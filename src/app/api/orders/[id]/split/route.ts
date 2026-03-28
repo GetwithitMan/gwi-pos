@@ -20,6 +20,7 @@ import {
 } from '@/lib/domain/split-order'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 
 const log = createChildLogger('orders.id.split')
 
@@ -58,10 +59,7 @@ export const POST = withVenue(async function POST(
     })
 
     if ('error' in lockResult) {
-      return NextResponse.json(
-        { error: lockResult.error },
-        { status: lockResult.status }
-      )
+      return err(lockResult.error, lockResult.status)
     }
 
     // Get the original order with all details (row was validated above)
@@ -112,35 +110,26 @@ export const POST = withVenue(async function POST(
     })
 
     if (!order) {
-      return NextResponse.json(
-        { error: 'Order not found' },
-        { status: 404 }
-      )
+      return notFound('Order not found')
     }
 
     // Auth check — require pos.split_checks permission (skip for read-only get_splits)
     if (body.type !== 'get_splits') {
       const auth = await requirePermission(body.employeeId, order.locationId, PERMISSIONS.POS_SPLIT_CHECKS)
-      if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+      if (!auth.authorized) return err(auth.error, auth.status)
     }
 
     // Block splitting orders with active pre-auth holds
     if (body.type !== 'get_splits') {
       const activeCards = order.cards?.filter((c: any) => c.status === 'authorized') || []
       if (activeCards.length > 0) {
-        return NextResponse.json(
-          { error: 'Cannot split order with active pre-authorization. Close the tab or void the pre-auth first.' },
-          { status: 400 }
-        )
+        return err('Cannot split order with active pre-authorization. Close the tab or void the pre-auth first.')
       }
 
       // Block splitting orders with partial payments (including gift cards)
       const completedPayments = order.payments?.filter((p: any) => p.status === 'completed') || []
       if (completedPayments.length > 0) {
-        return NextResponse.json(
-          { error: 'Cannot split order with existing payments. Void payments first or pay remaining balance.' },
-          { status: 400 }
-        )
+        return err('Cannot split order with existing payments. Void payments first or pay remaining balance.')
       }
     }
 
@@ -163,14 +152,11 @@ export const POST = withVenue(async function POST(
     // Handle get_splits - return all split orders for navigation
     if (body.type === 'get_splits') {
       const result = getSplitOrders(splitOrder)
-      return NextResponse.json({ data: { type: 'get_splits', ...result } })
+      return ok({ type: 'get_splits', ...result })
     }
 
     if (order.status === 'paid' || order.status === 'closed') {
-      return NextResponse.json(
-        { error: 'Cannot split a closed order' },
-        { status: 400 }
-      )
+      return err('Cannot split a closed order')
     }
 
     // Calculate what's already been paid on this order
@@ -179,17 +165,11 @@ export const POST = withVenue(async function POST(
     if (body.type === 'even') {
       const numWays = body.numWays || 2
       if (numWays < 2 || numWays > 10) {
-        return NextResponse.json(
-          { error: 'Must split between 2 and 10 ways' },
-          { status: 400 }
-        )
+        return err('Must split between 2 and 10 ways')
       }
 
       if (isAlreadySplit) {
-        return NextResponse.json(
-          { error: 'Order is already split. Navigate between existing splits.' },
-          { status: 400 }
-        )
+        return err('Order is already split. Navigate between existing splits.')
       }
 
       const orderTotal = Number(order.total)
@@ -240,7 +220,7 @@ export const POST = withVenue(async function POST(
 
       pushUpstream()
 
-      return NextResponse.json({ data: {
+      return ok({
         type: 'even',
         parentOrder: {
           id: order.id,
@@ -258,41 +238,29 @@ export const POST = withVenue(async function POST(
         })),
         numWays,
         message: `Order #${order.orderNumber} split into ${numWays} checks`,
-      } })
+      })
     }
 
     if (body.type === 'by_item') {
       const itemIds = body.itemIds || []
       if (itemIds.length === 0) {
-        return NextResponse.json(
-          { error: 'No items selected' },
-          { status: 400 }
-        )
+        return err('No items selected')
       }
 
       // Guard: cannot split an already-split order (same guard as even/seat/table splits)
       if (isAlreadySplit) {
-        return NextResponse.json(
-          { error: 'Cannot split an already-split order' },
-          { status: 400 }
-        )
+        return err('Cannot split an already-split order')
       }
 
       // Validate items belong to this order
       const itemsToMove = order.items.filter(item => itemIds.includes(item.id))
       if (itemsToMove.length !== itemIds.length) {
-        return NextResponse.json(
-          { error: 'Some items do not belong to this order' },
-          { status: 400 }
-        )
+        return err('Some items do not belong to this order')
       }
 
       // Check that we're not moving all items
       if (itemsToMove.length === order.items.length) {
-        return NextResponse.json(
-          { error: 'Cannot move all items - at least one must remain' },
-          { status: 400 }
-        )
+        return err('Cannot move all items - at least one must remain')
       }
 
       // === TRANSACTION: create child order + soft-delete items from parent + recalc parent atomically ===
@@ -362,7 +330,7 @@ export const POST = withVenue(async function POST(
 
       pushUpstream()
 
-      return NextResponse.json({ data: {
+      return ok({
         type: 'by_item',
         originalOrder: {
           id: order.id,
@@ -389,7 +357,7 @@ export const POST = withVenue(async function POST(
             price: Number(item.price),
           })),
         },
-      } })
+      })
     }
 
     if (body.type === 'by_seat') {
@@ -405,17 +373,11 @@ export const POST = withVenue(async function POST(
 
       const seatsWithItems = Array.from(itemsBySeat.keys()).filter(s => s !== null)
       if (seatsWithItems.length < 2) {
-        return NextResponse.json(
-          { error: 'Need at least 2 seats with items to split by seat' },
-          { status: 400 }
-        )
+        return err('Need at least 2 seats with items to split by seat')
       }
 
       if (isAlreadySplit) {
-        return NextResponse.json(
-          { error: 'Order is already split. Navigate between existing splits.' },
-          { status: 400 }
-        )
+        return err('Order is already split. Navigate between existing splits.')
       }
 
       const sortedSeats = (seatsWithItems as number[]).sort((a, b) => a - b)
@@ -497,7 +459,7 @@ export const POST = withVenue(async function POST(
 
       pushUpstream()
 
-      return NextResponse.json({ data: {
+      return ok({
         type: 'by_seat',
         parentOrder: {
           id: order.id,
@@ -509,7 +471,7 @@ export const POST = withVenue(async function POST(
         splits: splitOrders,
         seatCount: sortedSeats.length,
         message: `Order #${order.orderNumber} split into ${sortedSeats.length} checks by seat`,
-      } })
+      })
     }
 
     if (body.type === 'by_table') {
@@ -525,17 +487,11 @@ export const POST = withVenue(async function POST(
 
       const tablesWithItems = Array.from(itemsByTable.keys()).filter(t => t !== null) as string[]
       if (tablesWithItems.length < 2) {
-        return NextResponse.json(
-          { error: 'Need at least 2 tables with items to split by table' },
-          { status: 400 }
-        )
+        return err('Need at least 2 tables with items to split by table')
       }
 
       if (isAlreadySplit) {
-        return NextResponse.json(
-          { error: 'Order is already split. Navigate between existing splits.' },
-          { status: 400 }
-        )
+        return err('Order is already split. Navigate between existing splits.')
       }
 
       // Get table names for better labeling (read-only query, safe outside transaction)
@@ -622,7 +578,7 @@ export const POST = withVenue(async function POST(
 
       pushUpstream()
 
-      return NextResponse.json({ data: {
+      return ok({
         type: 'by_table',
         parentOrder: {
           id: order.id,
@@ -634,39 +590,27 @@ export const POST = withVenue(async function POST(
         splits: splitOrders,
         tableCount: tablesWithItems.length,
         message: `Order #${order.orderNumber} split into ${tablesWithItems.length} checks by table`,
-      } })
+      })
     }
 
     if (body.type === 'custom_amount') {
       const amount = body.amount || 0
       if (amount <= 0) {
-        return NextResponse.json(
-          { error: 'Amount must be greater than 0' },
-          { status: 400 }
-        )
+        return err('Amount must be greater than 0')
       }
 
       const remaining = Number(order.total) - paidAmount
       if (amount > remaining + 0.01) {
-        return NextResponse.json(
-          { error: `Amount exceeds remaining balance of $${remaining.toFixed(2)}` },
-          { status: 400 }
-        )
+        return err(`Amount exceeds remaining balance of $${remaining.toFixed(2)}`)
       }
 
       const result = calculateCustomSplit(splitOrder, amount, paidAmount)
-      return NextResponse.json({ data: { type: 'custom_amount', ...result } })
+      return ok({ type: 'custom_amount', ...result })
     }
 
-    return NextResponse.json(
-      { error: 'Invalid split type' },
-      { status: 400 }
-    )
+    return err('Invalid split type')
   } catch (error) {
     console.error('Failed to split order:', error)
-    return NextResponse.json(
-      { error: 'Failed to split order' },
-      { status: 500 }
-    )
+    return err('Failed to split order', 500)
   }
 })

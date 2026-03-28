@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET /api/invoices/[id] — get invoice with line items
 export const GET = withVenue(async function GET(
@@ -17,11 +18,11 @@ export const GET = withVenue(async function GET(
     const requestingEmployeeId = searchParams.get('requestingEmployeeId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.INVENTORY_VIEW)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const invoice = await db.invoice.findFirst({
       where: { id, locationId, deletedAt: null },
@@ -47,11 +48,10 @@ export const GET = withVenue(async function GET(
     })
 
     if (!invoice) {
-      return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
+      return notFound('Invoice not found')
     }
 
-    return NextResponse.json({
-      data: {
+    return ok({
         invoice: {
           ...invoice,
           subtotal: Number(invoice.subtotal),
@@ -73,11 +73,10 @@ export const GET = withVenue(async function GET(
             } : null,
           })),
         },
-      },
-    })
+      })
   } catch (error) {
     console.error('Get invoice error:', error)
-    return NextResponse.json({ error: 'Failed to fetch invoice' }, { status: 500 })
+    return err('Failed to fetch invoice', 500)
   }
 })
 
@@ -92,21 +91,21 @@ export const PATCH = withVenue(async function PATCH(
     const { locationId, requestingEmployeeId, ...updates } = body
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.INVENTORY_MANAGE)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Only allow editing draft invoices
     const existing = await db.invoice.findFirst({
       where: { id, locationId, deletedAt: null },
     })
     if (!existing) {
-      return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
+      return notFound('Invoice not found')
     }
     if (String(existing.status) !== 'draft') {
-      return NextResponse.json({ error: 'Only draft invoices can be edited' }, { status: 400 })
+      return err('Only draft invoices can be edited')
     }
 
     const allowedFields: Record<string, unknown> = {}
@@ -126,8 +125,7 @@ export const PATCH = withVenue(async function PATCH(
 
     pushUpstream()
 
-    return NextResponse.json({
-      data: {
+    return ok({
         invoice: {
           ...invoice,
           subtotal: Number(invoice.subtotal),
@@ -135,11 +133,10 @@ export const PATCH = withVenue(async function PATCH(
           shippingCost: Number(invoice.shippingCost),
           totalAmount: Number(invoice.totalAmount),
         },
-      },
-    })
+      })
   } catch (error) {
     console.error('Update invoice error:', error)
-    return NextResponse.json({ error: 'Failed to update invoice' }, { status: 500 })
+    return err('Failed to update invoice', 500)
   }
 })
 
@@ -155,20 +152,20 @@ export const DELETE = withVenue(async function DELETE(
     const requestingEmployeeId = searchParams.get('requestingEmployeeId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.INVENTORY_MANAGE)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const existing = await db.invoice.findFirst({
       where: { id, locationId, deletedAt: null },
     })
     if (!existing) {
-      return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
+      return notFound('Invoice not found')
     }
     if (String(existing.status) !== 'draft') {
-      return NextResponse.json({ error: 'Only draft invoices can be deleted' }, { status: 400 })
+      return err('Only draft invoices can be deleted')
     }
 
     await db.invoice.update({
@@ -178,9 +175,9 @@ export const DELETE = withVenue(async function DELETE(
 
     pushUpstream()
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Delete invoice error:', error)
-    return NextResponse.json({ error: 'Failed to delete invoice' }, { status: 500 })
+    return err('Failed to delete invoice', 500)
   }
 })

@@ -5,6 +5,7 @@ import { getLocationId, getLocationSettings } from '@/lib/location-cache'
 import { mergeWithDefaults, DEFAULT_RESERVATION_SETTINGS } from '@/lib/settings'
 import { getAvailableSlots } from '@/lib/reservations/availability'
 import { createRateLimiter } from '@/lib/rate-limiter'
+import { err, ok } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -27,7 +28,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'Location not found' }, { status: 400 })
+      return err('Location not found')
     }
 
     const rawSettings = await getLocationSettings(locationId)
@@ -36,7 +37,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     // Check if online booking is enabled
     if (!resSetting.allowOnlineBooking) {
-      return NextResponse.json({ enabled: false })
+      return ok({ enabled: false })
     }
 
     const { searchParams } = new URL(request.url)
@@ -44,14 +45,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const partySize = parseInt(searchParams.get('partySize') || '2', 10)
 
     if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      return NextResponse.json({ error: 'Valid date (YYYY-MM-DD) is required' }, { status: 400 })
+      return err('Valid date (YYYY-MM-DD) is required')
     }
 
     if (partySize < 1 || partySize > resSetting.maxPartySize) {
-      return NextResponse.json(
-        { error: `Party size must be between 1 and ${resSetting.maxPartySize}` },
-        { status: 400 }
-      )
+      return err(`Party size must be between 1 and ${resSetting.maxPartySize}`)
     }
 
     // Check date is within booking window
@@ -60,7 +58,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const maxDate = new Date(today)
     maxDate.setDate(maxDate.getDate() + resSetting.maxFutureBookingDays)
     if (requestedDate < today || requestedDate > maxDate) {
-      return NextResponse.json({ enabled: true, slots: [] })
+      return ok({ enabled: true, slots: [] })
     }
 
     // TODO: Load operating hours from venue settings once hours model exists.
@@ -77,10 +75,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       isPublic: true,
     })
 
-    return NextResponse.json({ enabled: true, slots })
+    return ok({ enabled: true, slots })
   } catch (error) {
     console.error('[Public Availability] Error:', error)
-    return NextResponse.json({ error: 'Failed to fetch availability' }, { status: 500 })
+    return err('Failed to fetch availability', 500)
   }
 })
 

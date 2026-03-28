@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db, adminDb } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { buildSpiritTiersFromItem, normalizeModifier } from '@/lib/spirit-tiers'
 import { parseSettings } from '@/lib/settings'
 import { authenticateTerminal } from '@/lib/terminal-auth'
+import { notFound, ok } from '@/lib/api-response'
 
 // ─── Sync bootstrap cache ─────────────────────────────────────────────────
 // Same pattern as session/bootstrap's menu cache. Caches the heavy menu+categories
@@ -63,7 +64,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       } : null,
     }
     cachedData.syncVersion = Date.now()
-    return NextResponse.json({ data: cachedData })
+    return ok(cachedData)
   }
 
   // Inflight promise coalescing: if another request for this locationId is already
@@ -93,7 +94,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       } : null,
     }
     personalizedData.syncVersion = Date.now()
-    return NextResponse.json({ data: personalizedData })
+    return ok(personalizedData)
   }
 
   // Create the inflight promise for this locationId — other concurrent requests will await it
@@ -278,9 +279,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Sanity check: if location doesn't exist in this venue DB, fail loudly
     if (!location) {
       console.error(`[bootstrap] FATAL: locationId=${locationId} not found in venue DB (slug=${venueSlug}). Likely posLocationId mismatch in MC.`)
-      return NextResponse.json({
-        error: `Bootstrap failed: locationId '${locationId}' not found in venue database '${venueSlug}'. Device must be re-paired after fixing posLocationId in Mission Control.`,
-      }, { status: 404 })
+      return notFound(`Bootstrap failed: locationId '${locationId}' not found in venue database '${venueSlug}'. Device must be re-paired after fixing posLocationId in Mission Control.`)
     }
 
     // Sanity check: if no categories found, warn (might be valid for empty venue, but usually wrong)
@@ -709,5 +708,5 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
   const finalData = await bootstrapPromise
 
-  return NextResponse.json({ data: finalData })
+  return ok(finalData)
 })

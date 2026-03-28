@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
@@ -8,6 +8,7 @@ import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 import { advanceRunStatus, advanceDeliveryStatus } from '@/lib/delivery/state-machine'
 import type { DeliveryOrderStatus } from '@/lib/delivery/state-machine'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,13 +23,13 @@ export const GET = withVenue(async function GET(
     const { id } = await params
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Auth check
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.DELIVERY_VIEW)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Feature gate
     const featureGate = await requireDeliveryFeature(locationId)
@@ -46,7 +47,7 @@ export const GET = withVenue(async function GET(
     `, id, locationId)
 
     if (!rows.length) {
-      return NextResponse.json({ error: 'Run not found' }, { status: 404 })
+      return notFound('Run not found')
     }
 
     const run = rows[0]
@@ -67,7 +68,7 @@ export const GET = withVenue(async function GET(
       deliveryFee: Number(o.deliveryFee),
     }))
 
-    return NextResponse.json({
+    return ok({
       run: {
         ...run,
         driverName: run.driverFirstName
@@ -92,7 +93,7 @@ export const GET = withVenue(async function GET(
     })
   } catch (error) {
     console.error('[Delivery/Runs/Detail] GET error:', error)
-    return NextResponse.json({ error: 'Failed to fetch run detail' }, { status: 500 })
+    return err('Failed to fetch run detail', 500)
   }
 })
 
@@ -109,13 +110,13 @@ export const PUT = withVenue(async function PUT(
     const { id } = await params
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Auth check
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.DELIVERY_DISPATCH)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Feature gate
     const featureGate = await requireDeliveryFeature(locationId)
@@ -132,7 +133,7 @@ export const PUT = withVenue(async function PUT(
     )
 
     if (!existing.length) {
-      return NextResponse.json({ error: 'Run not found' }, { status: 404 })
+      return notFound('Run not found')
     }
 
     const currentRun = existing[0]
@@ -147,7 +148,7 @@ export const PUT = withVenue(async function PUT(
       })
 
       if (!result.success) {
-        return NextResponse.json({ error: result.error }, { status: 400 })
+        return err(result.error)
       }
 
       // If run status changes, cascade to orders via state machine
@@ -256,7 +257,7 @@ export const PUT = withVenue(async function PUT(
     const updatedRun = updatedRows[0]
     pushUpstream()
 
-    return NextResponse.json({
+    return ok({
       run: {
         ...updatedRun,
         driverName: updatedRun.driverFirstName
@@ -267,6 +268,6 @@ export const PUT = withVenue(async function PUT(
     })
   } catch (error) {
     console.error('[Delivery/Runs/Detail] PUT error:', error)
-    return NextResponse.json({ error: 'Failed to update run' }, { status: 500 })
+    return err('Failed to update run', 500)
   }
 })

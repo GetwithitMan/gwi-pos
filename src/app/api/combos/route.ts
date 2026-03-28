@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db as prisma } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, ok } from '@/lib/api-response'
 
 // GET - List all combos
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -12,7 +13,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const locationId = searchParams.get('locationId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID required' }, { status: 400 })
+      return err('Location ID required')
     }
 
     // Get all combo menu items with their templates
@@ -127,7 +128,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }])
     )
 
-    return NextResponse.json({ data: {
+    return ok({
       combos: combos.map(c => ({
         id: c.id,
         name: c.name,
@@ -140,10 +141,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         isAvailable: c.isAvailable,
         template: templateMap[c.id] || null,
       })),
-    } })
+    })
   } catch (error) {
     console.error('Get combos error:', error)
-    return NextResponse.json({ error: 'Failed to fetch combos' }, { status: 500 })
+    return err('Failed to fetch combos', 500)
   }
 })
 
@@ -164,7 +165,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     } = body
 
     if (!locationId || !categoryId || !name || price === undefined) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+      return err('Missing required fields')
     }
 
     // Create the menu item as a combo
@@ -221,7 +222,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     void notifyDataChanged({ locationId, domain: 'combos', action: 'created', entityId: menuItem.id })
     void pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       combo: {
         id: menuItem.id,
         name: menuItem.name,
@@ -233,9 +234,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
           components: template.components,
         },
       },
-    } })
+    })
   } catch (error) {
     console.error('Create combo error:', error)
-    return NextResponse.json({ error: 'Failed to create combo' }, { status: 500 })
+    return err('Failed to create combo', 500)
   }
 }))

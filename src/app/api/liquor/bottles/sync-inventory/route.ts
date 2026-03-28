@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { emitToLocation } from '@/lib/socket-server'
 import { withVenue } from '@/lib/with-venue'
@@ -6,6 +6,7 @@ import { withAuth } from '@/lib/api-auth-middleware'
 import { getLocationId } from '@/lib/location-cache'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok } from '@/lib/api-response'
 
 const log = createChildLogger('liquor.bottles.sync-inventory')
 
@@ -48,10 +49,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     // Get the location
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'No location found' },
-        { status: 400 }
-      )
+      return err('No location found')
     }
 
     // Find all bottles without an inventoryItemId
@@ -72,11 +70,11 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     })
 
     if (bottlesWithoutInventory.length === 0) {
-      return NextResponse.json({ data: {
+      return ok({
         message: 'All bottles already have linked inventory items',
         synced: 0,
         bottles: [],
-      } })
+      })
     }
 
     // Process each bottle and create inventory items
@@ -180,18 +178,15 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       void emitToLocation(locationId, 'inventory:changed', { action: 'liquor-sync' }).catch(err => log.warn({ err }, 'socket emit failed'))
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       message: `Synced ${synced} bottles to inventory${errors > 0 ? `, ${errors} errors` : ''}`,
       synced,
       errors,
       bottles: results,
-    } })
+    })
   } catch (error) {
     console.error('Failed to sync inventory:', error)
-    return NextResponse.json(
-      { error: 'Failed to sync inventory' },
-      { status: 500 }
-    )
+    return err('Failed to sync inventory', 500)
   }
 }))
 
@@ -205,10 +200,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
     // Get the location
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'No location found' },
-        { status: 400 }
-      )
+      return err('No location found')
     }
 
     // Count bottles without inventory link
@@ -228,19 +220,16 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
       },
     })
 
-    return NextResponse.json({ data: {
+    return ok({
       needsSync: count,
       total,
       synced: total - count,
       message: count > 0
         ? `${count} bottles need to be synced to inventory`
         : 'All bottles are synced to inventory',
-    } })
+    })
   } catch (error) {
     console.error('Failed to check sync status:', error)
-    return NextResponse.json(
-      { error: 'Failed to check sync status' },
-      { status: 500 }
-    )
+    return err('Failed to check sync status', 500)
   }
 }))

@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // POST - Check in by ticket number or barcode (event-scoped)
 // This is a convenience endpoint that wraps /api/tickets/[id]/check-in
@@ -15,10 +16,7 @@ export const POST = withVenue(withAuth(async function POST(
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'No location found' },
-        { status: 400 }
-      )
+      return err('No location found')
     }
 
     const { id: eventId } = await params
@@ -26,10 +24,7 @@ export const POST = withVenue(withAuth(async function POST(
     const { ticketIdentifier, employeeId, method = 'scan' } = body
 
     if (!ticketIdentifier) {
-      return NextResponse.json(
-        { error: 'ticketIdentifier is required (ticket number or barcode)' },
-        { status: 400 }
-      )
+      return err('ticketIdentifier is required (ticket number or barcode)')
     }
 
     // Verify event exists
@@ -44,10 +39,7 @@ export const POST = withVenue(withAuth(async function POST(
     })
 
     if (!event) {
-      return NextResponse.json(
-        { error: 'Event not found' },
-        { status: 404 }
-      )
+      return notFound('Event not found')
     }
 
     // Find ticket by number or barcode, scoped to this event
@@ -75,15 +67,15 @@ export const POST = withVenue(withAuth(async function POST(
     })
 
     if (!ticket) {
-      return NextResponse.json({ data: {
+      return ok({
         success: false,
         checkInResult: 'invalid',
         error: 'Ticket not found for this event',
-      } })
+      })
     }
 
     if (ticket.status === 'checked_in') {
-      return NextResponse.json({ data: {
+      return ok({
         success: false,
         checkInResult: 'already_checked_in',
         error: 'Ticket already checked in',
@@ -96,15 +88,15 @@ export const POST = withVenue(withAuth(async function POST(
           pricingTier: ticket.pricingTier.name,
           tierColor: ticket.pricingTier.color,
         },
-      } })
+      })
     }
 
     if (ticket.status !== 'sold') {
-      return NextResponse.json({ data: {
+      return ok({
         success: false,
         checkInResult: 'invalid_status',
         error: `Ticket status is "${ticket.status}" - only sold tickets can be checked in`,
-      } })
+      })
     }
 
     // Perform check-in
@@ -145,7 +137,7 @@ export const POST = withVenue(withAuth(async function POST(
     const soldCount = checkInStats.find(s => s.status === 'sold')?._count.id || 0
     const totalAttendees = checkedInCount + soldCount
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       checkInResult: 'success',
       checkedInAt: now.toISOString(),
@@ -167,12 +159,9 @@ export const POST = withVenue(withAuth(async function POST(
           ? Math.round((checkedInCount / totalAttendees) * 100)
           : 0,
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to check in:', error)
-    return NextResponse.json(
-      { error: 'Failed to check in' },
-      { status: 500 }
-    )
+    return err('Failed to check in', 500)
   }
 }))

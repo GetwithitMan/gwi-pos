@@ -5,7 +5,7 @@
  * POST - Create a new template
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { TipGroupSplitMode } from '@/generated/prisma/client'
 import { requirePermission } from '@/lib/api-auth'
@@ -13,6 +13,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { queueIfOutageOrFail, OutageQueueFullError, pushUpstream } from '@/lib/sync/outage-safe-write'
+import { created, err, ok } from '@/lib/api-response'
 
 // ─── GET: List templates ─────────────────────────────────────────────────────
 
@@ -23,10 +24,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
     const includeInactive = searchParams.get('includeInactive') === 'true'
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'locationId is required' },
-        { status: 400 }
-      )
+      return err('locationId is required')
     }
 
     // Auth check
@@ -37,10 +35,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
       PERMISSIONS.TIPS_MANAGE_RULES
     )
     if (!auth.authorized) {
-      return NextResponse.json(
-        { error: auth.error },
-        { status: auth.status }
-      )
+      return err(auth.error, auth.status)
     }
 
     const where: Record<string, unknown> = {
@@ -56,8 +51,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
       orderBy: { sortOrder: 'asc' },
     })
 
-    return NextResponse.json({
-      data: templates.map(t => ({
+    return ok(templates.map(t => ({
         id: t.id,
         locationId: t.locationId,
         name: t.name,
@@ -65,14 +59,10 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
         defaultSplitMode: t.defaultSplitMode,
         active: t.active,
         sortOrder: t.sortOrder,
-      })),
-    })
+      })))
   } catch (error) {
     console.error('Failed to list tip group templates:', error)
-    return NextResponse.json(
-      { error: 'Failed to list tip group templates' },
-      { status: 500 }
-    )
+    return err('Failed to list tip group templates', 500)
   }
 }))
 
@@ -90,17 +80,11 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     }
 
     if (!locationId || !name?.trim()) {
-      return NextResponse.json(
-        { error: 'locationId and name are required' },
-        { status: 400 }
-      )
+      return err('locationId and name are required')
     }
 
     if (allowedRoleIds !== undefined && !Array.isArray(allowedRoleIds)) {
-      return NextResponse.json(
-        { error: 'allowedRoleIds must be an array' },
-        { status: 400 }
-      )
+      return err('allowedRoleIds must be an array')
     }
 
     // Auth check
@@ -111,10 +95,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       PERMISSIONS.TIPS_MANAGE_RULES
     )
     if (!auth.authorized) {
-      return NextResponse.json(
-        { error: auth.error },
-        { status: auth.status }
-      )
+      return err(auth.error, auth.status)
     }
 
     // Get next sort order
@@ -141,15 +122,14 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       await queueIfOutageOrFail('TipGroupTemplate', locationId, template.id, 'INSERT')
     } catch (err) {
       if (err instanceof OutageQueueFullError) {
-        return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+        return err('Service temporarily unavailable — outage queue full', 507)
       }
       throw err
     }
 
     pushUpstream()
 
-    return NextResponse.json({
-      data: {
+    return created({
         id: template.id,
         locationId: template.locationId,
         name: template.name,
@@ -157,13 +137,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
         defaultSplitMode: template.defaultSplitMode,
         active: template.active,
         sortOrder: template.sortOrder,
-      },
-    }, { status: 201 })
+      })
   } catch (error) {
     console.error('Failed to create tip group template:', error)
-    return NextResponse.json(
-      { error: 'Failed to create tip group template' },
-      { status: 500 }
-    )
+    return err('Failed to create tip group template', 500)
   }
 }))

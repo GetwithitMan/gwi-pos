@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchMenuStockChanged } from '@/lib/socket-dispatch'
@@ -9,6 +9,7 @@ import { withAuth } from '@/lib/api-auth-middleware'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('inventory-86-status')
 
 /**
@@ -25,7 +26,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const search = searchParams.get('search')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // Build where clause - include all ingredients (base and prep items)
@@ -205,8 +206,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       prepItemsByParent[parentId].push(item)
     })
 
-    return NextResponse.json({
-      data: {
+    return ok({
         items,
         quickList,
         byCategory,
@@ -214,11 +214,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         total86d: items.filter(i => i.is86d).length,
         totalEffectively86d: items.filter(i => i.effectivelyIs86d).length,
         totalItems: items.length
-      }
-    })
+      })
   } catch (error) {
     console.error('Error fetching 86 status:', error)
-    return NextResponse.json({ error: 'Failed to fetch 86 status' }, { status: 500 })
+    return err('Failed to fetch 86 status', 500)
   }
 })
 
@@ -234,10 +233,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     const { ingredientId, is86d, employeeId } = body
 
     if (!ingredientId || is86d === undefined) {
-      return NextResponse.json(
-        { error: 'ingredientId and is86d are required' },
-        { status: 400 }
-      )
+      return err('ingredientId and is86d are required')
     }
 
     // Get ingredient and verify it exists
@@ -283,13 +279,13 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     })
 
     if (!ingredient || ingredient.deletedAt) {
-      return NextResponse.json({ error: 'Ingredient not found' }, { status: 404 })
+      return notFound('Ingredient not found')
     }
 
     // Auth check — require menu.86_items permission
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, ingredient.locationId, PERMISSIONS.MENU_86_ITEMS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Update 86 status (tenant-scoped)
     const updated = await db.ingredient.update({
@@ -355,8 +351,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     void notifyDataChanged({ locationId: ingredient.locationId, domain: 'inventory', action: 'updated', entityId: updated.id })
     pushUpstream()
 
-    return NextResponse.json({
-      data: {
+    return ok({
         ingredient: {
           id: updated.id,
           name: updated.name,
@@ -368,11 +363,10 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
         message: is86d
           ? `${updated.name} marked as 86. ${affectedMenuItems.length} menu items and ${affectedModifiers.length} modifiers affected.`
           : `${updated.name} is back in stock.`
-      }
-    })
+      })
   } catch (error) {
     console.error('Error updating 86 status:', error)
-    return NextResponse.json({ error: 'Failed to update 86 status' }, { status: 500 })
+    return err('Failed to update 86 status', 500)
   }
 }))
 
@@ -387,10 +381,7 @@ export const PATCH = withVenue(withAuth('ADMIN', async function PATCH(request: N
     const { ingredientId, showOnQuick86 } = body
 
     if (!ingredientId || showOnQuick86 === undefined) {
-      return NextResponse.json(
-        { error: 'ingredientId and showOnQuick86 are required' },
-        { status: 400 }
-      )
+      return err('ingredientId and showOnQuick86 are required')
     }
 
     // Fetch ingredient to get locationId for auth check
@@ -399,13 +390,13 @@ export const PATCH = withVenue(withAuth('ADMIN', async function PATCH(request: N
       select: { locationId: true },
     })
     if (!ingredientForAuth) {
-      return NextResponse.json({ error: 'Ingredient not found' }, { status: 404 })
+      return notFound('Ingredient not found')
     }
 
     // Auth check — require menu.86_items permission
     const actorPatch = await getActorFromRequest(request)
     const authPatch = await requirePermission(actorPatch.employeeId, ingredientForAuth.locationId, PERMISSIONS.MENU_86_ITEMS)
-    if (!authPatch.authorized) return NextResponse.json({ error: authPatch.error }, { status: authPatch.status })
+    if (!authPatch.authorized) return err(authPatch.error, authPatch.status)
 
     const updated = await db.ingredient.update({
       where: { id: ingredientId, locationId: ingredientForAuth.locationId },
@@ -420,16 +411,14 @@ export const PATCH = withVenue(withAuth('ADMIN', async function PATCH(request: N
     void notifyDataChanged({ locationId: ingredientForAuth.locationId, domain: 'inventory', action: 'updated', entityId: updated.id })
     pushUpstream()
 
-    return NextResponse.json({
-      data: {
+    return ok({
         ingredient: updated,
         message: showOnQuick86
           ? `${updated.name} added to Quick 86 list.`
           : `${updated.name} removed from Quick 86 list.`
-      }
-    })
+      })
   } catch (error) {
     console.error('Error updating Quick 86 status:', error)
-    return NextResponse.json({ error: 'Failed to update Quick 86 status' }, { status: 500 })
+    return err('Failed to update Quick 86 status', 500)
   }
 }))

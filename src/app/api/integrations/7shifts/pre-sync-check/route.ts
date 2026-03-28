@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationSettings } from '@/lib/location-cache'
 import { parseSettings } from '@/lib/settings'
+import { err, ok } from '@/lib/api-response'
 
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
@@ -10,7 +11,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const locationId = searchParams.get('locationId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId required' }, { status: 400 })
+      return err('locationId required')
     }
 
     // Get location timezone
@@ -186,8 +187,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const settings = parseSettings(rawSettings)
     const s7 = settings.sevenShifts || {} as Record<string, unknown>
 
-    return NextResponse.json({
-      data: {
+    return ok({
         businessDate,
         issues: {
           unmappedEmployeesWithPunches,
@@ -204,10 +204,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         isReadyToSync,
         lastPushAt: (s7 as Record<string, string | null>).lastPunchPushAt ?? null,
         lastPushStatus: (s7 as Record<string, string | null>).lastPunchPushStatus ?? null,
-      },
-    })
+      })
   } catch (error) {
     console.error('Pre-sync check error:', error)
-    return NextResponse.json({ error: 'Failed to run pre-sync check' }, { status: 500 })
+    return err('Failed to run pre-sync check', 500)
   }
 })

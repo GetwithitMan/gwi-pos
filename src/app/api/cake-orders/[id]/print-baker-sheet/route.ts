@@ -7,6 +7,7 @@ import { sendToPrinter } from '@/lib/printer-connection'
 import { buildCakeBakerSheet, type CakeBakerSheetData, type CakeBakerSheetTier } from '@/lib/escpos/cake-baker-sheet'
 import { parseCakeConfig, parseDesignConfig, parseDietaryConfig } from '@/lib/cake-orders/schemas'
 import { requireCakeFeature } from '@/lib/cake-orders/require-cake-feature'
+import { err, notFound, ok } from '@/lib/api-response'
 
 /**
  * POST /api/cake-orders/[id]/print-baker-sheet
@@ -28,7 +29,7 @@ export const POST = withVenue(async function POST(
     const locationId = actor.locationId || body.locationId
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // ── Permission check ──────────────────────────────────────────────
@@ -61,7 +62,7 @@ export const POST = withVenue(async function POST(
     )
 
     if (orders.length === 0) {
-      return NextResponse.json({ error: 'Cake order not found' }, { status: 404 })
+      return notFound('Cake order not found')
     }
 
     const order = orders[0]
@@ -157,10 +158,7 @@ export const POST = withVenue(async function POST(
     }
 
     if (!printer) {
-      return NextResponse.json(
-        { error: 'No active printer found. Configure a receipt printer in Settings > Hardware.' },
-        { status: 422 },
-      )
+      return err('No active printer found. Configure a receipt printer in Settings > Hardware.', 422)
     }
 
     // ── Send to printer ───────────────────────────────────────────────
@@ -168,10 +166,7 @@ export const POST = withVenue(async function POST(
 
     if (!result.success) {
       console.error(`[cake-baker-sheet] Print failed for order ${id}:`, result.error)
-      return NextResponse.json(
-        { error: `Print failed: ${result.error}` },
-        { status: 502 },
-      )
+      return err(`Print failed: ${result.error}`, 502)
     }
 
     // ── Log print job ─────────────────────────────────────────────────
@@ -186,9 +181,9 @@ export const POST = withVenue(async function POST(
       // Non-critical — log but don't fail
     }
 
-    return NextResponse.json({ success: true })
+    return ok({ success: true })
   } catch (error) {
     console.error('Failed to print baker sheet:', error)
-    return NextResponse.json({ error: 'Failed to print baker sheet' }, { status: 500 })
+    return err('Failed to print baker sheet', 500)
   }
 })

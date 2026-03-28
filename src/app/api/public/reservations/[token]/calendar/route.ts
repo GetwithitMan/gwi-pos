@@ -4,6 +4,7 @@ import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { generateICS } from '@/lib/reservations/ics'
 import { createRateLimiter } from '@/lib/rate-limiter'
+import { err, notFound } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -30,7 +31,7 @@ export const GET = withVenue(async function GET(
     const { token } = params
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'Location not found' }, { status: 400 })
+      return err('Location not found')
     }
 
     const reservation = await db.reservation.findFirst({
@@ -47,7 +48,7 @@ export const GET = withVenue(async function GET(
     })
 
     if (!reservation) {
-      return NextResponse.json({ error: 'Reservation not found' }, { status: 404 })
+      return notFound('Reservation not found')
     }
 
     const location = await db.location.findUnique({
@@ -56,7 +57,7 @@ export const GET = withVenue(async function GET(
     })
 
     if (!location) {
-      return NextResponse.json({ error: 'Location not found' }, { status: 400 })
+      return err('Location not found')
     }
 
     const icsContent = generateICS({
@@ -84,6 +85,6 @@ export const GET = withVenue(async function GET(
     })
   } catch (error) {
     console.error('[Public Calendar] Error:', error)
-    return NextResponse.json({ error: 'Failed to generate calendar invite' }, { status: 500 })
+    return err('Failed to generate calendar invite', 500)
   }
 })

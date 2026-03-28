@@ -8,7 +8,6 @@
  * endpoint always returns them — the dashboard needs them.
  */
 
-import { NextResponse } from 'next/server'
 import { db, getVenueClientCount } from '@/lib/db'
 import { CONNECTION_BUDGET } from '@/lib/db-connection-budget'
 import { withVenue } from '@/lib/with-venue'
@@ -20,6 +19,7 @@ import { getReadinessState } from '@/lib/readiness'
 import { APP_VERSION } from '@/lib/version-contract'
 import { readFileSync } from 'fs'
 import path from 'path'
+import { ok } from '@/lib/api-response'
 export const dynamic = 'force-dynamic'
 
 // Track server start time for uptime calculation
@@ -315,8 +315,7 @@ export const GET = withVenue(async function GET(): Promise<NextResponse> {
   }
 
   // ── Assemble response ───────────────────────────────────────────────────────
-  return NextResponse.json({
-    data: {
+  return ok({
       generatedAt,
       health: {
         status,
@@ -348,6 +347,5 @@ export const GET = withVenue(async function GET(): Promise<NextResponse> {
       readiness,
       connectionPool,
       lastUpdate,
-    },
-  })
+    })
 })

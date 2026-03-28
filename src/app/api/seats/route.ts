@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch';
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, ok } from '@/lib/api-response'
 
 // GET - List seats with filters
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -14,10 +15,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const status = searchParams.get('status');
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'Location ID is required' },
-        { status: 400 }
-      );
+      return err('Location ID is required');
     }
 
     const seats = await db.seat.findMany({
@@ -42,7 +40,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       ],
     });
 
-    return NextResponse.json({ data: {
+    return ok({
       seats: seats.map((seat) => ({
         id: seat.id,
         locationId: seat.locationId,
@@ -56,13 +54,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         seatType: seat.seatType,
         isActive: seat.isActive,
       })),
-    } });
+    });
   } catch (error) {
     console.error('Failed to fetch seats:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch seats' },
-      { status: 500 }
-    );
+    return err('Failed to fetch seats', 500);
   }
 })
 
@@ -82,10 +77,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     } = body;
 
     if (!locationId || !tableId) {
-      return NextResponse.json(
-        { error: 'Location ID and Table ID are required' },
-        { status: 400 }
-      );
+      return err('Location ID and Table ID are required');
     }
 
     // Auto-increment seat number if not provided
@@ -117,7 +109,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     // Notify POS terminals of floor plan update
     dispatchFloorPlanUpdate(locationId, { async: true });
 
-    return NextResponse.json({ data: {
+    return ok({
       seat: {
         id: seat.id,
         locationId: seat.locationId,
@@ -130,12 +122,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
         seatType: seat.seatType,
         isActive: seat.isActive,
       },
-    } });
+    });
   } catch (error) {
     console.error('Failed to create seat:', error);
-    return NextResponse.json(
-      { error: 'Failed to create seat' },
-      { status: 500 }
-    );
+    return err('Failed to create seat', 500);
   }
 }))

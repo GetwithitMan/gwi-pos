@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
@@ -8,6 +8,7 @@ import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { emitToLocation } from '@/lib/socket-server'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 
 const log = createChildLogger('schedules.id.shifts')
 
@@ -81,22 +82,19 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     } = body
 
     if (!employeeId || !date || !startTime || !endTime) {
-      return NextResponse.json(
-        { error: 'employeeId, date, startTime, and endTime are required' },
-        { status: 400 }
-      )
+      return err('employeeId, date, startTime, and endTime are required')
     }
 
     const schedule = await db.schedule.findUnique({ where: { id: scheduleId } })
     if (!schedule) {
-      return NextResponse.json({ error: 'Schedule not found' }, { status: 404 })
+      return notFound('Schedule not found')
     }
 
     // Auth check — require staff scheduling permission
     const actor = await getActorFromRequest(request)
     const resolvedEmployeeId = actor.employeeId ?? body.employeeId
     const auth = await requirePermission(resolvedEmployeeId, schedule.locationId, PERMISSIONS.STAFF_SCHEDULING)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Check for time-based overlapping shifts (not just same-day same-schedule)
     const overlap = await findOverlappingShift(
@@ -160,10 +158,10 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     void pushUpstream()
     void emitToLocation(schedule.locationId, 'schedules:changed', { trigger: 'shift-created' }).catch(err => log.warn({ err }, 'socket emit failed'))
 
-    return NextResponse.json({ data: response })
+    return ok(response)
   } catch (error) {
     console.error('Failed to create shift:', error)
-    return NextResponse.json({ error: 'Failed to create shift' }, { status: 500 })
+    return err('Failed to create shift', 500)
   }
 }))
 
@@ -190,13 +188,13 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
 
     const schedule = await db.schedule.findUnique({ where: { id: scheduleId } })
     if (!schedule) {
-      return NextResponse.json({ error: 'Schedule not found' }, { status: 404 })
+      return notFound('Schedule not found')
     }
 
     // Auth check — require staff scheduling permission
     const putActor = await getActorFromRequest(request)
     const putAuth = await requirePermission(putActor.employeeId, schedule.locationId, PERMISSIONS.STAFF_SCHEDULING)
-    if (!putAuth.authorized) return NextResponse.json({ error: putAuth.error }, { status: putAuth.status })
+    if (!putAuth.authorized) return err(putAuth.error, putAuth.status)
 
     // Delete existing shifts not in the update
     const existingIds = shifts.filter(s => s.id).map(s => s.id!)
@@ -274,9 +272,9 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     void pushUpstream()
     void emitToLocation(schedule.locationId, 'schedules:changed', { trigger: 'shifts-bulk-updated' }).catch(err => log.warn({ err }, 'socket emit failed'))
 
-    return NextResponse.json({ data: response })
+    return ok(response)
   } catch (error) {
     console.error('Failed to update shifts:', error)
-    return NextResponse.json({ error: 'Failed to update shifts' }, { status: 500 })
+    return err('Failed to update shifts', 500)
   }
 }))

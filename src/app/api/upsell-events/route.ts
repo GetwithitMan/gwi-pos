@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, ok } from '@/lib/api-response'
 
 interface UpsellEventRow {
   id: string
@@ -34,18 +35,12 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     } = body
 
     if (!locationId || !ruleId || !orderId || !action) {
-      return NextResponse.json(
-        { error: 'locationId, ruleId, orderId, and action are required' },
-        { status: 400 }
-      )
+      return err('locationId, ruleId, orderId, and action are required')
     }
 
     const validActions = ['shown', 'accepted', 'dismissed']
     if (!validActions.includes(action)) {
-      return NextResponse.json(
-        { error: `Invalid action. Must be one of: ${validActions.join(', ')}` },
-        { status: 400 }
-      )
+      return err(`Invalid action. Must be one of: ${validActions.join(', ')}`)
     }
 
     const rows = await db.$queryRawUnsafe<UpsellEventRow[]>(`
@@ -67,9 +62,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       addedAmount != null ? addedAmount : null,
     )
 
-    return NextResponse.json({ data: { success: true, id: rows[0]?.id } })
+    return ok({ success: true, id: rows[0]?.id })
   } catch (error) {
     console.error('Failed to record upsell event:', error)
-    return NextResponse.json({ error: 'Failed to record upsell event' }, { status: 500 })
+    return err('Failed to record upsell event', 500)
   }
 }))

@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { parseSettings } from '@/lib/settings'
 import { getAvailableSlots, type OperatingHours } from '@/lib/reservations/availability'
 import { getLocationId } from '@/lib/location-cache'
+import { err, notFound, ok } from '@/lib/api-response'
 
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
@@ -13,7 +14,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const partySize = parseInt(sp.get('partySize') || '2', 10)
 
     if (!locationId || !date) {
-      return NextResponse.json({ error: 'date is required' }, { status: 400 })
+      return err('date is required')
     }
 
     // Load location settings + operating hours
@@ -23,7 +24,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     })
 
     if (!location) {
-      return NextResponse.json({ error: 'Location not found' }, { status: 404 })
+      return notFound('Location not found')
     }
 
     const settings = parseSettings(location.settings)
@@ -45,9 +46,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       isPublic: sp.get('public') === 'true',
     })
 
-    return NextResponse.json({ data: slots })
+    return ok(slots)
   } catch (error) {
     console.error('[reservations/availability] GET error:', error)
-    return NextResponse.json({ error: 'Failed to fetch availability' }, { status: 500 })
+    return err('Failed to fetch availability', 500)
   }
 })

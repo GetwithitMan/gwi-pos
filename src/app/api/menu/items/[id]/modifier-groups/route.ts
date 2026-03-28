@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { Prisma } from '@/generated/prisma/client'
 import { MenuItemRepository } from '@/lib/repositories'
@@ -11,6 +11,7 @@ import { getLocationId } from '@/lib/location-cache'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 
 const log = createChildLogger('menu.items.id.modifier-groups')
 
@@ -152,7 +153,7 @@ export const GET = withVenue(async function GET(request: NextRequest, { params }
     const { id: menuItemId } = await params
     const locationId = request.nextUrl.searchParams.get('locationId') || await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     const menuItem = await MenuItemRepository.getMenuItemByIdWithSelect(menuItemId, locationId, {
@@ -160,7 +161,7 @@ export const GET = withVenue(async function GET(request: NextRequest, { params }
     })
 
     if (!menuItem) {
-      return NextResponse.json({ error: 'Menu item not found' }, { status: 404 })
+      return notFound('Menu item not found')
     }
 
     // Shared include shape for modifiers (used by both queries)
@@ -221,12 +222,10 @@ export const GET = withVenue(async function GET(request: NextRequest, { params }
 
     // Return ALL groups - child groups remain in the list for editing
     // The childModifierGroup reference is just a link, not a move
-    return NextResponse.json({
-      data: formattedGroups,
-    })
+    return ok(formattedGroups)
   } catch (error) {
     console.error('Error fetching item modifier groups:', error)
-    return NextResponse.json({ error: 'Failed to fetch modifier groups' }, { status: 500 })
+    return err('Failed to fetch modifier groups', 500)
   }
 })
 
@@ -237,13 +236,13 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
     const { id: menuItemId } = await params
     const locationId = request.nextUrl.searchParams.get('locationId') || await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // Auth check — require menu.edit_items permission
     const actor = await getActorFromRequest(request)
     const authCheck = await requirePermission(actor.employeeId, locationId, PERMISSIONS.MENU_EDIT_ITEMS)
-    if (!authCheck.authorized) return NextResponse.json({ error: authCheck.error }, { status: authCheck.status })
+    if (!authCheck.authorized) return err(authCheck.error, authCheck.status)
 
     const body = await request.json()
     const {
@@ -260,12 +259,12 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
     } = body
 
     if (!name && !duplicateFromGroupId) {
-      return NextResponse.json({ error: 'Modifier group name is required' }, { status: 400 })
+      return err('Modifier group name is required')
     }
 
     // Cross-field validation
     if (minSelections > maxSelections) {
-      return NextResponse.json({ error: 'minSelections cannot exceed maxSelections' }, { status: 400 })
+      return err('minSelections cannot exceed maxSelections')
     }
 
     const menuItem = await MenuItemRepository.getMenuItemByIdWithSelect(menuItemId, locationId, {
@@ -273,7 +272,7 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
     })
 
     if (!menuItem) {
-      return NextResponse.json({ error: 'Menu item not found' }, { status: 404 })
+      return notFound('Menu item not found')
     }
 
     // If parentModifierId provided, verify it belongs to a group owned by this item
@@ -285,7 +284,7 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
         },
       })
       if (!parentModifier) {
-        return NextResponse.json({ error: 'Parent modifier not found' }, { status: 404 })
+        return notFound('Parent modifier not found')
       }
     }
 
@@ -328,7 +327,7 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
       })
 
       if (!sourceGroup) {
-        return NextResponse.json({ error: 'Source group not found' }, { status: 404 })
+        return notFound('Source group not found')
       }
 
       // Deep copy: group + all modifiers + child groups recursively
@@ -580,9 +579,7 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
       void notifyDataChanged({ locationId: menuItem.locationId, domain: 'menu', action: 'created', entityId: newGroup.id })
       void pushUpstream()
 
-      return NextResponse.json({
-        data: formatGroup(newGroup),
-      })
+      return ok(formatGroup(newGroup))
     }
 
     // If copying from template, get template data AND group settings
@@ -743,8 +740,7 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
     void notifyDataChanged({ locationId: menuItem.locationId, domain: 'menu', action: 'created', entityId: group.id })
     void pushUpstream()
 
-    return NextResponse.json({
-      data: {
+    return ok({
         id: group.id,
         name: group.name,
         displayName: group.displayName,
@@ -801,12 +797,11 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
           spiritTier: m.spiritTier,
           linkedBottleProductId: m.linkedBottleProductId,
         })),
-      },
-    })
+      })
   } catch (error) {
     console.error('Error creating modifier group:', error)
     const message = error instanceof Error ? error.message : 'Unknown error'
-    return NextResponse.json({ error: `Failed to create modifier group: ${message}` }, { status: 500 })
+    return err(`Failed to create modifier group: ${message}`, 500)
   }
 })
 
@@ -820,20 +815,20 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest, { para
     if (patchLocationId) {
       const actorPatch = await getActorFromRequest(request)
       const authPatch = await requirePermission(actorPatch.employeeId, patchLocationId, PERMISSIONS.MENU_EDIT_ITEMS)
-      if (!authPatch.authorized) return NextResponse.json({ error: authPatch.error }, { status: authPatch.status })
+      if (!authPatch.authorized) return err(authPatch.error, authPatch.status)
     }
 
     const body = await request.json()
     const { sortOrders } = body // Array of { id: string, sortOrder: number }
 
     if (!Array.isArray(sortOrders) || sortOrders.length === 0) {
-      return NextResponse.json({ error: 'sortOrders array is required' }, { status: 400 })
+      return err('sortOrders array is required')
     }
 
     // Validate each entry
     for (const entry of sortOrders) {
       if (!entry.id || typeof entry.sortOrder !== 'number' || !Number.isFinite(entry.sortOrder)) {
-        return NextResponse.json({ error: 'Each sortOrder entry must have a valid id and numeric sortOrder' }, { status: 400 })
+        return err('Each sortOrder entry must have a valid id and numeric sortOrder')
       }
     }
 
@@ -846,7 +841,7 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest, { para
     })
 
     if (ownedGroups.length !== sortOrders.length) {
-      return NextResponse.json({ error: 'Some groups not found for this item' }, { status: 404 })
+      return notFound('Some groups not found for this item')
     }
 
     // Bulk update in transaction
@@ -875,10 +870,10 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest, { para
       void pushUpstream()
     }
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Error updating modifier group sort orders:', error)
-    return NextResponse.json({ error: 'Failed to update sort orders' }, { status: 500 })
+    return err('Failed to update sort orders', 500)
   }
 })
 
@@ -892,7 +887,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
     if (putLocationId) {
       const actorPut = await getActorFromRequest(request)
       const authPut = await requirePermission(actorPut.employeeId, putLocationId, PERMISSIONS.MENU_EDIT_ITEMS)
-      if (!authPut.authorized) return NextResponse.json({ error: authPut.error }, { status: authPut.status })
+      if (!authPut.authorized) return err(authPut.error, authPut.status)
     }
 
     const body = await request.json()
@@ -900,7 +895,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
     // targetParentModifierId: null = promote to top-level, string = demote to child of this modifier
 
     if (!groupId) {
-      return NextResponse.json({ error: 'groupId is required' }, { status: 400 })
+      return err('groupId is required')
     }
 
     // Verify the group belongs to this item
@@ -909,7 +904,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
     })
 
     if (!group) {
-      return NextResponse.json({ error: 'Group not found for this item' }, { status: 404 })
+      return notFound('Group not found for this item')
     }
 
     // Find the current parent modifier (if any) that links to this group
@@ -975,11 +970,11 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
       void pushUpstream()
     }
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error: any) {
     console.error('Error reparenting modifier group:', error)
     const message = error?.message || 'Failed to reparent modifier group'
-    return NextResponse.json({ error: message }, { status: 500 })
+    return err(message, 500)
   }
 })
 

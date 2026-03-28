@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // PATCH /api/pizza/crusts/[id] - Update pizza crust
 export const PATCH = withVenue(withAuth('ADMIN', async function PATCH(
@@ -16,12 +17,12 @@ export const PATCH = withVenue(withAuth('ADMIN', async function PATCH(
 
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const existing = await db.pizzaCrust.findUnique({ where: { id } })
     if (!existing || existing.locationId !== locationId) {
-      return NextResponse.json({ error: 'Crust not found' }, { status: 404 })
+      return notFound('Crust not found')
     }
 
     if (body.isDefault) {
@@ -50,13 +51,13 @@ export const PATCH = withVenue(withAuth('ADMIN', async function PATCH(
     })
     pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       ...crust,
       price: Number(crust.price),
-    } })
+    })
   } catch (error) {
     console.error('Failed to update pizza crust:', error)
-    return NextResponse.json({ error: 'Failed to update pizza crust' }, { status: 500 })
+    return err('Failed to update pizza crust', 500)
   }
 }))
 
@@ -70,12 +71,12 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
 
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const existing = await db.pizzaCrust.findUnique({ where: { id } })
     if (!existing || existing.locationId !== locationId) {
-      return NextResponse.json({ error: 'Crust not found' }, { status: 404 })
+      return notFound('Crust not found')
     }
 
     await db.pizzaCrust.update({
@@ -84,9 +85,9 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     })
     pushUpstream()
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Failed to delete pizza crust:', error)
-    return NextResponse.json({ error: 'Failed to delete pizza crust' }, { status: 500 })
+    return err('Failed to delete pizza crust', 500)
   }
 }))

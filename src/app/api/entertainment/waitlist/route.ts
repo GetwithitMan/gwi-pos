@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { EntertainmentWaitlistStatus } from '@/generated/prisma/client'
 import { dispatchFloorPlanUpdate, dispatchEntertainmentWaitlistNotify, dispatchEntertainmentWaitlistChanged } from '@/lib/socket-dispatch'
@@ -8,6 +8,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { formatWaitTime, calculateWaitMinutes } from '@/lib/domain/entertainment'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - List waitlist entries for floor plan elements
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -19,10 +20,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const status = (searchParams.get('status') || 'waiting') as EntertainmentWaitlistStatus | 'all'
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'Location ID is required' },
-        { status: 400 }
-      )
+      return err('Location ID is required')
     }
 
     const waitlist = await db.entertainmentWaitlist.findMany({
@@ -100,20 +98,17 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }
     })
 
-    return NextResponse.json({ data: {
+    return ok({
       waitlist: enrichedWaitlist,
       counts: {
         waiting: enrichedWaitlist.filter(w => w.status === 'waiting').length,
         notified: enrichedWaitlist.filter(w => w.status === 'notified').length,
         seated: enrichedWaitlist.filter(w => w.status === 'seated').length,
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch waitlist:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch waitlist' },
-      { status: 500 }
-    )
+    return err('Failed to fetch waitlist', 500)
   }
 })
 
@@ -135,28 +130,19 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     } = body
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'Location ID is required' },
-        { status: 400 }
-      )
+      return err('Location ID is required')
     }
 
     // Permission check
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.SETTINGS_ENTERTAINMENT)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     if (!elementId && !visualType) {
-      return NextResponse.json(
-        { error: 'Either elementId or visualType is required' },
-        { status: 400 }
-      )
+      return err('Either elementId or visualType is required')
     }
 
     if (!customerName && !tableId) {
-      return NextResponse.json(
-        { error: 'Either customer name or table ID is required' },
-        { status: 400 }
-      )
+      return err('Either customer name or table ID is required')
     }
 
     // Verify element exists if elementId provided
@@ -169,17 +155,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       linkedMenuItemId = element?.linkedMenuItemId || null
 
       if (!element) {
-        return NextResponse.json(
-          { error: 'Element not found' },
-          { status: 404 }
-        )
+        return notFound('Element not found')
       }
 
       if (element.locationId !== locationId) {
-        return NextResponse.json(
-          { error: 'Element does not belong to this location' },
-          { status: 400 }
-        )
+        return err('Element does not belong to this location')
       }
     }
 
@@ -285,7 +265,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
     }).catch(err => console.error('[entertainment] Audit log failed:', err))
 
-    return NextResponse.json({ data: {
+    return ok({
       entry: {
         id: entry.id,
         customerName: entry.customerName,
@@ -315,13 +295,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         allowCashDeposit: waitlistSettings?.allowCashDeposit !== false,
       } : {}),
       message: `Added ${customerName || 'Table'} to waitlist at position ${entry.position}`,
-    } })
+    })
   } catch (error) {
     console.error('Failed to add to waitlist:', error)
-    return NextResponse.json(
-      { error: 'Failed to add to waitlist' },
-      { status: 500 }
-    )
+    return err('Failed to add to waitlist', 500)
   }
 })
 

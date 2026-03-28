@@ -15,6 +15,7 @@ import { withVenue } from '@/lib/with-venue'
 import { requestPaymentSchema } from '@/lib/cake-orders/schemas'
 import { requestCakePaymentViaText } from '@/lib/cake-orders/cake-payment-service'
 import { requireCakeFeature } from '@/lib/cake-orders/require-cake-feature'
+import { ok } from '@/lib/api-response'
 
 export const POST = withVenue(async function POST(
   request: NextRequest,
@@ -130,13 +131,11 @@ export const POST = withVenue(async function POST(
 
       // Same amount: return existing (idempotent)
       if (Math.abs(existingAmount - input.amount) < 0.01) {
-        return NextResponse.json({
-          data: {
+        return ok({
             paymentLinkToken: existingLink.token as string,
             message: 'Existing payment link returned (idempotent)',
             idempotent: true,
-          },
-        })
+          })
       }
 
       // Different amount: supersede old links (they'll be cancelled by requestCakePaymentViaText)
@@ -153,13 +152,11 @@ export const POST = withVenue(async function POST(
     })
 
     // ── Return result ───────────────────────────────────────────────────
-    return NextResponse.json({
-      data: {
+    return ok({
         paymentLinkToken: result.paymentLinkToken,
         settlementOrderId: result.settlementOrderId,
         message: 'SMS sent to customer',
-      },
-    })
+      })
   } catch (error) {
     console.error('[cake-request-payment] Failed to send text-to-pay:', error)
 

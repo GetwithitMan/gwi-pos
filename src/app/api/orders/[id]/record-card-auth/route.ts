@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
@@ -7,6 +7,7 @@ import { recordTab, DuplicateTabError } from '@/lib/datacap/record-tab'
 import { dispatchOpenOrdersChanged, dispatchTabUpdated } from '@/lib/socket-dispatch'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-record-card-auth')
 
 /**
@@ -56,17 +57,11 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
 
     // Validate required fields
     if (!cardType || !cardLast4 || !recordNo || !authCode || !authAmount || !employeeId) {
-      return NextResponse.json(
-        { error: 'Missing required fields: cardType, cardLast4, recordNo, authCode, authAmount, employeeId' },
-        { status: 400 }
-      )
+      return err('Missing required fields: cardType, cardLast4, recordNo, authCode, authAmount, employeeId')
     }
 
     if (typeof authAmount !== 'number' || authAmount <= 0) {
-      return NextResponse.json(
-        { error: 'authAmount must be a positive number' },
-        { status: 400 }
-      )
+      return err('authAmount must be a positive number')
     }
 
     // Fetch the order
@@ -76,7 +71,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     })
 
     if (!order) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      return notFound('Order not found')
     }
 
     const locationId = order.locationId
@@ -88,7 +83,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     })
 
     if (!employee) {
-      return NextResponse.json({ error: 'Employee not found at this location' }, { status: 400 })
+      return err('Employee not found at this location')
     }
 
     // Normalize cardholder name from chip format (SMITH/JOHN -> John Smith)
@@ -122,8 +117,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       void dispatchTabUpdated(locationId, { orderId }).catch(err => log.warn({ err }, 'Background task failed'))
       pushUpstream()
 
-      return NextResponse.json({
-        data: {
+      return ok({
           approved: true,
           tabStatus: 'open',
           cardholderName: normalizedName,
@@ -141,22 +135,19 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
           datacapSequenceNo: datacapSequenceNo || null,
           cvm: cvm || null,
           aid: aid || null,
-        },
-      })
+        })
     } catch (err) {
       if (err instanceof DuplicateTabError) {
         // Gracefully return existing tab info instead of erroring
-        return NextResponse.json({
-          data: {
+        return ok({
             tabStatus: 'existing_tab_found',
             existingTab: err.existingTab,
-          },
-        })
+          })
       }
       throw err
     }
   } catch (error) {
     console.error('[record-card-auth] Failed to record card authorization:', error)
-    return NextResponse.json({ error: 'Failed to record card authorization' }, { status: 500 })
+    return err('Failed to record card authorization', 500)
   }
 }))

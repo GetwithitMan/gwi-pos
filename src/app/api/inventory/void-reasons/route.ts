@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, ok } from '@/lib/api-response'
 
 // GET - List void reasons
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -13,7 +14,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const activeOnly = searchParams.get('activeOnly') !== 'false'
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID required' }, { status: 400 })
+      return err('Location ID required')
     }
 
     const where: Record<string, unknown> = {
@@ -28,10 +29,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orderBy: { sortOrder: 'asc' },
     })
 
-    return NextResponse.json({ data: { voidReasons } })
+    return ok({ voidReasons })
   } catch (error) {
     console.error('Void reasons list error:', error)
-    return NextResponse.json({ error: 'Failed to fetch void reasons' }, { status: 500 })
+    return err('Failed to fetch void reasons', 500)
   }
 })
 
@@ -49,9 +50,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     } = body
 
     if (!locationId || !name) {
-      return NextResponse.json({
-        error: 'Location ID and name required',
-      }, { status: 400 })
+      return err('Location ID and name required')
     }
 
     // Get max sort order if not provided
@@ -79,12 +78,12 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     void notifyDataChanged({ locationId, domain: 'reasons', action: 'created', entityId: voidReason.id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { voidReason } })
+    return ok({ voidReason })
   } catch (error) {
     console.error('Create void reason error:', error)
     if ((error as { code?: string }).code === 'P2002') {
-      return NextResponse.json({ error: 'Void reason with this name already exists' }, { status: 400 })
+      return err('Void reason with this name already exists')
     }
-    return NextResponse.json({ error: 'Failed to create void reason' }, { status: 500 })
+    return err('Failed to create void reason', 500)
   }
 }))

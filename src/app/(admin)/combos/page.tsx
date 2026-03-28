@@ -10,6 +10,7 @@ import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { useOrderSettings } from '@/hooks/useOrderSettings'
 import { calculateCardPrice } from '@/lib/pricing'
+import type { MenuItem as BaseMenuItem, CategoryBasic } from '@/types'
 
 interface Modifier {
   id: string
@@ -28,11 +29,7 @@ interface ModifierGroup {
   modifiers: Modifier[]
 }
 
-interface MenuItem {
-  id: string
-  name: string
-  price: number
-  categoryId: string
+type MenuItem = Pick<BaseMenuItem, 'id' | 'name' | 'price' | 'categoryId'> & {
   categoryName?: string
   modifierGroups?: {
     modifierGroup: ModifierGroup
@@ -71,9 +68,7 @@ interface Combo {
   template: ComboTemplate | null
 }
 
-interface Category {
-  id: string
-  name: string
+type Category = CategoryBasic & {
   items?: MenuItem[]
 }
 

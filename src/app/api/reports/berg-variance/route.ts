@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { err, ok } from '@/lib/api-response'
 
 /**
  * GET /api/reports/berg-variance
@@ -19,10 +20,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const requestingEmployeeId = searchParams.get('employeeId') || ''
     const alertThresholdPct = parseFloat(searchParams.get('alertThreshold') || '5')
 
-    if (!locationId) return NextResponse.json({ error: 'locationId required' }, { status: 400 })
+    if (!locationId) return err('locationId required')
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_INVENTORY)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const dateFilter: { gte?: Date; lte?: Date } = {}
     if (startDate) dateFilter.gte = new Date(startDate)
@@ -192,7 +193,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     // FIX 1: Response structure matches UI expectations (summary key)
-    return NextResponse.json({
+    return ok({
       period: { startDate, endDate },
       generatedAt: new Date().toISOString(),
       rows: allRows,
@@ -211,6 +212,6 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     })
   } catch (err) {
     console.error('[reports/berg-variance]', err)
-    return NextResponse.json({ error: 'Failed to load variance report' }, { status: 500 })
+    return err('Failed to load variance report', 500)
   }
 })

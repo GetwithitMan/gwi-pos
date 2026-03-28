@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { Prisma, type PrismaClient } from '@/generated/prisma/client'
 import { parseSettings, DEFAULT_EOD_SETTINGS } from '@/lib/settings'
 import { executeEodReset } from '@/lib/eod'
 import { verifyCronSecret } from '@/lib/cron-auth'
 import { forAllVenues } from '@/lib/cron-venue-helper'
+import { ok } from '@/lib/api-response'
 
 // PAY-P3-4: Datacap batch close is already handled by executeEodReset() when
 // location settings have autoBatchClose=true and processor='datacap'.
@@ -286,7 +287,7 @@ export async function GET(request: NextRequest) {
     }
   }, { label: 'cron:eod-batch-close' })
 
-  return NextResponse.json({
+  return ok({
     ...summary,
     venuesProcessed,
     maxVenuesPerRun: MAX_VENUES_PER_RUN,

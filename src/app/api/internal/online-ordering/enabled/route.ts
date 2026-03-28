@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { invalidateLocationCache } from '@/lib/location-cache'
 import { registerVenueDbName } from '@/lib/db-venue-cache'
+import { err, notFound, ok, unauthorized } from '@/lib/api-response'
 
 /**
  * POST /api/internal/online-ordering/enabled
@@ -30,7 +31,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   // ── Auth ──────────────────────────────────────────────────────────────
   const apiKey = request.headers.get('x-api-key')
   if (!apiKey || apiKey !== process.env.PROVISION_API_KEY) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return unauthorized('Unauthorized')
   }
 
   const venueSlug = request.headers.get('x-venue-slug')
@@ -39,7 +40,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   const { enabled, orderCode, databaseName } = body
 
   if (typeof enabled !== 'boolean') {
-    return NextResponse.json({ error: 'enabled must be a boolean' }, { status: 400 })
+    return err('enabled must be a boolean')
   }
 
   // ── Register venue database name in cache ────────────────────────────
@@ -55,7 +56,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   })
 
   if (!location) {
-    return NextResponse.json({ error: 'Location not found' }, { status: 404 })
+    return notFound('Location not found')
   }
 
   // ── Merge enabled into settings.onlineOrdering ────────────────────────
@@ -79,5 +80,5 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
   invalidateLocationCache(location.id)
 
-  return NextResponse.json({ success: true })
+  return ok({ success: true })
 })

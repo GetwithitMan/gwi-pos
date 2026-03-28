@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationSettings } from '@/lib/location-cache'
 import { parseSettings } from '@/lib/settings'
@@ -7,26 +7,27 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { db } from '@/lib/db'
 import { getBusinessDate, getDateRange, updateSyncStatus } from '../_helpers'
+import { err, notFound, ok } from '@/lib/api-response'
 
 export const POST = withVenue(async function POST(request: NextRequest) {
   const location = await db.location.findFirst({
     where: { deletedAt: null },
     select: { id: true, timezone: true, settings: true },
   })
-  if (!location) return NextResponse.json({ error: 'No location' }, { status: 404 })
+  if (!location) return notFound('No location')
 
   const body = await request.json().catch(() => ({})) as { businessDate?: string; employeeId?: string }
   const actor = await getActorFromRequest(request)
   const resolvedEmployeeId = actor.employeeId ?? body.employeeId
   const auth = await requirePermission(resolvedEmployeeId, location.id, PERMISSIONS.SETTINGS_INTEGRATIONS)
   if (!auth.authorized) {
-    return NextResponse.json({ error: auth.error }, { status: auth.status })
+    return err(auth.error, auth.status)
   }
 
   const settings = parseSettings(await getLocationSettings(location.id))
   const s = settings.sevenShifts
   if (!s?.enabled || !s.clientId || !s.companyId) {
-    return NextResponse.json({ error: '7shifts not configured' }, { status: 400 })
+    return err('7shifts not configured')
   }
 
   const businessDate = body.businessDate || getBusinessDate(location.timezone || 'America/New_York')
@@ -38,9 +39,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       where: { locationId_businessDate_revenueType: { locationId: location.id, businessDate, revenueType: 'combined' } },
     })
     if (existing?.status === 'pushed') {
-      return NextResponse.json({
-        data: { skipped: true, message: `Sales for ${businessDate} already pushed`, receiptId: existing.sevenShiftsReceiptId },
-      })
+      return ok({ skipped: true, message: `Sales for ${businessDate} already pushed`, receiptId: existing.sevenShiftsReceiptId })
     }
 
     // Aggregate closed orders for the business date
@@ -112,16 +111,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       lastSalesPushError: null,
     })
 
-    return NextResponse.json({
-      data: {
+    return ok({
         pushed: true,
         businessDate,
         orderCount: orders.length,
         netTotalCents,
         tipsAmountCents,
         receiptId: result.receipt_id ?? result.id,
-      },
-    })
+      })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
     console.error('[7shifts/push-sales] Error:', message)
@@ -132,6 +129,6 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       lastSalesPushError: message.slice(0, 500),
     })
 
-    return NextResponse.json({ error: 'Failed to push sales to 7shifts' }, { status: 502 })
+    return err('Failed to push sales to 7shifts', 502)
   }
 })

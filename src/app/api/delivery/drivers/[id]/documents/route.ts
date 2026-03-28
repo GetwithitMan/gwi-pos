@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
@@ -7,6 +7,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 import { writeDeliveryAuditLog } from '@/lib/delivery/state-machine'
 import { createChildLogger } from '@/lib/logger'
+import { created, err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('delivery-drivers-documents')
 
 export const dynamic = 'force-dynamic'
@@ -30,13 +31,13 @@ export const GET = withVenue(async function GET(
     const { id: driverId } = await params
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Auth check
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.DELIVERY_VIEW)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Feature gate
     const featureGate = await requireDeliveryFeature(locationId)
@@ -50,7 +51,7 @@ export const GET = withVenue(async function GET(
     `, driverId, locationId)
 
     if (!driver.length) {
-      return NextResponse.json({ error: 'Driver not found' }, { status: 404 })
+      return notFound('Driver not found')
     }
 
     const documents: any[] = await db.$queryRawUnsafe(`
@@ -59,10 +60,10 @@ export const GET = withVenue(async function GET(
       ORDER BY "createdAt" DESC
     `, driverId)
 
-    return NextResponse.json({ documents })
+    return ok({ documents })
   } catch (error) {
     console.error('[Delivery/Drivers/Documents] GET error:', error)
-    return NextResponse.json({ error: 'Failed to fetch documents' }, { status: 500 })
+    return err('Failed to fetch documents', 500)
   }
 })
 
@@ -79,13 +80,13 @@ export const POST = withVenue(async function POST(
     const { id: driverId } = await params
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Auth check
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.DELIVERY_DRIVERS_MANAGE)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Feature gate — requires driverDocumentsProvisioned subfeature
     const featureGate = await requireDeliveryFeature(locationId, { subfeature: 'driverDocumentsProvisioned' })
@@ -96,14 +97,11 @@ export const POST = withVenue(async function POST(
 
     // Validate required fields
     if (!documentType || !VALID_DOCUMENT_TYPES.includes(documentType)) {
-      return NextResponse.json(
-        { error: `documentType must be one of: ${VALID_DOCUMENT_TYPES.join(', ')}` },
-        { status: 400 }
-      )
+      return err(`documentType must be one of: ${VALID_DOCUMENT_TYPES.join(', ')}`)
     }
 
     if (!storageKey || typeof storageKey !== 'string') {
-      return NextResponse.json({ error: 'storageKey is required' }, { status: 400 })
+      return err('storageKey is required')
     }
 
     // Verify driver exists at this location
@@ -114,7 +112,7 @@ export const POST = withVenue(async function POST(
     `, driverId, locationId)
 
     if (!driver.length) {
-      return NextResponse.json({ error: 'Driver not found' }, { status: 404 })
+      return notFound('Driver not found')
     }
 
     // Insert document
@@ -146,9 +144,9 @@ export const POST = withVenue(async function POST(
       newValue: { documentType, documentNumber, storageKey },
     }).catch(err => log.warn({ err }, 'Background task failed'))
 
-    return NextResponse.json({ document: inserted[0] }, { status: 201 })
+    return created({ document: inserted[0] })
   } catch (error) {
     console.error('[Delivery/Drivers/Documents] POST error:', error)
-    return NextResponse.json({ error: 'Failed to upload document' }, { status: 500 })
+    return err('Failed to upload document', 500)
   }
 })

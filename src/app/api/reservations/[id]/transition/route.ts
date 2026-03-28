@@ -10,6 +10,7 @@ import { dispatchReservationChanged } from '@/lib/socket-dispatch'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, forbidden, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('reservations-transition')
 
 export const POST = withVenue(async function POST(
@@ -26,12 +27,12 @@ export const POST = withVenue(async function POST(
     }
 
     if (!to) {
-      return NextResponse.json({ error: 'Target status (to) is required' }, { status: 400 })
+      return err('Target status (to) is required')
     }
 
     const callerLocationId = await getLocationId()
     if (!callerLocationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Load reservation with full details for potential waitlist bridge
@@ -51,13 +52,13 @@ export const POST = withVenue(async function POST(
     })
 
     if (!reservation || reservation.locationId !== callerLocationId) {
-      return NextResponse.json({ error: 'Reservation not found' }, { status: 404 })
+      return notFound('Reservation not found')
     }
 
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, reservation.locationId, 'tables.reservations')
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error || 'Permission denied' }, { status: 403 })
+      return forbidden(auth.error || 'Permission denied')
     }
 
     // Execute transition inside a transaction
@@ -86,13 +87,13 @@ export const POST = withVenue(async function POST(
     void notifyDataChanged({ locationId: reservation.locationId, domain: 'reservations', action: 'updated', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: updated })
+    return ok(updated)
   } catch (error) {
     if (error instanceof TransitionError) {
       return NextResponse.json({ error: error.message, code: error.code }, { status: 422 })
     }
     console.error('[reservations/[id]/transition] POST error:', error)
-    return NextResponse.json({ error: 'Failed to transition reservation' }, { status: 500 })
+    return err('Failed to transition reservation', 500)
   }
 })
 

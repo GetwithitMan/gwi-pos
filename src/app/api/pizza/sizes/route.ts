@@ -1,16 +1,17 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, ok } from '@/lib/api-response'
 
 // GET /api/pizza/sizes - Get all pizza sizes
 export const GET = withVenue(async function GET() {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const sizes = await db.pizzaSize.findMany({
@@ -18,7 +19,7 @@ export const GET = withVenue(async function GET() {
       orderBy: { sortOrder: 'asc' }
     })
 
-    return NextResponse.json(sizes.map(size => ({
+    return ok(sizes.map(size => ({
       ...size,
       basePrice: Number(size.basePrice),
       priceMultiplier: Number(size.priceMultiplier),
@@ -27,7 +28,7 @@ export const GET = withVenue(async function GET() {
     })))
   } catch (error) {
     console.error('Failed to get pizza sizes:', error)
-    return NextResponse.json({ error: 'Failed to get pizza sizes' }, { status: 500 })
+    return err('Failed to get pizza sizes', 500)
   }
 })
 
@@ -38,15 +39,15 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     const { name, displayName, inches, slices, basePrice, priceMultiplier, toppingMultiplier, freeToppings, isDefault, inventoryMultiplier, ingredientId, inventoryItemId, usageQuantity, usageUnit } = body
 
     if (!name?.trim()) {
-      return NextResponse.json({ error: 'Name is required' }, { status: 400 })
+      return err('Name is required')
     }
     if (basePrice === undefined || basePrice < 0) {
-      return NextResponse.json({ error: 'Valid base price is required' }, { status: 400 })
+      return err('Valid base price is required')
     }
 
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Get max sort order
@@ -86,16 +87,16 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     })
     pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       ...size,
       basePrice: Number(size.basePrice),
       priceMultiplier: Number(size.priceMultiplier),
       toppingMultiplier: Number(size.toppingMultiplier),
       inventoryMultiplier: Number(size.inventoryMultiplier),
       usageQuantity: size.usageQuantity ? Number(size.usageQuantity) : null,
-    } })
+    })
   } catch (error) {
     console.error('Failed to create pizza size:', error)
-    return NextResponse.json({ error: 'Failed to create pizza size' }, { status: 500 })
+    return err('Failed to create pizza size', 500)
   }
 }))

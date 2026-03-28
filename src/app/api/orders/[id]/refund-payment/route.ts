@@ -17,6 +17,7 @@ import { queueIfOutageOrFail, OutageQueueFullError, pushUpstream } from '@/lib/s
 import { restoreInventoryForOrder } from '@/lib/inventory/void-waste'
 import { validateCellularRefundFromHeaders, validateManagerReauthFromHeaders, CellularAuthError } from '@/lib/cellular-validation'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-refund-payment')
 
 export const POST = withVenue(async function POST(
@@ -30,10 +31,7 @@ export const POST = withVenue(async function POST(
 
     // Validate required fields
     if (!paymentId || refundAmount === undefined || refundAmount === null || !refundReason || !managerId) {
-      return NextResponse.json(
-        { error: 'Missing required fields' },
-        { status: 400 }
-      )
+      return err('Missing required fields')
     }
 
     // HA cellular sync — detect mutation origin for downstream sync
@@ -45,7 +43,7 @@ export const POST = withVenue(async function POST(
       validateCellularRefundFromHeaders(request)
     } catch (err) {
       if (err instanceof CellularAuthError) {
-        return NextResponse.json({ error: err.message }, { status: err.status })
+        return err(err.message, err.status)
       }
       throw err
     }
@@ -55,7 +53,7 @@ export const POST = withVenue(async function POST(
       validateManagerReauthFromHeaders(request, managerId, managerPinHash)
     } catch (err) {
       if (err instanceof CellularAuthError) {
-        return NextResponse.json({ error: err.message }, { status: err.status })
+        return err(err.message, err.status)
       }
       throw err
     }
@@ -73,20 +71,17 @@ export const POST = withVenue(async function POST(
     })
 
     if (!order) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      return notFound('Order not found')
     }
 
     // Validate refund amount (cheap check before lock)
     if (refundAmount <= 0) {
-      return NextResponse.json(
-        { error: 'Refund amount must be greater than 0' },
-        { status: 400 }
-      )
+      return err('Refund amount must be greater than 0')
     }
 
     // Verify manager has permission to issue refunds
     const authResult = await requirePermission(managerId, order.locationId, PERMISSIONS.MGR_REFUNDS)
-    if (!authResult.authorized) return NextResponse.json({ error: authResult.error }, { status: authResult.status ?? 403 })
+    if (!authResult.authorized) return err(authResult.error, authResult.status ?? 403)
 
     // W5-11: 2FA enforcement for large refunds
     const locationSettings = parseSettings(await getLocationSettings(order.locationId))
@@ -119,10 +114,7 @@ export const POST = withVenue(async function POST(
       lockKey,
     )
     if (!acquired) {
-      return NextResponse.json(
-        { error: 'Another refund is already in progress for this payment' },
-        { status: 409 }
-      )
+      return err('Another refund is already in progress for this payment', 409)
     }
 
     try {
@@ -168,7 +160,7 @@ export const POST = withVenue(async function POST(
     }, { timeout: 15000 })
 
     if ('error' in phase1Result) {
-      return NextResponse.json({ error: phase1Result.error }, { status: phase1Result.status })
+      return err(phase1Result.error, phase1Result.status)
     }
 
     const { payment, totalAlreadyRefunded } = phase1Result
@@ -177,7 +169,7 @@ export const POST = withVenue(async function POST(
     // Re-check payment status immediately before calling processor (concurrent void/refund guard)
     const freshCheck = await db.payment.findUnique({ where: { id: paymentId }, select: { status: true } })
     if (!freshCheck || freshCheck.status !== 'completed') {
-      return NextResponse.json({ error: 'Payment status changed — cannot refund' }, { status: 409 })
+      return err('Payment status changed — cannot refund', 409)
     }
 
     let datacapRefNo: string | null = null
@@ -210,10 +202,7 @@ export const POST = withVenue(async function POST(
           `[PROCESSOR-ACTION] DECLINED: action=${refundActionId}, ` +
           `response=${response.textResponse || 'Unknown'}`
         )
-        return NextResponse.json(
-          { error: response.textResponse || 'Refund declined' },
-          { status: 422 }
-        )
+        return err(response.textResponse || 'Refund declined', 422)
       }
 
       console.log(`[PROCESSOR-ACTION] APPROVED: action=${refundActionId}, type=refund, refNo=${response.refNo ?? 'none'}`)
@@ -299,7 +288,7 @@ export const POST = withVenue(async function POST(
           `Manual reconciliation required.`
         )
       }
-      return NextResponse.json({ error: txResult.error }, { status: txResult.status })
+      return err(txResult.error, txResult.status)
     }
 
     const { refundLog, isPartial } = txResult
@@ -309,7 +298,7 @@ export const POST = withVenue(async function POST(
       await queueIfOutageOrFail('RefundLog', order.locationId, refundLog.id, 'INSERT')
     } catch (err) {
       if (err instanceof OutageQueueFullError) {
-        return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+        return err('Service temporarily unavailable — outage queue full', 507)
       }
       throw err
     }
@@ -609,8 +598,7 @@ export const POST = withVenue(async function POST(
     // Trigger upstream sync (fire-and-forget, debounced)
     pushUpstream()
 
-    return NextResponse.json({
-      data: {
+    return ok({
         refundLog: {
           id: refundLog.id,
           refundAmount: Number(refundLog.refundAmount),
@@ -618,17 +606,13 @@ export const POST = withVenue(async function POST(
           createdAt: refundLog.createdAt,
         },
         isPartial,
-      },
-    })
+      })
     } finally {
       // PAY-P2-1: Release advisory lock after all 3 phases complete (success or failure)
       await db.$queryRawUnsafe('SELECT pg_advisory_unlock($1::bigint)', lockKey).catch(err => log.warn({ err }, 'Background task failed'))
     }
   } catch (error) {
     console.error('Failed to refund payment:', error)
-    return NextResponse.json(
-      { error: 'Failed to refund payment' },
-      { status: 500 }
-    )
+    return err('Failed to refund payment', 500)
   }
 })

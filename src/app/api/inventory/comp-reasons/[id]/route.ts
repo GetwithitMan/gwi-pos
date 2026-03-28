@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - Get single comp reason
 export const GET = withVenue(async function GET(
@@ -18,13 +19,13 @@ export const GET = withVenue(async function GET(
     })
 
     if (!compReason || compReason.deletedAt) {
-      return NextResponse.json({ error: 'Comp reason not found' }, { status: 404 })
+      return notFound('Comp reason not found')
     }
 
-    return NextResponse.json({ data: { compReason } })
+    return ok({ compReason })
   } catch (error) {
     console.error('Get comp reason error:', error)
-    return NextResponse.json({ error: 'Failed to fetch comp reason' }, { status: 500 })
+    return err('Failed to fetch comp reason', 500)
   }
 })
 
@@ -42,7 +43,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     })
 
     if (!existing || existing.deletedAt) {
-      return NextResponse.json({ error: 'Comp reason not found' }, { status: 404 })
+      return notFound('Comp reason not found')
     }
 
     const updateData: Record<string, unknown> = {}
@@ -62,13 +63,13 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     void notifyDataChanged({ locationId: existing.locationId, domain: 'reasons', action: 'updated', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { compReason } })
+    return ok({ compReason })
   } catch (error) {
     console.error('Update comp reason error:', error)
     if ((error as { code?: string }).code === 'P2002') {
-      return NextResponse.json({ error: 'Comp reason with this name already exists' }, { status: 400 })
+      return err('Comp reason with this name already exists')
     }
-    return NextResponse.json({ error: 'Failed to update comp reason' }, { status: 500 })
+    return err('Failed to update comp reason', 500)
   }
 }))
 
@@ -85,7 +86,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     })
 
     if (!existing || existing.deletedAt) {
-      return NextResponse.json({ error: 'Comp reason not found' }, { status: 404 })
+      return notFound('Comp reason not found')
     }
 
     await db.compReason.update({
@@ -96,9 +97,9 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     void notifyDataChanged({ locationId: existing.locationId, domain: 'reasons', action: 'deleted', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Delete comp reason error:', error)
-    return NextResponse.json({ error: 'Failed to delete comp reason' }, { status: 500 })
+    return err('Failed to delete comp reason', 500)
   }
 }))

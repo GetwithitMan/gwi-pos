@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { requireAnyPermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { getLedgerBalance, getLedgerEntries, centsToDollars } from '@/lib/domain/tips'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, forbidden, ok } from '@/lib/api-response'
 
 // GET - Get the requesting employee's own ledger balance + recent entries
 export const GET = withVenue(withAuth({ allowCellular: true }, async function GET(request: NextRequest) {
@@ -14,17 +15,11 @@ export const GET = withVenue(withAuth({ allowCellular: true }, async function GE
     const limitParam = searchParams.get('limit')
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'Location ID is required' },
-        { status: 400 }
-      )
+      return err('Location ID is required')
     }
 
     if (!employeeId) {
-      return NextResponse.json(
-        { error: 'Employee ID is required' },
-        { status: 400 }
-      )
+      return err('Employee ID is required')
     }
 
     // Skill 279: Self-access is always allowed; viewing others requires permission
@@ -32,10 +27,7 @@ export const GET = withVenue(withAuth({ allowCellular: true }, async function GE
     if (requestingEmployeeId && requestingEmployeeId !== employeeId) {
       const auth = await requireAnyPermission(requestingEmployeeId, locationId, [PERMISSIONS.TIPS_VIEW_LEDGER])
       if (!auth.authorized) {
-        return NextResponse.json(
-          { error: 'Not authorized to view other employees\' tip ledger' },
-          { status: 403 }
-        )
+        return forbidden('Not authorized to view other employees\' tip ledger')
       }
     }
 
@@ -46,7 +38,7 @@ export const GET = withVenue(withAuth({ allowCellular: true }, async function GE
 
     if (!balance) {
       // No ledger yet — return zero balance with empty entries
-      return NextResponse.json({
+      return ok({
         balance: {
           currentBalanceCents: 0,
           currentBalanceDollars: 0,
@@ -60,7 +52,7 @@ export const GET = withVenue(withAuth({ allowCellular: true }, async function GE
 
     const { entries, total } = await getLedgerEntries(employeeId, { limit })
 
-    return NextResponse.json({
+    return ok({
       balance: {
         currentBalanceCents: balance.currentBalanceCents,
         currentBalanceDollars: centsToDollars(balance.currentBalanceCents),
@@ -84,9 +76,6 @@ export const GET = withVenue(withAuth({ allowCellular: true }, async function GE
     })
   } catch (error) {
     console.error('Failed to get tip ledger:', error)
-    return NextResponse.json(
-      { error: 'Failed to get tip ledger' },
-      { status: 500 }
-    )
+    return err('Failed to get tip ledger', 500)
   }
 }))

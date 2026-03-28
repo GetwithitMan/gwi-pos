@@ -11,7 +11,8 @@
  * Auth: INTERNAL_API_SECRET or HA_SHARED_SECRET (bearer token)
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
+import { err, ok, unauthorized } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -30,7 +31,7 @@ function authorize(request: NextRequest): boolean {
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   if (!authorize(request)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return unauthorized('Unauthorized')
   }
 
   try {
@@ -44,22 +45,22 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       process.env.STATION_ROLE = 'fenced'
 
       console.error('[HA-FENCE] Node is now FENCED. No writes will be accepted.')
-      return NextResponse.json({ status: 'stepped_down' })
+      return ok({ status: 'stepped_down' })
     }
 
-    return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
+    return err('Unknown action')
   } catch (err) {
     console.error('[HA-FENCE] POST error:', err)
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
+    return err('Internal error', 500)
   }
 }
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
   if (!authorize(request)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return unauthorized('Unauthorized')
   }
 
-  return NextResponse.json({
+  return ok({
     stationRole: process.env.STATION_ROLE || 'unknown',
     isFenced: process.env.STATION_ROLE === 'fenced',
   })

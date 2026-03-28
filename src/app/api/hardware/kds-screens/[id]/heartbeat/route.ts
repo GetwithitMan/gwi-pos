@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // Cookie name for device token
 const DEVICE_TOKEN_COOKIE = 'kds_device_token'
@@ -24,7 +25,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     })
 
     if (!screen) {
-      return NextResponse.json({ error: 'KDS screen not found' }, { status: 404 })
+      return notFound('KDS screen not found')
     }
 
     // If screen is paired, verify the device token
@@ -92,7 +93,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       },
     })
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       screen: {
         id: screen.id,
@@ -106,9 +107,9 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
         playSound: screen.playSound,
         flashOnNew: screen.flashOnNew,
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to update KDS screen heartbeat:', error)
-    return NextResponse.json({ error: 'Failed to update heartbeat' }, { status: 500 })
+    return err('Failed to update heartbeat', 500)
   }
 }))

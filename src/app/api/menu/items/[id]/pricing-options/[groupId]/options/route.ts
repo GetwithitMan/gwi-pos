@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { invalidateMenuCache } from '@/lib/menu-cache'
@@ -8,6 +8,7 @@ import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 
 const log = createChildLogger('menu.items.id.pricing-options.groupId.options')
 
@@ -22,18 +23,12 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     const { label, price, priceCC, sortOrder, isDefault, showOnPos, color } = body
 
     if (!label?.trim()) {
-      return NextResponse.json(
-        { error: 'Label is required' },
-        { status: 400 }
-      )
+      return err('Label is required')
     }
 
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'No location found' },
-        { status: 400 }
-      )
+      return err('No location found')
     }
 
     // Verify group belongs to this item and location
@@ -42,10 +37,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
       select: { id: true },
     })
     if (!group) {
-      return NextResponse.json(
-        { error: 'Pricing option group not found' },
-        { status: 404 }
-      )
+      return notFound('Pricing option group not found')
     }
 
     // Remove any soft-deleted option with the same label (unique constraint includes deleted)
@@ -97,8 +89,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     void notifyDataChanged({ locationId, domain: 'pricing', action: 'created', entityId: option.id })
     void pushUpstream()
 
-    return NextResponse.json({
-      data: {
+    return ok({
         option: {
           id: option.id,
           groupId: option.groupId,
@@ -110,13 +101,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
           showOnPos: option.showOnPos,
           color: option.color,
         },
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to create pricing option:', error)
-    return NextResponse.json(
-      { error: 'Failed to create pricing option' },
-      { status: 500 }
-    )
+    return err('Failed to create pricing option', 500)
   }
 }))

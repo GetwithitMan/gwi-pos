@@ -5,13 +5,14 @@ import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { getLocationId } from '@/lib/location-cache'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, forbidden, notFound, ok } from '@/lib/api-response'
 
 // GET - List reservation blocks
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
     const sp = request.nextUrl.searchParams
 
@@ -27,10 +28,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orderBy: [{ blockDate: 'asc' }, { startTime: 'asc' }],
     })
 
-    return NextResponse.json({ data: blocks })
+    return ok(blocks)
   } catch (error) {
     console.error('[reservations/blocks] GET error:', error)
-    return NextResponse.json({ error: 'Failed to fetch blocks' }, { status: 500 })
+    return err('Failed to fetch blocks', 500)
   }
 })
 
@@ -41,13 +42,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const { locationId, name, reason, blockDate, startTime, endTime, isAllDay, reducedCapacityPercent, blockedTableIds, blockedSectionIds } = body
 
     if (!locationId || !name || !blockDate) {
-      return NextResponse.json({ error: 'locationId, name, and blockDate are required' }, { status: 400 })
+      return err('locationId, name, and blockDate are required')
     }
 
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, 'floorplan.edit')
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error || 'Permission denied' }, { status: 403 })
+      return forbidden(auth.error || 'Permission denied')
     }
 
     // Warn about conflicts (don't auto-cancel)
@@ -91,7 +92,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
   } catch (error) {
     console.error('[reservations/blocks] POST error:', error)
-    return NextResponse.json({ error: 'Failed to create block' }, { status: 500 })
+    return err('Failed to create block', 500)
   }
 })
 
@@ -102,13 +103,13 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     const { id, locationId, name, reason, blockDate, startTime, endTime, isAllDay, reducedCapacityPercent, blockedTableIds, blockedSectionIds } = body
 
     if (!id || !locationId) {
-      return NextResponse.json({ error: 'id and locationId are required' }, { status: 400 })
+      return err('id and locationId are required')
     }
 
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, 'floorplan.edit')
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error || 'Permission denied' }, { status: 403 })
+      return forbidden(auth.error || 'Permission denied')
     }
 
     // Verify block belongs to the provided locationId
@@ -117,7 +118,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       select: { id: true },
     })
     if (!existingBlock) {
-      return NextResponse.json({ error: 'Block not found' }, { status: 404 })
+      return notFound('Block not found')
     }
 
     const block = await db.reservationBlock.update({
@@ -139,10 +140,10 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     void notifyDataChanged({ locationId, domain: 'reservations', action: 'updated', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: block })
+    return ok(block)
   } catch (error) {
     console.error('[reservations/blocks] PUT error:', error)
-    return NextResponse.json({ error: 'Failed to update block' }, { status: 500 })
+    return err('Failed to update block', 500)
   }
 })
 
@@ -154,13 +155,13 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
     const locationId = sp.get('locationId')
 
     if (!id || !locationId) {
-      return NextResponse.json({ error: 'id and locationId are required' }, { status: 400 })
+      return err('id and locationId are required')
     }
 
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, 'floorplan.edit')
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error || 'Permission denied' }, { status: 403 })
+      return forbidden(auth.error || 'Permission denied')
     }
 
     // Verify block belongs to the provided locationId
@@ -169,7 +170,7 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
       select: { id: true },
     })
     if (!existingBlock) {
-      return NextResponse.json({ error: 'Block not found' }, { status: 404 })
+      return notFound('Block not found')
     }
 
     await db.reservationBlock.update({
@@ -180,9 +181,9 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
     void notifyDataChanged({ locationId, domain: 'reservations', action: 'deleted', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ success: true })
+    return ok({ success: true })
   } catch (error) {
     console.error('[reservations/blocks] DELETE error:', error)
-    return NextResponse.json({ error: 'Failed to delete block' }, { status: 500 })
+    return err('Failed to delete block', 500)
   }
 })

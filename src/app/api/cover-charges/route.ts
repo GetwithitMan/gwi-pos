@@ -8,7 +8,7 @@
  * (table created via migration 027).
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -18,6 +18,7 @@ import { parseSettings } from '@/lib/settings'
 import { getLocationSettings, getLocationTimezone } from '@/lib/location-cache'
 import { emitToLocation } from '@/lib/socket-server'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok } from '@/lib/api-response'
 const log = createChildLogger('cover-charges')
 
 interface CoverChargeRow {
@@ -44,13 +45,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const endDate = searchParams.get('endDate')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+      return err('Location ID is required')
     }
 
     // Permission check — use MGR_PAY_IN_OUT as closest existing permission for cash ops
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.MGR_PAY_IN_OUT)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Build date range using business day boundaries
@@ -112,8 +113,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const maxCapacity = coverSettings?.maxCapacity || 0
     const capacityRemaining = maxCapacity > 0 ? Math.max(0, maxCapacity - doorCount) : null
 
-    return NextResponse.json({
-      data: {
+    return ok({
         entries: rows.map(r => ({
           id: r.id,
           employeeId: r.employeeId,
@@ -137,11 +137,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         maxCapacity,
         capacityRemaining,
         entryCount: rows.length,
-      },
-    })
+      })
   } catch (error) {
     console.error('[GET /api/cover-charges] Error:', error)
-    return NextResponse.json({ error: 'Failed to fetch cover charges' }, { status: 500 })
+    return err('Failed to fetch cover charges', 500)
   }
 })
 
@@ -161,23 +160,23 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     } = body
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+      return err('Location ID is required')
     }
 
     // Resolve employeeId from authenticated session, fall back to body for Android clients
     const actor = await getActorFromRequest(request)
     const employeeId = actor.employeeId || body.employeeId
     if (!employeeId) {
-      return NextResponse.json({ error: 'Employee ID is required' }, { status: 400 })
+      return err('Employee ID is required')
     }
     if (paymentMethod && !['cash', 'card'].includes(paymentMethod)) {
-      return NextResponse.json({ error: 'Payment method must be "cash" or "card"' }, { status: 400 })
+      return err('Payment method must be "cash" or "card"')
     }
 
     // Permission check
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.MGR_PAY_IN_OUT)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Load settings
@@ -217,10 +216,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       const incomingGuests = Number(guestCount) || 1
 
       if (currentCount + incomingGuests > coverSettings.maxCapacity) {
-        return NextResponse.json(
-          { error: `At capacity (${currentCount}/${coverSettings.maxCapacity}). Cannot admit ${incomingGuests} more guest(s).` },
-          { status: 400 }
-        )
+        return err(`At capacity (${currentCount}/${coverSettings.maxCapacity}). Cannot admit ${incomingGuests} more guest(s).`)
       }
     }
 
@@ -257,8 +253,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       createdAt: record.createdAt instanceof Date ? record.createdAt.toISOString() : record.createdAt,
     }).catch(err => log.warn({ err }, 'Background task failed'))
 
-    return NextResponse.json({
-      data: {
+    return ok({
         id: record.id,
         amount: typeof record.amount === 'object' && record.amount && 'toNumber' in record.amount
           ? (record.amount as { toNumber: () => number }).toNumber()
@@ -270,10 +265,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         isComped: record.isComped,
         compReason: record.compReason,
         createdAt: record.createdAt instanceof Date ? record.createdAt.toISOString() : record.createdAt,
-      },
-    })
+      })
   } catch (error) {
     console.error('[POST /api/cover-charges] Error:', error)
-    return NextResponse.json({ error: 'Failed to record cover charge' }, { status: 500 })
+    return err('Failed to record cover charge', 500)
   }
 })

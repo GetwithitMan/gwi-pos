@@ -1,13 +1,6 @@
 'use client'
 
-interface Category {
-  id: string
-  name: string
-  color?: string
-  itemCount?: number
-  categoryType?: string  // food, drinks, liquor, entertainment, combos, retail
-  categoryShow?: string  // 'bar' | 'food' | 'entertainment' | 'all'
-}
+import type { CategoryFloorPlan as Category } from '@/types'
 
 interface CategoriesBarProps {
   categories: Category[]

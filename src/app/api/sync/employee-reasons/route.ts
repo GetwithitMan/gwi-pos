@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db, adminDb } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { resolveAllowedReasonIds } from '@/app/api/settings/reason-access/allowed/route'
 import { getRequestLocationId } from '@/lib/request-context'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET ?employeeId=X → returns allowed voidReasons, compReasons, discountPresets for that employee
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -11,7 +12,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const employeeId = searchParams.get('employeeId')
 
     if (!employeeId) {
-      return NextResponse.json({ error: 'employeeId is required' }, { status: 400 })
+      return err('employeeId is required')
     }
 
     // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
@@ -22,7 +23,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         select: { locationId: true },
       })
       if (!employee) {
-        return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
+        return notFound('Employee not found')
       }
       locationId = employee.locationId
     }
@@ -65,15 +66,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           }),
     ])
 
-    return NextResponse.json({
-      data: {
+    return ok({
         voidReasons,
         compReasons,
         discountPresets,
-      },
-    })
+      })
   } catch (error) {
     console.error('Employee reasons sync error:', error)
-    return NextResponse.json({ error: 'Failed to fetch employee reasons' }, { status: 500 })
+    return err('Failed to fetch employee reasons', 500)
   }
 })

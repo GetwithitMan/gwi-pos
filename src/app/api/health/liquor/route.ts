@@ -1,7 +1,7 @@
-import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
+import { err, ok } from '@/lib/api-response'
 
 /**
  * GET /api/health/liquor
@@ -12,7 +12,7 @@ export const GET = withVenue(async function GET() {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000)
@@ -47,7 +47,7 @@ export const GET = withVenue(async function GET() {
       }),
     ])
 
-    return NextResponse.json({
+    return ok({
       status: 'ok',
       locationId,
       timestamp: new Date().toISOString(),
@@ -60,6 +60,6 @@ export const GET = withVenue(async function GET() {
     })
   } catch (error) {
     console.error('Failed to generate liquor health report:', error)
-    return NextResponse.json({ error: 'Health check failed' }, { status: 500 })
+    return err('Health check failed', 500)
   }
 })

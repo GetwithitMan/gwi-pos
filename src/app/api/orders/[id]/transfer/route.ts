@@ -5,7 +5,7 @@
  * Used for shift handoff and ad-hoc order reassignment.
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requireAnyPermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -17,6 +17,7 @@ import { isOpen } from '@/lib/domain/order-status'
 import { OrderRepository, EmployeeRepository } from '@/lib/repositories'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-transfer')
 
 interface TransferPayload {
@@ -39,17 +40,11 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     const mutationOrigin = isCellularTransfer ? 'cloud' : 'local'
 
     if (!toEmployeeId) {
-      return NextResponse.json(
-        { error: 'toEmployeeId is required' },
-        { status: 400 }
-      )
+      return err('toEmployeeId is required')
     }
 
     if (!fromEmployeeId) {
-      return NextResponse.json(
-        { error: 'fromEmployeeId is required' },
-        { status: 400 }
-      )
+      return err('fromEmployeeId is required')
     }
 
     // TODO: Initial fetch uses raw db because locationId is unknown until fetch.
@@ -68,26 +63,17 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     })
 
     if (!order) {
-      return NextResponse.json(
-        { error: 'Order not found' },
-        { status: 404 }
-      )
+      return notFound('Order not found')
     }
 
     // ── Validate order is open ──────────────────────────────────────────
     if (!isOpen(order.status)) {
-      return NextResponse.json(
-        { error: 'Cannot transfer a closed, paid, or voided order' },
-        { status: 400 }
-      )
+      return err('Cannot transfer a closed, paid, or voided order')
     }
 
     // ── Self-transfer guard ─────────────────────────────────────────────
     if (order.employeeId === toEmployeeId) {
-      return NextResponse.json(
-        { error: 'Order is already assigned to this employee' },
-        { status: 400 }
-      )
+      return err('Order is already assigned to this employee')
     }
 
     // ── Auth: own order uses pos.change_server, other's order needs manager.transfer_checks ──
@@ -98,7 +84,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
 
     const auth = await requireAnyPermission(fromEmployeeId, order.locationId, requiredPerms)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // ── Validate destination employee ───────────────────────────────────
@@ -115,10 +101,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     )
 
     if (!toEmployee || !toEmployee.isActive) {
-      return NextResponse.json(
-        { error: 'Destination employee not found or inactive' },
-        { status: 404 }
-      )
+      return notFound('Destination employee not found or inactive')
     }
 
     // ── Validate destination employee has an open shift ──────────────────
@@ -132,10 +115,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     })
 
     if (!toShift) {
-      return NextResponse.json(
-        { error: 'Destination employee does not have an open shift' },
-        { status: 400 }
-      )
+      return err('Destination employee does not have an open shift')
     }
 
     // ── Transfer the order (FOR UPDATE lock to prevent concurrent mutations) ──
@@ -160,7 +140,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     )
 
     if (!updatedOrder) {
-      return NextResponse.json({ error: 'Failed to transfer order' }, { status: 500 })
+      return err('Failed to transfer order', 500)
     }
 
     // ── Audit log ───────────────────────────────────────────────────────
@@ -201,8 +181,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
 
     pushUpstream()
 
-    return NextResponse.json({
-      data: {
+    return ok({
         success: true,
         order: {
           id: updatedOrder.id,
@@ -215,13 +194,9 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
               `${updatedOrder.employee.firstName} ${updatedOrder.employee.lastName}`,
           },
         },
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to transfer order:', error)
-    return NextResponse.json(
-      { error: 'Failed to transfer order' },
-      { status: 500 }
-    )
+    return err('Failed to transfer order', 500)
   }
 }))

@@ -13,6 +13,7 @@ import { findLastMemberGroup } from '@/lib/domain/tips/tip-groups'
 import { dispatchAlert } from '@/lib/alert-service'
 import { queueIfOutage, pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('time-clock')
 
 // GET - List time clock entries
@@ -26,10 +27,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const openOnly = searchParams.get('openOnly') === 'true'
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'Location ID is required' },
-        { status: 400 }
-      )
+      return err('Location ID is required')
     }
 
     // Build filters
@@ -70,7 +68,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       take: 100,
     })
 
-    return NextResponse.json({ data: {
+    return ok({
       entries: entries.map(entry => ({
         id: entry.id,
         employeeId: entry.employeeId,
@@ -84,13 +82,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         overtimeHours: entry.overtimeHours ? Number(entry.overtimeHours) : null,
         notes: entry.notes,
       })),
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch time clock entries:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch time clock entries' },
-      { status: 500 }
-    )
+    return err('Failed to fetch time clock entries', 500)
   }
 })
 
@@ -107,15 +102,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     if (!locationId || !employeeId) {
-      return NextResponse.json(
-        { error: 'Location ID and Employee ID are required' },
-        { status: 400 }
-      )
+      return err('Location ID and Employee ID are required')
     }
 
     // Auth check — require pos.access permission (any employee can clock in)
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.POS_ACCESS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Check if employee is already clocked in
     const existing = await db.timeClockEntry.findFirst({
@@ -126,10 +118,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     if (existing) {
-      return NextResponse.json(
-        { error: 'Employee is already clocked in' },
-        { status: 409 }
-      )
+      return err('Employee is already clocked in', 409)
     }
 
     // 60-second cooldown: prevent instant clock-out/clock-in cycling
@@ -146,10 +135,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       const secondsSinceClockOut = (Date.now() - lastClockOut.clockOut.getTime()) / 1000
       if (secondsSinceClockOut < 60) {
         const waitSeconds = Math.ceil(60 - secondsSinceClockOut)
-        return NextResponse.json(
-          { error: `Please wait ${waitSeconds} seconds before clocking back in` },
-          { status: 400 }
-        )
+        return err(`Please wait ${waitSeconds} seconds before clocking back in`)
       }
     }
 
@@ -285,20 +271,17 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       id: entry.id,
       employeeId: entry.employeeId,
       employeeName: entry.employee.displayName || `${entry.employee.firstName} ${entry.employee.lastName}`,
       clockIn: entry.clockIn.toISOString(),
       message: 'Clocked in successfully',
       ...(selectedTipGroup ? { selectedTipGroup } : {}),
-    } })
+    })
   } catch (error) {
     console.error('Failed to clock in:', error)
-    return NextResponse.json(
-      { error: 'Failed to clock in' },
-      { status: 500 }
-    )
+    return err('Failed to clock in', 500)
   }
 })
 
@@ -316,10 +299,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     const overrideClockOut = overrideClockOutRaw ? new Date(overrideClockOutRaw) : null
 
     if (!entryId || !action) {
-      return NextResponse.json(
-        { error: 'Entry ID and action are required' },
-        { status: 400 }
-      )
+      return err('Entry ID and action are required')
     }
 
     const entry = await db.timeClockEntry.findUnique({
@@ -327,17 +307,11 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     })
 
     if (!entry) {
-      return NextResponse.json(
-        { error: 'Time clock entry not found' },
-        { status: 404 }
-      )
+      return notFound('Time clock entry not found')
     }
 
     if (entry.clockOut) {
-      return NextResponse.json(
-        { error: 'This entry is already closed' },
-        { status: 400 }
-      )
+      return err('This entry is already closed')
     }
 
     const now = new Date()
@@ -384,23 +358,17 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
           const requestingEmployeeId = request.headers.get('x-employee-id')
           const overrideAuth = await requirePermission(requestingEmployeeId, entry.locationId, PERMISSIONS.STAFF_EDIT_WAGES)
           if (!overrideAuth.authorized) {
-            return NextResponse.json({ error: overrideAuth.error }, { status: overrideAuth.status })
+            return err(overrideAuth.error, overrideAuth.status)
           }
 
           // Validate: must be in the past
           if (overrideClockOut.getTime() > Date.now()) {
-            return NextResponse.json(
-              { error: 'Override clock-out time must be in the past' },
-              { status: 400 }
-            )
+            return err('Override clock-out time must be in the past')
           }
 
           // Validate: must be after clock-in
           if (overrideClockOut.getTime() <= entry.clockIn.getTime()) {
-            return NextResponse.json(
-              { error: 'Override clock-out time must be after clock-in time' },
-              { status: 400 }
-            )
+            return err('Override clock-out time must be after clock-in time')
           }
 
           effectiveClockOutTime = overrideClockOut
@@ -451,10 +419,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
 
             if (!hasAdequateBreak) {
               if (breakConfig.complianceMode === 'enforce' && !force) {
-                return NextResponse.json(
-                  { error: 'Cannot clock out without taking a required break. Please clock in for break first.' },
-                  { status: 400 }
-                )
+                return err('Cannot clock out without taking a required break. Please clock in for break first.')
               }
               // mode === 'warn': set flag to include warning in response
               breakComplianceWarning = `Break compliance: No break taken during a ${Math.round(shiftHours * 10) / 10}-hour shift`
@@ -480,15 +445,13 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
 
           if (unadjustedTips.length > 0) {
             const totalUnadjusted = unadjustedTips.reduce((sum, p) => sum + Number(p.amount), 0)
-            return NextResponse.json({
-              data: {
+            return ok({
                 id: entry.id,
                 employeeId: entry.employeeId,
                 warning: `You have ${unadjustedTips.length} unadjusted tip${unadjustedTips.length > 1 ? 's' : ''} totaling $${totalUnadjusted.toFixed(2)}. Please adjust tips before clocking out.`,
                 unadjustedTipCount: unadjustedTips.length,
                 unadjustedTipTotal: totalUnadjusted,
-              },
-            })
+              })
           }
         }
         // ── End requireTipsAdjusted check ──────────────────────────────────
@@ -516,10 +479,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
 
       case 'startBreak': {
         if (entry.breakStart && !entry.breakEnd) {
-          return NextResponse.json(
-            { error: 'Already on break' },
-            { status: 400 }
-          )
+          return err('Already on break')
         }
         updateData = {
           breakStart: now,
@@ -530,10 +490,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
 
       case 'endBreak': {
         if (!entry.breakStart || entry.breakEnd) {
-          return NextResponse.json(
-            { error: 'Not currently on break' },
-            { status: 400 }
-          )
+          return err('Not currently on break')
         }
         const breakMinutes = Math.round((now.getTime() - entry.breakStart.getTime()) / (1000 * 60))
         updateData = {
@@ -648,7 +605,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       })()
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       id: updated.id,
       employeeId: updated.employeeId,
       employeeName: updated.employee.displayName || `${updated.employee.firstName} ${updated.employee.lastName}`,
@@ -661,13 +618,10 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       message: action === 'clockOut' ? 'Clocked out successfully' :
                action === 'startBreak' ? 'Break started' : 'Break ended',
       ...(breakComplianceWarning ? { warning: breakComplianceWarning } : {}),
-    } })
+    })
   } catch (error) {
     console.error('Failed to update time clock:', error)
-    return NextResponse.json(
-      { error: 'Failed to update time clock' },
-      { status: 500 }
-    )
+    return err('Failed to update time clock', 500)
   }
 })
 
@@ -686,16 +640,13 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
     }
 
     if (!entryId || !performedBy || !locationId) {
-      return NextResponse.json(
-        { error: 'Entry ID, performedBy, and locationId are required' },
-        { status: 400 }
-      )
+      return err('Entry ID, performedBy, and locationId are required')
     }
 
     // Require manager permission to edit time punches
     const auth = await requirePermission(performedBy, locationId, PERMISSIONS.STAFF_EDIT_WAGES)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Fetch original entry
@@ -704,7 +655,7 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
     })
 
     if (!original) {
-      return NextResponse.json({ error: 'Time clock entry not found' }, { status: 404 })
+      return notFound('Time clock entry not found')
     }
 
     // Capture before values
@@ -772,17 +723,14 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
       employeeId: original.employeeId,
     }).catch(err => log.warn({ err }, 'fire-and-forget failed in time-clock'))
 
-    return NextResponse.json({ data: {
+    return ok({
       id: updated.id,
       message: 'Time punch updated successfully',
       before: beforeValues,
       after: afterValues,
-    } })
+    })
   } catch (error) {
     console.error('Failed to edit time punch:', error)
-    return NextResponse.json(
-      { error: 'Failed to edit time punch' },
-      { status: 500 }
-    )
+    return err('Failed to edit time punch', 500)
   }
 })

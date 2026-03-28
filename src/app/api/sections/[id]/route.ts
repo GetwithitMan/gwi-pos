@@ -1,11 +1,11 @@
 import { db } from '@/lib/db'
-import { NextResponse } from 'next/server'
 import { softDeleteData } from '@/lib/floorplan/queries'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - Get a single section
 export const GET = withVenue(async function GET(
@@ -19,7 +19,7 @@ export const GET = withVenue(async function GET(
     const locationId = searchParams.get('locationId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     const section = await db.section.findFirst({
@@ -41,13 +41,13 @@ export const GET = withVenue(async function GET(
     })
 
     if (!section) {
-      return NextResponse.json({ error: 'Section not found' }, { status: 404 })
+      return notFound('Section not found')
     }
 
-    return NextResponse.json({ data: { section } })
+    return ok({ section })
   } catch (error) {
     console.error('[sections/[id]] GET error:', error)
-    return NextResponse.json({ error: 'Failed to fetch section' }, { status: 500 })
+    return err('Failed to fetch section', 500)
   }
 })
 
@@ -63,7 +63,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     const { locationId, name, color, isVisible, posX, posY, width, height, widthFeet, heightFeet, gridSizeFeet } = body
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // Verify the section belongs to this location
@@ -72,7 +72,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     })
 
     if (!existing) {
-      return NextResponse.json({ error: 'Section not found or access denied' }, { status: 404 })
+      return notFound('Section not found or access denied')
     }
 
     const section = await db.section.update({
@@ -111,10 +111,10 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     void notifyDataChanged({ locationId, domain: 'floorplan', action: 'updated', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { section } })
+    return ok({ section })
   } catch (error) {
     console.error('[sections/[id]] PUT error:', error)
-    return NextResponse.json({ error: 'Failed to update section' }, { status: 500 })
+    return err('Failed to update section', 500)
   }
 }))
 
@@ -130,7 +130,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     const locationId = searchParams.get('locationId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // Verify the section belongs to this location
@@ -139,7 +139,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     })
 
     if (!existing) {
-      return NextResponse.json({ error: 'Section not found or access denied' }, { status: 404 })
+      return notFound('Section not found or access denied')
     }
 
     // Check if section has tables
@@ -167,9 +167,9 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     void notifyDataChanged({ locationId, domain: 'floorplan', action: 'deleted', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { success: true, tablesMovedToNoSection: tablesInSection } })
+    return ok({ success: true, tablesMovedToNoSection: tablesInSection })
   } catch (error) {
     console.error('[sections/[id]] DELETE error:', error)
-    return NextResponse.json({ error: 'Failed to delete section' }, { status: 500 })
+    return err('Failed to delete section', 500)
   }
 }))

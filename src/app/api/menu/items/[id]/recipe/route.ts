@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { MenuItemRepository } from '@/lib/repositories'
 import { dispatchMenuItemChanged } from '@/lib/socket-dispatch'
@@ -9,6 +9,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 
 const log = createChildLogger('menu.items.id.recipe')
 
@@ -120,7 +121,7 @@ export const GET = withVenue(async function GET(
     const { id } = await params
     const locationId = request.nextUrl.searchParams.get('locationId') || await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // Get the menu item with its recipe (tenant-safe)
@@ -135,10 +136,7 @@ export const GET = withVenue(async function GET(
     })
 
     if (!menuItem) {
-      return NextResponse.json(
-        { error: 'Menu item not found' },
-        { status: 404 }
-      )
+      return notFound('Menu item not found')
     }
 
     const ingredients = menuItem.recipeIngredients.map(mapIngredient)
@@ -146,20 +144,17 @@ export const GET = withVenue(async function GET(
     const sellPrice = Number(menuItem.price)
     const profitMargin = sellPrice > 0 ? ((sellPrice - totalPourCost) / sellPrice) * 100 : 0
 
-    return NextResponse.json({ data: {
+    return ok({
       menuItemId: menuItem.id,
       menuItemName: menuItem.name,
       sellPrice,
       ingredients,
       totalPourCost: Math.round(totalPourCost * 100) / 100,
       profitMargin: Math.round(profitMargin * 10) / 10,
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch recipe:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch recipe' },
-      { status: 500 }
-    )
+    return err('Failed to fetch recipe', 500)
   }
 })
 
@@ -178,19 +173,16 @@ export const POST = withVenue(async function POST(
     const { ingredients } = body
     const locationId = request.nextUrl.searchParams.get('locationId') || await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // Auth check — require menu.edit_items permission
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.MENU_EDIT_ITEMS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     if (!Array.isArray(ingredients)) {
-      return NextResponse.json(
-        { error: 'Ingredients must be an array' },
-        { status: 400 }
-      )
+      return err('Ingredients must be an array')
     }
 
     // Verify menu item exists (tenant-safe)
@@ -199,10 +191,7 @@ export const POST = withVenue(async function POST(
     })
 
     if (!menuItem) {
-      return NextResponse.json(
-        { error: 'Menu item not found' },
-        { status: 404 }
-      )
+      return notFound('Menu item not found')
     }
 
     // Split into spirit and food ingredients
@@ -212,10 +201,7 @@ export const POST = withVenue(async function POST(
     // Validate each ingredient has either bottleProductId or ingredientId
     for (const ing of ingredients) {
       if (!ing.bottleProductId && !ing.ingredientId) {
-        return NextResponse.json(
-          { error: 'Each ingredient must have either bottleProductId or ingredientId' },
-          { status: 400 }
-        )
+        return err('Each ingredient must have either bottleProductId or ingredientId')
       }
     }
 
@@ -229,10 +215,7 @@ export const POST = withVenue(async function POST(
       const foundIds = new Set(bottles.map((b) => b.id))
       const missingIds = bottleIds.filter((bid: string) => !foundIds.has(bid))
       if (missingIds.length > 0) {
-        return NextResponse.json(
-          { error: `Bottle products not found: ${missingIds.join(', ')}` },
-          { status: 400 }
-        )
+        return err(`Bottle products not found: ${missingIds.join(', ')}`)
       }
     }
 
@@ -246,10 +229,7 @@ export const POST = withVenue(async function POST(
       const foundIds = new Set(found.map((i) => i.id))
       const missingIds = ingIds.filter((iid: string) => !foundIds.has(iid))
       if (missingIds.length > 0) {
-        return NextResponse.json(
-          { error: `Ingredients not found: ${missingIds.join(', ')}` },
-          { status: 400 }
-        )
+        return err(`Ingredients not found: ${missingIds.join(', ')}`)
       }
     }
 
@@ -301,20 +281,17 @@ export const POST = withVenue(async function POST(
     void notifyDataChanged({ locationId: menuItem.locationId, domain: 'menu', action: 'updated', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       menuItemId: menuItem.id,
       menuItemName: menuItem.name,
       sellPrice,
       ingredients: resultIngredients,
       totalPourCost: Math.round(totalPourCost * 100) / 100,
       profitMargin: Math.round(profitMargin * 10) / 10,
-    } })
+    })
   } catch (error) {
     console.error('Failed to save recipe:', error)
-    return NextResponse.json(
-      { error: 'Failed to save recipe' },
-      { status: 500 }
-    )
+    return err('Failed to save recipe', 500)
   }
 })
 
@@ -332,19 +309,16 @@ export const PATCH = withVenue(async function PATCH(
     const { bottleProductId, pourCount, isSubstitutable } = await request.json()
     const locationId = request.nextUrl.searchParams.get('locationId') || await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // Auth check — require menu.edit_items permission
     const actorPatch = await getActorFromRequest(request)
     const authPatch = await requirePermission(actorPatch.employeeId, locationId, PERMISSIONS.MENU_EDIT_ITEMS)
-    if (!authPatch.authorized) return NextResponse.json({ error: authPatch.error }, { status: authPatch.status })
+    if (!authPatch.authorized) return err(authPatch.error, authPatch.status)
 
     if (!bottleProductId) {
-      return NextResponse.json(
-        { error: 'bottleProductId is required' },
-        { status: 400 }
-      )
+      return err('bottleProductId is required')
     }
 
     // Verify menu item exists (tenant-safe)
@@ -352,10 +326,7 @@ export const PATCH = withVenue(async function PATCH(
       id: true, locationId: true,
     })
     if (!menuItem) {
-      return NextResponse.json(
-        { error: 'Menu item not found' },
-        { status: 404 }
-      )
+      return notFound('Menu item not found')
     }
 
     // Check if this bottle is already in the recipe
@@ -363,7 +334,7 @@ export const PATCH = withVenue(async function PATCH(
       where: { menuItemId: id, bottleProductId },
     })
     if (existing) {
-      return NextResponse.json({ data: { alreadyExists: true } })
+      return ok({ alreadyExists: true })
     }
 
     // Validate bottle exists
@@ -372,10 +343,7 @@ export const PATCH = withVenue(async function PATCH(
       select: { id: true },
     })
     if (!bottle) {
-      return NextResponse.json(
-        { error: 'Bottle product not found' },
-        { status: 400 }
-      )
+      return err('Bottle product not found')
     }
 
     // Add at position 0, shift existing ingredients
@@ -415,13 +383,10 @@ export const PATCH = withVenue(async function PATCH(
     void notifyDataChanged({ locationId: menuItem.locationId, domain: 'menu', action: 'updated', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { ingredients: resultIngredients } })
+    return ok({ ingredients: resultIngredients })
   } catch (error) {
     console.error('Failed to add recipe ingredient:', error)
-    return NextResponse.json(
-      { error: 'Failed to add recipe ingredient' },
-      { status: 500 }
-    )
+    return err('Failed to add recipe ingredient', 500)
   }
 })
 
@@ -437,13 +402,13 @@ export const DELETE = withVenue(async function DELETE(
     const { id } = await params
     const locationId = request.nextUrl.searchParams.get('locationId') || await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // Auth check — require menu.edit_items permission
     const actorDel = await getActorFromRequest(request)
     const authDel = await requirePermission(actorDel.employeeId, locationId, PERMISSIONS.MENU_EDIT_ITEMS)
-    if (!authDel.authorized) return NextResponse.json({ error: authDel.error }, { status: authDel.status })
+    if (!authDel.authorized) return err(authDel.error, authDel.status)
 
     // Get locationId for socket dispatch (tenant-safe)
     const menuItem = await MenuItemRepository.getMenuItemByIdWithSelect(id, locationId, {
@@ -463,12 +428,9 @@ export const DELETE = withVenue(async function DELETE(
       }).catch(err => log.warn({ err }, 'fire-and-forget failed in menu.items.id.recipe'))
     }
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Failed to delete recipe:', error)
-    return NextResponse.json(
-      { error: 'Failed to delete recipe' },
-      { status: 500 }
-    )
+    return err('Failed to delete recipe', 500)
   }
 })

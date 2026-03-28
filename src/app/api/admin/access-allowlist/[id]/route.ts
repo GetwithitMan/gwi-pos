@@ -5,8 +5,9 @@
  * Protected: requires Authorization: Bearer <INTERNAL_API_SECRET>
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { removeFromAllowlist, regenerateAccessCode } from '@/lib/access-allowlist'
+import { ok, unauthorized } from '@/lib/api-response'
 
 function authorize(req: NextRequest): boolean {
   const secret = process.env.INTERNAL_API_SECRET
@@ -19,11 +20,11 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   if (!authorize(req)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return unauthorized('Unauthorized')
   }
   const { id } = await params
   await removeFromAllowlist(id)
-  return NextResponse.json({ success: true })
+  return ok({ success: true })
 }
 
 export async function PATCH(
@@ -31,9 +32,9 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   if (!authorize(req)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return unauthorized('Unauthorized')
   }
   const { id } = await params
   const newCode = await regenerateAccessCode(id)
-  return NextResponse.json({ access_code: newCode })
+  return ok({ access_code: newCode })
 }

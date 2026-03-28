@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
 import { getLocationSettings } from '@/lib/location-cache'
@@ -14,6 +14,7 @@ import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { roundToCents } from '@/lib/pricing'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-merge')
 
 // POST - Merge another order into this one
@@ -27,17 +28,11 @@ export const POST = withVenue(async function POST(
     const { sourceOrderId, employeeId } = body
 
     if (!sourceOrderId) {
-      return NextResponse.json(
-        { error: 'Source order ID is required' },
-        { status: 400 }
-      )
+      return err('Source order ID is required')
     }
 
     if (targetOrderId === sourceOrderId) {
-      return NextResponse.json(
-        { error: 'Cannot merge an order with itself' },
-        { status: 400 }
-      )
+      return err('Cannot merge an order with itself')
     }
 
     // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
@@ -48,10 +43,7 @@ export const POST = withVenue(async function POST(
         select: { id: true, locationId: true },
       })
       if (!targetOrderCheck) {
-        return NextResponse.json(
-          { error: 'Target order not found' },
-          { status: 404 }
-        )
+        return notFound('Target order not found')
       }
       locationId = targetOrderCheck.locationId
     }
@@ -65,24 +57,18 @@ export const POST = withVenue(async function POST(
     )
 
     if (!targetOrder) {
-      return NextResponse.json(
-        { error: 'Target order not found' },
-        { status: 404 }
-      )
+      return notFound('Target order not found')
     }
 
     // Server-side permission check — merging orders requires pos.transfer_order
     // (manager.bulk_operations is for batch void/close, not order merging)
     const auth = await requirePermission(employeeId, targetOrder.locationId, PERMISSIONS.POS_TRANSFER_ORDER)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     if (['paid', 'closed', 'voided', 'cancelled', 'split'].includes(targetOrder.status)) {
-      return NextResponse.json(
-        { error: `Cannot merge into a ${targetOrder.status} order` },
-        { status: 400 }
-      )
+      return err(`Cannot merge into a ${targetOrder.status} order`)
     }
 
     // Get source order
@@ -95,33 +81,21 @@ export const POST = withVenue(async function POST(
     )
 
     if (!sourceOrder) {
-      return NextResponse.json(
-        { error: 'Source order not found' },
-        { status: 404 }
-      )
+      return notFound('Source order not found')
     }
 
     if (['paid', 'closed', 'voided', 'cancelled', 'split'].includes(sourceOrder.status)) {
-      return NextResponse.json(
-        { error: `Cannot merge from a ${sourceOrder.status} order` },
-        { status: 400 }
-      )
+      return err(`Cannot merge from a ${sourceOrder.status} order`)
     }
 
     // Check same location
     if (targetOrder.locationId !== sourceOrder.locationId) {
-      return NextResponse.json(
-        { error: 'Orders must be from the same location' },
-        { status: 400 }
-      )
+      return err('Orders must be from the same location')
     }
 
     // Block merging split children from different parent orders
     if (sourceOrder.parentOrderId && targetOrder.parentOrderId && sourceOrder.parentOrderId !== targetOrder.parentOrderId) {
-      return NextResponse.json(
-        { error: 'Cannot merge split children from different parent orders' },
-        { status: 400 }
-      )
+      return err('Cannot merge split children from different parent orders')
     }
 
     // Move items, recalculate totals, void source, and audit log atomically
@@ -338,7 +312,7 @@ export const POST = withVenue(async function POST(
       taxFromExclusive: Number(updatedOrder!.taxFromExclusive ?? 0),
     })
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       order: {
         ...updatedOrder,
@@ -361,32 +335,20 @@ export const POST = withVenue(async function POST(
       sourceOrderVoided: true,
       itemsMoved: movedItems.count,
       discountsMoved: movedDiscounts.count,
-    } })
+    })
   } catch (error) {
     if (error instanceof Error) {
       if (error.message === 'TARGET_ORDER_INVALID') {
-        return NextResponse.json(
-          { error: 'Target order can no longer be merged — it may have been paid or closed' },
-          { status: 409 }
-        )
+        return err('Target order can no longer be merged — it may have been paid or closed', 409)
       }
       if (error.message === 'SOURCE_ORDER_INVALID') {
-        return NextResponse.json(
-          { error: 'Source order can no longer be merged — it may have been paid or closed' },
-          { status: 409 }
-        )
+        return err('Source order can no longer be merged — it may have been paid or closed', 409)
       }
       if (error.message === 'ORDERS_HAVE_PAYMENTS') {
-        return NextResponse.json(
-          { error: 'Cannot merge orders that have existing payments. Void the payments first.' },
-          { status: 400 }
-        )
+        return err('Cannot merge orders that have existing payments. Void the payments first.')
       }
     }
     console.error('Failed to merge orders:', error)
-    return NextResponse.json(
-      { error: 'Failed to merge orders' },
-      { status: 500 }
-    )
+    return err('Failed to merge orders', 500)
   }
 })

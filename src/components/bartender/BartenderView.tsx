@@ -38,20 +38,11 @@ import {
 } from '@/components/bartender/bartender-settings'
 import { useBartenderPreferences } from '@/hooks/useBartenderPreferences'
 import { useSocket } from '@/hooks/useSocket'
+import type { MenuItem as BaseMenuItem, CategoryFloorPlan as Category } from '@/types'
 
 // ============================================================================
 // TYPES
 // ============================================================================
-
-
-interface Category {
-  id: string
-  name: string
-  color?: string
-  itemCount?: number
-  categoryType?: string // 'drinks' | 'liquor' | 'food' | 'entertainment' | etc.
-  categoryShow?: string // 'bar' | 'food' | 'entertainment' | 'all'
-}
 
 interface SpiritOption {
   id: string
@@ -69,20 +60,13 @@ interface SpiritTiers {
   top_shelf: SpiritOption[]
 }
 
-interface MenuItem {
-  id: string
-  name: string
-  price: number
-  categoryId: string
-  categoryType?: string
-  hasModifiers?: boolean
-  hasOtherModifiers?: boolean // Has non-spirit modifier groups
-  itemType?: string // 'standard' | 'combo' | 'timed_rental' | 'pizza'
-  pourSizes?: Record<string, number | { label: string; multiplier: number; customPrice?: number | null }> | null // { shot: 1.0, double: 2.0, tall: 1.5, short: 0.75 }
-  defaultPourSize?: string | null
-  spiritTiers?: SpiritTiers | null // Spirit upgrade options by tier
-  pricingOptionGroups?: import('@/types').PricingOptionGroup[]
-  hasPricingOptions?: boolean
+/** Bartender view extends base MenuItem with spirit-specific fields */
+type MenuItem = Pick<BaseMenuItem,
+  'id' | 'name' | 'price' | 'categoryId' | 'categoryType' | 'hasModifiers'
+  | 'itemType' | 'pourSizes' | 'defaultPourSize' | 'pricingOptionGroups' | 'hasPricingOptions'
+> & {
+  hasOtherModifiers?: boolean  // Has non-spirit modifier groups
+  spiritTiers?: SpiritTiers | null  // Spirit upgrade options by tier
 }
 
 // Spirit tier display config - distinct colors for each tier

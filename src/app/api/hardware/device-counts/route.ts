@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { withVenue } from '@/lib/with-venue'
 import { parseSettings } from '@/lib/settings'
 import { db } from '@/lib/db'
 import { getDeviceCounts } from '@/lib/device-limits'
+import { err, ok } from '@/lib/api-response'
 
 // GET current device counts and limits for a location
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -10,7 +11,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // Get current counts
@@ -24,8 +25,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const settings = parseSettings(location?.settings)
     const limits = settings.hardwareLimits
 
-    return NextResponse.json({
-      data: {
+    return ok({
         counts,
         limits: limits
           ? {
@@ -36,10 +36,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
               maxPrinters: limits.maxPrinters,
             }
           : null,
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to fetch device counts:', error)
-    return NextResponse.json({ error: 'Failed to fetch device counts' }, { status: 500 })
+    return err('Failed to fetch device counts', 500)
   }
 })

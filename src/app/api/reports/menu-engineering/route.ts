@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { dateRangeToUTC } from '@/lib/timezone'
 import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
+import { err, ok } from '@/lib/api-response'
 
 type Classification = 'star' | 'plow_horse' | 'puzzle' | 'dog'
 
@@ -35,12 +36,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const requestingEmployeeId = searchParams.get('requestingEmployeeId') || searchParams.get('employeeId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+      return err('Location ID is required')
     }
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_INVENTORY)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     const loc = await db.location.findFirst({
@@ -128,14 +129,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const items = Array.from(itemMap.values()).filter(it => it.qtySold >= minQtySold)
 
     if (items.length === 0) {
-      return NextResponse.json({
-        data: {
+      return ok({
           items: [],
           summary: { stars: 0, plowHorses: 0, puzzles: 0, dogs: 0, totalItems: 0 },
           averages: { avgQtySold: 0, avgContributionMargin: 0 },
           dateRange: { start: range.start, end: range.end },
-        },
-      })
+        })
     }
 
     // Calculate averages from items WITH cost data
@@ -185,17 +184,15 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orderBy: { name: 'asc' },
     })
 
-    return NextResponse.json({
-      data: {
+    return ok({
         items: classified,
         summary,
         averages: { avgQtySold, avgContributionMargin: avgCM },
         categories,
         dateRange: { start: range.start, end: range.end },
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to generate menu engineering report:', error)
-    return NextResponse.json({ error: 'Failed to generate menu engineering report' }, { status: 500 })
+    return err('Failed to generate menu engineering report', 500)
   }
 })

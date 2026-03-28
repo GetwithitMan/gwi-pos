@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { getAllMenuItemsStockStatus } from '@/lib/stock-status'
 import { withVenue } from '@/lib/with-venue'
@@ -7,6 +7,7 @@ import { getMenuCache, setMenuCache, buildMenuCacheKey } from '@/lib/menu-cache'
 import { getLocationId } from '@/lib/location-cache'
 import { getRequestLocationId } from '@/lib/request-context'
 import type { CategoryType, CategoryShow } from '@/generated/prisma/client'
+import { err, ok } from '@/lib/api-response'
 
 // TODO: Migrate db.menuItem.findMany to MenuItemRepository once complex include+parallel shapes are supported
 
@@ -29,18 +30,12 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
 
     // Validate categoryType against known enum values
     if (categoryTypeRaw && !VALID_CATEGORY_TYPES.includes(categoryTypeRaw)) {
-      return NextResponse.json(
-        { error: `Invalid categoryType '${categoryTypeRaw}'. Must be one of: ${VALID_CATEGORY_TYPES.join(', ')}` },
-        { status: 400 }
-      )
+      return err(`Invalid categoryType '${categoryTypeRaw}'. Must be one of: ${VALID_CATEGORY_TYPES.join(', ')}`)
     }
 
     // Validate categoryShow against known enum values
     if (categoryShowRaw && !VALID_CATEGORY_SHOWS.includes(categoryShowRaw)) {
-      return NextResponse.json(
-        { error: `Invalid categoryShow '${categoryShowRaw}'. Must be one of: ${VALID_CATEGORY_SHOWS.join(', ')}` },
-        { status: 400 }
-      )
+      return err(`Invalid categoryShow '${categoryShowRaw}'. Must be one of: ${VALID_CATEGORY_SHOWS.join(', ')}`)
     }
 
     const categoryType = categoryTypeRaw as CategoryType | null
@@ -51,10 +46,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
     // Get the location ID — prefer request context (set by proxy, zero DB cost)
     const locationId = getRequestLocationId() || await getLocationId()
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'No location found' },
-        { status: 400 }
-      )
+      return err('No location found')
     }
 
     // Check server-side cache first
@@ -62,7 +54,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
     const cached = getMenuCache(cacheKey)
     if (cached) {
       timing.add('cache', 0, 'Hit')
-      return NextResponse.json({ data: cached })
+      return ok(cached)
     }
 
     const categoryTypeFilter = categoryType ? { categoryType } : {}
@@ -312,12 +304,9 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
     // Store in cache
     setMenuCache(cacheKey, responseData)
 
-    return NextResponse.json({ data: responseData })
+    return ok(responseData)
   } catch (error) {
     console.error('Failed to fetch menu:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch menu' },
-      { status: 500 }
-    )
+    return err('Failed to fetch menu', 500)
   }
 }, 'menu-load'))

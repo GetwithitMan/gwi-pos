@@ -8,6 +8,7 @@ import { dispatchCakeOrderNew } from '@/lib/socket-dispatch'
 import { adminCreateCakeOrderSchema } from '@/lib/cake-orders/schemas'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { requireCakeFeature } from '@/lib/cake-orders/require-cake-feature'
+import { err, ok } from '@/lib/api-response'
 
 // GET /api/cake-orders — list cake orders (cursor-based pagination)
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -16,7 +17,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const locationId = searchParams.get('locationId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // ── Permission check ──────────────────────────────────────────────
@@ -129,15 +130,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const page = hasMore ? orders.slice(0, take) : orders
     const nextCursor = hasMore ? (page[page.length - 1]?.id as string) : null
 
-    return NextResponse.json({
-      data: {
+    return ok({
         orders: page,
         pagination: { nextCursor, hasMore },
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to list cake orders:', error)
-    return NextResponse.json({ error: 'Failed to list cake orders' }, { status: 500 })
+    return err('Failed to list cake orders', 500)
   }
 })
 
@@ -152,7 +151,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const locationId = actor.locationId || body.locationId
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // ── Permission check ──────────────────────────────────────────────
@@ -319,9 +318,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       orderId,
     )
 
-    return NextResponse.json({ data: created[0] })
+    return ok(created[0])
   } catch (error) {
     console.error('Failed to create cake order:', error)
-    return NextResponse.json({ error: 'Failed to create cake order' }, { status: 500 })
+    return err('Failed to create cake order', 500)
   }
 })

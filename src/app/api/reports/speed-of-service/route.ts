@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
 import { withVenue } from '@/lib/with-venue'
 import { parseSettings, DEFAULT_SPEED_OF_SERVICE } from '@/lib/settings'
+import { err, ok } from '@/lib/api-response'
 
 interface TimingMetrics {
   avgOrderToSend: number | null
@@ -56,15 +57,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const filterEmployeeId = searchParams.get('employeeId') || null
     const requestingEmployeeId = searchParams.get('requestingEmployeeId') || searchParams.get('employeeId')
     if (!locationId || !startDate || !endDate) {
-      return NextResponse.json(
-        { error: 'locationId, startDate, and endDate are required' },
-        { status: 400 }
-      )
+      return err('locationId, startDate, and endDate are required')
     }
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_VIEW)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     const start = new Date(startDate)
@@ -354,8 +352,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }
     })
 
-    return NextResponse.json({
-      data: {
+    return ok({
         overall,
         byDay,
         byEmployee,
@@ -371,13 +368,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           warningMinutes: sos.warningMinutes,
           goalAttainmentPercent,
         },
-      },
-    })
+      })
   } catch (error) {
     console.error('Speed of service report error:', error)
-    return NextResponse.json(
-      { error: 'Failed to generate speed of service report' },
-      { status: 500 }
-    )
+    return err('Failed to generate speed of service report', 500)
   }
 })

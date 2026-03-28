@@ -10,7 +10,7 @@
  * group membership and ownership — never modifies ledger entries.
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requireAnyPermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -25,6 +25,7 @@ import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { queueIfOutageOrFail, OutageQueueFullError, pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, forbidden, notFound, ok, unauthorized } from '@/lib/api-response'
 const log = createChildLogger('tips-groups-transfer')
 
 interface TransferPayload {
@@ -44,34 +45,22 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     const requestingEmployeeId = request.headers.get('x-employee-id')
 
     if (!requestingEmployeeId) {
-      return NextResponse.json(
-        { error: 'Employee ID is required (x-employee-id header)' },
-        { status: 401 }
-      )
+      return unauthorized('Employee ID is required (x-employee-id header)')
     }
 
     if (!toEmployeeId) {
-      return NextResponse.json(
-        { error: 'toEmployeeId is required' },
-        { status: 400 }
-      )
+      return err('toEmployeeId is required')
     }
 
     // ── Fetch the group ─────────────────────────────────────────────────
     const group = await getGroupInfo(groupId)
 
     if (!group) {
-      return NextResponse.json(
-        { error: 'Tip group not found' },
-        { status: 404 }
-      )
+      return notFound('Tip group not found')
     }
 
     if (group.status !== 'active') {
-      return NextResponse.json(
-        { error: 'Tip group is not active' },
-        { status: 409 }
-      )
+      return err('Tip group is not active', 409)
     }
 
     // ── Auth: group owner OR TIPS_MANAGE_GROUPS permission ──────────────
@@ -83,19 +72,13 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
         [PERMISSIONS.TIPS_MANAGE_GROUPS]
       )
       if (!auth.authorized) {
-        return NextResponse.json(
-          { error: 'Not authorized. Must be group owner or have tip management permission.' },
-          { status: 403 }
-        )
+        return forbidden('Not authorized. Must be group owner or have tip management permission.')
       }
     }
 
     // ── Self-transfer guard ─────────────────────────────────────────────
     if (group.ownerId === toEmployeeId) {
-      return NextResponse.json(
-        { error: 'This employee is already the group owner' },
-        { status: 400 }
-      )
+      return err('This employee is already the group owner')
     }
 
     // ── Validate destination employee exists and has an open shift ───────
@@ -115,10 +98,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     })
 
     if (!toEmployee) {
-      return NextResponse.json(
-        { error: 'Destination employee not found or inactive' },
-        { status: 404 }
-      )
+      return notFound('Destination employee not found or inactive')
     }
 
     const toShift = await db.shift.findFirst({
@@ -131,10 +111,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     })
 
     if (!toShift) {
-      return NextResponse.json(
-        { error: 'Destination employee does not have an open shift' },
-        { status: 400 }
-      )
+      return err('Destination employee does not have an open shift')
     }
 
     // ── Check if toEmployee is already a member ─────────────────────────
@@ -200,7 +177,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       await queueIfOutageOrFail('TipGroup', group.locationId, groupId, 'UPDATE')
     } catch (err) {
       if (err instanceof OutageQueueFullError) {
-        return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+        return err('Service temporarily unavailable — outage queue full', 507)
       }
       throw err
     }
@@ -219,28 +196,20 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     const toName = toEmployee.displayName ||
       `${toEmployee.firstName} ${toEmployee.lastName}`
 
-    return NextResponse.json({
-      data: {
+    return ok({
         success: true,
         group: updatedGroup,
         transferredTo: { id: toEmployeeId, name: toName },
         previousOwnerId,
-      },
-    })
+      })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
 
     if (message === 'NEW_OWNER_NOT_ACTIVE_MEMBER') {
-      return NextResponse.json(
-        { error: 'New owner must be an active member of the group' },
-        { status: 400 }
-      )
+      return err('New owner must be an active member of the group')
     }
 
     console.error('Failed to transfer tip group:', error)
-    return NextResponse.json(
-      { error: 'Failed to transfer tip group' },
-      { status: 500 }
-    )
+    return err('Failed to transfer tip group', 500)
   }
 }))

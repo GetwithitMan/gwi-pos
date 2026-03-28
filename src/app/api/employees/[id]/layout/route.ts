@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { Prisma } from '@/generated/prisma/client'
 import * as EmployeeRepository from '@/lib/repositories/employee-repository'
 import { getLocationId } from '@/lib/location-cache'
 import { DEFAULT_LAYOUT_SETTINGS, type POSLayoutSettings } from '@/lib/settings'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - Get employee's layout settings
 export const GET = withVenue(async function GET(
@@ -15,7 +16,7 @@ export const GET = withVenue(async function GET(
     const { id } = await params
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'Location required' }, { status: 400 })
+      return err('Location required')
     }
 
     const employee = await EmployeeRepository.getEmployeeByIdWithInclude(id, locationId, {
@@ -27,10 +28,7 @@ export const GET = withVenue(async function GET(
     })
 
     if (!employee) {
-      return NextResponse.json(
-        { error: 'Employee not found' },
-        { status: 404 }
-      )
+      return notFound('Employee not found')
     }
 
     // Merge: global defaults < location defaults < personal settings
@@ -44,16 +42,13 @@ export const GET = withVenue(async function GET(
       ...(personalLayout || {}),
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       layout: mergedLayout,
       hasPersonalSettings: !!personalLayout,
-    } })
+    })
   } catch (error) {
     console.error('Failed to get employee layout:', error)
-    return NextResponse.json(
-      { error: 'Failed to get layout settings' },
-      { status: 500 }
-    )
+    return err('Failed to get layout settings', 500)
   }
 })
 
@@ -69,7 +64,7 @@ export const PUT = withVenue(withAuth(async function PUT(
 
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'Location required' }, { status: 400 })
+      return err('Location required')
     }
 
     // Verify employee exists (tenant-scoped, with includes for existing settings)
@@ -82,10 +77,7 @@ export const PUT = withVenue(withAuth(async function PUT(
     })
 
     if (!employee) {
-      return NextResponse.json(
-        { error: 'Employee not found' },
-        { status: 404 }
-      )
+      return notFound('Employee not found')
     }
 
     // Merge with existing settings
@@ -101,16 +93,13 @@ export const PUT = withVenue(withAuth(async function PUT(
       posLayoutSettings: updatedLayout as Prisma.InputJsonValue,
     })
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       layout: { ...DEFAULT_LAYOUT_SETTINGS, ...updatedLayout },
-    } })
+    })
   } catch (error) {
     console.error('Failed to update employee layout:', error)
-    return NextResponse.json(
-      { error: 'Failed to update layout settings' },
-      { status: 500 }
-    )
+    return err('Failed to update layout settings', 500)
   }
 }))
 
@@ -123,22 +112,19 @@ export const DELETE = withVenue(withAuth(async function DELETE(
     const { id } = await params
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'Location required' }, { status: 400 })
+      return err('Location required')
     }
 
     await EmployeeRepository.updateEmployee(id, locationId, {
       posLayoutSettings: Prisma.JsonNull,
     })
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       layout: DEFAULT_LAYOUT_SETTINGS,
-    } })
+    })
   } catch (error) {
     console.error('Failed to reset employee layout:', error)
-    return NextResponse.json(
-      { error: 'Failed to reset layout settings' },
-      { status: 500 }
-    )
+    return err('Failed to reset layout settings', 500)
   }
 }))

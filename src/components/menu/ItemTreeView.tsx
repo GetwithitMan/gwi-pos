@@ -2,6 +2,7 @@
 
 import { useState, useEffect, createContext, useContext, useCallback } from 'react'
 import { formatCurrency } from '@/lib/utils'
+import type { MenuItem as BaseMenuItem } from '@/types'
 
 interface ModifierGroup {
   id: string
@@ -32,13 +33,7 @@ interface Ingredient {
   extraPrice: number
 }
 
-interface MenuItem {
-  id: string
-  name: string
-  price: number
-  description?: string
-  printerIds?: string[] | null
-}
+type MenuItem = Pick<BaseMenuItem, 'id' | 'name' | 'price' | 'description' | 'printerIds'>
 
 interface ItemTreeViewProps {
   item: MenuItem | null

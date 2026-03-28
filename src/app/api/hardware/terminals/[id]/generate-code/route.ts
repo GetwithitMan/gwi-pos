@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // POST generate a new pairing code for this terminal
 export const POST = withVenue(withAuth('ADMIN', async function POST(
@@ -15,7 +16,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
 
     const terminal = await db.terminal.findUnique({ where: { id } })
     if (!terminal || terminal.deletedAt) {
-      return NextResponse.json({ error: 'Terminal not found' }, { status: 404 })
+      return notFound('Terminal not found')
     }
 
     // Generate 6-digit code
@@ -35,13 +36,13 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     void notifyDataChanged({ locationId: terminal.locationId, domain: 'hardware', action: 'updated', entityId: terminal.id })
     void pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       pairingCode,
       expiresAt: expiresAt.toISOString(),
       terminalName: terminal.name,
-    } })
+    })
   } catch (error) {
     console.error('Failed to generate pairing code:', error)
-    return NextResponse.json({ error: 'Failed to generate pairing code' }, { status: 500 })
+    return err('Failed to generate pairing code', 500)
   }
 }))

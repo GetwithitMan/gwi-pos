@@ -7,9 +7,10 @@
  * GET /api/health/update
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { getUpdateAgentStatus, runPreflightChecks } from '@/lib/update-agent'
 import { verifySchema } from '@/lib/schema-verify'
+import { ok, unauthorized } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,7 +22,7 @@ export async function GET(req: NextRequest) {
   if (secret) {
     const authHeader = req.headers.get('authorization')
     if (authHeader !== `Bearer ${secret}`) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return unauthorized('Unauthorized')
     }
   }
   const status = getUpdateAgentStatus()
@@ -30,7 +31,7 @@ export async function GET(req: NextRequest) {
     verifySchema(),
   ])
 
-  return NextResponse.json({
+  return ok({
     version: status.currentVersion,
     isUpdating: status.isUpdating,
     lockFileExists: status.lockFileExists,

@@ -29,30 +29,27 @@ interface OrderItem {
   }[]
 }
 
-interface OpenOrder {
-  id: string
-  orderNumber: number
+// OpenOrder extends the canonical type from @/types with page-specific fields
+import type { OpenOrder as BaseOpenOrder } from '@/types'
+
+interface OpenOrder extends BaseOpenOrder {
+  // Required overrides (base has these optional, manager always provides them)
   displayNumber: string
   status: string
-  orderType: string
-  tabName: string | null
-  tableName: string | null
-  tableId: string | null
+  employee: { id: string; name: string }
+  subtotal: number
+  taxTotal: number
+  tipTotal: number
   ageMinutes: number
   isRolledOver: boolean
   rolledOverAt: string | null
   rolledOverFrom: string | null
   isCaptureDeclined: boolean
   captureRetryCount: number
-  employee: { id: string; name: string }
-  itemCount: number
-  subtotal: number
-  taxTotal: number
-  tipTotal: number
-  total: number
-  items: OrderItem[]
   createdAt: string
   openedAt: string
+  // Page-specific fields
+  items: OrderItem[]
   hasPreAuth: boolean
   preAuth: {
     cardBrand: string | null

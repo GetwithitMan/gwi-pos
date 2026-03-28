@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { exec } from 'child_process'
 import { getActorFromRequest } from '@/lib/api-auth'
+import { ok, unauthorized } from '@/lib/api-response'
 
 /**
  * POST /api/system/exit-kiosk
@@ -19,7 +20,7 @@ export async function POST(request: NextRequest) {
   if (authHeader !== `Bearer ${process.env.INTERNAL_API_SECRET}`) {
     const session = await getActorFromRequest(request)
     if (!session?.employeeId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return unauthorized('Unauthorized')
     }
   }
   if (process.env.NODE_ENV === 'production') {
@@ -32,5 +33,5 @@ export async function POST(request: NextRequest) {
   }
 
   // In dev mode, just acknowledge
-  return NextResponse.json({ data: { ok: true, dev: true } })
+  return ok({ ok: true, dev: true })
 }

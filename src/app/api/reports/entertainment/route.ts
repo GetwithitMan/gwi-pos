@@ -8,6 +8,7 @@ import { getBusinessDayRange } from '@/lib/business-day'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings, getLocationTimezone } from '@/lib/location-cache'
 import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
+import { err, ok } from '@/lib/api-response'
 
 // ============================================================
 // ENTERTAINMENT REVENUE REPORT
@@ -33,12 +34,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const requestingEmployeeId = searchParams.get('requestingEmployeeId') || searchParams.get('employeeId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID required' }, { status: 400 })
+      return err('Location ID required')
     }
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_SALES)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     const rateCheck = checkReportRateLimit(requestingEmployeeId || 'anonymous')
@@ -287,8 +288,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     // ── Build response ────────────────────────────────────────────
 
-    return NextResponse.json({
-      data: {
+    return ok({
         summary: {
           totalRevenue: round(totalRevenue),
           totalSessions,
@@ -315,13 +315,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           dateRangeStart: startOfRange.toISOString(),
           dateRangeEnd: endOfRange.toISOString(),
         },
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to generate entertainment report:', error)
-    return NextResponse.json(
-      { error: 'Failed to generate entertainment report' },
-      { status: 500 }
-    )
+    return err('Failed to generate entertainment report', 500)
   }
 })

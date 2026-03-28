@@ -7,11 +7,12 @@
  * Uses getDbForVenue(slug) for tenant isolation (same as other public routes).
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { getDbForVenue } from '@/lib/db'
 import { CouponValidateSchema } from '@/lib/site-api-schemas'
 import { checkOnlineRateLimit } from '@/lib/online-rate-limiter'
 import { getClientIp } from '@/lib/get-client-ip'
+import { err, ok } from '@/lib/api-response'
 
 export async function POST(request: NextRequest) {
   const ip = getClientIp(request)
@@ -19,10 +20,7 @@ export async function POST(request: NextRequest) {
   // Rate limit: reuse 'menu' bucket (30/min) — validation is lightweight
   const rateCheck = checkOnlineRateLimit(ip, 'coupon-validate', 'menu')
   if (!rateCheck.allowed) {
-    return NextResponse.json(
-      { error: 'Too many requests. Please try again shortly.' },
-      { status: 429 }
-    )
+    return err('Too many requests. Please try again shortly.', 429)
   }
 
   let parsed
@@ -30,7 +28,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     parsed = CouponValidateSchema.parse(body)
   } catch {
-    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
+    return err('Invalid request body')
   }
 
   const { code, slug, subtotal, customerId } = parsed
@@ -40,7 +38,7 @@ export async function POST(request: NextRequest) {
     try {
       venueDb = await getDbForVenue(slug)
     } catch {
-      return NextResponse.json({ valid: false, reason: 'Location not found' })
+      return ok({ valid: false, reason: 'Location not found' })
     }
 
     // Find the location for this venue
@@ -49,7 +47,7 @@ export async function POST(request: NextRequest) {
       select: { id: true },
     })
     if (!location) {
-      return NextResponse.json({ valid: false, reason: 'Location not found' })
+      return ok({ valid: false, reason: 'Location not found' })
     }
     const locationId = location.id
 
@@ -78,26 +76,26 @@ export async function POST(request: NextRequest) {
     })
 
     if (!coupon) {
-      return NextResponse.json({ valid: false, reason: 'Coupon not found' })
+      return ok({ valid: false, reason: 'Coupon not found' })
     }
 
     // Validate: active
     if (!coupon.isActive) {
-      return NextResponse.json({ valid: false, reason: 'This coupon is no longer active' })
+      return ok({ valid: false, reason: 'This coupon is no longer active' })
     }
 
     // Validate: date range
     const now = new Date()
     if (coupon.validFrom && now < coupon.validFrom) {
-      return NextResponse.json({ valid: false, reason: 'This coupon is not yet valid' })
+      return ok({ valid: false, reason: 'This coupon is not yet valid' })
     }
     if (coupon.validUntil && now > coupon.validUntil) {
-      return NextResponse.json({ valid: false, reason: 'This coupon has expired' })
+      return ok({ valid: false, reason: 'This coupon has expired' })
     }
 
     // Validate: global usage limit
     if (coupon.usageLimit != null && coupon.usageCount >= coupon.usageLimit) {
-      return NextResponse.json({ valid: false, reason: 'This coupon has reached its usage limit' })
+      return ok({ valid: false, reason: 'This coupon has reached its usage limit' })
     }
 
     // Validate: per-customer limit
@@ -110,13 +108,13 @@ export async function POST(request: NextRequest) {
         },
       })
       if (customerUsageCount >= coupon.perCustomerLimit) {
-        return NextResponse.json({ valid: false, reason: 'You have already used this coupon the maximum number of times' })
+        return ok({ valid: false, reason: 'You have already used this coupon the maximum number of times' })
       }
     }
 
     // Validate: minimum order
     if (coupon.minimumOrder != null && subtotal < Number(coupon.minimumOrder)) {
-      return NextResponse.json({
+      return ok({
         valid: false,
         reason: `Minimum order of $${Number(coupon.minimumOrder).toFixed(2)} required`,
       })
@@ -128,7 +126,7 @@ export async function POST(request: NextRequest) {
     const maxDiscount = coupon.maximumDiscount != null ? Number(coupon.maximumDiscount) : null
 
     if (discountType === 'free_item') {
-      return NextResponse.json({
+      return ok({
         valid: true,
         discount: 0,
         discountType: 'free_item',
@@ -154,7 +152,7 @@ export async function POST(request: NextRequest) {
     // Round to 2 decimal places
     discount = Math.round(discount * 100) / 100
 
-    return NextResponse.json({
+    return ok({
       valid: true,
       discount,
       discountType,
@@ -162,9 +160,6 @@ export async function POST(request: NextRequest) {
     })
   } catch (error) {
     console.error('[POST /api/public/coupons/validate] Error:', error)
-    return NextResponse.json(
-      { error: 'Failed to validate coupon' },
-      { status: 500 }
-    )
+    return err('Failed to validate coupon', 500)
   }
 }

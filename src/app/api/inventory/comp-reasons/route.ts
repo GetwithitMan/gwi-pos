@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, ok } from '@/lib/api-response'
 
 // GET - List comp reasons
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -13,7 +14,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const activeOnly = searchParams.get('activeOnly') !== 'false'
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID required' }, { status: 400 })
+      return err('Location ID required')
     }
 
     const where: Record<string, unknown> = {
@@ -28,10 +29,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orderBy: { sortOrder: 'asc' },
     })
 
-    return NextResponse.json({ data: { compReasons } })
+    return ok({ compReasons })
   } catch (error) {
     console.error('Comp reasons list error:', error)
-    return NextResponse.json({ error: 'Failed to fetch comp reasons' }, { status: 500 })
+    return err('Failed to fetch comp reasons', 500)
   }
 })
 
@@ -49,9 +50,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     } = body
 
     if (!locationId || !name) {
-      return NextResponse.json({
-        error: 'Location ID and name required',
-      }, { status: 400 })
+      return err('Location ID and name required')
     }
 
     // Get max sort order if not provided
@@ -79,12 +78,12 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     void notifyDataChanged({ locationId, domain: 'reasons', action: 'created', entityId: compReason.id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { compReason } })
+    return ok({ compReason })
   } catch (error) {
     console.error('Create comp reason error:', error)
     if ((error as { code?: string }).code === 'P2002') {
-      return NextResponse.json({ error: 'Comp reason with this name already exists' }, { status: 400 })
+      return err('Comp reason with this name already exists')
     }
-    return NextResponse.json({ error: 'Failed to create comp reason' }, { status: 500 })
+    return err('Failed to create comp reason', 500)
   }
 }))

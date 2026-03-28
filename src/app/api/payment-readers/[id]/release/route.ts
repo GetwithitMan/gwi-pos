@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { releaseLease } from '@/lib/domain/payment-readers/listener-service'
+import { err, forbidden, notFound, ok } from '@/lib/api-response'
 
 // DELETE /api/payment-readers/[id]/release
 //
@@ -22,19 +23,13 @@ export const DELETE = withVenue(async function DELETE(
     const { terminalId, sessionId, reason } = body
 
     if (!terminalId || !sessionId) {
-      return NextResponse.json(
-        { error: 'Missing required fields: terminalId, sessionId' },
-        { status: 400 }
-      )
+      return err('Missing required fields: terminalId, sessionId')
     }
 
     // Validate reason if provided
     const validReasons = ['manual_cancel', 'logout', 'unmount', 'navigation']
     if (reason && !validReasons.includes(reason)) {
-      return NextResponse.json(
-        { error: `Invalid reason. Must be one of: ${validReasons.join(', ')}` },
-        { status: 400 }
-      )
+      return err(`Invalid reason. Must be one of: ${validReasons.join(', ')}`)
     }
 
     // Validate reader exists
@@ -43,7 +38,7 @@ export const DELETE = withVenue(async function DELETE(
       select: { id: true, locationId: true, leaseSessionId: true },
     })
     if (!reader) {
-      return NextResponse.json({ error: 'Payment reader not found' }, { status: 404 })
+      return notFound('Payment reader not found')
     }
 
     // Validate sessionId matches — reject if wrong session tries to release
@@ -60,15 +55,15 @@ export const DELETE = withVenue(async function DELETE(
       select: { id: true },
     })
     if (!terminal) {
-      return NextResponse.json({ error: 'Terminal not found or does not belong to this location' }, { status: 403 })
+      return forbidden('Terminal not found or does not belong to this location')
     }
 
     // Release lease
     await releaseLease(readerId, sessionId, reason || 'manual_cancel')
 
-    return NextResponse.json({ data: { ok: true } })
+    return ok({ ok: true })
   } catch (error) {
     console.error('Failed to release reader lease:', error)
-    return NextResponse.json({ error: 'Failed to release reader lease' }, { status: 500 })
+    return err('Failed to release reader lease', 500)
   }
 })

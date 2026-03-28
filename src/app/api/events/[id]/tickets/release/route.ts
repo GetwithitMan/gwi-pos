@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // POST - Release held tickets
 export const POST = withVenue(withAuth(async function POST(
@@ -15,10 +16,7 @@ export const POST = withVenue(withAuth(async function POST(
     const { ticketIds, sessionId } = body
 
     if (!ticketIds || ticketIds.length === 0) {
-      return NextResponse.json(
-        { error: 'Ticket IDs are required' },
-        { status: 400 }
-      )
+      return err('Ticket IDs are required')
     }
 
     // Find tickets
@@ -31,10 +29,7 @@ export const POST = withVenue(withAuth(async function POST(
     })
 
     if (tickets.length === 0) {
-      return NextResponse.json(
-        { error: 'No held tickets found' },
-        { status: 404 }
-      )
+      return notFound('No held tickets found')
     }
 
     // If sessionId provided, only release tickets held by that session
@@ -43,10 +38,7 @@ export const POST = withVenue(withAuth(async function POST(
       : tickets
 
     if (ticketsToRelease.length === 0) {
-      return NextResponse.json(
-        { error: 'No tickets to release for this session' },
-        { status: 404 }
-      )
+      return notFound('No tickets to release for this session')
     }
 
     // Soft delete the held tickets (they were never sold)
@@ -60,18 +52,15 @@ export const POST = withVenue(withAuth(async function POST(
 
     pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       releasedCount: result.count,
       releasedTicketIds: ticketsToRelease.map(t => t.id),
       message: `${result.count} ticket(s) released successfully`,
-    } })
+    })
   } catch (error) {
     console.error('Failed to release tickets:', error)
-    return NextResponse.json(
-      { error: 'Failed to release tickets' },
-      { status: 500 }
-    )
+    return err('Failed to release tickets', 500)
   }
 }))
 
@@ -104,18 +93,15 @@ export const DELETE = withVenue(withAuth(async function DELETE(
 
     pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       releasedCount: result.count,
       message: expiredOnly
         ? `${result.count} expired hold(s) released`
         : `${result.count} held ticket(s) released`,
-    } })
+    })
   } catch (error) {
     console.error('Failed to release tickets:', error)
-    return NextResponse.json(
-      { error: 'Failed to release tickets' },
-      { status: 500 }
-    )
+    return err('Failed to release tickets', 500)
   }
 }))

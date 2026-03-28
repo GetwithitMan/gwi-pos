@@ -16,6 +16,7 @@ import { isInOutageMode } from '@/lib/sync/upstream-sync-worker'
 import { pushUpstream, queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
 import { getRequestLocationId } from '@/lib/request-context'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-adjust-tip')
 
 export const PATCH = withVenue(withAuth({ allowCellular: true }, async function PATCH(
@@ -32,17 +33,11 @@ export const PATCH = withVenue(withAuth({ allowCellular: true }, async function 
 
     // Validate inputs
     if (!paymentId || newTipAmount === undefined || !reason || !managerId) {
-      return NextResponse.json(
-        { error: 'Missing required fields' },
-        { status: 400 }
-      )
+      return err('Missing required fields')
     }
 
     if (newTipAmount < 0) {
-      return NextResponse.json(
-        { error: 'Tip amount cannot be negative' },
-        { status: 400 }
-      )
+      return err('Tip amount cannot be negative')
     }
 
     // Fast path: locationId from auth context or request context. Fallback: bootstrap from DB.
@@ -57,10 +52,7 @@ export const PATCH = withVenue(withAuth({ allowCellular: true }, async function 
       })
 
       if (!orderCheck) {
-        return NextResponse.json(
-          { error: 'Order not found' },
-          { status: 404 }
-        )
+        return notFound('Order not found')
       }
       locationId = orderCheck.locationId
     }
@@ -70,7 +62,7 @@ export const PATCH = withVenue(withAuth({ allowCellular: true }, async function 
     // The caller must be authenticated (withAuth above ensures this).
     const authResult = await requirePermission(managerId, locationId, PERMISSIONS.TIPS_PERFORM_ADJUSTMENTS)
     if (!authResult.authorized) {
-      return NextResponse.json({ error: authResult.error }, { status: authResult.status ?? 403 })
+      return err(authResult.error, authResult.status ?? 403)
     }
 
     // Interactive transaction: FOR UPDATE on Payment row prevents concurrent tip adjustments
@@ -183,7 +175,7 @@ export const PATCH = withVenue(withAuth({ allowCellular: true }, async function 
 
     // Handle early-return errors from inside the transaction
     if ('error' in txResult) {
-      return NextResponse.json({ error: txResult.error }, { status: txResult.status })
+      return err(txResult.error, txResult.status)
     }
 
     const { order, payment, updatedPayment, oldTipAmount, newTotalAmount, newOrderTipTotal, newOrderTotal } = txResult
@@ -383,8 +375,7 @@ export const PATCH = withVenue(withAuth({ allowCellular: true }, async function 
       },
     })
 
-    return NextResponse.json({
-      data: {
+    return ok({
         payment: {
           id: updatedPayment.id,
           tipAmount: Number(updatedPayment.tipAmount),
@@ -392,13 +383,9 @@ export const PATCH = withVenue(withAuth({ allowCellular: true }, async function 
         },
         oldTipAmount,
         newTipAmount,
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to adjust tip:', error)
-    return NextResponse.json(
-      { error: 'Failed to adjust tip' },
-      { status: 500 }
-    )
+    return err('Failed to adjust tip', 500)
   }
 }))

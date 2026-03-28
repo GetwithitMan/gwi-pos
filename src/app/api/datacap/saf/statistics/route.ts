@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { requireDatacapClient, validateReader, datacapErrorResponse } from '@/lib/datacap/helpers'
 import { withVenue } from '@/lib/with-venue'
+import { err, ok } from '@/lib/api-response'
 
 /**
  * GET /api/datacap/saf/statistics?locationId=...&readerId=...
@@ -14,7 +15,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const readerId = searchParams.get('readerId')
 
     if (!locationId || !readerId) {
-      return Response.json({ error: 'Missing required params: locationId, readerId' }, { status: 400 })
+      return err('Missing required params: locationId, readerId')
     }
 
     await validateReader(readerId, locationId)
@@ -22,15 +23,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     const response = await client.safStatistics(readerId)
 
-    return Response.json({
-      data: {
+    return ok({
         success: response.cmdStatus === 'Success',
         safCount: parseInt(response.safCount || '0', 10),
         safAmount: parseFloat(response.safAmount || '0'),
         hasPending: parseInt(response.safCount || '0', 10) > 0,
         sequenceNo: response.sequenceNo,
-      },
-    })
+      })
   } catch (err) {
     return datacapErrorResponse(err)
   }

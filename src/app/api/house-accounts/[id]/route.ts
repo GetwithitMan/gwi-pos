@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - Get a single house account
 export const GET = withVenue(async function GET(
@@ -23,10 +24,10 @@ export const GET = withVenue(async function GET(
     })
 
     if (!account) {
-      return NextResponse.json({ error: 'Account not found' }, { status: 404 })
+      return notFound('Account not found')
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       account: {
         ...account,
         creditLimit: Number(account.creditLimit),
@@ -36,10 +37,10 @@ export const GET = withVenue(async function GET(
           amount: Number(t.amount),
         })),
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch account:', error)
-    return NextResponse.json({ error: 'Failed to fetch account' }, { status: 500 })
+    return err('Failed to fetch account', 500)
   }
 })
 
@@ -57,7 +58,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
       where: { id, ...(locationId ? { locationId } : {}) },
     })
     if (!existing) {
-      return NextResponse.json({ error: 'Account not found' }, { status: 404 })
+      return notFound('Account not found')
     }
 
     const account = await db.houseAccount.update({
@@ -80,12 +81,12 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     void notifyDataChanged({ locationId: existing.locationId, domain: 'house-accounts', action: 'updated', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       account: { ...account, creditLimit: Number(account.creditLimit), currentBalance: Number(account.currentBalance) },
-    } })
+    })
   } catch (error) {
     console.error('Failed to update account:', error)
-    return NextResponse.json({ error: 'Failed to update account' }, { status: 500 })
+    return err('Failed to update account', 500)
   }
 }))
 
@@ -104,15 +105,12 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     })
 
     if (!account) {
-      return NextResponse.json({ error: 'Account not found' }, { status: 404 })
+      return notFound('Account not found')
     }
 
     // Check for outstanding balance
     if (Number(account.currentBalance) !== 0) {
-      return NextResponse.json(
-        { error: 'Cannot delete account with outstanding balance' },
-        { status: 409 }
-      )
+      return err('Cannot delete account with outstanding balance', 409)
     }
 
     // If has transactions, close instead of delete
@@ -123,15 +121,15 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
       })
       void notifyDataChanged({ locationId: account.locationId, domain: 'house-accounts', action: 'deleted', entityId: id })
       void pushUpstream()
-      return NextResponse.json({ data: { success: true, message: 'Account closed (has transaction history)' } })
+      return ok({ success: true, message: 'Account closed (has transaction history)' })
     }
 
     await db.houseAccount.update({ where: { id }, data: { deletedAt: new Date(), lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local' } })
     void notifyDataChanged({ locationId: account.locationId, domain: 'house-accounts', action: 'deleted', entityId: id })
     void pushUpstream()
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Failed to delete account:', error)
-    return NextResponse.json({ error: 'Failed to delete account' }, { status: 500 })
+    return err('Failed to delete account', 500)
   }
 }))

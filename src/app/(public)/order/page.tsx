@@ -37,6 +37,8 @@ interface DatacapTokenResponse {
 
 // ─── Menu Data Types ──────────────────────────────────────────────────────────
 
+import type { MenuItem as BaseMenuItem } from '@/types'
+
 interface ModifierOption {
   id: string
   name: string
@@ -53,12 +55,7 @@ interface ModifierGroup {
   options: ModifierOption[]
 }
 
-interface MenuItem {
-  id: string
-  name: string
-  description: string | null
-  price: number
-  imageUrl: string | null
+type MenuItem = Pick<BaseMenuItem, 'id' | 'name' | 'description' | 'price' | 'imageUrl'> & {
   stockStatus: 'in_stock' | 'low_stock' | 'out_of_stock'
   modifierGroups: ModifierGroup[]
 }

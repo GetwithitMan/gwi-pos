@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { parseSettings } from '@/lib/settings'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
@@ -10,6 +10,7 @@ import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { OrderRepository } from '@/lib/repositories'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-auto-increment')
 
 // POST - Check if tab needs auto-increment and fire IncrementalAuth if so
@@ -43,7 +44,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     })
 
     if (!order) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      return notFound('Order not found')
     }
 
     const settings = parseSettings(order.location.settings)
@@ -57,13 +58,13 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
 
     // Auto-increment disabled (unless forced by user)
     if (!autoIncrementEnabled && !force) {
-      return NextResponse.json({ data: { action: 'disabled', incremented: false } })
+      return ok({ action: 'disabled', incremented: false })
     }
 
     // No cards on tab
     const defaultCard = order.cards.find((c) => c.isDefault) || order.cards[0]
     if (!defaultCard) {
-      return NextResponse.json({ data: { action: 'no_card', incremented: false } })
+      return ok({ action: 'no_card', incremented: false })
     }
 
     // Calculate total authorized across all cards
@@ -78,28 +79,24 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
 
     // Not at threshold yet (skip check if forced — user explicitly clicked Re-Auth)
     if (!force && tabTotal < thresholdAmount) {
-      return NextResponse.json({
-        data: {
+      return ok({
           action: 'below_threshold',
           incremented: false,
           tabTotal,
           totalAuthorized,
           threshold: thresholdAmount,
-        },
-      })
+        })
     }
 
     // If tab total is already covered by current auth, nothing to increment
     if (tabTotal <= totalAuthorized && !force) {
-      return NextResponse.json({
-        data: {
+      return ok({
           action: 'below_threshold',
           incremented: false,
           tabTotal,
           totalAuthorized,
           threshold: thresholdAmount,
-        },
-      })
+        })
     }
 
     // Check max tab alert
@@ -159,16 +156,14 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
 
         pushUpstream()
 
-        return NextResponse.json({
-          data: {
+        return ok({
             action: 'incremented',
             incremented: true,
             additionalAmount: dynamicIncrement,
             newAuthorizedTotal: newAuthAmount,
             needsManagerAlert,
             tabTotal,
-          },
-        })
+          })
       } else {
         // Increment failed — persist flag so banner shows even after refresh
         console.warn(`[Tab Auto-Increment] DECLINED Order=${orderId} Card=...${defaultCard.cardLast4} +$${dynamicIncrement} Error=${error?.text || 'Unknown'}`)
@@ -186,8 +181,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
 
         pushUpstream()
 
-        return NextResponse.json({
-          data: {
+        return ok({
             action: 'increment_failed',
             incremented: false,
             tabTotal,
@@ -196,8 +190,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
             error: error
               ? { code: error.code, message: error.text, isRetryable: error.isRetryable }
               : null,
-          },
-        })
+          })
       }
     } catch (err) {
       // PAYMENT-SAFETY: Ambiguous state — IncrementalAuth may have succeeded on the processor
@@ -218,17 +211,15 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
         error: err instanceof Error ? err.message : String(err),
         timestamp: new Date().toISOString(),
       })
-      return NextResponse.json({
-        data: {
+      return ok({
           action: 'error',
           incremented: false,
           needsManagerAlert,
           error: err instanceof Error ? err.message : 'Increment failed',
-        },
-      })
+        })
     }
   } catch (error) {
     console.error('Failed to auto-increment:', error)
-    return NextResponse.json({ error: 'Failed to auto-increment' }, { status: 500 })
+    return err('Failed to auto-increment', 500)
   }
 }))

@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - Get single inventory count with items
 export const GET = withVenue(async function GET(
@@ -40,10 +41,10 @@ export const GET = withVenue(async function GET(
     })
 
     if (!count || count.deletedAt) {
-      return NextResponse.json({ error: 'Inventory count not found' }, { status: 404 })
+      return notFound('Inventory count not found')
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       count: {
         ...count,
         varianceValue: count.varianceValue ? Number(count.varianceValue) : null,
@@ -61,10 +62,10 @@ export const GET = withVenue(async function GET(
           },
         })),
       },
-    } })
+    })
   } catch (error) {
     console.error('Get inventory count error:', error)
-    return NextResponse.json({ error: 'Failed to fetch inventory count' }, { status: 500 })
+    return err('Failed to fetch inventory count', 500)
   }
 })
 
@@ -83,7 +84,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     })
 
     if (!existing || existing.deletedAt) {
-      return NextResponse.json({ error: 'Inventory count not found' }, { status: 404 })
+      return notFound('Inventory count not found')
     }
 
     // Handle item count updates
@@ -176,7 +177,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
 
     if (body.status === 'reviewed' && existing.status === 'completed') {
       if (!body.reviewedById) {
-        return NextResponse.json({ error: 'Reviewer ID required' }, { status: 400 })
+        return err('Reviewer ID required')
       }
 
       // Apply counts to inventory — wrapped in interactive transaction
@@ -256,17 +257,17 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     void notifyDataChanged({ locationId: existing.locationId, domain: 'inventory', action: 'updated', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       count: {
         ...count,
         varianceValue: count.varianceValue ? Number(count.varianceValue) : null,
         expectedValue: count.expectedValue ? Number(count.expectedValue) : null,
         countedValue: count.countedValue ? Number(count.countedValue) : null,
       },
-    } })
+    })
   } catch (error) {
     console.error('Update inventory count error:', error)
-    return NextResponse.json({ error: 'Failed to update inventory count' }, { status: 500 })
+    return err('Failed to update inventory count', 500)
   }
 }))
 
@@ -283,13 +284,11 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     })
 
     if (!existing || existing.deletedAt) {
-      return NextResponse.json({ error: 'Inventory count not found' }, { status: 404 })
+      return notFound('Inventory count not found')
     }
 
     if ((existing.status as string) === 'approved') {
-      return NextResponse.json({
-        error: 'Cannot delete approved inventory count',
-      }, { status: 400 })
+      return err('Cannot delete approved inventory count')
     }
 
     await db.inventoryCount.update({
@@ -300,9 +299,9 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     void notifyDataChanged({ locationId: existing.locationId, domain: 'inventory', action: 'deleted', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Delete inventory count error:', error)
-    return NextResponse.json({ error: 'Failed to delete inventory count' }, { status: 500 })
+    return err('Failed to delete inventory count', 500)
   }
 }))

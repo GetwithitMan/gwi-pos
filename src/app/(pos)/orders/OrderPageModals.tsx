@@ -12,9 +12,9 @@ import { ShiftStartModal } from '@/components/shifts/ShiftStartModal'
 import { useAuthStore } from '@/stores/auth-store'
 import { useEntertainmentUiStore } from '@/stores/entertainment-ui-store'
 import { useOrderStore } from '@/stores/order-store'
-import type { OrderItem, MenuItem, PizzaOrderConfig, PizzaSpecialty, SelectedModifier } from '@/types'
+import { useOrderPageStore } from '@/stores/order-page-store'
+import type { OrderItem, SelectedModifier } from '@/types'
 import type { PrepaidPackage } from '@/lib/entertainment-pricing'
-import type { ComboTemplate } from '@/hooks/useComboBuilder'
 
 const PaymentModal = lazy(() => import('@/components/payment/PaymentModal').then(m => ({ default: m.PaymentModal })))
 const DiscountModal = lazy(() => import('@/components/orders/DiscountModal').then(m => ({ default: m.DiscountModal })))
@@ -34,8 +34,13 @@ const CardFirstTabFlow = lazy(() => import('@/components/tabs/CardFirstTabFlow')
 const TabNamePromptModal = lazy(() => import('@/components/tabs/TabNamePromptModal').then(m => ({ default: m.TabNamePromptModal })))
 const ComboStepFlow = lazy(() => import('@/components/modifiers/ComboStepFlow').then(m => ({ default: m.ComboStepFlow })))
 
+/**
+ * OrderPageModalsProps — dramatically reduced from ~120 props to ~35.
+ * All modal open/close state + modal data now lives in useOrderPageStore.
+ * Only callbacks, settings, refs, and data from parent hooks remain as props.
+ */
 export interface OrderPageModalsProps {
-  // Employee
+  // Employee (needed by many child modals)
   employee: {
     id: string
     displayName?: string
@@ -46,39 +51,21 @@ export interface OrderPageModalsProps {
     availableRoles?: { isPrimary: boolean; cashHandlingMode?: string }[]
   }
   permissionsArray: string[]
+  savedOrderId: string | null
 
-  // Display settings
-  showDisplaySettings: boolean
-  onCloseDisplaySettings: () => void
+  // Display settings (settings data from hooks)
   displaySettings: any
   onUpdateSetting: any
   onBatchUpdateSettings: (settings: Record<string, any>) => void
 
-  // Tabs panel / Open Orders
-  showTabsPanel: boolean
-  setShowTabsPanel: (v: boolean) => void
-  isTabManagerExpanded: boolean
-  setIsTabManagerExpanded: (v: boolean) => void
-  tabsRefreshTrigger: number
-  setTabsRefreshTrigger: React.Dispatch<React.SetStateAction<number>>
-  savedOrderId: string | null
+  // Open Orders callbacks
   onSelectOpenOrder: (order: OpenOrder) => void
   onViewOpenOrder: (order: OpenOrder) => void
   onNewTab: () => void
   onClosedOrderAction: () => void
-  onOpenTipAdjustment: () => void
   onViewReceipt: (orderId: string) => void
 
-  // Modifier modal
-  showModifierModal: boolean
-  setShowModifierModal: (v: boolean) => void
-  selectedItem: MenuItem | null
-  setSelectedItem: (v: MenuItem | null) => void
-  itemModifierGroups: any[]
-  setItemModifierGroups: (v: any[]) => void
-  loadingModifiers: boolean
-  editingOrderItem: any | null
-  setEditingOrderItem: (v: any | null) => void
+  // Modifier callbacks + settings
   dualPricing: any
   inlineModifierCallbackRef: React.MutableRefObject<((...args: any[]) => void) | null>
   onAddItemWithModifiers: (modifiers: SelectedModifier[], specialNotes?: string, pourSize?: string, pourMultiplier?: number, ingredientModifications?: any[], pourCustomPrice?: number | null) => void
@@ -86,61 +73,24 @@ export interface OrderPageModalsProps {
   quickPreModifiers?: string[]
   quickPreModifiersEnabled?: boolean
 
-  // Pizza builder
-  showPizzaModal: boolean
-  setShowPizzaModal: (v: boolean) => void
-  selectedPizzaItem: MenuItem | null
-  setSelectedPizzaItem: (v: MenuItem | null) => void
-  selectedPizzaSpecialty: PizzaSpecialty | null
-  setSelectedPizzaSpecialty: (v: PizzaSpecialty | null) => void
-  editingPizzaItem: { id: string; pizzaConfig?: PizzaOrderConfig } | null
-  setEditingPizzaItem: (v: { id: string; pizzaConfig?: PizzaOrderConfig } | null) => void
-  inlinePizzaCallbackRef: React.MutableRefObject<((config: PizzaOrderConfig) => void) | null>
-  onAddPizzaToOrder: (config: PizzaOrderConfig) => void
+  // Pizza callback + ref
+  inlinePizzaCallbackRef: React.MutableRefObject<((config: any) => void) | null>
+  onAddPizzaToOrder: (config: any) => void
 
-  // Combo builder
-  showComboModal: boolean
-  setShowComboModal: (v: boolean) => void
-  selectedComboItem: MenuItem | null
-  setSelectedComboItem: (v: MenuItem | null) => void
-  comboTemplate: ComboTemplate | null
-  setComboTemplate: (v: ComboTemplate | null) => void
-  onComboConfirm: (selections: Record<string, Record<string, string[]>>) => void
+  // Combo callback + ref
   inlineComboCallbackRef?: React.MutableRefObject<((modifiers: { id: string; name: string; price: number; depth?: number }[]) => void) | null>
+  onComboConfirm: (selections: Record<string, Record<string, string[]>>) => void
 
-  // Entertainment
-  showEntertainmentStart: boolean
-  setShowEntertainmentStart: (v: boolean) => void
-  entertainmentItem: {
-    id: string
-    name: string
-    ratePerMinute?: number
-    prepaidPackages?: PrepaidPackage[]
-    happyHourEnabled?: boolean
-    happyHourPrice?: number | null
-  } | null
-  setEntertainmentItem: (v: any | null) => void
+  // Entertainment callbacks
   onStartEntertainmentWithCurrentOrder: (pkg?: PrepaidPackage) => Promise<void>
   onStartEntertainmentWithNewTab: (tabName: string, pkg?: PrepaidPackage) => Promise<void>
   onStartEntertainmentWithExistingTab: (orderId: string, pkg?: PrepaidPackage) => Promise<void>
 
-  // Timed rental
-  showTimedRentalModal: boolean
-  setShowTimedRentalModal: (v: boolean) => void
-  selectedTimedItem: MenuItem | null
-  setSelectedTimedItem: (v: MenuItem | null) => void
+  // Timed rental callback + ref
   inlineTimedRentalCallbackRef: React.MutableRefObject<((price: number, blockMinutes: number) => void) | null>
   onStartTimedSession: (rateType?: 'per15Min' | 'per30Min' | 'perHour') => Promise<void>
-  loadingSession: boolean
 
-  // Payment modal
-  showPaymentModal: boolean
-  setShowPaymentModal: (v: boolean) => void
-  orderToPayId: string | null
-  setOrderToPayId: (v: string | null) => void
-  initialPayMethod: 'cash' | 'credit' | undefined
-  setInitialPayMethod: (v: 'cash' | 'credit' | undefined) => void
-  paymentTabCards: any[]
+  // Payment settings + callbacks
   onTabCardsChanged: () => void
   paymentSettings: any
   priceRounding: any
@@ -150,72 +100,29 @@ export interface OrderPageModalsProps {
   orderReadyPromiseRef: React.MutableRefObject<Promise<string | null> | null>
   terminalId: string
 
-  // Receipt modal
-  showReceiptModal: boolean
-  setShowReceiptModal: (v: boolean) => void
-  receiptOrderId: string | null
-  setReceiptOrderId: (v: string | null) => void
-  preloadedReceiptData: any
-  setPreloadedReceiptData: (v: any) => void
+  // Receipt settings
   receiptSettings: any
   setPaidOrderId: (v: string | null) => void
 
-  // Tip adjustment
-  showTipAdjustment: boolean
-  setShowTipAdjustment: (v: boolean) => void
-
-  // Card-first tab flow
-  showCardTabFlow: boolean
-  setShowCardTabFlow: (v: boolean) => void
-  cardTabOrderId: string | null
+  // Card tab callbacks
   onCardTabComplete: (result: any) => Promise<void>
   onCardTabCancel: () => void
 
-  // Discount modal
-  showDiscountModal: boolean
-  setShowDiscountModal: (v: boolean) => void
-  appliedDiscounts: any[]
+  // Discount callback
   onDiscountApplied: (newTotals: { subtotal?: number; discountTotal: number; taxTotal: number; total: number }) => void
-  itemDiscountTargetId?: string | null
 
-  // Comp/Void modal
-  showCompVoidModal: boolean
-  setShowCompVoidModal: (v: boolean) => void
-  compVoidItem: any | null
-  setCompVoidItem: (v: any | null) => void
+  // Comp/Void callback
   onCompVoidComplete: (result: any) => Promise<void>
 
-  // Resend modal
-  resendModal: { itemId: string; itemName: string } | null
-  setResendModal: (v: { itemId: string; itemName: string } | null) => void
-  resendNote: string
-  setResendNote: (v: string) => void
-  resendLoading: boolean
+  // Resend callback
   onConfirmResend: () => Promise<void>
 
-  // Item Transfer modal
-  showItemTransferModal: boolean
-  setShowItemTransferModal: (v: boolean) => void
+  // Transfer callback
   onTransferComplete: (transferredItemIds: string[]) => Promise<void>
 
-  // Tab/Order Transfer modal
-  showTabTransferModal: boolean
-  setShowTabTransferModal: (v: boolean) => void
-
-  // Split Check Screen
-  showSplitTicketManager: boolean
-  setShowSplitTicketManager: (v: boolean) => void
-  splitManageMode: boolean
-  setSplitManageMode: (v: boolean) => void
-  splitParentId: string | null
+  // Split callbacks
   splitCheckItems: { id: string; seatNumber?: number | null; name: string; price: number; quantity: number; categoryType?: string | null; sentToKitchen?: boolean; isPaid: boolean }[]
   setFloorPlanRefreshTrigger: React.Dispatch<React.SetStateAction<number>>
-  splitParentToReturnTo: string | null
-  setSplitParentToReturnTo: (v: string | null) => void
-  payAllSplitsQueue: string[]
-  setPayAllSplitsQueue: React.Dispatch<React.SetStateAction<string[]>>
-  editingChildSplit: boolean
-  setEditingChildSplit: (v: boolean) => void
   setSavedOrderId: (v: string | null) => void
   clearOrder: () => void
   setOrderSent: (v: boolean) => void
@@ -225,44 +132,14 @@ export interface OrderPageModalsProps {
   onAddCard: (splitId: string) => void
   onAddItems: (splitId: string) => Promise<void>
 
-  // Note edit modal (useActiveOrder)
+  // Note edit (from useActiveOrder)
   noteEditTarget: { itemId: string; currentNote?: string; itemName?: string } | null
   closeNoteEditor: () => void
   saveNote: (itemId: string, note: string) => Promise<void>
 
-  // Pay All Splits Confirmation
-  showPayAllSplitsConfirm: boolean
-  setShowPayAllSplitsConfirm: (v: boolean) => void
-  payAllSplitsParentId: string | null
-  setPayAllSplitsParentId: (v: string | null) => void
-  payAllSplitsTotal: number
-  payAllSplitsCardTotal: number
-  setPayAllSplitsStep: (v: 'confirm' | 'datacap_card') => void
-  payAllSplitsProcessing: boolean
-  orderSplitChips: { id: string; label: string; isPaid: boolean; total: number }[]
+  // Pay All callbacks
   onPayAllCash: () => void
   onPayAllCard: (cardResult: any) => void
-
-  // Tab name prompt
-  showTabNamePrompt: boolean
-  setShowTabNamePrompt: (v: boolean) => void
-  tabNameCallback: (() => void) | null
-  setTabNameCallback: (v: (() => void) | null) => void
-  tabCardInfo: { cardholderName?: string; cardLast4?: string; cardType?: string } | null
-
-  // Time Clock
-  showTimeClockModal: boolean
-  setShowTimeClockModal: (v: boolean) => void
-  currentShift: any | null
-  setCurrentShift: (v: any | null) => void
-  setShowShiftCloseoutModal: (v: boolean) => void
-
-  // Shift Start
-  showShiftStartModal: boolean
-  setShowShiftStartModal: (v: boolean) => void
-
-  // Shift Closeout
-  showShiftCloseoutModal: boolean
 
   // Pricing info (for dual pricing in split modals)
   pricing: {
@@ -270,7 +147,7 @@ export interface OrderPageModalsProps {
     cashDiscountRate: number
   }
 
-  // Last Call batch tab close
+  // Last Call
   lastCallEnabled?: boolean
 }
 
@@ -278,78 +155,30 @@ export function OrderPageModals(props: OrderPageModalsProps) {
   const {
     employee,
     permissionsArray,
-    showDisplaySettings,
-    onCloseDisplaySettings,
+    savedOrderId,
     displaySettings,
     onUpdateSetting,
     onBatchUpdateSettings,
-    showTabsPanel,
-    setShowTabsPanel,
-    isTabManagerExpanded,
-    setIsTabManagerExpanded,
-    tabsRefreshTrigger,
-    setTabsRefreshTrigger,
-    savedOrderId,
     onSelectOpenOrder,
     onViewOpenOrder,
     onNewTab,
     onClosedOrderAction,
-    onOpenTipAdjustment,
     onViewReceipt,
-    showModifierModal,
-    setShowModifierModal,
-    selectedItem,
-    setSelectedItem,
-    itemModifierGroups,
-    setItemModifierGroups,
-    loadingModifiers,
-    editingOrderItem,
-    setEditingOrderItem,
     dualPricing,
     inlineModifierCallbackRef,
     onAddItemWithModifiers,
     onUpdateItemWithModifiers,
     quickPreModifiers,
     quickPreModifiersEnabled,
-    showPizzaModal,
-    setShowPizzaModal,
-    selectedPizzaItem,
-    setSelectedPizzaItem,
-    selectedPizzaSpecialty,
-    setSelectedPizzaSpecialty,
-    editingPizzaItem,
-    setEditingPizzaItem,
     inlinePizzaCallbackRef,
     onAddPizzaToOrder,
-    showComboModal,
-    setShowComboModal,
-    selectedComboItem,
-    setSelectedComboItem,
-    comboTemplate,
-    setComboTemplate,
-    onComboConfirm,
     inlineComboCallbackRef,
-    showEntertainmentStart,
-    setShowEntertainmentStart,
-    entertainmentItem,
-    setEntertainmentItem,
+    onComboConfirm,
     onStartEntertainmentWithCurrentOrder,
     onStartEntertainmentWithNewTab,
     onStartEntertainmentWithExistingTab,
-    showTimedRentalModal,
-    setShowTimedRentalModal,
-    selectedTimedItem,
-    setSelectedTimedItem,
     inlineTimedRentalCallbackRef,
     onStartTimedSession,
-    loadingSession,
-    showPaymentModal,
-    setShowPaymentModal,
-    orderToPayId,
-    setOrderToPayId,
-    initialPayMethod,
-    setInitialPayMethod,
-    paymentTabCards,
     onTabCardsChanged,
     paymentSettings,
     priceRounding,
@@ -358,55 +187,16 @@ export function OrderPageModals(props: OrderPageModalsProps) {
     onPaymentComplete,
     orderReadyPromiseRef,
     terminalId,
-    showReceiptModal,
-    setShowReceiptModal,
-    receiptOrderId,
-    setReceiptOrderId,
-    preloadedReceiptData,
-    setPreloadedReceiptData,
     receiptSettings,
     setPaidOrderId,
-    showTipAdjustment,
-    setShowTipAdjustment,
-    showCardTabFlow,
-    setShowCardTabFlow,
-    cardTabOrderId,
     onCardTabComplete,
     onCardTabCancel,
-    showDiscountModal,
-    setShowDiscountModal,
-    appliedDiscounts,
     onDiscountApplied,
-    itemDiscountTargetId,
-    showCompVoidModal,
-    setShowCompVoidModal,
-    compVoidItem,
-    setCompVoidItem,
     onCompVoidComplete,
-    resendModal,
-    setResendModal,
-    resendNote,
-    setResendNote,
-    resendLoading,
     onConfirmResend,
-    showItemTransferModal,
-    setShowItemTransferModal,
     onTransferComplete,
-    showTabTransferModal,
-    setShowTabTransferModal,
-    showSplitTicketManager,
-    setShowSplitTicketManager,
-    splitManageMode,
-    setSplitManageMode,
-    splitParentId,
     splitCheckItems,
     setFloorPlanRefreshTrigger,
-    splitParentToReturnTo,
-    setSplitParentToReturnTo,
-    payAllSplitsQueue,
-    setPayAllSplitsQueue,
-    editingChildSplit,
-    setEditingChildSplit,
     setSavedOrderId,
     clearOrder,
     setOrderSent,
@@ -418,38 +208,137 @@ export function OrderPageModals(props: OrderPageModalsProps) {
     noteEditTarget,
     closeNoteEditor,
     saveNote,
-    showPayAllSplitsConfirm,
-    setShowPayAllSplitsConfirm,
-    payAllSplitsParentId,
-    setPayAllSplitsParentId,
-    payAllSplitsTotal,
-    payAllSplitsCardTotal,
-    setPayAllSplitsStep,
-    payAllSplitsProcessing,
-    orderSplitChips,
     onPayAllCash,
     onPayAllCard,
-    showTabNamePrompt,
-    setShowTabNamePrompt,
-    tabNameCallback,
-    setTabNameCallback,
-    tabCardInfo,
-    showTimeClockModal,
-    setShowTimeClockModal,
-    currentShift,
-    setCurrentShift,
-    setShowShiftCloseoutModal,
-    showShiftStartModal,
-    setShowShiftStartModal,
-    showShiftCloseoutModal,
   } = props
+
+  // ── Read all modal state from the store (atomic selectors) ──
+  const showDisplaySettings = useOrderPageStore(s => s.showDisplaySettings)
+  const setShowDisplaySettings = useOrderPageStore(s => s.setShowDisplaySettings)
+
+  const showTabsPanel = useOrderPageStore(s => s.showTabsPanel)
+  const setShowTabsPanel = useOrderPageStore(s => s.setShowTabsPanel)
+  const isTabManagerExpanded = useOrderPageStore(s => s.isTabManagerExpanded)
+  const setIsTabManagerExpanded = useOrderPageStore(s => s.setIsTabManagerExpanded)
+  const tabsRefreshTrigger = useOrderPageStore(s => s.tabsRefreshTrigger)
+  const setShowTipAdjustment = useOrderPageStore(s => s.setShowTipAdjustment)
+  const showTipAdjustment = useOrderPageStore(s => s.showTipAdjustment)
+
+  const showModifierModal = useOrderPageStore(s => s.showModifierModal)
+  const selectedItem = useOrderPageStore(s => s.selectedItem)
+  const itemModifierGroups = useOrderPageStore(s => s.itemModifierGroups)
+  const loadingModifiers = useOrderPageStore(s => s.loadingModifiers)
+  const editingOrderItem = useOrderPageStore(s => s.editingOrderItem)
+  const closeModifierModal = useOrderPageStore(s => s.closeModifierModal)
+
+  const showPizzaModal = useOrderPageStore(s => s.showPizzaModal)
+  const selectedPizzaItem = useOrderPageStore(s => s.selectedPizzaItem)
+  const selectedPizzaSpecialty = useOrderPageStore(s => s.selectedPizzaSpecialty)
+  const editingPizzaItem = useOrderPageStore(s => s.editingPizzaItem)
+  const closePizzaModal = useOrderPageStore(s => s.closePizzaModal)
+
+  const showComboModal = useOrderPageStore(s => s.showComboModal)
+  const selectedComboItem = useOrderPageStore(s => s.selectedComboItem)
+  const comboTemplate = useOrderPageStore(s => s.comboTemplate)
+  const closeComboModal = useOrderPageStore(s => s.closeComboModal)
+
+  const showEntertainmentStart = useOrderPageStore(s => s.showEntertainmentStart)
+  const entertainmentItem = useOrderPageStore(s => s.entertainmentItem)
+  const setShowEntertainmentStart = useOrderPageStore(s => s.setShowEntertainmentStart)
+  const setEntertainmentItem = useOrderPageStore(s => s.setEntertainmentItem)
+
+  const showTimedRentalModal = useOrderPageStore(s => s.showTimedRentalModal)
+  const selectedTimedItem = useOrderPageStore(s => s.selectedTimedItem)
+  const loadingSession = useOrderPageStore(s => s.loadingSession)
+  const setShowTimedRentalModal = useOrderPageStore(s => s.setShowTimedRentalModal)
+  const setSelectedTimedItem = useOrderPageStore(s => s.setSelectedTimedItem)
+
+  const showPaymentModal = useOrderPageStore(s => s.showPaymentModal)
+  const orderToPayId = useOrderPageStore(s => s.orderToPayId)
+  const initialPayMethod = useOrderPageStore(s => s.initialPayMethod)
+  const paymentTabCards = useOrderPageStore(s => s.paymentTabCards)
+  const setShowPaymentModal = useOrderPageStore(s => s.setShowPaymentModal)
+  const setOrderToPayId = useOrderPageStore(s => s.setOrderToPayId)
+  const setInitialPayMethod = useOrderPageStore(s => s.setInitialPayMethod)
+
+  const showReceiptModal = useOrderPageStore(s => s.showReceiptModal)
+  const receiptOrderId = useOrderPageStore(s => s.receiptOrderId)
+  const preloadedReceiptData = useOrderPageStore(s => s.preloadedReceiptData)
+  const setShowReceiptModal = useOrderPageStore(s => s.setShowReceiptModal)
+  const setReceiptOrderId = useOrderPageStore(s => s.setReceiptOrderId)
+  const setPreloadedReceiptData = useOrderPageStore(s => s.setPreloadedReceiptData)
+
+  const showCardTabFlow = useOrderPageStore(s => s.showCardTabFlow)
+  const cardTabOrderId = useOrderPageStore(s => s.cardTabOrderId)
+  const setShowCardTabFlow = useOrderPageStore(s => s.setShowCardTabFlow)
+
+  const showDiscountModal = useOrderPageStore(s => s.showDiscountModal)
+  const appliedDiscounts = useOrderPageStore(s => s.appliedDiscounts)
+  const itemDiscountTargetId = useOrderPageStore(s => s.itemDiscountTargetId)
+  const setShowDiscountModal = useOrderPageStore(s => s.setShowDiscountModal)
+
+  const showCompVoidModal = useOrderPageStore(s => s.showCompVoidModal)
+  const compVoidItem = useOrderPageStore(s => s.compVoidItem)
+  const setShowCompVoidModal = useOrderPageStore(s => s.setShowCompVoidModal)
+  const setCompVoidItem = useOrderPageStore(s => s.setCompVoidItem)
+
+  const resendModal = useOrderPageStore(s => s.resendModal)
+  const resendNote = useOrderPageStore(s => s.resendNote)
+  const resendLoading = useOrderPageStore(s => s.resendLoading)
+  const setResendModal = useOrderPageStore(s => s.setResendModal)
+  const setResendNote = useOrderPageStore(s => s.setResendNote)
+
+  const showItemTransferModal = useOrderPageStore(s => s.showItemTransferModal)
+  const setShowItemTransferModal = useOrderPageStore(s => s.setShowItemTransferModal)
+
+  const showTabTransferModal = useOrderPageStore(s => s.showTabTransferModal)
+  const setShowTabTransferModal = useOrderPageStore(s => s.setShowTabTransferModal)
+
+  const showSplitTicketManager = useOrderPageStore(s => s.showSplitTicketManager)
+  const splitManageMode = useOrderPageStore(s => s.splitManageMode)
+  const splitParentId = useOrderPageStore(s => s.splitParentId)
+  const setShowSplitTicketManager = useOrderPageStore(s => s.setShowSplitTicketManager)
+  const setSplitManageMode = useOrderPageStore(s => s.setSplitManageMode)
+  const editingChildSplit = useOrderPageStore(s => s.editingChildSplit)
+  const setEditingChildSplit = useOrderPageStore(s => s.setEditingChildSplit)
+  const splitParentToReturnTo = useOrderPageStore(s => s.splitParentToReturnTo)
+  const setSplitParentToReturnTo = useOrderPageStore(s => s.setSplitParentToReturnTo)
+  const payAllSplitsQueue = useOrderPageStore(s => s.payAllSplitsQueue)
+  const setPayAllSplitsQueue = useOrderPageStore(s => s.setPayAllSplitsQueue)
+
+  const showPayAllSplitsConfirm = useOrderPageStore(s => s.showPayAllSplitsConfirm)
+  const payAllSplitsParentId = useOrderPageStore(s => s.payAllSplitsParentId)
+  const payAllSplitsTotal = useOrderPageStore(s => s.payAllSplitsTotal)
+  const payAllSplitsCardTotal = useOrderPageStore(s => s.payAllSplitsCardTotal)
+  const payAllSplitsProcessing = useOrderPageStore(s => s.payAllSplitsProcessing)
+  const orderSplitChips = useOrderPageStore(s => s.orderSplitChips)
+  const setShowPayAllSplitsConfirm = useOrderPageStore(s => s.setShowPayAllSplitsConfirm)
+  const setPayAllSplitsParentId = useOrderPageStore(s => s.setPayAllSplitsParentId)
+  const setPayAllSplitsStep = useOrderPageStore(s => s.setPayAllSplitsStep)
+
+  const showTabNamePrompt = useOrderPageStore(s => s.showTabNamePrompt)
+  const tabNameCallback = useOrderPageStore(s => s.tabNameCallback)
+  const tabCardInfo = useOrderPageStore(s => s.tabCardInfo)
+  const setShowTabNamePrompt = useOrderPageStore(s => s.setShowTabNamePrompt)
+  const setTabNameCallback = useOrderPageStore(s => s.setTabNameCallback)
+
+  const showTimeClockModal = useOrderPageStore(s => s.showTimeClockModal)
+  const setShowTimeClockModal = useOrderPageStore(s => s.setShowTimeClockModal)
+  const currentShift = useOrderPageStore(s => s.currentShift)
+  const setCurrentShift = useOrderPageStore(s => s.setCurrentShift)
+  const setShowShiftCloseoutModal = useOrderPageStore(s => s.setShowShiftCloseoutModal)
+  const showShiftStartModal = useOrderPageStore(s => s.showShiftStartModal)
+  const setShowShiftStartModal = useOrderPageStore(s => s.setShowShiftStartModal)
+  const showShiftCloseoutModal = useOrderPageStore(s => s.showShiftCloseoutModal)
+
+  const setTabsRefreshTrigger = useOrderPageStore(s => s.setTabsRefreshTrigger)
 
   return (
     <>
       {/* Display Settings Modal */}
       <POSDisplaySettingsModal
         isOpen={showDisplaySettings}
-        onClose={onCloseDisplaySettings}
+        onClose={() => setShowDisplaySettings(false)}
         settings={displaySettings}
         onUpdate={onUpdateSetting}
         onBatchUpdate={onBatchUpdateSettings}
@@ -477,7 +366,7 @@ export function OrderPageModals(props: OrderPageModalsProps) {
             onViewOrder={onViewOpenOrder}
             onNewTab={onNewTab}
             onClosedOrderAction={onClosedOrderAction}
-            onOpenTipAdjustment={onOpenTipAdjustment}
+            onOpenTipAdjustment={() => setShowTipAdjustment(true)}
             onViewReceipt={onViewReceipt}
             lastCallEnabled={props.lastCallEnabled}
           />
@@ -499,10 +388,7 @@ export function OrderPageModals(props: OrderPageModalsProps) {
             quickPreModifiersEnabled={quickPreModifiersEnabled}
             onConfirm={editingOrderItem && !inlineModifierCallbackRef.current ? onUpdateItemWithModifiers : onAddItemWithModifiers}
             onCancel={() => {
-              setShowModifierModal(false)
-              setSelectedItem(null)
-              setItemModifierGroups([])
-              setEditingOrderItem(null)
+              closeModifierModal()
               inlineModifierCallbackRef.current = null
             }}
           />
@@ -518,10 +404,7 @@ export function OrderPageModals(props: OrderPageModalsProps) {
             editingItem={editingPizzaItem}
             onConfirm={onAddPizzaToOrder}
             onCancel={() => {
-              setShowPizzaModal(false)
-              setSelectedPizzaItem(null)
-              setSelectedPizzaSpecialty(null)
-              setEditingPizzaItem(null)
+              closePizzaModal()
               inlinePizzaCallbackRef.current = null
             }}
           />
@@ -538,9 +421,7 @@ export function OrderPageModals(props: OrderPageModalsProps) {
               onComboConfirm(selections)
             }}
             onCancel={() => {
-              setShowComboModal(false)
-              setSelectedComboItem(null)
-              setComboTemplate(null)
+              closeComboModal()
               if (inlineComboCallbackRef) inlineComboCallbackRef.current = null
             }}
           />

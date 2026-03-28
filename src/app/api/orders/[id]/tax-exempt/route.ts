@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { calculateOrderTotals } from '@/lib/order-calculations'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
@@ -9,6 +9,7 @@ import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { roundToCents } from '@/lib/pricing'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-tax-exempt')
 
 /**
@@ -31,15 +32,15 @@ export const POST = withVenue(async function POST(
     const mutationOrigin = isCellularTaxExempt ? 'cloud' : 'local'
 
     if (!reason || reason.trim().length === 0) {
-      return NextResponse.json({ error: 'Tax exempt reason is required' }, { status: 400 })
+      return err('Tax exempt reason is required')
     }
 
     if (reason.length > 200) {
-      return NextResponse.json({ error: 'Reason cannot exceed 200 characters' }, { status: 400 })
+      return err('Reason cannot exceed 200 characters')
     }
 
     if (taxId && taxId.length > 50) {
-      return NextResponse.json({ error: 'Tax ID cannot exceed 50 characters' }, { status: 400 })
+      return err('Tax ID cannot exceed 50 characters')
     }
 
     // Wrap read-calculate-update in a transaction with FOR UPDATE to prevent lost updates
@@ -170,10 +171,10 @@ export const POST = withVenue(async function POST(
 
     // Handle transaction results
     if ('error' in updated) {
-      return NextResponse.json({ error: updated.error }, { status: updated.status })
+      return err(updated.error, updated.status)
     }
     if ('earlyReturn' in updated) {
-      return NextResponse.json({ data: { success: true, alreadyExempt: true } })
+      return ok({ success: true, alreadyExempt: true })
     }
 
     const { data: updatedOrder, locationId } = updated
@@ -199,8 +200,7 @@ export const POST = withVenue(async function POST(
     // Upstream sync
     pushUpstream()
 
-    return NextResponse.json({
-      data: {
+    return ok({
         success: true,
         isTaxExempt: true,
         taxExemptReason: updatedOrder.taxExemptReason,
@@ -208,11 +208,10 @@ export const POST = withVenue(async function POST(
         taxExemptSavedAmount: Number(updatedOrder.taxExemptSavedAmount),
         taxTotal: Number(updatedOrder.taxTotal),
         total: Number(updatedOrder.total),
-      },
-    })
+      })
   } catch (error) {
     console.error('Tax exempt POST error:', error)
-    return NextResponse.json({ error: 'Failed to set tax exemption' }, { status: 500 })
+    return err('Failed to set tax exemption', 500)
   }
 })
 
@@ -354,10 +353,10 @@ export const DELETE = withVenue(async function DELETE(
 
     // Handle transaction results
     if ('error' in deleteResult) {
-      return NextResponse.json({ error: deleteResult.error }, { status: deleteResult.status })
+      return err(deleteResult.error, deleteResult.status)
     }
     if ('earlyReturn' in deleteResult) {
-      return NextResponse.json({ data: { success: true, alreadyNotExempt: true } })
+      return ok({ success: true, alreadyNotExempt: true })
     }
 
     const { data: updated, locationId: delLocationId } = deleteResult
@@ -383,16 +382,14 @@ export const DELETE = withVenue(async function DELETE(
     // Upstream sync
     pushUpstream()
 
-    return NextResponse.json({
-      data: {
+    return ok({
         success: true,
         isTaxExempt: false,
         taxTotal: Number(updated.taxTotal),
         total: Number(updated.total),
-      },
-    })
+      })
   } catch (error) {
     console.error('Tax exempt DELETE error:', error)
-    return NextResponse.json({ error: 'Failed to remove tax exemption' }, { status: 500 })
+    return err('Failed to remove tax exemption', 500)
   }
 })

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
@@ -8,6 +8,7 @@ import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 import { writeDeliveryAuditLog } from '@/lib/delivery/state-machine'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { created, err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('delivery-driver-proof')
 
 export const dynamic = 'force-dynamic'
@@ -25,13 +26,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Auth check
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.DELIVERY_CREATE)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Feature gate — proof of delivery subfeature
     const featureGate = await requireDeliveryFeature(locationId, { subfeature: 'proofOfDeliveryProvisioned' })
@@ -42,16 +43,16 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Validation
     if (!deliveryOrderId || typeof deliveryOrderId !== 'string') {
-      return NextResponse.json({ error: 'deliveryOrderId is required' }, { status: 400 })
+      return err('deliveryOrderId is required')
     }
 
     const validTypes = ['photo', 'signature']
     if (!type || !validTypes.includes(type)) {
-      return NextResponse.json({ error: `type must be one of: ${validTypes.join(', ')}` }, { status: 400 })
+      return err(`type must be one of: ${validTypes.join(', ')}`)
     }
 
     if (!storageKey || typeof storageKey !== 'string' || storageKey.trim().length === 0) {
-      return NextResponse.json({ error: 'storageKey is required' }, { status: 400 })
+      return err('storageKey is required')
     }
 
     // Find driver for this employee
@@ -62,7 +63,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     `, actor.employeeId, locationId)
 
     if (!drivers.length) {
-      return NextResponse.json({ error: 'No driver profile found' }, { status: 404 })
+      return notFound('No driver profile found')
     }
 
     const driverId = drivers[0].id
@@ -80,10 +81,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     `, deliveryOrderId, locationId, driverId)
 
     if (!orderRows.length) {
-      return NextResponse.json(
-        { error: 'Order not found or not assigned to your active run' },
-        { status: 404 },
-      )
+      return notFound('Order not found or not assigned to your active run')
     }
 
     // Idempotency check
@@ -95,7 +93,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       `, idempotencyKey, locationId)
 
       if (existing.length) {
-        return NextResponse.json({ proof: existing[0], deduplicated: true })
+        return ok({ proof: existing[0], deduplicated: true })
       }
     }
 
@@ -106,10 +104,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       latNum = Number(lat)
       lngNum = Number(lng)
       if (isNaN(latNum) || latNum < -90 || latNum > 90) {
-        return NextResponse.json({ error: 'lat must be between -90 and 90' }, { status: 400 })
+        return err('lat must be between -90 and 90')
       }
       if (isNaN(lngNum) || lngNum < -180 || lngNum > 180) {
-        return NextResponse.json({ error: 'lng must be between -180 and 180' }, { status: 400 })
+        return err('lng must be between -180 and 180')
       }
     }
 
@@ -150,7 +148,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       newValue: { type, storageKey: storageKey.trim(), proofId: proof.id },
     }).catch(err => log.warn({ err }, 'Background task failed'))
 
-    return NextResponse.json({
+    return created({
       proof: {
         id: proof.id,
         deliveryOrderId: proof.deliveryOrderId,
@@ -161,9 +159,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         lng: proof.lng != null ? Number(proof.lng) : null,
         createdAt: proof.createdAt,
       },
-    }, { status: 201 })
+    })
   } catch (error) {
     console.error('[Delivery/Driver/Proof] POST error:', error)
-    return NextResponse.json({ error: 'Failed to upload proof of delivery' }, { status: 500 })
+    return err('Failed to upload proof of delivery', 500)
   }
 })

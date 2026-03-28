@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { getLocationSettings } from '@/lib/location-cache'
 import { mergeWithDefaults, DEFAULT_MENU_RESTORE_POINT_SETTINGS } from '@/lib/settings'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
+import { created, err, ok } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,7 +16,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const snapshots: any[] = await db.$queryRawUnsafe(`
@@ -25,10 +26,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       ORDER BY "createdAt" DESC
     `, locationId)
 
-    return NextResponse.json({ data: snapshots })
+    return ok(snapshots)
   } catch (error) {
     console.error('[MenuSnapshots] GET error:', error)
-    return NextResponse.json({ error: 'Failed to fetch snapshots' }, { status: 500 })
+    return err('Failed to fetch snapshots', 500)
   }
 })
 
@@ -40,7 +41,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const rawSettings = await getLocationSettings(locationId)
@@ -48,7 +49,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const restoreConfig = settings.menuRestorePoints ?? DEFAULT_MENU_RESTORE_POINT_SETTINGS
 
     if (!restoreConfig.enabled) {
-      return NextResponse.json({ error: 'Menu restore points are not enabled' }, { status: 400 })
+      return err('Menu restore points are not enabled')
     }
 
     // Auth check — manager level
@@ -59,7 +60,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     if (actor.employeeId && actor.locationId) {
       const authResult = await requirePermission(actor.employeeId, actor.locationId, 'manage_menu')
       if (!authResult.authorized) {
-        return NextResponse.json({ error: authResult.error }, { status: authResult.status })
+        return err(authResult.error, authResult.status)
       }
       employeeName = authResult.employee.displayName || `${authResult.employee.firstName} ${authResult.employee.lastName}`
       employeeId = authResult.employee.id
@@ -104,10 +105,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       JSON.stringify(snapshotData)
     )
 
-    return NextResponse.json({ data: inserted[0] }, { status: 201 })
+    return created(inserted[0])
   } catch (error) {
     console.error('[MenuSnapshots] POST error:', error)
-    return NextResponse.json({ error: 'Failed to create snapshot' }, { status: 500 })
+    return err('Failed to create snapshot', 500)
   }
 })
 

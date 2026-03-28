@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { err, ok } from '@/lib/api-response'
 
 /**
  * Resolve allowed reasons/discounts for an employee.
@@ -80,13 +81,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const reasonType = searchParams.get('reasonType') as 'void_reason' | 'comp_reason' | 'discount' | null
 
     if (!locationId || !employeeId || !reasonType) {
-      return NextResponse.json({
-        error: 'locationId, employeeId, and reasonType are required',
-      }, { status: 400 })
+      return err('locationId, employeeId, and reasonType are required')
     }
 
     if (!['void_reason', 'comp_reason', 'discount'].includes(reasonType)) {
-      return NextResponse.json({ error: 'reasonType must be "void_reason", "comp_reason", or "discount"' }, { status: 400 })
+      return err('reasonType must be "void_reason", "comp_reason", or "discount"')
     }
 
     const { ids, hasRules } = await resolveAllowedReasonIds(locationId, employeeId, reasonType)
@@ -98,19 +97,19 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           where: { locationId, isActive: true, deletedAt: null },
           orderBy: { sortOrder: 'asc' },
         })
-        return NextResponse.json({ data: { reasons: all, filtered: false } })
+        return ok({ reasons: all, filtered: false })
       } else if (reasonType === 'comp_reason') {
         const all = await db.compReason.findMany({
           where: { locationId, isActive: true, deletedAt: null },
           orderBy: { sortOrder: 'asc' },
         })
-        return NextResponse.json({ data: { reasons: all, filtered: false } })
+        return ok({ reasons: all, filtered: false })
       } else {
         const all = await db.discountRule.findMany({
           where: { locationId, isActive: true },
           orderBy: [{ priority: 'desc' }, { name: 'asc' }],
         })
-        return NextResponse.json({ data: { reasons: all, filtered: false } })
+        return ok({ reasons: all, filtered: false })
       }
     }
 
@@ -120,22 +119,22 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         where: { id: { in: ids }, isActive: true, deletedAt: null },
         orderBy: { sortOrder: 'asc' },
       })
-      return NextResponse.json({ data: { reasons, filtered: true } })
+      return ok({ reasons, filtered: true })
     } else if (reasonType === 'comp_reason') {
       const reasons = await db.compReason.findMany({
         where: { id: { in: ids }, isActive: true, deletedAt: null },
         orderBy: { sortOrder: 'asc' },
       })
-      return NextResponse.json({ data: { reasons, filtered: true } })
+      return ok({ reasons, filtered: true })
     } else {
       const reasons = await db.discountRule.findMany({
         where: { id: { in: ids }, isActive: true },
         orderBy: [{ priority: 'desc' }, { name: 'asc' }],
       })
-      return NextResponse.json({ data: { reasons, filtered: true } })
+      return ok({ reasons, filtered: true })
     }
   } catch (error) {
     console.error('Allowed reasons error:', error)
-    return NextResponse.json({ error: 'Failed to fetch allowed reasons' }, { status: 500 })
+    return err('Failed to fetch allowed reasons', 500)
   }
 })

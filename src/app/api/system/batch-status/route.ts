@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { withVenue } from '@/lib/with-venue'
 import { db } from '@/lib/db'
+import { ok } from '@/lib/api-response'
 
 /**
  * GET /api/system/batch-status
@@ -56,23 +57,19 @@ export const GET = withVenue(async () => {
       _sum: { amount: true },
     })
 
-    return NextResponse.json({
-      data: {
+    return ok({
         openOrderCount,
         unadjustedTipCount,
         currentBatchTotal: Number(batchAgg._sum.amount ?? 0),
         lastBatchClosedAt: lastBatchClosedAt?.toISOString() ?? null,
-      },
-    })
+      })
   } catch (e) {
     console.error('[batch-status]', e)
-    return NextResponse.json({
-      data: {
+    return ok({
         openOrderCount: null,
         unadjustedTipCount: null,
         currentBatchTotal: null,
         lastBatchClosedAt: null,
-      },
-    })
+      })
   }
 })

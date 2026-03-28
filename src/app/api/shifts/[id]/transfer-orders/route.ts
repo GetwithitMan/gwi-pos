@@ -5,7 +5,7 @@
  * Used when an employee wants to hand off their section before closing their shift.
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requireAnyPermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -17,6 +17,7 @@ import { OPEN_ORDER_STATUSES } from '@/lib/domain/order-status'
 import type { OrderStatus } from '@/generated/prisma/client'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('shifts-transfer-orders')
 
 interface BulkTransferPayload {
@@ -34,17 +35,11 @@ export const POST = withVenue(async function POST(
     const { toEmployeeId, requestingEmployeeId } = body
 
     if (!toEmployeeId) {
-      return NextResponse.json(
-        { error: 'toEmployeeId is required' },
-        { status: 400 }
-      )
+      return err('toEmployeeId is required')
     }
 
     if (!requestingEmployeeId) {
-      return NextResponse.json(
-        { error: 'requestingEmployeeId is required' },
-        { status: 400 }
-      )
+      return err('requestingEmployeeId is required')
     }
 
     // ── Fetch the shift ─────────────────────────────────────────────────
@@ -62,17 +57,11 @@ export const POST = withVenue(async function POST(
     })
 
     if (!shift) {
-      return NextResponse.json(
-        { error: 'Shift not found' },
-        { status: 404 }
-      )
+      return notFound('Shift not found')
     }
 
     if (shift.status === 'closed') {
-      return NextResponse.json(
-        { error: 'Shift is already closed' },
-        { status: 400 }
-      )
+      return err('Shift is already closed')
     }
 
     // ── Auth: own shift needs SHIFT_CLOSE equivalent, other shift needs manager ──
@@ -83,7 +72,7 @@ export const POST = withVenue(async function POST(
 
     const auth = await requireAnyPermission(requestingEmployeeId, shift.locationId, requiredPerms)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // ── Validate destination employee ───────────────────────────────────
@@ -103,18 +92,12 @@ export const POST = withVenue(async function POST(
     })
 
     if (!toEmployee) {
-      return NextResponse.json(
-        { error: 'Destination employee not found or inactive' },
-        { status: 404 }
-      )
+      return notFound('Destination employee not found or inactive')
     }
 
     // ── Self-transfer guard ─────────────────────────────────────────────
     if (shift.employeeId === toEmployeeId) {
-      return NextResponse.json(
-        { error: 'Cannot transfer orders to the same employee' },
-        { status: 400 }
-      )
+      return err('Cannot transfer orders to the same employee')
     }
 
     // ── Validate destination employee has an open shift ──────────────────
@@ -128,10 +111,7 @@ export const POST = withVenue(async function POST(
     })
 
     if (!toShift) {
-      return NextResponse.json(
-        { error: 'Destination employee does not have an open shift' },
-        { status: 400 }
-      )
+      return err('Destination employee does not have an open shift')
     }
 
     // ── Bulk transfer in a transaction ──────────────────────────────────
@@ -228,8 +208,7 @@ export const POST = withVenue(async function POST(
     const toName = toEmployee.displayName ||
       `${toEmployee.firstName} ${toEmployee.lastName}`
 
-    return NextResponse.json({
-      data: {
+    return ok({
         success: true,
         transferred: result.transferred,
         fromEmployee: { id: shift.employeeId, name: fromName },
@@ -240,13 +219,9 @@ export const POST = withVenue(async function POST(
           tabName: o.tabName,
           status: o.status,
         })),
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to bulk transfer orders:', error)
-    return NextResponse.json(
-      { error: 'Failed to transfer orders' },
-      { status: 500 }
-    )
+    return err('Failed to transfer orders', 500)
   }
 })

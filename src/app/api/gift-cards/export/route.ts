@@ -13,6 +13,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth, type AuthenticatedContext } from '@/lib/api-auth-middleware'
+import { err } from '@/lib/api-response'
 
 function escapeCSV(value: string | null | undefined): string {
   if (value == null) return ''
@@ -41,17 +42,11 @@ export const GET = withVenue(withAuth('CUSTOMERS_GIFT_CARDS', async function GET
     const dateTo = searchParams.get('dateTo')
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'locationId is required' },
-        { status: 400 }
-      )
+      return err('locationId is required')
     }
 
     if (type !== 'cards' && type !== 'transactions') {
-      return NextResponse.json(
-        { error: 'type must be "cards" or "transactions"' },
-        { status: 400 }
-      )
+      return err('type must be "cards" or "transactions"')
     }
 
     const dateFilter: Record<string, Date> = {}
@@ -143,9 +138,6 @@ export const GET = withVenue(withAuth('CUSTOMERS_GIFT_CARDS', async function GET
     }
   } catch (error) {
     console.error('Failed to export gift cards:', error)
-    return NextResponse.json(
-      { error: 'Failed to export gift cards' },
-      { status: 500 }
-    )
+    return err('Failed to export gift cards', 500)
   }
 }))

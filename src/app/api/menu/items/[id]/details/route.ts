@@ -4,6 +4,7 @@ import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { err, notFound, ok } from '@/lib/api-response'
 
 /**
  * GET /api/menu/items/[id]/details
@@ -17,7 +18,7 @@ export const GET = withVenue(async function GET(
     const { id } = await params
     const locationId = request.nextUrl.searchParams.get('locationId') || await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     const actor = await getActorFromRequest(request)
@@ -80,7 +81,7 @@ export const GET = withVenue(async function GET(
     })
 
     if (!item) {
-      return NextResponse.json({ error: 'Item not found' }, { status: 404 })
+      return notFound('Item not found')
     }
 
     // Derive 86'd status from ingredients
@@ -88,8 +89,7 @@ export const GET = withVenue(async function GET(
       (mi) => mi.ingredient?.is86d === true
     )
 
-    return NextResponse.json({
-      data: {
+    return ok({
         id: item.id,
         name: item.name,
         description: item.description,
@@ -120,10 +120,9 @@ export const GET = withVenue(async function GET(
           isIncluded: mi.isIncluded,
           is86d: mi.ingredient?.is86d ?? false,
         })),
-      },
-    })
+      })
   } catch (error) {
     console.error('[menu/items/[id]/details] Error:', error)
-    return NextResponse.json({ error: 'Failed to fetch item details' }, { status: 500 })
+    return err('Failed to fetch item details', 500)
   }
 })

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
@@ -9,6 +9,7 @@ import { writeDeliveryAuditLog } from '@/lib/delivery/state-machine'
 import { dispatchRunEvent } from '@/lib/delivery/dispatch-events'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok } from '@/lib/api-response'
 const log = createChildLogger('delivery-runs-reorder')
 
 export const dynamic = 'force-dynamic'
@@ -28,13 +29,13 @@ export const POST = withVenue(async function POST(
     const { id } = await params
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Auth check
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.DELIVERY_DISPATCH)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Feature gate
     const featureGate = await requireDeliveryFeature(locationId)
@@ -44,25 +45,19 @@ export const POST = withVenue(async function POST(
     const { orderSequence } = body
 
     if (!Array.isArray(orderSequence) || orderSequence.length === 0) {
-      return NextResponse.json(
-        { error: 'orderSequence must be a non-empty array of {orderId, sequence}' },
-        { status: 400 }
-      )
+      return err('orderSequence must be a non-empty array of {orderId, sequence}')
     }
 
     // Validate sequences are unique positive integers starting from 1
     const sequences = orderSequence.map((s: any) => s.sequence)
     const uniqueSequences = new Set(sequences)
     if (uniqueSequences.size !== sequences.length) {
-      return NextResponse.json({ error: 'Duplicate sequence numbers' }, { status: 400 })
+      return err('Duplicate sequence numbers')
     }
     const sorted = [...sequences].sort((a, b) => a - b)
     for (let i = 0; i < sorted.length; i++) {
       if (sorted[i] !== i + 1) {
-        return NextResponse.json(
-          { error: 'Sequences must be consecutive integers starting from 1' },
-          { status: 400 }
-        )
+        return err('Sequences must be consecutive integers starting from 1')
       }
     }
 
@@ -208,7 +203,7 @@ export const POST = withVenue(async function POST(
     // Fire socket events
     void dispatchRunEvent(locationId, 'delivery:run_created', result.run).catch(err => log.warn({ err }, 'Background task failed'))
 
-    return NextResponse.json({
+    return ok({
       run: result.run,
       message: 'Stop order updated',
     })
@@ -222,8 +217,8 @@ export const POST = withVenue(async function POST(
       message.includes('Cannot reorder') ||
       message.includes('Expected')
     ) {
-      return NextResponse.json({ error: message }, { status: 400 })
+      return err(message)
     }
-    return NextResponse.json({ error: 'Failed to reorder stops' }, { status: 500 })
+    return err('Failed to reorder stops', 500)
   }
 })

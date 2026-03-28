@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
@@ -9,6 +9,7 @@ import { emitToLocation } from '@/lib/socket-server'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok } from '@/lib/api-response'
 
 const log = createChildLogger('liquor.categories')
 
@@ -25,10 +26,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
     // Get the location
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'No location found' },
-        { status: 400 }
-      )
+      return err('No location found')
     }
 
     const categories = await db.spiritCategory.findMany({
@@ -65,8 +63,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
       orderBy: { sortOrder: 'asc' },
     })
 
-    return NextResponse.json(
-      categories.map((category) => ({
+    return ok(categories.map((category) => ({
         id: category.id,
         name: category.name,
         categoryType: category.categoryType,
@@ -84,14 +81,10 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
             pourCost: b.pourCost ? Number(b.pourCost) : null,
           })),
         }),
-      }))
-    )
+      })))
   } catch (error) {
     console.error('Failed to fetch spirit categories:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch spirit categories' },
-      { status: 500 }
-    )
+    return err('Failed to fetch spirit categories', 500)
   }
 }))
 
@@ -105,24 +98,18 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     const { name, displayName, description, categoryType } = body
 
     if (!name?.trim()) {
-      return NextResponse.json(
-        { error: 'Name is required' },
-        { status: 400 }
-      )
+      return err('Name is required')
     }
 
     // Get the location
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'No location found' },
-        { status: 400 }
-      )
+      return err('No location found')
     }
 
     const auth = await requirePermission(body.employeeId || null, locationId, PERMISSIONS.MENU_EDIT_ITEMS)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Get max sort order
@@ -147,7 +134,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     void notifyDataChanged({ locationId, domain: 'liquor', action: 'created', entityId: category.id })
     void pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       id: category.id,
       name: category.name,
       categoryType: category.categoryType,
@@ -159,12 +146,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       modifierGroupCount: 0,
       createdAt: category.createdAt,
       updatedAt: category.updatedAt,
-    } })
+    })
   } catch (error) {
     console.error('Failed to create spirit category:', error)
-    return NextResponse.json(
-      { error: 'Failed to create spirit category' },
-      { status: 500 }
-    )
+    return err('Failed to create spirit category', 500)
   }
 }))

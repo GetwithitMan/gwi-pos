@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { evaluateAutoDiscounts } from '@/lib/auto-discount-engine'
@@ -15,6 +15,7 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-auto-discounts')
 
 /**
@@ -38,10 +39,7 @@ export const POST = withVenue(async function POST(
     })
 
     if (!order) {
-      return NextResponse.json(
-        { error: 'Order not found' },
-        { status: 404 }
-      )
+      return notFound('Order not found')
     }
 
     const locationId = order.locationId
@@ -49,13 +47,10 @@ export const POST = withVenue(async function POST(
     // Permission check: POS_ACCESS required to trigger auto-discount evaluation
     const actor = await getActorFromRequest(request)
     const autoDiscountAuth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.POS_ACCESS)
-    if (!autoDiscountAuth.authorized) return NextResponse.json({ error: autoDiscountAuth.error }, { status: autoDiscountAuth.status })
+    if (!autoDiscountAuth.authorized) return err(autoDiscountAuth.error, autoDiscountAuth.status)
 
     if (order.status !== 'open' && order.status !== 'draft' && order.status !== 'in_progress') {
-      return NextResponse.json(
-        { error: 'Cannot evaluate discounts on a closed order' },
-        { status: 400 }
-      )
+      return err('Cannot evaluate discounts on a closed order')
     }
 
     const result = await evaluateAutoDiscounts(orderId, locationId)
@@ -110,20 +105,15 @@ export const POST = withVenue(async function POST(
       pushUpstream()
     }
 
-    return NextResponse.json({
-      data: {
+    return ok({
         applied: result.applied,
         removed: result.removed,
         appliedCount: result.applied.length,
         removedCount: result.removed.length,
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to evaluate auto-discounts:', error)
-    return NextResponse.json(
-      { error: 'Failed to evaluate auto-discounts' },
-      { status: 500 }
-    )
+    return err('Failed to evaluate auto-discounts', 500)
   }
 })
 
@@ -150,10 +140,7 @@ export const GET = withVenue(async function GET(
       })
 
       if (!order) {
-        return NextResponse.json(
-          { error: 'Order not found' },
-          { status: 404 }
-        )
+        return notFound('Order not found')
       }
       orderLocationId = order.locationId
     }
@@ -181,8 +168,7 @@ export const GET = withVenue(async function GET(
       orderBy: { createdAt: 'asc' },
     })
 
-    return NextResponse.json({
-      data: {
+    return ok({
         discounts: autoDiscounts.map(d => ({
           id: d.id,
           name: d.name,
@@ -201,13 +187,9 @@ export const GET = withVenue(async function GET(
           createdAt: d.createdAt.toISOString(),
         })),
         count: autoDiscounts.length,
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to fetch auto-discounts:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch auto-discounts' },
-      { status: 500 }
-    )
+    return err('Failed to fetch auto-discounts', 500)
   }
 })

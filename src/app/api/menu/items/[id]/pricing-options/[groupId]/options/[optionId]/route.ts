@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { invalidateMenuCache } from '@/lib/menu-cache'
@@ -8,6 +8,7 @@ import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 
 const log = createChildLogger('menu.items.id.pricing-options.groupId.options.optionId')
 
@@ -23,10 +24,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
 
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'No location found' },
-        { status: 400 }
-      )
+      return err('No location found')
     }
 
     // Verify option belongs to this group, item, and location
@@ -41,10 +39,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
       select: { id: true },
     })
     if (!existing) {
-      return NextResponse.json(
-        { error: 'Pricing option not found' },
-        { status: 404 }
-      )
+      return notFound('Pricing option not found')
     }
 
     // If label is changing, remove any soft-deleted option with the same label (unique constraint includes deleted)
@@ -87,8 +82,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     void notifyDataChanged({ locationId, domain: 'pricing', action: 'updated', entityId: optionId })
     void pushUpstream()
 
-    return NextResponse.json({
-      data: {
+    return ok({
         option: {
           id: updated.id,
           groupId: updated.groupId,
@@ -100,14 +94,10 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
           showOnPos: updated.showOnPos,
           color: updated.color,
         },
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to update pricing option:', error)
-    return NextResponse.json(
-      { error: 'Failed to update pricing option' },
-      { status: 500 }
-    )
+    return err('Failed to update pricing option', 500)
   }
 }))
 
@@ -121,10 +111,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
 
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'No location found' },
-        { status: 400 }
-      )
+      return err('No location found')
     }
 
     // Verify option belongs to this group, item, and location
@@ -139,10 +126,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
       select: { id: true },
     })
     if (!existing) {
-      return NextResponse.json(
-        { error: 'Pricing option not found' },
-        { status: 404 }
-      )
+      return notFound('Pricing option not found')
     }
 
     await db.pricingOption.update({
@@ -162,12 +146,9 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     void notifyDataChanged({ locationId, domain: 'pricing', action: 'deleted', entityId: optionId })
     void pushUpstream()
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Failed to delete pricing option:', error)
-    return NextResponse.json(
-      { error: 'Failed to delete pricing option' },
-      { status: 500 }
-    )
+    return err('Failed to delete pricing option', 500)
   }
 }))

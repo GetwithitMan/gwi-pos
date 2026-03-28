@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { Prisma } from '@/generated/prisma/client'
 import { withVenue } from '@/lib/with-venue'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { err, ok } from '@/lib/api-response'
 // TODO: Migrate to OrderRepository once it supports complex findMany with cursor pagination,
 // search filters, multi-field includes, orderBy mapping, and tip-status post-filtering
 
@@ -23,16 +24,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const tipStatus = searchParams.get('tipStatus') || 'all'
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'Location ID is required' },
-        { status: 400 }
-      )
+      return err('Location ID is required')
     }
 
     // Auth check — require POS access to view closed orders
     const requestingEmployeeId = request.headers.get('x-employee-id') || searchParams.get('requestingEmployeeId')
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.POS_ACCESS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Date range: default to today if no dateFrom/dateTo provided
     let dateStart: Date
@@ -212,19 +210,16 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     const nextCursor = hasMore ? resultOrders[resultOrders.length - 1].id : null
 
-    return NextResponse.json({ data: {
+    return ok({
       orders: mappedOrders,
       pagination: {
         hasMore,
         nextCursor,
         limit,
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch closed orders:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch closed orders' },
-      { status: 500 }
-    )
+    return err('Failed to fetch closed orders', 500)
   }
 })

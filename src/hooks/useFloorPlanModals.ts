@@ -1,30 +1,5 @@
 import { useState, useCallback } from 'react'
-
-interface MenuItem {
-  id: string
-  name: string
-  price: number
-  description?: string
-  categoryId: string
-  categoryType?: string
-  hasModifiers?: boolean
-  isPizza?: boolean
-  itemType?: string
-  entertainmentStatus?: 'available' | 'in_use' | 'maintenance' | 'reserved' | null
-  blockTimeMinutes?: number | null
-  modifierGroupCount?: number
-  timedPricing?: {
-    per15Min?: number
-    per30Min?: number
-    perHour?: number
-    minimum?: number
-  }
-  stockStatus?: 'ok' | 'low' | 'critical' | 'out'
-  stockCount?: number | null
-  stockIngredientName?: string | null
-  is86d?: boolean
-  reasons86d?: string[]
-}
+import type { MenuItemFloorPlan as MenuItem } from '@/types'
 
 interface CompVoidItem {
   id: string

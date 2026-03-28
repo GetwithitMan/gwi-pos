@@ -1,16 +1,17 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, ok } from '@/lib/api-response'
 
 // GET /api/pizza/sauces - Get all pizza sauces
 export const GET = withVenue(async function GET() {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const sauces = await db.pizzaSauce.findMany({
@@ -18,14 +19,14 @@ export const GET = withVenue(async function GET() {
       orderBy: { sortOrder: 'asc' }
     })
 
-    return NextResponse.json(sauces.map(sauce => ({
+    return ok(sauces.map(sauce => ({
       ...sauce,
       price: Number(sauce.price),
       extraPrice: Number(sauce.extraPrice),
     })))
   } catch (error) {
     console.error('Failed to get pizza sauces:', error)
-    return NextResponse.json({ error: 'Failed to get pizza sauces' }, { status: 500 })
+    return err('Failed to get pizza sauces', 500)
   }
 })
 
@@ -36,12 +37,12 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     const { name, displayName, description, price, allowLight, allowExtra, extraPrice, isDefault, ingredientId, inventoryItemId, usageQuantity, usageUnit } = body
 
     if (!name?.trim()) {
-      return NextResponse.json({ error: 'Name is required' }, { status: 400 })
+      return err('Name is required')
     }
 
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const maxSort = await db.pizzaSauce.aggregate({
@@ -77,13 +78,13 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     })
     pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       ...sauce,
       price: Number(sauce.price),
       extraPrice: Number(sauce.extraPrice),
-    } })
+    })
   } catch (error) {
     console.error('Failed to create pizza sauce:', error)
-    return NextResponse.json({ error: 'Failed to create pizza sauce' }, { status: 500 })
+    return err('Failed to create pizza sauce', 500)
   }
 }))

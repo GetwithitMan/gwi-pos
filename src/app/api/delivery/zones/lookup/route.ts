@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
+import { err, ok } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -92,13 +93,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Auth check
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.DELIVERY_VIEW)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Feature gate
     const featureGate = await requireDeliveryFeature(locationId)
@@ -108,10 +109,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const { address, city, state, zipCode, latitude, longitude } = body
 
     if (!address && !zipCode && latitude == null) {
-      return NextResponse.json(
-        { error: 'At least one of address, zipCode, or latitude/longitude is required' },
-        { status: 400 }
-      )
+      return err('At least one of address, zipCode, or latitude/longitude is required')
     }
 
     // Fetch all active, non-deleted zones ordered by sortOrder
@@ -122,7 +120,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     `, locationId)
 
     if (!zones.length) {
-      return NextResponse.json({ zone: null, matchType: null })
+      return ok({ zone: null, matchType: null })
     }
 
     const hasCoords = latitude != null && longitude != null
@@ -135,7 +133,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       if (zone.zoneType === 'polygon' && hasCoords && zone.polygonJson) {
         const ring = getPolygonRing(zone.polygonJson)
         if (ring && pointInPolygon(lat!, lng!, ring)) {
-          return NextResponse.json({
+          return ok({
             zone: enrichZone(zone),
             matchType: 'polygon',
           })
@@ -149,7 +147,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         const radiusMiles = Number(zone.radiusMiles)
         const distance = haversineDistance(lat!, lng!, centerLat, centerLng)
         if (distance <= radiusMiles) {
-          return NextResponse.json({
+          return ok({
             zone: enrichZone(zone),
             matchType: 'radius',
             distanceMiles: Math.round(distance * 100) / 100,
@@ -162,7 +160,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         const zips: string[] = Array.isArray(zone.zipCodes) ? zone.zipCodes : []
         const normalizedInput = zipCode.toString().trim()
         if (zips.some((z: string) => z.trim() === normalizedInput)) {
-          return NextResponse.json({
+          return ok({
             zone: enrichZone(zone),
             matchType: 'zipcode',
           })
@@ -171,10 +169,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // No match found
-    return NextResponse.json({ zone: null, matchType: null })
+    return ok({ zone: null, matchType: null })
   } catch (error) {
     console.error('[Delivery/Zones/Lookup] POST error:', error)
-    return NextResponse.json({ error: 'Failed to look up delivery zone' }, { status: 500 })
+    return err('Failed to look up delivery zone', 500)
   }
 })
 

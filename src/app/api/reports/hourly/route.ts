@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -7,6 +7,7 @@ import { parseSettings } from '@/lib/settings'
 import { getLocationSettings, getLocationTimezone } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
+import { err, ok } from '@/lib/api-response'
 
 // Hour label lookup: 0 → "12 AM", 1 → "1 AM", ..., 12 → "12 PM", 13 → "1 PM", etc.
 function hourLabel(hour: number): string {
@@ -53,7 +54,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       searchParams.get('requestingEmployeeId') || searchParams.get('employeeId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+      return err('Location ID is required')
     }
 
     const auth = await requirePermission(
@@ -62,7 +63,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       PERMISSIONS.REPORTS_SALES
     )
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Fetch location settings for business day boundaries
@@ -171,21 +172,16 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }))
     }
 
-    return NextResponse.json({
-      data: {
+    return ok({
         date: resolvedDate,
         hours,
         ...(compareDate !== undefined && { compareDate }),
         ...(compareHours !== undefined && { compareHours }),
         summary,
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to generate hourly sales report:', error)
-    return NextResponse.json(
-      { error: 'Failed to generate hourly sales report' },
-      { status: 500 }
-    )
+    return err('Failed to generate hourly sales report', 500)
   }
 })
 

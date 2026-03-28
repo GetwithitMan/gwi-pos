@@ -31,18 +31,8 @@ import { useOrderPanelCallbacks } from '@/hooks/useOrderPanelCallbacks'
 import { useOrderingEngine } from '@/hooks/useOrderingEngine'
 import { toast } from '@/stores/toast-store'
 import { hasPermission, PERMISSIONS } from '@/lib/auth-utils'
-import { useSplitTickets } from '@/hooks/useSplitTickets'
-import { useShiftManagement } from '@/hooks/useShiftManagement'
-import { useTimedRentals } from '@/hooks/useTimedRentals'
-import { useItemOperations } from '@/hooks/useItemOperations'
-import { usePaymentFlow } from '@/hooks/usePaymentFlow'
-import { useModifierModal } from '@/hooks/useModifierModal'
-import { useComboBuilder } from '@/hooks/useComboBuilder'
-import { useCardTabFlow } from '@/hooks/useCardTabFlow'
 import { useBarcodeScanner } from '@/hooks/useBarcodeScanner'
-import { useTabsPanel } from '@/hooks/useTabsPanel'
-import { usePizzaBuilder } from '@/hooks/usePizzaBuilder'
-import { useOrderPageModals } from './useOrderPageModals'
+import { useOrderPageStore } from '@/stores/order-page-store'
 import { OrderPageModals } from './OrderPageModals'
 import { WeightCaptureModal } from '@/components/scale/WeightCaptureModal'
 import { PricingOptionPicker } from '@/components/orders/PricingOptionPicker'
@@ -121,12 +111,121 @@ export default function OrdersPage() {
     permissionsArray.some(p => p.startsWith('reports.') || p.startsWith('settings.') || p.startsWith('tips.'))
 
   // ── Domain hooks (state groups) ──
-  const { showModifierModal, setShowModifierModal, selectedItem, setSelectedItem,
-    itemModifierGroups, setItemModifierGroups, loadingModifiers, setLoadingModifiers,
-    editingOrderItem, setEditingOrderItem } = useModifierModal()
+  // ── All modal + UI orchestration state from store ──
+  const store = useOrderPageStore
+  const setShowModifierModal = store(s => s.setShowModifierModal)
+  const setSelectedItem = store(s => s.setSelectedItem)
+  const setItemModifierGroups = store(s => s.setItemModifierGroups)
+  const setLoadingModifiers = store(s => s.setLoadingModifiers)
+  const setEditingOrderItem = store(s => s.setEditingOrderItem)
+  const setShowPizzaModal = store(s => s.setShowPizzaModal)
+  const setSelectedPizzaItem = store(s => s.setSelectedPizzaItem)
+  const setSelectedPizzaSpecialty = store(s => s.setSelectedPizzaSpecialty)
+  const setEditingPizzaItem = store(s => s.setEditingPizzaItem)
+  const setShowComboModal = store(s => s.setShowComboModal)
+  const setSelectedComboItem = store(s => s.setSelectedComboItem)
+  const setComboTemplate = store(s => s.setComboTemplate)
+  const setComboSelections = store(s => s.setComboSelections)
+  const setShowTimedRentalModal = store(s => s.setShowTimedRentalModal)
+  const setSelectedTimedItem = store(s => s.setSelectedTimedItem)
+  const setSelectedRateType = store(s => s.setSelectedRateType)
+  const setLoadingSession = store(s => s.setLoadingSession)
+  const setShowEntertainmentStart = store(s => s.setShowEntertainmentStart)
+  const setEntertainmentItem = store(s => s.setEntertainmentItem)
+  const setShowPaymentModal = store(s => s.setShowPaymentModal)
+  const setInitialPayMethod = store(s => s.setInitialPayMethod)
+  const setOrderToPayId = store(s => s.setOrderToPayId)
+  const setPaymentTabCards = store(s => s.setPaymentTabCards)
+  const setShowDiscountModal = store(s => s.setShowDiscountModal)
+  const setAppliedDiscounts = store(s => s.setAppliedDiscounts)
+  const setItemDiscountTargetId = store(s => s.setItemDiscountTargetId)
+  const setShowCompVoidModal = store(s => s.setShowCompVoidModal)
+  const setCompVoidItem = store(s => s.setCompVoidItem)
+  const setResendModal = store(s => s.setResendModal)
+  const setResendNote = store(s => s.setResendNote)
+  const setResendLoading = store(s => s.setResendLoading)
+  const setShowReceiptModal = store(s => s.setShowReceiptModal)
+  const setReceiptOrderId = store(s => s.setReceiptOrderId)
+  const setPreloadedReceiptData = store(s => s.setPreloadedReceiptData)
+  const setShowDisplaySettings = store(s => s.setShowDisplaySettings)
+  const setShowTabNamePrompt = store(s => s.setShowTabNamePrompt)
+  const setTabNameCallback = store(s => s.setTabNameCallback)
+  const setShowItemTransferModal = store(s => s.setShowItemTransferModal)
+  const setShowTabTransferModal = store(s => s.setShowTabTransferModal)
+  const setEditingNotesItemId = store(s => s.setEditingNotesItemId)
+  const setEditingNotesText = store(s => s.setEditingNotesText)
+  const setShowSplitTicketManager = store(s => s.setShowSplitTicketManager)
+  const setSplitManageMode = store(s => s.setSplitManageMode)
+  const setEditingChildSplit = store(s => s.setEditingChildSplit)
+  const setSplitParentToReturnTo = store(s => s.setSplitParentToReturnTo)
+  const setPayAllSplitsQueue = store(s => s.setPayAllSplitsQueue)
+  const setShowPayAllSplitsConfirm = store(s => s.setShowPayAllSplitsConfirm)
+  const setPayAllSplitsTotal = store(s => s.setPayAllSplitsTotal)
+  const setPayAllSplitsCardTotal = store(s => s.setPayAllSplitsCardTotal)
+  const setPayAllSplitsParentId = store(s => s.setPayAllSplitsParentId)
+  const setPayAllSplitsProcessing = store(s => s.setPayAllSplitsProcessing)
+  const setPayAllSplitsStep = store(s => s.setPayAllSplitsStep)
+  const setOrderSplitChips = store(s => s.setOrderSplitChips)
+  const setSplitParentId = store(s => s.setSplitParentId)
+  const setSplitChipsFlashing = store(s => s.setSplitChipsFlashing)
+  const setShowTabsPanel = store(s => s.setShowTabsPanel)
+  const setIsTabManagerExpanded = store(s => s.setIsTabManagerExpanded)
+  const setShowTipAdjustment = store(s => s.setShowTipAdjustment)
+  const setTabsRefreshTrigger = store(s => s.setTabsRefreshTrigger)
+  const setShowTimeClockModal = store(s => s.setShowTimeClockModal)
+  const setCurrentShift = store(s => s.setCurrentShift)
+  const setShowShiftStartModal = store(s => s.setShowShiftStartModal)
+  const setShowShiftCloseoutModal = store(s => s.setShowShiftCloseoutModal)
+  const setShowCardTabFlow = store(s => s.setShowCardTabFlow)
+  const setCardTabOrderId = store(s => s.setCardTabOrderId)
+  const setTabCardInfo = store(s => s.setTabCardInfo)
+  const setShowWeightModal = store(s => s.setShowWeightModal)
+  const setWeightCaptureItem = store(s => s.setWeightCaptureItem)
+  const setPricingPickerItem = store(s => s.setPricingPickerItem)
+  const setShowAgeVerification = store(s => s.setShowAgeVerification)
+  const setAgeVerificationItem = store(s => s.setAgeVerificationItem)
+  const setAgeVerificationCallback = store(s => s.setAgeVerificationCallback)
+  const setAllergenNotice = store(s => s.setAllergenNotice)
 
-  const { showPizzaModal, setShowPizzaModal, selectedPizzaItem, setSelectedPizzaItem,
-    selectedPizzaSpecialty, setSelectedPizzaSpecialty, editingPizzaItem, setEditingPizzaItem } = usePizzaBuilder()
+  // Read-only store selectors used in this component
+  const showSplitTicketManager = store(s => s.showSplitTicketManager)
+  const editingChildSplit = store(s => s.editingChildSplit)
+  const orderSplitChips = store(s => s.orderSplitChips)
+  const splitChipsFlashing = store(s => s.splitChipsFlashing)
+  const splitParentId = store(s => s.splitParentId)
+  const splitParentToReturnTo = store(s => s.splitParentToReturnTo)
+  const payAllSplitsQueue = store(s => s.payAllSplitsQueue)
+  const tabCardInfo = store(s => s.tabCardInfo)
+  const tabsRefreshTrigger = store(s => s.tabsRefreshTrigger)
+  const showWeightModal = store(s => s.showWeightModal)
+  const weightCaptureItem = store(s => s.weightCaptureItem)
+  const pricingPickerItem = store(s => s.pricingPickerItem)
+  const showAgeVerification = store(s => s.showAgeVerification)
+  const ageVerificationItem = store(s => s.ageVerificationItem)
+  const ageVerificationCallback = store(s => s.ageVerificationCallback)
+  const allergenNotice = store(s => s.allergenNotice)
+  const selectedItem = store(s => s.selectedItem)
+  const editingOrderItem = store(s => s.editingOrderItem)
+  const selectedPizzaItem = store(s => s.selectedPizzaItem)
+  const editingPizzaItem = store(s => s.editingPizzaItem)
+  const selectedComboItem = store(s => s.selectedComboItem)
+  const comboTemplate = store(s => s.comboTemplate)
+  const comboSelections = store(s => s.comboSelections)
+  const selectedTimedItem = store(s => s.selectedTimedItem)
+  const selectedRateType = store(s => s.selectedRateType)
+  const entertainmentItem = store(s => s.entertainmentItem)
+  const resendModal = store(s => s.resendModal)
+  const resendNote = store(s => s.resendNote)
+  const editingNotesItemId = store(s => s.editingNotesItemId)
+  const editingNotesText = store(s => s.editingNotesText)
+  const orderToPayId = store(s => s.orderToPayId)
+  const cardTabOrderId = store(s => s.cardTabOrderId)
+
+  // State that was previously from usePaymentFlow but only paymentMethod needs local state
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'credit'>('credit')
+
+  // Shift checked needs local state (used only in bootstrap)
+  const [shiftChecked, setShiftChecked] = useState(false)
 
   const { dualPricing, paymentSettings, priceRounding, taxRate, receiptSettings,
     taxInclusiveLiquor, taxInclusiveFood, requireCardForTab, allowNameOnlyTab, ageVerification, sendBehavior, barOperations, entertainmentTipsEnabled } = useOrderSettings()
@@ -146,67 +245,7 @@ export default function OrdersPage() {
     permissions: hasLayoutPermission ? { posLayout: ['customize_personal'] } : undefined,
   })
 
-  const { paymentMethod, setPaymentMethod, showPaymentModal, setShowPaymentModal,
-    initialPayMethod, setInitialPayMethod, orderToPayId, setOrderToPayId,
-    paymentTabCards, setPaymentTabCards, showDiscountModal, setShowDiscountModal,
-    appliedDiscounts, setAppliedDiscounts } = usePaymentFlow()
-
-  const { showDisplaySettings, setShowDisplaySettings, showReceiptModal, setShowReceiptModal,
-    receiptOrderId, setReceiptOrderId, preloadedReceiptData, setPreloadedReceiptData,
-    showTabNamePrompt, setShowTabNamePrompt, tabNameCallback, setTabNameCallback,
-    showItemTransferModal, setShowItemTransferModal,
-    showTabTransferModal, setShowTabTransferModal,
-    editingNotesItemId, setEditingNotesItemId,
-    editingNotesText, setEditingNotesText } = useOrderPageModals()
-
-  const { showCompVoidModal, setShowCompVoidModal, resendModal, setResendModal,
-    resendNote, setResendNote, resendLoading, setResendLoading,
-    compVoidItem, setCompVoidItem } = useItemOperations()
-
-  const { showSplitTicketManager, setShowSplitTicketManager, splitManageMode, setSplitManageMode,
-    editingChildSplit, setEditingChildSplit, splitParentToReturnTo, setSplitParentToReturnTo,
-    payAllSplitsQueue, setPayAllSplitsQueue, showPayAllSplitsConfirm, setShowPayAllSplitsConfirm,
-    payAllSplitsTotal, setPayAllSplitsTotal, payAllSplitsCardTotal, setPayAllSplitsCardTotal,
-    payAllSplitsParentId, setPayAllSplitsParentId, payAllSplitsProcessing, setPayAllSplitsProcessing,
-    payAllSplitsStep, setPayAllSplitsStep, orderSplitChips, setOrderSplitChips,
-    splitParentId, setSplitParentId, splitChipsFlashing, setSplitChipsFlashing } = useSplitTickets()
-
-  const { showTabsPanel, setShowTabsPanel, isTabManagerExpanded, setIsTabManagerExpanded,
-    showTipAdjustment, setShowTipAdjustment, tabsRefreshTrigger, setTabsRefreshTrigger } = useTabsPanel()
-
-  const { showTimeClockModal, setShowTimeClockModal, currentShift, setCurrentShift,
-    showShiftStartModal, setShowShiftStartModal, showShiftCloseoutModal, setShowShiftCloseoutModal,
-    shiftChecked, setShiftChecked } = useShiftManagement()
-
-  const { showComboModal, setShowComboModal, selectedComboItem, setSelectedComboItem,
-    comboTemplate, setComboTemplate, comboSelections, setComboSelections } = useComboBuilder()
-
-  const { showTimedRentalModal, setShowTimedRentalModal, selectedTimedItem, setSelectedTimedItem,
-    selectedRateType, setSelectedRateType, loadingSession, setLoadingSession,
-    showEntertainmentStart, setShowEntertainmentStart,
-    entertainmentItem, setEntertainmentItem } = useTimedRentals()
-
-  const { showCardTabFlow, setShowCardTabFlow, cardTabOrderId, setCardTabOrderId,
-    tabCardInfo, setTabCardInfo } = useCardTabFlow(currentOrderId ? { id: currentOrderId } : null)
-
-  // ── Pricing option picker state ──
-  const [pricingPickerItem, setPricingPickerItem] = useState<any>(null)
   const pricingPickerCallbackRef = useRef<((option: any) => void) | null>(null)
-
-  // ── Per-item discount state ──
-  const [itemDiscountTargetId, setItemDiscountTargetId] = useState<string | null>(null)
-
-  // ── Weight capture modal ──
-  const [showWeightModal, setShowWeightModal] = useState(false)
-  const [weightCaptureItem, setWeightCaptureItem] = useState<{
-    id: string; name: string; pricePerWeightUnit: number; weightUnit: string
-  } | null>(null)
-
-  // ── Age verification & allergen notice ──
-  const [showAgeVerification, setShowAgeVerification] = useState(false)
-  const [ageVerificationItem, setAgeVerificationItem] = useState<MenuItem | null>(null)
-  const [ageVerificationCallback, setAgeVerificationCallback] = useState<(() => void) | null>(null)
-  const [allergenNotice, setAllergenNotice] = useState<{ itemName: string; allergens: string[] } | null>(null)
 
   // ── Saved order state ──
   const [savedOrderId, setSavedOrderId] = useState<string | null>(null)
@@ -1032,22 +1071,14 @@ export default function OrdersPage() {
         </BartenderView>
       )}
 
-      {/* Shared Modals */}
+      {/* Shared Modals — modal state read from useOrderPageStore */}
       <OrderPageModals
         employee={employee}
         permissionsArray={permissionsArray}
-        showDisplaySettings={showDisplaySettings}
-        onCloseDisplaySettings={() => setShowDisplaySettings(false)}
+        savedOrderId={savedOrderId}
         displaySettings={displaySettings}
         onUpdateSetting={updateSetting}
         onBatchUpdateSettings={updateSettings}
-        showTabsPanel={showTabsPanel}
-        setShowTabsPanel={setShowTabsPanel}
-        isTabManagerExpanded={isTabManagerExpanded}
-        setIsTabManagerExpanded={setIsTabManagerExpanded}
-        tabsRefreshTrigger={tabsRefreshTrigger}
-        setTabsRefreshTrigger={setTabsRefreshTrigger}
-        savedOrderId={savedOrderId}
         onSelectOpenOrder={(order) => {
           setOrderToLoad({
             id: order.id,
@@ -1093,56 +1124,27 @@ export default function OrdersPage() {
           setIsTabManagerExpanded(false)
         }}
         onClosedOrderAction={() => setTabsRefreshTrigger(prev => prev + 1)}
-        onOpenTipAdjustment={() => setShowTipAdjustment(true)}
         onViewReceipt={(orderId) => {
           setReceiptOrderId(orderId)
           setShowReceiptModal(true)
         }}
-        showModifierModal={showModifierModal}
-        setShowModifierModal={setShowModifierModal}
-        selectedItem={selectedItem}
-        setSelectedItem={setSelectedItem}
-        itemModifierGroups={itemModifierGroups}
-        setItemModifierGroups={setItemModifierGroups}
-        loadingModifiers={loadingModifiers}
-        editingOrderItem={editingOrderItem}
-        setEditingOrderItem={setEditingOrderItem}
         dualPricing={dualPricing}
         inlineModifierCallbackRef={inlineModifierCallbackRef}
         onAddItemWithModifiers={handlers.handleAddItemWithModifiers}
         onUpdateItemWithModifiers={handlers.handleUpdateItemWithModifiers}
         quickPreModifiers={barOperations.quickPreModifiers}
         quickPreModifiersEnabled={barOperations.quickPreModifiersEnabled}
-        showPizzaModal={showPizzaModal}
-        setShowPizzaModal={setShowPizzaModal}
-        selectedPizzaItem={selectedPizzaItem}
-        setSelectedPizzaItem={setSelectedPizzaItem}
-        selectedPizzaSpecialty={selectedPizzaSpecialty}
-        setSelectedPizzaSpecialty={setSelectedPizzaSpecialty}
-        editingPizzaItem={editingPizzaItem}
-        setEditingPizzaItem={setEditingPizzaItem}
         inlinePizzaCallbackRef={inlinePizzaCallbackRef}
         onAddPizzaToOrder={handlers.handleAddPizzaToOrder}
-        showComboModal={showComboModal}
-        setShowComboModal={setShowComboModal}
-        selectedComboItem={selectedComboItem}
-        setSelectedComboItem={setSelectedComboItem}
-        comboTemplate={comboTemplate}
-        setComboTemplate={setComboTemplate}
         inlineComboCallbackRef={inlineComboCallbackRef}
         onComboConfirm={(selections) => {
+          const ct = useOrderPageStore.getState().comboTemplate
           if (inlineComboCallbackRef.current) {
-            // Engine-triggered combo: build modifiers and call engine onComplete
             const modifiers: { id: string; name: string; price: number; depth?: number }[] = []
-            if (comboTemplate) {
-              for (const component of comboTemplate.components) {
+            if (ct) {
+              for (const component of ct.components) {
                 if (component.menuItem) {
-                  modifiers.push({
-                    id: `combo-item-${component.id}`,
-                    name: component.displayName,
-                    price: 0,
-                    depth: 0,
-                  })
+                  modifiers.push({ id: `combo-item-${component.id}`, name: component.displayName, price: 0, depth: 0 })
                   const componentSelections = selections[component.id] || {}
                   for (const mg of component.menuItem.modifierGroups || []) {
                     const groupSelections = componentSelections[mg.modifierGroup.id] || []
@@ -1150,13 +1152,7 @@ export default function OrdersPage() {
                       const modifier = mg.modifierGroup.modifiers.find((m: any) => m.id === modifierId)
                       if (modifier) {
                         const overridePrice = component.modifierPriceOverrides?.[modifier.id]
-                        const price = overridePrice !== undefined ? overridePrice : 0
-                        modifiers.push({
-                          id: `combo-${component.id}-${modifier.id}`,
-                          name: `  - ${modifier.name}`,
-                          price,
-                          depth: 1,
-                        })
+                        modifiers.push({ id: `combo-${component.id}-${modifier.id}`, name: `  - ${modifier.name}`, price: overridePrice !== undefined ? overridePrice : 0, depth: 1 })
                       }
                     }
                   }
@@ -1164,14 +1160,7 @@ export default function OrdersPage() {
                   const legacySelections = (selections[component.id] as unknown as string[]) || []
                   for (const optionId of legacySelections) {
                     const option = component.options.find((o: any) => o.id === optionId)
-                    if (option) {
-                      modifiers.push({
-                        id: `combo-${component.id}-${option.id}`,
-                        name: `${component.displayName}: ${option.name}`,
-                        price: option.upcharge,
-                        depth: 0,
-                      })
-                    }
+                    if (option) modifiers.push({ id: `combo-${component.id}-${option.id}`, name: `${component.displayName}: ${option.name}`, price: option.upcharge, depth: 0 })
                   }
                 }
               }
@@ -1179,49 +1168,31 @@ export default function OrdersPage() {
             inlineComboCallbackRef.current(modifiers)
             inlineComboCallbackRef.current = null
           } else {
-            // Direct combo add (from useOrderHandlers)
             handlers.handleAddComboToOrderWithSelections(selections)
           }
-          setShowComboModal(false)
-          setSelectedComboItem(null)
-          setComboTemplate(null)
-          setComboSelections({})
+          useOrderPageStore.getState().closeComboModal()
         }}
-        showEntertainmentStart={showEntertainmentStart}
-        setShowEntertainmentStart={setShowEntertainmentStart}
-        entertainmentItem={entertainmentItem}
-        setEntertainmentItem={setEntertainmentItem}
         onStartEntertainmentWithCurrentOrder={handlers.handleStartEntertainmentWithCurrentOrder}
         onStartEntertainmentWithNewTab={handlers.handleStartEntertainmentWithNewTab}
         onStartEntertainmentWithExistingTab={handlers.handleStartEntertainmentWithExistingTab}
-        showTimedRentalModal={showTimedRentalModal}
-        setShowTimedRentalModal={setShowTimedRentalModal}
-        selectedTimedItem={selectedTimedItem}
-        setSelectedTimedItem={setSelectedTimedItem}
         inlineTimedRentalCallbackRef={inlineTimedRentalCallbackRef}
         onStartTimedSession={handlers.handleStartTimedSession}
-        loadingSession={loadingSession}
-        showPaymentModal={showPaymentModal}
-        setShowPaymentModal={setShowPaymentModal}
-        orderToPayId={orderToPayId}
-        setOrderToPayId={setOrderToPayId}
-        initialPayMethod={initialPayMethod}
-        setInitialPayMethod={setInitialPayMethod}
-        paymentTabCards={paymentTabCards}
         onTabCardsChanged={handlers.handleTabCardsChanged}
         paymentSettings={paymentSettings}
         priceRounding={priceRounding}
         entertainmentTipsEnabled={entertainmentTipsEnabled}
         currentOrder={currentOrder}
         onPaymentComplete={(receiptData) => {
-          const paidId = orderToPayId
+          const paidId = useOrderPageStore.getState().orderToPayId
           setShowPaymentModal(false)
           setOrderToPayId(null)
           setInitialPayMethod(undefined)
 
-          if (splitParentToReturnTo) {
-            if (payAllSplitsQueue.length > 0) {
-              const nextSplitId = payAllSplitsQueue[0]
+          const sptr = useOrderPageStore.getState().splitParentToReturnTo
+          const pasq = useOrderPageStore.getState().payAllSplitsQueue
+          if (sptr) {
+            if (pasq.length > 0) {
+              const nextSplitId = pasq[0]
               setPayAllSplitsQueue(prev => prev.slice(1))
               clearOrder()
               setOrderToPayId(nextSplitId)
@@ -1235,7 +1206,7 @@ export default function OrdersPage() {
               setReceiptOrderId(paidId)
               setShowReceiptModal(true)
             }
-            setSavedOrderId(splitParentToReturnTo)
+            setSavedOrderId(sptr)
             setSplitManageMode(true)
             setShowSplitTicketManager(true)
             setSplitParentToReturnTo(null)
@@ -1261,19 +1232,8 @@ export default function OrdersPage() {
         }}
         orderReadyPromiseRef={orderReadyPromiseRef}
         terminalId={TERMINAL_ID}
-        showReceiptModal={showReceiptModal}
-        setShowReceiptModal={setShowReceiptModal}
-        receiptOrderId={receiptOrderId}
-        setReceiptOrderId={setReceiptOrderId}
-        preloadedReceiptData={preloadedReceiptData}
-        setPreloadedReceiptData={setPreloadedReceiptData}
         receiptSettings={receiptSettings}
         setPaidOrderId={setPaidOrderId}
-        showTipAdjustment={showTipAdjustment}
-        setShowTipAdjustment={setShowTipAdjustment}
-        showCardTabFlow={showCardTabFlow}
-        setShowCardTabFlow={setShowCardTabFlow}
-        cardTabOrderId={cardTabOrderId}
         onCardTabComplete={async (result) => {
           setShowCardTabFlow(false)
 
@@ -1431,24 +1391,9 @@ export default function OrdersPage() {
           }
           setCardTabOrderId(null)
         }}
-        showDiscountModal={showDiscountModal}
-        setShowDiscountModal={setShowDiscountModal}
-        appliedDiscounts={appliedDiscounts}
         onDiscountApplied={handlers.handleDiscountApplied}
-        itemDiscountTargetId={itemDiscountTargetId}
-        showCompVoidModal={showCompVoidModal}
-        setShowCompVoidModal={setShowCompVoidModal}
-        compVoidItem={compVoidItem}
-        setCompVoidItem={setCompVoidItem}
         onCompVoidComplete={handlers.handleCompVoidComplete}
-        resendModal={resendModal}
-        setResendModal={setResendModal}
-        resendNote={resendNote}
-        setResendNote={setResendNote}
-        resendLoading={resendLoading}
         onConfirmResend={handlers.confirmResendItem}
-        showItemTransferModal={showItemTransferModal}
-        setShowItemTransferModal={setShowItemTransferModal}
         onTransferComplete={async () => {
           try {
             const response = await fetch(`/api/orders/${savedOrderId}`)
@@ -1460,21 +1405,8 @@ export default function OrdersPage() {
             console.error('Failed to reload order:', error)
           }
         }}
-        showTabTransferModal={showTabTransferModal}
-        setShowTabTransferModal={setShowTabTransferModal}
-        showSplitTicketManager={showSplitTicketManager}
-        setShowSplitTicketManager={setShowSplitTicketManager}
-        splitManageMode={splitManageMode}
-        setSplitManageMode={setSplitManageMode}
-        splitParentId={splitParentId}
         splitCheckItems={splitCheckItems}
         setFloorPlanRefreshTrigger={setFloorPlanRefreshTrigger}
-        splitParentToReturnTo={splitParentToReturnTo}
-        setSplitParentToReturnTo={setSplitParentToReturnTo}
-        payAllSplitsQueue={payAllSplitsQueue}
-        setPayAllSplitsQueue={setPayAllSplitsQueue}
-        editingChildSplit={editingChildSplit}
-        setEditingChildSplit={setEditingChildSplit}
         setSavedOrderId={setSavedOrderId}
         clearOrder={clearOrder}
         setOrderSent={setOrderSent}
@@ -1483,7 +1415,7 @@ export default function OrdersPage() {
           setFloorPlanRefreshTrigger(prev => prev + 1)
         }}
         onPaySplit={(splitId) => {
-          const parentId = splitParentId || savedOrderId || useOrderStore.getState().currentOrder?.id || ''
+          const parentId = useOrderPageStore.getState().splitParentId || savedOrderId || useOrderStore.getState().currentOrder?.id || ''
           setSplitParentToReturnTo(parentId)
           setShowSplitTicketManager(false)
           setSplitManageMode(false)
@@ -1493,7 +1425,7 @@ export default function OrdersPage() {
         }}
         onPayAllSplits={(splitIds, combinedTotal) => {
           if (splitIds.length === 0) return
-          const parentId = splitParentId || savedOrderId || useOrderStore.getState().currentOrder?.id || ''
+          const parentId = useOrderPageStore.getState().splitParentId || savedOrderId || useOrderStore.getState().currentOrder?.id || ''
           const combinedCardTotal = pricing.isDualPricingEnabled
             ? calculateCardPrice(combinedTotal, pricing.cashDiscountRate)
             : combinedTotal
@@ -1525,30 +1457,8 @@ export default function OrdersPage() {
         noteEditTarget={activeOrderFull.noteEditTarget}
         closeNoteEditor={activeOrderFull.closeNoteEditor}
         saveNote={activeOrderFull.saveNote}
-        showPayAllSplitsConfirm={showPayAllSplitsConfirm}
-        setShowPayAllSplitsConfirm={setShowPayAllSplitsConfirm}
-        payAllSplitsParentId={payAllSplitsParentId}
-        setPayAllSplitsParentId={setPayAllSplitsParentId}
-        payAllSplitsTotal={payAllSplitsTotal}
-        payAllSplitsCardTotal={payAllSplitsCardTotal}
-        setPayAllSplitsStep={setPayAllSplitsStep}
-        payAllSplitsProcessing={payAllSplitsProcessing}
-        orderSplitChips={orderSplitChips}
         onPayAllCash={() => handlers.callPayAllSplitsAPI('cash')}
         onPayAllCard={(cardResult) => handlers.callPayAllSplitsAPI('credit', cardResult)}
-        showTabNamePrompt={showTabNamePrompt}
-        setShowTabNamePrompt={setShowTabNamePrompt}
-        tabNameCallback={tabNameCallback}
-        setTabNameCallback={setTabNameCallback}
-        tabCardInfo={tabCardInfo}
-        showTimeClockModal={showTimeClockModal}
-        setShowTimeClockModal={setShowTimeClockModal}
-        currentShift={currentShift}
-        setCurrentShift={setCurrentShift}
-        setShowShiftCloseoutModal={setShowShiftCloseoutModal}
-        showShiftStartModal={showShiftStartModal}
-        setShowShiftStartModal={setShowShiftStartModal}
-        showShiftCloseoutModal={showShiftCloseoutModal}
         pricing={pricing}
         lastCallEnabled={barOperations.lastCallEnabled}
       />

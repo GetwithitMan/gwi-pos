@@ -13,6 +13,7 @@ import { getDbForVenue } from '@/lib/db'
 import { createRateLimiter } from '@/lib/rate-limiter'
 import { getClientIp } from '@/lib/get-client-ip'
 import { DEFAULT_CAKE_ORDERING, type CakeOrderingSettings } from '@/lib/settings'
+import { err, forbidden, notFound, ok } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -26,7 +27,7 @@ export async function GET(
     const { slug } = (await context.params) as { slug: string }
 
     if (!slug) {
-      return NextResponse.json({ error: 'Venue slug is required' }, { status: 400 })
+      return err('Venue slug is required')
     }
 
     // ── Rate limit ─────────────────────────────────────────────────────
@@ -45,7 +46,7 @@ export async function GET(
     try {
       venueDb = await getDbForVenue(slug)
     } catch {
-      return NextResponse.json({ error: 'Location not found' }, { status: 404 })
+      return notFound('Location not found')
     }
 
     // ── Get location + settings ────────────────────────────────────────
@@ -55,7 +56,7 @@ export async function GET(
     })
 
     if (!location) {
-      return NextResponse.json({ error: 'Location not found' }, { status: 404 })
+      return notFound('Location not found')
     }
 
     const settings = location.settings as Record<string, unknown> | null
@@ -66,36 +67,22 @@ export async function GET(
 
     // ── Check cake ordering enabled + public ordering ──────────────────
     if (!cakeSettings.enabled) {
-      return NextResponse.json(
-        { error: 'Cake ordering is not available at this location' },
-        { status: 403 },
-      )
+      return forbidden('Cake ordering is not available at this location')
     }
 
     if (!cakeSettings.allowPublicOrdering) {
-      return NextResponse.json(
-        { error: 'Online cake ordering is not available at this location' },
-        { status: 403 },
-      )
+      return forbidden('Online cake ordering is not available at this location')
     }
 
     // ── Query menu items in cake categories ────────────────────────────
     const cakeCategoryIds = cakeSettings.cakeCategoryIds
     if (!cakeCategoryIds || cakeCategoryIds.length === 0) {
-      return NextResponse.json(
-        {
+      return ok({
           available: false,
           locationName: location.name,
           categories: [],
           availabilityRules: buildAvailabilityRules(cakeSettings),
-        },
-        {
-          status: 200,
-          headers: {
-            'Cache-Control': 'public, max-age=60, stale-while-revalidate=300',
-          },
-        },
-      )
+        })
     }
 
     // Fetch categories and items in parallel
@@ -196,7 +183,7 @@ export async function GET(
     return response
   } catch (error) {
     console.error('[GET /api/public/cake-order/[slug]/config] Error:', error)
-    return NextResponse.json({ error: 'Failed to load cake ordering configuration' }, { status: 500 })
+    return err('Failed to load cake ordering configuration', 500)
   }
 }
 

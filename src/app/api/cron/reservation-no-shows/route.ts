@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { verifyCronSecret } from '@/lib/cron-auth'
 import { transition } from '@/lib/reservations/state-machine'
 import { parseSettings, DEFAULT_RESERVATION_SETTINGS } from '@/lib/settings'
@@ -6,6 +6,7 @@ import { dispatchReservationChanged } from '@/lib/socket-dispatch'
 import { forAllVenues } from '@/lib/cron-venue-helper'
 import { notifyNuc } from '@/lib/cron-nuc-notify'
 import { createChildLogger } from '@/lib/logger'
+import { ok } from '@/lib/api-response'
 const log = createChildLogger('cron-reservation-no-shows')
 
 export const dynamic = 'force-dynamic'
@@ -142,7 +143,7 @@ export async function GET(request: NextRequest) {
     }
   }, { label: 'cron:reservation-no-shows' })
 
-  return NextResponse.json({
+  return ok({
     ...summary,
     processed: allProcessed,
     timestamp: now.toISOString(),

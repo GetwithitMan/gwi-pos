@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { calculateOrderTotals } from '@/lib/order-calculations'
 import type { OrderItemForCalculation } from '@/lib/order-calculations'
@@ -12,6 +12,7 @@ import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
 import { roundToCents } from '@/lib/pricing'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 
 const log = createChildLogger('orders.id.items.itemId.discount')
 
@@ -37,24 +38,15 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
 
     // Validate required fields
     if (!body.type || body.value === undefined || body.value === null || !authEmployeeId) {
-      return NextResponse.json(
-        { error: 'type, value, and employeeId are required' },
-        { status: 400 }
-      )
+      return err('type, value, and employeeId are required')
     }
 
     if (body.value <= 0) {
-      return NextResponse.json(
-        { error: 'Discount value must be greater than 0' },
-        { status: 400 }
-      )
+      return err('Discount value must be greater than 0')
     }
 
     if (body.type === 'percent' && body.value > 100) {
-      return NextResponse.json(
-        { error: 'Percentage cannot exceed 100%' },
-        { status: 400 }
-      )
+      return err('Percentage cannot exceed 100%')
     }
 
     const result = await db.$transaction(async (tx) => {
@@ -66,10 +58,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
         'SELECT "locationId" FROM "Order" WHERE id = $1', orderId
       )
       if (!lockedDisc) {
-        return NextResponse.json(
-          { error: 'Order not found' },
-          { status: 404 }
-        )
+        return notFound('Order not found')
       }
       const order = await OrderRepository.getOrderByIdWithInclude(orderId, lockedDisc.locationId, {
         location: true,
@@ -77,21 +66,15 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       }, tx)
 
       if (!order) {
-        return NextResponse.json(
-          { error: 'Order not found' },
-          { status: 404 }
-        )
+        return notFound('Order not found')
       }
 
       // Auth check — require manager.discounts permission using verified identity
       const auth = await requirePermission(authEmployeeId, order.locationId, PERMISSIONS.MGR_DISCOUNTS)
-      if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+      if (!auth.authorized) return err(auth.error, auth.status)
 
       if (order.status === 'paid' || order.status === 'closed') {
-        return NextResponse.json(
-          { error: 'Cannot apply discount to a paid or closed order' },
-          { status: 409 }
-        )
+        return err('Cannot apply discount to a paid or closed order', 409)
       }
 
       // Fetch item (tenant-safe via OrderItemRepository)
@@ -100,18 +83,12 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       }, tx)
 
       if (!item) {
-        return NextResponse.json(
-          { error: 'Order item not found' },
-          { status: 404 }
-        )
+        return notFound('Order item not found')
       }
 
       // Block item-level discounts on timed_rental items (dynamic pricing makes fixed discounts unreliable)
       if (item.menuItem?.itemType === 'timed_rental') {
-        return NextResponse.json(
-          { error: 'Cannot apply item-level discounts to timed rental items. Use order-level discounts instead.' },
-          { status: 400 }
-        )
+        return err('Cannot apply item-level discounts to timed rental items. Use order-level discounts instead.')
       }
 
       // Toggle prevention: if this discountRuleId is already applied to this item, remove it
@@ -157,8 +134,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
             lineItemId: itemId,
           })
 
-          return NextResponse.json({
-            data: {
+          return ok({
               toggled: 'off',
               removedDiscountId: alreadyApplied.id,
               orderTotals: {
@@ -167,8 +143,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
                 taxTotal: Number(updatedOrder.taxTotal),
                 total: Number(updatedOrder.total),
               },
-            },
-          })
+            })
         }
       }
 
@@ -192,10 +167,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       const maxNewDiscount = Math.max(0, Number(item.itemTotal) - existingDiscountSum)
       discountAmount = Math.min(discountAmount, maxNewDiscount)
       if (discountAmount <= 0) {
-        return NextResponse.json(
-          { error: 'Item is already fully discounted' },
-          { status: 400 }
-        )
+        return err('Item is already fully discounted')
       }
 
       // Create the OrderItemDiscount record
@@ -274,8 +246,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
         })
       }
 
-      return NextResponse.json({
-        data: {
+      return ok({
           discount: {
             id: itemDiscount.id,
             amount: Number(itemDiscount.amount),
@@ -292,8 +263,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
             taxTotal: Number(updatedOrder.taxTotal),
             total: Number(updatedOrder.total),
           },
-        },
-      })
+        })
     })
 
     pushUpstream()
@@ -301,10 +271,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     return result
   } catch (error) {
     console.error('Failed to apply item discount:', error)
-    return NextResponse.json(
-      { error: 'Failed to apply item discount' },
-      { status: 500 }
-    )
+    return err('Failed to apply item discount', 500)
   }
 }))
 
@@ -321,17 +288,11 @@ export const DELETE = withVenue(withAuth({ allowCellular: true }, async function
     const employeeId = ctx.auth.employeeId || request.nextUrl.searchParams.get('employeeId')
 
     if (!discountId) {
-      return NextResponse.json(
-        { error: 'discountId query parameter is required' },
-        { status: 400 }
-      )
+      return err('discountId query parameter is required')
     }
 
     if (!employeeId) {
-      return NextResponse.json(
-        { error: 'employeeId query parameter is required' },
-        { status: 400 }
-      )
+      return err('employeeId query parameter is required')
     }
 
     const result = await db.$transaction(async (tx) => {
@@ -349,10 +310,7 @@ export const DELETE = withVenue(withAuth({ allowCellular: true }, async function
       })
 
       if (!existingDiscount) {
-        return NextResponse.json(
-          { error: 'Discount not found on this item' },
-          { status: 404 }
-        )
+        return notFound('Discount not found on this item')
       }
 
       // Fetch order with items for split-aware tax recalculation (tenant-safe via OrderRepository)
@@ -360,10 +318,7 @@ export const DELETE = withVenue(withAuth({ allowCellular: true }, async function
         'SELECT "locationId" FROM "Order" WHERE id = $1', orderId
       )
       if (!lockedDiscDel) {
-        return NextResponse.json(
-          { error: 'Order not found' },
-          { status: 404 }
-        )
+        return notFound('Order not found')
       }
       const order = await OrderRepository.getOrderByIdWithInclude(orderId, lockedDiscDel.locationId, {
         location: true,
@@ -371,15 +326,12 @@ export const DELETE = withVenue(withAuth({ allowCellular: true }, async function
       }, tx)
 
       if (!order) {
-        return NextResponse.json(
-          { error: 'Order not found' },
-          { status: 404 }
-        )
+        return notFound('Order not found')
       }
 
       // Auth check — require manager.discounts permission
       const authResult = await requirePermission(employeeId, order.locationId, PERMISSIONS.MGR_DISCOUNTS)
-      if (!authResult.authorized) return NextResponse.json({ error: authResult.error }, { status: authResult.status ?? 403 })
+      if (!authResult.authorized) return err(authResult.error, authResult.status ?? 403)
 
       const discountAmount = Number(existingDiscount.amount)
 
@@ -440,8 +392,7 @@ export const DELETE = withVenue(withAuth({ allowCellular: true }, async function
         total: Number(updatedOrder.total),
       }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.items.itemId.discount'))
 
-      return NextResponse.json({
-        data: {
+      return ok({
           success: true,
           orderTotals: {
             subtotal: Number(updatedOrder.subtotal),
@@ -449,8 +400,7 @@ export const DELETE = withVenue(withAuth({ allowCellular: true }, async function
             taxTotal: Number(updatedOrder.taxTotal),
             total: Number(updatedOrder.total),
           },
-        },
-      })
+        })
     })
 
     pushUpstream()
@@ -458,9 +408,6 @@ export const DELETE = withVenue(withAuth({ allowCellular: true }, async function
     return result
   } catch (error) {
     console.error('Failed to remove item discount:', error)
-    return NextResponse.json(
-      { error: 'Failed to remove item discount' },
-      { status: 500 }
-    )
+    return err('Failed to remove item discount', 500)
   }
 }))

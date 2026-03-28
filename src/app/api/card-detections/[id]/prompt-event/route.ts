@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { ok } from '@/lib/api-response'
 
 // PATCH /api/card-detections/[id]/prompt-event
 //
@@ -19,7 +20,7 @@ export const PATCH = withVenue(async function PATCH(
 
     if (!event || !['shown', 'dismissed', 'auto_dismissed'].includes(event)) {
       // Best-effort — return 200 anyway
-      return NextResponse.json({ data: { ok: true } })
+      return ok({ ok: true })
     }
 
     // Look up detection to verify it belongs to this location
@@ -30,7 +31,7 @@ export const PATCH = withVenue(async function PATCH(
 
     if (!detection) {
       // Detection not found — still return 200 (best-effort, non-blocking)
-      return NextResponse.json({ data: { ok: true } })
+      return ok({ ok: true })
     }
 
     // Update the appropriate timestamp
@@ -48,10 +49,10 @@ export const PATCH = withVenue(async function PATCH(
       data: updateData,
     })
 
-    return NextResponse.json({ data: { ok: true } })
+    return ok({ ok: true })
   } catch (error) {
     // Best-effort — failures return 200 anyway (non-blocking)
     console.warn('Failed to update card detection prompt event:', error)
-    return NextResponse.json({ data: { ok: true } })
+    return ok({ ok: true })
   }
 })

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getActorFromRequest } from '@/lib/api-auth'
@@ -7,6 +7,7 @@ import { Prisma } from '@/generated/prisma/client'
 import type { ShiftRequestType, ShiftSwapRequestStatus } from '@/generated/prisma/client'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { created, err, forbidden, notFound, ok, unauthorized } from '@/lib/api-response'
 const log = createChildLogger('shift-requests')
 
 // GET - List shift requests for a location
@@ -22,7 +23,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const employeeId = searchParams.get('employeeId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+      return err('Location ID is required')
     }
 
     const where: Prisma.ShiftSwapRequestWhereInput = {
@@ -92,10 +93,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orderBy: { createdAt: 'desc' },
     })
 
-    return NextResponse.json({ data: { requests } })
+    return ok({ requests })
   } catch (error) {
     console.error('Failed to fetch shift requests:', error)
-    return NextResponse.json({ error: 'Failed to fetch shift requests' }, { status: 500 })
+    return err('Failed to fetch shift requests', 500)
   }
 })
 
@@ -125,38 +126,38 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+      return err('Location ID is required')
     }
     if (!shiftId) {
-      return NextResponse.json({ error: 'shiftId is required' }, { status: 400 })
+      return err('shiftId is required')
     }
 
     // Resolve actor
     const actor = await getActorFromRequest(request)
     const requestedByEmployeeId = bodyEmployeeId ?? actor.employeeId
     if (!requestedByEmployeeId) {
-      return NextResponse.json({ error: 'Employee ID is required' }, { status: 401 })
+      return unauthorized('Employee ID is required')
     }
 
     // Validate type
     if (!['swap', 'cover', 'drop'].includes(type)) {
-      return NextResponse.json({ error: 'type must be swap, cover, or drop' }, { status: 400 })
+      return err('type must be swap, cover, or drop')
     }
 
     if (type === 'drop' && requestedToEmployeeId) {
-      return NextResponse.json({ error: 'Drop requests cannot have a target employee' }, { status: 400 })
+      return err('Drop requests cannot have a target employee')
     }
 
     // Validate shift
     const shift = await db.scheduledShift.findUnique({ where: { id: shiftId } })
     if (!shift) {
-      return NextResponse.json({ error: 'Shift not found' }, { status: 404 })
+      return notFound('Shift not found')
     }
     if (shift.locationId !== locationId) {
-      return NextResponse.json({ error: 'Shift does not belong to this location' }, { status: 403 })
+      return forbidden('Shift does not belong to this location')
     }
     if (shift.deletedAt !== null) {
-      return NextResponse.json({ error: 'Shift has been deleted' }, { status: 404 })
+      return notFound('Shift has been deleted')
     }
 
     // Check no active request already exists for this shift
@@ -169,10 +170,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
     })
     if (existing) {
-      return NextResponse.json(
-        { error: 'An active request already exists for this shift' },
-        { status: 409 }
-      )
+      return err('An active request already exists for this shift', 409)
     }
 
     const expiresAt = new Date()
@@ -232,9 +230,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       shiftId,
     }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
 
-    return NextResponse.json({ data: { request: created } }, { status: 201 })
+    return created({ request: created })
   } catch (error) {
     console.error('Failed to create shift request:', error)
-    return NextResponse.json({ error: 'Failed to create shift request' }, { status: 500 })
+    return err('Failed to create shift request', 500)
   }
 })

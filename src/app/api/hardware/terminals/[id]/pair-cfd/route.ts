@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // POST — Link a CFD terminal to a register terminal
 export const POST = withVenue(withAuth('ADMIN', async function POST(
@@ -18,36 +19,30 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
 
     // Validate required field
     if (!cfdTerminalId) {
-      return NextResponse.json({ error: 'cfdTerminalId is required' }, { status: 400 })
+      return err('cfdTerminalId is required')
     }
 
     // Prevent pairing a terminal to itself
     if (cfdTerminalId === id) {
-      return NextResponse.json(
-        { error: 'A terminal cannot be paired to itself' },
-        { status: 400 }
-      )
+      return err('A terminal cannot be paired to itself')
     }
 
     // Find the register terminal
     const existing = await db.terminal.findUnique({ where: { id } })
     if (!existing || existing.deletedAt) {
-      return NextResponse.json({ error: 'Terminal not found' }, { status: 404 })
+      return notFound('Terminal not found')
     }
 
     // Validate the register is not itself a CFD display
      
     if ((existing as any).category === 'CFD_DISPLAY') {
-      return NextResponse.json(
-        { error: 'A CFD terminal cannot be paired to another CFD terminal' },
-        { status: 400 }
-      )
+      return err('A CFD terminal cannot be paired to another CFD terminal')
     }
 
     // Find the CFD terminal
     const cfdExisting = await db.terminal.findUnique({ where: { id: cfdTerminalId } })
     if (!cfdExisting || cfdExisting.deletedAt) {
-      return NextResponse.json({ error: 'CFD terminal not found' }, { status: 404 })
+      return notFound('CFD terminal not found')
     }
 
     // Update the register terminal with CFD pairing info
@@ -93,10 +88,10 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     void notifyDataChanged({ locationId: existing.locationId, domain: 'hardware', action: 'updated', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { terminal } })
+    return ok({ terminal })
   } catch (error) {
     console.error('Failed to pair CFD terminal:', error)
-    return NextResponse.json({ error: 'Failed to pair CFD terminal' }, { status: 500 })
+    return err('Failed to pair CFD terminal', 500)
   }
 }))
 
@@ -111,7 +106,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     // Find the register terminal
     const existing = await db.terminal.findUnique({ where: { id } })
     if (!existing || existing.deletedAt) {
-      return NextResponse.json({ error: 'Terminal not found' }, { status: 404 })
+      return notFound('Terminal not found')
     }
 
     // Clear CFD pairing fields
@@ -129,9 +124,9 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     void notifyDataChanged({ locationId: existing.locationId, domain: 'hardware', action: 'updated', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Failed to unpair CFD terminal:', error)
-    return NextResponse.json({ error: 'Failed to unpair CFD terminal' }, { status: 500 })
+    return err('Failed to unpair CFD terminal', 500)
   }
 }))

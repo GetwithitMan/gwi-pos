@@ -1,12 +1,12 @@
-import { NextResponse } from 'next/server'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationSettings } from '@/lib/location-cache'
 import { parseSettings } from '@/lib/settings'
 import { db } from '@/lib/db'
+import { notFound, ok } from '@/lib/api-response'
 
 export const GET = withVenue(async function GET() {
   const location = await db.location.findFirst({ select: { id: true } })
-  if (!location) return NextResponse.json({ error: 'No location' }, { status: 404 })
+  if (!location) return notFound('No location')
 
   const settings = parseSettings(await getLocationSettings(location.id))
   const s = settings.sevenShifts
@@ -28,8 +28,7 @@ export const GET = withVenue(async function GET() {
   // P1: Webhooks are considered registered if the timestamp flag is set (set by register-webhooks route)
   const webhooksRegistered = !!s?.webhooksRegisteredAt
 
-  return NextResponse.json({
-    data: {
+  return ok({
       isConfigured,
       isEnabled,
       // Legacy field — keep for backward compat with existing UI code
@@ -51,6 +50,5 @@ export const GET = withVenue(async function GET() {
       lastSchedulePullStatus: s?.lastSchedulePullStatus ?? null,
       lastSchedulePullError: s?.lastSchedulePullError ?? null,
       syncOptions: s?.syncOptions ?? { pushSales: true, pushTimePunches: true, pullSchedule: true },
-    },
-  })
+    })
 })

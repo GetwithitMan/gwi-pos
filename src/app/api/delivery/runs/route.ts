@@ -12,6 +12,7 @@ import { evaluateEffectiveProofMode } from '@/lib/delivery/proof-resolver'
 import { dispatchRunEvent, dispatchDeliveryStatusChanged, dispatchDriverAssigned } from '@/lib/delivery/dispatch-events'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok } from '@/lib/api-response'
 const log = createChildLogger('delivery-runs')
 
 export const dynamic = 'force-dynamic'
@@ -25,13 +26,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Auth check
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.DELIVERY_VIEW)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Feature gate
     const featureGate = await requireDeliveryFeature(locationId)
@@ -127,10 +128,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orders: ordersMap.get(row.id) || [],
     }))
 
-    return NextResponse.json({ runs: enriched })
+    return ok({ runs: enriched })
   } catch (error) {
     console.error('[Delivery/Runs] GET error:', error)
-    return NextResponse.json({ error: 'Failed to fetch delivery runs' }, { status: 500 })
+    return err('Failed to fetch delivery runs', 500)
   }
 })
 
@@ -143,13 +144,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Auth check
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.DELIVERY_DISPATCH)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Feature gate
     const featureGate = await requireDeliveryFeature(locationId)
@@ -160,10 +161,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Basic validation
     if (!driverId || typeof driverId !== 'string') {
-      return NextResponse.json({ error: 'driverId is required' }, { status: 400 })
+      return err('driverId is required')
     }
     if (!Array.isArray(orderIds) || orderIds.length === 0) {
-      return NextResponse.json({ error: 'orderIds must be a non-empty array' }, { status: 400 })
+      return err('orderIds must be a non-empty array')
     }
 
     // Load settings
@@ -174,10 +175,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Validate order count vs maxOrdersPerRun
     if (orderIds.length > deliveryConfig.maxOrdersPerRun) {
-      return NextResponse.json(
-        { error: `Run exceeds maximum ${deliveryConfig.maxOrdersPerRun} orders per run` },
-        { status: 400 }
-      )
+      return err(`Run exceeds maximum ${deliveryConfig.maxOrdersPerRun} orders per run`)
     }
 
     // Timezone lives on Location, not LocationSettings
@@ -484,8 +482,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       message.includes('suspended') ||
       message.includes('inactive')
     ) {
-      return NextResponse.json({ error: message }, { status: 400 })
+      return err(message)
     }
-    return NextResponse.json({ error: 'Failed to create delivery run' }, { status: 500 })
+    return err('Failed to create delivery run', 500)
   }
 })

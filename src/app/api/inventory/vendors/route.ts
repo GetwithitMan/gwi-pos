@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -6,6 +6,7 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, ok } from '@/lib/api-response'
 
 // GET - List vendors
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -15,7 +16,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const activeOnly = searchParams.get('activeOnly') !== 'false'
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID required' }, { status: 400 })
+      return err('Location ID required')
     }
 
     const where: Record<string, unknown> = {
@@ -30,10 +31,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orderBy: { name: 'asc' },
     })
 
-    return NextResponse.json({ data: { vendors } })
+    return ok({ vendors })
   } catch (error) {
     console.error('Vendor list error:', error)
-    return NextResponse.json({ error: 'Failed to fetch vendors' }, { status: 500 })
+    return err('Failed to fetch vendors', 500)
   }
 })
 
@@ -53,16 +54,14 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     } = body
 
     if (!locationId || !name) {
-      return NextResponse.json({
-        error: 'Location ID and name required',
-      }, { status: 400 })
+      return err('Location ID and name required')
     }
 
     // Auth check — require inventory.vendors permission
     const actor = await getActorFromRequest(request)
     const resolvedEmployeeId = actor.employeeId ?? body.employeeId
     const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.INVENTORY_VENDORS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const vendor = await db.vendor.create({
       data: {
@@ -80,12 +79,12 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     void notifyDataChanged({ locationId, domain: 'inventory', action: 'created', entityId: vendor.id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { vendor } })
+    return ok({ vendor })
   } catch (error) {
     console.error('Create vendor error:', error)
     if ((error as { code?: string }).code === 'P2002') {
-      return NextResponse.json({ error: 'Vendor with this name already exists' }, { status: 400 })
+      return err('Vendor with this name already exists')
     }
-    return NextResponse.json({ error: 'Failed to create vendor' }, { status: 500 })
+    return err('Failed to create vendor', 500)
   }
 }))

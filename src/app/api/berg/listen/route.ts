@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { err, ok } from '@/lib/api-response'
 
 const MAX_LIMIT = 50
 
@@ -15,10 +16,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const since = searchParams.get('since') ? new Date(searchParams.get('since')!) : undefined
     const limit = Math.min(parseInt(searchParams.get('limit') || '30', 10), MAX_LIMIT)
 
-    if (!locationId) return NextResponse.json({ error: 'locationId required' }, { status: 400 })
+    if (!locationId) return err('locationId required')
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.SETTINGS_VIEW)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const events = await db.bergDispenseEvent.findMany({
       where: {
@@ -48,9 +49,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({ events: events.reverse() }) // oldest-first for display
+    return ok({ events: events.reverse() }) // oldest-first for display
   } catch (err) {
     console.error('[berg/listen GET]', err)
-    return NextResponse.json({ error: 'Failed to load events' }, { status: 500 })
+    return err('Failed to load events', 500)
   }
 })

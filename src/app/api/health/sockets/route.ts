@@ -5,6 +5,7 @@ import { getLatestEventId } from '@/lib/socket-event-buffer'
 import { getUpstreamSyncMetrics } from '@/lib/sync/upstream-sync-worker'
 import { getDownstreamSyncMetrics } from '@/lib/sync/downstream-sync-worker'
 import { getOutageReplayMetrics } from '@/lib/sync/outage-replay-worker'
+import { ok } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -33,7 +34,7 @@ export async function GET() {
   const locationId = process.env.POS_LOCATION_ID || process.env.LOCATION_ID || ''
   const latestEventId = getLatestEventId(locationId)
 
-  return NextResponse.json({
+  return ok({
     connectedClients: socketHealth.connectedClients,
     eventThroughput: socketHealth.eventThroughput,
     ackQueue: {

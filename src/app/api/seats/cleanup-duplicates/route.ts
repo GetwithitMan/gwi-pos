@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, ok } from '@/lib/api-response'
 
 /**
  * GWI POS - Seats Cleanup API
@@ -18,10 +19,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     const { locationId, dryRun = true } = body;
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'locationId is required' },
-        { status: 400 }
-      );
+      return err('locationId is required');
     }
 
     // Find all active seats for this location
@@ -71,15 +69,15 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     }
 
     if (duplicates.length === 0) {
-      return NextResponse.json({ data: {
+      return ok({
         message: 'No duplicate seats found',
         duplicatesFound: 0,
-      } });
+      });
     }
 
     // If dry run, just report what would be deleted
     if (dryRun) {
-      return NextResponse.json({ data: {
+      return ok({
         message: 'Dry run complete - no changes made',
         duplicatesFound: duplicates.length,
         totalToDelete: duplicates.reduce((sum, d) => sum + d.deleteIds.length, 0),
@@ -89,7 +87,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
           keeping: d.keepId,
           deleting: d.deleteIds.length,
         })),
-      } });
+      });
     }
 
     // Actually delete (soft delete) the duplicates
@@ -106,7 +104,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
 
     pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       message: `Cleaned up ${allDeleteIds.length} duplicate seats`,
       duplicatesFound: duplicates.length,
       seatsDeleted: allDeleteIds.length,
@@ -115,13 +113,10 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
         seatNumber: d.seatNumber,
         deleted: d.deleteIds.length,
       })),
-    } });
+    });
   } catch (error) {
     console.error('Failed to cleanup duplicate seats:', error);
-    return NextResponse.json(
-      { error: 'Failed to cleanup duplicate seats' },
-      { status: 500 }
-    );
+    return err('Failed to cleanup duplicate seats', 500);
   }
 }))
 
@@ -131,10 +126,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   const locationId = searchParams.get('locationId');
 
   if (!locationId) {
-    return NextResponse.json(
-      { error: 'locationId query param required' },
-      { status: 400 }
-    );
+    return err('locationId query param required');
   }
 
   // Reuse POST logic with dryRun=true

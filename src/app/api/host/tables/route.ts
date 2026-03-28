@@ -6,6 +6,7 @@ import { getLocationId } from '@/lib/location-cache'
 import { dispatchFloorPlanUpdate, dispatchTableStatusChanged } from '@/lib/socket-dispatch'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('host-tables')
 
 export const dynamic = 'force-dynamic'
@@ -21,7 +22,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Fetch all active tables with their current order and server info
@@ -208,8 +209,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       ORDER BY sr."tableCount" ASC, sr."lastSeatedAt" ASC NULLS FIRST
     `, locationId)
 
-    return NextResponse.json({
-      data: {
+    return ok({
         sections: Array.from(sectionMap.values()),
         avgTurnMinutes,
         serverRotation: serverRotation.map(sr => ({
@@ -229,11 +229,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           reserved: tables.filter(t => t.status === 'reserved').length,
           dirty: tables.filter(t => t.status === 'dirty').length,
         },
-      },
-    })
+      })
   } catch (error) {
     console.error('[Host/Tables] GET error:', error)
-    return NextResponse.json({ error: 'Failed to fetch tables' }, { status: 500 })
+    return err('Failed to fetch tables', 500)
   }
 })
 
@@ -247,22 +246,19 @@ export const PUT = withVenue(withAuth(async function PUT(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const body = await request.json()
     const { tableId, status } = body
 
     if (!tableId || typeof tableId !== 'string') {
-      return NextResponse.json({ error: 'tableId is required' }, { status: 400 })
+      return err('tableId is required')
     }
 
     const validStatuses = ['available', 'occupied', 'dirty', 'reserved', 'in_use']
     if (!status || !validStatuses.includes(status)) {
-      return NextResponse.json(
-        { error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` },
-        { status: 400 }
-      )
+      return err(`Invalid status. Must be one of: ${validStatuses.join(', ')}`)
     }
 
     const table = await db.table.findFirst({
@@ -270,7 +266,7 @@ export const PUT = withVenue(withAuth(async function PUT(request: NextRequest) {
     })
 
     if (!table) {
-      return NextResponse.json({ error: 'Table not found' }, { status: 404 })
+      return notFound('Table not found')
     }
 
     // If changing from occupied to available/dirty, decrement server table count
@@ -312,6 +308,6 @@ export const PUT = withVenue(withAuth(async function PUT(request: NextRequest) {
     })
   } catch (error) {
     console.error('[Host/Tables] PUT error:', error)
-    return NextResponse.json({ error: 'Failed to update table status' }, { status: 500 })
+    return err('Failed to update table status', 500)
   }
 }))

@@ -11,13 +11,14 @@
  */
 
 import { randomUUID } from 'crypto'
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth, type AuthenticatedContext } from '@/lib/api-auth-middleware'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { importCardsSchema } from '@/lib/domain/gift-cards/schemas'
+import { err, ok } from '@/lib/api-response'
 
 // Card number validation: uppercase alphanumeric with dashes, 4-30 chars
 const CARD_NUMBER_REGEX = /^[A-Z0-9-]+$/
@@ -82,27 +83,18 @@ export const POST = withVenue(withAuth('CUSTOMERS_GIFT_CARDS', async function PO
       const body = await request.json()
       const parsed = importCardsSchema.safeParse(body)
       if (!parsed.success) {
-        return NextResponse.json(
-          { error: 'Validation failed', details: parsed.error.flatten().fieldErrors },
-          { status: 400 }
-        )
+        return err('Validation failed', 400, parsed.error.flatten().fieldErrors)
       }
       rawCardNumbers = parsed.data.cardNumbers
       rawPins = parsed.data.pins || []
     }
 
     if (rawCardNumbers.length === 0) {
-      return NextResponse.json(
-        { error: 'No card numbers provided' },
-        { status: 400 }
-      )
+      return err('No card numbers provided')
     }
 
     if (rawCardNumbers.length > 5000) {
-      return NextResponse.json(
-        { error: 'Maximum 5000 cards per import batch' },
-        { status: 400 }
-      )
+      return err('Maximum 5000 cards per import batch')
     }
 
     // ── Validate each card number ─────────────────────────────────────────
@@ -128,7 +120,7 @@ export const POST = withVenue(withAuth('CUSTOMERS_GIFT_CARDS', async function PO
     }
 
     if (validCards.length === 0) {
-      return NextResponse.json({
+      return ok({
         imported: 0,
         skipped: errors.length,
         errors,
@@ -154,7 +146,7 @@ export const POST = withVenue(withAuth('CUSTOMERS_GIFT_CARDS', async function PO
     }
 
     if (toImport.length === 0) {
-      return NextResponse.json({
+      return ok({
         imported: 0,
         skipped: errors.length,
         errors,
@@ -186,7 +178,7 @@ export const POST = withVenue(withAuth('CUSTOMERS_GIFT_CARDS', async function PO
     pushUpstream()
     void notifyDataChanged({ locationId, domain: 'gift-cards', action: 'created' })
 
-    return NextResponse.json({
+    return ok({
       imported: toImport.length,
       skipped: errors.length,
       errors,
@@ -194,9 +186,6 @@ export const POST = withVenue(withAuth('CUSTOMERS_GIFT_CARDS', async function PO
     })
   } catch (error) {
     console.error('Failed to import gift cards:', error)
-    return NextResponse.json(
-      { error: 'Failed to import gift cards' },
-      { status: 500 }
-    )
+    return err('Failed to import gift cards', 500)
   }
 }))

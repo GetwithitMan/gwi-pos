@@ -1,14 +1,7 @@
 'use client'
 
 import { MenuSearchResultItem } from './MenuSearchResultItem'
-
-interface MenuItem {
-  id: string
-  name: string
-  price: number
-  categoryId: string
-  is86d?: boolean
-}
+import type { MenuItemSearch as MenuItem } from '@/types'
 
 interface IngredientMatch {
   ingredientType: 'spirit' | 'food'

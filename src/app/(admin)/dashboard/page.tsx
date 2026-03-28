@@ -12,23 +12,18 @@ import { toast } from '@/stores/toast-store'
 import { getSharedSocket, releaseSharedSocket, isSharedSocketConnected } from '@/lib/shared-socket'
 import Link from 'next/link'
 
+import type { OpenOrder as BaseOpenOrder } from '@/types'
+
 // ============================================================================
 // TYPES
 // ============================================================================
 
-interface OpenOrder {
-  id: string
-  orderNumber: number
+type OpenOrder = BaseOpenOrder & {
   displayNumber: string
   status: string
-  orderType: string
   orderTypeConfig: { name: string; color: string | null; icon: string | null } | null
-  tabName: string | null
-  tableName: string | null
   table: { id: string; name: string; section: string | null } | null
   employee: { id: string; name: string }
-  itemCount: number
-  total: number
   ageMinutes: number
   createdAt: string
   openedAt: string

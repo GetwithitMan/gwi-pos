@@ -9,10 +9,10 @@
  * GET /api/health/ping
  */
 
-import { NextResponse } from 'next/server'
+import { ok } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
 export function GET() {
-  return NextResponse.json({ ok: true })
+  return ok({ ok: true })
 }

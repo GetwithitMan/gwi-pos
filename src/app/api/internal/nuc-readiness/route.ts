@@ -1,9 +1,9 @@
-import { NextResponse } from 'next/server'
 import { config } from '@/lib/system-config'
 import { getBootstrapResult, getSchemaRecheckCount } from '@/lib/venue-bootstrap'
 import { getWorkerHealth } from '@/lib/worker-registry'
 import { getReadinessState } from '@/lib/readiness'
 import { EXPECTED_SCHEMA_VERSION } from '@/lib/version-contract'
+import { ok, unauthorized } from '@/lib/api-response'
 
 /**
  * GET /api/internal/nuc-readiness
@@ -15,7 +15,7 @@ import { EXPECTED_SCHEMA_VERSION } from '@/lib/version-contract'
 export async function GET(request: Request) {
   const apiKey = request.headers.get('x-api-key')
   if (!apiKey || apiKey !== config.provisionApiKey) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return unauthorized('Unauthorized')
   }
 
   const bootstrap = getBootstrapResult()
@@ -35,7 +35,7 @@ export async function GET(request: Request) {
     ? (bootstrap?.degradedReasons?.join(', ') ?? null)
     : null
 
-  return NextResponse.json({
+  return ok({
     // Canonical readiness level — ONE source of truth
     readinessLevel: readiness?.level ?? null,
     syncContractReady: readiness?.syncContractReady ?? false,

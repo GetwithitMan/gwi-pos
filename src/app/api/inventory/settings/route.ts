@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -6,6 +6,7 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, ok } from '@/lib/api-response'
 
 const DEFAULT_SETTINGS = {
   // Tracking mode
@@ -37,7 +38,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const locationId = searchParams.get('locationId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID required' }, { status: 400 })
+      return err('Location ID required')
     }
 
     const settings = await db.inventorySettings.findUnique({
@@ -46,7 +47,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     if (!settings) {
       // Return defaults if no settings exist
-      return NextResponse.json({ data: {
+      return ok({
         settings: {
           id: null,
           locationId,
@@ -61,10 +62,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           updatedAt: null,
         },
         isDefault: true,
-      } })
+      })
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       settings: {
         ...settings,
         // Tracking mode
@@ -102,10 +103,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           : DEFAULT_SETTINGS.multiplierTriple,
       },
       isDefault: false,
-    } })
+    })
   } catch (error) {
     console.error('Get inventory settings error:', error)
-    return NextResponse.json({ error: 'Failed to fetch settings' }, { status: 500 })
+    return err('Failed to fetch settings', 500)
   }
 })
 
@@ -116,14 +117,14 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     const { locationId, employeeId: bodyEmployeeId, ...settingsData } = body
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID required' }, { status: 400 })
+      return err('Location ID required')
     }
 
     // Auth check — require settings.inventory permission
     const actor = await getActorFromRequest(request)
     const resolvedEmployeeId = actor.employeeId ?? bodyEmployeeId
     const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.SETTINGS_INVENTORY)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Prepare update data
     const updateData: Record<string, unknown> = {}
@@ -197,7 +198,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     void notifyDataChanged({ locationId, domain: 'inventory', action: 'updated', entityId: settings.id })
     pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       settings: {
         ...settings,
         varianceAlertPct: settings.varianceAlertPct
@@ -226,9 +227,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
           ? Number(settings.multiplierTriple)
           : DEFAULT_SETTINGS.multiplierTriple,
       },
-    } })
+    })
   } catch (error) {
     console.error('Save inventory settings error:', error)
-    return NextResponse.json({ error: 'Failed to save settings' }, { status: 500 })
+    return err('Failed to save settings', 500)
   }
 }))

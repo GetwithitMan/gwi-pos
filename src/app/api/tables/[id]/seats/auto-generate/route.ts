@@ -6,6 +6,7 @@ import { SEAT_RADIUS } from '@/lib/floorplan/constants'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { notFound, ok } from '@/lib/api-response'
 
 type LabelPattern = 'numeric' | 'alpha' | 'alphanumeric'
 
@@ -104,10 +105,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     })
 
     if (!table) {
-      return NextResponse.json(
-        { error: 'Table not found' },
-        { status: 404 }
-      )
+      return notFound('Table not found')
     }
 
     const seatCount = count || table.capacity
@@ -354,7 +352,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
 
     dispatchFloorPlanUpdate(table.locationId, { async: true })
 
-    return NextResponse.json({ data: {
+    return ok({
       seats: result.map(seat => ({
         id: seat.id,
         tableId: seat.tableId,
@@ -372,7 +370,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
         warning: 'Seats generated with collisions (forceGenerate was true)',
         collisions: collisionResult.collisions,
       } : {}),
-    } })
+    })
   } catch (error) {
     console.error('Failed to auto-generate seats:', error)
     // Return detailed error for debugging

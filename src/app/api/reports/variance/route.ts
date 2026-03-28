@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { InventoryCountStatus } from '@/generated/prisma/client'
 import { requirePermission } from '@/lib/api-auth'
@@ -6,6 +6,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { calculateTheoreticalUsage, toNumber } from '@/lib/inventory-calculations'
 import { varianceQuerySchema, validateRequest } from '@/lib/validations'
 import { withVenue } from '@/lib/with-venue'
+import { err, ok } from '@/lib/api-response'
 // TODO: Phase 1 - No InventoryItemRepository or InventoryCountRepository yet.
 // db.inventoryItem, db.inventoryItemTransaction, db.inventoryCount calls remain direct.
 
@@ -42,7 +43,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     const validation = validateRequest(varianceQuerySchema, queryParams)
     if (!validation.success) {
-      return NextResponse.json({ error: validation.error }, { status: 400 })
+      return err(validation.error)
     }
 
     const { locationId, startDate, endDate, department, category } = validation.data
@@ -50,7 +51,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const requestingEmployeeId = searchParams.get('requestingEmployeeId') || searchParams.get('employeeId')
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_INVENTORY)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Parse dates
@@ -207,7 +208,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       ? (totalVarianceCost / totalTheoreticalCost) * 100
       : 0
 
-    return NextResponse.json({ data: {
+    return ok({
       report: {
         locationId,
         startDate: start.toISOString(),
@@ -225,9 +226,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           itemsUnderTheoretical: varianceItems.filter(i => i.variance < 0).length,
         },
       },
-    } })
+    })
   } catch (error) {
     console.error('Variance report error:', error)
-    return NextResponse.json({ error: 'Failed to generate report' }, { status: 500 })
+    return err('Failed to generate report', 500)
   }
 })

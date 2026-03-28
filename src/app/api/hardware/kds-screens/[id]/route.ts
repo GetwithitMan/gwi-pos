@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { emitToLocation } from '@/lib/socket-server'
@@ -7,6 +7,7 @@ import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('hardware-kds-screens')
 
 // GET single KDS screen
@@ -38,13 +39,13 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
     })
 
     if (!screen) {
-      return NextResponse.json({ error: 'KDS screen not found' }, { status: 404 })
+      return notFound('KDS screen not found')
     }
 
-    return NextResponse.json({ data: { screen } })
+    return ok({ screen })
   } catch (error) {
     console.error('Failed to fetch KDS screen:', error)
-    return NextResponse.json({ error: 'Failed to fetch KDS screen' }, { status: 500 })
+    return err('Failed to fetch KDS screen', 500)
   }
 }))
 
@@ -62,7 +63,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     })
 
     if (!existingScreen) {
-      return NextResponse.json({ error: 'KDS screen not found' }, { status: 404 })
+      return notFound('KDS screen not found')
     }
 
     const {
@@ -89,19 +90,19 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     // Validate new JSON fields if provided
     if (displayMode !== undefined) {
       const r = KDSDisplayModeSchema.safeParse(displayMode)
-      if (!r.success) return NextResponse.json({ error: 'Invalid displayMode' }, { status: 400 })
+      if (!r.success) return err('Invalid displayMode')
     }
     if (transitionTimes !== undefined && transitionTimes !== null) {
       const r = KDSTransitionTimesSchema.safeParse(transitionTimes)
-      if (!r.success) return NextResponse.json({ error: 'Invalid transitionTimes' }, { status: 400 })
+      if (!r.success) return err('Invalid transitionTimes')
     }
     if (orderBehavior !== undefined && orderBehavior !== null) {
       const r = KDSOrderBehaviorSchema.safeParse(orderBehavior)
-      if (!r.success) return NextResponse.json({ error: 'Invalid orderBehavior' }, { status: 400 })
+      if (!r.success) return err('Invalid orderBehavior')
     }
     if (orderTypeFilters !== undefined && orderTypeFilters !== null) {
       const r = KDSOrderTypeFiltersSchema.safeParse(orderTypeFilters)
-      if (!r.success) return NextResponse.json({ error: 'Invalid orderTypeFilters' }, { status: 400 })
+      if (!r.success) return err('Invalid orderTypeFilters')
     }
 
     // Update the screen
@@ -173,10 +174,10 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     void notifyDataChanged({ locationId: existingScreen.locationId, domain: 'hardware', action: 'updated', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { screen: completeScreen } })
+    return ok({ screen: completeScreen })
   } catch (error) {
     console.error('Failed to update KDS screen:', error)
-    return NextResponse.json({ error: 'Failed to update KDS screen' }, { status: 500 })
+    return err('Failed to update KDS screen', 500)
   }
 }))
 
@@ -194,7 +195,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     })
 
     if (!screen) {
-      return NextResponse.json({ error: 'KDS screen not found' }, { status: 404 })
+      return notFound('KDS screen not found')
     }
 
     // Soft delete the screen
@@ -216,9 +217,9 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     void notifyDataChanged({ locationId: screen.locationId, domain: 'hardware', action: 'deleted', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Failed to delete KDS screen:', error)
-    return NextResponse.json({ error: 'Failed to delete KDS screen' }, { status: 500 })
+    return err('Failed to delete KDS screen', 500)
   }
 }))

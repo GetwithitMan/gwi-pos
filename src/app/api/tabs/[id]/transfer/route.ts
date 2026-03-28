@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { withVenue } from '@/lib/with-venue'
@@ -10,6 +10,7 @@ import { queueSocketEvent, flushOutboxSafe } from '@/lib/socket-outbox'
 import * as OrderRepository from '@/lib/repositories/order-repository'
 import { getLocationId } from '@/lib/location-cache'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, forbidden, notFound, ok } from '@/lib/api-response'
 
 interface TransferRequest {
   toEmployeeId: string
@@ -29,16 +30,13 @@ export const POST = withVenue(async function POST(
     const { toEmployeeId, reason, fromEmployeeId } = body
 
     if (!toEmployeeId || !fromEmployeeId) {
-      return NextResponse.json(
-        { error: 'Both source and destination employee IDs are required' },
-        { status: 400 }
-      )
+      return err('Both source and destination employee IDs are required')
     }
 
     // Get the tab (order with bar_tab type)
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const tab = await OrderRepository.getOrderByIdWithInclude(tabId, locationId, {
@@ -49,52 +47,34 @@ export const POST = withVenue(async function POST(
     })
 
     if (!tab) {
-      return NextResponse.json(
-        { error: 'Tab not found' },
-        { status: 404 }
-      )
+      return notFound('Tab not found')
     }
 
     if (tab.orderType !== 'bar_tab') {
-      return NextResponse.json(
-        { error: 'This order is not a bar tab' },
-        { status: 400 }
-      )
+      return err('This order is not a bar tab')
     }
 
     const auth = await requirePermission(fromEmployeeId, tab.locationId, PERMISSIONS.MGR_TRANSFER_CHECKS)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Guard: destination employee must be permitted to receive transfers
     const receiveAuth = await requirePermission(toEmployeeId, tab.locationId, PERMISSIONS.MGR_RECEIVE_TRANSFERS)
     if (!receiveAuth.authorized) {
-      return NextResponse.json(
-        { error: `Destination employee cannot receive transfers: ${receiveAuth.error}` },
-        { status: receiveAuth.status }
-      )
+      return err(`Destination employee cannot receive transfers: ${receiveAuth.error}`, receiveAuth.status)
     }
 
     if (tab.status !== 'open' && tab.status !== 'in_progress') {
-      return NextResponse.json(
-        { error: 'Cannot transfer a closed tab' },
-        { status: 400 }
-      )
+      return err('Cannot transfer a closed tab')
     }
 
     if (tab.employeeId !== fromEmployeeId) {
-      return NextResponse.json(
-        { error: 'You can only transfer tabs assigned to you' },
-        { status: 403 }
-      )
+      return forbidden('You can only transfer tabs assigned to you')
     }
 
     if (tab.employeeId === toEmployeeId) {
-      return NextResponse.json(
-        { error: 'Tab is already assigned to this employee' },
-        { status: 400 }
-      )
+      return err('Tab is already assigned to this employee')
     }
 
     // Get the destination employee
@@ -104,17 +84,11 @@ export const POST = withVenue(async function POST(
     })
 
     if (!toEmployee) {
-      return NextResponse.json(
-        { error: 'Destination employee not found' },
-        { status: 404 }
-      )
+      return notFound('Destination employee not found')
     }
 
     if (!toEmployee.isActive) {
-      return NextResponse.json(
-        { error: 'Cannot transfer to an inactive employee' },
-        { status: 400 }
-      )
+      return err('Cannot transfer to an inactive employee')
     }
 
     // Wrap tab update + audit log + socket outbox in a single atomic transaction
@@ -174,7 +148,7 @@ export const POST = withVenue(async function POST(
       employeeId: toEmployeeId,
     })
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       tab: {
         id: updatedTab.id,
@@ -186,12 +160,9 @@ export const POST = withVenue(async function POST(
             `${updatedTab.employee.firstName} ${updatedTab.employee.lastName}`,
         },
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to transfer tab:', error)
-    return NextResponse.json(
-      { error: 'Failed to transfer tab' },
-      { status: 500 }
-    )
+    return err('Failed to transfer tab', 500)
   }
 })

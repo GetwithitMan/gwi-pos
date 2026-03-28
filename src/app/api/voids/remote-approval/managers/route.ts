@@ -5,11 +5,12 @@
  * for the remote approval dropdown.
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { hasPermission, PERMISSIONS } from '@/lib/auth-utils'
 import { maskPhone } from '@/lib/twilio'
 import { withVenue } from '@/lib/with-venue'
+import { err, ok } from '@/lib/api-response'
 
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
@@ -17,7 +18,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const locationId = searchParams.get('locationId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // Fetch all active employees with their roles
@@ -67,17 +68,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         ),
       }))
 
-    return NextResponse.json({
-      data: {
+    return ok({
         managers: managersWithVoidPermission,
         count: managersWithVoidPermission.length,
-      },
-    })
+      })
   } catch (error) {
     console.error('[RemoteVoidApproval] Error fetching managers:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch managers' },
-      { status: 500 }
-    )
+    return err('Failed to fetch managers', 500)
   }
 })

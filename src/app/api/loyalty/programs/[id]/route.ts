@@ -5,6 +5,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET /api/loyalty/programs/[id]
 export const GET = withVenue(async function GET(
@@ -17,7 +18,7 @@ export const GET = withVenue(async function GET(
     const locationId = searchParams.get('locationId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     const actor = await getActorFromRequest(request)
@@ -39,7 +40,7 @@ export const GET = withVenue(async function GET(
     )
 
     if (rows.length === 0) {
-      return NextResponse.json({ error: 'Program not found' }, { status: 404 })
+      return notFound('Program not found')
     }
 
     // Also fetch tiers
@@ -50,13 +51,13 @@ export const GET = withVenue(async function GET(
       id,
     )
 
-    return NextResponse.json({ data: { ...rows[0], tiers } })
+    return ok({ ...rows[0], tiers })
   } catch (error: any) {
     if (error?.message?.includes('does not exist') || error?.code === '42P01') {
-      return NextResponse.json({ error: 'Loyalty system not yet configured. Please run database migrations.' }, { status: 503 })
+      return err('Loyalty system not yet configured. Please run database migrations.', 503)
     }
     console.error('Failed to fetch loyalty program:', error)
-    return NextResponse.json({ error: 'Failed to fetch loyalty program' }, { status: 500 })
+    return err('Failed to fetch loyalty program', 500)
   }
 })
 
@@ -74,7 +75,7 @@ export const PUT = withVenue(async function PUT(
     const locationId = actor.locationId || body.locationId
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.SETTINGS_EDIT)
@@ -94,7 +95,7 @@ export const PUT = withVenue(async function PUT(
     )
 
     if (existing.length === 0) {
-      return NextResponse.json({ error: 'Program not found' }, { status: 404 })
+      return notFound('Program not found')
     }
 
     // Build dynamic SET clause
@@ -117,7 +118,7 @@ export const PUT = withVenue(async function PUT(
       if (key in body) {
         if (validate) {
           const err = validate(body[key])
-          if (err) return NextResponse.json({ error: err }, { status: 400 })
+          if (err) return err(err)
         }
         if (isArray) {
           setClauses.push(`"${column}" = $${paramIdx}::text[]`)
@@ -130,7 +131,7 @@ export const PUT = withVenue(async function PUT(
     }
 
     if (setClauses.length === 1) {
-      return NextResponse.json({ error: 'No fields to update' }, { status: 400 })
+      return err('No fields to update')
     }
 
     setParams.push(id, locationId)
@@ -150,13 +151,13 @@ export const PUT = withVenue(async function PUT(
     pushUpstream()
     void notifyDataChanged({ locationId, domain: 'loyalty', action: 'updated', entityId: id })
 
-    return NextResponse.json({ data: updated[0] })
+    return ok(updated[0])
   } catch (error: any) {
     if (error?.message?.includes('does not exist') || error?.code === '42P01') {
-      return NextResponse.json({ error: 'Loyalty system not yet configured. Please run database migrations.' }, { status: 503 })
+      return err('Loyalty system not yet configured. Please run database migrations.', 503)
     }
     console.error('Failed to update loyalty program:', error)
-    return NextResponse.json({ error: 'Failed to update loyalty program' }, { status: 500 })
+    return err('Failed to update loyalty program', 500)
   }
 })
 
@@ -171,7 +172,7 @@ export const DELETE = withVenue(async function DELETE(
     const locationId = searchParams.get('locationId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     const actor = await getActorFromRequest(request)
@@ -194,18 +195,18 @@ export const DELETE = withVenue(async function DELETE(
     )
 
     if (result === 0) {
-      return NextResponse.json({ error: 'Program not found' }, { status: 404 })
+      return notFound('Program not found')
     }
 
     pushUpstream()
     void notifyDataChanged({ locationId, domain: 'loyalty', action: 'deleted', entityId: id })
 
-    return NextResponse.json({ success: true })
+    return ok({ success: true })
   } catch (error: any) {
     if (error?.message?.includes('does not exist') || error?.code === '42P01') {
-      return NextResponse.json({ error: 'Loyalty system not yet configured. Please run database migrations.' }, { status: 503 })
+      return err('Loyalty system not yet configured. Please run database migrations.', 503)
     }
     console.error('Failed to delete loyalty program:', error)
-    return NextResponse.json({ error: 'Failed to delete loyalty program' }, { status: 500 })
+    return err('Failed to delete loyalty program', 500)
   }
 })

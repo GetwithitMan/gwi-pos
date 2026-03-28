@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
+import { err, ok } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,13 +19,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Auth check
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.DELIVERY_DISPATCH)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Feature gate — require dispatch board provisioned
     const featureGate = await requireDeliveryFeature(locationId, {
@@ -187,7 +188,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       deliveredCount,
     }
 
-    return NextResponse.json({
+    return ok({
       orders,
       runs,
       drivers,
@@ -197,6 +198,6 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     })
   } catch (error) {
     console.error('[Delivery/Dispatch] GET error:', error)
-    return NextResponse.json({ error: 'Failed to fetch dispatch board data' }, { status: 500 })
+    return err('Failed to fetch dispatch board data', 500)
   }
 })

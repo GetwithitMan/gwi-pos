@@ -7,6 +7,7 @@ import { getBusinessDayRange } from '@/lib/business-day'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 import { checkReportRateLimit } from '@/lib/report-rate-limiter'
+import { err, ok } from '@/lib/api-response'
 
 /**
  * GET /api/reports/tax-exempt
@@ -29,12 +30,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const requestingEmployeeId = searchParams.get('requestingEmployeeId') || searchParams.get('employeeId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+      return err('Location ID is required')
     }
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_SALES)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     const rateCheck = checkReportRateLimit(requestingEmployeeId || 'anonymous')
@@ -147,8 +148,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }
     })
 
-    return NextResponse.json({
-      data: {
+    return ok({
         orders: exemptOrders,
         summary: {
           totalExemptOrders: exemptOrders.length,
@@ -159,10 +159,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
             end: endDate || defaultEnd,
           },
         },
-      },
-    })
+      })
   } catch (error) {
     console.error('Tax exempt report error:', error)
-    return NextResponse.json({ error: 'Failed to generate tax exempt report' }, { status: 500 })
+    return err('Failed to generate tax exempt report', 500)
   }
 })

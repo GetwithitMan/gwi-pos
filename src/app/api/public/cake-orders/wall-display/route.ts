@@ -5,10 +5,11 @@
  * Returns only safe, non-PII fields for kitchen display.
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { parseSettings, DEFAULT_CAKE_ORDERING } from '@/lib/settings'
 import { parseCakeConfig } from '@/lib/cake-orders/schemas'
+import { err, forbidden, notFound, ok } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -20,10 +21,7 @@ export async function GET(request: NextRequest) {
 
     // ── Validate required params ──────────────────────────────────────────
     if (!token || !locationId) {
-      return NextResponse.json(
-        { error: 'token and locationId are required' },
-        { status: 400 },
-      )
+      return err('token and locationId are required')
     }
 
     // ── Validate token against location settings ─────────────────────────
@@ -33,7 +31,7 @@ export async function GET(request: NextRequest) {
     )
 
     if (locationRows.length === 0) {
-      return NextResponse.json({ error: 'Location not found' }, { status: 404 })
+      return notFound('Location not found')
     }
 
     const settings = parseSettings(locationRows[0].settings as Record<string, unknown> | null)
@@ -42,11 +40,11 @@ export async function GET(request: NextRequest) {
       : DEFAULT_CAKE_ORDERING
 
     if (!cakeSettings.enabled) {
-      return NextResponse.json({ error: 'Cake ordering is not enabled' }, { status: 403 })
+      return forbidden('Cake ordering is not enabled')
     }
 
     if (!cakeSettings.wallDisplayToken || cakeSettings.wallDisplayToken !== token) {
-      return NextResponse.json({ error: 'Invalid display token' }, { status: 403 })
+      return forbidden('Invalid display token')
     }
 
     // ── Query active cake orders ─────────────────────────────────────────
@@ -104,12 +102,9 @@ export async function GET(request: NextRequest) {
       }
     })
 
-    return NextResponse.json({ orders: safeOrders })
+    return ok({ orders: safeOrders })
   } catch (error) {
     console.error('[wall-display] Failed to fetch cake orders:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch cake orders' },
-      { status: 500 },
-    )
+    return err('Failed to fetch cake orders', 500)
   }
 }

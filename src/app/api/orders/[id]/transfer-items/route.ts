@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import * as OrderRepository from '@/lib/repositories/order-repository'
 import * as OrderItemRepository from '@/lib/repositories/order-item-repository'
@@ -14,6 +14,7 @@ import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
 import { getRequestLocationId } from '@/lib/request-context'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-transfer-items')
 
 interface TransferItemsRequest {
@@ -34,17 +35,11 @@ export const POST = withVenue(async function POST(
     const { toOrderId, itemIds, employeeId } = body
 
     if (!toOrderId || !itemIds || itemIds.length === 0) {
-      return NextResponse.json(
-        { error: 'Destination order ID and item IDs are required' },
-        { status: 400 }
-      )
+      return err('Destination order ID and item IDs are required')
     }
 
     if (fromOrderId === toOrderId) {
-      return NextResponse.json(
-        { error: 'Cannot transfer items to the same order' },
-        { status: 400 }
-      )
+      return err('Cannot transfer items to the same order')
     }
 
     // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
@@ -57,10 +52,7 @@ export const POST = withVenue(async function POST(
       })
 
       if (!fromCheck) {
-        return NextResponse.json(
-          { error: 'Source order not found' },
-          { status: 404 }
-        )
+        return notFound('Source order not found')
       }
       fromLocationId = fromCheck.locationId
     }
@@ -77,24 +69,18 @@ export const POST = withVenue(async function POST(
     })
 
     if (!fromOrder) {
-      return NextResponse.json(
-        { error: 'Source order not found' },
-        { status: 404 }
-      )
+      return notFound('Source order not found')
     }
 
     // Server-side permission check — transfer items between orders requires pos.transfer_order
     // (manager.transfer_checks is for transferring check ownership between employees, not item moves)
     const auth = await requirePermission(employeeId, fromOrder.locationId, PERMISSIONS.POS_TRANSFER_ORDER)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     if (fromOrder.status !== 'open' && fromOrder.status !== 'in_progress') {
-      return NextResponse.json(
-        { error: 'Cannot transfer items from a closed order' },
-        { status: 400 }
-      )
+      return err('Cannot transfer items from a closed order')
     }
 
     // Block transfers from orders with existing payments (would create overpayment on source)
@@ -102,10 +88,7 @@ export const POST = withVenue(async function POST(
       where: { orderId: fromOrderId, status: 'completed', deletedAt: null },
     })
     if (sourcePayments > 0) {
-      return NextResponse.json(
-        { error: 'Cannot transfer items from an order with existing payments. Void the payment first.' },
-        { status: 400 }
-      )
+      return err('Cannot transfer items from an order with existing payments. Void the payment first.')
     }
 
     // Block transfers from orders with active pre-auth card holds
@@ -113,10 +96,7 @@ export const POST = withVenue(async function POST(
       where: { orderId: fromOrderId, status: 'authorized', deletedAt: null },
     })
     if (activePreAuths > 0) {
-      return NextResponse.json(
-        { error: 'Cannot transfer items from an order with active card pre-authorization. Close the tab first.' },
-        { status: 400 }
-      )
+      return err('Cannot transfer items from an order with active card pre-authorization. Close the tab first.')
     }
 
     // Get destination order (same location as source)
@@ -125,33 +105,21 @@ export const POST = withVenue(async function POST(
     })
 
     if (!toOrder) {
-      return NextResponse.json(
-        { error: 'Destination order not found' },
-        { status: 404 }
-      )
+      return notFound('Destination order not found')
     }
 
     if (toOrder.status !== 'open' && toOrder.status !== 'in_progress') {
-      return NextResponse.json(
-        { error: 'Cannot transfer items to a closed order' },
-        { status: 400 }
-      )
+      return err('Cannot transfer items to a closed order')
     }
 
     // Block cross-location transfers
     if (fromOrder.locationId !== toOrder.locationId) {
-      return NextResponse.json(
-        { error: 'Cannot transfer items between different locations' },
-        { status: 400 }
-      )
+      return err('Cannot transfer items between different locations')
     }
 
     // Verify all items exist in source order
     if (fromOrder.items.length !== itemIds.length) {
-      return NextResponse.json(
-        { error: 'Some items not found in source order' },
-        { status: 400 }
-      )
+      return err('Some items not found in source order')
     }
 
     // Get location settings for tax calculation
@@ -345,7 +313,7 @@ export const POST = withVenue(async function POST(
 
     pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       transferred: {
         itemCount: itemIds.length,
@@ -353,13 +321,10 @@ export const POST = withVenue(async function POST(
         fromOrderId,
         toOrderId,
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to transfer items:', error)
-    return NextResponse.json(
-      { error: 'Failed to transfer items' },
-      { status: 500 }
-    )
+    return err('Failed to transfer items', 500)
   }
 })
 
@@ -374,20 +339,14 @@ export const GET = withVenue(async function GET(
     const locationId = searchParams.get('locationId')
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'Location ID is required' },
-        { status: 400 }
-      )
+      return err('Location ID is required')
     }
 
     // Get current order to exclude it
     const currentOrder = await OrderRepository.getOrderById(currentOrderId, locationId)
 
     if (!currentOrder) {
-      return NextResponse.json(
-        { error: 'Order not found' },
-        { status: 404 }
-      )
+      return notFound('Order not found')
     }
 
     // Get open orders at this location (exclude current order)
@@ -432,12 +391,9 @@ export const GET = withVenue(async function GET(
       createdAt: order.createdAt.toISOString(),
     }))
 
-    return NextResponse.json({ data: { orders: formattedOrders } })
+    return ok({ orders: formattedOrders })
   } catch (error) {
     console.error('Failed to get transfer targets:', error)
-    return NextResponse.json(
-      { error: 'Failed to get transfer targets' },
-      { status: 500 }
-    )
+    return err('Failed to get transfer targets', 500)
   }
 })

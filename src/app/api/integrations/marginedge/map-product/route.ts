@@ -1,12 +1,13 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { withVenue } from '@/lib/with-venue'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { db } from '@/lib/db'
+import { err, notFound, ok } from '@/lib/api-response'
 
 export const POST = withVenue(async function POST(request: NextRequest) {
   const location = await db.location.findFirst({ select: { id: true } })
-  if (!location) return NextResponse.json({ error: 'No location' }, { status: 404 })
+  if (!location) return notFound('No location')
 
   const body = await request.json().catch(() => ({})) as {
     employeeId?: string
@@ -22,11 +23,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   const resolvedEmployeeId = actor.employeeId ?? body.employeeId
   const auth = await requirePermission(resolvedEmployeeId, location.id, PERMISSIONS.SETTINGS_EDIT)
   if (!auth.authorized) {
-    return NextResponse.json({ error: auth.error }, { status: auth.status })
+    return err(auth.error, auth.status)
   }
 
   if (!body.marginEdgeProductId || !body.marginEdgeProductName || !body.inventoryItemId) {
-    return NextResponse.json({ error: 'marginEdgeProductId, marginEdgeProductName, and inventoryItemId are required' }, { status: 400 })
+    return err('marginEdgeProductId, marginEdgeProductName, and inventoryItemId are required')
   }
 
   // Verify inventory item exists
@@ -34,7 +35,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     where: { id: body.inventoryItemId, locationId: location.id, deletedAt: null },
   })
   if (!item) {
-    return NextResponse.json({ error: 'Inventory item not found' }, { status: 404 })
+    return notFound('Inventory item not found')
   }
 
   const mapping = await db.marginEdgeProductMapping.upsert({
@@ -68,5 +69,5 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     },
   })
 
-  return NextResponse.json({ data: mapping })
+  return ok(mapping)
 })

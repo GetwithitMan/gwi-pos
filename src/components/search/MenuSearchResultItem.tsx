@@ -1,13 +1,7 @@
 'use client'
 
 import { formatCurrency } from '@/lib/utils'
-
-interface MenuItem {
-  id: string
-  name: string
-  price: number
-  is86d?: boolean
-}
+import type { MenuItemSearch as MenuItem } from '@/types'
 
 interface MenuSearchResultItemProps {
   item: MenuItem

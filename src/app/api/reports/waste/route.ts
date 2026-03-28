@@ -5,6 +5,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { dateRangeToUTC } from '@/lib/timezone'
 import { checkReportRateLimit } from '@/lib/report-rate-limiter'
+import { err, ok } from '@/lib/api-response'
 
 /**
  * GET /api/reports/waste
@@ -25,12 +26,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const requestingEmployeeId = searchParams.get('requestingEmployeeId') || searchParams.get('employeeId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+      return err('Location ID is required')
     }
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_INVENTORY)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     const rateCheck = checkReportRateLimit(requestingEmployeeId || 'anonymous')
@@ -181,8 +182,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Determine top waste reason
     const topReason = byReason.length > 0 ? byReason[0].reason : null
 
-    return NextResponse.json({
-      data: {
+    return ok({
         summary: {
           totalWasteCost,
           totalWasteQuantity,
@@ -195,10 +195,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         byDay,
         logs,
         dateRange: { start: range.start.toISOString(), end: range.end.toISOString() },
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to generate waste report:', error)
-    return NextResponse.json({ error: 'Failed to generate waste report' }, { status: 500 })
+    return err('Failed to generate waste report', 500)
   }
 })

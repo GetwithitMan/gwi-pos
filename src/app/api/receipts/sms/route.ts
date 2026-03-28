@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { sendSMS, isTwilioConfigured } from '@/lib/twilio'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { formatCurrency } from '@/lib/utils'
+import { err, forbidden, notFound, ok } from '@/lib/api-response'
 
 const PAYMENT_METHOD_LABELS: Record<string, string> = {
   cash: 'Cash',
@@ -112,26 +113,17 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     const { orderId, phone, locationId } = body
 
     if (!orderId || !phone || !locationId) {
-      return NextResponse.json(
-        { error: 'orderId, phone, and locationId are required' },
-        { status: 400 }
-      )
+      return err('orderId, phone, and locationId are required')
     }
 
     // Basic phone validation (at least 10 digits)
     const digits = phone.replace(/\D/g, '')
     if (digits.length < 10) {
-      return NextResponse.json(
-        { error: 'Invalid phone number. Must be at least 10 digits.' },
-        { status: 400 }
-      )
+      return err('Invalid phone number. Must be at least 10 digits.')
     }
 
     if (!isTwilioConfigured()) {
-      return NextResponse.json(
-        { error: 'SMS service is not configured' },
-        { status: 503 }
-      )
+      return err('SMS service is not configured', 503)
     }
 
     // Fetch order with related data
@@ -151,14 +143,11 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     })
 
     if (!order) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      return notFound('Order not found')
     }
 
     if (order.locationId !== locationId) {
-      return NextResponse.json(
-        { error: 'Order does not belong to this location' },
-        { status: 403 }
-      )
+      return forbidden('Order does not belong to this location')
     }
 
     const smsBody = buildSmsReceipt(order as any)
@@ -192,10 +181,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
         },
       }).catch(err => console.error('[receipt-sms] audit log (failed) failed:', err))
 
-      return NextResponse.json(
-        { error: result.error || 'Failed to send SMS' },
-        { status: 500 }
-      )
+      return err(result.error || 'Failed to send SMS', 500)
     }
 
     void db.auditLog.create({
@@ -209,14 +195,9 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
       },
     }).catch(err => console.error('[receipt-sms] audit log (sent) failed:', err))
 
-    return NextResponse.json({
-      data: { success: true, messageSid: result.messageSid },
-    })
+    return ok({ success: true, messageSid: result.messageSid })
   } catch (error) {
     console.error('Failed to send SMS receipt:', error)
-    return NextResponse.json(
-      { error: 'Failed to send SMS receipt' },
-      { status: 500 }
-    )
+    return err('Failed to send SMS receipt', 500)
   }
 }))

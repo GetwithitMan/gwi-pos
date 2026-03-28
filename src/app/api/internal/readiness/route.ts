@@ -1,8 +1,8 @@
-import { NextResponse } from 'next/server'
 import { getBootstrapResult } from '@/lib/venue-bootstrap'
 import { EXPECTED_SCHEMA_VERSION, EXPECTED_SEED_VERSION, PROVISIONER_VERSION, APP_VERSION } from '@/lib/version-contract'
 import { getWorkerHealth } from '@/lib/worker-registry'
 import { getReadinessState } from '@/lib/readiness'
+import { ok, unauthorized } from '@/lib/api-response'
 
 export async function GET(request: Request) {
   // Auth check — lazy-load config to avoid crashing if secrets are missing.
@@ -19,14 +19,14 @@ export async function GET(request: Request) {
   }
   const apiKey = request.headers.get('x-api-key')
   if (!apiKey || apiKey !== provisionApiKey) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return unauthorized('Unauthorized')
   }
 
   const bootstrap = getBootstrapResult()
   const workers = getWorkerHealth()
   const readiness = getReadinessState()
 
-  return NextResponse.json({
+  return ok({
     // Canonical readiness — ONE source of truth
     readiness: readiness ?? null,
     // Legacy fields (kept for backward compat with existing MC consumers)

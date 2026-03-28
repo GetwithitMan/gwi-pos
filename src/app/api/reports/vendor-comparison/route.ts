@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { err, ok } from '@/lib/api-response'
 
 // GET /api/reports/vendor-comparison
 // For each inventory item, show prices from different vendors (from VendorOrderLineItem records)
@@ -12,13 +13,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId') || await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // Auth check
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.REPORTS_VIEW)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const category = searchParams.get('category') // optional filter by InventoryItem.category
 
@@ -193,8 +194,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Get unique categories for filter dropdown
     const categories = [...new Set(inventoryItems.map(i => i.category))].sort()
 
-    return NextResponse.json({
-      data: {
+    return ok({
         vendors: vendors.map(v => ({ id: v.id, name: v.name })),
         categories,
         comparison,
@@ -203,10 +203,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           itemsWithMultipleVendors: comparison.filter(c => c.prices.length > 1).length,
           totalPotentialSavings: Math.round(totalPotentialSavings * 100) / 100,
         },
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to fetch vendor comparison:', error)
-    return NextResponse.json({ error: 'Failed to fetch vendor comparison' }, { status: 500 })
+    return err('Failed to fetch vendor comparison', 500)
   }
 })

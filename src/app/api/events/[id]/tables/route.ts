@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - List table configurations for an event
 export const GET = withVenue(withAuth('ADMIN', async function GET(
@@ -24,10 +25,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
     })
 
     if (!event) {
-      return NextResponse.json(
-        { error: 'Event not found' },
-        { status: 404 }
-      )
+      return notFound('Event not found')
     }
 
     // Get all tables for the location
@@ -93,7 +91,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
       ticketCountMap.get(stat.tableId)![stat.status] = stat._count.id
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       eventId: id,
       eventName: event.name,
       ticketingMode: event.ticketingMode,
@@ -135,13 +133,10 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
           hasConfiguration: !!config,
         }
       }),
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch table configurations:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch table configurations' },
-      { status: 500 }
-    )
+    return err('Failed to fetch table configurations', 500)
   }
 }))
 
@@ -156,10 +151,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     const { tables } = body // Array of { tableId, isIncluded, bookingMode, pricingTierId, minPartySize, maxPartySize }
 
     if (!tables || !Array.isArray(tables)) {
-      return NextResponse.json(
-        { error: 'Tables array is required' },
-        { status: 400 }
-      )
+      return err('Tables array is required')
     }
 
     const event = await db.event.findUnique({
@@ -168,10 +160,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     })
 
     if (!event) {
-      return NextResponse.json(
-        { error: 'Event not found' },
-        { status: 404 }
-      )
+      return notFound('Event not found')
     }
 
     // Upsert each table configuration
@@ -215,16 +204,13 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     void notifyDataChanged({ locationId: event.locationId, domain: 'events', action: 'updated', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       configured: results.length,
       message: `${results.length} table configuration(s) updated`,
-    } })
+    })
   } catch (error) {
     console.error('Failed to configure tables:', error)
-    return NextResponse.json(
-      { error: 'Failed to configure tables' },
-      { status: 500 }
-    )
+    return err('Failed to configure tables', 500)
   }
 }))

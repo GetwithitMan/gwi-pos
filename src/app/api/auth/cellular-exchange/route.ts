@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { issueCellularToken } from '@/lib/cellular-auth'
 import { getDbForVenue } from '@/lib/db'
+import { err, ok, unauthorized } from '@/lib/api-response'
 
 const bodySchema = z.object({
   deviceId: z.string().min(1),
@@ -25,15 +26,12 @@ export async function POST(request: NextRequest) {
     try {
       body = await request.json()
     } catch {
-      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+      return err('Invalid JSON body')
     }
 
     const parsed = bodySchema.safeParse(body)
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: 'Validation failed', details: parsed.error.flatten().fieldErrors },
-        { status: 400 }
-      )
+      return err('Validation failed', 400, parsed.error.flatten().fieldErrors)
     }
 
     const { deviceId, nonce, deviceFingerprint } = parsed.data
@@ -43,10 +41,7 @@ export async function POST(request: NextRequest) {
     const claimKey = process.env.CELLULAR_CLAIM_KEY
     if (!claimKey) {
       console.error('[cellular-exchange] CELLULAR_CLAIM_KEY not configured')
-      return NextResponse.json(
-        { error: 'Server not configured for cellular pairing' },
-        { status: 503 }
-      )
+      return err('Server not configured for cellular pairing', 503)
     }
 
     let mcResponse: Response
@@ -62,19 +57,13 @@ export async function POST(request: NextRequest) {
       })
     } catch (error) {
       console.error('[cellular-exchange] MC fetch failed:', error)
-      return NextResponse.json(
-        { error: 'Failed to verify nonce with Mission Control' },
-        { status: 502 }
-      )
+      return err('Failed to verify nonce with Mission Control', 502)
     }
 
     if (!mcResponse.ok) {
       const errorBody = await mcResponse.text().catch(() => 'unknown')
       console.error(`[cellular-exchange] MC returned ${mcResponse.status}: ${errorBody}`)
-      return NextResponse.json(
-        { error: `Nonce verification failed: ${mcResponse.status}` },
-        { status: mcResponse.status }
-      )
+      return err(`Nonce verification failed: ${mcResponse.status}`, mcResponse.status)
     }
 
     const mcResult = (await mcResponse.json()) as {
@@ -98,10 +87,7 @@ export async function POST(request: NextRequest) {
         received: deviceFingerprint,
         timestamp: new Date().toISOString(),
       }))
-      return NextResponse.json(
-        { error: 'Device fingerprint mismatch' },
-        { status: 401 }
-      )
+      return unauthorized('Device fingerprint mismatch')
     }
 
     // -----------------------------------------------------------------------
@@ -141,19 +127,13 @@ export async function POST(request: NextRequest) {
 
       if (!location) {
         console.error(`[cellular-exchange] No Location found in venue DB '${mcData.venueSlug}'. Venue not provisioned.`)
-        return NextResponse.json(
-          { error: `No location found in venue database '${mcData.venueSlug}'. Venue may not be provisioned.` },
-          { status: 500 }
-        )
+        return err(`No location found in venue database '${mcData.venueSlug}'. Venue may not be provisioned.`, 500)
       }
 
       resolvedLocationId = location.id
     } catch (dbError) {
       console.error(`[cellular-exchange] Failed to resolve locationId from venue DB '${mcData.venueSlug}':`, dbError)
-      return NextResponse.json(
-        { error: 'Failed to resolve location from venue database' },
-        { status: 500 }
-      )
+      return err('Failed to resolve location from venue database', 500)
     }
 
     // Cellular device count limit check (subscription-gated)
@@ -186,16 +166,13 @@ export async function POST(request: NextRequest) {
     } catch (issueError) {
       console.error('[cellular-exchange] Token issuance failed:', issueError)
       const msg = issueError instanceof Error ? issueError.message : 'Token issuance failed'
-      return NextResponse.json({ error: msg }, { status: 500 })
+      return err(msg, 500)
     }
 
     console.info(`[cellular-exchange] JWT issued: terminal=${mcData.terminalId} location=${resolvedLocationId} venue=${mcData.venueSlug}`)
-    return NextResponse.json({ token })
+    return ok({ token })
   } catch (error) {
     console.error('[cellular-exchange] Unexpected error:', error)
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Internal server error' },
-      { status: 500 }
-    )
+    return err(error instanceof Error ? error.message : 'Internal server error', 500)
   }
 }

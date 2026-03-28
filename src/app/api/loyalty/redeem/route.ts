@@ -6,6 +6,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { err, ok } from '@/lib/api-response'
 
 // POST /api/loyalty/redeem — redeem points for a dollar discount
 export const POST = withVenue(async function POST(request: NextRequest) {
@@ -17,7 +18,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const locationId = actor.locationId || body.locationId
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.POS_ACCESS)
@@ -31,10 +32,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const { customerId, points, orderId } = body
 
     if (!customerId) {
-      return NextResponse.json({ error: 'customerId is required' }, { status: 400 })
+      return err('customerId is required')
     }
     if (!points || typeof points !== 'number' || points <= 0) {
-      return NextResponse.json({ error: 'points must be a positive number' }, { status: 400 })
+      return err('points must be a positive number')
     }
 
     // Wrap entire redeem operation in a transaction with FOR UPDATE to prevent
@@ -143,18 +144,18 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }, { timeout: 15000 })
 
     if ('error' in result) {
-      return NextResponse.json({ error: result.error }, { status: result.status })
+      return err(result.error, result.status)
     }
 
     pushUpstream()
     void notifyDataChanged({ locationId, domain: 'loyalty', action: 'updated' })
 
-    return NextResponse.json(result)
+    return ok(result)
   } catch (error: any) {
     if (error?.message?.includes('does not exist') || error?.code === '42P01') {
-      return NextResponse.json({ error: 'Loyalty system not yet configured. Please run database migrations.' }, { status: 503 })
+      return err('Loyalty system not yet configured. Please run database migrations.', 503)
     }
     console.error('Failed to redeem loyalty points:', error)
-    return NextResponse.json({ error: 'Failed to redeem loyalty points' }, { status: 500 })
+    return err('Failed to redeem loyalty points', 500)
   }
 })

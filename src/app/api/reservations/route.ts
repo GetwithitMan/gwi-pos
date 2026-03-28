@@ -9,6 +9,7 @@ import { SOURCE_TYPES, type SourceType } from '@/lib/reservations/state-machine'
 import { getLocationId } from '@/lib/location-cache'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - List reservations
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -16,7 +17,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
     const date = searchParams.get('date')
     const serviceDate = searchParams.get('serviceDate')
@@ -87,13 +88,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       ],
     })
 
-    return NextResponse.json(reservations)
+    return ok(reservations)
   } catch (error) {
     console.error('Failed to fetch reservations:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch reservations' },
-      { status: 500 }
-    )
+    return err('Failed to fetch reservations', 500)
   }
 })
 
@@ -102,7 +100,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const body = await request.json()
@@ -130,52 +128,34 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     } = body
 
     if (!guestName || !partySize || !reservationDate || !reservationTime) {
-      return NextResponse.json(
-        { error: 'guestName, partySize, reservationDate, and reservationTime are required' },
-        { status: 400 }
-      )
+      return err('guestName, partySize, reservationDate, and reservationTime are required')
     }
 
     // Validate partySize: must be a positive integer, capped at a reasonable max
     const MAX_PARTY_SIZE = 200
     if (!Number.isInteger(partySize) || partySize < 1 || partySize > MAX_PARTY_SIZE) {
-      return NextResponse.json(
-        { error: `partySize must be a positive integer (max ${MAX_PARTY_SIZE})` },
-        { status: 400 }
-      )
+      return err(`partySize must be a positive integer (max ${MAX_PARTY_SIZE})`)
     }
 
     // Validate reservationDate: must match YYYY-MM-DD format
     if (!/^\d{4}-\d{2}-\d{2}$/.test(reservationDate)) {
-      return NextResponse.json(
-        { error: 'reservationDate must be in YYYY-MM-DD format' },
-        { status: 400 }
-      )
+      return err('reservationDate must be in YYYY-MM-DD format')
     }
 
     // Validate reservationTime: must match HH:MM format with valid hours/minutes
     const timeMatch = reservationTime.match(/^(\d{2}):(\d{2})$/)
     if (!timeMatch) {
-      return NextResponse.json(
-        { error: 'reservationTime must be in HH:MM format' },
-        { status: 400 }
-      )
+      return err('reservationTime must be in HH:MM format')
     }
     const parsedHours = parseInt(timeMatch[1], 10)
     const parsedMinutes = parseInt(timeMatch[2], 10)
     if (parsedHours < 0 || parsedHours > 23 || parsedMinutes < 0 || parsedMinutes > 59) {
-      return NextResponse.json(
-        { error: 'reservationTime has invalid hours (0-23) or minutes (0-59)' },
-        { status: 400 }
-      )
+      return err('reservationTime has invalid hours (0-23) or minutes (0-59)')
     }
 
     // Validate source against allowed types
     if (source && !SOURCE_TYPES.includes(source as SourceType)) {
-      return NextResponse.json(
-        { error: `Invalid source. Must be one of: ${SOURCE_TYPES.join(', ')}` },
-        { status: 400 }
-      )
+      return err(`Invalid source. Must be one of: ${SOURCE_TYPES.join(', ')}`)
     }
 
     // Load location settings
@@ -185,7 +165,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     if (!location) {
-      return NextResponse.json({ error: 'Location not found' }, { status: 404 })
+      return notFound('Location not found')
     }
 
     const settings = parseSettings(location.settings)
@@ -263,9 +243,6 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       return NextResponse.json({ error: error.message, code: error.code }, { status: statusCode })
     }
     console.error('Failed to create reservation:', error)
-    return NextResponse.json(
-      { error: 'Failed to create reservation' },
-      { status: 500 }
-    )
+    return err('Failed to create reservation', 500)
   }
 })

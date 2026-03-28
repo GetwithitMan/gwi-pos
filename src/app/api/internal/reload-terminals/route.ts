@@ -1,7 +1,7 @@
-import { NextResponse } from 'next/server'
 import { emitToLocation } from '@/lib/socket-server'
 import { getLocationId } from '@/lib/location-cache'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok, unauthorized } from '@/lib/api-response'
 const log = createChildLogger('internal-reload-terminals')
 
 /**
@@ -15,20 +15,20 @@ export async function POST(request: Request) {
   const apiKey = request.headers.get('x-api-key') || request.headers.get('authorization')?.replace('Bearer ', '')
   const secret = process.env.PROVISION_API_KEY || process.env.INTERNAL_API_SECRET
   if (!apiKey || !secret || apiKey !== secret) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return unauthorized('Unauthorized')
   }
 
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No locationId configured' }, { status: 500 })
+      return err('No locationId configured', 500)
     }
 
     void emitToLocation(locationId, 'system:reload', {}).catch(err => log.warn({ err }, 'Background task failed'))
 
-    return NextResponse.json({ data: { ok: true } })
+    return ok({ ok: true })
   } catch (err) {
     console.error('[Reload Terminals] Error:', err)
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
+    return err('Internal error', 500)
   }
 }

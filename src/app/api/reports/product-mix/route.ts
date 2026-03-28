@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -6,6 +6,7 @@ import { withVenue } from '@/lib/with-venue'
 import { dateRangeToUTC } from '@/lib/timezone'
 import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
 import { computeVariationFingerprint } from '@/lib/domain/reports/variation-fingerprint'
+import { err, ok } from '@/lib/api-response'
 
 // GET - Product mix report
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -20,15 +21,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const requestingEmployeeId = searchParams.get('requestingEmployeeId') || searchParams.get('employeeId')
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'Location ID is required' },
-        { status: 400 }
-      )
+      return err('Location ID is required')
     }
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_PRODUCT_MIX)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Resolve venue timezone for correct date boundaries
@@ -382,7 +380,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Calculate item pairings (frequently ordered together)
     const pairings = await calculateItemPairings(orderItems)
 
-    return NextResponse.json({ data: {
+    return ok({
       summary: {
         totalRevenue,
         totalCost,
@@ -407,13 +405,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         start: dateFilter.gte,
         end: dateFilter.lte || new Date(),
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to generate product mix report:', error)
-    return NextResponse.json(
-      { error: 'Failed to generate product mix report' },
-      { status: 500 }
-    )
+    return err('Failed to generate product mix report', 500)
   }
 })
 

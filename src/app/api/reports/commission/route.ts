@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -7,6 +7,7 @@ import { parseSettings } from '@/lib/settings'
 import { getLocationSettings, getLocationTimezone } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
+import { err, ok, unauthorized } from '@/lib/api-response'
 
 // GET commission report
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -19,26 +20,20 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const locationId = searchParams.get('locationId')
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'Location ID is required' },
-        { status: 400 }
-      )
+      return err('Location ID is required')
     }
 
     // Auth: require report viewing permission
     const authEmployeeId = requestingEmployeeId || employeeId
     if (!authEmployeeId) {
-      return NextResponse.json(
-        { error: 'requestingEmployeeId or employeeId is required' },
-        { status: 401 }
-      )
+      return unauthorized('requestingEmployeeId or employeeId is required')
     }
     // Self-access: employees can always view their own commission report
     const isSelfAccess = employeeId && requestingEmployeeId && employeeId === requestingEmployeeId
     if (!isSelfAccess) {
       const auth = await requirePermission(authEmployeeId, locationId, PERMISSIONS.REPORTS_COMMISSION)
       if (!auth.authorized) {
-        return NextResponse.json({ error: auth.error }, { status: auth.status })
+        return err(auth.error, auth.status)
       }
     }
 
@@ -223,7 +218,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Calculate grand total
     const grandTotal = report.reduce((sum, emp) => sum + emp.totalCommission, 0)
 
-    return NextResponse.json({ data: {
+    return ok({
       report,
       summary: {
         totalEmployees: report.length,
@@ -236,12 +231,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         employeeId,
         locationId,
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to generate commission report:', error)
-    return NextResponse.json(
-      { error: 'Failed to generate commission report' },
-      { status: 500 }
-    )
+    return err('Failed to generate commission report', 500)
   }
 })

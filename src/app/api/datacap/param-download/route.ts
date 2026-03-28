@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { requireDatacapClient, validateReader, parseBody, datacapErrorResponse } from '@/lib/datacap/helpers'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, ok } from '@/lib/api-response'
 
 interface ParamDownloadRequest {
   locationId: string
@@ -14,7 +15,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     const { locationId, readerId } = body
 
     if (!locationId || !readerId) {
-      return Response.json({ error: 'Missing required fields: locationId, readerId' }, { status: 400 })
+      return err('Missing required fields: locationId, readerId')
     }
 
     await validateReader(readerId, locationId)
@@ -22,12 +23,10 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
 
     const response = await client.paramDownload(readerId)
 
-    return Response.json({
-      data: {
+    return ok({
         success: response.cmdStatus === 'Success',
         textResponse: response.textResponse,
-      },
-    })
+      })
   } catch (err) {
     return datacapErrorResponse(err)
   }

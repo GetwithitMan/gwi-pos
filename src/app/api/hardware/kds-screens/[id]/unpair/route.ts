@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { Prisma } from '@/generated/prisma/client'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // POST /api/hardware/kds-screens/[id]/unpair - Remove device pairing
 export const POST = withVenue(withAuth('ADMIN', async function POST(
@@ -19,7 +20,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     })
 
     if (!screen) {
-      return NextResponse.json({ error: 'KDS screen not found' }, { status: 404 })
+      return notFound('KDS screen not found')
     }
 
     // Clear all pairing data
@@ -38,12 +39,12 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     void notifyDataChanged({ locationId: screen.locationId, domain: 'hardware', action: 'updated', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       message: 'Device unpaired successfully',
-    } })
+    })
   } catch (error) {
     console.error('Failed to unpair device:', error)
-    return NextResponse.json({ error: 'Failed to unpair device' }, { status: 500 })
+    return err('Failed to unpair device', 500)
   }
 }))

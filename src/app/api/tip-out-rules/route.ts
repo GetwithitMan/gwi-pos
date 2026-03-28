@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { created, err, ok } from '@/lib/api-response'
 
 // Valid basisType values
 const VALID_BASIS_TYPES = ['tips_earned', 'food_sales', 'bar_sales', 'total_sales', 'net_sales'] as const
@@ -17,10 +18,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const includeExpired = searchParams.get('includeExpired') === 'true'
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'Location ID is required' },
-        { status: 400 }
-      )
+      return err('Location ID is required')
     }
 
     // Build where clause: filter expired rules by default
@@ -57,13 +55,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       expiresAt: rule.expiresAt?.toISOString() || null,
     }))
 
-    return NextResponse.json({ data: serializedRules })
+    return ok(serializedRules)
   } catch (error) {
     console.error('Error fetching tip-out rules:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch tip-out rules' },
-      { status: 500 }
-    )
+    return err('Failed to fetch tip-out rules', 500)
   }
 })
 
@@ -75,49 +70,34 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Validation
     if (!locationId || !fromRoleId || !toRoleId || percentage === undefined) {
-      return NextResponse.json(
-        { error: 'Missing required fields: locationId, fromRoleId, toRoleId, percentage' },
-        { status: 400 }
-      )
+      return err('Missing required fields: locationId, fromRoleId, toRoleId, percentage')
     }
 
     // Require tips.manage_rules permission — modifying tip-out rules is a manager action
     const actor = await getActorFromRequest(request)
     const resolvedEmployeeId = actor.employeeId ?? body.employeeId
     const authResult = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.TIPS_MANAGE_RULES)
-    if (!authResult.authorized) return NextResponse.json({ error: authResult.error }, { status: authResult.status })
+    if (!authResult.authorized) return err(authResult.error, authResult.status)
 
     if (fromRoleId === toRoleId) {
-      return NextResponse.json(
-        { error: 'From role and to role cannot be the same' },
-        { status: 400 }
-      )
+      return err('From role and to role cannot be the same')
     }
 
     const percentageNum = Number(percentage)
     if (isNaN(percentageNum) || percentageNum <= 0 || percentageNum > 100) {
-      return NextResponse.json(
-        { error: 'Percentage must be between 0 and 100' },
-        { status: 400 }
-      )
+      return err('Percentage must be between 0 and 100')
     }
 
     // Validate basisType if provided
     if (basisType !== undefined && !VALID_BASIS_TYPES.includes(basisType)) {
-      return NextResponse.json(
-        { error: `Invalid basisType. Must be one of: ${VALID_BASIS_TYPES.join(', ')}` },
-        { status: 400 }
-      )
+      return err(`Invalid basisType. Must be one of: ${VALID_BASIS_TYPES.join(', ')}`)
     }
 
     // Validate maxPercentage if provided
     if (maxPercentage !== undefined && maxPercentage !== null) {
       const maxPctNum = Number(maxPercentage)
       if (isNaN(maxPctNum) || maxPctNum < 0 || maxPctNum > 100) {
-        return NextResponse.json(
-          { error: 'maxPercentage must be between 0 and 100' },
-          { status: 400 }
-        )
+        return err('maxPercentage must be between 0 and 100')
       }
     }
 
@@ -133,10 +113,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     if (existingRule) {
-      return NextResponse.json(
-        { error: 'A tip-out rule already exists for this role combination' },
-        { status: 409 }
-      )
+      return err('A tip-out rule already exists for this role combination', 409)
     }
 
     // Build create data with new fields
@@ -169,21 +146,16 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     void notifyDataChanged({ locationId, domain: 'tip-out-rules', action: 'created', entityId: rule.id })
     void pushUpstream()
 
-    return NextResponse.json({
-      data: {
+    return created({
         ...rule,
         percentage: Number(rule.percentage),
         maxPercentage: rule.maxPercentage ? Number(rule.maxPercentage) : null,
         effectiveDate: rule.effectiveDate?.toISOString() || null,
         expiresAt: rule.expiresAt?.toISOString() || null,
-      }
-    }, { status: 201 })
+      })
   } catch (error) {
     console.error('Error creating tip-out rule:', error)
     const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-    return NextResponse.json(
-      { error: `Failed to create tip-out rule: ${errorMessage}` },
-      { status: 500 }
-    )
+    return err(`Failed to create tip-out rule: ${errorMessage}`, 500)
   }
 })

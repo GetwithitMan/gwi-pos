@@ -5,9 +5,9 @@
  * Used by the NUC Dashboard app to render the devices overview.
  */
 
-import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { err, ok } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -24,7 +24,7 @@ export const GET = withVenue(async function GET(request: Request): Promise<NextR
     new URL(request.url).searchParams.get('locationId')
 
   if (!locationId) {
-    return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+    return err('locationId is required')
   }
 
   // Run all 6 queries in parallel for speed
@@ -119,8 +119,7 @@ export const GET = withVenue(async function GET(request: Request): Promise<NextR
     }).catch(() => []),
   ])
 
-  return NextResponse.json({
-    data: {
+  return ok({
       terminals: terminals.map(t => ({
         id: t.id,
         name: t.name,
@@ -174,6 +173,5 @@ export const GET = withVenue(async function GET(request: Request): Promise<NextR
         lastSeenAt: b.lastSeenAt?.toISOString() ?? null,
         lastError: b.lastError ?? null,
       })),
-    },
-  })
+    })
 })

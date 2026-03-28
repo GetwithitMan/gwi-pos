@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
+import { err, ok } from '@/lib/api-response'
 
 // GET - List/search tickets
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -18,7 +19,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Resolve locationId — query param → fallback to cached location
     const locationId = queryLocationId || await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'Location required' }, { status: 400 })
+      return err('Location required')
     }
 
     const whereClause: Record<string, unknown> = {}
@@ -90,7 +91,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       db.ticket.count({ where: whereClause }),
     ])
 
-    return NextResponse.json({ data: {
+    return ok({
       tickets: tickets.map(ticket => ({
         id: ticket.id,
         ticketNumber: ticket.ticketNumber,
@@ -135,12 +136,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         offset,
         hasMore: offset + tickets.length < total,
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch tickets:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch tickets' },
-      { status: 500 }
-    )
+    return err('Failed to fetch tickets', 500)
   }
 })

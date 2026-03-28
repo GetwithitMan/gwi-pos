@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // POST /api/hardware/kds-screens/[id]/generate-code - Generate a pairing code
 export const POST = withVenue(withAuth('ADMIN', async function POST(
@@ -18,7 +19,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     })
 
     if (!screen) {
-      return NextResponse.json({ error: 'KDS screen not found' }, { status: 404 })
+      return notFound('KDS screen not found')
     }
 
     // Generate a 6-digit pairing code
@@ -40,15 +41,15 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     void notifyDataChanged({ locationId: screen.locationId, domain: 'hardware', action: 'updated', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       pairingCode,
       expiresAt: pairingCodeExpiresAt.toISOString(),
       expiresInSeconds: 300,
       screenName: screen.name,
       slug: screen.slug,
-    } })
+    })
   } catch (error) {
     console.error('Failed to generate pairing code:', error)
-    return NextResponse.json({ error: 'Failed to generate pairing code' }, { status: 500 })
+    return err('Failed to generate pairing code', 500)
   }
 }))

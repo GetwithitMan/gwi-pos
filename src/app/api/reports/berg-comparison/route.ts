@@ -4,6 +4,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
+import { err, ok } from '@/lib/api-response'
 
 /**
  * GET /api/reports/berg-comparison
@@ -20,12 +21,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const requestingEmployeeId = searchParams.get('requestingEmployeeId') || searchParams.get('employeeId') || ''
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_INVENTORY)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Build date filter (matches liquor report pattern)
@@ -140,7 +141,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       })
     }
 
-    return NextResponse.json({
+    return ok({
       period: { startDate, endDate },
       generatedAt: new Date().toISOString(),
       mappings: mappingResults,
@@ -149,6 +150,6 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     })
   } catch (err) {
     console.error('[berg-comparison GET]', err)
-    return NextResponse.json({ error: 'Failed to generate Berg comparison report' }, { status: 500 })
+    return err('Failed to generate Berg comparison report', 500)
   }
 })

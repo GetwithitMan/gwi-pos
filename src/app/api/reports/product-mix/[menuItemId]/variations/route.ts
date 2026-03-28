@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -7,6 +7,7 @@ import { dateRangeToUTC } from '@/lib/timezone'
 import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
 import { groupByVariation, computeVariationFingerprint } from '@/lib/domain/reports/variation-fingerprint'
 import type { TransformedOrderItem } from '@/lib/domain/reports/variation-fingerprint'
+import { err, ok } from '@/lib/api-response'
 
 // GET /api/reports/product-mix/[menuItemId]/variations
 export const GET = withVenue(async function GET(
@@ -23,15 +24,12 @@ export const GET = withVenue(async function GET(
     const requestingEmployeeId = searchParams.get('requestingEmployeeId') || searchParams.get('employeeId')
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'Location ID is required' },
-        { status: 400 }
-      )
+      return err('Location ID is required')
     }
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_PRODUCT_MIX)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Resolve venue timezone for correct date boundaries
@@ -126,8 +124,7 @@ export const GET = withVenue(async function GET(
     })
 
     if (orderItems.length === 0) {
-      return NextResponse.json({
-        data: {
+      return ok({
           menuItemId,
           menuItemName: '',
           categoryName: '',
@@ -137,8 +134,7 @@ export const GET = withVenue(async function GET(
           totalCost: 0,
           variations: [],
           insights: null,
-        },
-      })
+        })
     }
 
     const menuItem = orderItems[0].menuItem
@@ -227,8 +223,7 @@ export const GET = withVenue(async function GET(
       ? Math.round(variationsWithPercent.reduce((s, v) => s + (v.totalOunces || 0), 0) * 100) / 100
       : null
 
-    return NextResponse.json({
-      data: {
+    return ok({
         menuItemId,
         menuItemName: menuItem?.name || '',
         categoryName: menuItem?.category?.name || '',
@@ -243,13 +238,9 @@ export const GET = withVenue(async function GET(
           start: dateFilter.gte,
           end: dateFilter.lte || new Date(),
         },
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to generate product mix variations report:', error)
-    return NextResponse.json(
-      { error: 'Failed to generate product mix variations report' },
-      { status: 500 }
-    )
+    return err('Failed to generate product mix variations report', 500)
   }
 })

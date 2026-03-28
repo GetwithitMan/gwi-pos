@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { buildDailyReportReceipt, DailyReportPrintData } from '@/lib/escpos/daily-report-receipt'
 import { sendToPrinter } from '@/lib/printer-connection'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { queueIfOutage, pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, ok } from '@/lib/api-response'
 
 export const POST = withVenue(withAuth(async function POST(request: NextRequest) {
   try {
@@ -12,7 +13,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     const { locationId, date } = body
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // Fetch the daily report from our own API (internal reuse)
@@ -25,7 +26,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     const reportRes = await fetch(reportUrl.toString())
     if (!reportRes.ok) {
       const err = await reportRes.json().catch(() => ({ error: 'Failed to fetch report' }))
-      return NextResponse.json({ error: err.error || 'Failed to generate report' }, { status: 500 })
+      return err(err.error || 'Failed to generate report', 500)
     }
 
     const report = await reportRes.json()
@@ -42,7 +43,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     })
 
     if (!printer) {
-      return NextResponse.json({ error: 'No receipt printer configured' }, { status: 400 })
+      return err('No receipt printer configured')
     }
 
     // Map report data to print data
@@ -89,10 +90,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     const result = await sendToPrinter(printer.ipAddress, printer.port, buffer)
 
     if (!result.success) {
-      return NextResponse.json(
-        { error: result.error || 'Failed to send to printer' },
-        { status: 500 }
-      )
+      return err(result.error || 'Failed to send to printer', 500)
     }
 
     // Log the print job
@@ -110,12 +108,9 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     queueIfOutage('PrintJob', locationId, printJob.id, 'INSERT')
     pushUpstream()
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Failed to print daily report:', error)
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Print failed' },
-      { status: 500 }
-    )
+    return err(error instanceof Error ? error.message : 'Print failed', 500)
   }
 }))

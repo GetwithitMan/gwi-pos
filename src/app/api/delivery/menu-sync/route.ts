@@ -9,7 +9,7 @@
  * MenuSyncItem[] format (prices in cents), and pushes to each platform via their client.
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -18,6 +18,7 @@ import { getLocationSettings } from '@/lib/location-cache'
 import { parseSettings } from '@/lib/settings'
 import { getPlatformClient, getActivePlatformClients } from '@/lib/delivery/clients/platform-registry'
 import type { DeliveryPlatformId, MenuSyncItem, MenuSyncModifierGroup, MenuSyncResult } from '@/lib/delivery/clients/types'
+import { err, ok } from '@/lib/api-response'
 
 // ─── Delivery markup helpers ────────────────────────────────────────────────
 
@@ -53,12 +54,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+      return err('Location ID is required')
     }
 
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.SETTINGS_EDIT)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Load settings
@@ -70,19 +71,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     if (platform) {
       const client = getPlatformClient(platform, settings)
       if (!client) {
-        return NextResponse.json(
-          { error: `Platform "${platform}" is not enabled or credentials are missing` },
-          { status: 400 },
-        )
+        return err(`Platform "${platform}" is not enabled or credentials are missing`)
       }
       clients.push({ platform, client })
     } else {
       const activeClients = getActivePlatformClients(settings)
       if (!activeClients.length) {
-        return NextResponse.json(
-          { error: 'No delivery platforms are enabled' },
-          { status: 400 },
-        )
+        return err('No delivery platforms are enabled')
       }
       clients.push(...activeClients)
     }
@@ -235,15 +230,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       })(),
     } : { enabled: false }
 
-    return NextResponse.json({
-      data: {
+    return ok({
         itemCount: menuItems.length,
         results,
         markup: markupInfo,
-      },
-    })
+      })
   } catch (error) {
     console.error('[POST /api/delivery/menu-sync] Error:', error)
-    return NextResponse.json({ error: 'Failed to sync menu' }, { status: 500 })
+    return err('Failed to sync menu', 500)
   }
 })

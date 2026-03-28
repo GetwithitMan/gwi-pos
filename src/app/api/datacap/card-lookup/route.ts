@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { getDatacapClient, parseBody } from '@/lib/datacap/helpers'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, ok } from '@/lib/api-response'
 
 interface CardLookupRequest {
   locationId: string
@@ -21,18 +22,15 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     const { locationId, readerId } = body
 
     if (!locationId || !readerId) {
-      return Response.json(
-        { error: 'Missing required fields: locationId, readerId' },
-        { status: 400 }
-      )
+      return err('Missing required fields: locationId, readerId')
     }
 
     const client = await getDatacapClient(locationId)
     const result = await client.cardLookup(readerId)
 
-    return Response.json({ data: result })
+    return ok(result)
   } catch (err) {
     const message = err instanceof Error ? err.message : 'CardLookup failed'
-    return Response.json({ error: message }, { status: 500 })
+    return err(message, 500)
   }
 }))

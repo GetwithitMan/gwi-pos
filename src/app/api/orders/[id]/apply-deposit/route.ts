@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { calculateOrderTotals } from '@/lib/order-calculations'
 import type { OrderItemForCalculation } from '@/lib/order-calculations'
@@ -14,6 +14,7 @@ import { notifyDataChanged } from '@/lib/cloud-notify'
 import { SOCKET_EVENTS } from '@/lib/socket-events'
 import { queueSocketEvent, flushOutboxSafe } from '@/lib/socket-outbox'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-apply-deposit')
 
 interface ApplyDepositRequest {
@@ -42,10 +43,7 @@ export const POST = withVenue(async function POST(
     const { reservationId } = body
 
     if (!reservationId) {
-      return NextResponse.json(
-        { error: 'reservationId is required' },
-        { status: 400 }
-      )
+      return err('reservationId is required')
     }
 
     // Resolve actor
@@ -58,20 +56,17 @@ export const POST = withVenue(async function POST(
       select: { locationId: true, status: true },
     })
     if (!orderCheck) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      return notFound('Order not found')
     }
 
     // Permission check
     const auth = await requirePermission(employeeId, orderCheck.locationId, PERMISSIONS.MGR_DISCOUNTS)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     if (orderCheck.status !== 'open' && orderCheck.status !== 'in_progress') {
-      return NextResponse.json(
-        { error: 'Cannot apply deposit to a closed or paid order' },
-        { status: 400 }
-      )
+      return err('Cannot apply deposit to a closed or paid order')
     }
 
     // Track locationId for socket flush
@@ -337,16 +332,13 @@ export const POST = withVenue(async function POST(
     // Trigger upstream sync (fire-and-forget)
     pushUpstream()
 
-    return NextResponse.json({ data: result })
+    return ok(result)
   } catch (error: unknown) {
     const err = error as { statusCode?: number; message?: string }
     if (err.statusCode) {
-      return NextResponse.json({ error: err.message }, { status: err.statusCode })
+      return err(err.message, err.statusCode)
     }
     console.error('Failed to apply deposit:', error)
-    return NextResponse.json(
-      { error: 'Failed to apply deposit' },
-      { status: 500 }
-    )
+    return err('Failed to apply deposit', 500)
   }
 })

@@ -15,6 +15,7 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { requireCakeFeature } from '@/lib/cake-orders/require-cake-feature'
+import { err, ok } from '@/lib/api-response'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -69,10 +70,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const dateTo = searchParams.get('dateTo')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
     if (!dateFrom || !dateTo) {
-      return NextResponse.json({ error: 'dateFrom and dateTo are required' }, { status: 400 })
+      return err('dateFrom and dateTo are required')
     }
 
     // ── Permission check ──────────────────────────────────────────────
@@ -106,7 +107,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     )
 
     if (orders.length === 0) {
-      return NextResponse.json({ data: { ingredients: [] } })
+      return ok({ ingredients: [] })
     }
 
     // ── Step 2: Collect all unique modifier IDs from cakeConfigs ──────
@@ -124,7 +125,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     if (modifierIds.size === 0) {
-      return NextResponse.json({ data: { ingredients: [] } })
+      return ok({ ingredients: [] })
     }
 
     // ── Step 3: Fetch modifier metadata for required ingredients ──────
@@ -149,7 +150,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     if (modIngredientMap.size === 0) {
-      return NextResponse.json({ data: { ingredients: [] } })
+      return ok({ ingredients: [] })
     }
 
     // ── Step 4: Aggregate quantities per inventoryItemId ──────────────
@@ -173,7 +174,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     if (aggregated.size === 0) {
-      return NextResponse.json({ data: { ingredients: [] } })
+      return ok({ ingredients: [] })
     }
 
     // ── Step 5: JOIN with InventoryItem for name, stock, unit ─────────
@@ -234,12 +235,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       return a.name.localeCompare(b.name)
     })
 
-    return NextResponse.json({ data: { ingredients } })
+    return ok({ ingredients })
   } catch (error) {
     console.error('[cake-production-ingredients] Failed:', error)
-    return NextResponse.json(
-      { error: 'Failed to aggregate production ingredients' },
-      { status: 500 },
-    )
+    return err('Failed to aggregate production ingredients', 500)
   }
 })

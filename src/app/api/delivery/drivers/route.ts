@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
@@ -6,6 +6,7 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { created, err, notFound, ok } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -16,13 +17,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Auth check
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.DELIVERY_VIEW)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Feature gate
     const featureGate = await requireDeliveryFeature(locationId)
@@ -84,10 +85,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         : null,
     }))
 
-    return NextResponse.json({ drivers })
+    return ok({ drivers })
   } catch (error) {
     console.error('[Delivery/Drivers] GET error:', error)
-    return NextResponse.json({ error: 'Failed to fetch drivers' }, { status: 500 })
+    return err('Failed to fetch drivers', 500)
   }
 })
 
@@ -101,13 +102,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Auth check
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.DELIVERY_DRIVERS_MANAGE)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Feature gate
     const featureGate = await requireDeliveryFeature(locationId)
@@ -126,13 +127,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     } = body
 
     if (!employeeId || typeof employeeId !== 'string') {
-      return NextResponse.json({ error: 'employeeId is required' }, { status: 400 })
+      return err('employeeId is required')
     }
 
     // Validate vehicleType if provided
     const VALID_VEHICLE_TYPES = ['car', 'bike', 'scooter', 'other'] as const
     if (vehicleType != null && vehicleType !== '' && !(VALID_VEHICLE_TYPES as readonly string[]).includes(vehicleType)) {
-      return NextResponse.json({ error: 'vehicleType must be one of: car, bike, scooter, other' }, { status: 400 })
+      return err('vehicleType must be one of: car, bike, scooter, other')
     }
 
     // Validate employee exists and belongs to location
@@ -142,7 +143,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     if (!employee) {
-      return NextResponse.json({ error: 'Employee not found at this location' }, { status: 404 })
+      return notFound('Employee not found at this location')
     }
 
     // Check for existing driver profile
@@ -153,7 +154,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     `, employeeId, locationId)
 
     if (existing.length) {
-      return NextResponse.json({ error: 'Driver profile already exists for this employee' }, { status: 409 })
+      return err('Driver profile already exists for this employee', 409)
     }
 
     // Insert driver profile
@@ -181,9 +182,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     pushUpstream()
 
-    return NextResponse.json({ driver: inserted[0] }, { status: 201 })
+    return created({ driver: inserted[0] })
   } catch (error) {
     console.error('[Delivery/Drivers] POST error:', error)
-    return NextResponse.json({ error: 'Failed to create driver profile' }, { status: 500 })
+    return err('Failed to create driver profile', 500)
   }
 })

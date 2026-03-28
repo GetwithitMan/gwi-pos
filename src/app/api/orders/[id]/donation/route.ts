@@ -8,6 +8,7 @@ import { notifyDataChanged } from '@/lib/cloud-notify'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate, dispatchOrderSummaryUpdated } from '@/lib/socket-dispatch'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-donation')
 
 // POST - Set donation amount on order
@@ -25,16 +26,10 @@ export const POST = withVenue(async function POST(
     const mutationOrigin = isCellularDonation ? 'cloud' : 'local'
 
     if (typeof amount !== 'number' || amount < 0) {
-      return NextResponse.json(
-        { error: 'amount must be a non-negative number' },
-        { status: 400 }
-      )
+      return err('amount must be a non-negative number')
     }
     if (amount > 9999) {
-      return NextResponse.json(
-        { error: 'Donation amount exceeds maximum of $9,999' },
-        { status: 400 }
-      )
+      return err('Donation amount exceeds maximum of $9,999')
     }
 
     const order = await db.order.findUnique({
@@ -59,7 +54,7 @@ export const POST = withVenue(async function POST(
     })
 
     if (!order) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      return notFound('Order not found')
     }
 
     // Auth check
@@ -148,19 +143,14 @@ export const POST = withVenue(async function POST(
     pushUpstream()
     void notifyDataChanged({ locationId: order.locationId, domain: 'orders', action: 'updated', entityId: orderId })
 
-    return NextResponse.json({
-      data: {
+    return ok({
         orderId: updated.id,
         donationAmount: Number(updated.donationAmount),
         total: Number(updated.total),
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to set donation:', error)
-    return NextResponse.json(
-      { error: 'Failed to set donation' },
-      { status: 500 }
-    )
+    return err('Failed to set donation', 500)
   }
 })
 
@@ -198,7 +188,7 @@ export const DELETE = withVenue(async function DELETE(
     })
 
     if (!order) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      return notFound('Order not found')
     }
 
     // Auth check
@@ -247,13 +237,11 @@ export const DELETE = withVenue(async function DELETE(
     }, { timeout: 10000 })
 
     if (txResult.noop) {
-      return NextResponse.json({
-        data: {
+      return ok({
           orderId: txResult.orderId,
           donationAmount: 0,
           total: txResult.total,
-        },
-      })
+        })
     }
 
     const updated = txResult
@@ -300,18 +288,13 @@ export const DELETE = withVenue(async function DELETE(
     pushUpstream()
     void notifyDataChanged({ locationId: order.locationId, domain: 'orders', action: 'updated', entityId: orderId })
 
-    return NextResponse.json({
-      data: {
+    return ok({
         orderId: updated.id,
         donationAmount: 0,
         total: Number(updated.total),
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to remove donation:', error)
-    return NextResponse.json(
-      { error: 'Failed to remove donation' },
-      { status: 500 }
-    )
+    return err('Failed to remove donation', 500)
   }
 })

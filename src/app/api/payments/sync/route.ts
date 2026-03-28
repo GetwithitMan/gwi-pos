@@ -7,6 +7,7 @@ import { OrderRepository, EmployeeRepository } from '@/lib/repositories'
 import { getLocationId } from '@/lib/location-cache'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('payments-sync')
 
 /**
@@ -40,22 +41,16 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     // Resolve locationId from request context for tenant isolation
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+      return err('Location ID is required')
     }
 
     // Validate required fields
     if (!orderId && !localOrderId) {
-      return NextResponse.json(
-        { error: 'Order ID or Local Order ID is required' },
-        { status: 400 }
-      )
+      return err('Order ID or Local Order ID is required')
     }
 
     if (!amount || !employeeId) {
-      return NextResponse.json(
-        { error: 'Amount and employee ID are required' },
-        { status: 400 }
-      )
+      return err('Amount and employee ID are required')
     }
 
     // Check for duplicate sync (idempotency via intentId)
@@ -93,10 +88,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       })
 
       if (!syncedOrder) {
-        return NextResponse.json(
-          { error: 'Order not found - please sync the order first' },
-          { status: 400 }
-        )
+        return err('Order not found - please sync the order first')
       }
 
       resolvedOrderId = syncedOrder.id
@@ -109,14 +101,14 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     })
 
     if (!order) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      return notFound('Order not found')
     }
 
     // Verify employee exists — tenant-safe via EmployeeRepository
     const employee = await EmployeeRepository.checkEmployeeExists(employeeId, order.locationId)
 
     if (!employee) {
-      return NextResponse.json({ error: 'Employee not found' }, { status: 400 })
+      return err('Employee not found')
     }
 
     // Map payment method to schema format
@@ -208,7 +200,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     pushUpstream()
 
     // Return the payment from the transaction directly (no redundant re-fetch)
-    return NextResponse.json({
+    return ok({
       success: true,
       paymentId: payment.id,
       payment,
@@ -219,10 +211,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     })
   } catch (error) {
     console.error('Failed to sync payment:', error)
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to sync payment' },
-      { status: 500 }
-    )
+    return err(error instanceof Error ? error.message : 'Failed to sync payment', 500)
   }
 }))
 
@@ -236,7 +225,7 @@ export const GET = withVenue(withAuth({ allowCellular: true }, async function GE
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
     const dateStr = searchParams.get('date') // YYYY-MM-DD format
     const needsReconciliation = searchParams.get('needsReconciliation') === 'true'
@@ -285,16 +274,13 @@ export const GET = withVenue(withAuth({ allowCellular: true }, async function GE
       reconciled: payments.filter((p) => !p.needsReconciliation).length,
     }
 
-    return NextResponse.json({
+    return ok({
       payments,
       summary,
     })
   } catch (error) {
     console.error('Failed to fetch offline payments:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch payments' },
-      { status: 500 }
-    )
+    return err('Failed to fetch payments', 500)
   }
 }))
 
@@ -311,14 +297,11 @@ export const PATCH = withVenue(withAuth(async function PATCH(request: NextReques
     // Resolve locationId from request context for tenant isolation
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+      return err('Location ID is required')
     }
 
     if (!paymentIds || !Array.isArray(paymentIds) || paymentIds.length === 0) {
-      return NextResponse.json(
-        { error: 'Payment IDs are required' },
-        { status: 400 }
-      )
+      return err('Payment IDs are required')
     }
 
     // TX-KEEP: BULK — batch reconcile payments by ID array with locationId tenant filter
@@ -337,16 +320,13 @@ export const PATCH = withVenue(withAuth(async function PATCH(request: NextReques
 
     pushUpstream()
 
-    return NextResponse.json({
+    return ok({
       success: true,
       count: result.count,
       message: `${result.count} payment(s) marked as reconciled`,
     })
   } catch (error) {
     console.error('Failed to reconcile payments:', error)
-    return NextResponse.json(
-      { error: 'Failed to reconcile payments' },
-      { status: 500 }
-    )
+    return err('Failed to reconcile payments', 500)
   }
 }))

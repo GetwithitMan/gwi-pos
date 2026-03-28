@@ -7,6 +7,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 import { advanceDriverSessionStatus, type DriverSessionStatus } from '@/lib/delivery/state-machine'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -39,7 +40,7 @@ export const PATCH = withVenue(async function PATCH(
     const { id: driverId } = await params
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Feature gate
@@ -49,20 +50,17 @@ export const PATCH = withVenue(async function PATCH(
     // Auth check — dispatch permission for managing driver status from KDS/dispatch board
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.DELIVERY_DISPATCH)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const body = await request.json()
     const { status } = body
 
     if (!status || typeof status !== 'string') {
-      return NextResponse.json({ error: 'status is required' }, { status: 400 })
+      return err('status is required')
     }
 
     if (!VALID_SESSION_STATUSES.includes(status as DriverSessionStatus)) {
-      return NextResponse.json(
-        { error: `Invalid status. Must be one of: ${VALID_SESSION_STATUSES.join(', ')}` },
-        { status: 400 },
-      )
+      return err(`Invalid status. Must be one of: ${VALID_SESSION_STATUSES.join(', ')}`)
     }
 
     // Verify driver exists
@@ -75,7 +73,7 @@ export const PATCH = withVenue(async function PATCH(
     )
 
     if (!driverRows.length) {
-      return NextResponse.json({ error: 'Driver not found' }, { status: 404 })
+      return notFound('Driver not found')
     }
 
     const driver = driverRows[0]
@@ -92,10 +90,7 @@ export const PATCH = withVenue(async function PATCH(
     if (!sessions.length) {
       // If transitioning to available/on_delivery/break, we could auto-create a session
       // But for safety, require an active session to exist
-      return NextResponse.json(
-        { error: 'No active driver session found. Driver must clock in first.' },
-        { status: 404 },
-      )
+      return notFound('No active driver session found. Driver must clock in first.')
     }
 
     const session = sessions[0]
@@ -109,7 +104,7 @@ export const PATCH = withVenue(async function PATCH(
     )
 
     if (!result.success) {
-      return NextResponse.json({ error: result.error }, { status: 400 })
+      return err(result.error)
     }
 
     const updatedSession = result.session
@@ -134,6 +129,6 @@ export const PATCH = withVenue(async function PATCH(
     })
   } catch (error) {
     console.error('[Delivery/Drivers/Status] PATCH error:', error)
-    return NextResponse.json({ error: 'Failed to update driver status' }, { status: 500 })
+    return err('Failed to update driver status', 500)
   }
 })

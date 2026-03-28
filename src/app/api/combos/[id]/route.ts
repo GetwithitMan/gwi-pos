@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 export const GET = withVenue(async function GET(
   request: NextRequest,
@@ -45,10 +46,10 @@ export const GET = withVenue(async function GET(
     })
 
     if (!template) {
-      return NextResponse.json({ data: {
+      return ok({
         template: null,
         message: 'No combo template found for this item'
-      } })
+      })
     }
 
     // Get modifier groups for each component's menu item
@@ -75,7 +76,7 @@ export const GET = withVenue(async function GET(
       itemModifierMap[mg.menuItemId].push(mg)
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       template: {
         id: template.id,
         basePrice: Number(template.basePrice),
@@ -126,13 +127,10 @@ export const GET = withVenue(async function GET(
           }))
         }))
       }
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch combo:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch combo' },
-      { status: 500 }
-    )
+    return err('Failed to fetch combo', 500)
   }
 })
 
@@ -162,12 +160,12 @@ export const PUT = withVenue(async function PUT(
     // Verify menu item exists to get locationId for auth
     const existing = await db.menuItem.findUnique({ where: { id }, select: { locationId: true } })
     if (!existing) {
-      return NextResponse.json({ error: 'Combo not found' }, { status: 404 })
+      return notFound('Combo not found')
     }
 
     const auth = await requirePermission(resolvedEmployeeId, existing.locationId, PERMISSIONS.MENU_EDIT_ITEMS)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Update the menu item
@@ -241,19 +239,16 @@ export const PUT = withVenue(async function PUT(
     void notifyDataChanged({ locationId: existing.locationId, domain: 'combos', action: 'updated', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       combo: {
         id: menuItem.id,
         name: menuItem.name,
         price: Number(menuItem.price),
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to update combo:', error)
-    return NextResponse.json(
-      { error: 'Failed to update combo' },
-      { status: 500 }
-    )
+    return err('Failed to update combo', 500)
   }
 })
 
@@ -271,12 +266,12 @@ export const DELETE = withVenue(async function DELETE(
     // Verify menu item exists to get locationId for auth
     const menuItemCheck = await db.menuItem.findUnique({ where: { id }, select: { locationId: true } })
     if (!menuItemCheck) {
-      return NextResponse.json({ error: 'Combo not found' }, { status: 404 })
+      return notFound('Combo not found')
     }
 
     const auth = await requirePermission(resolvedEmployeeId, menuItemCheck.locationId, PERMISSIONS.MENU_EDIT_ITEMS)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Find and delete the template first (cascades to components and options)
@@ -314,12 +309,9 @@ export const DELETE = withVenue(async function DELETE(
     void notifyDataChanged({ locationId: menuItemCheck.locationId, domain: 'combos', action: 'deleted', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Failed to delete combo:', error)
-    return NextResponse.json(
-      { error: 'Failed to delete combo' },
-      { status: 500 }
-    )
+    return err('Failed to delete combo', 500)
   }
 })

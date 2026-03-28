@@ -3,6 +3,7 @@ import { requireDatacapClient, validateReader, datacapErrorResponse } from '@/li
 import { parseError } from '@/lib/datacap/xml-parser'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, ok } from '@/lib/api-response'
 
 export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextRequest) {
   try {
@@ -11,7 +12,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
     const readerId = searchParams.get('readerId')
 
     if (!locationId || !readerId) {
-      return Response.json({ error: 'Missing required params: locationId, readerId' }, { status: 400 })
+      return err('Missing required params: locationId, readerId')
     }
 
     await validateReader(readerId, locationId)
@@ -31,8 +32,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
       // SAF not supported or reader error — ignore
     }
 
-    return Response.json({
-      data: {
+    return ok({
         success: response.cmdStatus === 'Success',
         batchNo: response.batchNo,
         transactionCount: response.batchItemCount,
@@ -40,8 +40,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
         safAmount,
         hasSAFPending: safCount > 0,
         error: error ? { code: error.code, message: error.text } : null,
-      },
-    })
+      })
   } catch (err) {
     return datacapErrorResponse(err)
   }
@@ -58,7 +57,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     const { locationId, readerId } = body
 
     if (!locationId || !readerId) {
-      return Response.json({ error: 'Missing required fields: locationId, readerId' }, { status: 400 })
+      return err('Missing required fields: locationId, readerId')
     }
 
     await validateReader(readerId, locationId)
@@ -82,13 +81,11 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       // Non-critical — NUC-only path, will fail in dev/Vercel which is fine
     }
 
-    return Response.json({
-      data: {
+    return ok({
         success: response.cmdStatus === 'Success',
         batchNo: response.batchNo,
         error: error ? { code: error.code, message: error.text } : null,
-      },
-    })
+      })
   } catch (err) {
     return datacapErrorResponse(err)
   }

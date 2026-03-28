@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { err, ok } from '@/lib/api-response'
 
 // GET /api/kds/all-day-counts?locationId=X&resetHour=4
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -10,10 +11,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const resetHour = parseInt(searchParams.get('resetHour') || '4', 10)
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'Location ID is required' },
-        { status: 400 }
-      )
+      return err('Location ID is required')
     }
 
     // Clamp resetHour to valid range
@@ -112,18 +110,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }))
       .sort((a, b) => b.count - a.count)
 
-    return NextResponse.json({
-      data: {
+    return ok({
         counts,
         since: sinceUtc.toISOString(),
         resetHour: safeResetHour,
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to fetch all-day counts:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch all-day counts' },
-      { status: 500 }
-    )
+    return err('Failed to fetch all-day counts', 500)
   }
 })

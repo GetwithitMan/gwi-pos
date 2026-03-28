@@ -8,8 +8,9 @@
  */
 
 import crypto from 'crypto'
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { getDbForVenue } from '@/lib/db'
+import { err, forbidden, notFound, ok } from '@/lib/api-response'
 
 // ── Token Helpers (exported for checkout route) ──────────────────────────────
 
@@ -76,25 +77,16 @@ export async function GET(
     const slug = request.nextUrl.searchParams.get('slug')
 
     if (!id || !token) {
-      return NextResponse.json(
-        { error: 'Order ID and token are required' },
-        { status: 400 }
-      )
+      return err('Order ID and token are required')
     }
 
     if (!slug) {
-      return NextResponse.json(
-        { error: 'slug query parameter is required' },
-        { status: 400 }
-      )
+      return err('slug query parameter is required')
     }
 
     // Verify HMAC token
     if (!verifyOrderViewToken(id, token)) {
-      return NextResponse.json(
-        { error: 'Invalid or expired token' },
-        { status: 403 }
-      )
+      return forbidden('Invalid or expired token')
     }
 
     // Resolve venue DB for tenant isolation
@@ -102,7 +94,7 @@ export async function GET(
     try {
       venueDb = await getDbForVenue(slug)
     } catch {
-      return NextResponse.json({ error: 'Venue not found' }, { status: 404 })
+      return notFound('Venue not found')
     }
 
     const location = await venueDb.location.findFirst({
@@ -110,7 +102,7 @@ export async function GET(
       select: { id: true },
     })
     if (!location) {
-      return NextResponse.json({ error: 'Location not found' }, { status: 404 })
+      return notFound('Location not found')
     }
 
     // Fetch order with items and location — scoped to locationId
@@ -150,10 +142,7 @@ export async function GET(
     })
 
     if (!order) {
-      return NextResponse.json(
-        { error: 'Order not found' },
-        { status: 404 }
-      )
+      return notFound('Order not found')
     }
 
     // Compute estimated ready time from settings
@@ -185,14 +174,9 @@ export async function GET(
       source: order.source ?? 'online',
     }
 
-    return NextResponse.json({ data: response }, {
-      headers: { 'Cache-Control': 'private, no-store' },
-    })
+    return ok(response)
   } catch (error) {
     console.error('[GET /api/public/order-status/[id]] Error:', error)
-    return NextResponse.json(
-      { error: 'An unexpected error occurred' },
-      { status: 500 }
-    )
+    return err('An unexpected error occurred', 500)
   }
 }

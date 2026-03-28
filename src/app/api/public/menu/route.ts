@@ -9,10 +9,11 @@
  * Rate limited: 30 requests per minute per IP.
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { getDbForVenue } from '@/lib/db'
 import { createRateLimiter } from '@/lib/rate-limiter'
 import { getClientIp } from '@/lib/get-client-ip'
+import { err, forbidden, notFound, ok } from '@/lib/api-response'
 
 // ── Rate limiter (30 req/min/IP) ────────────────────────────────────────────
 const limiter = createRateLimiter({ maxAttempts: 30, windowMs: 60_000 })
@@ -24,10 +25,7 @@ export async function GET(request: NextRequest) {
 
     const rateCheck = limiter.check(ip)
     if (!rateCheck.allowed) {
-      return NextResponse.json(
-        { error: 'Too many requests. Please try again later.' },
-        { status: 429 }
-      )
+      return err('Too many requests. Please try again later.', 429)
     }
 
     const { searchParams } = request.nextUrl
@@ -35,7 +33,7 @@ export async function GET(request: NextRequest) {
     const categoryIds = searchParams.get('categoryIds')?.split(',').filter(Boolean) || []
 
     if (!slug) {
-      return NextResponse.json({ error: 'slug query parameter is required' }, { status: 400 })
+      return err('slug query parameter is required')
     }
 
     // Resolve venue DB
@@ -43,7 +41,7 @@ export async function GET(request: NextRequest) {
     try {
       venueDb = await getDbForVenue(slug)
     } catch {
-      return NextResponse.json({ error: 'Location not found' }, { status: 404 })
+      return notFound('Location not found')
     }
 
     // Get location + settings
@@ -53,14 +51,14 @@ export async function GET(request: NextRequest) {
     })
 
     if (!location) {
-      return NextResponse.json({ error: 'Location not found' }, { status: 404 })
+      return notFound('Location not found')
     }
 
     // Check QR ordering enabled
     const settings = location.settings as Record<string, unknown> | null
     const qrSettings = settings?.qrOrdering as Record<string, unknown> | null | undefined
     if (qrSettings?.enabled === false) {
-      return NextResponse.json({ error: 'QR ordering is not available at this location' }, { status: 403 })
+      return forbidden('QR ordering is not available at this location')
     }
 
     const showPrices = qrSettings?.showPrices !== false
@@ -168,12 +166,12 @@ export async function GET(request: NextRequest) {
         }
       })
 
-    return NextResponse.json({
+    return ok({
       locationName: location.name,
       categories: publicMenu,
     })
   } catch (error) {
     console.error('[GET /api/public/menu] Error:', error)
-    return NextResponse.json({ error: 'Failed to load menu' }, { status: 500 })
+    return err('Failed to load menu', 500)
   }
 }

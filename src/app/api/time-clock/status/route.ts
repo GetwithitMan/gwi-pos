@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { err, ok } from '@/lib/api-response'
 
 // GET /api/time-clock/status?employeeId=X - Check if employee is clocked in
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -8,10 +9,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const employeeId = request.nextUrl.searchParams.get('employeeId')
 
     if (!employeeId) {
-      return NextResponse.json(
-        { error: 'employeeId is required' },
-        { status: 400 }
-      )
+      return err('employeeId is required')
     }
 
     const activeEntry = await db.timeClockEntry.findFirst({
@@ -26,16 +24,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({ data: {
+    return ok({
       clockedIn: !!activeEntry,
       entryId: activeEntry?.id || null,
       clockInTime: activeEntry?.clockIn.toISOString() || null,
-    } })
+    })
   } catch (error) {
     console.error('Failed to check clock-in status:', error)
-    return NextResponse.json(
-      { error: 'Failed to check clock-in status' },
-      { status: 500 }
-    )
+    return err('Failed to check clock-in status', 500)
   }
 })

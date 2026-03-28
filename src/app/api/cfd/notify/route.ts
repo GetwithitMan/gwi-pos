@@ -24,6 +24,7 @@ import {
   dispatchCFDIdle,
   dispatchCFDReceiptSent,
 } from '@/lib/socket-dispatch'
+import { err, ok } from '@/lib/api-response'
 
 export const POST = withVenue(withAuth(async (request: Request) => {
   try {
@@ -31,7 +32,7 @@ export const POST = withVenue(withAuth(async (request: Request) => {
     const { event, locationId, payload, cfdTerminalId = null } = body
 
     if (!event || !locationId || !payload) {
-      return NextResponse.json({ error: 'Missing event, locationId, or payload' }, { status: 400 })
+      return err('Missing event, locationId, or payload')
     }
 
     switch (event) {
@@ -66,12 +67,12 @@ export const POST = withVenue(withAuth(async (request: Request) => {
         dispatchCFDReceiptSent(locationId, cfdTerminalId, payload)
         break
       default:
-        return NextResponse.json({ error: `Unknown CFD event: ${event}` }, { status: 400 })
+        return err(`Unknown CFD event: ${event}`)
     }
 
-    return NextResponse.json({ ok: true })
+    return ok({ ok: true })
   } catch (error) {
     console.error('[CFD Notify] Error:', error)
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
+    return err('Internal error', 500)
   }
 }))

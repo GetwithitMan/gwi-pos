@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -6,6 +6,7 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { KDSScreenLinkCreateSchema, KDSScreenLinkUpdateSchema } from '@/lib/kds/types'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET — list screen links for a location or specific screen
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -15,7 +16,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const screenId = searchParams.get('screenId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     const links = await db.kDSScreenLink.findMany({
@@ -31,8 +32,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
     })
 
-    return NextResponse.json({
-      data: {
+    return ok({
         links: links.map(l => ({
           id: l.id,
           locationId: l.locationId,
@@ -46,11 +46,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           isActive: l.isActive,
           sortOrder: l.sortOrder,
         })),
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to fetch screen links:', error)
-    return NextResponse.json({ error: 'Failed to fetch screen links' }, { status: 500 })
+    return err('Failed to fetch screen links', 500)
   }
 })
 
@@ -61,26 +60,26 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const { locationId, employeeId: bodyEmployeeId } = body
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // Auth
     const actor = await getActorFromRequest(request)
     const resolvedEmployeeId = actor.employeeId ?? bodyEmployeeId
     const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.SETTINGS_HARDWARE)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Validate
     const parsed = KDSScreenLinkCreateSchema.safeParse(body)
     if (!parsed.success) {
-      return NextResponse.json({ error: 'Invalid link data', details: parsed.error.flatten() }, { status: 400 })
+      return err('Invalid link data', 400, parsed.error.flatten())
     }
 
     const { sourceScreenId, targetScreenId, linkType, bumpAction, resetStrikethroughsOnSend, isActive, sortOrder } = parsed.data
 
     // Cannot link screen to itself
     if (sourceScreenId === targetScreenId) {
-      return NextResponse.json({ error: 'Source and target screen must be different' }, { status: 400 })
+      return err('Source and target screen must be different')
     }
 
     // Cycle detection: prevent reverse send_to_next links (Kitchen→Expo AND Expo→Kitchen = infinite loop)
@@ -94,7 +93,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         },
       })
       if (reverseLink) {
-        return NextResponse.json({ error: 'Cannot create reverse send_to_next link — would cause an infinite forwarding loop' }, { status: 400 })
+        return err('Cannot create reverse send_to_next link — would cause an infinite forwarding loop')
       }
     }
 
@@ -105,10 +104,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     ])
 
     if (!source || source.locationId !== locationId) {
-      return NextResponse.json({ error: 'Source screen not found at this location' }, { status: 400 })
+      return err('Source screen not found at this location')
     }
     if (!target || target.locationId !== locationId) {
-      return NextResponse.json({ error: 'Target screen not found at this location' }, { status: 400 })
+      return err('Target screen not found at this location')
     }
 
     // Check for duplicate (same source→target→linkType that isn't soft-deleted)
@@ -121,7 +120,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
     })
     if (existing) {
-      return NextResponse.json({ error: 'A link with this source, target, and type already exists' }, { status: 400 })
+      return err('A link with this source, target, and type already exists')
     }
 
     const link = await db.kDSScreenLink.create({
@@ -144,8 +143,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     void notifyDataChanged({ locationId, domain: 'hardware', action: 'created', entityId: link.id })
     void pushUpstream()
 
-    return NextResponse.json({
-      data: {
+    return ok({
         link: {
           id: link.id,
           locationId: link.locationId,
@@ -159,14 +157,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           isActive: link.isActive,
           sortOrder: link.sortOrder,
         },
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to create screen link:', error)
     if (error instanceof Error && error.message.includes('Unique constraint')) {
-      return NextResponse.json({ error: 'Duplicate link already exists' }, { status: 400 })
+      return err('Duplicate link already exists')
     }
-    return NextResponse.json({ error: 'Failed to create screen link' }, { status: 500 })
+    return err('Failed to create screen link', 500)
   }
 })
 
@@ -177,22 +174,22 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     const { id, locationId, employeeId: bodyEmployeeId } = body
 
     if (!id || !locationId) {
-      return NextResponse.json({ error: 'id and locationId are required' }, { status: 400 })
+      return err('id and locationId are required')
     }
 
     const actor = await getActorFromRequest(request)
     const resolvedEmployeeId = actor.employeeId ?? bodyEmployeeId
     const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.SETTINGS_HARDWARE)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const parsed = KDSScreenLinkUpdateSchema.safeParse(body)
     if (!parsed.success) {
-      return NextResponse.json({ error: 'Invalid update data', details: parsed.error.flatten() }, { status: 400 })
+      return err('Invalid update data', 400, parsed.error.flatten())
     }
 
     const existing = await db.kDSScreenLink.findUnique({ where: { id } })
     if (!existing || existing.locationId !== locationId) {
-      return NextResponse.json({ error: 'Screen link not found' }, { status: 404 })
+      return notFound('Screen link not found')
     }
 
     const updated = await db.kDSScreenLink.update({
@@ -207,8 +204,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     void notifyDataChanged({ locationId, domain: 'hardware', action: 'updated', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({
-      data: {
+    return ok({
         link: {
           id: updated.id,
           locationId: updated.locationId,
@@ -222,11 +218,10 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
           isActive: updated.isActive,
           sortOrder: updated.sortOrder,
         },
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to update screen link:', error)
-    return NextResponse.json({ error: 'Failed to update screen link' }, { status: 500 })
+    return err('Failed to update screen link', 500)
   }
 })
 
@@ -237,17 +232,17 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
     const { id, locationId, employeeId: bodyEmployeeId } = body
 
     if (!id || !locationId) {
-      return NextResponse.json({ error: 'id and locationId are required' }, { status: 400 })
+      return err('id and locationId are required')
     }
 
     const actor = await getActorFromRequest(request)
     const resolvedEmployeeId = actor.employeeId ?? bodyEmployeeId
     const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.SETTINGS_HARDWARE)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const existing = await db.kDSScreenLink.findUnique({ where: { id } })
     if (!existing || existing.locationId !== locationId) {
-      return NextResponse.json({ error: 'Screen link not found' }, { status: 404 })
+      return notFound('Screen link not found')
     }
 
     await db.kDSScreenLink.update({
@@ -258,9 +253,9 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
     void notifyDataChanged({ locationId, domain: 'hardware', action: 'deleted', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Failed to delete screen link:', error)
-    return NextResponse.json({ error: 'Failed to delete screen link' }, { status: 500 })
+    return err('Failed to delete screen link', 500)
   }
 })

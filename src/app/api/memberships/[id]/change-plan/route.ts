@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
@@ -8,6 +8,7 @@ import { buildIdempotencyKey } from '@/lib/membership/idempotency'
 import { ChargeType, MembershipEventType } from '@/lib/membership/types'
 import { dispatchMembershipUpdate } from '@/lib/socket-dispatch'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('memberships-change-plan')
 
 export const POST = withVenue(async function POST(
@@ -20,11 +21,11 @@ export const POST = withVenue(async function POST(
     const { locationId, requestingEmployeeId, newPlanId, effective } = body
 
     if (!locationId || !newPlanId) {
-      return NextResponse.json({ error: 'locationId and newPlanId required' }, { status: 400 })
+      return err('locationId and newPlanId required')
     }
 
     const auth = await requirePermission(requestingEmployeeId, locationId, 'admin.manage_memberships')
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Fetch membership
     const mbrs: any[] = await db.$queryRawUnsafe(`
@@ -32,7 +33,7 @@ export const POST = withVenue(async function POST(
       WHERE "id" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL AND "status" IN ('active', 'trial')
       LIMIT 1
     `, id, locationId)
-    if (mbrs.length === 0) return NextResponse.json({ error: 'Active membership not found' }, { status: 404 })
+    if (mbrs.length === 0) return notFound('Active membership not found')
     const mbr = mbrs[0]
 
     // Fetch new plan
@@ -41,7 +42,7 @@ export const POST = withVenue(async function POST(
       WHERE "id" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL AND "isActive" = true
       LIMIT 1
     `, newPlanId, locationId)
-    if (plans.length === 0) return NextResponse.json({ error: 'New plan not found or inactive' }, { status: 404 })
+    if (plans.length === 0) return notFound('New plan not found or inactive')
     const newPlan = plans[0]
 
     const effectiveMode = effective || 'next_period'
@@ -97,7 +98,7 @@ export const POST = withVenue(async function POST(
           }
         } catch (err) {
           if (err instanceof PayApiError) {
-            return NextResponse.json({ error: `Proration charge failed: ${err.message}` }, { status: 402 })
+            return err(`Proration charge failed: ${err.message}`, 402)
           }
           throw err
         }
@@ -134,9 +135,9 @@ export const POST = withVenue(async function POST(
       details: { planChanged: true },
     }).catch(err => log.warn({ err }, 'Background task failed'))
 
-    return NextResponse.json({ data: { success: true, effective: effectiveMode } })
+    return ok({ success: true, effective: effectiveMode })
   } catch (err) {
     console.error('[memberships/change-plan] error:', err)
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
+    return err('Internal error', 500)
   }
 })

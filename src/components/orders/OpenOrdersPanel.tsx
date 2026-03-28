@@ -14,38 +14,21 @@ import { AuthStatusBadge } from '@/components/tabs/AuthStatusBadge'
 import { LastCallDialog } from '@/components/tabs/LastCallDialog'
 import { toast } from '@/stores/toast-store'
 import { hasPermission, isAdmin } from '@/lib/auth-utils'
+import type { OpenOrder as BaseOpenOrder } from '@/types'
 
-interface OpenOrder {
-  id: string
-  orderNumber: number
-  displayNumber?: string
-  isSplitTicket?: boolean
-  orderType: string
-  orderTypeConfig?: {
-    name: string
-    color?: string
-    icon?: string
-  } | null
-  customFields?: Record<string, string> | null
-  tabName: string | null
+interface OpenOrder extends BaseOpenOrder {
+  // Required overrides (base has these optional, panel always provides them)
+  status: string
   tabStatus: string | null
   cardholderName: string | null
   tableId: string | null
-  table?: {
-    id: string
-    name: string
-    section: string | null
-  } | null
-  customer?: {
-    id: string
-    name: string
-  } | null
+  employee: { id: string; name: string }
+  subtotal: number
+  taxTotal: number
+  createdAt: string
+  openedAt: string
+  // Panel-specific fields
   guestCount: number
-  status: string
-  employee: {
-    id: string
-    name: string
-  }
   items: {
     id: string
     menuItemId: string
@@ -68,11 +51,6 @@ interface OpenOrder {
       preModifier: string | null
     }[]
   }[]
-  itemCount: number
-  subtotal: number
-  taxTotal: number
-  tipTotal?: number
-  total: number
   hasPreAuth: boolean
   preAuth: {
     cardBrand: string
@@ -80,8 +58,6 @@ interface OpenOrder {
     amount: number | null
     expiresAt: string
   } | null
-  createdAt: string
-  openedAt: string
   closedAt?: string | null
   paidAmount: number
   paymentMethods?: string[]
@@ -106,13 +82,7 @@ interface OpenOrder {
   hasCoursingEnabled?: boolean
   hasDelayedItems?: boolean
   courseMode?: string | null
-  ageMinutes?: number
-  isRolledOver?: boolean
-  rolledOverAt?: string | null
-  rolledOverFrom?: string | null
   isWalkout?: boolean
-  isCaptureDeclined?: boolean
-  captureRetryCount?: number
   reopenedAt?: string | null
   reopenReason?: string | null
   claimedByEmployeeId?: string | null

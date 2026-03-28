@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { getBusinessDayRange } from '@/lib/business-day'
@@ -12,6 +12,7 @@ import {
   getTipOutCounterparts,
   getShiftsWithTips,
 } from '@/lib/query-services'
+import { err, ok } from '@/lib/api-response'
 
 // Migrated from legacy TipBank/TipShare (Skill 273)
 // All tip data now sourced from TipLedgerEntry instead of TipShare/TipBank models.
@@ -27,10 +28,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const requestingEmployeeId = searchParams.get('requestingEmployeeId') || searchParams.get('employeeId') || employeeId
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'Location ID is required' },
-        { status: 400 }
-      )
+      return err('Location ID is required')
     }
 
     // Self-access: employees can always view their own tips report
@@ -38,7 +36,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     if (!isSelfAccess) {
       const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_SALES_BY_EMPLOYEE)
       if (!auth.authorized) {
-        return NextResponse.json({ error: auth.error }, { status: auth.status })
+        return err(auth.error, auth.status)
       }
     }
 
@@ -228,7 +226,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const empName = (emp: { displayName: string | null; firstName: string; lastName: string }) =>
       emp.displayName || `${emp.firstName} ${emp.lastName}`
 
-    return NextResponse.json({ data: {
+    return ok({
       byEmployee: Array.from(employeeSummaries.values()).map(emp => ({
         ...emp,
         grossTips: Math.round(emp.grossTips * 100) / 100,
@@ -289,12 +287,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         totalCollected: Math.round(summary.totalCollected * 100) / 100,
         totalPaidOut: Math.round(summary.totalPaidOut * 100) / 100,
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to generate tips report:', error)
-    return NextResponse.json(
-      { error: 'Failed to generate tips report' },
-      { status: 500 }
-    )
+    return err('Failed to generate tips report', 500)
   }
 })

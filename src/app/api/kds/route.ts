@@ -15,6 +15,7 @@ import { getReadinessState } from '@/lib/readiness'
 import { mergeOrderBehavior } from '@/lib/kds/defaults'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok } from '@/lib/api-response'
 const log = createChildLogger('kds')
 
 // Circuit breaker: suppress repeated DeliveryOrder queries when table is missing.
@@ -76,10 +77,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const includePager = searchParams.get('includePager') !== 'false' // Default: include pagerNumber when present
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'Location ID is required' },
-        { status: 400 }
-      )
+      return err('Location ID is required')
     }
 
     // Entertainment expiry is handled by the cron job (single source of truth).
@@ -398,7 +396,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Cursor for next page — last order ID from the raw DB result (before filtering)
     const nextCursor = orders.length === 50 ? orders[orders.length - 1].id : null
 
-    return NextResponse.json({ data: {
+    return ok({
       orders: kdsOrders,
       nextCursor,
       station: station ? {
@@ -410,7 +408,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         showAllItems: station.showAllItems,
       } : null,
       timestamp: new Date().toISOString(),
-    } })
+    })
   } catch (error) {
     // If server is booting/degraded, return 503 so KDS retries gracefully
     const readiness = getReadinessState()
@@ -423,10 +421,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       )
     }
     console.error('Failed to fetch KDS orders:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch KDS orders' },
-      { status: 500 }
-    )
+    return err('Failed to fetch KDS orders', 500)
   }
 })
 
@@ -443,18 +438,12 @@ const putHandler = async function PUT(request: NextRequest) {
     }
 
     if (!itemIds || itemIds.length === 0) {
-      return NextResponse.json(
-        { error: 'Item IDs are required' },
-        { status: 400 }
-      )
+      return err('Item IDs are required')
     }
 
     // Resend reason is mandatory — prevents frivolous resends
     if (action === 'resend' && (!resendNote || resendNote.trim().length === 0)) {
-      return NextResponse.json(
-        { error: 'A resend reason is required' },
-        { status: 400 }
-      )
+      return err('A resend reason is required')
     }
 
     const now = new Date()
@@ -469,10 +458,7 @@ const putHandler = async function PUT(request: NextRequest) {
     // Guard: reject bumps on voided/cancelled orders
     const orderStatus = firstItemForDispatch?.order?.status
     if (orderStatus === 'voided' || orderStatus === 'cancelled') {
-      return NextResponse.json(
-        { error: `Cannot modify items on a ${orderStatus} order` },
-        { status: 400 }
-      )
+      return err(`Cannot modify items on a ${orderStatus} order`)
     }
 
     // Resolve bumpedBy for completedBy field
@@ -541,10 +527,7 @@ const putHandler = async function PUT(request: NextRequest) {
       })
       const maxedOut = existingItems.filter((i) => (i.resendCount || 0) >= 5)
       if (maxedOut.length > 0) {
-        return NextResponse.json(
-          { error: 'Maximum resends reached (5). These items cannot be resent again.' },
-          { status: 400 }
-        )
+        return err('Maximum resends reached (5). These items cannot be resent again.')
       }
 
       // Resend items to kitchen - batch update all at once
@@ -923,18 +906,15 @@ const putHandler = async function PUT(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       itemIds,
       action,
       timestamp: now.toISOString(),
-    } })
+    })
   } catch (error) {
     console.error('Failed to update KDS items:', error)
-    return NextResponse.json(
-      { error: 'Failed to update items' },
-      { status: 500 }
-    )
+    return err('Failed to update items', 500)
   }
 }
 

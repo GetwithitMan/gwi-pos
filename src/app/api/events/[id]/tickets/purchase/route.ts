@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // POST - Complete ticket purchase
 export const POST = withVenue(withAuth(async function POST(
@@ -24,17 +25,11 @@ export const POST = withVenue(withAuth(async function POST(
     } = body
 
     if (!ticketIds || ticketIds.length === 0) {
-      return NextResponse.json(
-        { error: 'Ticket IDs are required' },
-        { status: 400 }
-      )
+      return err('Ticket IDs are required')
     }
 
     if (!customerName) {
-      return NextResponse.json(
-        { error: 'Customer name is required' },
-        { status: 400 }
-      )
+      return err('Customer name is required')
     }
 
     // Validate event
@@ -49,17 +44,11 @@ export const POST = withVenue(withAuth(async function POST(
     })
 
     if (!event) {
-      return NextResponse.json(
-        { error: 'Event not found' },
-        { status: 404 }
-      )
+      return notFound('Event not found')
     }
 
     if (!['on_sale', 'draft'].includes(event.status)) {
-      return NextResponse.json(
-        { error: 'Event is not available for ticket sales' },
-        { status: 400 }
-      )
+      return err('Event is not available for ticket sales')
     }
 
     const now = new Date()
@@ -76,10 +65,7 @@ export const POST = withVenue(withAuth(async function POST(
     })
 
     if (tickets.length !== ticketIds.length) {
-      return NextResponse.json(
-        { error: 'One or more tickets not found' },
-        { status: 400 }
-      )
+      return err('One or more tickets not found')
     }
 
     // Check ticket statuses
@@ -167,7 +153,7 @@ export const POST = withVenue(withAuth(async function POST(
 
     pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       purchasedAt: now.toISOString(),
       orderSummary: {
@@ -204,12 +190,9 @@ export const POST = withVenue(withAuth(async function POST(
         totalPrice: Number(ticket.totalPrice),
         status: ticket.status,
       })),
-    } })
+    })
   } catch (error) {
     console.error('Failed to purchase tickets:', error)
-    return NextResponse.json(
-      { error: 'Failed to purchase tickets' },
-      { status: 500 }
-    )
+    return err('Failed to purchase tickets', 500)
   }
 }))

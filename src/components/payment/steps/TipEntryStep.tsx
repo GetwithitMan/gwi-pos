@@ -1,140 +1,144 @@
-/**
- * Tip Entry Step
- *
- * Displays tip percentage buttons and custom tip input.
- * Calculates tip amount based on subtotal or total.
- */
+'use client'
 
 import React from 'react'
+import { formatCurrency } from '@/lib/utils'
+import { calculateTip } from '@/lib/payment'
+import { usePaymentContext } from '../PaymentContext'
+import {
+  sectionLabelClasses,
+  mutedTextClasses,
+  inputClasses,
+  backButtonClasses,
+  primaryButtonClasses,
+  infoPanelBase,
+  infoPanelIndigo,
+} from '../payment-styles'
 
-interface TipEntryStepProps {
-  subtotal: number
-  tipAmount: number
-  customTip: string
-  onSetTipAmount: (amount: number) => void
-  onSetCustomTip: (value: string) => void
-  onContinue: () => void
-  onBack: () => void
-  tipPercentages?: number[]
-  calculateOn?: 'subtotal' | 'total'
-  total?: number
-  tipExemptAmount?: number
-}
+/**
+ * TipEntryStep — tip percentage selection + custom tip input.
+ */
+export function TipEntryStep() {
+  const {
+    selectedMethod,
+    currentTotal,
+    effectiveSubtotal,
+    effectiveOrderTotal,
+    tipSettings,
+    tipAmount,
+    setTipAmount,
+    customTip,
+    setCustomTip,
+    totalWithTip,
+    tipExemptAmount,
+    setStep,
+    setError,
+    terminalId,
+  } = usePaymentContext()
 
-export function TipEntryStep({
-  subtotal,
-  tipAmount,
-  customTip,
-  onSetTipAmount,
-  onSetCustomTip,
-  onContinue,
-  onBack,
-  tipPercentages = [15, 18, 20, 25],
-  calculateOn = 'subtotal',
-  total,
-  tipExemptAmount,
-}: TipEntryStepProps) {
-  const rawBase = calculateOn === 'total' && total ? total : subtotal
-  const baseAmount = tipExemptAmount ? Math.max(0, rawBase - tipExemptAmount) : rawBase
-
-  const calculateTip = (percent: number) => {
-    return Math.round(baseAmount * (percent / 100) * 100) / 100
+  const handleSelectTip = (percent: number | null) => {
+    if (percent === null) {
+      setTipAmount(0)
+    } else {
+      const tip = calculateTip(effectiveSubtotal, percent, tipSettings.calculateOn, effectiveOrderTotal, tipExemptAmount)
+      setTipAmount(tip)
+    }
+    setCustomTip('')
   }
 
-  const handleCustomTipChange = (value: string) => {
-    onSetCustomTip(value)
-    const amount = parseFloat(value)
-    if (!isNaN(amount) && amount >= 0) {
-      onSetTipAmount(amount)
+  const handleCustomTip = () => {
+    const tip = parseFloat(customTip) || 0
+    setTipAmount(tip)
+  }
+
+  const handleContinueFromTip = () => {
+    if (!selectedMethod) {
+      setError('No payment method selected. Please go back and select a payment method.')
+      return
+    }
+    if (selectedMethod === 'cash') {
+      setStep('cash')
+    } else if (selectedMethod === 'credit' || selectedMethod === 'debit') {
+      if (!terminalId) {
+        setError('Terminal not configured. Cannot process card payments. Please contact support.')
+        setStep('method')
+        return
+      }
+      setStep('datacap_card')
+    } else {
+      setStep(selectedMethod as 'gift_card' | 'house_account' | 'room_charge')
     }
   }
 
-  const totalWithTip = subtotal + tipAmount
-
   return (
-    <div className="space-y-3">
-      <div className="text-center text-gray-600 mb-3">
-        Add a tip? (calculated on {calculateOn === 'total' ? 'total' : 'subtotal'})
-      </div>
+    <div className="flex flex-col gap-2.5">
+      <h3 className={sectionLabelClasses}>Add Tip</h3>
+      <p className={`${mutedTextClasses} mb-2`}>
+        Paying with {selectedMethod === 'cash' ? 'Cash' : 'Card'}: {formatCurrency(currentTotal)}
+      </p>
 
-      {/* Percentage buttons */}
+      {/* Tip percentage grid */}
       <div className="grid grid-cols-4 gap-2">
-        {tipPercentages.map((percent) => {
-          const amount = calculateTip(percent)
-          const isSelected = Math.abs(tipAmount - amount) < 0.01
+        {tipSettings.suggestedPercentages.map(percent => {
+          const tipForPercent = calculateTip(effectiveSubtotal, percent, tipSettings.calculateOn, effectiveOrderTotal, tipExemptAmount)
+          const isSelected = tipAmount === tipForPercent
           return (
             <button
               key={percent}
-              onClick={() => onSetTipAmount(amount)}
-              className={`p-3 rounded-lg font-bold transition-all ${
+              onClick={() => handleSelectTip(percent)}
+              className={`flex flex-col items-center justify-center h-16 rounded-[10px] cursor-pointer transition-colors ${
                 isSelected
-                  ? 'bg-green-500 text-white ring-2 ring-green-300'
-                  : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                  ? 'border border-indigo-500/50 bg-indigo-500/20 text-indigo-300'
+                  : 'border border-slate-600/30 bg-slate-800/50 text-slate-400 hover:bg-slate-800/70'
               }`}
             >
-              <div className="text-sm">{percent}%</div>
-              <div className="text-xs mt-1">${amount.toFixed(2)}</div>
+              <span className="font-bold text-base">{percent}%</span>
+              <span className="text-xs mt-0.5">{formatCurrency(tipForPercent)}</span>
             </button>
           )
         })}
       </div>
 
-      {/* No tip and custom tip */}
-      <div className="flex gap-2 mt-3">
+      {/* No tip + custom tip */}
+      <div className="flex gap-2 mt-2">
         <button
-          onClick={() => {
-            onSetTipAmount(0)
-            onSetCustomTip('')
-          }}
-          className={`px-4 py-2 rounded-lg font-bold transition-all ${
-            tipAmount === 0
-              ? 'bg-gray-500 text-white'
-              : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+          onClick={() => handleSelectTip(null)}
+          className={`flex-1 py-2.5 px-4 rounded-[10px] cursor-pointer text-sm font-medium transition-colors ${
+            tipAmount === 0 && !customTip
+              ? 'border border-indigo-500/50 bg-indigo-500/20 text-indigo-300'
+              : 'border border-slate-600/30 bg-slate-800/50 text-slate-400 hover:bg-slate-800/70'
           }`}
         >
           No Tip
         </button>
-
-        <div className="flex-1 flex gap-2">
-          <div className="relative flex-1">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">
-              $
-            </span>
-            <input
-              type="number"
-              value={customTip}
-              onChange={(e) => handleCustomTipChange(e.target.value)}
-              onKeyDown={(e) => { if (['e','E','+','-'].includes(e.key)) e.preventDefault() }}
-              placeholder="Custom"
-              step="0.01"
-              min="0"
-              max="9999.99"
-              className="w-full pl-7 pr-3 py-2 border rounded-lg"
-            />
-          </div>
+        <div className="flex-1 relative">
+          <span className="absolute left-3 top-[11px] text-slate-500 text-sm">$</span>
+          <input
+            type="number"
+            value={customTip}
+            onChange={(e) => setCustomTip(e.target.value)}
+            onBlur={handleCustomTip}
+            className={`${inputClasses} pl-7`}
+            placeholder="Custom"
+            step="0.01"
+            min="0"
+          />
         </div>
       </div>
 
-      {/* Total preview */}
-      <div className="mt-4 p-3 bg-blue-50 rounded-lg">
-        <div className="flex justify-between font-bold">
-          <span>Total with Tip:</span>
-          <span className="text-blue-600">${totalWithTip.toFixed(2)}</span>
+      {/* Total with tip */}
+      <div className={`${infoPanelBase} ${infoPanelIndigo}`}>
+        <div className="flex justify-between font-bold text-white text-lg font-mono">
+          <span>Total with Tip</span>
+          <span>{formatCurrency(totalWithTip)}</span>
         </div>
       </div>
 
       {/* Action buttons */}
-      <div className="flex gap-2 mt-4">
-        <button
-          onClick={onBack}
-          className="flex-1 px-4 py-3 bg-gray-200 hover:bg-gray-300 rounded-lg font-bold"
-        >
+      <div className="flex gap-2 mt-2">
+        <button onClick={() => setStep('method')} className={backButtonClasses}>
           Back
         </button>
-        <button
-          onClick={onContinue}
-          className="flex-1 px-4 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-bold"
-        >
+        <button onClick={handleContinueFromTip} className={primaryButtonClasses}>
           Continue
         </button>
       </div>

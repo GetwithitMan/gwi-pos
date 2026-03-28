@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
@@ -6,6 +6,7 @@ import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { dispatchMenuUpdate } from '@/lib/socket-dispatch'
 import { invalidateMenuCache } from '@/lib/menu-cache'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok, unauthorized } from '@/lib/api-response'
 const log = createChildLogger('menu-snapshots')
 
 export const dynamic = 'force-dynamic'
@@ -21,7 +22,7 @@ export const GET = withVenue(async function GET(
     const { id } = await params
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const rows: any[] = await db.$queryRawUnsafe(`
@@ -31,7 +32,7 @@ export const GET = withVenue(async function GET(
     `, id, locationId)
 
     if (!rows.length) {
-      return NextResponse.json({ error: 'Snapshot not found' }, { status: 404 })
+      return notFound('Snapshot not found')
     }
 
     const snapshot = rows[0]
@@ -39,7 +40,7 @@ export const GET = withVenue(async function GET(
     // Size guard: reject snapshots > 10MB to prevent OOM
     const dataStr = typeof snapshot.data === 'string' ? snapshot.data : JSON.stringify(snapshot.data)
     if (dataStr.length > 10_000_000) {
-      return NextResponse.json({ error: 'Snapshot too large. Contact support.' }, { status: 413 })
+      return err('Snapshot too large. Contact support.', 413)
     }
 
     const snapshotData = typeof snapshot.data === 'string' ? JSON.parse(snapshot.data) : snapshot.data
@@ -61,8 +62,7 @@ export const GET = withVenue(async function GET(
       categoryDelta: currentCategoryCount - snapshot.categoryCount,
     }
 
-    return NextResponse.json({
-      data: {
+    return ok({
         id: snapshot.id,
         label: snapshot.label,
         createdByName: snapshot.createdByName,
@@ -75,11 +75,10 @@ export const GET = withVenue(async function GET(
         items: snapshotData.items || [],
         modifierGroups: snapshotData.modifierGroups || [],
         modifiers: snapshotData.modifiers || [],
-      },
-    })
+      })
   } catch (error) {
     console.error('[MenuSnapshots] GET [id] error:', error)
-    return NextResponse.json({ error: 'Failed to fetch snapshot' }, { status: 500 })
+    return err('Failed to fetch snapshot', 500)
   }
 })
 
@@ -98,18 +97,18 @@ export const POST = withVenue(async function POST(
     const { id } = await params
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Auth check — admin level (destructive operation)
     const actor = await getActorFromRequest(request)
     if (!actor.employeeId || !actor.locationId) {
-      return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
+      return unauthorized('Authentication required')
     }
 
     const authResult = await requirePermission(actor.employeeId, actor.locationId, 'manage_menu')
     if (!authResult.authorized) {
-      return NextResponse.json({ error: authResult.error }, { status: authResult.status })
+      return err(authResult.error, authResult.status)
     }
 
     // Fetch snapshot
@@ -119,7 +118,7 @@ export const POST = withVenue(async function POST(
     `, id, locationId)
 
     if (!rows.length) {
-      return NextResponse.json({ error: 'Snapshot not found' }, { status: 404 })
+      return notFound('Snapshot not found')
     }
 
     const snapshotData = typeof rows[0].data === 'string' ? JSON.parse(rows[0].data) : rows[0].data
@@ -342,13 +341,13 @@ export const POST = withVenue(async function POST(
 
     const employeeName = authResult.employee.displayName || `${authResult.employee.firstName} ${authResult.employee.lastName}`
 
-    return NextResponse.json({
+    return ok({
       success: true,
       message: `Menu restored from snapshot by ${employeeName}. ${snapshotData.categories?.length || 0} categories and ${snapshotData.items?.length || 0} items restored.`,
     })
   } catch (error) {
     console.error('[MenuSnapshots] POST restore error:', error)
-    return NextResponse.json({ error: 'Failed to restore from snapshot' }, { status: 500 })
+    return err('Failed to restore from snapshot', 500)
   }
 })
 
@@ -363,7 +362,7 @@ export const DELETE = withVenue(async function DELETE(
     const { id } = await params
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Auth check
@@ -371,7 +370,7 @@ export const DELETE = withVenue(async function DELETE(
     if (actor.employeeId && actor.locationId) {
       const authResult = await requirePermission(actor.employeeId, actor.locationId, 'manage_menu')
       if (!authResult.authorized) {
-        return NextResponse.json({ error: authResult.error }, { status: authResult.status })
+        return err(authResult.error, authResult.status)
       }
     }
 
@@ -382,12 +381,12 @@ export const DELETE = withVenue(async function DELETE(
     `, id, locationId)
 
     if (!Array.isArray(result) || result.length === 0) {
-      return NextResponse.json({ error: 'Snapshot not found' }, { status: 404 })
+      return notFound('Snapshot not found')
     }
 
-    return NextResponse.json({ success: true })
+    return ok({ success: true })
   } catch (error) {
     console.error('[MenuSnapshots] DELETE error:', error)
-    return NextResponse.json({ error: 'Failed to delete snapshot' }, { status: 500 })
+    return err('Failed to delete snapshot', 500)
   }
 })

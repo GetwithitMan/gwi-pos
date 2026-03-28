@@ -9,6 +9,7 @@ import { offerSlotToWaitlist } from '@/lib/reservations/waitlist-bridge'
 import { createRateLimiter } from '@/lib/rate-limiter'
 import { dispatchReservationChanged } from '@/lib/socket-dispatch'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('public-reservations-cancel')
 
 export const dynamic = 'force-dynamic'
@@ -42,7 +43,7 @@ export const POST = withVenue(async function POST(
 
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'Location not found' }, { status: 400 })
+      return err('Location not found')
     }
 
     const reservation = await db.reservation.findFirst({
@@ -50,15 +51,12 @@ export const POST = withVenue(async function POST(
     })
 
     if (!reservation) {
-      return NextResponse.json({ error: 'Reservation not found' }, { status: 404 })
+      return notFound('Reservation not found')
     }
 
     const terminalStatuses = ['completed', 'cancelled', 'no_show']
     if (terminalStatuses.includes(reservation.status)) {
-      return NextResponse.json(
-        { error: `Reservation is already ${reservation.status}` },
-        { status: 400 }
-      )
+      return err(`Reservation is already ${reservation.status}`)
     }
 
     // Load settings for cutoff + refund calculation
@@ -95,7 +93,7 @@ export const POST = withVenue(async function POST(
 
     // Preview mode — return refund info without executing
     if (!confirm) {
-      return NextResponse.json({
+      return ok({
         preview: true,
         depositAmountCents: depositCents,
         depositPaid,
@@ -163,7 +161,7 @@ export const POST = withVenue(async function POST(
       reservationId: reservation.id, action: 'cancelled',
     }).catch(err => log.warn({ err }, 'Background task failed'))
 
-    return NextResponse.json({
+    return ok({
       id: updated.id,
       status: 'cancelled',
       refundAmountCents: refund.refundAmountCents,
@@ -178,9 +176,9 @@ export const POST = withVenue(async function POST(
       }, { status: 400 })
     }
     if (error?.name === 'TransitionError') {
-      return NextResponse.json({ error: error.message }, { status: 400 })
+      return err(error.message)
     }
     console.error('[Public Cancel] Error:', error)
-    return NextResponse.json({ error: 'Failed to cancel reservation' }, { status: 500 })
+    return err('Failed to cancel reservation', 500)
   }
 })

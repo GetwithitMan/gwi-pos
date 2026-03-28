@@ -5,7 +5,7 @@
  * POST - Start a new tip group
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { TipGroupStatus } from '@/generated/prisma/client'
 import { startTipGroup } from '@/lib/domain/tips/tip-groups'
@@ -16,6 +16,7 @@ import { withAuth } from '@/lib/api-auth-middleware'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { queueIfOutageOrFail, OutageQueueFullError, pushUpstream } from '@/lib/sync/outage-safe-write'
+import { created, err, ok } from '@/lib/api-response'
 
 // ─── GET: List active tip groups for a location ─────────────────────────────
 
@@ -28,17 +29,14 @@ export const GET = withVenue(withAuth({ allowCellular: true }, async function GE
     // ── Validate required fields ──────────────────────────────────────────
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'locationId is required' },
-        { status: 400 }
-      )
+      return err('locationId is required')
     }
 
     // ── Auth check ────────────────────────────────────────────────────────
     const actor = await getActorFromRequest(request)
     const requestingEmployeeId = actor.employeeId || request.headers.get('x-employee-id')
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.POS_ACCESS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // ── Query groups ──────────────────────────────────────────────────────
 
@@ -119,13 +117,10 @@ export const GET = withVenue(withAuth({ allowCellular: true }, async function GE
       }
     })
 
-    return NextResponse.json({ groups: groupInfos })
+    return ok({ groups: groupInfos })
   } catch (error) {
     console.error('Failed to list tip groups:', error)
-    return NextResponse.json(
-      { error: 'Failed to list tip groups' },
-      { status: 500 }
-    )
+    return err('Failed to list tip groups', 500)
   }
 }))
 
@@ -139,38 +134,26 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     // ── Validate required fields ──────────────────────────────────────────
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'locationId is required' },
-        { status: 400 }
-      )
+      return err('locationId is required')
     }
 
     if (!initialMemberIds || !Array.isArray(initialMemberIds)) {
-      return NextResponse.json(
-        { error: 'initialMemberIds is required and must be an array' },
-        { status: 400 }
-      )
+      return err('initialMemberIds is required and must be an array')
     }
 
     // ── Auth check ────────────────────────────────────────────────────────
     const actor = await getActorFromRequest(request)
     const requestingEmployeeId = actor.employeeId || request.headers.get('x-employee-id')
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.POS_ACCESS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // ── Validate custom splits if provided ────────────────────────────
     if (splitMode === 'custom' && !customSplits) {
-      return NextResponse.json(
-        { error: "customSplits is required when splitMode is 'custom'" },
-        { status: 400 }
-      )
+      return err("customSplits is required when splitMode is 'custom'")
     }
 
     if (customSplits && typeof customSplits !== 'object') {
-      return NextResponse.json(
-        { error: 'customSplits must be an object mapping employeeId to decimal percentage' },
-        { status: 400 }
-      )
+      return err('customSplits must be an object mapping employeeId to decimal percentage')
     }
 
     // ── Create the group ──────────────────────────────────────────────────
@@ -189,7 +172,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       await queueIfOutageOrFail('TipGroup', locationId, group.id, 'INSERT')
     } catch (err) {
       if (err instanceof OutageQueueFullError) {
-        return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+        return err('Service temporarily unavailable — outage queue full', 507)
       }
       throw err
     }
@@ -204,19 +187,13 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       { async: true }
     ).catch((err) => console.error('[TipGroups] Socket dispatch failed:', err))
 
-    return NextResponse.json({ group }, { status: 201 })
+    return created({ group })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error'
     if (message === 'EMPLOYEE_IN_ANOTHER_GROUP') {
-      return NextResponse.json(
-        { error: 'One or more employees are already in an active tip group. They must leave that group first.' },
-        { status: 409 }
-      )
+      return err('One or more employees are already in an active tip group. They must leave that group first.', 409)
     }
     console.error('Failed to create tip group:', error)
-    return NextResponse.json(
-      { error: 'Failed to create tip group' },
-      { status: 500 }
-    )
+    return err('Failed to create tip group', 500)
   }
 }))

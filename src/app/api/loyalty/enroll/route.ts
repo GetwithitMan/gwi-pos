@@ -7,6 +7,7 @@ import { withVenue } from '@/lib/with-venue'
 import { parseSettings } from '@/lib/settings'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // POST /api/loyalty/enroll — enroll a customer in a loyalty program
 export const POST = withVenue(async function POST(request: NextRequest) {
@@ -18,7 +19,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const locationId = actor.locationId || body.locationId
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.POS_ACCESS)
@@ -32,7 +33,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const { customerId, programId } = body
 
     if (!customerId) {
-      return NextResponse.json({ error: 'customerId is required' }, { status: 400 })
+      return err('customerId is required')
     }
 
     // Find program — if programId not given, use the location's active program
@@ -45,7 +46,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         locationId,
       )
       if (programs.length === 0) {
-        return NextResponse.json({ error: 'No active loyalty program found' }, { status: 404 })
+        return notFound('No active loyalty program found')
       }
       resolvedProgramId = programs[0].id
     }
@@ -60,13 +61,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     )
 
     if (customers.length === 0) {
-      return NextResponse.json({ error: 'Customer not found' }, { status: 404 })
+      return notFound('Customer not found')
     }
 
     const customer = customers[0]
 
     if (customer.loyaltyProgramId) {
-      return NextResponse.json({ error: 'Customer is already enrolled in a loyalty program' }, { status: 409 })
+      return err('Customer is already enrolled in a loyalty program', 409)
     }
 
     // Enroll the customer
@@ -121,16 +122,16 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     pushUpstream()
     void notifyDataChanged({ locationId, domain: 'loyalty', action: 'updated' })
 
-    return NextResponse.json({
+    return ok({
       success: true,
       programId: resolvedProgramId,
       welcomeBonusAwarded: welcomeBonus,
     })
   } catch (error: any) {
     if (error?.message?.includes('does not exist') || error?.code === '42P01') {
-      return NextResponse.json({ error: 'Loyalty system not yet configured. Please run database migrations.' }, { status: 503 })
+      return err('Loyalty system not yet configured. Please run database migrations.', 503)
     }
     console.error('Failed to enroll in loyalty program:', error)
-    return NextResponse.json({ error: 'Failed to enroll in loyalty program' }, { status: 500 })
+    return err('Failed to enroll in loyalty program', 500)
   }
 })

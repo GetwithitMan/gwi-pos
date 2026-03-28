@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - List tray configs for a prep item or all daily count items
 // This works with Ingredients that have preparationType (prep-style ingredients)
@@ -15,7 +16,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const dailyCountItemsOnly = searchParams.get('dailyCountItemsOnly') === 'true'
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID required' }, { status: 400 })
+      return err('Location ID required')
     }
 
     // If prepItemId specified, get configs for that specific ingredient
@@ -29,12 +30,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         orderBy: { sortOrder: 'asc' },
       })
 
-      return NextResponse.json({
-        data: configs.map(c => ({
+      return ok(configs.map(c => ({
           ...c,
           capacity: Number(c.capacity),
-        })),
-      })
+        })))
     }
 
     // Get all ingredients with preparationType (these are prep-style items)
@@ -85,8 +84,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       trayConfigsByIngredient[config.prepItemId].push(config)
     }
 
-    return NextResponse.json({
-      data: prepIngredients.map(item => ({
+    return ok(prepIngredients.map(item => ({
         id: item.id,
         name: item.name,
         outputUnit: item.standardUnit || 'each',
@@ -109,11 +107,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           ...c,
           capacity: Number(c.capacity),
         })),
-      })),
-    })
+      })))
   } catch (error) {
     console.error('Tray configs list error:', error)
-    return NextResponse.json({ error: 'Failed to fetch tray configs' }, { status: 500 })
+    return err('Failed to fetch tray configs', 500)
   }
 })
 
@@ -131,9 +128,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     } = body
 
     if (!locationId || !prepItemId || !name || capacity === undefined) {
-      return NextResponse.json({
-        error: 'Location ID, prep item ID, name, and capacity required',
-      }, { status: 400 })
+      return err('Location ID, prep item ID, name, and capacity required')
     }
 
     // Verify ingredient exists and belongs to this location (ingredients with preparationType are "prep items")
@@ -142,7 +137,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     })
 
     if (!ingredient) {
-      return NextResponse.json({ error: 'Prep item not found' }, { status: 404 })
+      return notFound('Prep item not found')
     }
 
     // Get max sortOrder if not provided
@@ -169,18 +164,16 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     void notifyDataChanged({ locationId, domain: 'inventory', action: 'created', entityId: config.id })
     pushUpstream()
 
-    return NextResponse.json({
-      data: {
+    return ok({
         ...config,
         capacity: Number(config.capacity),
-      },
-    })
+      })
   } catch (error) {
     console.error('Create tray config error:', error)
     if ((error as { code?: string }).code === 'P2002') {
-      return NextResponse.json({ error: 'A tray config with this name already exists for this prep item' }, { status: 400 })
+      return err('A tray config with this name already exists for this prep item')
     }
-    return NextResponse.json({ error: 'Failed to create tray config' }, { status: 500 })
+    return err('Failed to create tray config', 500)
   }
 }))
 
@@ -191,7 +184,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
     const { ingredientId, isDailyCountItem } = body
 
     if (!ingredientId || isDailyCountItem === undefined) {
-      return NextResponse.json({ error: 'Ingredient ID and isDailyCountItem required' }, { status: 400 })
+      return err('Ingredient ID and isDailyCountItem required')
     }
 
     const ingredient = await db.ingredient.update({
@@ -202,15 +195,13 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
     void notifyDataChanged({ locationId: ingredient.locationId, domain: 'inventory', action: 'updated', entityId: ingredient.id })
     pushUpstream()
 
-    return NextResponse.json({
-      data: {
+    return ok({
         id: ingredient.id,
         name: ingredient.name,
         isDailyCountItem: ingredient.isDailyCountItem,
-      },
-    })
+      })
   } catch (error) {
     console.error('Toggle daily count error:', error)
-    return NextResponse.json({ error: 'Failed to update ingredient' }, { status: 500 })
+    return err('Failed to update ingredient', 500)
   }
 }))

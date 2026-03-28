@@ -15,6 +15,7 @@ import { getStockStatus } from '@/lib/online-availability'
 import { PrismaClient } from '@/generated/prisma/client'
 import { checkOnlineRateLimit } from '@/lib/online-rate-limiter'
 import { getClientIp } from '@/lib/get-client-ip'
+import { err, notFound } from '@/lib/api-response'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -170,10 +171,7 @@ export async function GET(
     const slug = searchParams.get('slug')
 
     if (!slug) {
-      return NextResponse.json(
-        { error: 'slug query parameter is required' },
-        { status: 400 }
-      )
+      return err('slug query parameter is required')
     }
 
     // ── Rate limit ────────────────────────────────────────────────────────────
@@ -238,10 +236,7 @@ export async function GET(
     })
 
     if (!item) {
-      return NextResponse.json(
-        { error: 'Item not found' },
-        { status: 404 }
-      )
+      return notFound('Item not found')
     }
 
     // ── Expand modifier groups recursively ──────────────────────────────────
@@ -457,9 +452,6 @@ export async function GET(
     return res
   } catch (error) {
     console.error('[GET /api/online/menu/[itemId]] Error:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch item detail' },
-      { status: 500 }
-    )
+    return err('Failed to fetch item detail', 500)
   }
 }

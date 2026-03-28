@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { getDatacapClient } from '@/lib/datacap/helpers'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // POST - Verify payment reader identity via EMVPadReset + optional beep
 // EMVPadReset confirms the device is alive and responds to Datacap protocol
@@ -20,7 +21,7 @@ export const POST = withVenue(withAuth(async function POST(
     })
 
     if (!reader) {
-      return NextResponse.json({ error: 'Payment reader not found' }, { status: 404 })
+      return notFound('Payment reader not found')
     }
 
     const startTime = Date.now()
@@ -53,13 +54,13 @@ export const POST = withVenue(withAuth(async function POST(
         }
       }
 
-      return NextResponse.json({ data: {
+      return ok({
         verified: isOnline,
         isOnline,
         responseTimeMs: responseTime,
         serialNumber: reader.serialNumber,
         beepTriggered: triggerBeep && isOnline,
-      } })
+      })
     } catch (fetchError) {
       const responseTime = Date.now() - startTime
       const errorMessage = fetchError instanceof Error ? fetchError.message : 'Connection failed'
@@ -73,15 +74,15 @@ export const POST = withVenue(withAuth(async function POST(
         },
       })
 
-      return NextResponse.json({ data: {
+      return ok({
         verified: false,
         isOnline: false,
         error: errorMessage,
         responseTimeMs: responseTime,
-      } })
+      })
     }
   } catch (error) {
     console.error('Failed to verify payment reader:', error)
-    return NextResponse.json({ error: 'Failed to verify payment reader' }, { status: 500 })
+    return err('Failed to verify payment reader', 500)
   }
 }))

@@ -4,6 +4,7 @@ import * as EmployeeRepository from '@/lib/repositories/employee-repository'
 import { compare } from 'bcryptjs'
 import { withVenue } from '@/lib/with-venue'
 import { getClientIp } from '@/lib/get-client-ip'
+import { err, ok, unauthorized } from '@/lib/api-response'
 
 // ── Dedicated rate limiter for PIN verification ────────────────────────────
 // Stricter than login: 5 failed attempts per IP → 5-minute lockout.
@@ -153,17 +154,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     if (!pin || pin.length < 4) {
-      return NextResponse.json(
-        { error: 'PIN must be at least 4 digits' },
-        { status: 400 }
-      )
+      return err('PIN must be at least 4 digits')
     }
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'locationId is required' },
-        { status: 400 }
-      )
+      return err('locationId is required')
     }
 
     // Fast path: O(1) — single employee lookup + one compare (tenant-scoped)
@@ -181,21 +176,15 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       if (!employee || !employee.isActive) {
         recordPinFailure(ip)
         if (terminalRateKey) recordTerminalPinFailure(terminalRateKey, terminalRateLabel)
-        return NextResponse.json(
-          { error: 'Invalid PIN' },
-          { status: 401 }
-        )
+        return unauthorized('Invalid PIN')
       }
       const pinMatch = await compare(pin, employee.pin)
       if (!pinMatch) {
         recordPinFailure(ip)
         if (terminalRateKey) recordTerminalPinFailure(terminalRateKey, terminalRateLabel)
-        return NextResponse.json(
-          { error: 'Invalid PIN' },
-          { status: 401 }
-        )
+        return unauthorized('Invalid PIN')
       }
-      return NextResponse.json({ data: {
+      return ok({
         employee: {
           id: employee.id,
           firstName: employee.firstName,
@@ -204,7 +193,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           requiresPinChange: employee.requiresPinChange ?? false,
         },
         verified: true,
-      } })
+      })
     }
 
     // Fall through to existing O(N) scan for backwards compatibility
@@ -239,14 +228,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     if (!matchedEmployee) {
       recordPinFailure(ip)
       if (terminalRateKey) recordTerminalPinFailure(terminalRateKey, terminalRateLabel)
-      return NextResponse.json(
-        { error: 'Invalid PIN' },
-        { status: 401 }
-      )
+      return unauthorized('Invalid PIN')
     }
 
     // Return minimal employee info for verification
-    return NextResponse.json({ data: {
+    return ok({
       employee: {
         id: matchedEmployee.id,
         firstName: matchedEmployee.firstName,
@@ -255,12 +241,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         requiresPinChange: matchedEmployee.requiresPinChange ?? false,
       },
       verified: true,
-    } })
+    })
   } catch (error) {
     console.error('PIN verification error:', error)
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    )
+    return err('Internal server error', 500)
   }
 })

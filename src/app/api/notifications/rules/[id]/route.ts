@@ -6,7 +6,7 @@
  * Permission: GET = notifications.view_log, PUT/DELETE = notifications.manage_rules
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
@@ -14,6 +14,7 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { clearRoutingRulesCache } from '@/lib/notifications/dispatcher'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('notifications-rules')
 
 export const dynamic = 'force-dynamic'
@@ -35,12 +36,12 @@ export const GET = withVenue(async function GET(
     const { id } = await params
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.NOTIFICATIONS_VIEW_LOG)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const rules: any[] = await db.$queryRawUnsafe(
       `SELECT r.*,
@@ -55,13 +56,13 @@ export const GET = withVenue(async function GET(
     )
 
     if (rules.length === 0) {
-      return NextResponse.json({ error: 'Rule not found' }, { status: 404 })
+      return notFound('Rule not found')
     }
 
-    return NextResponse.json({ data: rules[0] })
+    return ok(rules[0])
   } catch (error) {
     console.error('[Notification Rules] GET [id] error:', error)
-    return NextResponse.json({ error: 'Failed to fetch rule' }, { status: 500 })
+    return err('Failed to fetch rule', 500)
   }
 })
 
@@ -78,12 +79,12 @@ export const PUT = withVenue(async function PUT(
     const { id } = await params
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.NOTIFICATIONS_MANAGE_RULES)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Verify rule exists
     const existing: any[] = await db.$queryRawUnsafe(
@@ -94,7 +95,7 @@ export const PUT = withVenue(async function PUT(
       locationId
     )
     if (existing.length === 0) {
-      return NextResponse.json({ error: 'Rule not found' }, { status: 404 })
+      return notFound('Rule not found')
     }
 
     const body = await request.json()
@@ -128,17 +129,11 @@ export const PUT = withVenue(async function PUT(
 
     // Validate targetType if provided
     if (targetType !== undefined && !VALID_TARGET_TYPES.includes(targetType)) {
-      return NextResponse.json(
-        { error: `targetType must be one of: ${VALID_TARGET_TYPES.join(', ')}` },
-        { status: 400 }
-      )
+      return err(`targetType must be one of: ${VALID_TARGET_TYPES.join(', ')}`)
     }
 
     if (criticalityClass !== undefined && !VALID_CRITICALITY_CLASSES.includes(criticalityClass)) {
-      return NextResponse.json(
-        { error: `criticalityClass must be one of: ${VALID_CRITICALITY_CLASSES.join(', ')}` },
-        { status: 400 }
-      )
+      return err(`criticalityClass must be one of: ${VALID_CRITICALITY_CLASSES.join(', ')}`)
     }
 
     // Validate provider capability compatibility if provider or targetType changed
@@ -153,7 +148,7 @@ export const PUT = withVenue(async function PUT(
         locationId
       )
       if (providers.length === 0) {
-        return NextResponse.json({ error: 'Provider not found or inactive' }, { status: 404 })
+        return notFound('Provider not found or inactive')
       }
 
       const capabilities = providers[0].capabilities as Record<string, boolean> | null
@@ -168,10 +163,7 @@ export const PUT = withVenue(async function PUT(
         }
         const requiredCap = capabilityMap[effectiveTargetType]
         if (requiredCap && !capabilities[requiredCap]) {
-          return NextResponse.json(
-            { error: `Provider does not support ${effectiveTargetType} (missing ${requiredCap})` },
-            { status: 400 }
-          )
+          return err(`Provider does not support ${effectiveTargetType} (missing ${requiredCap})`)
         }
       }
     }
@@ -235,7 +227,7 @@ export const PUT = withVenue(async function PUT(
     )
 
     if (updated.length === 0) {
-      return NextResponse.json({ error: 'Rule not found' }, { status: 404 })
+      return notFound('Rule not found')
     }
 
     // Audit log: notification_rule_updated
@@ -258,10 +250,10 @@ export const PUT = withVenue(async function PUT(
     // Clear cached routing rules so updates take effect immediately
     clearRoutingRulesCache()
 
-    return NextResponse.json({ data: updated[0] })
+    return ok(updated[0])
   } catch (error) {
     console.error('[Notification Rules] PUT error:', error)
-    return NextResponse.json({ error: 'Failed to update rule' }, { status: 500 })
+    return err('Failed to update rule', 500)
   }
 })
 
@@ -276,12 +268,12 @@ export const DELETE = withVenue(async function DELETE(
     const { id } = await params
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.NOTIFICATIONS_MANAGE_RULES)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Fetch rule details before deletion for audit
     const existing: any[] = await db.$queryRawUnsafe(
@@ -301,7 +293,7 @@ export const DELETE = withVenue(async function DELETE(
     )
 
     if (deleted === 0) {
-      return NextResponse.json({ error: 'Rule not found' }, { status: 404 })
+      return notFound('Rule not found')
     }
 
     // Audit log: notification_rule_deleted
@@ -324,9 +316,9 @@ export const DELETE = withVenue(async function DELETE(
     // Clear cached routing rules so deletion takes effect immediately
     clearRoutingRulesCache()
 
-    return NextResponse.json({ success: true })
+    return ok({ success: true })
   } catch (error) {
     console.error('[Notification Rules] DELETE error:', error)
-    return NextResponse.json({ error: 'Failed to delete rule' }, { status: 500 })
+    return err('Failed to delete rule', 500)
   }
 })

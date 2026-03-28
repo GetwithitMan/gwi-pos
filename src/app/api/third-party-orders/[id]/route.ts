@@ -9,7 +9,7 @@
  * On ready: updates status. TODO: notify platform for pickup when credentials are available.
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -21,6 +21,7 @@ import { getLocationSettings } from '@/lib/location-cache'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { getPlatformClient } from '@/lib/delivery/clients/platform-registry'
 import type { DeliveryPlatformId } from '@/lib/delivery/clients/types'
+import { err, notFound, ok } from '@/lib/api-response'
 
 function toNum(val: unknown): number {
   if (typeof val === 'object' && val && 'toNumber' in val) {
@@ -42,12 +43,12 @@ export const GET = withVenue(async function GET(
     const employeeId = searchParams.get('employeeId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+      return err('Location ID is required')
     }
 
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.REPORTS_VIEW)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     const rows = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
@@ -59,12 +60,11 @@ export const GET = withVenue(async function GET(
     )
 
     if (!rows.length) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      return notFound('Order not found')
     }
 
     const row = rows[0]
-    return NextResponse.json({
-      data: {
+    return ok({
         id: row.id,
         platform: row.platform,
         externalOrderId: row.externalOrderId,
@@ -84,11 +84,10 @@ export const GET = withVenue(async function GET(
         rawPayload: row.rawPayload,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
-      },
-    })
+      })
   } catch (error) {
     console.error('[GET /api/third-party-orders/[id]] Error:', error)
-    return NextResponse.json({ error: 'Failed to fetch order' }, { status: 500 })
+    return err('Failed to fetch order', 500)
   }
 })
 
@@ -109,12 +108,12 @@ export const PUT = withVenue(async function PUT(
     }
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+      return err('Location ID is required')
     }
 
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.REPORTS_VIEW)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Fetch the order
@@ -127,7 +126,7 @@ export const PUT = withVenue(async function PUT(
     )
 
     if (!rows.length) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      return notFound('Order not found')
     }
 
     const order = rows[0]
@@ -137,7 +136,7 @@ export const PUT = withVenue(async function PUT(
     switch (action) {
       case 'accept': {
         if (order.status !== 'received') {
-          return NextResponse.json({ error: 'Order is not in received status' }, { status: 400 })
+          return err('Order is not in received status')
         }
 
         // Get tax rate from settings
@@ -185,9 +184,7 @@ export const PUT = withVenue(async function PUT(
           posOrderId,
         })
 
-        return NextResponse.json({
-          data: { id, status: 'accepted', posOrderId },
-        })
+        return ok({ id, status: 'accepted', posOrderId })
       }
 
       case 'reject': {
@@ -214,9 +211,7 @@ export const PUT = withVenue(async function PUT(
           status: 'cancelled',
         })
 
-        return NextResponse.json({
-          data: { id, status: 'cancelled' },
-        })
+        return ok({ id, status: 'cancelled' })
       }
 
       case 'ready': {
@@ -243,19 +238,17 @@ export const PUT = withVenue(async function PUT(
           status: 'ready',
         })
 
-        return NextResponse.json({
-          data: { id, status: 'ready' },
-        })
+        return ok({ id, status: 'ready' })
       }
 
       case 'status_update': {
         if (!newStatus) {
-          return NextResponse.json({ error: 'status is required' }, { status: 400 })
+          return err('status is required')
         }
 
         const validStatuses = ['received', 'accepted', 'preparing', 'ready', 'picked_up', 'delivered', 'cancelled']
         if (!validStatuses.includes(newStatus)) {
-          return NextResponse.json({ error: `Invalid status: ${newStatus}` }, { status: 400 })
+          return err(`Invalid status: ${newStatus}`)
         }
 
         await db.$executeRawUnsafe(
@@ -274,17 +267,15 @@ export const PUT = withVenue(async function PUT(
           status: newStatus,
         })
 
-        return NextResponse.json({
-          data: { id, status: newStatus },
-        })
+        return ok({ id, status: newStatus })
       }
 
       default: {
-        return NextResponse.json({ error: 'Invalid action. Use: accept, reject, ready, status_update' }, { status: 400 })
+        return err('Invalid action. Use: accept, reject, ready, status_update')
       }
     }
   } catch (error) {
     console.error('[PUT /api/third-party-orders/[id]] Error:', error)
-    return NextResponse.json({ error: 'Failed to update order' }, { status: 500 })
+    return err('Failed to update order', 500)
   }
 })

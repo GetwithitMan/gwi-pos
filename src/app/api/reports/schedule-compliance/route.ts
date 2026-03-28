@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { err, ok } from '@/lib/api-response'
 
 // I-4: Schedule compliance report — scheduled vs actual hours
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -14,12 +15,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const requestingEmployeeId = searchParams.get('requestingEmployeeId') || searchParams.get('employeeId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+      return err('Location ID is required')
     }
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_LABOR)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     const end = endDate ? new Date(endDate + 'T23:59:59') : new Date()
@@ -175,7 +176,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const noShows = rows.filter(r => r.status === 'no_show').length
     const lateCount = rows.filter(r => r.status === 'late').length
 
-    return NextResponse.json({ data: {
+    return ok({
       rows: rows.sort((a, b) => b.date.localeCompare(a.date) || a.employeeName.localeCompare(b.employeeName)),
       summary: {
         totalScheduledHours: Math.round(totalScheduled * 100) / 100,
@@ -188,9 +189,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           : 100,
       },
       filters: { startDate: start.toISOString(), endDate: end.toISOString() },
-    } })
+    })
   } catch (error) {
     console.error('Failed to generate schedule compliance report:', error)
-    return NextResponse.json({ error: 'Failed to generate schedule compliance report' }, { status: 500 })
+    return err('Failed to generate schedule compliance report', 500)
   }
 })

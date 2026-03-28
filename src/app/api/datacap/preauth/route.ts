@@ -5,6 +5,7 @@ import { withVenue } from '@/lib/with-venue'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { roundToCents } from '@/lib/pricing'
+import { err, ok } from '@/lib/api-response'
 
 interface PreAuthRequest {
   locationId: string
@@ -21,18 +22,18 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     let { amount } = body
 
     if (!locationId || !readerId || !orderId || amount === undefined || amount === null) {
-      return Response.json({ error: 'Missing required fields: locationId, readerId, orderId, amount' }, { status: 400 })
+      return err('Missing required fields: locationId, readerId, orderId, amount')
     }
 
     if (amount <= 0) {
-      return Response.json({ error: 'Amount must be positive' }, { status: 400 })
+      return err('Amount must be positive')
     }
 
     amount = roundToCents(amount)
 
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.POS_CARD_PAYMENTS)
     if (!auth.authorized) {
-      return Response.json({ error: auth.error }, { status: auth.status ?? 403 })
+      return err(auth.error, auth.status ?? 403)
     }
 
     await validateReader(readerId, locationId)
@@ -46,8 +47,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     const error = parseError(response)
 
-    return Response.json({
-      data: {
+    return ok({
         approved: response.cmdStatus === 'Approved',
         authCode: response.authCode,
         recordNo: response.recordNo,
@@ -58,8 +58,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         amountAuthorized: response.authorize,
         sequenceNo: response.sequenceNo,
         error: error ? { code: error.code, message: error.text, isRetryable: error.isRetryable } : null,
-      },
-    })
+      })
   } catch (err) {
     return datacapErrorResponse(err)
   }

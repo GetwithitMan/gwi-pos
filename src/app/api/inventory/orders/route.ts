@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
@@ -6,6 +6,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - List purchase orders
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -18,12 +19,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') ?? '50', 10)
 
     if (!locationId || !employeeId) {
-      return NextResponse.json({ error: 'locationId and employeeId required' }, { status: 400 })
+      return err('locationId and employeeId required')
     }
 
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.INVENTORY_MANAGE)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     const cappedLimit = Math.min(Math.max(limit, 1), 200)
@@ -48,8 +49,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       db.vendorOrder.count({ where }),
     ])
 
-    return NextResponse.json({
-      data: {
+    return ok({
         orders: orders.map(o => ({
           id: o.id,
           vendorId: o.vendorId,
@@ -68,11 +68,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           updatedAt: o.updatedAt,
         })),
         total,
-      },
-    })
+      })
   } catch (error) {
     console.error('List purchase orders error:', error)
-    return NextResponse.json({ error: 'Failed to fetch purchase orders' }, { status: 500 })
+    return err('Failed to fetch purchase orders', 500)
   }
 })
 
@@ -83,18 +82,18 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     const { locationId, employeeId, vendorId, orderNumber, expectedDelivery, notes, lineItems } = body
 
     if (!locationId || !employeeId || !vendorId) {
-      return NextResponse.json({ error: 'locationId, employeeId, and vendorId required' }, { status: 400 })
+      return err('locationId, employeeId, and vendorId required')
     }
 
     if (!lineItems?.length) {
-      return NextResponse.json({ error: 'lineItems array required and must not be empty' }, { status: 400 })
+      return err('lineItems array required and must not be empty')
     }
 
     const actor = await getActorFromRequest(request)
     const resolvedEmployeeId = actor.employeeId ?? employeeId
     const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.INVENTORY_MANAGE)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Validate vendor exists for this location
@@ -102,7 +101,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       where: { id: vendorId, locationId, deletedAt: null },
     })
     if (!vendor) {
-      return NextResponse.json({ error: 'Vendor not found' }, { status: 404 })
+      return notFound('Vendor not found')
     }
 
     // Validate inventory items exist
@@ -115,7 +114,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       const foundIds = new Set(items.map(i => i.id))
       const missing = itemIds.filter((id: string) => !foundIds.has(id))
       if (missing.length > 0) {
-        return NextResponse.json({ error: `Inventory items not found: ${missing.join(', ')}` }, { status: 400 })
+        return err(`Inventory items not found: ${missing.join(', ')}`)
       }
     }
 
@@ -174,9 +173,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     void notifyDataChanged({ locationId, domain: 'inventory', action: 'created', entityId: order?.id ?? '' })
     pushUpstream()
 
-    return NextResponse.json({ data: { order } })
+    return ok({ order })
   } catch (error) {
     console.error('Create purchase order error:', error)
-    return NextResponse.json({ error: 'Failed to create purchase order' }, { status: 500 })
+    return err('Failed to create purchase order', 500)
   }
 }))

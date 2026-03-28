@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - Get ticket details
 export const GET = withVenue(withAuth(PERMISSIONS.EVENTS_VIEW, async function GET(
@@ -79,13 +80,10 @@ export const GET = withVenue(withAuth(PERMISSIONS.EVENTS_VIEW, async function GE
     })
 
     if (!ticket) {
-      return NextResponse.json(
-        { error: 'Ticket not found' },
-        { status: 404 }
-      )
+      return notFound('Ticket not found')
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       ticket: {
         id: ticket.id,
         ticketNumber: ticket.ticketNumber,
@@ -146,13 +144,10 @@ export const GET = withVenue(withAuth(PERMISSIONS.EVENTS_VIEW, async function GE
             }
           : null,
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch ticket:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch ticket' },
-      { status: 500 }
-    )
+    return err('Failed to fetch ticket', 500)
   }
 }))
 
@@ -177,17 +172,11 @@ export const PUT = withVenue(withAuth(PERMISSIONS.EVENTS_MANAGE, async function 
     })
 
     if (!ticket) {
-      return NextResponse.json(
-        { error: 'Ticket not found' },
-        { status: 404 }
-      )
+      return notFound('Ticket not found')
     }
 
     if (!['sold', 'checked_in'].includes(ticket.status)) {
-      return NextResponse.json(
-        { error: 'Can only update sold or checked-in tickets' },
-        { status: 400 }
-      )
+      return err('Can only update sold or checked-in tickets')
     }
 
     const updated = await db.ticket.update({
@@ -209,16 +198,13 @@ export const PUT = withVenue(withAuth(PERMISSIONS.EVENTS_MANAGE, async function 
 
     pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       ticket: updated,
-    } })
+    })
   } catch (error) {
     console.error('Failed to update ticket:', error)
-    return NextResponse.json(
-      { error: 'Failed to update ticket' },
-      { status: 500 }
-    )
+    return err('Failed to update ticket', 500)
   }
 }))
 
@@ -240,17 +226,11 @@ export const DELETE = withVenue(withAuth(PERMISSIONS.EVENTS_MANAGE, async functi
     })
 
     if (!ticket) {
-      return NextResponse.json(
-        { error: 'Ticket not found' },
-        { status: 404 }
-      )
+      return notFound('Ticket not found')
     }
 
     if (['cancelled', 'refunded'].includes(ticket.status)) {
-      return NextResponse.json(
-        { error: 'Ticket is already cancelled or refunded' },
-        { status: 400 }
-      )
+      return err('Ticket is already cancelled or refunded')
     }
 
     const wasSold = ticket.status === 'sold' || ticket.status === 'checked_in'
@@ -279,16 +259,13 @@ export const DELETE = withVenue(withAuth(PERMISSIONS.EVENTS_MANAGE, async functi
 
     pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       message: 'Ticket cancelled successfully',
       ticketNumber: ticket.ticketNumber,
-    } })
+    })
   } catch (error) {
     console.error('Failed to cancel ticket:', error)
-    return NextResponse.json(
-      { error: 'Failed to cancel ticket' },
-      { status: 500 }
-    )
+    return err('Failed to cancel ticket', 500)
   }
 }))

@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { err, ok } from '@/lib/api-response'
 
 interface RulePerformanceRow {
   upsellRuleId: string
@@ -31,13 +32,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       // Auth check
       const actor = await getActorFromRequest(request)
       const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.REPORTS_VIEW)
-      if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+      if (!auth.authorized) return err(auth.error, auth.status)
     }
     const startDate = searchParams.get('startDate')
     const endDate = searchParams.get('endDate')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+      return err('Location ID is required')
     }
 
     // Default to last 30 days
@@ -89,8 +90,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const totalShown = Number(overallData.totalShown)
     const totalAccepted = Number(overallData.totalAccepted)
 
-    return NextResponse.json({
-      data: {
+    return ok({
         dateRange: { start: start.toISOString(), end: end.toISOString() },
         overall: {
           totalShown,
@@ -113,10 +113,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
             revenueGenerated: Number(r.revenueGenerated || 0),
           }
         }),
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to generate upsell analytics:', error)
-    return NextResponse.json({ error: 'Failed to generate upsell analytics' }, { status: 500 })
+    return err('Failed to generate upsell analytics', 500)
   }
 })

@@ -7,6 +7,7 @@ import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { getClientIp } from '@/lib/get-client-ip'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok, unauthorized } from '@/lib/api-response'
 const log = createChildLogger('hardware-terminals-heartbeat-native')
 // POST terminal heartbeat for native apps (Android/iOS) - Bearer token auth
 // NO withAuth — this route does its own token validation against the Terminal table.
@@ -22,7 +23,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const terminalToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
 
     if (!terminalToken && !isCellularAuth) {
-      return NextResponse.json({ error: 'Not authenticated. Provide Authorization: Bearer {token}' }, { status: 401 })
+      return unauthorized('Not authenticated. Provide Authorization: Bearer {token}')
     }
 
     // Parse optional body for version info
@@ -47,7 +48,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       const cellularTerminalId = request.headers.get('x-terminal-id')
       const cellularRole = request.headers.get('x-terminal-role') || 'CELLULAR_ROAMING'
 
-      return NextResponse.json({ data: {
+      return ok({
         success: true,
         terminal: {
           id: cellularTerminalId || 'cellular',
@@ -57,7 +58,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           forceAllPrints: false,
           receiptPrinter: null,
         },
-      } })
+      })
     }
 
     // ── LAN terminal path ──────────────────────────────────────────────────
@@ -80,7 +81,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     if (!terminal) {
-      return NextResponse.json({ error: 'Invalid terminal token' }, { status: 401 })
+      return unauthorized('Invalid terminal token')
     }
 
     // IP affinity check for fixed stations
@@ -156,7 +157,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       terminal: {
         id: terminal.id,
@@ -166,9 +167,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         forceAllPrints: terminal.forceAllPrints,
         receiptPrinter: terminal.receiptPrinter,
       },
-    } })
+    })
   } catch (error) {
     console.error('Terminal heartbeat (native) failed:', error)
-    return NextResponse.json({ error: 'Heartbeat failed' }, { status: 500 })
+    return err('Heartbeat failed', 500)
   }
 })

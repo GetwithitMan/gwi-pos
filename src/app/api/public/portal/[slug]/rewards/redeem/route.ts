@@ -4,6 +4,7 @@ import { cookies } from 'next/headers'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { generateRedemptionCode } from '@/lib/portal-auth'
+import { err, notFound, ok, unauthorized } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -48,7 +49,7 @@ export const POST = withVenue(async function POST(
     )
 
     if (locations.length === 0) {
-      return NextResponse.json({ error: 'Location not found' }, { status: 404 })
+      return notFound('Location not found')
     }
 
     const locationId = locations[0].id as string
@@ -56,7 +57,7 @@ export const POST = withVenue(async function POST(
     // ── Session auth ──────────────────────────────────────────────────
     const session = await verifyPortalSession(locationId)
     if (!session) {
-      return NextResponse.json({ error: 'Unauthorized — please log in' }, { status: 401 })
+      return unauthorized('Unauthorized — please log in')
     }
 
     const customerId = session.customerId
@@ -64,7 +65,7 @@ export const POST = withVenue(async function POST(
     // ── Validate body ─────────────────────────────────────────────────
     const { rewardId } = body
     if (!rewardId || typeof rewardId !== 'string') {
-      return NextResponse.json({ error: 'rewardId is required' }, { status: 400 })
+      return err('rewardId is required')
     }
 
     // ── Fetch reward ──────────────────────────────────────────────────
@@ -81,7 +82,7 @@ export const POST = withVenue(async function POST(
     )
 
     if (rewardRows.length === 0) {
-      return NextResponse.json({ error: 'Reward not found or not available' }, { status: 404 })
+      return notFound('Reward not found or not available')
     }
 
     const reward = rewardRows[0]
@@ -91,7 +92,7 @@ export const POST = withVenue(async function POST(
     const totalAvailable = Number(reward.totalAvailable ?? 0)
     const totalRedeemed = Number(reward.totalRedeemed ?? 0)
     if (totalAvailable > 0 && totalRedeemed >= totalAvailable) {
-      return NextResponse.json({ error: 'Reward is sold out' }, { status: 409 })
+      return err('Reward is sold out', 409)
     }
 
     // ── Check per-customer limit ──────────────────────────────────────
@@ -105,7 +106,7 @@ export const POST = withVenue(async function POST(
       )
       const customerRedemptions = Number(countRows[0]?.count ?? 0)
       if (customerRedemptions >= maxPerCustomer) {
-        return NextResponse.json({ error: 'Maximum redemptions reached for this reward' }, { status: 409 })
+        return err('Maximum redemptions reached for this reward', 409)
       }
     }
 
@@ -150,7 +151,7 @@ export const POST = withVenue(async function POST(
           customerId,
           pointCost,
         )
-        return NextResponse.json({ error: 'Failed to generate unique code' }, { status: 500 })
+        return err('Failed to generate unique code', 500)
       }
     }
 
@@ -180,16 +181,16 @@ export const POST = withVenue(async function POST(
     // ── Return ────────────────────────────────────────────────────────
     const pointsRemaining = currentPoints - pointCost
 
-    return NextResponse.json({
+    return ok({
       redemptionCode,
       expiresAt: expiresAt.toISOString(),
       pointsRemaining,
     })
   } catch (error: any) {
     if (error?.message?.includes('does not exist') || error?.code === '42P01') {
-      return NextResponse.json({ error: 'Loyalty system not yet configured. Please run database migrations.' }, { status: 503 })
+      return err('Loyalty system not yet configured. Please run database migrations.', 503)
     }
     console.error('Failed to redeem loyalty reward:', error)
-    return NextResponse.json({ error: 'Failed to redeem reward' }, { status: 500 })
+    return err('Failed to redeem reward', 500)
   }
 })

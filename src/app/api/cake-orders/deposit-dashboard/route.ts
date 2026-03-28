@@ -12,6 +12,7 @@ import { db } from '@/lib/db'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
 import { requireCakeFeature } from '@/lib/cake-orders/require-cake-feature'
+import { err, ok } from '@/lib/api-response'
 
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
@@ -19,7 +20,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const locationId = searchParams.get('locationId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // ── Permission check ──────────────────────────────────────────────
@@ -111,17 +112,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       nextCursor = `${lastDate}|${last.id}`
     }
 
-    return NextResponse.json({
-      data: {
+    return ok({
         orders: page,
         pagination: { nextCursor, hasMore },
-      },
-    })
+      })
   } catch (error) {
     console.error('[cake-deposit-dashboard] Failed to list orders:', error)
-    return NextResponse.json(
-      { error: 'Failed to load deposit dashboard' },
-      { status: 500 },
-    )
+    return err('Failed to load deposit dashboard', 500)
   }
 })

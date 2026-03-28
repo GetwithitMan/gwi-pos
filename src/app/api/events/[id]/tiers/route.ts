@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - List pricing tiers for an event
 export const GET = withVenue(withAuth('ADMIN', async function GET(
@@ -19,10 +20,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
     })
 
     if (!event) {
-      return NextResponse.json(
-        { error: 'Event not found' },
-        { status: 404 }
-      )
+      return notFound('Event not found')
     }
 
     const tiers = await db.eventPricingTier.findMany({
@@ -42,7 +40,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
       },
     })
 
-    return NextResponse.json({ data: {
+    return ok({
       eventId: id,
       eventName: event.name,
       tiers: tiers.map(tier => ({
@@ -65,13 +63,10 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
         createdAt: tier.createdAt.toISOString(),
         updatedAt: tier.updatedAt.toISOString(),
       })),
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch pricing tiers:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch pricing tiers' },
-      { status: 500 }
-    )
+    return err('Failed to fetch pricing tiers', 500)
   }
 }))
 
@@ -97,10 +92,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
 
     // Validate required fields
     if (!name || price === undefined) {
-      return NextResponse.json(
-        { error: 'Name and price are required' },
-        { status: 400 }
-      )
+      return err('Name and price are required')
     }
 
     // Validate event exists
@@ -118,10 +110,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     })
 
     if (!event) {
-      return NextResponse.json(
-        { error: 'Event not found' },
-        { status: 404 }
-      )
+      return notFound('Event not found')
     }
 
     // Check if event has sold tickets - limit what can be changed
@@ -160,7 +149,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     void notifyDataChanged({ locationId: event.locationId, domain: 'events', action: 'created', entityId: tier.id })
     void pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       tier: {
         id: tier.id,
@@ -176,12 +165,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
         sortOrder: tier.sortOrder,
         isActive: tier.isActive,
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to create pricing tier:', error)
-    return NextResponse.json(
-      { error: 'Failed to create pricing tier' },
-      { status: 500 }
-    )
+    return err('Failed to create pricing tier', 500)
   }
 }))

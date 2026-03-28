@@ -1,5 +1,5 @@
 import { randomInt } from 'crypto'
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth, type AuthenticatedContext } from '@/lib/api-auth-middleware'
@@ -10,6 +10,7 @@ import { parseSettings } from '@/lib/settings'
 import { allocatePooledGiftCard } from '@/lib/domain/gift-cards/allocate-pooled-gift-card'
 import { activateGiftCard } from '@/lib/domain/gift-cards/activate-gift-card'
 import { dispatchGiftCardBalanceChanged } from '@/lib/socket-dispatch'
+import { created, err, ok } from '@/lib/api-response'
 
 // Generate a unique gift card number
 function generateCardNumber(): string {
@@ -36,7 +37,7 @@ export const GET = withVenue(async function GET(
 
     const locationId = searchParams.get('locationId')
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     const where: Record<string, unknown> = { locationId }
@@ -64,17 +65,14 @@ export const GET = withVenue(async function GET(
       }
     })
 
-    return NextResponse.json(giftCards.map(card => ({
+    return ok(giftCards.map(card => ({
       ...card,
       initialBalance: Number(card.initialBalance),
       currentBalance: Number(card.currentBalance),
     })))
   } catch (error) {
     console.error('Failed to fetch gift cards:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch gift cards' },
-      { status: 500 }
-    )
+    return err('Failed to fetch gift cards', 500)
   }
 })
 
@@ -102,19 +100,13 @@ export const POST = withVenue(withAuth('CUSTOMERS_GIFT_CARDS', async function PO
     const purchasedById = ctx.auth.employeeId
 
     if (!amount || amount <= 0) {
-      return NextResponse.json(
-        { error: 'A positive amount is required' },
-        { status: 400 }
-      )
+      return err('A positive amount is required')
     }
 
     // Gift card creation must be tied to a payment (anti-fraud guard)
     const skipPaymentCheck = body.skipPaymentCheck === true
     if (!orderId && !skipPaymentCheck) {
-      return NextResponse.json(
-        { error: 'Gift card creation requires an associated order. Use the POS payment flow to create gift cards.' },
-        { status: 400 }
-      )
+      return err('Gift card creation requires an associated order. Use the POS payment flow to create gift cards.')
     }
 
     // ── Check pool mode from location settings ──────────────────────────
@@ -159,10 +151,7 @@ export const POST = withVenue(withAuth('CUSTOMERS_GIFT_CARDS', async function PO
       })
 
       if (!result.success) {
-        return NextResponse.json(
-          { error: result.error },
-          { status: 400 }
-        )
+        return err(result.error)
       }
 
       giftCard = result.data as Record<string, unknown>
@@ -238,16 +227,13 @@ export const POST = withVenue(withAuth('CUSTOMERS_GIFT_CARDS', async function PO
       }).catch(err => console.error('[GiftCard] Email delivery failed:', err))
     }
 
-    return NextResponse.json({ data: {
+    return created({
       ...giftCard,
       initialBalance: Number(giftCard.initialBalance),
       currentBalance: Number(giftCard.currentBalance),
-    } }, { status: 201 })
+    })
   } catch (error) {
     console.error('Failed to create gift card:', error)
-    return NextResponse.json(
-      { error: 'Failed to create gift card' },
-      { status: 500 }
-    )
+    return err('Failed to create gift card', 500)
   }
 }))

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
@@ -6,6 +6,7 @@ import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { created, err, notFound, ok } from '@/lib/api-response'
 
 function formatTemplate(t: any) {
   return {
@@ -39,7 +40,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const templates = await db.modifierGroupTemplate.findMany({
@@ -53,10 +54,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orderBy: { name: 'asc' },
     })
 
-    return NextResponse.json({ data: templates.map(formatTemplate) })
+    return ok(templates.map(formatTemplate))
   } catch (error) {
     console.error('Error fetching modifier templates:', error)
-    return NextResponse.json({ error: 'Failed to fetch templates' }, { status: 500 })
+    return err('Failed to fetch templates', 500)
   }
 })
 
@@ -66,13 +67,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Auth check — require menu.edit_items permission
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.MENU_EDIT_ITEMS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const body = await request.json()
     const {
@@ -86,7 +87,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     } = body
 
     if (!name) {
-      return NextResponse.json({ error: 'Template name is required' }, { status: 400 })
+      return err('Template name is required')
     }
 
     // Check for duplicate name
@@ -94,7 +95,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       where: { locationId_name: { locationId, name } },
     })
     if (existing && !existing.deletedAt) {
-      return NextResponse.json({ error: 'A template with this name already exists' }, { status: 409 })
+      return err('A template with this name already exists', 409)
     }
 
     // If copying from an existing modifier group
@@ -123,7 +124,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       })
 
       if (!sourceGroup) {
-        return NextResponse.json({ error: 'Source modifier group not found' }, { status: 404 })
+        return notFound('Source modifier group not found')
       }
 
       modifiersToCreate = sourceGroup.modifiers.map(m => ({
@@ -183,9 +184,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     void notifyDataChanged({ locationId, domain: 'menu', action: 'created', entityId: template.id })
     void pushUpstream()
 
-    return NextResponse.json({ data: formatTemplate(template) }, { status: 201 })
+    return created(formatTemplate(template))
   } catch (error) {
     console.error('Error creating modifier template:', error)
-    return NextResponse.json({ error: 'Failed to create template' }, { status: 500 })
+    return err('Failed to create template', 500)
   }
 })

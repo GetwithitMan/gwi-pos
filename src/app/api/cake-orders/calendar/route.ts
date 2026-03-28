@@ -6,6 +6,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { requireCakeFeature } from '@/lib/cake-orders/require-cake-feature'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // ── Color maps ──────────────────────────────────────────────────────────────
 const STATUS_COLORS: Record<string, string> = {
@@ -33,10 +34,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const assignedTo = searchParams.get('assignedTo')
 
     if (!locationId || !startDate || !endDate) {
-      return NextResponse.json(
-        { error: 'locationId, startDate, and endDate are required' },
-        { status: 400 },
-      )
+      return err('locationId, startDate, and endDate are required')
     }
 
     // ── Permission check ──────────────────────────────────────────────
@@ -175,10 +173,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       return aDate.localeCompare(bDate)
     })
 
-    return NextResponse.json({ data: combined })
+    return ok(combined)
   } catch (error) {
     console.error('Failed to fetch cake calendar:', error)
-    return NextResponse.json({ error: 'Failed to fetch cake calendar' }, { status: 500 })
+    return err('Failed to fetch cake calendar', 500)
   }
 })
 
@@ -193,7 +191,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const locationId = actor.locationId || body.locationId
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // ── Permission check ──────────────────────────────────────────────
@@ -214,24 +212,21 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const assignedEmployeeId = body.employeeId || null
 
     if (!title || typeof title !== 'string' || title.trim().length === 0) {
-      return NextResponse.json({ error: 'title is required' }, { status: 400 })
+      return err('title is required')
     }
 
     if (!startDate || !endDate) {
-      return NextResponse.json({ error: 'startDate and endDate are required' }, { status: 400 })
+      return err('startDate and endDate are required')
     }
 
     if (new Date(endDate) < new Date(startDate)) {
-      return NextResponse.json({ error: 'endDate must be >= startDate' }, { status: 400 })
+      return err('endDate must be >= startDate')
     }
 
     const validBlockTypes = ['production', 'decoration', 'delivery', 'blocked']
     const resolvedBlockType = blockType || 'production'
     if (!validBlockTypes.includes(resolvedBlockType)) {
-      return NextResponse.json(
-        { error: `blockType must be one of: ${validBlockTypes.join(', ')}` },
-        { status: 400 },
-      )
+      return err(`blockType must be one of: ${validBlockTypes.join(', ')}`)
     }
 
     // ── Validate cakeOrderId if provided ──────────────────────────────
@@ -242,7 +237,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         locationId,
       )
       if (orderExists.length === 0) {
-        return NextResponse.json({ error: 'Referenced cake order not found' }, { status: 404 })
+        return notFound('Referenced cake order not found')
       }
     }
 
@@ -253,7 +248,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         assignedEmployeeId,
       )
       if (empExists.length === 0) {
-        return NextResponse.json({ error: 'Referenced employee not found' }, { status: 404 })
+        return notFound('Referenced employee not found')
       }
     }
 
@@ -287,9 +282,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       blockId,
     )
 
-    return NextResponse.json({ data: created[0] })
+    return ok(created[0])
   } catch (error) {
     console.error('Failed to create cake calendar block:', error)
-    return NextResponse.json({ error: 'Failed to create cake calendar block' }, { status: 500 })
+    return err('Failed to create cake calendar block', 500)
   }
 })

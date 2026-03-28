@@ -7,9 +7,10 @@
  * and the 5 most recent transactions across all cards at the location.
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { err, ok } from '@/lib/api-response'
 
 export const GET = withVenue(async function GET(
   request: NextRequest,
@@ -19,10 +20,7 @@ export const GET = withVenue(async function GET(
     const locationId = searchParams.get('locationId')
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'locationId is required' },
-        { status: 400 }
-      )
+      return err('locationId is required')
     }
 
     // ── Run all queries in parallel ──────────────────────────────────────
@@ -79,7 +77,7 @@ export const GET = withVenue(async function GET(
     const frozenLiability = Number(frozenAgg._sum.currentBalance ?? 0)
     const totalLiability = activeLiability + frozenLiability
 
-    return NextResponse.json({
+    return ok({
       totalLiability,
       activeCount,
       depletedCount,
@@ -99,9 +97,6 @@ export const GET = withVenue(async function GET(
     })
   } catch (error) {
     console.error('Failed to fetch gift card stats:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch gift card stats' },
-      { status: 500 }
-    )
+    return err('Failed to fetch gift card stats', 500)
   }
 })

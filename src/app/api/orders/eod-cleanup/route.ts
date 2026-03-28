@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { PERMISSIONS } from '@/lib/auth'
 import { requirePermission } from '@/lib/api-auth'
@@ -8,6 +8,7 @@ import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchTableStatusChanged } from '@/lib/socket-dispatch'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-eod-cleanup')
 
 export const POST = withVenue(async function POST(request: NextRequest) {
@@ -17,12 +18,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const employeeId = searchParams.get('employeeId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // Auth check — require manager.close_day permission
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.MGR_CLOSE_DAY)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Resolve the current business day boundary using location settings (same as /api/eod/reset)
     const location = await db.location.findFirst({
@@ -156,20 +157,15 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       pushUpstream()
     }
 
-    return NextResponse.json({
-      data: {
+    return ok({
         cancelled: toCancelIds.length,
         abandoned: abandonedIds.length,
         rolledForward,
         cancelledOrderIds: toCancelIds,
         abandonedOrderIds: abandonedIds,
-      },
-    })
+      })
   } catch (error) {
     console.error('[EOD Cleanup] Error:', error)
-    return NextResponse.json(
-      { error: 'Failed to run EOD cleanup' },
-      { status: 500 }
-    )
+    return err('Failed to run EOD cleanup', 500)
   }
 })

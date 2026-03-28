@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { Prisma } from '@/generated/prisma/client'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { queueIfOutageOrFail, OutageQueueFullError, pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - Get a single seat
 export const GET = withVenue(async function GET(
@@ -24,13 +25,10 @@ export const GET = withVenue(async function GET(
     })
 
     if (!seat) {
-      return NextResponse.json(
-        { error: 'Seat not found' },
-        { status: 404 }
-      )
+      return notFound('Seat not found')
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       seat: {
         id: seat.id,
         tableId: seat.tableId,
@@ -41,13 +39,10 @@ export const GET = withVenue(async function GET(
         angle: seat.angle,
         seatType: seat.seatType,
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch seat:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch seat' },
-      { status: 500 }
-    )
+    return err('Failed to fetch seat', 500)
   }
 })
 
@@ -86,10 +81,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     })
 
     if (!existingSeat) {
-      return NextResponse.json(
-        { error: 'Seat not found' },
-        { status: 404 }
-      )
+      return notFound('Seat not found')
     }
 
     // Build type-safe update data
@@ -112,7 +104,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
       await queueIfOutageOrFail('Seat', existingSeat.table.locationId, seatId, 'UPDATE')
     } catch (err) {
       if (err instanceof OutageQueueFullError) {
-        return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+        return err('Service temporarily unavailable — outage queue full', 507)
       }
       throw err
     }
@@ -121,7 +113,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
 
     dispatchFloorPlanUpdate(existingSeat.table.locationId, { async: true })
 
-    return NextResponse.json({ data: {
+    return ok({
       seat: {
         id: seat.id,
         tableId: seat.tableId,
@@ -132,13 +124,10 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
         angle: seat.angle,
         seatType: seat.seatType,
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to update seat:', error)
-    return NextResponse.json(
-      { error: 'Failed to update seat' },
-      { status: 500 }
-    )
+    return err('Failed to update seat', 500)
   }
 }))
 
@@ -167,10 +156,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     })
 
     if (!existingSeat) {
-      return NextResponse.json(
-        { error: 'Seat not found' },
-        { status: 404 }
-      )
+      return notFound('Seat not found')
     }
 
     // Check if seat has any active tickets (sold, held, or checked in)
@@ -182,10 +168,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     })
 
     if (activeTickets > 0) {
-      return NextResponse.json(
-        { error: 'Cannot delete seat with active tickets' },
-        { status: 400 }
-      )
+      return err('Cannot delete seat with active tickets')
     }
 
     // Use transaction to soft delete and log
@@ -219,7 +202,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
       await queueIfOutageOrFail('Seat', existingSeat.table.locationId, seatId, 'DELETE')
     } catch (err) {
       if (err instanceof OutageQueueFullError) {
-        return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+        return err('Service temporarily unavailable — outage queue full', 507)
       }
       throw err
     }
@@ -228,12 +211,9 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
 
     dispatchFloorPlanUpdate(existingSeat.table.locationId, { async: true })
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Failed to delete seat:', error)
-    return NextResponse.json(
-      { error: 'Failed to delete seat' },
-      { status: 500 }
-    )
+    return err('Failed to delete seat', 500)
   }
 }))

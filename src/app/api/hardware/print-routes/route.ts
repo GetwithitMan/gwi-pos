@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, ok } from '@/lib/api-response'
 
 // GET - List all print routes for a location
 export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextRequest) {
@@ -11,7 +12,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
     const routeType = searchParams.get('routeType') // Optional filter
 
@@ -37,10 +38,10 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
       orderBy: [{ priority: 'desc' }, { name: 'asc' }],
     })
 
-    return NextResponse.json({ data: { routes } })
+    return ok({ routes })
   } catch (error) {
     console.error('Failed to fetch print routes:', error)
-    return NextResponse.json({ error: 'Failed to fetch print routes' }, { status: 500 })
+    return err('Failed to fetch print routes', 500)
   }
 }))
 
@@ -64,24 +65,18 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     } = body
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // Validate required fields
     if (!name || !routeType) {
-      return NextResponse.json(
-        { error: 'Name and route type are required' },
-        { status: 400 }
-      )
+      return err('Name and route type are required')
     }
 
     // Validate routeType
     const validRouteTypes = ['category', 'item_type', 'station', 'custom']
     if (!validRouteTypes.includes(routeType)) {
-      return NextResponse.json(
-        { error: `Invalid route type. Must be one of: ${validRouteTypes.join(', ')}` },
-        { status: 400 }
-      )
+      return err(`Invalid route type. Must be one of: ${validRouteTypes.join(', ')}`)
     }
 
     // Validate printer exists if provided
@@ -90,10 +85,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
         where: { id: printerId, locationId, deletedAt: null },
       })
       if (!printer) {
-        return NextResponse.json(
-          { error: 'Primary printer not found at this location' },
-          { status: 400 }
-        )
+        return err('Primary printer not found at this location')
       }
     }
 
@@ -103,10 +95,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
         where: { id: backupPrinterId, locationId, deletedAt: null },
       })
       if (!backupPrinter) {
-        return NextResponse.json(
-          { error: 'Backup printer not found at this location' },
-          { status: 400 }
-        )
+        return err('Backup printer not found at this location')
       }
     }
 
@@ -143,9 +132,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     void notifyDataChanged({ locationId, domain: 'hardware', action: 'created', entityId: route.id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { route } })
+    return ok({ route })
   } catch (error) {
     console.error('Failed to create print route:', error)
-    return NextResponse.json({ error: 'Failed to create print route' }, { status: 500 })
+    return err('Failed to create print route', 500)
   }
 }))

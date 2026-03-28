@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { randomBytes } from 'crypto'
+import { err, ok } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -34,23 +35,17 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     } = body
 
     if (!reportType || !locationId || !employeeId) {
-      return NextResponse.json(
-        { error: 'reportType, locationId, and employeeId are required' },
-        { status: 400 }
-      )
+      return err('reportType, locationId, and employeeId are required')
     }
 
     if (!generatedData || typeof generatedData !== 'object') {
-      return NextResponse.json(
-        { error: 'generatedData (report snapshot) is required' },
-        { status: 400 }
-      )
+      return err('generatedData (report snapshot) is required')
     }
 
     // Validate permission — need REPORTS_EXPORT to share
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.REPORTS_EXPORT)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Generate secure token (32 bytes = 64 hex chars)
@@ -77,11 +72,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const protocol = host.includes('localhost') ? 'http' : 'https'
     const url = `${protocol}://${host}/reports/shared/${token}`
 
-    return NextResponse.json({
-      data: { url, token, expiresAt: expiresAt.toISOString() },
-    })
+    return ok({ url, token, expiresAt: expiresAt.toISOString() })
   } catch (error) {
     console.error('[reports/share] Error creating shared report:', error)
-    return NextResponse.json({ error: 'Failed to create shared report' }, { status: 500 })
+    return err('Failed to create shared report', 500)
   }
 })

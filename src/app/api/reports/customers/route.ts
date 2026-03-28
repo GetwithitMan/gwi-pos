@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
+import { err, ok } from '@/lib/api-response'
 
 // GET customer analytics report
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -19,15 +20,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const requestingEmployeeId = searchParams.get('requestingEmployeeId') || searchParams.get('employeeId')
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'Location ID is required' },
-        { status: 400 }
-      )
+      return err('Location ID is required')
     }
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_CUSTOMERS)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Build date filter for orders with businessDayDate OR-fallback
@@ -352,7 +350,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const vipThreshold = Math.ceil(totalCustomers * 0.1)
     const vipCustomers = sortedCustomers.slice(0, Math.max(vipThreshold, frequencyBuckets.vip))
 
-    return NextResponse.json({ data: {
+    return ok({
       summary: {
         totalCustomers,
         totalRevenue: Math.round(totalRevenue * 100) / 100,
@@ -391,12 +389,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         minSpent,
         sortBy,
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to generate customer report:', error)
-    return NextResponse.json(
-      { error: 'Failed to generate customer report' },
-      { status: 500 }
-    )
+    return err('Failed to generate customer report', 500)
   }
 })

@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { dispatchShiftRequestUpdate } from '@/lib/socket-dispatch'
 import type { ShiftRequestType } from '@/generated/prisma/client'
 import { createChildLogger } from '@/lib/logger'
+import { created, err, forbidden, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('schedules-swap-requests')
 
 // GET - List swap/cover/drop requests for a specific shift
@@ -18,7 +19,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
     const locationId = searchParams.get('locationId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+      return err('Location ID is required')
     }
 
     const requests = await db.shiftSwapRequest.findMany({
@@ -48,10 +49,10 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
       orderBy: { createdAt: 'desc' },
     })
 
-    return NextResponse.json({ data: { requests } })
+    return ok({ requests })
   } catch (error) {
     console.error('Failed to fetch swap requests:', error)
-    return NextResponse.json({ error: 'Failed to fetch swap requests' }, { status: 500 })
+    return err('Failed to fetch swap requests', 500)
   }
 }))
 
@@ -82,36 +83,36 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     }
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+      return err('Location ID is required')
     }
 
     if (!requestedByEmployeeId) {
-      return NextResponse.json({ error: 'requestedByEmployeeId is required' }, { status: 400 })
+      return err('requestedByEmployeeId is required')
     }
 
     // Validate type
     if (!['swap', 'cover', 'drop'].includes(type)) {
-      return NextResponse.json({ error: 'type must be swap, cover, or drop' }, { status: 400 })
+      return err('type must be swap, cover, or drop')
     }
 
     // Drop requests can't have a target employee
     if (type === 'drop' && requestedToEmployeeId) {
-      return NextResponse.json({ error: 'Drop requests cannot have a target employee' }, { status: 400 })
+      return err('Drop requests cannot have a target employee')
     }
 
     // Validate shift exists, belongs to this location and schedule, and is not deleted
     const shift = await db.scheduledShift.findUnique({ where: { id: shiftId } })
     if (!shift) {
-      return NextResponse.json({ error: 'Shift not found' }, { status: 404 })
+      return notFound('Shift not found')
     }
     if (shift.locationId !== locationId) {
-      return NextResponse.json({ error: 'Shift does not belong to this location' }, { status: 403 })
+      return forbidden('Shift does not belong to this location')
     }
     if (shift.scheduleId !== scheduleId) {
-      return NextResponse.json({ error: 'Shift does not belong to this schedule' }, { status: 400 })
+      return err('Shift does not belong to this schedule')
     }
     if (shift.deletedAt !== null) {
-      return NextResponse.json({ error: 'Shift has been deleted' }, { status: 404 })
+      return notFound('Shift has been deleted')
     }
 
     // Validate no active request already exists for this shift
@@ -124,10 +125,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
       },
     })
     if (existingRequest) {
-      return NextResponse.json(
-        { error: 'An active request already exists for this shift' },
-        { status: 409 }
-      )
+      return err('An active request already exists for this shift', 409)
     }
 
     const expiresAt = new Date()
@@ -176,9 +174,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
       shiftId,
     }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
 
-    return NextResponse.json({ data: { request: swapRequest } }, { status: 201 })
+    return created({ request: swapRequest })
   } catch (error) {
     console.error('Failed to create shift request:', error)
-    return NextResponse.json({ error: 'Failed to create shift request' }, { status: 500 })
+    return err('Failed to create shift request', 500)
   }
 }))

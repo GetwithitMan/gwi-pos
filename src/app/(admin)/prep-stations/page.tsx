@@ -8,6 +8,7 @@ import { Modal } from '@/components/ui/modal'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { useAdminCRUD } from '@/hooks/useAdminCRUD'
+import type { MenuItemPrepStation as MenuItem, CategoryBasic } from '@/types'
 
 interface PrepStation {
   id: string
@@ -23,16 +24,8 @@ interface PrepStation {
   itemCount: number
 }
 
-interface Category {
-  id: string
-  name: string
+type Category = CategoryBasic & {
   color: string | null
-}
-
-interface MenuItem {
-  id: string
-  name: string
-  categoryId: string
 }
 
 const STATION_TYPES = [

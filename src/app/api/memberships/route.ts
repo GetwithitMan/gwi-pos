@@ -8,6 +8,7 @@ import { calculateSignupProration } from '@/lib/membership/proration'
 import { ChargeType, MembershipEventType } from '@/lib/membership/types'
 import { dispatchMembershipUpdate } from '@/lib/socket-dispatch'
 import { createChildLogger } from '@/lib/logger'
+import { created, err, notFound } from '@/lib/api-response'
 const log = createChildLogger('memberships')
 
 // GET — list memberships with filters + pagination
@@ -23,10 +24,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const limit = parseInt(sp.get('limit') || '50')
     const offset = parseInt(sp.get('offset') || '0')
 
-    if (!locationId) return NextResponse.json({ error: 'locationId required' }, { status: 400 })
+    if (!locationId) return err('locationId required')
 
     const auth = await requirePermission(employeeId, locationId, 'admin.manage_memberships')
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     let where = `"m"."locationId" = $1 AND "m"."deletedAt" IS NULL`
     const params: any[] = [locationId]
@@ -59,7 +60,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     return NextResponse.json({ data: rows, total: countResult[0]?.total ?? 0 })
   } catch (err) {
     console.error('[memberships] GET error:', err)
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
+    return err('Internal error', 500)
   }
 })
 
@@ -70,14 +71,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const { locationId, requestingEmployeeId: bodyEmployeeId, customerId, planId, savedCardId } = body
 
     if (!locationId || !customerId || !planId) {
-      return NextResponse.json({ error: 'locationId, customerId, planId required' }, { status: 400 })
+      return err('locationId, customerId, planId required')
     }
 
     const actor = await getActorFromRequest(request)
     const requestingEmployeeId = actor.employeeId ?? bodyEmployeeId
 
     const auth = await requirePermission(requestingEmployeeId, locationId, 'admin.manage_memberships')
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Validate plan
     const plans: any[] = await db.$queryRawUnsafe(`
@@ -85,7 +86,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       WHERE "id" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL AND "isActive" = true
       LIMIT 1
     `, planId, locationId)
-    if (plans.length === 0) return NextResponse.json({ error: 'Plan not found or inactive' }, { status: 404 })
+    if (plans.length === 0) return notFound('Plan not found or inactive')
     const plan = plans[0]
 
     // Validate customer
@@ -94,7 +95,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       WHERE "id" = $1 AND "locationId" = $2 AND "isActive" = true
       LIMIT 1
     `, customerId, locationId)
-    if (customers.length === 0) return NextResponse.json({ error: 'Customer not found' }, { status: 404 })
+    if (customers.length === 0) return notFound('Customer not found')
 
     // Validate saved card if provided
     let token: string | null = null
@@ -104,7 +105,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         WHERE "id" = $1 AND "locationId" = $2 AND "customerId" = $3 AND "deletedAt" IS NULL
         LIMIT 1
       `, savedCardId, locationId, customerId)
-      if (cards.length === 0) return NextResponse.json({ error: 'Saved card not found or does not belong to customer' }, { status: 400 })
+      if (cards.length === 0) return err('Saved card not found or does not belong to customer')
       token = cards[0].token
     }
 
@@ -115,7 +116,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         WHERE "planId" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL AND "status" IN ('trial', 'active', 'paused')
       `, planId, locationId)
       if (countResult[0]?.cnt >= plan.maxMembers) {
-        return NextResponse.json({ error: 'Plan is at maximum capacity' }, { status: 409 })
+        return err('Plan is at maximum capacity', 409)
       }
     }
 
@@ -169,7 +170,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         if (resp.token) token = resp.token
       } catch (err) {
         if (err instanceof PayApiError) {
-          return NextResponse.json({ error: `Setup fee charge failed: ${err.message}` }, { status: 402 })
+          return err(`Setup fee charge failed: ${err.message}`, 402)
         }
         throw err
       }
@@ -208,9 +209,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       action: 'enrolled', membershipId: membership.id, customerId,
     }).catch(err => log.warn({ err }, 'Background task failed'))
 
-    return NextResponse.json({ data: membership }, { status: 201 })
+    return created(membership)
   } catch (err) {
     console.error('[memberships] POST error:', err)
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
+    return err('Internal error', 500)
   }
 })

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS, hasPermission } from '@/lib/auth-utils'
@@ -10,6 +10,7 @@ import { emitToLocation } from '@/lib/socket-server'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { compare } from 'bcryptjs'
 import { createChildLogger } from '@/lib/logger'
+import { err, forbidden, ok } from '@/lib/api-response'
 const log = createChildLogger('paid-in-out')
 
 // Parse category from stored reason format: "[Category] Reason text"
@@ -35,12 +36,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const categoryFilter = searchParams.get('category')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+      return err('Location ID is required')
     }
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.MGR_PAY_IN_OUT)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Build date range using business day boundaries
@@ -105,8 +106,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({
-      data: {
+    return ok({
         records: records.map(r => {
           const parsed = parseCategoryFromReason(r.reason)
           return {
@@ -133,11 +133,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           net: Math.round((totalPaidIn - totalPaidOut) * 100) / 100,
           count: records.length,
         },
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to fetch paid in/out records:', error)
-    return NextResponse.json({ error: 'Failed to fetch paid in/out records' }, { status: 500 })
+    return err('Failed to fetch paid in/out records', 500)
   }
 })
 
@@ -158,25 +157,25 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     } = body
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+      return err('Location ID is required')
     }
     if (!employeeId) {
-      return NextResponse.json({ error: 'Employee ID is required' }, { status: 400 })
+      return err('Employee ID is required')
     }
     if (!type || (type !== 'paid_in' && type !== 'paid_out')) {
-      return NextResponse.json({ error: 'Type must be "paid_in" or "paid_out"' }, { status: 400 })
+      return err('Type must be "paid_in" or "paid_out"')
     }
     if (!amount || Number(amount) <= 0) {
-      return NextResponse.json({ error: 'Amount must be greater than 0' }, { status: 400 })
+      return err('Amount must be greater than 0')
     }
     if (!reason || reason.trim().length === 0) {
-      return NextResponse.json({ error: 'Reason is required' }, { status: 400 })
+      return err('Reason is required')
     }
 
     // Permission check
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.MGR_PAY_IN_OUT)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Manager approval required for paid-out over threshold
@@ -186,10 +185,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     let verifiedApprover: string | null = null
     if (type === 'paid_out' && Number(amount) > PAID_OUT_APPROVAL_THRESHOLD) {
       if (!managerPin) {
-        return NextResponse.json(
-          { error: 'Paid-out transactions over $100 require manager approval. Please enter a manager PIN.' },
-          { status: 403 }
-        )
+        return forbidden('Paid-out transactions over $100 require manager approval. Please enter a manager PIN.')
       }
       // Verify manager PIN server-side — find an employee whose PIN matches
       const employees = await db.employee.findMany({
@@ -211,10 +207,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         }
       }
       if (!verifiedApprover) {
-        return NextResponse.json(
-          { error: 'Invalid PIN or approver does not have paid-in/out permission' },
-          { status: 403 }
-        )
+        return forbidden('Invalid PIN or approver does not have paid-in/out permission')
       }
       console.log(`[AUDIT] PAID_OUT over $${PAID_OUT_APPROVAL_THRESHOLD} approved by ${verifiedApprover}`)
     }
@@ -227,7 +220,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         select: { id: true },
       })
       if (!activeDrawer) {
-        return NextResponse.json({ error: 'No active drawer found at this location' }, { status: 400 })
+        return err('No active drawer found at this location')
       }
       resolvedDrawerId = activeDrawer.id
     }
@@ -284,8 +277,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }).catch(err => log.warn({ err }, 'Background task failed'))
 
     const parsedRecord = parseCategoryFromReason(record.reason)
-    return NextResponse.json({
-      data: {
+    return ok({
         id: record.id,
         type: type,
         amount: Number(record.amount),
@@ -301,10 +293,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         drawerId: record.drawerId,
         drawerName: record.drawer.name,
         createdAt: record.createdAt.toISOString(),
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to create paid in/out record:', error)
-    return NextResponse.json({ error: 'Failed to create paid in/out record' }, { status: 500 })
+    return err('Failed to create paid in/out record', 500)
   }
 })

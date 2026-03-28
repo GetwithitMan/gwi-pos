@@ -17,6 +17,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { createRateLimiter } from '@/lib/rate-limiter'
 import { emitToLocation } from '@/lib/socket-server'
+import { err, forbidden, notFound, ok } from '@/lib/api-response'
 
 // 5 SMS per manager phone per 15 minutes
 const smsLimiter = createRateLimiter({ maxAttempts: 5, windowMs: 15 * 60 * 1000 })
@@ -53,17 +54,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Validate required fields
     if (!locationId || !orderId || !managerId || !voidReason || !requestedById) {
-      return NextResponse.json(
-        { error: 'Missing required fields' },
-        { status: 400 }
-      )
+      return err('Missing required fields')
     }
 
     // Permission check — any POS employee can REQUEST remote approval.
     // The actual void is gated by the manager approving via SMS.
     const auth = await requirePermission(requestedById, locationId, PERMISSIONS.POS_ACCESS)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Fetch the order to get order number (read from snapshot)
@@ -73,14 +71,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     if (!order) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      return notFound('Order not found')
     }
 
     if (order.locationId !== locationId) {
-      return NextResponse.json(
-        { error: 'Order does not belong to this location' },
-        { status: 403 }
-      )
+      return forbidden('Order does not belong to this location')
     }
 
     // Fetch the manager
@@ -94,17 +89,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     if (!manager || !manager.isActive) {
-      return NextResponse.json(
-        { error: 'Manager not found or inactive' },
-        { status: 404 }
-      )
+      return notFound('Manager not found or inactive')
     }
 
     if (!manager.phone) {
-      return NextResponse.json(
-        { error: 'Manager does not have a phone number on file' },
-        { status: 400 }
-      )
+      return err('Manager does not have a phone number on file')
     }
 
     // Rate limit: 5 SMS per manager phone per 15 minutes
@@ -128,10 +117,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     if (!requester) {
-      return NextResponse.json(
-        { error: 'Requesting employee not found' },
-        { status: 404 }
-      )
+      return notFound('Requesting employee not found')
     }
 
     // Check for existing pending request for this order/item
@@ -212,8 +198,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const managerName =
       manager.displayName || `${manager.firstName} ${manager.lastName}`
 
-    return NextResponse.json({
-      data: {
+    return ok({
         approvalId: approval.id,
         managerName,
         expiresAt: approvalTokenExpiry.toISOString(),
@@ -221,13 +206,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         message: smsResult.success
           ? `Approval request sent to ${managerName}`
           : 'Approval request created (SMS not sent - Twilio not configured)',
-      },
-    })
+      })
   } catch (error) {
     console.error('[RemoteVoidApproval] Error creating request:', error)
-    return NextResponse.json(
-      { error: 'Failed to create approval request' },
-      { status: 500 }
-    )
+    return err('Failed to create approval request', 500)
   }
 })

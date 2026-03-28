@@ -17,6 +17,7 @@ import { getLocationId } from '@/lib/location-cache'
 import { parseSettings } from '@/lib/settings'
 import type { ReservationIntegration } from '@/lib/settings'
 import { RESERVATION_PLATFORMS } from '@/lib/settings'
+import { err, ok } from '@/lib/api-response'
 
 export const POST = withVenue(async function POST(
   request: NextRequest,
@@ -26,13 +27,13 @@ export const POST = withVenue(async function POST(
   const locationId = await getLocationId()
 
   if (!locationId) {
-    return NextResponse.json({ success: false, error: 'No location found' }, { status: 400 })
+    return err('No location found')
   }
 
   // Validate platform is known
   const knownPlatform = RESERVATION_PLATFORMS.find(p => p.platform === platform)
   if (!knownPlatform) {
-    return NextResponse.json({ success: false, error: `Unknown platform: ${platform}` }, { status: 400 })
+    return err(`Unknown platform: ${platform}`)
   }
 
   // Load location settings
@@ -42,7 +43,7 @@ export const POST = withVenue(async function POST(
   })
 
   if (!location) {
-    return NextResponse.json({ success: false, error: 'Location not found' }, { status: 404 })
+    return err('Location not found')
   }
 
   const settings = parseSettings(location.settings)
@@ -74,7 +75,7 @@ export const POST = withVenue(async function POST(
   // TODO: For platforms with outbound APIs (push/bidirectional), make a
   // test API call here to verify credentials. For now, just confirm config.
 
-  return NextResponse.json({
+  return ok({
     success: true,
     message: `${knownPlatform.name} integration is configured and ready to receive webhooks.`,
     webhookUrl: `/api/webhooks/reservations/${platform}`,

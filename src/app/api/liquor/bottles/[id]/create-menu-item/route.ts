@@ -8,6 +8,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 
 const log = createChildLogger('liquor.bottles.id.create-menu-item')
 
@@ -40,21 +41,18 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     })
 
     if (!bottle) {
-      return NextResponse.json(
-        { error: 'Bottle not found' },
-        { status: 404 }
-      )
+      return notFound('Bottle not found')
     }
 
     // Tenant verify
     const locationId = await getLocationId()
     if (locationId && bottle.locationId !== locationId) {
-      return NextResponse.json({ error: 'Bottle not found' }, { status: 404 })
+      return notFound('Bottle not found')
     }
 
     const auth = await requirePermission(body.employeeId || null, bottle.locationId, PERMISSIONS.MENU_EDIT_ITEMS)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Check if bottle already has a menu item
@@ -67,10 +65,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
 
     // Validate price
     if (price === undefined || price <= 0) {
-      return NextResponse.json(
-        { error: 'Valid price is required' },
-        { status: 400 }
-      )
+      return err('Valid price is required')
     }
 
     // Auto-assign sortOrder based on tier (Wells first, then Call, Premium, Top Shelf)
@@ -181,7 +176,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
       action: 'created',
     }).catch(err => log.warn({ err }, 'fire-and-forget failed in liquor.bottles.id.create-menu-item'))
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       menuItem: {
         id: menuItem.id,
@@ -190,12 +185,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
         category: menuItem.category,
         linkedBottleProduct: menuItem.linkedBottleProduct,
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to create menu item from bottle:', error)
-    return NextResponse.json(
-      { error: 'Failed to create menu item' },
-      { status: 500 }
-    )
+    return err('Failed to create menu item', 500)
   }
 }))

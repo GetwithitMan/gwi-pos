@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // Helper to parse HH:MM time to minutes from midnight
 function parseTimeToMinutes(time: string): number {
@@ -66,10 +67,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
     })
 
     if (!event) {
-      return NextResponse.json(
-        { error: 'Event not found' },
-        { status: 404 }
-      )
+      return notFound('Event not found')
     }
 
     // Find all reservations on the same date
@@ -119,7 +117,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
         createdAt: res.createdAt.toISOString(),
       }))
 
-    return NextResponse.json({ data: {
+    return ok({
       eventId: event.id,
       eventName: event.name,
       eventDate: event.eventDate.toISOString().split('T')[0],
@@ -130,12 +128,9 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
       conflictCount: conflicts.length,
       totalAffectedGuests: conflicts.reduce((sum, c) => sum + c.partySize, 0),
       conflicts,
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch conflicts:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch conflicts' },
-      { status: 500 }
-    )
+    return err('Failed to fetch conflicts', 500)
   }
 }))

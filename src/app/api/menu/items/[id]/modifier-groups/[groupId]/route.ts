@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { Prisma } from '@/generated/prisma/client'
 import { db } from '@/lib/db'
 import { dispatchMenuStructureChanged } from '@/lib/socket-dispatch'
@@ -9,6 +9,7 @@ import { withVenue } from '@/lib/with-venue'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 
 const log = createChildLogger('menu.items.id.modifier-groups.groupId')
 
@@ -25,13 +26,13 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
 
     // Validate inputs
     if (name !== undefined && typeof name === 'string' && name.trim() === '') {
-      return NextResponse.json({ error: 'Group name cannot be empty' }, { status: 400 })
+      return err('Group name cannot be empty')
     }
     if (minSelections !== undefined && (typeof minSelections !== 'number' || !Number.isFinite(minSelections) || minSelections < 0)) {
-      return NextResponse.json({ error: 'minSelections must be a non-negative number' }, { status: 400 })
+      return err('minSelections must be a non-negative number')
     }
     if (maxSelections !== undefined && (typeof maxSelections !== 'number' || !Number.isFinite(maxSelections) || maxSelections < 1)) {
-      return NextResponse.json({ error: 'maxSelections must be at least 1' }, { status: 400 })
+      return err('maxSelections must be at least 1')
     }
 
     // Verify group belongs to this item (needed for cross-field validation below)
@@ -40,19 +41,19 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
     })
 
     if (!group) {
-      return NextResponse.json({ error: 'Modifier group not found' }, { status: 404 })
+      return notFound('Modifier group not found')
     }
 
     // Auth check — require menu.edit_items permission
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, group.locationId, PERMISSIONS.MENU_EDIT_ITEMS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Cross-field validation
     const effectiveMin = minSelections !== undefined ? minSelections : group.minSelections
     const effectiveMax = maxSelections !== undefined ? maxSelections : group.maxSelections
     if (effectiveMin > effectiveMax) {
-      return NextResponse.json({ error: 'minSelections cannot exceed maxSelections' }, { status: 400 })
+      return err('minSelections cannot exceed maxSelections')
     }
 
     const updated = await db.modifierGroup.update({
@@ -112,8 +113,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
     void notifyDataChanged({ locationId: group.locationId, domain: 'menu', action: 'updated', entityId: groupId })
     void pushUpstream()
 
-    return NextResponse.json({
-      data: {
+    return ok({
         id: updated.id,
         name: updated.name,
         minSelections: updated.minSelections,
@@ -228,11 +228,10 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
             })),
           } : null,
         })),
-      },
-    })
+      })
   } catch (error) {
     console.error('Error updating modifier group:', error)
-    return NextResponse.json({ error: 'Failed to update modifier group' }, { status: 500 })
+    return err('Failed to update modifier group', 500)
   }
 })
 
@@ -270,13 +269,13 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest, { pa
     })
 
     if (!group) {
-      return NextResponse.json({ error: 'Modifier group not found' }, { status: 404 })
+      return notFound('Modifier group not found')
     }
 
     // Auth check — require menu.edit_items permission
     const actorDel = await getActorFromRequest(request)
     const authDel = await requirePermission(actorDel.employeeId, group.locationId, PERMISSIONS.MENU_EDIT_ITEMS)
-    if (!authDel.authorized) return NextResponse.json({ error: authDel.error }, { status: authDel.status })
+    if (!authDel.authorized) return err(authDel.error, authDel.status)
 
     // Recursively collect all descendant groups and modifiers
     const groupIds = new Set<string>()
@@ -285,13 +284,11 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest, { pa
 
     // Preview mode: just return the counts
     if (preview) {
-      return NextResponse.json({
-        data: {
+      return ok({
           groupCount: groupIds.size,
           modifierCount: modifierIds.size,
           groupName: group.name,
-        },
-      })
+        })
     }
 
     // Also unlink any parent modifier that points to this group
@@ -329,9 +326,9 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest, { pa
     void notifyDataChanged({ locationId: group.locationId, domain: 'menu', action: 'deleted', entityId: groupId })
     void pushUpstream()
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Error deleting modifier group:', error)
-    return NextResponse.json({ error: 'Failed to delete modifier group' }, { status: 500 })
+    return err('Failed to delete modifier group', 500)
   }
 })

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
@@ -6,6 +6,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { emitToLocation } from '@/lib/socket-server'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('chargebacks')
 
 const VALID_STATUSES = ['open', 'responded', 'won', 'lost'] as const
@@ -22,7 +23,7 @@ export const PUT = withVenue(async function PUT(
     // Find the case first to get locationId
     const existing = await db.chargebackCase.findUnique({ where: { id } })
     if (!existing || existing.deletedAt) {
-      return NextResponse.json({ error: 'Chargeback case not found' }, { status: 404 })
+      return notFound('Chargeback case not found')
     }
 
     // Auth: resolve employee from cookie or body, require manager.void_payments permission
@@ -30,15 +31,12 @@ export const PUT = withVenue(async function PUT(
     const resolvedEmployeeId = actor.employeeId ?? employeeId
     const auth = await requirePermission(resolvedEmployeeId, existing.locationId, PERMISSIONS.MGR_VOID_PAYMENTS)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Validate status if provided
     if (status && !VALID_STATUSES.includes(status)) {
-      return NextResponse.json(
-        { error: `Invalid status. Must be one of: ${VALID_STATUSES.join(', ')}` },
-        { status: 400 }
-      )
+      return err(`Invalid status. Must be one of: ${VALID_STATUSES.join(', ')}`)
     }
 
     // Build update data
@@ -92,8 +90,7 @@ export const PUT = withVenue(async function PUT(
       status: updated.status,
     }).catch(err => log.warn({ err }, 'Background task failed'))
 
-    return NextResponse.json({
-      data: {
+    return ok({
         id: updated.id,
         orderId: updated.orderId,
         paymentId: updated.paymentId,
@@ -111,10 +108,9 @@ export const PUT = withVenue(async function PUT(
         respondedBy: updated.respondedBy,
         resolvedAt: updated.resolvedAt?.toISOString(),
         createdAt: updated.createdAt.toISOString(),
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to update chargeback case:', error)
-    return NextResponse.json({ error: 'Failed to update chargeback case' }, { status: 500 })
+    return err('Failed to update chargeback case', 500)
   }
 })

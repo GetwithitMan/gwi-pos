@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { parseSettings } from '@/lib/settings'
 import { generateFakeTransactionId, calculatePreAuthExpiration } from '@/lib/payment'
@@ -12,6 +12,7 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { getRequestLocationId } from '@/lib/request-context'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - List open tabs with pagination
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -34,7 +35,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       if (tabsLocationId) {
         const auth = await requirePermission(actorId, tabsLocationId, PERMISSIONS.POS_ACCESS)
         if (!auth.authorized) {
-          return NextResponse.json({ error: auth.error }, { status: auth.status })
+          return err(auth.error, auth.status)
         }
       }
     }
@@ -81,7 +82,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       take: limit,
     })
 
-    return NextResponse.json({ data: {
+    return ok({
       tabs: tabs.map(tab => {
         const tabAny = tab as typeof tab & {
           tabStatus?: string | null
@@ -165,13 +166,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
             .reduce((sum, p) => sum + Number(p.totalAmount), 0),
         }
       }),
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch tabs:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch tabs' },
-      { status: 500 }
-    )
+    return err('Failed to fetch tabs', 500)
   }
 })
 
@@ -196,10 +194,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const locationId = body.locationId as string | undefined
 
     if (!employeeId) {
-      return NextResponse.json(
-        { error: 'Employee ID is required' },
-        { status: 400 }
-      )
+      return err('Employee ID is required')
     }
 
     // Run employee lookup + last order number in parallel
@@ -214,10 +209,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     if (!employee) {
-      return NextResponse.json(
-        { error: 'Employee not found' },
-        { status: 404 }
-      )
+      return notFound('Employee not found')
     }
 
     const resolvedLocationId = locationId || employee.locationId
@@ -226,27 +218,21 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Auth check
     const auth = await requirePermission(employeeId, resolvedLocationId, PERMISSIONS.POS_ACCESS)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Create pre-auth data if provided
     let preAuthData = {}
     if (preAuth && preAuth.cardLast4) {
       if (!/^\d{4}$/.test(preAuth.cardLast4)) {
-        return NextResponse.json(
-          { error: 'Invalid card last 4 digits' },
-          { status: 400 }
-        )
+        return err('Invalid card last 4 digits')
       }
 
       // Enforce minimum pre-auth amount if configured
       const resolvedPreAuthAmount = preAuth.amount || settings.payments.defaultPreAuthAmount
       const minPreAuth = settings.payments.minPreAuthAmount ?? 0
       if (minPreAuth > 0 && resolvedPreAuthAmount < minPreAuth) {
-        return NextResponse.json(
-          { error: `Pre-auth amount ($${resolvedPreAuthAmount}) is below the minimum required ($${minPreAuth})` },
-          { status: 400 }
-        )
+        return err(`Pre-auth amount ($${resolvedPreAuthAmount}) is below the minimum required ($${minPreAuth})`)
       }
 
       preAuthData = {
@@ -323,7 +309,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       })
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       id: tab.id,
       tabName: tab.tabName || `Tab #${tab.orderNumber}`,
       orderNumber: tab.orderNumber,
@@ -340,12 +326,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         expiresAt: tab.preAuthExpiresAt?.toISOString(),
       } : null,
       openedAt: tab.openedAt.toISOString(),
-    } })
+    })
   } catch (error) {
     console.error('Failed to create tab:', error)
-    return NextResponse.json(
-      { error: 'Failed to create tab' },
-      { status: 500 }
-    )
+    return err('Failed to create tab', 500)
   }
 })

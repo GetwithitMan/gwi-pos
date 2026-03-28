@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { getDbForVenue, venueDbName } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { ok, unauthorized } from '@/lib/api-response'
 
 /**
  * GET /api/internal/venue-health?slug=joes-bar
@@ -21,7 +22,7 @@ import { withVenue } from '@/lib/with-venue'
 export const GET = withVenue(async function GET(request: NextRequest) {
   const apiKey = request.headers.get('x-api-key')
   if (!apiKey || apiKey !== process.env.PROVISION_API_KEY) {
-    return Response.json({ error: 'Unauthorized' }, { status: 401 })
+    return unauthorized('Unauthorized')
   }
 
   const slug = request.nextUrl.searchParams.get('slug')
@@ -45,7 +46,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const latencyMs = Date.now() - start
     const tableCount = Number(tables[0]?.count ?? 0)
 
-    return Response.json({
+    return ok({
       ok: true,
       slug,
       database: dbName,

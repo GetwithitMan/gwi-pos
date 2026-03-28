@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { Prisma } from '@/generated/prisma/client'
 import { withVenue } from '@/lib/with-venue'
@@ -6,6 +6,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - Get a single discount by ID
 export const GET = withVenue(async function GET(
@@ -20,13 +21,10 @@ export const GET = withVenue(async function GET(
     })
 
     if (!discount) {
-      return NextResponse.json(
-        { error: 'Discount not found' },
-        { status: 404 }
-      )
+      return notFound('Discount not found')
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       discount: {
         id: discount.id,
         name: discount.name,
@@ -45,13 +43,10 @@ export const GET = withVenue(async function GET(
         createdAt: discount.createdAt.toISOString(),
         updatedAt: discount.updatedAt.toISOString(),
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch discount:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch discount' },
-      { status: 500 }
-    )
+    return err('Failed to fetch discount', 500)
   }
 })
 
@@ -87,15 +82,12 @@ export const PUT = withVenue(async function PUT(
     })
 
     if (!existing) {
-      return NextResponse.json(
-        { error: 'Discount not found' },
-        { status: 404 }
-      )
+      return notFound('Discount not found')
     }
 
     const auth = await requirePermission(requestingEmployeeId, existing.locationId, PERMISSIONS.SETTINGS_MENU)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     const discount = await db.discountRule.update({
@@ -121,7 +113,7 @@ export const PUT = withVenue(async function PUT(
     void notifyDataChanged({ locationId: existing.locationId, domain: 'discounts', action: 'updated', entityId: discount.id })
     void pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       discount: {
         id: discount.id,
         name: discount.name,
@@ -131,13 +123,10 @@ export const PUT = withVenue(async function PUT(
         isActive: discount.isActive,
         updatedAt: discount.updatedAt.toISOString(),
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to update discount:', error)
-    return NextResponse.json(
-      { error: 'Failed to update discount' },
-      { status: 500 }
-    )
+    return err('Failed to update discount', 500)
   }
 })
 
@@ -156,15 +145,12 @@ export const DELETE = withVenue(async function DELETE(
     })
 
     if (!discount) {
-      return NextResponse.json(
-        { error: 'Discount not found' },
-        { status: 404 }
-      )
+      return notFound('Discount not found')
     }
 
     const auth = await requirePermission(requestingEmployeeId, discount.locationId, PERMISSIONS.SETTINGS_MENU)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     await db.discountRule.update({
@@ -175,12 +161,9 @@ export const DELETE = withVenue(async function DELETE(
     void notifyDataChanged({ locationId: discount.locationId, domain: 'discounts', action: 'deleted', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Failed to delete discount:', error)
-    return NextResponse.json(
-      { error: 'Failed to delete discount' },
-      { status: 500 }
-    )
+    return err('Failed to delete discount', 500)
   }
 })

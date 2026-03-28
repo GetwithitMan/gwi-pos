@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -7,6 +7,7 @@ import { KDSDisplayModeSchema, KDSTransitionTimesSchema, KDSOrderBehaviorSchema,
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, ok } from '@/lib/api-response'
 
 // GET all KDS screens for a location
 export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextRequest) {
@@ -14,7 +15,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
     const screenType = searchParams.get('screenType') // Filter by type
 
@@ -47,7 +48,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
     })
 
-    return NextResponse.json({ data: {
+    return ok({
       screens: screens.map((s) => ({
         id: s.id,
         locationId: s.locationId,
@@ -94,10 +95,10 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
           isActive: sl.isActive,
         })),
       })),
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch KDS screens:', error)
-    return NextResponse.json({ error: 'Failed to fetch KDS screens' }, { status: 500 })
+    return err('Failed to fetch KDS screens', 500)
   }
 }))
 
@@ -128,17 +129,17 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
 
     // Validate required fields
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // Auth check — require settings.hardware permission
     const actor = await getActorFromRequest(request)
     const resolvedEmployeeId = actor.employeeId ?? bodyEmployeeId
     const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.SETTINGS_HARDWARE)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     if (!name) {
-      return NextResponse.json({ error: 'Name is required' }, { status: 400 })
+      return err('Name is required')
     }
 
     // Generate slug from name
@@ -156,19 +157,19 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     // Validate JSON fields if provided
     if (displayMode !== undefined) {
       const r = KDSDisplayModeSchema.safeParse(displayMode)
-      if (!r.success) return NextResponse.json({ error: 'Invalid displayMode' }, { status: 400 })
+      if (!r.success) return err('Invalid displayMode')
     }
     if (transitionTimes !== undefined && transitionTimes !== null) {
       const r = KDSTransitionTimesSchema.safeParse(transitionTimes)
-      if (!r.success) return NextResponse.json({ error: 'Invalid transitionTimes' }, { status: 400 })
+      if (!r.success) return err('Invalid transitionTimes')
     }
     if (orderBehavior !== undefined && orderBehavior !== null) {
       const r = KDSOrderBehaviorSchema.safeParse(orderBehavior)
-      if (!r.success) return NextResponse.json({ error: 'Invalid orderBehavior' }, { status: 400 })
+      if (!r.success) return err('Invalid orderBehavior')
     }
     if (orderTypeFilters !== undefined && orderTypeFilters !== null) {
       const r = KDSOrderTypeFiltersSchema.safeParse(orderTypeFilters)
-      if (!r.success) return NextResponse.json({ error: 'Invalid orderTypeFilters' }, { status: 400 })
+      if (!r.success) return err('Invalid orderTypeFilters')
     }
 
     // Create the screen
@@ -229,20 +230,17 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     void notifyDataChanged({ locationId, domain: 'hardware', action: 'created', entityId: screen.id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { screen: completeScreen } })
+    return ok({ screen: completeScreen })
   } catch (error) {
     console.error('Failed to create KDS screen:', error)
     // Check for unique constraint violation
     if (error instanceof Error) {
       if (error.message.includes('Unique constraint')) {
-        return NextResponse.json(
-          { error: 'A KDS screen with this name already exists at this location' },
-          { status: 400 }
-        )
+        return err('A KDS screen with this name already exists at this location')
       }
       // Return detailed error for debugging
-      return NextResponse.json({ error: `Failed to create KDS screen: ${error.message}` }, { status: 500 })
+      return err(`Failed to create KDS screen: ${error.message}`, 500)
     }
-    return NextResponse.json({ error: 'Failed to create KDS screen' }, { status: 500 })
+    return err('Failed to create KDS screen', 500)
   }
 }))

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import * as EmployeeRepository from '@/lib/repositories/employee-repository'
 import { hashPin } from '@/lib/auth'
@@ -9,6 +9,7 @@ import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { emitToLocation } from '@/lib/socket-server'
 import { withVenue } from '@/lib/with-venue'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 
 const log = createChildLogger('employees')
 
@@ -26,10 +27,7 @@ export const GET = withVenue(async function GET(
     const skip = (page - 1) * limit
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'Location ID is required' },
-        { status: 400 }
-      )
+      return err('Location ID is required')
     }
 
     const filterWhere = includeInactive ? {} : { isActive: true }
@@ -63,7 +61,7 @@ export const GET = withVenue(async function GET(
     // Strip PII from unauthenticated response — this endpoint is used by
     // POS terminals for login/selection and must NOT expose email, phone,
     // hourlyRate, or full role permissions to unauthenticated callers.
-    return NextResponse.json({ data: {
+    return ok({
       employees: employees.map(emp => ({
         id: emp.id,
         firstName: emp.firstName,
@@ -84,13 +82,10 @@ export const GET = withVenue(async function GET(
         total,
         totalPages: Math.ceil(total / limit),
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch employees:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch employees' },
-      { status: 500 }
-    )
+    return err('Failed to fetch employees', 500)
   }
 })
 
@@ -105,10 +100,7 @@ export const POST = withVenue(withAuth('STAFF_EDIT_PROFILE', async function POST
     // Validate request body
     const validation = validateRequest(createEmployeeSchema, body)
     if (!validation.success) {
-      return NextResponse.json(
-        { error: validation.error },
-        { status: 400 }
-      )
+      return err(validation.error)
     }
 
     const { locationId, firstName, lastName, displayName, email, phone, pin, roleId, hourlyRate, hireDate, color } = validation.data
@@ -122,10 +114,7 @@ export const POST = withVenue(withAuth('STAFF_EDIT_PROFILE', async function POST
     })
 
     if (!role) {
-      return NextResponse.json(
-        { error: 'Role not found' },
-        { status: 404 }
-      )
+      return notFound('Role not found')
     }
 
     // Check for duplicate PIN at this location (tenant-scoped)
@@ -165,7 +154,7 @@ export const POST = withVenue(withAuth('STAFF_EDIT_PROFILE', async function POST
       },
     })
     if (!employeeWithRole) {
-      return NextResponse.json({ error: 'Employee created but could not be retrieved' }, { status: 500 })
+      return err('Employee created but could not be retrieved', 500)
     }
 
     // Notify cloud → NUC sync
@@ -176,7 +165,7 @@ export const POST = withVenue(withAuth('STAFF_EDIT_PROFILE', async function POST
     void emitToLocation(locationId, 'employees:changed', { action: 'created', employeeId: employee.id }).catch(err => log.warn({ err }, 'socket emit failed'))
     void emitToLocation(locationId, 'employee:updated', { action: 'created', employeeId: employee.id }).catch(err => log.warn({ err }, 'socket emit failed'))
 
-    return NextResponse.json({ data: {
+    return ok({
       id: employeeWithRole.id,
       firstName: employeeWithRole.firstName,
       lastName: employeeWithRole.lastName,
@@ -193,21 +182,15 @@ export const POST = withVenue(withAuth('STAFF_EDIT_PROFILE', async function POST
       isActive: employeeWithRole.isActive,
       color: employeeWithRole.color,
       createdAt: employeeWithRole.createdAt.toISOString(),
-    } })
+    })
   } catch (error) {
     console.error('Failed to create employee:', error)
 
     // Check for unique constraint violation
     if (error instanceof Error && error.message.includes('Unique constraint')) {
-      return NextResponse.json(
-        { error: 'An employee with this PIN already exists at this location' },
-        { status: 409 }
-      )
+      return err('An employee with this PIN already exists at this location', 409)
     }
 
-    return NextResponse.json(
-      { error: 'Failed to create employee' },
-      { status: 500 }
-    )
+    return err('Failed to create employee', 500)
   }
 }))

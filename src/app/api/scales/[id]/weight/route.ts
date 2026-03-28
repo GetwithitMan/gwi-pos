@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { getLocationId } from '@/lib/location-cache'
 import { scaleService } from '@/lib/scale/scale-service'
 import { withVenue } from '@/lib/with-venue'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - Get current weight reading (HTTP fallback when socket unavailable)
 export const GET = withVenue(async function GET(
@@ -13,7 +14,7 @@ export const GET = withVenue(async function GET(
     const { id } = await params
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     let scale
@@ -23,21 +24,18 @@ export const GET = withVenue(async function GET(
       })
     } catch {
       // Scale table doesn't exist on un-migrated DB
-      return NextResponse.json(
-        { error: 'Scale feature not available - database migration required' },
-        { status: 503 }
-      )
+      return err('Scale feature not available - database migration required', 503)
     }
     if (!scale) {
-      return NextResponse.json({ error: 'Scale not found' }, { status: 404 })
+      return notFound('Scale not found')
     }
 
     const reading = await scaleService.getWeight(id)
 
-    return NextResponse.json({ data: reading })
+    return ok(reading)
   } catch (error) {
     console.error('Failed to read scale weight:', error)
     const message = error instanceof Error ? error.message : 'Failed to read weight'
-    return NextResponse.json({ error: message }, { status: 500 })
+    return err(message, 500)
   }
 })

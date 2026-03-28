@@ -1,5 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
+import { err, notFound, ok, unauthorized } from '@/lib/api-response'
 
 /**
  * POST /api/internal/migrate-location-id
@@ -15,21 +16,21 @@ export async function POST(request: NextRequest) {
   // Auth: require internal API key (consistent with other internal endpoints)
   const apiKey = request.headers.get('x-internal-api-key') || request.headers.get('x-api-key')
   if (apiKey !== process.env.INTERNAL_API_KEY) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return unauthorized('Unauthorized')
   }
 
   const { oldLocationId, newLocationId } = await request.json()
   if (!oldLocationId || !newLocationId) {
-    return NextResponse.json({ error: 'oldLocationId and newLocationId required' }, { status: 400 })
+    return err('oldLocationId and newLocationId required')
   }
   if (oldLocationId === newLocationId) {
-    return NextResponse.json({ message: 'IDs already match, no migration needed' })
+    return ok({ message: 'IDs already match, no migration needed' })
   }
 
   // Verify old location exists
   const oldLocation = await db.location.findUnique({ where: { id: oldLocationId } })
   if (!oldLocation) {
-    return NextResponse.json({ error: `Location ${oldLocationId} not found` }, { status: 404 })
+    return notFound(`Location ${oldLocationId} not found`)
   }
 
   // Auto-generated from prisma/schema.prisma — 171 models with locationId FK
@@ -237,9 +238,9 @@ export async function POST(request: NextRequest) {
       return counts
     }, { timeout: 300_000 }) // 5 min timeout for large venues with millions of rows
 
-    return NextResponse.json({ success: true, oldLocationId, newLocationId, counts: result })
+    return ok({ success: true, oldLocationId, newLocationId, counts: result })
   } catch (err: any) {
     console.error('[MigrateLocationId] Failed:', err)
-    return NextResponse.json({ error: 'Migration failed', details: err.message }, { status: 500 })
+    return err('Migration failed', 500, err.message)
   }
 }

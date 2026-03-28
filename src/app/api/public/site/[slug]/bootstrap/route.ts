@@ -14,6 +14,7 @@ import { getSiteBootstrapData } from '@/lib/site-bootstrap'
 import { SiteBootstrapSchema } from '@/lib/site-api-schemas'
 import { checkOnlineRateLimit } from '@/lib/online-rate-limiter'
 import { getClientIp } from '@/lib/get-client-ip'
+import { err, notFound } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -25,7 +26,7 @@ export async function GET(
     const { slug } = (await context.params) as { slug: string }
 
     if (!slug) {
-      return NextResponse.json({ error: 'Venue slug is required' }, { status: 400 })
+      return err('Venue slug is required')
     }
 
     // ── Rate limit ──────────────────────────────────────────────────────────
@@ -45,7 +46,7 @@ export async function GET(
     try {
       venueDb = await getDbForVenue(slug)
     } catch {
-      return NextResponse.json({ error: 'Location not found' }, { status: 404 })
+      return notFound('Location not found')
     }
 
     // ── Get location ─────────────────────────────────────────────
@@ -62,7 +63,7 @@ export async function GET(
     })
 
     if (!location) {
-      return NextResponse.json({ error: 'Location not found' }, { status: 404 })
+      return notFound('Location not found')
     }
 
     // ── Build bootstrap payload ──────────────────────────────────
@@ -85,6 +86,6 @@ export async function GET(
     return response
   } catch (error) {
     console.error('[GET /api/public/site/[slug]/bootstrap] Error:', error)
-    return NextResponse.json({ error: 'Failed to load site data' }, { status: 500 })
+    return err('Failed to load site data', 500)
   }
 }

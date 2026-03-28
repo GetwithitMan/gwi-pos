@@ -19,12 +19,13 @@
  * - sortOrder: asc or desc
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { Prisma, ErrorSeverity, ErrorLogStatus } from '@/generated/prisma/client'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, ok } from '@/lib/api-response'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -50,7 +51,7 @@ export const GET = withVenue(withAuth(async function GET(req: NextRequest) {
     // Resolve locationId — query param → fallback to cached location
     const locationId = queryLocationId || await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'Location required' }, { status: 400 })
+      return err('Location required')
     }
 
     // Pagination
@@ -149,7 +150,7 @@ export const GET = withVenue(withAuth(async function GET(req: NextRequest) {
       alertSentAt: error.alertSentAt,
     }))
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       errors: formattedErrors,
       pagination: {
@@ -158,15 +159,12 @@ export const GET = withVenue(withAuth(async function GET(req: NextRequest) {
         offset,
         hasMore: offset + limit < total,
       },
-    } })
+    })
 
   } catch (error) {
     console.error('[Monitoring API] Failed to fetch errors:', error)
 
-    return NextResponse.json(
-      { error: 'Failed to fetch errors' },
-      { status: 500 }
-    )
+    return err('Failed to fetch errors', 500)
   }
 }))
 

@@ -5,6 +5,7 @@ import { withVenue } from '@/lib/with-venue'
 import { hashPassword, hashPin } from '@/lib/auth'
 import { checkLoginRateLimit, recordLoginFailure, recordLoginSuccess } from '@/lib/auth-rate-limiter'
 import { getClientIp } from '@/lib/get-client-ip'
+import { err, forbidden, notFound, ok } from '@/lib/api-response'
 
 /**
  * POST /api/auth/venue-setup
@@ -46,24 +47,18 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   const { email, setupKey, newPassword } = body
 
   if (!email || !setupKey || !newPassword) {
-    return NextResponse.json(
-      { error: 'email, setupKey, and newPassword are required' },
-      { status: 400 }
-    )
+    return err('email, setupKey, and newPassword are required')
   }
 
   // Validate using PROVISION_API_KEY as bootstrap auth
   const secret = process.env.PROVISION_API_KEY
   if (!secret || setupKey !== secret) {
     recordLoginFailure(ip)
-    return NextResponse.json({ error: 'Invalid setup key' }, { status: 403 })
+    return forbidden('Invalid setup key')
   }
 
   if (typeof newPassword !== 'string' || newPassword.length < 8) {
-    return NextResponse.json(
-      { error: 'Password must be at least 8 characters' },
-      { status: 400 }
-    )
+    return err('Password must be at least 8 characters')
   }
 
   const normalizedEmail = email.trim().toLowerCase()
@@ -77,9 +72,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
   if (existing) {
     await EmployeeRepository.updateEmployee(existing.id, existing.locationId, { password: passwordHash })
-    return NextResponse.json({
-      data: { success: true, action: 'updated', employeeId: existing.id },
-    })
+    return ok({ success: true, action: 'updated', employeeId: existing.id })
   }
 
   // No employee found — create a venue admin employee
@@ -88,7 +81,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     select: { id: true },
   })
   if (!location) {
-    return NextResponse.json({ error: 'No location found in venue database' }, { status: 404 })
+    return notFound('No location found in venue database')
   }
 
   // Find a Manager or Admin role; fall back to any role
@@ -104,7 +97,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   })
 
   if (!role) {
-    return NextResponse.json({ error: 'No roles found in venue database' }, { status: 404 })
+    return notFound('No roles found in venue database')
   }
 
   const namePart = normalizedEmail.split('@')[0]
@@ -119,7 +112,5 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     pin: pinHash,
   })
 
-  return NextResponse.json({
-    data: { success: true, action: 'created', employeeId: newEmployee.id },
-  })
+  return ok({ success: true, action: 'created', employeeId: newEmployee.id })
 })

@@ -15,6 +15,7 @@ import {
 } from '@/lib/domain/entertainment'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 
 const log = createChildLogger('entertainment.status')
 
@@ -29,10 +30,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const locationId = searchParams.get('locationId')
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'Location ID is required' },
-        { status: 400 }
-      )
+      return err('Location ID is required')
     }
 
     // 1. Query MenuItems as PRIMARY source — all timed_rental items
@@ -268,10 +266,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     return response
   } catch (error) {
     console.error('Failed to fetch entertainment status:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch entertainment status' },
-      { status: 500 }
-    )
+    return err('Failed to fetch entertainment status', 500)
   }
 })
 
@@ -282,21 +277,15 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
     const { elementId, locationId, status, currentOrderId, sessionStartedAt, sessionExpiresAt, employeeId } = body
 
     if (!elementId || !locationId) {
-      return NextResponse.json(
-        { error: 'Element ID and Location ID are required' },
-        { status: 400 }
-      )
+      return err('Element ID and Location ID are required')
     }
 
     // Permission check — status changes (maintenance, etc.) require entertainment settings permission
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.SETTINGS_ENTERTAINMENT)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     if (status && !validateEntertainmentStatus(status)) {
-      return NextResponse.json(
-        { error: `Invalid status. Must be one of: available, in_use, reserved, maintenance` },
-        { status: 400 }
-      )
+      return err(`Invalid status. Must be one of: available, in_use, reserved, maintenance`)
     }
 
     // Verify element belongs to location (multi-tenancy security)
@@ -305,10 +294,7 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
     })
 
     if (!element) {
-      return NextResponse.json(
-        { error: 'Element not found' },
-        { status: 404 }
-      )
+      return notFound('Element not found')
     }
 
     const updateData: {
@@ -471,16 +457,11 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
       }).catch(err => console.error('[entertainment] Audit log failed:', err))
     }
 
-    return NextResponse.json({
-      data: {
+    return ok({
         element: updatedElement
-      }
-    })
+      })
   } catch (error) {
     console.error('Failed to update entertainment status:', error)
-    return NextResponse.json(
-      { error: 'Failed to update entertainment status' },
-      { status: 500 }
-    )
+    return err('Failed to update entertainment status', 500)
   }
 })

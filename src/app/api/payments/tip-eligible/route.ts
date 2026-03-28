@@ -5,9 +5,10 @@
  * Used by the Tip Adjustment Report page.
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { err, ok } from '@/lib/api-response'
 
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
@@ -17,7 +18,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const endDate = searchParams.get('endDate')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // Default to today if no dates
@@ -49,8 +50,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orderBy: { createdAt: 'desc' },
     })
 
-    return NextResponse.json({
-      data: {
+    return ok({
         payments: payments.map(p => ({
           id: p.id,
           orderId: p.order?.id,
@@ -69,10 +69,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           createdAt: p.createdAt.toISOString(),
         })),
         count: payments.length,
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to fetch tip-eligible payments:', error)
-    return NextResponse.json({ error: 'Failed to fetch payments' }, { status: 500 })
+    return err('Failed to fetch payments', 500)
   }
 })

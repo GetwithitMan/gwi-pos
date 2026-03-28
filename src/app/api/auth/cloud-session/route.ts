@@ -3,6 +3,7 @@ import { verifyCloudToken } from '@/lib/cloud-auth'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { config } from '@/lib/system-config'
+import { err, forbidden, notFound, ok, unauthorized } from '@/lib/api-response'
 
 // TODO(scale): PROVISION_API_KEY is currently used for both MC→POS API auth AND JWT signing.
 // Split into separate secrets (PROVISION_API_KEY for API auth, CLOUD_SESSION_SECRET for JWT)
@@ -22,31 +23,25 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   const { token } = body
 
   if (!token || typeof token !== 'string') {
-    return NextResponse.json({ error: 'Token required' }, { status: 400 })
+    return err('Token required')
   }
 
   const secret = config.cloudJwtSecret
   if (!secret) {
     console.error('[cloud-auth] CLOUD_JWT_SECRET (or PROVISION_API_KEY fallback) not configured')
-    return NextResponse.json(
-      { error: 'Server misconfigured' },
-      { status: 500 }
-    )
+    return err('Server misconfigured', 500)
   }
 
   // Validate JWT signature + expiry
   const payload = await verifyCloudToken(token, secret)
   if (!payload) {
-    return NextResponse.json(
-      { error: 'Invalid or expired token' },
-      { status: 401 }
-    )
+    return unauthorized('Invalid or expired token')
   }
 
   // Verify slug matches the venue this request is for
   const venueSlug = request.headers.get('x-venue-slug')
   if (venueSlug && payload.slug !== venueSlug) {
-    return NextResponse.json({ error: 'Venue mismatch' }, { status: 403 })
+    return forbidden('Venue mismatch')
   }
 
   // Resolve the POS Location record for this cloud session.
@@ -154,26 +149,17 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 export const GET = withVenue(async function GET(request: NextRequest) {
   const sessionToken = request.cookies.get('pos-cloud-session')?.value
   if (!sessionToken) {
-    return NextResponse.json(
-      { error: 'No cloud session' },
-      { status: 401 }
-    )
+    return unauthorized('No cloud session')
   }
 
   const secret = config.cloudJwtSecret
   if (!secret) {
-    return NextResponse.json(
-      { error: 'Server misconfigured' },
-      { status: 500 }
-    )
+    return err('Server misconfigured', 500)
   }
 
   const payload = await verifyCloudToken(sessionToken, secret)
   if (!payload) {
-    return NextResponse.json(
-      { error: 'Invalid or expired session' },
-      { status: 401 }
-    )
+    return unauthorized('Invalid or expired session')
   }
 
   // Resolve Location from venue DB (same logic as POST)
@@ -194,10 +180,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   }
 
   if (!location) {
-    return NextResponse.json(
-      { error: 'No location in venue database' },
-      { status: 404 }
-    )
+    return notFound('No location in venue database')
   }
 
   const nameParts = payload.name.split(' ')
@@ -212,7 +195,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     isDevAccess: false,
   }
 
-  return NextResponse.json({ data: { employee } })
+  return ok({ employee })
 })
 
 /**

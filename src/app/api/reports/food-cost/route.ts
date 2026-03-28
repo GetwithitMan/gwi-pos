@@ -6,6 +6,7 @@ import { withVenue } from '@/lib/with-venue'
 import { dateRangeToUTC } from '@/lib/timezone'
 import { checkReportRateLimit } from '@/lib/report-rate-limiter'
 import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
+import { err, ok } from '@/lib/api-response'
 
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
@@ -17,12 +18,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const requestingEmployeeId = searchParams.get('requestingEmployeeId') || searchParams.get('employeeId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+      return err('Location ID is required')
     }
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_INVENTORY)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     const rateCheck = checkReportRateLimit(requestingEmployeeId || 'anonymous')
@@ -211,8 +212,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       contributionMargin: it.unitPrice - it.unitCost,
     })).sort((a, b) => b.revenue - a.revenue)
 
-    return NextResponse.json({
-      data: {
+    return ok({
         summary: {
           totalRevenue,
           totalCost,
@@ -226,10 +226,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         byCategory,
         byItem,
         dateRange: { start: range.start, end: range.end },
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to generate food cost report:', error)
-    return NextResponse.json({ error: 'Failed to generate food cost report' }, { status: 500 })
+    return err('Failed to generate food cost report', 500)
   }
 })

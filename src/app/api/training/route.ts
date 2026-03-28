@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { parseSettings, type TrainingSettings, DEFAULT_TRAINING_SETTINGS } from '@/lib/settings'
 import { requirePermission } from '@/lib/api-auth'
@@ -7,6 +7,7 @@ import { getLocationSettings, invalidateLocationCache } from '@/lib/location-cac
 import { emitToLocation } from '@/lib/socket-server'
 import { withVenue } from '@/lib/with-venue'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('training')
 
 // GET: Return current training settings
@@ -14,16 +15,16 @@ export const GET = withVenue(async function GET() {
   try {
     const location = await db.location.findFirst({ select: { id: true } })
     if (!location) {
-      return NextResponse.json({ error: 'No location found' }, { status: 404 })
+      return notFound('No location found')
     }
 
     const settings = parseSettings(await getLocationSettings(location.id))
     const training: TrainingSettings = settings.training ?? DEFAULT_TRAINING_SETTINGS
 
-    return NextResponse.json({ data: { training } })
+    return ok({ training })
   } catch (error) {
     console.error('Failed to fetch training settings:', error)
-    return NextResponse.json({ error: 'Failed to fetch training settings' }, { status: 500 })
+    return err('Failed to fetch training settings', 500)
   }
 })
 
@@ -39,18 +40,18 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     }
 
     if (!employeeId || typeof enabled !== 'boolean') {
-      return NextResponse.json({ error: 'employeeId and enabled are required' }, { status: 400 })
+      return err('employeeId and enabled are required')
     }
 
     const location = await db.location.findFirst({ select: { id: true } })
     if (!location) {
-      return NextResponse.json({ error: 'No location found' }, { status: 404 })
+      return notFound('No location found')
     }
 
     // Require manager-level permission
     const auth = await requirePermission(actorEmployeeId, location.id, PERMISSIONS.SETTINGS_EDIT)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Get current settings
@@ -101,9 +102,9 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       },
     }).catch(err => log.warn({ err }, 'Background task failed'))
 
-    return NextResponse.json({ data: { training: updatedTraining } })
+    return ok({ training: updatedTraining })
   } catch (error) {
     console.error('Failed to update training settings:', error)
-    return NextResponse.json({ error: 'Failed to update training settings' }, { status: 500 })
+    return err('Failed to update training settings', 500)
   }
 })

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { Prisma } from '@/generated/prisma/client'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
@@ -8,6 +8,7 @@ import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - Get customer details with order history
 export const GET = withVenue(async function GET(
@@ -19,7 +20,7 @@ export const GET = withVenue(async function GET(
     const searchParams = request.nextUrl.searchParams
     const locationId = searchParams.get('locationId') || await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Pagination params
@@ -70,10 +71,7 @@ export const GET = withVenue(async function GET(
     })
 
     if (!customer) {
-      return NextResponse.json(
-        { error: 'Customer not found' },
-        { status: 404 }
-      )
+      return notFound('Customer not found')
     }
 
     // Total count for pagination (read from snapshot)
@@ -175,7 +173,7 @@ export const GET = withVenue(async function GET(
 
     const tags = (customer.tags ?? []) as string[]
 
-    return NextResponse.json({ data: {
+    return ok({
       id: customer.id,
       firstName: customer.firstName,
       lastName: customer.lastName,
@@ -257,13 +255,10 @@ export const GET = withVenue(async function GET(
         cancelledAt: m.cancelledAt,
         pausedAt: m.pausedAt,
       })),
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch customer:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch customer' },
-      { status: 500 }
-    )
+    return err('Failed to fetch customer', 500)
   }
 })
 
@@ -277,24 +272,21 @@ export const PUT = withVenue(async function PUT(
     const body = await request.json()
     const locationId = body.locationId || request.nextUrl.searchParams.get('locationId') || await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Auth check — require customers.edit permission
     const actor = await getActorFromRequest(request)
     const resolvedEmployeeId = actor.employeeId ?? body.employeeId
     const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.CUSTOMERS_EDIT)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const customer = await db.customer.findFirst({
       where: { id, locationId },
     })
 
     if (!customer) {
-      return NextResponse.json(
-        { error: 'Customer not found' },
-        { status: 404 }
-      )
+      return notFound('Customer not found')
     }
 
     const {
@@ -327,10 +319,7 @@ export const PUT = withVenue(async function PUT(
         },
       })
       if (existingEmail) {
-        return NextResponse.json(
-          { error: 'A customer with this email already exists' },
-          { status: 409 }
-        )
+        return err('A customer with this email already exists', 409)
       }
     }
 
@@ -346,10 +335,7 @@ export const PUT = withVenue(async function PUT(
         },
       })
       if (existingPhone) {
-        return NextResponse.json(
-          { error: 'A customer with this phone number already exists' },
-          { status: 409 }
-        )
+        return err('A customer with this phone number already exists', 409)
       }
     }
 
@@ -376,7 +362,7 @@ export const PUT = withVenue(async function PUT(
     void notifyDataChanged({ locationId, domain: 'customers', action: 'updated', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       id: updated.id,
       firstName: updated.firstName,
       lastName: updated.lastName,
@@ -396,13 +382,10 @@ export const PUT = withVenue(async function PUT(
       lastVisit: updated.lastVisit?.toISOString() || null,
       marketingOptIn: updated.marketingOptIn,
       birthday: updated.birthday?.toISOString() || null,
-    } })
+    })
   } catch (error) {
     console.error('Failed to update customer:', error)
-    return NextResponse.json(
-      { error: 'Failed to update customer' },
-      { status: 500 }
-    )
+    return err('Failed to update customer', 500)
   }
 })
 
@@ -415,7 +398,7 @@ export const DELETE = withVenue(async function DELETE(
     const { id } = await params
     const locationId = request.nextUrl.searchParams.get('locationId') || await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const customer = await db.customer.findFirst({
@@ -423,10 +406,7 @@ export const DELETE = withVenue(async function DELETE(
     })
 
     if (!customer) {
-      return NextResponse.json(
-        { error: 'Customer not found' },
-        { status: 404 }
-      )
+      return notFound('Customer not found')
     }
 
     // Soft delete (tenant-scoped)
@@ -438,12 +418,9 @@ export const DELETE = withVenue(async function DELETE(
     void notifyDataChanged({ locationId, domain: 'customers', action: 'deleted', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Failed to delete customer:', error)
-    return NextResponse.json(
-      { error: 'Failed to delete customer' },
-      { status: 500 }
-    )
+    return err('Failed to delete customer', 500)
   }
 })

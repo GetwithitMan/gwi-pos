@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { PERMISSIONS } from '@/lib/auth'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
@@ -8,6 +8,7 @@ import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 /**
  * Calculate cost per unit from ingredient data
@@ -48,7 +49,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const locationId = searchParams.get('locationId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // Get all ingredients marked as daily count items
@@ -99,16 +100,14 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       byCategory[cat].push(item)
     })
 
-    return NextResponse.json({
-      data: {
+    return ok({
         items: formattedItems,
         byCategory,
         totalItems: formattedItems.length,
-      }
-    })
+      })
   } catch (error) {
     console.error('Error fetching stock items:', error)
-    return NextResponse.json({ error: 'Failed to fetch stock items' }, { status: 500 })
+    return err('Failed to fetch stock items', 500)
   }
 })
 
@@ -126,20 +125,17 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     // Resolve locationId — body → fallback to cached location
     const locationId = bodyLocationId || await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'Location required' }, { status: 400 })
+      return err('Location required')
     }
 
     // Auth check — require inventory.adjust_prep_stock permission (unconditional)
     const actor = await getActorFromRequest(request)
     const resolvedEmployeeId = actor.employeeId ?? employeeId
     const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.INVENTORY_ADJUST_PREP_STOCK)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     if (!ingredientId || operation === undefined || quantity === undefined) {
-      return NextResponse.json(
-        { error: 'ingredientId, operation, and quantity are required' },
-        { status: 400 }
-      )
+      return err('ingredientId, operation, and quantity are required')
     }
 
     // Get current ingredient with cost data (scoped to location)
@@ -161,7 +157,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     })
 
     if (!ingredient) {
-      return NextResponse.json({ error: 'Ingredient not found' }, { status: 404 })
+      return notFound('Ingredient not found')
     }
 
     const currentStock = Number(ingredient.currentPrepStock) || 0
@@ -179,10 +175,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
         newStock = currentStock - quantity
         break
       default:
-        return NextResponse.json(
-          { error: 'Invalid operation. Use: set, add, or subtract' },
-          { status: 400 }
-        )
+        return err('Invalid operation. Use: set, add, or subtract')
     }
 
     // Don't allow negative stock
@@ -271,8 +264,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       message = `${ingredient.name} unchanged at ${newStock} ${unit}`
     }
 
-    return NextResponse.json({
-      data: {
+    return ok({
         ingredient: {
           id: updated.id,
           name: updated.name,
@@ -283,11 +275,10 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
           costImpact: totalCostImpact,
         },
         message,
-      }
-    })
+      })
   } catch (error) {
     console.error('Error adjusting stock:', error)
-    return NextResponse.json({ error: 'Failed to adjust stock' }, { status: 500 })
+    return err('Failed to adjust stock', 500)
   }
 }))
 
@@ -304,30 +295,24 @@ export const PATCH = withVenue(withAuth('ADMIN', async function PATCH(request: N
     const { adjustments, employeeId, locationId: bodyLocationId } = body
 
     if (!adjustments || !Array.isArray(adjustments)) {
-      return NextResponse.json(
-        { error: 'adjustments array is required' },
-        { status: 400 }
-      )
+      return err('adjustments array is required')
     }
 
     if (!employeeId) {
-      return NextResponse.json(
-        { error: 'employeeId is required for stock adjustments' },
-        { status: 400 }
-      )
+      return err('employeeId is required for stock adjustments')
     }
 
     // Resolve locationId — body → fallback to cached location
     const locationId = bodyLocationId || await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'Location required' }, { status: 400 })
+      return err('Location required')
     }
 
     // Auth check — require inventory.adjust_prep_stock permission
     const actor = await getActorFromRequest(request)
     const resolvedEmployeeId = actor.employeeId ?? employeeId
     const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.INVENTORY_ADJUST_PREP_STOCK)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Get employee info for audit trail
     const employee = await db.employee.findUnique({
@@ -538,8 +523,7 @@ export const PATCH = withVenue(withAuth('ADMIN', async function PATCH(request: N
       }, { async: true }).catch(err => console.error('Inventory dispatch failed:', err))
     }
 
-    return NextResponse.json({
-      data: {
+    return ok({
         results,
         summary: {
           total: adjustments.length,
@@ -552,10 +536,9 @@ export const PATCH = withVenue(withAuth('ADMIN', async function PATCH(request: N
           name: employeeName,
         },
         message: `Updated ${successCount} items${failCount > 0 ? `, ${failCount} failed` : ''}`
-      }
-    })
+      })
   } catch (error) {
     console.error('Error bulk adjusting stock:', error)
-    return NextResponse.json({ error: 'Failed to bulk adjust stock' }, { status: 500 })
+    return err('Failed to bulk adjust stock', 500)
   }
 }))

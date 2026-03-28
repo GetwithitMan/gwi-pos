@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { getLocationId } from '@/lib/location-cache'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { err, ok } from '@/lib/api-response'
 
 /**
  * POST /api/liquor/upsells
@@ -30,24 +31,18 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
 
     // Validation
     if (!orderId || !orderItemId || !employeeId) {
-      return NextResponse.json(
-        { error: 'Missing required fields: orderId, orderItemId, employeeId' },
-        { status: 400 }
-      )
+      return err('Missing required fields: orderId, orderItemId, employeeId')
     }
 
     // Get the location
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'No location found' },
-        { status: 400 }
-      )
+      return err('No location found')
     }
 
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.POS_ACCESS)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     const upsellEvent = await db.spiritUpsellEvent.create({
@@ -68,16 +63,13 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       },
     })
 
-    return NextResponse.json({ data: {
+    return ok({
       id: upsellEvent.id,
       wasAccepted: upsellEvent.wasAccepted,
-    } })
+    })
   } catch (error) {
     console.error('Failed to record upsell event:', error)
-    return NextResponse.json(
-      { error: 'Failed to record upsell event' },
-      { status: 500 }
-    )
+    return err('Failed to record upsell event', 500)
   }
 }))
 
@@ -95,15 +87,12 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
     // Get the location
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'No location found' },
-        { status: 400 }
-      )
+      return err('No location found')
     }
 
     const auth = await requirePermission(employeeId || null, locationId, PERMISSIONS.REPORTS_INVENTORY)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     const where: any = {
@@ -151,7 +140,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
 
     const acceptanceRate = totalShown > 0 ? (totalAccepted / totalShown) * 100 : 0
 
-    return NextResponse.json({ data: {
+    return ok({
       summary: {
         totalShown,
         totalAccepted,
@@ -169,12 +158,9 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
         employeeId: e.employeeId,
         totalPrompts: e._count,
       })),
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch upsell stats:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch upsell stats' },
-      { status: 500 }
-    )
+    return err('Failed to fetch upsell stats', 500)
   }
 }))

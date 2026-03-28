@@ -18,6 +18,7 @@ import { createCakeOrderSchema } from '@/lib/cake-orders/schemas'
 import { DEFAULT_CAKE_ORDERING, type CakeOrderingSettings } from '@/lib/settings'
 import { normalizePhone } from '@/lib/utils'
 import { dispatchCakeOrderNew } from '@/lib/socket-dispatch'
+import { err, forbidden, notFound, ok } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -31,7 +32,7 @@ export async function POST(
     const { slug } = (await context.params) as { slug: string }
 
     if (!slug) {
-      return NextResponse.json({ error: 'Venue slug is required' }, { status: 400 })
+      return err('Venue slug is required')
     }
 
     // ── Rate limit ─────────────────────────────────────────────────────
@@ -50,7 +51,7 @@ export async function POST(
     try {
       venueDb = await getDbForVenue(slug)
     } catch {
-      return NextResponse.json({ error: 'Location not found' }, { status: 404 })
+      return notFound('Location not found')
     }
 
     // ── Get location + settings ────────────────────────────────────────
@@ -60,7 +61,7 @@ export async function POST(
     })
 
     if (!location) {
-      return NextResponse.json({ error: 'Location not found' }, { status: 404 })
+      return notFound('Location not found')
     }
 
     const settings = location.settings as Record<string, unknown> | null
@@ -71,17 +72,11 @@ export async function POST(
 
     // ── Check cake ordering enabled + public ordering ──────────────────
     if (!cakeSettings.enabled) {
-      return NextResponse.json(
-        { error: 'Cake ordering is not available at this location' },
-        { status: 403 },
-      )
+      return forbidden('Cake ordering is not available at this location')
     }
 
     if (!cakeSettings.allowPublicOrdering) {
-      return NextResponse.json(
-        { error: 'Online cake ordering is not available at this location' },
-        { status: 403 },
-      )
+      return forbidden('Online cake ordering is not available at this location')
     }
 
     // ── Parse body ─────────────────────────────────────────────────────
@@ -89,7 +84,7 @@ export async function POST(
 
     // ── Honeypot check ─────────────────────────────────────────────────
     if ('website' in body) {
-      return NextResponse.json({ error: 'Invalid submission' }, { status: 422 })
+      return err('Invalid submission', 422)
     }
 
     // ── Validate body ──────────────────────────────────────────────────
@@ -104,7 +99,7 @@ export async function POST(
 
     // ── Secondary honeypot (_hp field must be empty) ───────────────────
     if (input._hp && input._hp.length > 0) {
-      return NextResponse.json({ error: 'Invalid submission' }, { status: 422 })
+      return err('Invalid submission', 422)
     }
 
     const locationId = location.id
@@ -119,7 +114,7 @@ export async function POST(
     )
 
     if (existingOrder.length > 0) {
-      return NextResponse.json({
+      return ok({
         success: true,
         orderNumber: Number(existingOrder[0].orderNumber),
         message: 'Order already submitted.',
@@ -304,12 +299,9 @@ export async function POST(
       source: 'public_form',
     }).catch(err => console.error('[public-cake-order] Socket dispatch failed:', err))
 
-    return NextResponse.json({
-      success: true,
-      orderNumber,
-    })
+    return ok({ success: true })
   } catch (error) {
     console.error('[POST /api/public/cake-order/[slug]] Error:', error)
-    return NextResponse.json({ error: 'Failed to submit cake order' }, { status: 500 })
+    return err('Failed to submit cake order', 500)
   }
 }

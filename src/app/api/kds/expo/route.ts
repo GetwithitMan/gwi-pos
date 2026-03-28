@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { OrderItemRepository } from '@/lib/repositories'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
@@ -10,6 +10,7 @@ import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok } from '@/lib/api-response'
 const log = createChildLogger('kds-expo')
 
 /**
@@ -28,16 +29,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const cursor = searchParams.get('cursor')
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'Location ID is required' },
-        { status: 400 }
-      )
+      return err('Location ID is required')
     }
 
     // Auth check — require pos.kds permission
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.POS_KDS_ACCESS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Get all open orders with full item data
     // Cursor-based pagination: take 50 at a time for performance at 100+ open orders
@@ -195,13 +193,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Cursor for next page — last order ID from the raw DB result (before filtering)
     const nextCursor = orders.length === 50 ? orders[orders.length - 1].id : null
 
-    return NextResponse.json({ data: { orders: expoOrders, nextCursor } })
+    return ok({ orders: expoOrders, nextCursor })
   } catch (error) {
     console.error('Failed to fetch expo orders:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch orders' },
-      { status: 500 }
-    )
+    return err('Failed to fetch orders', 500)
   }
 })
 
@@ -212,10 +207,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     const { itemIds, action, status } = body
 
     if (!itemIds || itemIds.length === 0) {
-      return NextResponse.json(
-        { error: 'Item IDs required' },
-        { status: 400 }
-      )
+      return err('Item IDs required')
     }
 
     // Resolve locationId from the first item for tenant-scoped operations
@@ -231,7 +223,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     if (locationId) {
       const actorPut = await getActorFromRequest(request)
       const authPut = await requirePermission(actorPut.employeeId, locationId, PERMISSIONS.POS_KDS_ACCESS)
-      if (!authPut.authorized) return NextResponse.json({ error: authPut.error }, { status: authPut.status })
+      if (!authPut.authorized) return err(authPut.error, authPut.status)
     }
 
     if (action === 'serve' || status === 'served') {
@@ -440,12 +432,9 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Failed to update expo items:', error)
-    return NextResponse.json(
-      { error: 'Failed to update' },
-      { status: 500 }
-    )
+    return err('Failed to update', 500)
   }
 })

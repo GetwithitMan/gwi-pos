@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, ok } from '@/lib/api-response'
 
 interface ImportRow {
   barcode: string
@@ -30,15 +31,15 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     const locationId = bodyLocationId || await getLocationId()
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+      return err('Location ID is required')
     }
 
     if (!Array.isArray(rows) || rows.length === 0) {
-      return NextResponse.json({ error: 'No rows provided' }, { status: 400 })
+      return err('No rows provided')
     }
 
     if (rows.length > 5000) {
-      return NextResponse.json({ error: 'Maximum 5000 rows per import' }, { status: 400 })
+      return err('Maximum 5000 rows per import')
     }
 
     // Pre-fetch existing barcodes at this location for dedup
@@ -168,7 +169,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       pushUpstream()
     }
 
-    return NextResponse.json({
+    return ok({
       created,
       skipped,
       errors,
@@ -176,6 +177,6 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     })
   } catch (error) {
     console.error('Failed to import barcodes:', error)
-    return NextResponse.json({ error: 'Failed to import barcodes' }, { status: 500 })
+    return err('Failed to import barcodes', 500)
   }
 }))

@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { cookies } from 'next/headers'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { err, notFound, ok, unauthorized } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -44,7 +45,7 @@ export const GET = withVenue(async function GET(
     )
 
     if (locations.length === 0) {
-      return NextResponse.json({ error: 'Location not found' }, { status: 404 })
+      return notFound('Location not found')
     }
 
     const locationId = locations[0].id as string
@@ -52,7 +53,7 @@ export const GET = withVenue(async function GET(
     // Session auth
     const session = await verifyPortalSession(locationId)
     if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return unauthorized('Unauthorized')
     }
 
     const customerId = session.customerId
@@ -71,7 +72,7 @@ export const GET = withVenue(async function GET(
     )
 
     if (customers.length === 0) {
-      return NextResponse.json({ error: 'Customer not found' }, { status: 404 })
+      return notFound('Customer not found')
     }
 
     const customer = customers[0]
@@ -112,7 +113,7 @@ export const GET = withVenue(async function GET(
       locationId,
     )
 
-    return NextResponse.json({
+    return ok({
       points: Number(customer.loyaltyPoints),
       lifetimePoints,
       enrolledAt: customer.loyaltyEnrolledAt,
@@ -135,9 +136,9 @@ export const GET = withVenue(async function GET(
     })
   } catch (error: any) {
     if (error?.message?.includes('does not exist') || error?.code === '42P01') {
-      return NextResponse.json({ error: 'Loyalty system not yet configured. Please run database migrations.' }, { status: 503 })
+      return err('Loyalty system not yet configured. Please run database migrations.', 503)
     }
     console.error('Failed to fetch loyalty balance:', error)
-    return NextResponse.json({ error: 'Failed to fetch balance' }, { status: 500 })
+    return err('Failed to fetch balance', 500)
   }
 })

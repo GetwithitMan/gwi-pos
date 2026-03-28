@@ -6,7 +6,7 @@
  * DELETE - Remove member from group (or self-leave)
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { requireAnyPermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import {
@@ -21,6 +21,7 @@ import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, forbidden, notFound, ok } from '@/lib/api-response'
 
 const log = createChildLogger('tips.groups.id.members')
 
@@ -37,17 +38,11 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
 
     // ── Validate required fields ──────────────────────────────────────────
     if (!employeeId) {
-      return NextResponse.json(
-        { error: 'employeeId is required' },
-        { status: 400 }
-      )
+      return err('employeeId is required')
     }
 
     if (!action || !['add', 'request'].includes(action)) {
-      return NextResponse.json(
-        { error: "action is required and must be 'add' or 'request'" },
-        { status: 400 }
-      )
+      return err("action is required and must be 'add' or 'request'")
     }
 
     const requestingEmployeeId = request.headers.get('x-employee-id')
@@ -61,22 +56,16 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
         if (groupLocationId) {
           const auth = await requireAnyPermission(requestingEmployeeId, groupLocationId, [PERMISSIONS.TIPS_MANAGE_GROUPS])
           if (!auth.authorized) {
-            return NextResponse.json(
-              { error: 'Can only request to join a group for yourself' },
-              { status: 403 }
-            )
+            return forbidden('Can only request to join a group for yourself')
           }
         } else {
-          return NextResponse.json(
-            { error: 'Tip group not found' },
-            { status: 404 }
-          )
+          return notFound('Tip group not found')
         }
       }
 
       const result = await requestJoinGroup({ groupId, employeeId })
 
-      return NextResponse.json({
+      return ok({
         membershipId: result.membershipId,
         status: result.status,
       })
@@ -86,10 +75,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     // Auth: must be group owner OR have TIPS_MANAGE_GROUPS permission
     const groupInfo = await getGroupInfo(groupId)
     if (!groupInfo) {
-      return NextResponse.json(
-        { error: 'Tip group not found' },
-        { status: 404 }
-      )
+      return notFound('Tip group not found')
     }
 
     const isOwner = requestingEmployeeId === groupInfo.ownerId
@@ -101,10 +87,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
         [PERMISSIONS.TIPS_MANAGE_GROUPS]
       )
       if (!auth.authorized) {
-        return NextResponse.json(
-          { error: 'Not authorized. Only the group owner or a manager with tip management permission can add members.' },
-          { status: 403 }
-        )
+        return forbidden('Not authorized. Only the group owner or a manager with tip management permission can add members.')
       }
     }
 
@@ -119,7 +102,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       await queueIfOutageOrFail('TipGroup', groupInfo.locationId, groupId, 'UPDATE')
     } catch (err) {
       if (err instanceof OutageQueueFullError) {
-        return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+        return err('Service temporarily unavailable — outage queue full', 507)
       }
       throw err
     }
@@ -131,41 +114,26 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       employeeId,
     }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in tips.groups.id.members'))
 
-    return NextResponse.json({ group })
+    return ok({ group })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error'
 
     // Map domain errors to HTTP status codes
     if (message === 'TIP_GROUP_NOT_ACTIVE') {
-      return NextResponse.json(
-        { error: 'Tip group is not active' },
-        { status: 409 }
-      )
+      return err('Tip group is not active', 409)
     }
     if (message === 'EMPLOYEE_ALREADY_MEMBER') {
-      return NextResponse.json(
-        { error: 'Employee is already a member of this group' },
-        { status: 409 }
-      )
+      return err('Employee is already a member of this group', 409)
     }
     if (message === 'EMPLOYEE_ALREADY_MEMBER_OR_PENDING') {
-      return NextResponse.json(
-        { error: 'Employee already has an active or pending membership in this group' },
-        { status: 409 }
-      )
+      return err('Employee already has an active or pending membership in this group', 409)
     }
     if (message === 'EMPLOYEE_IN_ANOTHER_GROUP') {
-      return NextResponse.json(
-        { error: 'Employee is already in another active tip group. They must leave that group first.' },
-        { status: 409 }
-      )
+      return err('Employee is already in another active tip group. They must leave that group first.', 409)
     }
 
     console.error('Failed to add member to tip group:', error)
-    return NextResponse.json(
-      { error: 'Failed to add member to tip group' },
-      { status: 500 }
-    )
+    return err('Failed to add member to tip group', 500)
   }
 }))
 
@@ -182,10 +150,7 @@ export const PUT = withVenue(withAuth({ allowCellular: true }, async function PU
 
     // ── Validate required fields ──────────────────────────────────────────
     if (!employeeId) {
-      return NextResponse.json(
-        { error: 'employeeId is required' },
-        { status: 400 }
-      )
+      return err('employeeId is required')
     }
 
     const requestingEmployeeId = request.headers.get('x-employee-id')
@@ -193,10 +158,7 @@ export const PUT = withVenue(withAuth({ allowCellular: true }, async function PU
     // ── Auth: must be group owner OR have TIPS_MANAGE_GROUPS permission ──
     const groupInfo = await getGroupInfo(groupId)
     if (!groupInfo) {
-      return NextResponse.json(
-        { error: 'Tip group not found' },
-        { status: 404 }
-      )
+      return notFound('Tip group not found')
     }
 
     const isOwner = requestingEmployeeId === groupInfo.ownerId
@@ -208,10 +170,7 @@ export const PUT = withVenue(withAuth({ allowCellular: true }, async function PU
         [PERMISSIONS.TIPS_MANAGE_GROUPS]
       )
       if (!auth.authorized) {
-        return NextResponse.json(
-          { error: 'Not authorized. Only the group owner or a manager with tip management permission can approve join requests.' },
-          { status: 403 }
-        )
+        return forbidden('Not authorized. Only the group owner or a manager with tip management permission can approve join requests.')
       }
     }
 
@@ -226,7 +185,7 @@ export const PUT = withVenue(withAuth({ allowCellular: true }, async function PU
       await queueIfOutageOrFail('TipGroup', groupInfo.locationId, groupId, 'UPDATE')
     } catch (err) {
       if (err instanceof OutageQueueFullError) {
-        return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+        return err('Service temporarily unavailable — outage queue full', 507)
       }
       throw err
     }
@@ -238,34 +197,22 @@ export const PUT = withVenue(withAuth({ allowCellular: true }, async function PU
       employeeId,
     }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in tips.groups.id.members'))
 
-    return NextResponse.json({ group })
+    return ok({ group })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error'
 
     if (message === 'NO_PENDING_REQUEST') {
-      return NextResponse.json(
-        { error: 'No pending join request found for this employee' },
-        { status: 404 }
-      )
+      return notFound('No pending join request found for this employee')
     }
     if (message === 'TIP_GROUP_NOT_ACTIVE') {
-      return NextResponse.json(
-        { error: 'Tip group is not active' },
-        { status: 409 }
-      )
+      return err('Tip group is not active', 409)
     }
     if (message === 'EMPLOYEE_IN_ANOTHER_GROUP') {
-      return NextResponse.json(
-        { error: 'Employee is already in another active tip group. They must leave that group first.' },
-        { status: 409 }
-      )
+      return err('Employee is already in another active tip group. They must leave that group first.', 409)
     }
 
     console.error('Failed to approve join request:', error)
-    return NextResponse.json(
-      { error: 'Failed to approve join request' },
-      { status: 500 }
-    )
+    return err('Failed to approve join request', 500)
   }
 }))
 
@@ -282,10 +229,7 @@ export const DELETE = withVenue(withAuth({ allowCellular: true }, async function
 
     // ── Validate required fields ──────────────────────────────────────────
     if (!employeeId) {
-      return NextResponse.json(
-        { error: 'employeeId query parameter is required' },
-        { status: 400 }
-      )
+      return err('employeeId query parameter is required')
     }
 
     // ── Parse and validate optional leftAt override ─────────────────────
@@ -293,16 +237,10 @@ export const DELETE = withVenue(withAuth({ allowCellular: true }, async function
     if (leftAtParam) {
       const parsed = new Date(leftAtParam)
       if (isNaN(parsed.getTime())) {
-        return NextResponse.json(
-          { error: 'leftAt must be a valid ISO 8601 timestamp' },
-          { status: 400 }
-        )
+        return err('leftAt must be a valid ISO 8601 timestamp')
       }
       if (parsed.getTime() > Date.now()) {
-        return NextResponse.json(
-          { error: 'leftAt must be in the past' },
-          { status: 400 }
-        )
+        return err('leftAt must be in the past')
       }
       overrideLeftAt = parsed
     }
@@ -315,10 +253,7 @@ export const DELETE = withVenue(withAuth({ allowCellular: true }, async function
     if (!isSelf) {
       const groupInfo = await getGroupInfo(groupId)
       if (!groupInfo) {
-        return NextResponse.json(
-          { error: 'Tip group not found' },
-          { status: 404 }
-        )
+        return notFound('Tip group not found')
       }
 
       const isOwner = requestingEmployeeId === groupInfo.ownerId
@@ -330,10 +265,7 @@ export const DELETE = withVenue(withAuth({ allowCellular: true }, async function
           [PERMISSIONS.TIPS_MANAGE_GROUPS]
         )
         if (!auth.authorized) {
-          return NextResponse.json(
-            { error: 'Not authorized. Only the employee themselves, the group owner, or a manager with tip management permission can remove members.' },
-            { status: 403 }
-          )
+          return forbidden('Not authorized. Only the employee themselves, the group owner, or a manager with tip management permission can remove members.')
         }
       }
     }
@@ -348,10 +280,7 @@ export const DELETE = withVenue(withAuth({ allowCellular: true }, async function
           [PERMISSIONS.TIPS_MANAGE_GROUPS]
         )
         if (!auth.authorized) {
-          return NextResponse.json(
-            { error: 'Retroactive leave time requires tip management permission' },
-            { status: 403 }
-          )
+          return forbidden('Retroactive leave time requires tip management permission')
         }
       }
     }
@@ -377,7 +306,7 @@ export const DELETE = withVenue(withAuth({ allowCellular: true }, async function
         await queueIfOutageOrFail('TipGroup', locationId, groupId, 'UPDATE')
       } catch (err) {
         if (err instanceof OutageQueueFullError) {
-          return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+          return err('Service temporarily unavailable — outage queue full', 507)
         }
         throw err
       }
@@ -398,7 +327,7 @@ export const DELETE = withVenue(withAuth({ allowCellular: true }, async function
       }
     }
 
-    return NextResponse.json({
+    return ok({
       group,
       groupClosed,
     })
@@ -406,22 +335,13 @@ export const DELETE = withVenue(withAuth({ allowCellular: true }, async function
     const message = error instanceof Error ? error.message : 'Unknown error'
 
     if (message === 'TIP_GROUP_NOT_ACTIVE') {
-      return NextResponse.json(
-        { error: 'Tip group is not active' },
-        { status: 409 }
-      )
+      return err('Tip group is not active', 409)
     }
     if (message === 'EMPLOYEE_NOT_MEMBER') {
-      return NextResponse.json(
-        { error: 'Employee is not an active member of this group' },
-        { status: 404 }
-      )
+      return notFound('Employee is not an active member of this group')
     }
 
     console.error('Failed to remove member from tip group:', error)
-    return NextResponse.json(
-      { error: 'Failed to remove member from tip group' },
-      { status: 500 }
-    )
+    return err('Failed to remove member from tip group', 500)
   }
 }))

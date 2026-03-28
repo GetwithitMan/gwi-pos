@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, notFound, ok } from '@/lib/api-response'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -17,7 +18,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     const { submittedById } = body
 
     if (!submittedById) {
-      return NextResponse.json({ error: 'Submitted by ID required' }, { status: 400 })
+      return err('Submitted by ID required')
     }
 
     const existing = await db.dailyPrepCount.findUnique({
@@ -28,15 +29,15 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     })
 
     if (!existing || existing.deletedAt) {
-      return NextResponse.json({ error: 'Daily count not found' }, { status: 404 })
+      return notFound('Daily count not found')
     }
 
     if (existing.status !== 'draft') {
-      return NextResponse.json({ error: 'Can only submit draft counts' }, { status: 400 })
+      return err('Can only submit draft counts')
     }
 
     if (existing.countItems.length === 0) {
-      return NextResponse.json({ error: 'Cannot submit a count with no items' }, { status: 400 })
+      return err('Cannot submit a count with no items')
     }
 
     const count = await db.dailyPrepCount.update({
@@ -66,8 +67,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     void notifyDataChanged({ locationId: existing.locationId, domain: 'inventory', action: 'updated', entityId: id })
     pushUpstream()
 
-    return NextResponse.json({
-      data: {
+    return ok({
         ...count,
         countItems: count.countItems.map(item => ({
           ...item,
@@ -76,10 +76,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
           variance: item.variance ? Number(item.variance) : null,
           variancePercent: item.variancePercent ? Number(item.variancePercent) : null,
         })),
-      },
-    })
+      })
   } catch (error) {
     console.error('Submit daily count error:', error)
-    return NextResponse.json({ error: 'Failed to submit daily count' }, { status: 500 })
+    return err('Failed to submit daily count', 500)
   }
 }))

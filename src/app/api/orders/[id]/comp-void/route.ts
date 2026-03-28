@@ -40,6 +40,7 @@ import {
   applyRestore,
 } from '@/lib/domain/comp-void'
 import { createChildLogger } from '@/lib/logger'
+import { err, forbidden, notFound, ok, unauthorized } from '@/lib/api-response'
 const log = createChildLogger('orders-comp-void')
 
 interface CompVoidRequest {
@@ -70,10 +71,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     const employeeId = ctx.auth.employeeId || body.employeeId
 
     if (!action || !itemId || !reason || !employeeId) {
-      return NextResponse.json(
-        { error: 'Action, item ID, reason, and employee ID are required' },
-        { status: 400 }
-      )
+      return err('Action, item ID, reason, and employee ID are required')
     }
 
     // Cellular terminal: require manager PIN re-authentication for comp/void
@@ -83,7 +81,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
         validateManagerReauthFromHeaders(request, approvedById, managerPinHash)
       } catch (err) {
         if (err instanceof CellularAuthError) {
-          return NextResponse.json({ error: err.message }, { status: err.status })
+          return err(err.message, err.status)
         }
         throw err
       }
@@ -96,7 +94,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
         await validateCellularOrderAccess(true, orderId, 'mutate', db)
       } catch (err) {
         if (err instanceof CellularAuthError) {
-          return NextResponse.json({ error: err.message }, { status: err.status })
+          return err(err.message, err.status)
         }
         throw err
       }
@@ -117,7 +115,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       db as any, remoteApprovalCode, orderId, itemId,
     )
     if (approvalError) {
-      return NextResponse.json({ error: approvalError.error }, { status: approvalError.status })
+      return err(approvalError.error, approvalError.status)
     }
 
     // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
@@ -128,7 +126,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
         select: { locationId: true },
       })
       if (!compVoidLocationCheck) {
-        return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+        return notFound('Order not found')
       }
       compVoidLocationId = compVoidLocationCheck.locationId
     }
@@ -149,16 +147,13 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     })
 
     if (!order) {
-      return NextResponse.json(
-        { error: 'Order not found' },
-        { status: 404 }
-      )
+      return notFound('Order not found')
     }
 
     // Validate order state
     const orderError = validateOrderForCompVoid(order)
     if (orderError) {
-      return NextResponse.json({ error: orderError.error }, { status: orderError.status })
+      return err(orderError.error, orderError.status)
     }
 
     // Concurrency check
@@ -175,17 +170,14 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     // Actual void/comp authorization comes from approvedById or remote approval code
     const auth = await requirePermission(employeeId, order.locationId, PERMISSIONS.POS_ACCESS)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Validate approvedById has manager void permission if provided
     if (approvedById && !remoteApprovalCode) {
       const approverAuth = await requirePermission(approvedById, order.locationId, PERMISSIONS.MGR_VOID_ITEMS)
       if (!approverAuth.authorized) {
-        return NextResponse.json(
-          { error: 'You do not have permission to perform this action' },
-          { status: 403 }
-        )
+        return forbidden('You do not have permission to perform this action')
       }
 
       // V3 FRAUD FIX: Prevent self-approval — requester cannot approve their own void/comp.
@@ -199,7 +191,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     // Validate reason against allowed presets (backward compatible)
     const reasonError = await validateReasonPreset(db as any, action, reason, order.locationId, employeeId)
     if (reasonError) {
-      return NextResponse.json({ error: reasonError.error }, { status: reasonError.status })
+      return err(reasonError.error, reasonError.status)
     }
 
     // W4-1: Enforce configurable void approval from location settings
@@ -211,12 +203,12 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     // (idempotent success) instead of 400 error. This prevents double tip allocation reversal
     // and other side effects from re-processing an already-completed action.
     if (item && (item.status === 'voided' || item.status === 'comped')) {
-      return NextResponse.json({ data: { alreadyProcessed: true, message: `Item already ${item.status}` } })
+      return ok({ alreadyProcessed: true, message: `Item already ${item.status}` })
     }
 
     const itemError = validateItemForCompVoid(item)
     if (itemError) {
-      return NextResponse.json({ error: itemError.error }, { status: itemError.status })
+      return err(itemError.error, itemError.status)
     }
 
     // Calculate the item total (price + modifiers) * quantity
@@ -227,10 +219,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       const { exceedsThreshold } = await import('@/lib/domain/comp-void/calculations')
       const isAboveThreshold = exceedsThreshold(itemTotal, settings.approvals.voidApprovalThreshold)
       if (isAboveThreshold) {
-        return NextResponse.json(
-          { error: 'Cannot approve your own void/comp for items at or above the approval threshold. A different manager must approve.' },
-          { status: 403 }
-        )
+        return forbidden('Cannot approve your own void/comp for items at or above the approval threshold. A different manager must approve.')
       }
     }
 
@@ -276,7 +265,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     // Guard: cannot void/cancel a split parent with unpaid children
     const splitError = await validateSplitParent(db as any, order)
     if (splitError) {
-      return NextResponse.json({ error: splitError.error }, { status: splitError.status })
+      return err(splitError.error, splitError.status)
     }
 
     // Determine the approving manager (from remote approval or direct)
@@ -311,7 +300,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       await queueIfOutageOrFail('VoidLog', order.locationId, voidLogId, 'INSERT')
     } catch (err) {
       if (err instanceof OutageQueueFullError) {
-        return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+        return err('Service temporarily unavailable — outage queue full', 507)
       }
       throw err
     }
@@ -724,7 +713,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     // Trigger upstream sync (fire-and-forget, debounced)
     pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       action,
       orderAutoClosed: shouldAutoClose,
@@ -737,37 +726,25 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       orderTotals: totals,
       ...(cardReversalWarning ? { cardReversalWarning } : {}),
       ...(overpayment ? { overpayment } : {}),
-    } })
+    })
   } catch (error) {
     // Handle structured errors from the transaction lock
     if (error instanceof Error) {
       if (error.message === 'ORDER_NOT_FOUND') {
-        return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+        return notFound('Order not found')
       }
       if (error.message === 'ORDER_ALREADY_SETTLED') {
-        return NextResponse.json(
-          { error: 'Order cannot be modified — it may have been paid or closed by another terminal' },
-          { status: 409 }
-        )
+        return err('Order cannot be modified — it may have been paid or closed by another terminal', 409)
       }
       if (error.message === 'ITEM_ALREADY_SETTLED') {
-        return NextResponse.json(
-          { error: 'Item has already been voided or comped' },
-          { status: 409 }
-        )
+        return err('Item has already been voided or comped', 409)
       }
       if (error.message === 'ORDER_HAS_COMPLETED_PAYMENTS') {
-        return NextResponse.json(
-          { error: 'Cannot comp/void — order has completed payments. Void the payment first.' },
-          { status: 409 }
-        )
+        return err('Cannot comp/void — order has completed payments. Void the payment first.', 409)
       }
     }
     console.error('Failed to comp/void item:', error instanceof Error ? error.message : error)
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to process request' },
-      { status: 500 }
-    )
+    return err(error instanceof Error ? error.message : 'Failed to process request', 500)
   }
 }))
 
@@ -784,10 +761,7 @@ export const PUT = withVenue(withAuth({ allowCellular: true }, async function PU
     const employeeId = ctx.auth.employeeId || body.employeeId
 
     if (!itemId || !employeeId) {
-      return NextResponse.json(
-        { error: 'Item ID and employee ID are required' },
-        { status: 400 }
-      )
+      return err('Item ID and employee ID are required')
     }
 
     // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
@@ -798,7 +772,7 @@ export const PUT = withVenue(withAuth({ allowCellular: true }, async function PU
         select: { locationId: true },
       })
       if (!restoreLocationCheck) {
-        return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+        return notFound('Order not found')
       }
       restoreLocationId = restoreLocationCheck.locationId
     }
@@ -815,22 +789,19 @@ export const PUT = withVenue(withAuth({ allowCellular: true }, async function PU
     })
 
     if (!order) {
-      return NextResponse.json(
-        { error: 'Order not found' },
-        { status: 404 }
-      )
+      return notFound('Order not found')
     }
 
     // Restoring a voided/comped item requires manager void permission
     const auth = await requirePermission(employeeId, order.locationId, PERMISSIONS.MGR_VOID_ITEMS)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     const item = order.items[0]
     const restoreError = validateItemForRestore(item)
     if (restoreError) {
-      return NextResponse.json({ error: restoreError.error }, { status: restoreError.status })
+      return err(restoreError.error, restoreError.status)
     }
 
     // Wrap item restore + order total recalculation in a single transaction for atomicity.
@@ -904,7 +875,7 @@ export const PUT = withVenue(withAuth({ allowCellular: true }, async function PU
       })
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       item: {
         id: item!.id,
@@ -912,13 +883,10 @@ export const PUT = withVenue(withAuth({ allowCellular: true }, async function PU
         restored: true,
       },
       orderTotals: totals,
-    } })
+    })
   } catch (error) {
     console.error('Failed to restore item:', error)
-    return NextResponse.json(
-      { error: 'Failed to restore item' },
-      { status: 500 }
-    )
+    return err('Failed to restore item', 500)
   }
 }))
 
@@ -940,18 +908,18 @@ export const GET = withVenue(async function GET(
         select: { locationId: true },
       })
       if (!order) {
-        return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+        return notFound('Order not found')
       }
       historyLocationId = order.locationId
     }
 
     if (!employeeId) {
-      return NextResponse.json({ error: 'Employee ID is required' }, { status: 401 })
+      return unauthorized('Employee ID is required')
     }
 
     const auth = await requirePermission(employeeId, historyLocationId, PERMISSIONS.POS_ACCESS)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     const voidLogs = await db.voidLog.findMany({
@@ -964,7 +932,7 @@ export const GET = withVenue(async function GET(
       orderBy: { createdAt: 'desc' },
     })
 
-    return NextResponse.json({ data: {
+    return ok({
       logs: voidLogs.map(log => ({
         id: log.id,
         voidType: log.voidType,
@@ -978,12 +946,9 @@ export const GET = withVenue(async function GET(
         approvedAt: log.approvedAt?.toISOString() || null,
         createdAt: log.createdAt.toISOString(),
       })),
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch void logs:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch void history' },
-      { status: 500 }
-    )
+    return err('Failed to fetch void history', 500)
   }
 })

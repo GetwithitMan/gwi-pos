@@ -10,6 +10,7 @@ import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 
 const log = createChildLogger('tables.id')
 
@@ -24,10 +25,7 @@ export const GET = withVenue(async function GET(
     const locationId = searchParams.get('locationId')
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'locationId is required' },
-        { status: 400 }
-      )
+      return err('locationId is required')
     }
 
     const table = await db.table.findFirst({
@@ -52,13 +50,10 @@ export const GET = withVenue(async function GET(
     })
 
     if (!table) {
-      return NextResponse.json(
-        { error: 'Table not found' },
-        { status: 404 }
-      )
+      return notFound('Table not found')
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       table: {
         id: table.id,
         name: table.name,
@@ -92,13 +87,10 @@ export const GET = withVenue(async function GET(
           })),
         } : null,
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch table:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch table' },
-      { status: 500 }
-    )
+    return err('Failed to fetch table', 500)
   }
 })
 
@@ -128,17 +120,14 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     } = body
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'locationId is required' },
-        { status: 400 }
-      )
+      return err('locationId is required')
     }
 
     // Auth check — require tables.edit permission
     const actor = await getActorFromRequest(request)
     const resolvedEmployeeId = actor.employeeId ?? body.employeeId
     const authPut = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.TABLES_EDIT)
-    if (!authPut.authorized) return NextResponse.json({ error: authPut.error }, { status: authPut.status })
+    if (!authPut.authorized) return err(authPut.error, authPut.status)
 
     // Verify table belongs to this location
     const existing = await db.table.findFirst({
@@ -147,7 +136,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     })
 
     if (!existing) {
-      return NextResponse.json({ error: 'Table not found' }, { status: 404 })
+      return notFound('Table not found')
     }
 
     // Optimistic locking (B8): if client sends version, reject stale writes
@@ -172,10 +161,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
       })
 
       if (duplicate) {
-        return NextResponse.json(
-          { error: `A table named "${duplicate.name}" already exists` },
-          { status: 409 }
-        )
+        return err(`A table named "${duplicate.name}" already exists`, 409)
       }
     }
 
@@ -228,7 +214,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     void notifyDataChanged({ locationId: table.locationId, domain: 'floorplan', action: 'updated', entityId: table.id })
     void pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       table: {
         id: table.id,
         name: table.name,
@@ -246,17 +232,14 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
         section: table.section,
         version: table.version,
       },
-    } })
+    })
   } catch (error) {
     // Handle Prisma P2025 error (record not found)
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
-      return NextResponse.json({ error: 'Table not found' }, { status: 404 })
+      return notFound('Table not found')
     }
     console.error('Failed to update table:', error)
-    return NextResponse.json(
-      { error: 'Failed to update table' },
-      { status: 500 }
-    )
+    return err('Failed to update table', 500)
   }
 }))
 
@@ -271,17 +254,14 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     const locationId = searchParams.get('locationId')
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'locationId is required' },
-        { status: 400 }
-      )
+      return err('locationId is required')
     }
 
     // Auth check — require tables.edit permission
     const actorDel = await getActorFromRequest(request)
     const resolvedEmployeeIdDel = actorDel.employeeId ?? searchParams.get('employeeId')
     const authDel = await requirePermission(resolvedEmployeeIdDel, locationId, PERMISSIONS.TABLES_EDIT)
-    if (!authDel.authorized) return NextResponse.json({ error: authDel.error }, { status: authDel.status })
+    if (!authDel.authorized) return err(authDel.error, authDel.status)
 
     // Verify table belongs to this location
     const existing = await db.table.findFirst({
@@ -290,7 +270,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     })
 
     if (!existing) {
-      return NextResponse.json({ error: 'Table not found' }, { status: 404 })
+      return notFound('Table not found')
     }
 
     // Check for active orders (all active statuses, not just open)
@@ -299,10 +279,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     })
 
     if (openOrders > 0) {
-      return NextResponse.json(
-        { error: 'Cannot delete table with active orders' },
-        { status: 400 }
-      )
+      return err('Cannot delete table with active orders')
     }
 
     // Soft delete and get locationId for socket dispatch
@@ -319,12 +296,9 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     void notifyDataChanged({ locationId: table.locationId, domain: 'floorplan', action: 'deleted', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Failed to delete table:', error)
-    return NextResponse.json(
-      { error: 'Failed to delete table' },
-      { status: 500 }
-    )
+    return err('Failed to delete table', 500)
   }
 }))

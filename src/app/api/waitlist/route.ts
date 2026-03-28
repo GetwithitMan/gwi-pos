@@ -8,6 +8,7 @@ import { mergeWithDefaults, DEFAULT_WAITLIST_SETTINGS } from '@/lib/settings'
 import { dispatchWaitlistChanged } from '@/lib/socket-dispatch'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok } from '@/lib/api-response'
 const log = createChildLogger('waitlist')
 
 export const dynamic = 'force-dynamic'
@@ -19,7 +20,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const rawSettings = await getLocationSettings(locationId)
@@ -27,7 +28,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const waitlistConfig = settings.waitlist ?? DEFAULT_WAITLIST_SETTINGS
 
     if (!waitlistConfig.enabled) {
-      return NextResponse.json({ error: 'Waitlist is not enabled' }, { status: 400 })
+      return err('Waitlist is not enabled')
     }
 
     const entries: any[] = await db.$queryRawUnsafe(`
@@ -64,10 +65,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }
     })
 
-    return NextResponse.json({ data: enriched })
+    return ok(enriched)
   } catch (error) {
     console.error('[Waitlist] GET error:', error)
-    return NextResponse.json({ error: 'Failed to fetch waitlist' }, { status: 500 })
+    return err('Failed to fetch waitlist', 500)
   }
 })
 
@@ -78,7 +79,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const rawSettings = await getLocationSettings(locationId)
@@ -86,22 +87,19 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     const waitlistConfig = settings.waitlist ?? DEFAULT_WAITLIST_SETTINGS
 
     if (!waitlistConfig.enabled) {
-      return NextResponse.json({ error: 'Waitlist is not enabled' }, { status: 400 })
+      return err('Waitlist is not enabled')
     }
 
     const body = await request.json()
     const { customerName, partySize, phone, notes, assignPager } = body
 
     if (!customerName || typeof customerName !== 'string' || customerName.trim().length === 0) {
-      return NextResponse.json({ error: 'Customer name is required' }, { status: 400 })
+      return err('Customer name is required')
     }
 
     const size = Number(partySize)
     if (!size || size < 1 || size > waitlistConfig.maxPartySize) {
-      return NextResponse.json(
-        { error: `Party size must be between 1 and ${waitlistConfig.maxPartySize}` },
-        { status: 400 }
-      )
+      return err(`Party size must be between 1 and ${waitlistConfig.maxPartySize}`)
     }
 
     // Check waitlist capacity
@@ -114,10 +112,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
 
     const currentCount = countResult[0]?.count ?? 0
     if (currentCount >= waitlistConfig.maxWaitlistSize) {
-      return NextResponse.json(
-        { error: 'Waitlist is currently full. Please try again later.' },
-        { status: 409 }
-      )
+      return err('Waitlist is currently full. Please try again later.', 409)
     }
 
     // Calculate position (next after current active entries)
@@ -215,6 +210,6 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     }, { status: 201 })
   } catch (error) {
     console.error('[Waitlist] POST error:', error)
-    return NextResponse.json({ error: 'Failed to add to waitlist' }, { status: 500 })
+    return err('Failed to add to waitlist', 500)
   }
 }))

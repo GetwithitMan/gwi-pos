@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { verifyWithClerk } from '@/lib/clerk-verify'
 import { signAccessToken } from '@/lib/access-gate'
 import { isEmailAllowed } from '@/lib/access-allowlist'
+import { err, forbidden, unauthorized } from '@/lib/api-response'
 
 /**
  * POST /api/access/clerk-verify
@@ -15,7 +16,7 @@ export async function POST(request: NextRequest) {
   const { email, password } = body
 
   if (!email || typeof email !== 'string' || !password || typeof password !== 'string') {
-    return NextResponse.json({ error: 'Email and password required' }, { status: 400 })
+    return err('Email and password required')
   }
 
   const normalizedEmail = email.trim().toLowerCase()
@@ -23,18 +24,18 @@ export async function POST(request: NextRequest) {
   // Check allowlist first — deleting from allowlist blocks access
   const allowed = await isEmailAllowed(normalizedEmail)
   if (!allowed) {
-    return NextResponse.json({ error: 'Access not authorized. Contact your administrator.' }, { status: 403 })
+    return forbidden('Access not authorized. Contact your administrator.')
   }
 
   const clerkValid = await verifyWithClerk(normalizedEmail, password)
   if (!clerkValid) {
-    return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 })
+    return unauthorized('Invalid email or password')
   }
 
   const secret = process.env.GWI_ACCESS_SECRET
   if (!secret) {
     console.error('[clerk-verify] GWI_ACCESS_SECRET not configured')
-    return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 })
+    return err('Server misconfigured', 500)
   }
 
   const token = await signAccessToken(normalizedEmail, secret)

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { OrderRepository } from '@/lib/repositories'
 import { dispatchFloorPlanUpdate, dispatchOpenOrdersChanged, dispatchTableStatusChanged } from '@/lib/socket-dispatch'
@@ -9,6 +9,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 
 const log = createChildLogger('tables-merge')
 
@@ -28,24 +29,18 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
 
     // --- Validation ---
     if (!sourceTableId || !targetTableId || !locationId) {
-      return NextResponse.json(
-        { error: 'sourceTableId, targetTableId, and locationId are required' },
-        { status: 400 }
-      )
+      return err('sourceTableId, targetTableId, and locationId are required')
     }
 
     if (sourceTableId === targetTableId) {
-      return NextResponse.json(
-        { error: 'Cannot merge a table with itself' },
-        { status: 400 }
-      )
+      return err('Cannot merge a table with itself')
     }
 
     // Auth check — require tables.edit permission
     const actor = await getActorFromRequest(request)
     const resolvedEmployeeId = actor.employeeId ?? employeeId
     const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.TABLES_EDIT)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Fetch both tables
     const [sourceTable, targetTable] = await Promise.all([
@@ -60,27 +55,18 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     ])
 
     if (!sourceTable) {
-      return NextResponse.json(
-        { error: 'Source table not found' },
-        { status: 404 }
-      )
+      return notFound('Source table not found')
     }
 
     if (!targetTable) {
-      return NextResponse.json(
-        { error: 'Target table not found' },
-        { status: 404 }
-      )
+      return notFound('Target table not found')
     }
 
     // Find open orders on source table (tenant-scoped)
     const openOrders = await OrderRepository.getActiveOrdersForTable(sourceTableId, locationId)
 
     if (openOrders.length === 0) {
-      return NextResponse.json(
-        { error: 'Source table has no open orders to merge' },
-        { status: 400 }
-      )
+      return err('Source table has no open orders to merge')
     }
 
     // --- Execute merge in a transaction ---
@@ -144,20 +130,15 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
       }).catch(err => log.warn({ err }, 'Socket dispatch failed'))
     }
 
-    return NextResponse.json({
-      data: {
+    return ok({
         mergedOrders: openOrders.length,
         targetTable: {
           id: targetTable.id,
           name: targetTable.name,
         },
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to merge tables:', error)
-    return NextResponse.json(
-      { error: 'Failed to merge tables' },
-      { status: 500 }
-    )
+    return err('Failed to merge tables', 500)
   }
 }))

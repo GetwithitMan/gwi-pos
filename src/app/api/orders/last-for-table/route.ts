@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { err, ok } from '@/lib/api-response'
 
 /**
  * GET /api/orders/last-for-table?tableId=X&excludeOrderId=Y
@@ -15,7 +16,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   const excludeOrderId = searchParams.get('excludeOrderId')
 
   if (!tableId) {
-    return NextResponse.json({ error: 'tableId is required' }, { status: 400 })
+    return err('tableId is required')
   }
 
   // Find the most recent completed order for this table
@@ -69,7 +70,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   })
 
   if (!lastOrder) {
-    return NextResponse.json({ data: null })
+    return ok(null)
   }
 
   // Map items, flagging any that are now 86'd or deleted
@@ -92,14 +93,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     })),
   }))
 
-  return NextResponse.json({
-    data: {
+  return ok({
       orderId: lastOrder.id,
       orderNumber: lastOrder.orderNumber,
       closedAt: lastOrder.closedAt,
       items,
       totalItems: items.reduce((sum: number, i: any) => sum + i.quantity, 0),
       unavailableItems: items.filter((i: any) => i.is86d).map((i: any) => i.name),
-    },
-  })
+    })
 })

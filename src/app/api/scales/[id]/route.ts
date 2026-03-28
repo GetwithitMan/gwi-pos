@@ -6,6 +6,7 @@ import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - Get single scale by ID
 export const GET = withVenue(withAuth('ADMIN', async function GET(
@@ -16,7 +17,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
     const { id } = await params
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     let scale
@@ -26,25 +27,20 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
       })
     } catch {
       // Scale table doesn't exist on un-migrated DB
-      return NextResponse.json(
-        { error: 'Scale feature not available - database migration required' },
-        { status: 503 }
-      )
+      return err('Scale feature not available - database migration required', 503)
     }
 
     if (!scale) {
-      return NextResponse.json({ error: 'Scale not found' }, { status: 404 })
+      return notFound('Scale not found')
     }
 
-    return NextResponse.json({
-      data: {
+    return ok({
         ...scale,
         maxCapacity: scale.maxCapacity ? Number(scale.maxCapacity) : null,
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to fetch scale:', error)
-    return NextResponse.json({ error: 'Failed to fetch scale' }, { status: 500 })
+    return err('Failed to fetch scale', 500)
   }
 }))
 
@@ -74,7 +70,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     const { id } = await params
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     let existing
@@ -84,13 +80,10 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
       })
     } catch {
       // Scale table doesn't exist on un-migrated DB
-      return NextResponse.json(
-        { error: 'Scale feature not available - database migration required' },
-        { status: 503 }
-      )
+      return err('Scale feature not available - database migration required', 503)
     }
     if (!existing) {
-      return NextResponse.json({ error: 'Scale not found' }, { status: 404 })
+      return notFound('Scale not found')
     }
 
     const body = await request.json()
@@ -113,15 +106,15 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
         const effectiveHost = networkHost !== undefined ? networkHost : existing.networkHost
         const effectivePort = networkPort !== undefined ? networkPort : existing.networkPort
         if (!effectiveHost) {
-          return NextResponse.json({ error: 'Host address is required for network connections' }, { status: 400 })
+          return err('Host address is required for network connections')
         }
         if (!effectivePort) {
-          return NextResponse.json({ error: 'TCP port is required for network connections' }, { status: 400 })
+          return err('TCP port is required for network connections')
         }
       } else {
         const effectivePath = portPath !== undefined ? portPath : existing.portPath
         if (!effectivePath) {
-          return NextResponse.json({ error: 'Port path is required for serial connections' }, { status: 400 })
+          return err('Port path is required for serial connections')
         }
       }
     }
@@ -141,21 +134,16 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     void notifyDataChanged({ locationId: locationId!, domain: 'hardware', action: 'updated', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({
-      data: {
+    return ok({
         ...scale,
         maxCapacity: scale.maxCapacity ? Number(scale.maxCapacity) : null,
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to update scale:', error)
     if (error instanceof Error && error.message.includes('Unique constraint')) {
-      return NextResponse.json(
-        { error: 'A scale with this name or port already exists at this location' },
-        { status: 400 }
-      )
+      return err('A scale with this name or port already exists at this location')
     }
-    return NextResponse.json({ error: 'Failed to update scale' }, { status: 500 })
+    return err('Failed to update scale', 500)
   }
 }))
 
@@ -168,7 +156,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     const { id } = await params
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     let existing
@@ -178,13 +166,10 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
       })
     } catch {
       // Scale table doesn't exist on un-migrated DB
-      return NextResponse.json(
-        { error: 'Scale feature not available - database migration required' },
-        { status: 503 }
-      )
+      return err('Scale feature not available - database migration required', 503)
     }
     if (!existing) {
-      return NextResponse.json({ error: 'Scale not found' }, { status: 404 })
+      return notFound('Scale not found')
     }
 
     await db.scale.update({
@@ -195,9 +180,9 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     void notifyDataChanged({ locationId: locationId!, domain: 'hardware', action: 'deleted', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Failed to delete scale:', error)
-    return NextResponse.json({ error: 'Failed to delete scale' }, { status: 500 })
+    return err('Failed to delete scale', 500)
   }
 }))

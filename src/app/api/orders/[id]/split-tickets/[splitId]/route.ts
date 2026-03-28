@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { OrderStatus } from '@/generated/prisma/client'
 import { handleApiError, NotFoundError, ValidationError } from '@/lib/api-errors'
@@ -12,6 +12,7 @@ import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { OrderRepository, OrderItemRepository, PaymentRepository } from '@/lib/repositories'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-split-tickets')
 
 // ============================================
@@ -50,20 +51,14 @@ export const DELETE = withVenue(withAuth(async function DELETE(
     const activeItemCount = await OrderItemRepository.countItemsForOrder(splitId, locationId)
 
     if (activeItemCount > 0) {
-      return NextResponse.json(
-        { error: 'Cannot delete check with items. Move items to another check first.' },
-        { status: 400 }
-      )
+      return err('Cannot delete check with items. Move items to another check first.')
     }
 
     // Validate no payments
     const paymentCount = await PaymentRepository.countPayments(locationId, { orderId: splitId })
 
     if (paymentCount > 0) {
-      return NextResponse.json(
-        { error: 'Cannot delete check with payments.' },
-        { status: 400 }
-      )
+      return err('Cannot delete check with payments.')
     }
 
     // Get parent order info for socket emit
@@ -197,13 +192,13 @@ export const DELETE = withVenue(withAuth(async function DELETE(
     pushUpstream()
 
     if (merged) {
-      return NextResponse.json({ data: {
+      return ok({
         message: 'Last split merged back to parent',
         merged: true,
-      } })
+      })
     }
 
-    return NextResponse.json({ data: { message: 'Check deleted' } })
+    return ok({ message: 'Check deleted' })
   } catch (error) {
     return handleApiError(error, 'Failed to delete check')
   }

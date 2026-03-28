@@ -6,6 +6,7 @@ import { checkLoginRateLimit, recordLoginFailure, recordLoginSuccess } from '@/l
 import { setSessionCookie } from '@/lib/auth-session'
 import { getClientIp } from '@/lib/get-client-ip'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok, unauthorized } from '@/lib/api-response'
 const log = createChildLogger('auth-login')
 
 export const POST = withVenue(async function POST(request: NextRequest) {
@@ -29,10 +30,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const { pin, locationId } = await request.json()
 
     if (!pin || pin.length < 4) {
-      return NextResponse.json(
-        { error: 'PIN must be at least 4 digits' },
-        { status: 400 }
-      )
+      return err('PIN must be at least 4 digits')
     }
 
     // locationId is optional — database-per-venue isolation already scopes queries.
@@ -77,10 +75,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         }).catch(err => log.warn({ err }, 'Background task failed'))
       }
 
-      return NextResponse.json(
-        { error: 'Invalid PIN' },
-        { status: 401 }
-      )
+      return unauthorized('Invalid PIN')
     }
 
     // Fetch available roles from EmployeeRole junction table
@@ -137,25 +132,18 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const isDevAccess = permissions.includes('all') || permissions.includes('dev.access')
 
     // ── Set signed httpOnly session cookie (W1-S3) ─────────────
-    const sessionPayload = {
+    await setSessionCookie({
       employeeId: matchedEmployee.id,
       locationId: matchedEmployee.locationId,
       roleId: matchedEmployee.role.id,
       roleName: matchedEmployee.role.name,
       permissions,
-    }
-    await setSessionCookie(sessionPayload)
-
-    // Generate a portable session token for native clients (Android/PAX)
-    // that can't use httpOnly cookies. Same HMAC-SHA256 signing as the cookie.
-    const { createSessionToken } = await import('@/lib/auth-session')
-    const sessionToken = await createSessionToken(sessionPayload)
+    })
 
     // Clear rate limit state on success
     recordLoginSuccess(ip, matchedEmployee.id)
 
-    return NextResponse.json({ data: {
-      sessionToken,
+    return ok({
       employee: {
         id: matchedEmployee.id,
         firstName: matchedEmployee.firstName,
@@ -175,12 +163,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         availableRoles,
         requiresPinChange: matchedEmployee.requiresPinChange ?? false,
       },
-    } })
+    })
   } catch (error) {
     console.error('Login error:', error)
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    )
+    return err('Internal server error', 500)
   }
 })

@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch';
 import { generateSeatPositions, type SeatPattern } from '@/lib/seat-generation';
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // POST - Generate/regenerate default seat layout
 export const POST = withVenue(withAuth('ADMIN', async function POST(
@@ -36,10 +37,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     });
 
     if (!table) {
-      return NextResponse.json(
-        { error: 'Table not found' },
-        { status: 404 }
-      );
+      return notFound('Table not found');
     }
 
     // Use defaults from table if not provided
@@ -85,7 +83,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     // Notify POS terminals of floor plan update
     dispatchFloorPlanUpdate(table.locationId, { async: true });
 
-    return NextResponse.json({ data: {
+    return ok({
       seats: createdSeats.map((s) => ({
         id: s.id,
         label: s.label,
@@ -96,12 +94,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
         seatType: s.seatType,
         isActive: s.isActive,
       })),
-    } });
+    });
   } catch (error) {
     console.error('Failed to generate seats:', error);
-    return NextResponse.json(
-      { error: 'Failed to generate seats' },
-      { status: 500 }
-    );
+    return err('Failed to generate seats', 500);
   }
 }))

@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { err } from '@/lib/api-response'
 
 // GET /api/reports/outage-payments
 // Returns payments flagged for reconciliation (processed during outage or offline capture).
@@ -16,12 +17,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const requestingEmployeeId = searchParams.get('requestingEmployeeId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID required' }, { status: 400 })
+      return err('Location ID required')
     }
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_SALES)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Build date filter
@@ -101,9 +102,6 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     })
   } catch (error) {
     console.error('[OutagePayments] Report error:', error)
-    return NextResponse.json(
-      { success: false, error: 'Failed to fetch outage payments' },
-      { status: 500 }
-    )
+    return err('Failed to fetch outage payments')
   }
 })

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { masterClient } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { err } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -67,9 +68,6 @@ export const GET = withVenue(async () => {
     })
   } catch (error) {
     console.error('[OutageQueue] API error:', error)
-    return NextResponse.json(
-      { success: false, error: 'Failed to fetch outage queue status' },
-      { status: 500 }
-    )
+    return err('Failed to fetch outage queue status')
   }
 })

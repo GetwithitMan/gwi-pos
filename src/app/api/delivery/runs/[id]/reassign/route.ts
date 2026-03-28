@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId, getLocationSettings } from '@/lib/location-cache'
@@ -11,6 +11,7 @@ import { canAssignDriver } from '@/lib/delivery/dispatch-policy'
 import { dispatchRunEvent, dispatchDriverStatusChanged, dispatchOrderReassigned } from '@/lib/delivery/dispatch-events'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok } from '@/lib/api-response'
 const log = createChildLogger('delivery-runs-reassign')
 
 export const dynamic = 'force-dynamic'
@@ -28,13 +29,13 @@ export const POST = withVenue(async function POST(
     const { id } = await params
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Auth check
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.DELIVERY_DISPATCH)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Feature gate
     const featureGate = await requireDeliveryFeature(locationId)
@@ -44,10 +45,10 @@ export const POST = withVenue(async function POST(
     const { newDriverId, reason } = body
 
     if (!newDriverId || typeof newDriverId !== 'string') {
-      return NextResponse.json({ error: 'newDriverId is required' }, { status: 400 })
+      return err('newDriverId is required')
     }
     if (!reason || typeof reason !== 'string' || reason.trim().length === 0) {
-      return NextResponse.json({ error: 'reason is required for reassignment' }, { status: 400 })
+      return err('reason is required for reassignment')
     }
 
     // Load dispatch policy
@@ -217,7 +218,7 @@ export const POST = withVenue(async function POST(
       reason: reason.trim(),
     }).catch(err => log.warn({ err }, 'Background task failed'))
 
-    return NextResponse.json({
+    return ok({
       run: result.run,
       message: `Run reassigned from ${result.oldDriverName} to ${result.newDriverName}`,
     })
@@ -231,8 +232,8 @@ export const POST = withVenue(async function POST(
       message.includes('active run') ||
       message.includes('cannot be assigned')
     ) {
-      return NextResponse.json({ error: message }, { status: 400 })
+      return err(message)
     }
-    return NextResponse.json({ error: 'Failed to reassign run' }, { status: 500 })
+    return err('Failed to reassign run', 500)
   }
 })

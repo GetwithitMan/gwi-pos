@@ -8,6 +8,7 @@ import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 import { dispatchExceptionEvent } from '@/lib/delivery/dispatch-events'
 import { writeDeliveryAuditLog } from '@/lib/delivery/state-machine'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound } from '@/lib/api-response'
 const log = createChildLogger('delivery-exceptions-resolve')
 
 export const dynamic = 'force-dynamic'
@@ -34,7 +35,7 @@ export const POST = withVenue(async function POST(
     const { id } = await params
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Feature gate
@@ -44,13 +45,13 @@ export const POST = withVenue(async function POST(
     // Auth check
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.DELIVERY_EXCEPTIONS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const body = await request.json()
     const { resolution } = body
 
     if (!resolution || typeof resolution !== 'string' || resolution.trim().length === 0) {
-      return NextResponse.json({ error: 'resolution is required' }, { status: 400 })
+      return err('resolution is required')
     }
 
     // Fetch existing exception
@@ -60,24 +61,18 @@ export const POST = withVenue(async function POST(
     )
 
     if (!existing.length) {
-      return NextResponse.json({ error: 'Exception not found' }, { status: 404 })
+      return notFound('Exception not found')
     }
 
     const current = existing[0]
 
     // Validate status transition — only open or acknowledged can be resolved
     if (current.status === 'resolved') {
-      return NextResponse.json(
-        { error: 'Exception is already resolved' },
-        { status: 409 },
-      )
+      return err('Exception is already resolved', 409)
     }
 
     if (!['open', 'acknowledged'].includes(current.status)) {
-      return NextResponse.json(
-        { error: `Cannot resolve exception in '${current.status}' status` },
-        { status: 400 },
-      )
+      return err(`Cannot resolve exception in '${current.status}' status`)
     }
 
     // Update exception to resolved
@@ -94,7 +89,7 @@ export const POST = withVenue(async function POST(
     `, sanitizedResolution, auth.employee.id, id, locationId)
 
     if (!updated.length) {
-      return NextResponse.json({ error: 'Failed to resolve exception' }, { status: 500 })
+      return err('Failed to resolve exception', 500)
     }
 
     const exception = updated[0]
@@ -121,6 +116,6 @@ export const POST = withVenue(async function POST(
     })
   } catch (error) {
     console.error('[Delivery/Exceptions/Resolve] POST error:', error)
-    return NextResponse.json({ error: 'Failed to resolve delivery exception' }, { status: 500 })
+    return err('Failed to resolve delivery exception', 500)
   }
 })

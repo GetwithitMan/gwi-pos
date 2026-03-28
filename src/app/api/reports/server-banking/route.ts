@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { getBusinessDayRange } from '@/lib/business-day'
 import { getLocationSettings, getLocationTimezone } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
+import { err, ok } from '@/lib/api-response'
 
 // GET /api/reports/server-banking — Per-server cash bank report
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -17,7 +18,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       searchParams.get('requestingEmployeeId') || searchParams.get('employeeId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+      return err('Location ID is required')
     }
 
     const auth = await requirePermission(
@@ -26,7 +27,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       PERMISSIONS.REPORTS_VIEW
     )
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Build date range — default to current business day if no range specified
@@ -145,8 +146,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const employees = Array.from(employeeMap.values())
       .sort((a, b) => b.shiftsWorked - a.shiftsWorked)
 
-    return NextResponse.json({
-      data: {
+    return ok({
         dateRange: {
           from: dateFilter.gte.toISOString(),
           to: dateFilter.lte.toISOString(),
@@ -159,13 +159,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           netVariance: locationNetVariance,
         },
         employees,
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to generate server banking report:', error)
-    return NextResponse.json(
-      { error: 'Failed to generate server banking report' },
-      { status: 500 }
-    )
+    return err('Failed to generate server banking report', 500)
   }
 })

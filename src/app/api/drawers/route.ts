@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { err, ok } from '@/lib/api-response'
 
 // GET - List drawers at a location, with availability status
 // No auth required — POS terminals need drawer status for cash operations
@@ -10,7 +11,7 @@ export const GET = withVenue(async function GET(
   try {
     const locationId = request.nextUrl.searchParams.get('locationId')
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     const drawers = await db.drawer.findMany({
@@ -41,7 +42,7 @@ export const GET = withVenue(async function GET(
       orderBy: { name: 'asc' },
     })
 
-    return NextResponse.json({ data: {
+    return ok({
       drawers: drawers.map(drawer => ({
         id: drawer.id,
         name: drawer.name,
@@ -56,12 +57,9 @@ export const GET = withVenue(async function GET(
             }
           : null,
       })),
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch drawers:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch drawers' },
-      { status: 500 }
-    )
+    return err('Failed to fetch drawers', 500)
   }
 })

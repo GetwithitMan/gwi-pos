@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { err, ok } from '@/lib/api-response'
 
 const DEFAULT_COST_PER_OZ = 10
 
@@ -18,10 +19,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const endDate = searchParams.get('endDate')
     const requestingEmployeeId = searchParams.get('employeeId') || ''
 
-    if (!locationId) return NextResponse.json({ error: 'locationId required' }, { status: 400 })
+    if (!locationId) return err('locationId required')
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_INVENTORY)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Date filter using businessDate with receivedAt fallback (same pattern as berg-variance)
     const bergDateFilter: Record<string, unknown> = {}
@@ -141,7 +142,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const unmappedExposure = Math.round(plus.filter(p => !p.isMapped).reduce((s, p) => s + (p.estimatedExposure ?? 0), 0) * 100) / 100
     const totalPours = plus.reduce((s, p) => s + p.pourCount, 0)
 
-    return NextResponse.json({
+    return ok({
       period: { startDate, endDate },
       generatedAt: new Date().toISOString(),
       coveragePct,
@@ -157,6 +158,6 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     })
   } catch (err) {
     console.error('[reports/berg-mapping-coverage]', err)
-    return NextResponse.json({ error: 'Failed to load mapping coverage report' }, { status: 500 })
+    return err('Failed to load mapping coverage report', 500)
   }
 })

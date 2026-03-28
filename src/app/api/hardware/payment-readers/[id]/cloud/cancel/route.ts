@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getDatacapClient } from '@/lib/datacap/helpers'
 import { getRequestLocationId } from '@/lib/request-context'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { ok } from '@/lib/api-response'
 
 /**
  * Cloud reader cancel proxy
@@ -25,7 +26,7 @@ export const POST = withVenue(withAuth(async function POST(
         select: { locationId: true },
       })
       if (!reader) {
-        return NextResponse.json({ data: { success: false } })
+        return ok({ success: false })
       }
       cancelLocationId = reader.locationId
     }
@@ -33,10 +34,10 @@ export const POST = withVenue(withAuth(async function POST(
     const client = await getDatacapClient(cancelLocationId)
     await client.padReset(id)
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     // Cancel errors are non-fatal — log and return gracefully
     console.error('[cloud/cancel] padReset failed:', error)
-    return NextResponse.json({ data: { success: false } })
+    return ok({ success: false })
   }
 }))

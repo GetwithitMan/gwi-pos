@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { err, ok } from '@/lib/api-response'
 
 /**
  * GET /api/accounting/history?locationId=xxx&limit=50&offset=0
@@ -19,13 +20,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const offset = parseInt(searchParams.get('offset') || '0')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId query parameter is required' }, { status: 400 })
+      return err('locationId query parameter is required')
     }
 
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.REPORTS_SALES)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Query audit log for accounting exports
@@ -80,19 +81,14 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }
     })
 
-    return NextResponse.json({
-      data: {
+    return ok({
         history,
         total: totalCount,
         limit,
         offset,
-      },
-    })
+      })
   } catch (error) {
     console.error('[Accounting History] Failed:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch export history' },
-      { status: 500 }
-    )
+    return err('Failed to fetch export history', 500)
   }
 })

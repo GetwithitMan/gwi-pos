@@ -6,13 +6,14 @@ import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, ok } from '@/lib/api-response'
 
 // GET - List all scales for a location
 export const GET = withVenue(withAuth('ADMIN', async function GET() {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     let scales
@@ -23,18 +24,16 @@ export const GET = withVenue(withAuth('ADMIN', async function GET() {
       })
     } catch {
       // Scale table doesn't exist on un-migrated DB — return empty array
-      return NextResponse.json({ data: [] })
+      return ok([])
     }
 
-    return NextResponse.json({
-      data: scales.map((s) => ({
+    return ok(scales.map((s) => ({
         ...s,
         maxCapacity: s.maxCapacity ? Number(s.maxCapacity) : null,
-      })),
-    })
+      })))
   } catch (error) {
     console.error('Failed to fetch scales:', error)
-    return NextResponse.json({ error: 'Failed to fetch scales' }, { status: 500 })
+    return err('Failed to fetch scales', 500)
   }
 }))
 
@@ -59,7 +58,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const body = await request.json()
@@ -76,14 +75,14 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     // Validate connection-type-specific fields
     if (connectionType === 'network') {
       if (!networkHost) {
-        return NextResponse.json({ error: 'Host address is required for network connections' }, { status: 400 })
+        return err('Host address is required for network connections')
       }
       if (!networkPort) {
-        return NextResponse.json({ error: 'TCP port is required for network connections' }, { status: 400 })
+        return err('TCP port is required for network connections')
       }
     } else {
       if (!portPath) {
-        return NextResponse.json({ error: 'Port path is required for serial connections' }, { status: 400 })
+        return err('Port path is required for serial connections')
       }
     }
 
@@ -104,29 +103,21 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       // Scale table doesn't exist on un-migrated DB
       const msg = createErr instanceof Error ? createErr.message : ''
       if (msg.includes('Unique constraint')) {
-        return NextResponse.json(
-          { error: 'A scale with this name or port already exists at this location' },
-          { status: 400 }
-        )
+        return err('A scale with this name or port already exists at this location')
       }
       console.error('Failed to create scale:', createErr)
-      return NextResponse.json(
-        { error: 'Scale feature not available - database migration required' },
-        { status: 500 }
-      )
+      return err('Scale feature not available - database migration required', 500)
     }
 
     void notifyDataChanged({ locationId, domain: 'hardware', action: 'created', entityId: scale.id })
     void pushUpstream()
 
-    return NextResponse.json({
-      data: {
+    return ok({
         ...scale,
         maxCapacity: scale.maxCapacity ? Number(scale.maxCapacity) : null,
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to create scale:', error)
-    return NextResponse.json({ error: 'Failed to create scale' }, { status: 500 })
+    return err('Failed to create scale', 500)
   }
 }))

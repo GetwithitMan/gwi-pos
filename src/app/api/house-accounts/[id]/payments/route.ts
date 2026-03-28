@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, ok } from '@/lib/api-response'
 
 // POST - Record a payment against a house account balance
 export const POST = withVenue(withAuth(async function POST(
@@ -18,23 +19,20 @@ export const POST = withVenue(withAuth(async function POST(
 
     // Validate required fields
     if (amount === undefined || amount === null) {
-      return NextResponse.json({ error: 'amount is required' }, { status: 400 })
+      return err('amount is required')
     }
     if (typeof amount !== 'number' || amount <= 0) {
-      return NextResponse.json({ error: 'amount must be a number greater than 0' }, { status: 400 })
+      return err('amount must be a number greater than 0')
     }
     if (!paymentMethod) {
-      return NextResponse.json({ error: 'paymentMethod is required' }, { status: 400 })
+      return err('paymentMethod is required')
     }
     const validPaymentMethods = ['cash', 'check', 'ach', 'wire', 'card']
     if (!validPaymentMethods.includes(paymentMethod)) {
-      return NextResponse.json(
-        { error: `paymentMethod must be one of: ${validPaymentMethods.join(', ')}` },
-        { status: 400 }
-      )
+      return err(`paymentMethod must be one of: ${validPaymentMethods.join(', ')}`)
     }
     if (!employeeId) {
-      return NextResponse.json({ error: 'employeeId is required' }, { status: 400 })
+      return err('employeeId is required')
     }
 
     // C-FIN-1: Read balance inside the transaction to prevent race condition.
@@ -100,7 +98,7 @@ export const POST = withVenue(withAuth(async function POST(
     })
 
     if ('error' in result) {
-      return NextResponse.json({ error: result.error }, { status: result.status })
+      return err(result.error, result.status)
     }
 
     const { transaction, newBalance } = result
@@ -108,8 +106,7 @@ export const POST = withVenue(withAuth(async function POST(
     void notifyDataChanged({ locationId: transaction.locationId, domain: 'house-accounts', action: 'updated', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({
-      data: {
+    return ok({
         transaction: {
           ...transaction,
           amount: Number(transaction.amount),
@@ -117,10 +114,9 @@ export const POST = withVenue(withAuth(async function POST(
           balanceAfter: Number(transaction.balanceAfter),
         },
         newBalance: Number(newBalance),
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to record payment:', error)
-    return NextResponse.json({ error: 'Failed to record payment' }, { status: 500 })
+    return err('Failed to record payment', 500)
   }
 }))

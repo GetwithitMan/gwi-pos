@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
@@ -8,6 +8,7 @@ import { OrderItemRepository } from '@/lib/repositories'
 import { getRequestLocationId } from '@/lib/request-context'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-note')
 
 // POST — update an order item's special notes
@@ -21,7 +22,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     const { note } = body
 
     if (typeof note !== 'string') {
-      return NextResponse.json({ error: 'note must be a string' }, { status: 400 })
+      return err('note must be a string')
     }
 
     // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
@@ -32,7 +33,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
         select: { id: true, locationId: true },
       })
       if (!order) {
-        return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+        return notFound('Order not found')
       }
       locationId = order.locationId
     }
@@ -40,7 +41,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     // Verify item exists on this order
     const item = await OrderItemRepository.getItemById(itemId, locationId)
     if (!item || item.orderId !== orderId) {
-      return NextResponse.json({ error: 'Item not found' }, { status: 404 })
+      return notFound('Item not found')
     }
 
     // Update the special notes
@@ -68,9 +69,9 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
 
     pushUpstream()
 
-    return NextResponse.json({ data: { item: updated } })
+    return ok({ item: updated })
   } catch (error) {
     console.error('Failed to update item note:', error)
-    return NextResponse.json({ error: 'Failed to update item note' }, { status: 500 })
+    return err('Failed to update item note', 500)
   }
 }))

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { Prisma } from '@/generated/prisma/client'
 import { db } from '@/lib/db'
 import { MenuItemRepository } from '@/lib/repositories'
@@ -12,6 +12,7 @@ import { withVenue } from '@/lib/with-venue'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 
 const log = createChildLogger('menu.items.id')
 
@@ -24,7 +25,7 @@ export const GET = withVenue(async function GET(
 
     const locationId = request.nextUrl.searchParams.get('locationId') || await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     const item = await MenuItemRepository.getMenuItemByIdWithInclude(id, locationId, {
@@ -49,16 +50,13 @@ export const GET = withVenue(async function GET(
     })
 
     if (!item) {
-      return NextResponse.json(
-        { error: 'Item not found' },
-        { status: 404 }
-      )
+      return notFound('Item not found')
     }
 
     // Check if this is a pizza item based on category type OR item type
     const isPizzaItem = item.itemType === 'pizza' || item.category?.categoryType === 'pizza'
 
-    return NextResponse.json({ data: {
+    return ok({
       item: {
         id: item.id,
         categoryId: item.categoryId,
@@ -161,13 +159,10 @@ export const GET = withVenue(async function GET(
         })) || [],
         hasPricingOptions: ((item as any).pricingOptionGroups?.length || 0) > 0,
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to get item:', error)
-    return NextResponse.json(
-      { error: 'Failed to get item' },
-      { status: 500 }
-    )
+    return err('Failed to get item', 500)
   }
 })
 
@@ -275,13 +270,13 @@ export const PUT = withVenue(async function PUT(
     // Get locationId for tenant-safe queries
     const locationId = request.nextUrl.searchParams.get('locationId') || await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // Auth check — require menu.edit_items permission
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.MENU_EDIT_ITEMS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Get old item to detect stock changes (fetch availability fields for computeIsOrderableOnline)
     const oldItem = await MenuItemRepository.getMenuItemByIdWithSelect(id, locationId, {
@@ -298,7 +293,7 @@ export const PUT = withVenue(async function PUT(
 
     // Verify item belongs to this location before updating
     if (!oldItem) {
-      return NextResponse.json({ error: 'Item not found' }, { status: 404 })
+      return notFound('Item not found')
     }
 
     // TODO: Migrate to MenuItemRepository.updateMenuItemAndReturn() once complex update shapes are supported
@@ -440,7 +435,7 @@ export const PUT = withVenue(async function PUT(
     void notifyDataChanged({ locationId: item.locationId, domain: 'menu', action: 'updated', entityId: item.id })
     void pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       id: item.id,
       categoryId: item.categoryId,
       name: item.name,
@@ -461,13 +456,10 @@ export const PUT = withVenue(async function PUT(
       printerIds: item.printerIds,
       backupPrinterIds: item.backupPrinterIds,
       comboPrintMode: item.comboPrintMode,
-    } })
+    })
   } catch (error) {
     console.error('Failed to update item:', error)
-    return NextResponse.json(
-      { error: 'Failed to update item' },
-      { status: 500 }
-    )
+    return err('Failed to update item', 500)
   }
 })
 
@@ -481,20 +473,20 @@ export const DELETE = withVenue(async function DELETE(
     // Get item info before deletion for socket dispatch
     const locationId = request.nextUrl.searchParams.get('locationId') || await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // Auth check — require menu.edit_items permission
     const actorDel = await getActorFromRequest(request)
     const authDel = await requirePermission(actorDel.employeeId, locationId, PERMISSIONS.MENU_EDIT_ITEMS)
-    if (!authDel.authorized) return NextResponse.json({ error: authDel.error }, { status: authDel.status })
+    if (!authDel.authorized) return err(authDel.error, authDel.status)
 
     const item = await MenuItemRepository.getMenuItemByIdWithSelect(id, locationId, {
       locationId: true,
     })
 
     if (!item) {
-      return NextResponse.json({ error: 'Item not found' }, { status: 404 })
+      return notFound('Item not found')
     }
 
     await MenuItemRepository.softDeleteMenuItem(id, locationId)
@@ -517,13 +509,10 @@ export const DELETE = withVenue(async function DELETE(
       void pushUpstream()
     }
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Failed to delete item:', error)
-    return NextResponse.json(
-      { error: 'Failed to delete item' },
-      { status: 500 }
-    )
+    return err('Failed to delete item', 500)
   }
 })
 
@@ -554,19 +543,19 @@ export const PATCH = withVenue(async function PATCH(
     }
 
     if (Object.keys(data).length === 0) {
-      return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 })
+      return err('No valid fields to update')
     }
 
     // Get locationId for tenant-safe update
     const locationId = request.nextUrl.searchParams.get('locationId') || await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // Auth check — require menu.edit_items permission
     const actorPatch = await getActorFromRequest(request)
     const authPatch = await requirePermission(actorPatch.employeeId, locationId, PERMISSIONS.MENU_EDIT_ITEMS)
-    if (!authPatch.authorized) return NextResponse.json({ error: authPatch.error }, { status: authPatch.status })
+    if (!authPatch.authorized) return err(authPatch.error, authPatch.status)
 
     // Verify item belongs to this location, then update
     await MenuItemRepository.updateMenuItem(id, locationId, data as Prisma.MenuItemUpdateManyMutationInput)
@@ -588,9 +577,9 @@ export const PATCH = withVenue(async function PATCH(
     void notifyDataChanged({ locationId, domain: 'menu', action: 'updated', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { item } })
+    return ok({ item })
   } catch (error) {
     console.error('Failed to patch menu item:', error)
-    return NextResponse.json({ error: 'Failed to update item' }, { status: 500 })
+    return err('Failed to update item', 500)
   }
 })

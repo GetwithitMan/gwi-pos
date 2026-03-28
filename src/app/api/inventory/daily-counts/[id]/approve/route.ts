@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -17,7 +18,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     const { approvedById, reject, rejectionReason } = body
 
     if (!approvedById) {
-      return NextResponse.json({ error: 'Approved by ID required' }, { status: 400 })
+      return err('Approved by ID required')
     }
 
     const existing = await db.dailyPrepCount.findUnique({
@@ -40,11 +41,11 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     })
 
     if (!existing || existing.deletedAt) {
-      return NextResponse.json({ error: 'Daily count not found' }, { status: 404 })
+      return notFound('Daily count not found')
     }
 
     if (existing.status !== 'submitted') {
-      return NextResponse.json({ error: 'Can only approve/reject submitted counts' }, { status: 400 })
+      return err('Can only approve/reject submitted counts')
     }
 
     // Handle rejection
@@ -63,7 +64,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       void notifyDataChanged({ locationId: existing.locationId, domain: 'inventory', action: 'updated', entityId: id })
       pushUpstream()
 
-      return NextResponse.json({ data: count })
+      return ok(count)
     }
 
     // Process approval - update ingredient stock levels
@@ -162,8 +163,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     void notifyDataChanged({ locationId: existing.locationId, domain: 'inventory', action: 'updated', entityId: id })
     pushUpstream()
 
-    return NextResponse.json({
-      data: {
+    return ok({
         ...count,
         countItems: count.countItems.map(item => ({
           ...item,
@@ -196,10 +196,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
             .filter(t => t.type === 'ingredient_deduct')
             .reduce((sum, t) => sum + (t.totalCost || 0), 0),
         },
-      },
-    })
+      })
   } catch (error) {
     console.error('Approve daily count error:', error)
-    return NextResponse.json({ error: 'Failed to approve daily count' }, { status: 500 })
+    return err('Failed to approve daily count', 500)
   }
 }))

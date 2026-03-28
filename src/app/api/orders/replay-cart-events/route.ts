@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
 import { requirePermission } from '@/lib/api-auth'
@@ -13,6 +13,7 @@ import { getLocationTaxRate, calculateSplitTax, isItemTaxInclusive, type TaxIncl
 import { roundToCents } from '@/lib/pricing'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok, unauthorized } from '@/lib/api-response'
 
 const log = createChildLogger('orders.replay-cart-events')
 
@@ -90,19 +91,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     await ensureDedupTable()
 
     if (!Array.isArray(events) || events.length === 0) {
-      return NextResponse.json(
-        { error: 'Request body must contain a non-empty "events" array' },
-        { status: 400 }
-      )
+      return err('Request body must contain a non-empty "events" array')
     }
 
     // Validate each event has required fields
     for (const evt of events) {
       if (!evt.eventId || !evt.orderId || evt.sequence == null || !evt.eventType || !evt.payload) {
-        return NextResponse.json(
-          { error: `Event missing required fields: eventId, orderId, sequence, eventType, payload`, details: { eventId: evt.eventId } },
-          { status: 400 }
-        )
+        return err(`Event missing required fields: eventId, orderId, sequence, eventType, payload`, 400, { eventId: evt.eventId })
       }
     }
 
@@ -138,16 +133,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     if (!authEmployeeId || !authLocationId) {
-      return NextResponse.json(
-        { error: 'Could not determine employeeId and locationId from request' },
-        { status: 401 }
-      )
+      return unauthorized('Could not determine employeeId and locationId from request')
     }
 
     // Permission check
     const auth = await requirePermission(authEmployeeId, authLocationId, PERMISSIONS.POS_ACCESS)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
     const locationId = authLocationId
 
@@ -183,17 +175,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       if (!hasStart) {
         const existingOrder = await OrderRepository.getOrderById(oid, locationId)
         if (!existingOrder) {
-          return NextResponse.json(
-            { error: `ORDER_STARTED event missing for order ${oid}. Cannot process items without order creation.` },
-            { status: 400 }
-          )
+          return err(`ORDER_STARTED event missing for order ${oid}. Cannot process items without order creation.`)
         }
         // Block replaying events onto split orders
         if (existingOrder.status === 'split') {
-          return NextResponse.json(
-            { error: 'Cannot apply cart events to split orders' },
-            { status: 400 }
-          )
+          return err('Cannot apply cart events to split orders')
         }
       }
     }
@@ -656,18 +642,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       pushUpstream()
     }
 
-    return NextResponse.json({
-      data: {
+    return ok({
         processed,
         skipped,
         errors,
-      },
-    })
+      })
   } catch (error) {
     console.error('[replay-cart-events] Failed to replay cart events:', error)
-    return NextResponse.json(
-      { error: 'Failed to replay cart events' },
-      { status: 500 }
-    )
+    return err('Failed to replay cart events', 500)
   }
 })

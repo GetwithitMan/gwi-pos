@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { err, ok } from '@/lib/api-response'
 
 // Force dynamic rendering - never cache search results
 export const dynamic = 'force-dynamic'
@@ -17,10 +18,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     // Validate required parameters
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'Location ID is required' },
-        { status: 400 }
-      )
+      return err('Location ID is required')
     }
 
     // SKU lookup — exact match, bypasses name/spirit/ingredient search
@@ -54,11 +52,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     // Require minimum 2 characters for search
     if (!query || query.trim().length < 2) {
-      return NextResponse.json({ data: {
+      return ok({
         directMatches: [],
         ingredientMatches: [],
         totalMatches: 0
-      } })
+      })
     }
 
     const searchQuery = query.trim()
@@ -233,9 +231,6 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
   } catch (error) {
     console.error('Menu search error:', error)
-    return NextResponse.json(
-      { error: 'Failed to search menu' },
-      { status: 500 }
-    )
+    return err('Failed to search menu', 500)
   }
 })

@@ -20,6 +20,7 @@ import type { OrderTotalsUpdatedPayload, OrdersListChangedPayload, OrderSummaryU
 import { queueSocketEvent, flushOutboxSafe } from '@/lib/socket-outbox'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, forbidden, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-discount')
 
 interface ApplyDiscountRequest {
@@ -75,10 +76,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
         'SELECT id, "locationId" FROM "Order" WHERE id = $1 FOR UPDATE', orderId
       )
       if (!lockedRow) {
-        return NextResponse.json(
-          { error: 'Order not found' },
-          { status: 404 }
-        )
+        return notFound('Order not found')
       }
 
       // Get the order with current totals (tenant-safe via OrderRepository)
@@ -92,10 +90,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       }, tx)
 
       if (!order) {
-        return NextResponse.json(
-          { error: 'Order not found' },
-          { status: 404 }
-        )
+        return notFound('Order not found')
       }
 
       // Capture locationId for outbox flush after commit
@@ -103,15 +98,12 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
 
       // Auth check — require manager.discounts permission using verified identity
       const auth = await requirePermission(authEmployeeId, order.locationId, PERMISSIONS.MGR_DISCOUNTS)
-      if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+      if (!auth.authorized) return err(auth.error, auth.status)
 
       if (!isDiscountable(order.status)) {
-        return NextResponse.json(
-          { error: order.status === 'split'
+        return err(order.status === 'split'
             ? 'Cannot discount a split parent order — discount individual splits instead'
-            : `Cannot add discount to order in '${order.status}' status` },
-          { status: 400 }
-        )
+            : `Cannot add discount to order in '${order.status}' status`)
       }
 
       // Parse location settings for approval rules (W4-1, W4-2)
@@ -131,17 +123,11 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
         })
 
         if (!rule) {
-          return NextResponse.json(
-            { error: 'Discount rule not found' },
-            { status: 404 }
-          )
+          return notFound('Discount rule not found')
         }
 
         if (!rule.isActive) {
-          return NextResponse.json(
-            { error: 'This discount is not active' },
-            { status: 400 }
-          )
+          return err('This discount is not active')
         }
 
         // Toggle behavior: if this rule is already applied, remove it instead of stacking
@@ -258,7 +244,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
             taxFromExclusive: totals.taxFromExclusive,
           })
 
-          return NextResponse.json({ data: {
+          return ok({
             toggled: 'off',
             removedDiscountId: alreadyApplied.id,
             orderTotals: {
@@ -267,16 +253,13 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
               taxTotal: totals.taxTotal,
               total: finalTotal,
             },
-          } })
+          })
         }
 
         // Employee discount guard: if this rule is employee-only, enforce on-clock validation
         if (rule.isEmployeeDiscount) {
           if (!body.employeeId) {
-            return NextResponse.json(
-              { error: 'Employee ID is required for employee discounts' },
-              { status: 400 }
-            )
+            return err('Employee ID is required for employee discounts')
           }
 
           // Verify the applying employee is currently clocked in
@@ -289,10 +272,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
           })
 
           if (!activeClockEntry) {
-            return NextResponse.json(
-              { error: 'Employee must be clocked in to use an employee discount' },
-              { status: 403 }
-            )
+            return forbidden('Employee must be clocked in to use an employee discount')
           }
         }
 
@@ -302,19 +282,13 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
             d => d.discountRuleId === rule.id
           ).length
           if (existingCount >= rule.maxPerOrder) {
-            return NextResponse.json(
-              { error: `This discount can only be applied ${rule.maxPerOrder} time(s) per order` },
-              { status: 400 }
-            )
+            return err(`This discount can only be applied ${rule.maxPerOrder} time(s) per order`)
           }
         }
 
         // Check stackability
         if (!rule.isStackable && order.discounts.length > 0) {
-          return NextResponse.json(
-            { error: 'This discount cannot be combined with other discounts' },
-            { status: 400 }
-          )
+          return err('This discount cannot be combined with other discounts')
         }
 
         const config = rule.discountConfig as { type: 'percent' | 'fixed'; value: number; maxAmount?: number }
@@ -335,10 +309,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       } else {
         // Manual/custom discount
         if (!body.type || !body.value || !isFinite(body.value) || body.value <= 0) {
-          return NextResponse.json(
-            { error: 'Discount type and value are required' },
-            { status: 400 }
-          )
+          return err('Discount type and value are required')
         }
 
         // Reverse stackability check: block manual discount when a non-stackable rule is already applied
@@ -352,10 +323,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
               select: { displayText: true },
             })
             if (nonStackableRule) {
-              return NextResponse.json(
-                { error: `Cannot add manual discount — a non-stackable discount ("${nonStackableRule.displayText}") is already applied` },
-                { status: 400 }
-              )
+              return err(`Cannot add manual discount — a non-stackable discount ("${nonStackableRule.displayText}") is already applied`)
             }
           }
         }
@@ -367,10 +335,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
 
         if (normalizedType === 'percent') {
           if (body.value > 100) {
-            return NextResponse.json(
-              { error: 'Percentage cannot exceed 100%' },
-              { status: 400 }
-            )
+            return err('Percentage cannot exceed 100%')
           }
           discountPercent = body.value
           discountAmount = roundToCents(Number(order.subtotal) * (body.value / 100))
@@ -420,10 +385,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       if (body.approvedById) {
         const approverAuth = await requirePermission(body.approvedById, order.locationId, PERMISSIONS.MGR_DISCOUNTS)
         if (!approverAuth.authorized) {
-          return NextResponse.json(
-            { error: 'Approver does not have discount permission' },
-            { status: 403 }
-          )
+          return forbidden('Approver does not have discount permission')
         }
       }
 
@@ -446,25 +408,16 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
 
       // Reject if cumulative discounts (existing + new) would exceed the order subtotal
       if (cumulativeAfterNew > orderSubtotal) {
-        return NextResponse.json(
-          { error: `Total discounts ($${cumulativeAfterNew.toFixed(2)}) would exceed order subtotal ($${orderSubtotal.toFixed(2)})` },
-          { status: 400 }
-        )
+        return err(`Total discounts ($${cumulativeAfterNew.toFixed(2)}) would exceed order subtotal ($${orderSubtotal.toFixed(2)})`)
       }
 
       // Fix 4: Reject fixed discounts that exceed the full subtotal outright (don't silently clamp)
       if (discountPercent == null && discountAmount > orderSubtotal) {
-        return NextResponse.json(
-          { error: `Discount amount $${discountAmount.toFixed(2)} exceeds order subtotal $${orderSubtotal.toFixed(2)}` },
-          { status: 400 }
-        )
+        return err(`Discount amount $${discountAmount.toFixed(2)} exceeds order subtotal $${orderSubtotal.toFixed(2)}`)
       }
 
       if (discountAmount <= 0) {
-        return NextResponse.json(
-          { error: 'No discount amount to apply' },
-          { status: 400 }
-        )
+        return err('No discount amount to apply')
       }
 
       // Create the discount record
@@ -609,7 +562,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
         employeeId: body.employeeId || null,
       }
 
-      return NextResponse.json({ data: {
+      return ok({
         discount: {
           id: discount.id,
           name: discount.name,
@@ -623,7 +576,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
           total: applyFinalTotal,
         },
         requiresApproval,
-      } })
+      })
     })
 
     // Transaction committed — flush outbox (fire-and-forget, catch-up handles failures)
@@ -669,10 +622,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     return result
   } catch (error) {
     console.error('Failed to apply discount:', error)
-    return NextResponse.json(
-      { error: 'Failed to apply discount' },
-      { status: 500 }
-    )
+    return err('Failed to apply discount', 500)
   }
 }))
 
@@ -697,7 +647,7 @@ export const GET = withVenue(async function GET(
       orderBy: { createdAt: 'asc' },
     })
 
-    return NextResponse.json({ data: {
+    return ok({
       discounts: discounts.map(d => ({
         id: d.id,
         name: d.name,
@@ -710,13 +660,10 @@ export const GET = withVenue(async function GET(
         reason: d.reason,
         createdAt: d.createdAt.toISOString(),
       })),
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch order discounts:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch discounts' },
-      { status: 500 }
-    )
+    return err('Failed to fetch discounts', 500)
   }
 })
 
@@ -737,17 +684,11 @@ export const DELETE = withVenue(withAuth({ allowCellular: true }, async function
     const deleteMutationOrigin = isCellularDelete ? 'cloud' : 'local'
 
     if (!discountId) {
-      return NextResponse.json(
-        { error: 'Discount ID is required' },
-        { status: 400 }
-      )
+      return err('Discount ID is required')
     }
 
     if (!employeeId) {
-      return NextResponse.json(
-        { error: 'Employee ID is required' },
-        { status: 400 }
-      )
+      return err('Employee ID is required')
     }
 
     const result = await db.$transaction(async (tx) => {
@@ -756,10 +697,7 @@ export const DELETE = withVenue(withAuth({ allowCellular: true }, async function
         'SELECT id, "locationId" FROM "Order" WHERE id = $1 FOR UPDATE', orderId
       )
       if (!lockedRowDel) {
-        return NextResponse.json(
-          { error: 'Order not found' },
-          { status: 404 }
-        )
+        return notFound('Order not found')
       }
 
       // Get the order and discount (tenant-safe via OrderRepository)
@@ -776,24 +714,18 @@ export const DELETE = withVenue(withAuth({ allowCellular: true }, async function
       }, tx)
 
       if (!order) {
-        return NextResponse.json(
-          { error: 'Order not found' },
-          { status: 404 }
-        )
+        return notFound('Order not found')
       }
 
       // Auth check — require manager.discounts permission
       const authResult = await requirePermission(employeeId, order.locationId, PERMISSIONS.MGR_DISCOUNTS)
       if (!authResult.authorized) {
-        return NextResponse.json({ error: authResult.error }, { status: authResult.status ?? 403 })
+        return err(authResult.error, authResult.status ?? 403)
       }
 
       const discountToRemove = order.discounts.find(d => d.id === discountId)
       if (!discountToRemove) {
-        return NextResponse.json(
-          { error: 'Discount not found on this order' },
-          { status: 404 }
-        )
+        return notFound('Discount not found on this order')
       }
 
       // Soft delete the discount
@@ -962,9 +894,6 @@ export const DELETE = withVenue(withAuth({ allowCellular: true }, async function
     return result
   } catch (error) {
     console.error('Failed to remove discount:', error)
-    return NextResponse.json(
-      { error: 'Failed to remove discount' },
-      { status: 500 }
-    )
+    return err('Failed to remove discount', 500)
   }
 }))

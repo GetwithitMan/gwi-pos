@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
+import { err, notFound, ok } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,13 +19,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Auth check
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.DELIVERY_VIEW)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Feature gate
     const featureGate = await requireDeliveryFeature(locationId, { subfeature: 'driverAppProvisioned' })
@@ -38,7 +39,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     `, actor.employeeId, locationId)
 
     if (!drivers.length) {
-      return NextResponse.json({ error: 'No driver profile found for this employee' }, { status: 404 })
+      return notFound('No driver profile found for this employee')
     }
 
     const driverId = drivers[0].id
@@ -54,7 +55,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     `, driverId, locationId)
 
     if (!runs.length) {
-      return NextResponse.json({ run: null })
+      return ok({ run: null })
     }
 
     const run = runs[0]
@@ -135,7 +136,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       updatedAt: d.updatedAt,
     }))
 
-    return NextResponse.json({
+    return ok({
       run: {
         id: run.id,
         driverId: run.driverId,
@@ -151,6 +152,6 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     })
   } catch (error) {
     console.error('[Delivery/Driver/CurrentRun] GET error:', error)
-    return NextResponse.json({ error: 'Failed to fetch current run' }, { status: 500 })
+    return err('Failed to fetch current run', 500)
   }
 })

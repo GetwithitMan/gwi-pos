@@ -15,6 +15,7 @@ import { getPayApiClient } from '@/lib/datacap/payapi-client'
 import { sendEmail } from '@/lib/email-service'
 import { checkOnlineRateLimit } from '@/lib/online-rate-limiter'
 import { getClientIp } from '@/lib/get-client-ip'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // ─── Request Body Shape ──────────────────────────────────────────────────────
 
@@ -56,7 +57,7 @@ export async function POST(request: NextRequest) {
   try {
     body = (await request.json()) as PurchaseBody
   } catch {
-    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+    return err('Invalid JSON body')
   }
 
   const {
@@ -76,34 +77,31 @@ export async function POST(request: NextRequest) {
   // ── 1. Validate required fields ────────────────────────────────────────────
 
   if (!slug) {
-    return NextResponse.json({ error: 'slug is required' }, { status: 400 })
+    return err('slug is required')
   }
   if (!token) {
-    return NextResponse.json({ error: 'Payment token is required' }, { status: 400 })
+    return err('Payment token is required')
   }
   if (!idempotencyKey) {
-    return NextResponse.json({ error: 'idempotencyKey is required' }, { status: 400 })
+    return err('idempotencyKey is required')
   }
   if (!recipientName?.trim()) {
-    return NextResponse.json({ error: 'Recipient name is required' }, { status: 400 })
+    return err('Recipient name is required')
   }
   if (!recipientEmail?.trim()) {
-    return NextResponse.json({ error: 'Recipient email is required' }, { status: 400 })
+    return err('Recipient email is required')
   }
   if (!purchaserName?.trim()) {
-    return NextResponse.json({ error: 'Purchaser name is required' }, { status: 400 })
+    return err('Purchaser name is required')
   }
   if (!purchaserEmail?.trim()) {
-    return NextResponse.json({ error: 'Purchaser email is required' }, { status: 400 })
+    return err('Purchaser email is required')
   }
 
   // ── 2. Validate amount ─────────────────────────────────────────────────────
 
   if (typeof amount !== 'number' || amount <= 0 || amount > 500) {
-    return NextResponse.json(
-      { error: 'Amount must be between $0.01 and $500.00' },
-      { status: 400 }
-    )
+    return err('Amount must be between $0.01 and $500.00')
   }
   const roundedAmount = Math.round(amount * 100) / 100
 
@@ -125,7 +123,7 @@ export async function POST(request: NextRequest) {
   try {
     venueDb = await getDbForVenue(slug)
   } catch {
-    return NextResponse.json({ error: 'Venue not found' }, { status: 404 })
+    return notFound('Venue not found')
   }
 
   const location = await venueDb.location.findFirst({
@@ -134,7 +132,7 @@ export async function POST(request: NextRequest) {
   })
 
   if (!location) {
-    return NextResponse.json({ error: 'Location not found' }, { status: 404 })
+    return notFound('Location not found')
   }
 
   const locationId = location.id
@@ -156,7 +154,7 @@ export async function POST(request: NextRequest) {
     })
 
     if (existingTx?.giftCard) {
-      return NextResponse.json({
+      return ok({
         success: true,
         giftCardId: existingTx.giftCard.id,
         cardNumberLast4: existingTx.giftCard.cardNumber.slice(-4),
@@ -176,10 +174,7 @@ export async function POST(request: NextRequest) {
       })
     } catch (payErr) {
       console.error('[gift-card-purchase] PayAPI error:', payErr)
-      return NextResponse.json(
-        { error: 'Payment processing failed. Please try again.' },
-        { status: 502 }
-      )
+      return err('Payment processing failed. Please try again.', 502)
     }
 
     if (payApiResult.status !== 'Approved') {
@@ -257,17 +252,14 @@ export async function POST(request: NextRequest) {
 
     // ── 10. Return success ─────────────────────────────────────────────────────
 
-    return NextResponse.json({
+    return ok({
       success: true,
       giftCardId: giftCard.id,
       cardNumberLast4: giftCard.cardNumber.slice(-4),
     })
   } catch (error) {
     console.error('[POST /api/public/gift-cards/purchase] Error:', error)
-    return NextResponse.json(
-      { error: 'An unexpected error occurred. Please try again.' },
-      { status: 500 }
-    )
+    return err('An unexpected error occurred. Please try again.', 500)
   }
 }
 

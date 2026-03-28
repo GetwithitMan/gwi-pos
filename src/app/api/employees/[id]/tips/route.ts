@@ -1,13 +1,14 @@
 // Reads use TipLedgerEntry (migrated from legacy models in Skill 273).
 // TipBank model removed in Skill 284. TipShare remains for payout lifecycle.
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { centsToDollars, getLedgerBalance, findActiveGroupForEmployee } from '@/lib/domain/tips'
 import { withVenue } from '@/lib/with-venue'
 import { getRequestLocationId } from '@/lib/request-context'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - Get pending tips for an employee
 export const GET = withVenue(async function GET(
@@ -25,10 +26,7 @@ export const GET = withVenue(async function GET(
         select: { id: true, locationId: true },
       })
       if (!employee) {
-        return NextResponse.json(
-          { error: 'Employee not found' },
-          { status: 404 }
-        )
+        return notFound('Employee not found')
       }
       locationId = employee.locationId
     }
@@ -150,7 +148,7 @@ export const GET = withVenue(async function GET(
         .map(m => m.displayName || `${m.firstName} ${m.lastName}`)
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       pending: {
         tips: roleTipoutCredits.map(entry => ({
           id: entry.id,
@@ -184,13 +182,10 @@ export const GET = withVenue(async function GET(
       // Tip group membership
       tipGroupName,
       tipGroupMembers,
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch pending tips:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch pending tips' },
-      { status: 500 }
-    )
+    return err('Failed to fetch pending tips', 500)
   }
 })
 
@@ -242,24 +237,18 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
       const totalAccepted = updatedPendingShares.count + updatedBankedShares.count
       pushUpstream()
 
-      return NextResponse.json({ data: {
+      return ok({
         message: `Accepted ${totalAccepted} tip share(s) - will be added to payroll`,
         acceptedCount: totalAccepted,
         pendingSharesAccepted: updatedPendingShares.count,
         bankedSharesAccepted: updatedBankedShares.count,
         acceptedAt: now.toISOString(),
-      } })
+      })
     }
 
-    return NextResponse.json(
-      { error: 'Invalid action' },
-      { status: 400 }
-    )
+    return err('Invalid action')
   } catch (error) {
     console.error('Failed to collect tips:', error)
-    return NextResponse.json(
-      { error: 'Failed to collect tips' },
-      { status: 500 }
-    )
+    return err('Failed to collect tips', 500)
   }
 }))

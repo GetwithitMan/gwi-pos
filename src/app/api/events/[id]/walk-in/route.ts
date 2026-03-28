@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { randomBytes } from 'crypto'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // Generate ticket number: EVT-YYYYMMDD-XXXXX
 function generateTicketNumber(eventDate: Date, sequence: number): string {
@@ -36,17 +37,11 @@ export const POST = withVenue(withAuth(async function POST(
     } = body
 
     if (!pricingTierId) {
-      return NextResponse.json(
-        { error: 'pricingTierId is required' },
-        { status: 400 }
-      )
+      return err('pricingTierId is required')
     }
 
     if (quantity < 1 || quantity > 50) {
-      return NextResponse.json(
-        { error: 'Quantity must be between 1 and 50' },
-        { status: 400 }
-      )
+      return err('Quantity must be between 1 and 50')
     }
 
     // Validate event
@@ -67,26 +62,17 @@ export const POST = withVenue(withAuth(async function POST(
     })
 
     if (!event) {
-      return NextResponse.json(
-        { error: 'Event not found' },
-        { status: 404 }
-      )
+      return notFound('Event not found')
     }
 
     if (!['on_sale', 'draft'].includes(event.status)) {
-      return NextResponse.json(
-        { error: 'Event is not available for walk-ins' },
-        { status: 400 }
-      )
+      return err('Event is not available for walk-ins')
     }
 
     // Validate pricing tier
     const pricingTier = event.pricingTiers.find(t => t.id === pricingTierId)
     if (!pricingTier) {
-      return NextResponse.json(
-        { error: 'Invalid pricing tier' },
-        { status: 400 }
-      )
+      return err('Invalid pricing tier')
     }
 
     // Check capacity
@@ -99,23 +85,14 @@ export const POST = withVenue(withAuth(async function POST(
 
     const availableCapacity = event.totalCapacity - currentSold
     if (quantity > availableCapacity) {
-      return NextResponse.json(
-        {
-          error: `Only ${availableCapacity} spots remaining (capacity: ${event.totalCapacity}, sold/held: ${currentSold})`,
-          availableCapacity,
-        },
-        { status: 400 }
-      )
+      return err(`Only ${availableCapacity} spots remaining (capacity: ${event.totalCapacity}, sold/held: ${currentSold})`)
     }
 
     // Check tier quantity limit
     if (pricingTier.quantityAvailable) {
       const remaining = pricingTier.quantityAvailable - pricingTier.quantitySold
       if (quantity > remaining) {
-        return NextResponse.json(
-          { error: `Only ${remaining} tickets remaining for ${pricingTier.name}` },
-          { status: 400 }
-        )
+        return err(`Only ${remaining} tickets remaining for ${pricingTier.name}`)
       }
     }
 
@@ -177,7 +154,7 @@ export const POST = withVenue(withAuth(async function POST(
 
     const totalPrice = result.reduce((sum, t) => sum + Number(t.totalPrice), 0)
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       walkInCount: result.length,
       autoCheckIn,
@@ -195,12 +172,9 @@ export const POST = withVenue(withAuth(async function POST(
         pricingTier: ticket.pricingTier.name,
         totalPrice: Number(ticket.totalPrice),
       })),
-    } })
+    })
   } catch (error) {
     console.error('Failed to create walk-in tickets:', error)
-    return NextResponse.json(
-      { error: 'Failed to create walk-in tickets' },
-      { status: 500 }
-    )
+    return err('Failed to create walk-in tickets', 500)
   }
 }))

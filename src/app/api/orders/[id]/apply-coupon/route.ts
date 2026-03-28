@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { calculateOrderTotals } from '@/lib/order-calculations'
 import type { OrderItemForCalculation } from '@/lib/order-calculations'
@@ -11,6 +11,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 
 const log = createChildLogger('orders.id.apply-coupon')
 
@@ -30,10 +31,7 @@ export const POST = withVenue(async function POST(
     const { code, employeeId } = body
 
     if (!code || !employeeId) {
-      return NextResponse.json(
-        { error: 'Coupon code and employee ID are required' },
-        { status: 400 }
-      )
+      return err('Coupon code and employee ID are required')
     }
 
     // Permission check: MGR_DISCOUNTS required to apply coupons
@@ -42,10 +40,10 @@ export const POST = withVenue(async function POST(
       select: { locationId: true },
     })
     if (!couponOrderCheck) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      return notFound('Order not found')
     }
     const auth = await requirePermission(employeeId, couponOrderCheck.locationId, PERMISSIONS.MGR_DISCOUNTS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // --- All validation + application in a single transaction with FOR UPDATE lock ---
     const result = await db.$transaction(async (tx) => {
@@ -382,7 +380,7 @@ export const POST = withVenue(async function POST(
 
     pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       discount: {
         id: result.discount.id,
         name: result.discount.name,
@@ -396,16 +394,13 @@ export const POST = withVenue(async function POST(
         taxTotal: result.totals.taxTotal,
         total: result.couponFinalTotal,
       },
-    } })
+    })
   } catch (error: any) {
     // Handle validation errors thrown from inside the transaction
     if (error?.statusCode) {
-      return NextResponse.json({ error: error.message }, { status: error.statusCode })
+      return err(error.message, error.statusCode)
     }
     console.error('Failed to apply coupon:', error)
-    return NextResponse.json(
-      { error: 'Failed to apply coupon' },
-      { status: 500 }
-    )
+    return err('Failed to apply coupon', 500)
   }
 })

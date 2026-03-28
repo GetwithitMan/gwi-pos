@@ -1,29 +1,39 @@
 'use client'
 
 import React, { useState, useEffect, useMemo, useRef } from 'react'
-import { formatCurrency } from '@/lib/utils'
-import { calculateCardPrice, calculateDebitPrice, calculateCreditPrice, applyPriceRounding, roundToCents } from '@/lib/pricing'
-import { calculateTip, getQuickCashAmounts, PAYMENT_METHOD_LABELS } from '@/lib/payment'
+import { calculateCardPrice, calculateDebitPrice, calculateCreditPrice, applyPriceRounding } from '@/lib/pricing'
 import type { DualPricingSettings, TipSettings, PaymentSettings, PriceRoundingSettings, PricingProgram, CustomerFeedbackSettings } from '@/lib/settings'
 import { FeedbackPrompt } from './FeedbackPrompt'
-import { DatacapPaymentProcessor, type CardDetectionResult } from './DatacapPaymentProcessor'
 import { ManualCardEntryModal, type ManualCardEntryResult } from './ManualCardEntryModal'
-import type { DatacapResult } from '@/hooks/useDatacap'
+import type { CardDetectionResult } from './DatacapPaymentProcessor'
 import { toast } from '@/stores/toast-store'
 import { getOrderVersion, handleVersionConflict } from '@/lib/order-version'
 import { uuid } from '@/lib/uuid'
 import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
 import { startPaymentTiming, markRequestSent, markGatewayResponse, completePaymentTiming, type PaymentTimingEntry } from '@/lib/payment-timing'
 import { useAuthStore } from '@/stores/auth-store'
+import { PaymentProvider, type TabCard, type PendingPayment, type PaymentStepType, type PaymentMethod } from './PaymentContext'
+import {
+  OrderSummary,
+  PaymentMethodStep,
+  TipEntryStep,
+  CashEntryStep,
+  SplitPaymentStep,
+  CardProcessingStep,
+  GiftCardStep,
+  HouseAccountStep,
+  RoomChargeStep,
+} from './steps'
+import {
+  overlayClasses,
+  modalClasses,
+  headerClasses,
+  contentClasses,
+  footerClasses,
+} from './payment-styles'
 
-export interface TabCard {
-  id: string
-  cardType: string
-  cardLast4: string
-  cardholderName?: string | null
-  authAmount: number
-  isDefault: boolean
-}
+// Re-export TabCard for consumers that import from this file
+export type { TabCard } from './PaymentContext'
 
 interface PaymentModalProps {
   isOpen: boolean
@@ -33,102 +43,40 @@ interface PaymentModalProps {
   remainingBalance?: number
   subtotal?: number
   existingPayments?: { method: string; totalAmount: number }[]
-  tabCards?: TabCard[]  // Pre-authed cards on tab — show "Charge existing card" option
+  tabCards?: TabCard[]
   dualPricing: DualPricingSettings
   tipSettings?: TipSettings
   paymentSettings: PaymentSettings
   priceRounding?: PriceRoundingSettings
   onPaymentComplete: (receiptData?: Record<string, unknown>) => void
-  onTabCardsChanged?: () => void  // Called when a card is added so parent can refresh
+  onTabCardsChanged?: () => void
   employeeId?: string
-  terminalId?: string  // Required for Datacap integration
-  locationId?: string  // Required for Datacap integration
-  initialMethod?: 'cash' | 'credit'  // Skip method selection, go straight to payment
-  waitForOrderReady?: () => Promise<void>  // Await background items persist before /pay
-  pricingProgram?: PricingProgram  // Pricing program support
-  feedbackSettings?: CustomerFeedbackSettings  // Post-payment feedback prompt
-  tipExemptAmount?: number  // Sum of tip-exempt item totals — excluded from tip suggestion basis
+  terminalId?: string
+  locationId?: string
+  initialMethod?: 'cash' | 'credit'
+  waitForOrderReady?: () => Promise<void>
+  pricingProgram?: PricingProgram
+  feedbackSettings?: CustomerFeedbackSettings
+  tipExemptAmount?: number
 }
 
-interface PendingPayment {
-  method: 'cash' | 'credit' | 'debit' | 'gift_card' | 'house_account' | 'room_charge'
-  amount: number
-  tipAmount: number
-  amountTendered?: number
-  cardBrand?: string
-  cardLast4?: string
-  giftCardId?: string
-  giftCardNumber?: string
-  houseAccountId?: string
-  // Hotel PMS / Bill to Room fields (P1.1: selectionId is the server-trusted token)
-  selectionId?: string
-  roomNumber?: string
-  guestName?: string
-  pmsReservationId?: string
-  // Datacap Direct fields
-  datacapRecordNo?: string
-  datacapRefNumber?: string
-  datacapSequenceNo?: string
-  authCode?: string
-  entryMethod?: string
-  signatureData?: string
-  amountAuthorized?: number
-  // SAF (Store-and-Forward) — transaction stored offline on reader
-  storedOffline?: boolean
-  // Pricing tier detection (Payment & Pricing Redesign)
-  detectedCardType?: string
-  appliedPricingTier?: string
-  walletType?: string | null
-}
-
-interface GiftCardInfo {
-  id: string
-  cardNumber: string
-  currentBalance: number
-  status: string
-}
-
-interface HouseAccountInfo {
-  id: string
-  name: string
-  currentBalance: number
-  creditLimit: number
-  status: string
-}
-
-type PaymentStep = 'method' | 'cash' | 'tip' | 'gift_card' | 'house_account' | 'datacap_card' | 'room_charge' | 'manual_card_entry' | 'split'
-
-// Default tip settings
 const DEFAULT_TIP_SETTINGS: TipSettings = {
   enabled: true,
   suggestedPercentages: [15, 18, 20, 25],
   calculateOn: 'subtotal',
 }
 
-class PaymentStepErrorBoundary extends React.Component<
-  { children: React.ReactNode; onReset: () => void },
-  { hasError: boolean }
-> {
-  constructor(props: { children: React.ReactNode; onReset: () => void }) {
-    super(props)
-    this.state = { hasError: false }
-  }
+class PaymentStepErrorBoundary extends React.Component<{ children: React.ReactNode; onReset: () => void }, { hasError: boolean }> {
+  state = { hasError: false }
   static getDerivedStateFromError() { return { hasError: true } }
   componentDidCatch(error: Error) { console.error('Payment step error:', error) }
   render() {
-    if (this.state.hasError) {
-      return (
-        <div className="p-6 text-center">
-          <p className="text-red-600 font-medium mb-2">Something went wrong in this payment step.</p>
-          <button
-            onClick={() => { this.setState({ hasError: false }); this.props.onReset() }}
-            className="text-sm underline text-gray-600"
-          >
-            Return to Payment Method Selection
-          </button>
-        </div>
-      )
-    }
+    if (this.state.hasError) return (
+      <div className="p-6 text-center">
+        <p className="text-red-600 font-medium mb-2">Something went wrong in this payment step.</p>
+        <button onClick={() => { this.setState({ hasError: false }); this.props.onReset() }} className="text-sm underline text-gray-600">Return to Payment Method Selection</button>
+      </div>
+    )
     return this.props.children
   }
 }
@@ -157,21 +105,18 @@ export function PaymentModal({
   feedbackSettings,
   tipExemptAmount,
 }: PaymentModalProps) {
-  // ALL HOOKS MUST BE AT THE TOP - before any conditional returns
-  // Permission check for manual card entry (manager-level feature)
+  // All hooks before any conditional returns
   const employeePermissions = useAuthStore(s => s.employee?.permissions ?? [])
   const canKeyedEntry = employeePermissions.includes('manager.keyed_entry')
 
-  // State for fetched order data (when orderTotal is not provided)
   const [fetchedOrderTotal, setFetchedOrderTotal] = useState<number | null>(null)
   const [fetchedSubtotal, setFetchedSubtotal] = useState<number | null>(null)
   const [loadingOrder, setLoadingOrder] = useState(false)
 
-  // Payment flow state — skip to the right step if initialMethod provided
-  const [step, setStep] = useState<PaymentStep>(
+  const [step, setStep] = useState<PaymentStepType>(
     initialMethod === 'cash' ? 'cash' : initialMethod === 'credit' ? 'datacap_card' : 'method'
   )
-  const [selectedMethod, setSelectedMethod] = useState<'cash' | 'credit' | 'debit' | 'gift_card' | 'house_account' | 'room_charge' | null>(initialMethod || null)
+  const [selectedMethod, setSelectedMethod] = useState<PaymentMethod | null>(initialMethod || null)
   const [pendingPayments, setPendingPayments] = useState<PendingPayment[]>([])
   const [tipAmount, setTipAmount] = useState(0)
   const [customTip, setCustomTip] = useState('')
@@ -179,93 +124,29 @@ export function PaymentModal({
   const [idempotencyKey] = useState(() => uuid())
   const cardTimingRef = useRef<PaymentTimingEntry | null>(null)
   const [error, setError] = useState<string | null>(null)
-
-  // Cash payment state
-  const [amountTendered, setAmountTendered] = useState('')
-  const [customCashAmount, setCustomCashAmount] = useState('')
-  const [cashTendered, setCashTendered] = useState(0)
-  const [cashComplete, setCashComplete] = useState(false)
-
-  // Gift card state
-  const [giftCardNumber, setGiftCardNumber] = useState('')
-  const [giftCardInfo, setGiftCardInfo] = useState<GiftCardInfo | null>(null)
-  const [giftCardLoading, setGiftCardLoading] = useState(false)
-  const [giftCardError, setGiftCardError] = useState<string | null>(null)
-
-  // House account state
-  const [houseAccounts, setHouseAccounts] = useState<HouseAccountInfo[]>([])
-  const [selectedHouseAccount, setSelectedHouseAccount] = useState<HouseAccountInfo | null>(null)
-  const [houseAccountSearch, setHouseAccountSearch] = useState('')
-  const [houseAccountsLoading, setHouseAccountsLoading] = useState(false)
-
-  // Hotel PMS / Bill to Room state
-  const [roomChargeInput, setRoomChargeInput] = useState('')
-  const [roomChargeSearchType, setRoomChargeSearchType] = useState<'room' | 'name'>('room')
-  const [roomChargeResults, setRoomChargeResults] = useState<Array<{ reservationId: string; roomNumber: string; guestName: string; checkInDate: string; checkOutDate: string; selectionId: string }>>([])
-  const [selectedRoomGuest, setSelectedRoomGuest] = useState<{ reservationId: string; roomNumber: string; guestName: string; selectionId: string } | null>(null)
-  const [roomChargeLookupLoading, setRoomChargeLookupLoading] = useState(false)
-  const [roomChargeLookupError, setRoomChargeLookupError] = useState<string | null>(null)
-
-  // Card detection state (Model 3: dual_price_pan_debit)
   const [cardDetectionResult, setCardDetectionResult] = useState<CardDetectionResult | null>(null)
-
-  // Manual card entry state
   const [showManualEntry, setShowManualEntry] = useState(false)
-
-  // Add card to tab state
   const [addingCard, setAddingCard] = useState(false)
   const [addCardError, setAddCardError] = useState<string | null>(null)
   const [tabAuthSlow, setTabAuthSlow] = useState(false)
   const [tabAuthSuccess, setTabAuthSuccess] = useState<string | null>(null)
-
-  // Tab increment status — background indicator (Task #6)
   const [tabIncrementFailed, setTabIncrementFailed] = useState(false)
-
-  // Split payment state
-  const [splitMethod1, setSplitMethod1] = useState<'cash' | 'credit'>('cash')
-  const [splitMethod2, setSplitMethod2] = useState<'cash' | 'credit'>('credit')
-  const [splitAmount1, setSplitAmount1] = useState('')
-
-  // Post-payment feedback prompt state
   const [showFeedbackPrompt, setShowFeedbackPrompt] = useState(false)
   const [pendingReceiptData, setPendingReceiptData] = useState<Record<string, unknown> | undefined>(undefined)
-
-  // Wrapper: show feedback prompt before completing (if enabled)
-  const maybeShowFeedback = (receiptData?: Record<string, unknown>) => {
-    if (feedbackSettings?.enabled && feedbackSettings?.promptAfterPayment) {
-      setPendingReceiptData(receiptData)
-      setShowFeedbackPrompt(true)
-    } else {
-      onPaymentComplete(receiptData)
-    }
-  }
-
-  // Connection state — disable payment actions when disconnected from server
   const [isConnected, setIsConnected] = useState(true)
 
   useEffect(() => {
     const socket = getSharedSocket()
     const onConnect = () => setIsConnected(true)
     const onDisconnect = () => setIsConnected(false)
-
-    // Set initial state
     setIsConnected(socket.connected)
-
     socket.on('connect', onConnect)
     socket.on('disconnect', onDisconnect)
-
-    return () => {
-      socket.off('connect', onConnect)
-      socket.off('disconnect', onDisconnect)
-      releaseSharedSocket()
-    }
+    return () => { socket.off('connect', onConnect); socket.off('disconnect', onDisconnect); releaseSharedSocket() }
   }, [])
 
-  // Consolidated order fetch: populates order total/subtotal, CFD dispatch, and tab increment flag.
-  // Previously 3 separate useEffects each fetched `/api/orders/${orderId}` independently.
   useEffect(() => {
     if (!isOpen || !orderId) return
-
     const needsTotal = orderTotal === 0
     if (needsTotal) setLoadingOrder(true)
 
@@ -273,59 +154,23 @@ export function PaymentModal({
       .then(res => res.json())
       .then(raw => {
         const data = raw.data ?? raw
+        if (needsTotal) { setFetchedOrderTotal(data.total || 0); setFetchedSubtotal(data.subtotal || 0) }
+        if (data.incrementAuthFailed) setTabIncrementFailed(true)
 
-        // 1. Populate order total/subtotal when not provided by parent
-        if (needsTotal) {
-          setFetchedOrderTotal(data.total || 0)
-          setFetchedSubtotal(data.subtotal || 0)
-        }
-
-        // 2. Tab increment failure check (BUG-H3: DB-persisted flag)
-        if (data.incrementAuthFailed) {
-          setTabIncrementFailed(true)
-        }
-
-        // 3. CFD: dispatch show-order-detail for pre-payment confirmation (fire and forget)
-        // Note: show-order (live running tally) is dispatched during order building
-        // via order-events/batch. At payment time only the detail confirmation matters.
+        // CFD: fire and forget show-order-detail
         if (locationId) {
-          const itemsDetailed = (data.items ?? []).map((i: { name: string; quantity: number; price: number | string; modifiers?: Array<{ name: string }> }) => ({
-            name: i.name,
-            quantity: i.quantity,
-            price: Number(i.price),
-            modifiers: (i.modifiers ?? []).map((m: { name: string }) => m.name),
+          const items = (data.items ?? []).map((i: { name: string; quantity: number; price: number | string; modifiers?: Array<{ name: string }> }) => ({
+            name: i.name, quantity: i.quantity, price: Number(i.price), modifiers: (i.modifiers ?? []).map((m: { name: string }) => m.name),
           }))
-          void fetch('/api/cfd/notify', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              event: 'show-order-detail',
-              locationId,
-              payload: {
-                orderId: data.id ?? orderId,
-                orderNumber: data.orderNumber ?? 0,
-                items: itemsDetailed,
-                subtotal: Number(data.subtotal ?? 0),
-                tax: Number(data.taxTotal ?? 0),
-                total: Number(data.total ?? orderTotal),
-                discountTotal: Number(data.discountTotal ?? 0),
-                taxFromInclusive: Number(data.taxFromInclusive ?? 0),
-                taxFromExclusive: Number(data.taxFromExclusive ?? 0),
-              },
-            }),
-          }).catch(err => console.warn('fire-and-forget failed in payment.PaymentModal:', err))
+          void fetch('/api/cfd/notify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+            event: 'show-order-detail', locationId, payload: { orderId: data.id ?? orderId, orderNumber: data.orderNumber ?? 0, items, subtotal: Number(data.subtotal ?? 0), tax: Number(data.taxTotal ?? 0), total: Number(data.total ?? orderTotal), discountTotal: Number(data.discountTotal ?? 0), taxFromInclusive: Number(data.taxFromInclusive ?? 0), taxFromExclusive: Number(data.taxFromExclusive ?? 0) },
+          })}).catch(() => {})
         }
       })
-      .catch(err => {
-        console.error('Failed to fetch order:', err)
-      })
-      .finally(() => {
-        if (needsTotal) setLoadingOrder(false)
-      })
+      .catch(err => console.error('Failed to fetch order:', err))
+      .finally(() => { if (needsTotal) setLoadingOrder(false) })
   }, [isOpen, orderId, orderTotal, locationId])
 
-  // Listen for tab:updated socket events (increment status indicator)
-  // W3-3: Listener active even when modal is closed so toast fires immediately
   useEffect(() => {
     if (!orderId) return
     setTabIncrementFailed(false)
@@ -340,34 +185,18 @@ export function PaymentModal({
       }
     }
     socket.on('tab:updated', onTabUpdated)
-    return () => {
-      socket.off('tab:updated', onTabUpdated)
-      releaseSharedSocket()
-    }
+    return () => { socket.off('tab:updated', onTabUpdated); releaseSharedSocket() }
   }, [orderId])
 
-  // Use fetched total if orderTotal was 0
   const effectiveOrderTotal = orderTotal > 0 ? orderTotal : (fetchedOrderTotal ?? 0)
-  // Use subtotal from props or fetched or default to orderTotal
   const effectiveSubtotal = subtotal ?? fetchedSubtotal ?? effectiveOrderTotal
 
-  // Calculate amounts (memoized to prevent unnecessary recalculations)
-  // ALL hooks must be before any conditional returns
-  const alreadyPaid = useMemo(
-    () => existingPayments.reduce((sum, p) => sum + p.totalAmount, 0),
-    [existingPayments]
-  )
-
-  const pendingTotal = useMemo(
-    () => pendingPayments.reduce((sum, p) => sum + p.amount + p.tipAmount, 0),
-    [pendingPayments]
-  )
+  const alreadyPaid = useMemo(() => existingPayments.reduce((sum, p) => sum + p.totalAmount, 0), [existingPayments])
+  const pendingTotal = useMemo(() => pendingPayments.reduce((sum, p) => sum + p.amount + p.tipAmount, 0), [pendingPayments])
 
   const remainingBeforeTip = useMemo(() => {
     const raw = effectiveOrderTotal - alreadyPaid - pendingTotal
     if (raw <= 0) return 0
-    // When price rounding is active, a tiny leftover (e.g., $0.04 from quarter rounding)
-    // is a rounding artifact — not a real balance. If it rounds to $0, treat as paid in full.
     if (priceRounding?.enabled && priceRounding.applyToCash) {
       const rounded = applyPriceRounding(raw, priceRounding, 'cash')
       if (rounded <= 0) return 0
@@ -375,21 +204,13 @@ export function PaymentModal({
     return raw
   }, [effectiveOrderTotal, alreadyPaid, pendingTotal, priceRounding])
 
-  // Apply dual pricing - card price is displayed, cash gets discount (memoized)
   const discountPercent = dualPricing.cashDiscountPercent || 4.0
+  const cashTotal = useMemo(() => priceRounding ? applyPriceRounding(remainingBeforeTip, priceRounding, 'cash') : remainingBeforeTip, [remainingBeforeTip, priceRounding])
 
-  const cashTotal = useMemo(
-    () => priceRounding
-      ? applyPriceRounding(remainingBeforeTip, priceRounding, 'cash')
-      : remainingBeforeTip,
-    [remainingBeforeTip, priceRounding]
-  )
-
-  // Model 3: Separate debit and credit totals
   const debitTotal = useMemo(() => {
     if (pricingProgram?.enabled && (pricingProgram.model === 'dual_price_pan_debit' || pricingProgram.model === 'dual_price')) {
       const debitPct = pricingProgram.debitMarkupPercent ?? 0
-      if (debitPct <= 0) return remainingBeforeTip // Debit at cash price
+      if (debitPct <= 0) return remainingBeforeTip
       return calculateDebitPrice(remainingBeforeTip, debitPct)
     }
     return remainingBeforeTip
@@ -404,248 +225,108 @@ export function PaymentModal({
   }, [pricingProgram, remainingBeforeTip])
 
   const cardTotal = useMemo(() => {
-    // Model 3 (dual_price_pan_debit): Use detection result to determine card price
     if (pricingProgram?.enabled && pricingProgram.model === 'dual_price_pan_debit') {
       if (cardDetectionResult?.detectedCardType === 'debit') return debitTotal
-      // Default to credit (higher price) until detection completes
       return creditTotal
     }
-    // Legacy dual pricing: single card price
-    if (dualPricing.enabled) {
-      return calculateCardPrice(remainingBeforeTip, discountPercent)
-    }
+    if (dualPricing.enabled) return calculateCardPrice(remainingBeforeTip, discountPercent)
     return remainingBeforeTip
   }, [pricingProgram, dualPricing.enabled, remainingBeforeTip, discountPercent, cardDetectionResult, debitTotal, creditTotal])
 
-  const currentTotal = useMemo(
-    () => selectedMethod === 'cash' ? cashTotal : cardTotal,
-    [selectedMethod, cashTotal, cardTotal]
-  )
+  const currentTotal = useMemo(() => selectedMethod === 'cash' ? cashTotal : cardTotal, [selectedMethod, cashTotal, cardTotal])
+  const cashRoundingAdjustment = useMemo(() => Math.round((cashTotal - remainingBeforeTip) * 100) / 100, [cashTotal, remainingBeforeTip])
+  const totalWithTip = useMemo(() => currentTotal + tipAmount, [currentTotal, tipAmount])
 
-  // Rounding adjustment for display (e.g., $3.29 → $3.25 = -$0.04)
-  const cashRoundingAdjustment = useMemo(
-    () => Math.round((cashTotal - remainingBeforeTip) * 100) / 100,
-    [cashTotal, remainingBeforeTip]
-  )
-
-  const totalWithTip = useMemo(
-    () => currentTotal + tipAmount,
-    [currentTotal, tipAmount]
-  )
-
-  // Quick cash amounts (memoized)
-  const quickAmounts = useMemo(
-    () => getQuickCashAmounts(totalWithTip),
-    [totalWithTip]
-  )
-
-  // Surcharge: when pricing program is 'surcharge' and payment method is not cash,
-  // add surcharge on top of the card payment amount. Surcharge never applies to cash.
   const surchargeAmount = useMemo(() => {
     if (!pricingProgram?.enabled || pricingProgram.model !== 'surcharge') return 0
     if (!selectedMethod || selectedMethod === 'cash') return 0
     const pct = pricingProgram.surchargePercent ?? 0
     if (pct <= 0) return 0
-    // Only apply to card types that the program targets
     const applies =
       (selectedMethod === 'credit' && (pricingProgram.surchargeApplyToCredit ?? true)) ||
       (selectedMethod === 'debit' && (pricingProgram.surchargeApplyToDebit ?? false))
     if (!applies) return 0
-    // calculateSurcharge from pricing.ts: roundToCents(basePrice * (pct / 100))
     return Math.round(currentTotal * (pct / 100) * 100) / 100
   }, [pricingProgram, selectedMethod, currentTotal])
 
-  // Don't render if not open
   if (!isOpen) return null
 
-  // Show loading while fetching order
   if (loadingOrder) {
     return (
-      <div style={{ position: 'fixed', inset: 0, background: 'rgba(0, 0, 0, 0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
-        <div style={{ background: 'rgba(15, 23, 42, 0.95)', backdropFilter: 'blur(20px)', borderRadius: 16, padding: 32, textAlign: 'center', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
-          <div style={{ width: 32, height: 32, border: '4px solid rgba(99, 102, 241, 0.3)', borderTopColor: '#6366f1', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 16px' }} />
-          <p style={{ color: '#94a3b8' }}>Loading order...</p>
+      <div className={overlayClasses}>
+        <div className="bg-slate-900/95 backdrop-blur-xl rounded-2xl p-8 text-center border border-white/[0.08]">
+          <div className="w-8 h-8 border-4 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-slate-400">Loading order...</p>
         </div>
       </div>
     )
   }
 
-  const handleSelectMethod = (method: 'cash' | 'credit' | 'debit' | 'gift_card' | 'house_account' | 'room_charge') => {
+  const maybeShowFeedback = (receiptData?: Record<string, unknown>) => {
+    if (feedbackSettings?.enabled && feedbackSettings?.promptAfterPayment) {
+      setPendingReceiptData(receiptData)
+      setShowFeedbackPrompt(true)
+    } else {
+      onPaymentComplete(receiptData)
+    }
+  }
+
+
+  const handleSelectMethod = (method: PaymentMethod) => {
     setSelectedMethod(method)
     setTipAmount(0)
     setCustomTip('')
     setError(null)
 
-    if (method === 'gift_card') {
-      setGiftCardNumber('')
-      setGiftCardInfo(null)
-      setGiftCardError(null)
-      setStep('gift_card')
-    } else if (method === 'house_account') {
-      setSelectedHouseAccount(null)
-      setHouseAccountSearch('')
-      loadHouseAccounts()
-      setStep('house_account')
-    } else if (method === 'room_charge') {
-      setRoomChargeInput('')
-      setRoomChargeResults([])
-      setSelectedRoomGuest(null)
-      setRoomChargeLookupError(null)
-      setStep('room_charge')
-    } else if (tipSettings.enabled) {
-      setStep('tip')
-    } else if (method === 'cash') {
-      setStep('cash')
-    } else {
-      // All card payments go through Datacap
-      setStep('datacap_card')
-    }
+    if (method === 'gift_card') { setStep('gift_card') }
+    else if (method === 'house_account') { setStep('house_account') }
+    else if (method === 'room_charge') { setStep('room_charge') }
+    else if (tipSettings.enabled) { setStep('tip') }
+    else if (method === 'cash') { setStep('cash') }
+    else { setStep('datacap_card') }
   }
 
-  // Split Payment: open the split payment entry screen
-  const handleSplitPayment = () => {
-    setSplitMethod1('cash')
-    setSplitMethod2('credit')
-    setSplitAmount1('')
-    setError(null)
-    setStep('split')
-  }
+  const handleSplitPayment = () => { setError(null); setStep('split') }
 
-  // Split Payment: submit both payments
-  const handleSplitSubmit = () => {
-    const amount1 = parseFloat(splitAmount1)
-    if (!amount1 || amount1 <= 0 || amount1 >= remainingBeforeTip) {
-      setError('First payment must be between $0.01 and the remaining balance')
-      return
-    }
-    const amount2 = roundToCents(remainingBeforeTip - amount1)
-    if (amount2 <= 0) {
-      setError('Nothing remaining for second payment')
-      return
-    }
-
-    // Determine the amount for each method considering dual pricing.
-    // Cash portions stay at the base (cash) price; card portions get the card markup.
-    const payment1Amount = splitMethod1 === 'cash' ? amount1
-      : dualPricing.enabled ? calculateCardPrice(amount1, discountPercent) : amount1
-    const payment2Amount = splitMethod2 === 'cash' ? amount2
-      : dualPricing.enabled ? calculateCardPrice(amount2, discountPercent) : amount2
-
-    const payment1: PendingPayment = {
-      method: splitMethod1,
-      amount: payment1Amount,
-      tipAmount: 0,
-      ...(splitMethod1 === 'cash' ? { amountTendered: payment1Amount } : {}),
-    }
-    const payment2: PendingPayment = {
-      method: splitMethod2,
-      amount: payment2Amount,
-      tipAmount: 0,
-      ...(splitMethod2 === 'cash' ? { amountTendered: payment2Amount } : {}),
-    }
-
-    // If either payment is card, we need to go through the Datacap flow.
-    // For simplicity: if payment 1 is cash, process it as a pending payment
-    // and then process payment 2 via normal flow (card or cash).
-    if (splitMethod1 === 'cash' && splitMethod2 === 'cash') {
-      // Both cash — process both at once
-      processPayments([...pendingPayments, payment1, payment2], pendingPayments)
-    } else if (splitMethod1 === 'cash') {
-      // Cash first, then card — add cash as pending, proceed to card
-      setPendingPayments([...pendingPayments, payment1])
-      setSelectedMethod(splitMethod2)
-      // Set step to datacap card for the remaining amount
-      setStep('datacap_card')
-    } else if (splitMethod2 === 'cash') {
-      // Card first — add cash second as pending, process card first
-      // We need to process the card payment first through Datacap
-      setPendingPayments([...pendingPayments, payment2])
-      setSelectedMethod(splitMethod1)
-      setStep('datacap_card')
-    } else {
-      // Both cards — process first card, second will follow
-      setPendingPayments([...pendingPayments, payment2])
-      setSelectedMethod(splitMethod1)
-      setStep('datacap_card')
-    }
-  }
-
-  // W3-12: Cash Exact — skip cash entry screen, process immediately
   const handleCashExact = () => {
     setSelectedMethod('cash')
     setTipAmount(0)
-    const payment: PendingPayment = {
-      method: 'cash',
-      amount: cashTotal,
-      tipAmount: 0,
-      amountTendered: cashTotal,
-    }
+    const payment: PendingPayment = { method: 'cash', amount: cashTotal, tipAmount: 0, amountTendered: cashTotal }
     processPayments([...pendingPayments, payment], pendingPayments)
   }
 
-  // Close tab by capturing against a pre-authed card
   const handleChargeExistingCard = async (card: TabCard) => {
     if (!orderId || !employeeId) return
-    setIsProcessing(true)
-    setError(null)
+    setIsProcessing(true); setError(null)
     try {
       const res = await fetch(`/api/orders/${orderId}/close-tab`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          employeeId,
-          tipMode: 'receipt', // Bartender enters tip later
-          orderCardId: card.id, // Charge this specific card
-        }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ employeeId, tipMode: 'receipt', orderCardId: card.id }),
       })
       const data = await res.json()
-      if (data.data?.success) {
-        maybeShowFeedback()
-      } else {
-        setError(data.data?.error?.message || data.error || 'Capture failed')
-      }
-    } catch (err) {
-      setError('Failed to charge card')
-    } finally {
-      setIsProcessing(false)
-    }
+      if (data.data?.success) { maybeShowFeedback() }
+      else { setError(data.data?.error?.message || data.error || 'Capture failed') }
+    } catch { setError('Failed to charge card') }
+    finally { setIsProcessing(false) }
   }
 
-  // Add another card to an open tab
   const handleAddCardToTab = async () => {
     if (!orderId || !locationId) return
     const timing = startPaymentTiming('start_tab', orderId)
-    setAddingCard(true)
-    setAddCardError(null)
-    setTabAuthSlow(false)
-    setTabAuthSuccess(null)
-
-    // 15s timeout — EMV card-present needs time for chip read
+    setAddingCard(true); setAddCardError(null); setTabAuthSlow(false); setTabAuthSuccess(null)
     const slowTimer = setTimeout(() => setTabAuthSlow(true), 15000)
-
     try {
       if (!terminalId) {
-        clearTimeout(slowTimer)
-        completePaymentTiming(timing, 'error')
-        setAddCardError('No card reader configured')
-        setAddingCard(false)
-        return
+        clearTimeout(slowTimer); completePaymentTiming(timing, 'error')
+        setAddCardError('No card reader configured'); setAddingCard(false); return
       }
-
       markRequestSent(timing)
       const res = await fetch(`/api/orders/${orderId}/cards`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          readerId: terminalId,
-          employeeId,
-          makeDefault: (tabCards?.length || 0) === 0,
-        }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ readerId: terminalId, employeeId, makeDefault: (tabCards?.length || 0) === 0 }),
       })
-
       clearTimeout(slowTimer)
       const data = await res.json()
-
       markGatewayResponse(timing)
       if (data.data?.approved) {
         completePaymentTiming(timing, 'success')
@@ -658,2028 +339,162 @@ export function PaymentModal({
         completePaymentTiming(timing, 'declined')
         setAddCardError(data.data?.error?.message || data.error || 'Card declined')
       }
-    } catch {
-      clearTimeout(slowTimer)
-      completePaymentTiming(timing, 'error')
-      setAddCardError('Failed to add card')
-    } finally {
-      setAddingCard(false)
-      setTabAuthSlow(false)
-    }
+    } catch { clearTimeout(slowTimer); completePaymentTiming(timing, 'error'); setAddCardError('Failed to add card') }
+    finally { setAddingCard(false); setTabAuthSlow(false) }
   }
 
-  const loadHouseAccounts = async () => {
-    setHouseAccountsLoading(true)
-    try {
-      const response = await fetch(`/api/house-accounts?locationId=${locationId || ''}&status=active`)
-      if (response.ok) {
-        const raw = await response.json()
-        const data = raw.data ?? raw
-        setHouseAccounts(data)
-      }
-    } catch {
-      console.error('Failed to load house accounts')
-    } finally {
-      setHouseAccountsLoading(false)
-    }
-  }
-
-  const lookupGiftCard = async () => {
-    if (!giftCardNumber.trim()) {
-      setGiftCardError('Please enter a gift card number')
-      return
-    }
-
-    setGiftCardLoading(true)
-    setGiftCardError(null)
-
-    try {
-      const response = await fetch(`/api/gift-cards/${giftCardNumber.trim().toUpperCase()}`)
-      if (!response.ok) {
-        const data = await response.json()
-        setGiftCardError(data.error || 'Gift card not found')
-        setGiftCardInfo(null)
-        return
-      }
-
-      const raw = await response.json()
-      const data = raw.data ?? raw
-      if (data.status !== 'active') {
-        setGiftCardError(`Gift card is ${data.status}`)
-        setGiftCardInfo(null)
-        return
-      }
-
-      setGiftCardInfo(data)
-    } catch {
-      setGiftCardError('Failed to lookup gift card')
-      setGiftCardInfo(null)
-    } finally {
-      setGiftCardLoading(false)
-    }
-  }
-
-  const handleGiftCardPayment = () => {
-    if (!giftCardInfo) return
-
-    const maxAmount = Math.min(giftCardInfo.currentBalance, totalWithTip)
-
-    const payment: PendingPayment = {
-      method: 'gift_card',
-      amount: maxAmount,
-      tipAmount: 0, // Tips handled separately
-      giftCardId: giftCardInfo.id,
-      giftCardNumber: giftCardInfo.cardNumber,
-    }
-    processPayments([...pendingPayments, payment], pendingPayments)
-  }
-
-  const handleHouseAccountPayment = () => {
-    if (!selectedHouseAccount) return
-
-    const payment: PendingPayment = {
-      method: 'house_account',
-      amount: currentTotal,
-      tipAmount,
-      houseAccountId: selectedHouseAccount.id,
-    }
-    processPayments([...pendingPayments, payment], pendingPayments)
-  }
-
-  const handleRoomChargeLookup = async () => {
-    if (!roomChargeInput.trim()) return
-    setRoomChargeLookupLoading(true)
-    setRoomChargeLookupError(null)
-    setRoomChargeResults([])
-    setSelectedRoomGuest(null)
-    try {
-      const params = new URLSearchParams({
-        q: roomChargeInput.trim(),
-        type: roomChargeSearchType,
-        ...(employeeId ? { employeeId } : {}),
-      })
-      const res = await fetch(`/api/integrations/oracle-pms/room-lookup?${params}`)
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? 'Lookup failed')
-      const guests = data.data?.guests ?? []
-      if (guests.length === 0) {
-        setRoomChargeLookupError(
-          roomChargeSearchType === 'room'
-            ? `No in-house guest found in room ${roomChargeInput}. Verify the room number.`
-            : `No in-house guest found with last name "${roomChargeInput}".`
-        )
-      } else if (guests.length === 1) {
-        setSelectedRoomGuest(guests[0])
-      }
-      setRoomChargeResults(guests)
-    } catch (err) {
-      setRoomChargeLookupError(err instanceof Error ? err.message : 'Lookup failed')
-    } finally {
-      setRoomChargeLookupLoading(false)
-    }
-  }
-
-  const handleRoomChargePayment = () => {
-    if (!selectedRoomGuest) return
-
-    const payment: PendingPayment = {
-      method: 'room_charge',
-      amount: currentTotal,
-      tipAmount,
-      selectionId: selectedRoomGuest.selectionId,
-      roomNumber: selectedRoomGuest.roomNumber,
-      guestName: selectedRoomGuest.guestName,
-      pmsReservationId: selectedRoomGuest.reservationId,
-    }
-    processPayments([...pendingPayments, payment], pendingPayments)
-  }
-
-  const handleSelectTip = (percent: number | null) => {
-    if (percent === null) {
-      setTipAmount(0)
-    } else {
-      const tip = calculateTip(effectiveSubtotal, percent, tipSettings.calculateOn, effectiveOrderTotal, tipExemptAmount)
-      setTipAmount(tip)
-    }
-    setCustomTip('')
-  }
-
-  const handleCustomTip = () => {
-    const tip = parseFloat(customTip) || 0
-    setTipAmount(tip)
-  }
-
-  const handleContinueFromTip = () => {
-    // Safety: Validate selectedMethod before proceeding
-    if (!selectedMethod) {
-      setError('No payment method selected. Please go back and select a payment method.')
-      return
-    }
-
-    if (selectedMethod === 'cash') {
-      setStep('cash')
-    } else if (selectedMethod === 'credit' || selectedMethod === 'debit') {
-      // Validate terminal configuration for card payments
-      if (!terminalId) {
-        setError('Terminal not configured. Cannot process card payments. Please contact support.')
-        setStep('method') // Go back to method selection
-        return
-      }
-      // All card payments go through Datacap
-      setStep('datacap_card')
-    } else {
-      // Other payment methods (gift card, house account)
-      setStep(selectedMethod as PaymentStep)
-    }
-  }
-
-  const handleCashTender = (amount: number) => {
-    const newTotal = cashTendered + amount
-    setCashTendered(newTotal)
-    if (newTotal >= totalWithTip) {
-      setCashComplete(true)
-    }
-  }
-
-  const handleCashFinalize = () => {
-    const payment: PendingPayment = {
-      method: 'cash',
-      amount: currentTotal,
-      tipAmount,
-      amountTendered: cashTendered,
-    }
-    // Don't add to pendingPayments yet — wait for API success
-    // (adding before API call corrupts totals if the call fails)
-    processPayments([...pendingPayments, payment], pendingPayments)
-  }
-
-  // Handle Datacap payment success
-  const handleDatacapSuccess = (result: DatacapResult & { tipAmount: number; cardDetection?: CardDetectionResult }) => {
-    // Start timing — gateway already responded at this point
-    const timing = startPaymentTiming('pay_close', orderId || undefined)
-    timing.method = selectedMethod || 'credit'
-    markGatewayResponse(timing)
-    cardTimingRef.current = timing
-
-    // Safety: Validate selectedMethod is a valid card type
-    if (selectedMethod !== 'credit' && selectedMethod !== 'debit') {
-      setError(`Invalid payment method for card transaction: ${selectedMethod}. Expected 'credit' or 'debit'.`)
-      setStep('method') // Go back to method selection
-      return
-    }
-
-    // Determine pricing tier from card detection or default
-    const detection = result.cardDetection || cardDetectionResult
-    const appliedTier = detection?.appliedPricingTier || (selectedMethod === 'debit' ? 'debit' : 'credit')
-
-    const payment: PendingPayment = {
-      method: selectedMethod, // Now type-safe after validation
-      amount: currentTotal,
-      tipAmount: result.tipAmount,
-      cardBrand: result.cardBrand || 'card',
-      cardLast4: result.cardLast4 || '0000',
-      // Datacap fields for pay API
-      datacapRecordNo: result.recordNo,
-      datacapRefNumber: result.refNumber,
-      datacapSequenceNo: result.sequenceNo,
-      authCode: result.authCode,
-      entryMethod: result.entryMethod,
-      signatureData: result.signatureData,
-      amountAuthorized: result.amountAuthorized,
-      storedOffline: result.storedOffline,
-      // Pricing tier detection
-      detectedCardType: detection?.detectedCardType,
-      appliedPricingTier: appliedTier,
-      walletType: detection?.walletType,
-    }
-    processPayments([...pendingPayments, payment], pendingPayments)
-  }
-
-  // Handle Manual Card Entry success
   const handleManualEntrySuccess = (result: ManualCardEntryResult) => {
     setShowManualEntry(false)
     const timing = startPaymentTiming('pay_close', orderId || undefined)
     timing.method = 'credit'
     markGatewayResponse(timing)
     cardTimingRef.current = timing
-
     const payment: PendingPayment = {
-      method: 'credit',
-      amount: currentTotal,
-      tipAmount: tipAmount,
-      cardBrand: result.cardType || 'card',
-      cardLast4: result.cardLast4 || '0000',
-      datacapRecordNo: result.recordNo,
-      datacapRefNumber: result.authCode, // Use authCode as ref for keyed entry
-      datacapSequenceNo: result.sequenceNo,
-      authCode: result.authCode,
-      entryMethod: 'Manual',
-      amountAuthorized: result.amountAuthorized ? parseFloat(result.amountAuthorized) : undefined,
-      // Manual keyed entry is always credit (no card detection possible)
+      method: 'credit', amount: currentTotal, tipAmount,
+      cardBrand: result.cardType || 'card', cardLast4: result.cardLast4 || '0000',
+      datacapRecordNo: result.recordNo, datacapRefNumber: result.authCode,
+      datacapSequenceNo: result.sequenceNo, authCode: result.authCode,
+      entryMethod: 'Manual', amountAuthorized: result.amountAuthorized ? parseFloat(result.amountAuthorized) : undefined,
       appliedPricingTier: 'credit',
     }
     processPayments([...pendingPayments, payment], pendingPayments)
   }
 
-  // Build the /pay request body (shared between sync and fire-and-forget paths)
   const buildPayBody = (payments: PendingPayment[]) => ({
-    payments: payments.map(p => {
-      // Surcharge: for non-cash card payments under a surcharge pricing program,
-      // add the surcharge to the payment amount so the server records the full charge.
-      const isCashMethod = p.method === 'cash'
-      const paymentSurcharge = (!isCashMethod && surchargeAmount > 0) ? surchargeAmount : 0
-      return {
-        method: p.method,
-        amount: p.amount + paymentSurcharge,
-        tipAmount: p.tipAmount,
-        amountTendered: p.amountTendered,
-        cardBrand: p.cardBrand,
-        cardLast4: p.cardLast4,
-        giftCardId: p.giftCardId,
-        giftCardNumber: p.giftCardNumber,
-        houseAccountId: p.houseAccountId,
-        // Hotel PMS / Bill to Room fields (P1.1: send selectionId only; server resolves guest data)
-        selectionId: p.selectionId,
-        roomNumber: p.roomNumber,
-        guestName: p.guestName,
-        pmsReservationId: p.pmsReservationId,
-        // Datacap Direct fields — only include if we have the required fields
-        ...(p.datacapRecordNo && p.datacapRefNumber ? {
-          datacapRecordNo: p.datacapRecordNo,
-          datacapRefNumber: p.datacapRefNumber,
-          datacapSequenceNo: p.datacapSequenceNo,
-          authCode: p.authCode,
-          entryMethod: p.entryMethod,
-          signatureData: p.signatureData,
-          amountAuthorized: p.amountAuthorized,
-          storedOffline: p.storedOffline,
-        } : {}),
-        // Pricing tier detection (Payment & Pricing Redesign)
-        // appliedPricingTier MUST always be sent — server column is NOT NULL
-        appliedPricingTier: p.appliedPricingTier || (p.method === 'cash' ? 'cash' : 'credit'),
-        ...(p.detectedCardType ? { detectedCardType: p.detectedCardType } : {}),
-        ...(p.walletType ? { walletType: p.walletType } : {}),
-      }
-    }),
-    employeeId,
-    terminalId,
-    idempotencyKey,
-    version: getOrderVersion(),
+    payments: payments.map(p => ({
+      method: p.method, amount: p.amount + (p.method !== 'cash' && surchargeAmount > 0 ? surchargeAmount : 0),
+      tipAmount: p.tipAmount, amountTendered: p.amountTendered, cardBrand: p.cardBrand, cardLast4: p.cardLast4,
+      giftCardId: p.giftCardId, giftCardNumber: p.giftCardNumber, houseAccountId: p.houseAccountId,
+      selectionId: p.selectionId, roomNumber: p.roomNumber, guestName: p.guestName, pmsReservationId: p.pmsReservationId,
+      ...(p.datacapRecordNo && p.datacapRefNumber ? { datacapRecordNo: p.datacapRecordNo, datacapRefNumber: p.datacapRefNumber, datacapSequenceNo: p.datacapSequenceNo, authCode: p.authCode, entryMethod: p.entryMethod, signatureData: p.signatureData, amountAuthorized: p.amountAuthorized, storedOffline: p.storedOffline } : {}),
+      appliedPricingTier: p.appliedPricingTier || (p.method === 'cash' ? 'cash' : 'credit'),
+      ...(p.detectedCardType ? { detectedCardType: p.detectedCardType } : {}),
+      ...(p.walletType ? { walletType: p.walletType } : {}),
+    })),
+    employeeId, terminalId, idempotencyKey, version: getOrderVersion(),
   })
 
   const processPayments = async (payments: PendingPayment[], currentPendingPayments: PendingPayment[]) => {
-    // Safety: Validate orderId exists before attempting payment
-    if (!orderId) {
-      setError('Cannot process payment: No order ID provided. Please close this dialog and try again.')
-      setIsProcessing(false)
-      return
-    }
-
-    // Cash-only full payment — await the API before closing so failures are surfaced
+    if (!orderId) { setError('Cannot process payment: No order ID. Please close and try again.'); return }
+    setIsProcessing(true); setError(null)
     const isCashOnly = payments.every(p => p.method === 'cash') && currentPendingPayments.length === 0
-    if (isCashOnly) {
-      const cashTiming = startPaymentTiming('pay_close', orderId || undefined)
-      cashTiming.method = 'cash'
-      setIsProcessing(true)
-      setError(null)
-      try {
-        if (waitForOrderReady) await waitForOrderReady()
-        markRequestSent(cashTiming)
-        const res = await fetch(`/api/orders/${orderId}/pay`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(buildPayBody(payments)),
-        })
-        if (!res.ok) {
-          completePaymentTiming(cashTiming, 'error')
-          if (await handleVersionConflict(res, orderId)) return
-          const data = await res.json().catch(() => ({}))
-          toast.error(`Cash payment failed: ${data.error || 'Server error'}`)
-          setCashComplete(false)
-          setCashTendered(0)
-          return
-        }
-        completePaymentTiming(cashTiming, 'success')
-        maybeShowFeedback() // no receiptData → parent skips receipt modal
-      } catch {
-        completePaymentTiming(cashTiming, 'error')
-        toast.error('Cash payment failed — check network connection')
-        setCashComplete(false)
-        setCashTendered(0)
-      } finally {
-        setIsProcessing(false)
-      }
-      return
-    }
-
-    setIsProcessing(true)
-    setError(null)
-    const cardTiming = cardTimingRef.current
-
+    const timing = isCashOnly ? (() => { const t = startPaymentTiming('pay_close', orderId); t.method = 'cash'; return t })() : cardTimingRef.current
     try {
-      // Ensure items are persisted before calling /pay
-      // (started in background when modal opened — typically already done by now)
-      if (waitForOrderReady) {
-        await waitForOrderReady()
+      if (waitForOrderReady) await waitForOrderReady()
+      if (timing) markRequestSent(timing)
+      const res = await fetch(`/api/orders/${orderId}/pay`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(buildPayBody(payments)) })
+      if (!res.ok) {
+        if (timing) completePaymentTiming(timing, 'error')
+        if (await handleVersionConflict(res, orderId)) return
+        const d = await res.json().catch(() => ({}))
+        if (isCashOnly) { toast.error(`Cash payment failed: ${d.error || 'Server error'}`); return }
+        throw new Error(d.error || 'Payment failed')
       }
-
-      if (cardTiming) markRequestSent(cardTiming)
-      const response = await fetch(`/api/orders/${orderId}/pay`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(buildPayBody(payments)),
-      })
-
-      if (!response.ok) {
-        if (await handleVersionConflict(response, orderId)) return
-        const data = await response.json()
-        throw new Error(data.error || 'Payment failed')
-      }
-
-      const raw = await response.json()
-      const result = raw.data ?? raw
-
-      // Payment succeeded — now update pending payments state
+      const result = (await res.json()).data ?? {}
+      if (timing) { completePaymentTiming(timing, 'success'); if (!isCashOnly) cardTimingRef.current = null }
+      if (isCashOnly) { maybeShowFeedback(); return }
       setPendingPayments(payments)
-
-      // Card recognition: show toast when we recognize a returning customer on an unlinked order
       if (result.recognizedCustomer) {
         const rc = result.recognizedCustomer
-        toast.info(
-          `Returning customer: ${rc.name}${rc.visitCount > 1 ? ` (${rc.visitCount} visits)` : ''} — ${rc.cardType} ****${rc.cardLast4}`,
-          8000
-        )
+        toast.info(`Returning customer: ${rc.name}${rc.visitCount > 1 ? ` (${rc.visitCount} visits)` : ''} — ${rc.cardType} ****${rc.cardLast4}`, 8000)
       }
-
-      if (result.orderStatus === 'paid') {
-        if (cardTiming) { completePaymentTiming(cardTiming, 'success'); cardTimingRef.current = null }
-        maybeShowFeedback(result.receiptData)
-      } else {
-        // Partial payment - reset for more payments
-        setStep('method')
-        setSelectedMethod(null)
-        setTipAmount(0)
-      }
+      if (result.orderStatus === 'paid') { maybeShowFeedback(result.receiptData) }
+      else { setStep('method'); setSelectedMethod(null); setTipAmount(0) }
     } catch (err) {
-      if (cardTiming) { completePaymentTiming(cardTiming, 'error'); cardTimingRef.current = null }
-      setError(err instanceof Error ? err.message : 'Payment failed')
-      // Reset cash state so user can retry
-      setCashComplete(false)
-      setCashTendered(0)
-    } finally {
-      setIsProcessing(false)
-    }
+      if (timing && !isCashOnly) { completePaymentTiming(timing, 'error'); cardTimingRef.current = null }
+      if (isCashOnly) toast.error('Cash payment failed — check network')
+      else setError(err instanceof Error ? err.message : 'Payment failed')
+    } finally { setIsProcessing(false) }
   }
 
-  const removePendingPayment = (index: number) => {
-    setPendingPayments(pendingPayments.filter((_, i) => i !== index))
+
+  const contextValue = {
+    orderId, effectiveOrderTotal, effectiveSubtotal, employeeId, terminalId, locationId,
+    dualPricing, tipSettings, paymentSettings, priceRounding, pricingProgram, feedbackSettings, tipExemptAmount,
+    cashTotal, cardTotal, debitTotal, creditTotal, currentTotal, remainingBeforeTip, totalWithTip,
+    surchargeAmount, cashRoundingAdjustment, alreadyPaid, pendingTotal, discountPercent,
+    step, setStep, selectedMethod, setSelectedMethod, pendingPayments, setPendingPayments,
+    tipAmount, setTipAmount, customTip, setCustomTip, isProcessing, setIsProcessing, error, setError, isConnected,
+    tabCards, onTabCardsChanged, tabIncrementFailed,
+    cardDetectionResult, setCardDetectionResult, canKeyedEntry,
+    handleSelectMethod, handleChargeExistingCard, handleAddCardToTab, handleCashExact, handleSplitPayment,
+    processPayments, maybeShowFeedback,
+    addingCard, addCardError, tabAuthSlow, tabAuthSuccess,
+    showManualEntry, setShowManualEntry,
   }
 
-  // Shared styles
-  const overlayStyle: React.CSSProperties = {
-    position: 'fixed',
-    inset: 0,
-    background: 'rgba(0, 0, 0, 0.6)',
-    backdropFilter: 'blur(4px)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 50,
-  }
-
-  const modalStyle: React.CSSProperties = {
-    background: 'rgba(15, 23, 42, 0.95)',
-    backdropFilter: 'blur(20px)',
-    borderRadius: 16,
-    border: '1px solid rgba(255, 255, 255, 0.08)',
-    boxShadow: '0 25px 50px rgba(0, 0, 0, 0.5)',
-    width: '100%',
-    maxWidth: 448,
-    maxHeight: '90vh',
-    overflow: 'hidden',
-    display: 'flex',
-    flexDirection: 'column' as const,
-  }
-
-  const headerStyle: React.CSSProperties = {
-    padding: 16,
-    borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  }
-
-  const contentStyle: React.CSSProperties = {
-    flex: 1,
-    overflowY: 'auto' as const,
-    padding: 16,
-  }
-
-  const footerStyle: React.CSSProperties = {
-    padding: 16,
-    borderTop: '1px solid rgba(255, 255, 255, 0.08)',
-  }
-
-  const sectionLabelStyle: React.CSSProperties = {
-    color: '#f1f5f9',
-    fontWeight: 600,
-    fontSize: 16,
-    marginBottom: 8,
-  }
-
-  const mutedTextStyle: React.CSSProperties = {
-    color: '#94a3b8',
-    fontSize: 14,
-  }
-
-  const inputStyle: React.CSSProperties = {
-    background: 'rgba(15, 23, 42, 0.8)',
-    border: '1px solid rgba(100, 116, 139, 0.3)',
-    borderRadius: 8,
-    color: '#ffffff',
-    padding: '10px 12px',
-    width: '100%',
-    fontSize: 14,
-    outline: 'none',
-  }
-
-  const backButtonStyle: React.CSSProperties = {
-    flex: 1,
-    padding: '12px 16px',
-    borderRadius: 10,
-    border: '1px solid rgba(100, 116, 139, 0.3)',
-    background: 'transparent',
-    color: '#94a3b8',
-    fontSize: 15,
-    fontWeight: 500,
-    cursor: 'pointer',
-  }
-
-  const primaryButtonStyle: React.CSSProperties = {
-    flex: 1,
-    padding: '12px 16px',
-    borderRadius: 10,
-    border: 'none',
-    background: '#4f46e5',
-    color: '#ffffff',
-    fontSize: 15,
-    fontWeight: 600,
-    cursor: 'pointer',
-  }
-
-  const infoPanelStyle = (color: string): React.CSSProperties => ({
-    padding: 12,
-    borderRadius: 10,
-    marginBottom: 12,
-    background: color,
-  })
 
   return (
     <>
-    <div style={overlayStyle}>
-      <div style={modalStyle}>
-        {/* Header */}
-        <div style={headerStyle}>
-          <h2 style={{ color: '#f1f5f9', fontSize: 20, fontWeight: 700, margin: 0 }}>Pay Order</h2>
-          <button
-            onClick={onClose}
-            style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', padding: 4 }}
-          >
-            <svg style={{ width: 24, height: 24 }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-
-        {/* Content */}
-        <div style={contentStyle}>
-          {error && (
-            <div style={{ marginBottom: 16, padding: 12, background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: 10, color: '#f87171', fontSize: 14 }}>
-              {error}
-            </div>
-          )}
-
-          {/* Processing indicator — locks controls visually but keeps order summary visible */}
-          {isProcessing && (
-            <div style={{ marginBottom: 16, padding: 12, background: 'rgba(99, 102, 241, 0.12)', border: '1px solid rgba(99, 102, 241, 0.25)', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ width: 18, height: 18, border: '2px solid #818cf8', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite', flexShrink: 0 }} />
-              <span style={{ color: '#a5b4fc', fontSize: 14, fontWeight: 500 }}>Processing payment...</span>
-            </div>
-          )}
-
-          {/* Tab increment failed warning — card limit reached */}
-          {tabIncrementFailed && (
-            <div style={{ marginBottom: 16, padding: 12, background: 'rgba(245, 158, 11, 0.15)', border: '1px solid rgba(245, 158, 11, 0.3)', borderRadius: 10, color: '#f59e0b', fontSize: 14, fontWeight: 600 }}>
-              Card limit reached — take a new card or cash.
-            </div>
-          )}
-
-          {/* Order Summary */}
-          <div style={{ marginBottom: 16, padding: 12, background: 'rgba(30, 41, 59, 0.6)', borderRadius: 10, border: '1px solid rgba(255, 255, 255, 0.05)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, color: '#94a3b8', marginBottom: 4 }}>
-              <span>Order Total</span>
-              <span style={{ color: '#f1f5f9', fontWeight: 500 }}>{formatCurrency(effectiveOrderTotal)}</span>
-            </div>
-            {alreadyPaid > 0 && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, color: '#22c55e' }}>
-                <span>Already Paid</span>
-                <span>-{formatCurrency(alreadyPaid)}</span>
-              </div>
-            )}
-            {pendingPayments.length > 0 && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, color: '#818cf8' }}>
-                <span>Pending</span>
-                <span>-{formatCurrency(pendingTotal)}</span>
-              </div>
-            )}
-            {selectedMethod === 'cash' && cashRoundingAdjustment !== 0 && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, color: '#fbbf24', marginTop: 2 }}>
-                <span>Rounding</span>
-                <span>{cashRoundingAdjustment > 0 ? '+' : ''}{formatCurrency(cashRoundingAdjustment)}</span>
-              </div>
-            )}
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, marginTop: 8, paddingTop: 8, borderTop: '1px solid rgba(255, 255, 255, 0.08)', color: '#ffffff', fontSize: 18, fontFamily: 'ui-monospace, monospace' }}>
-              <span>Remaining</span>
-              <span>{formatCurrency(selectedMethod === 'cash' ? currentTotal : remainingBeforeTip)}</span>
-            </div>
+      <div className={overlayClasses}>
+        <div className={modalClasses}>
+          {/* Header */}
+          <div className={headerClasses}>
+            <h2 className="text-slate-100 text-xl font-bold m-0">Pay Order</h2>
+            <button
+              onClick={onClose}
+              className="bg-transparent border-none text-slate-500 cursor-pointer p-1 hover:text-slate-300"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
           </div>
 
-          {/* Surcharge disclosure — Visa requires pre-payment notice (P1 compliance) */}
-          {pricingProgram?.enabled && pricingProgram.model === 'surcharge' && selectedMethod && selectedMethod !== 'cash' && surchargeAmount > 0 && (
-            <div style={{ marginBottom: 12, padding: '8px 12px', background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.25)', borderRadius: 8, fontSize: 13, color: '#fbbf24', textAlign: 'center' }}>
-              A surcharge of {pricingProgram.surchargePercent ?? 0}% ({formatCurrency(surchargeAmount)}) applies to card payments
-            </div>
-          )}
+          {/* Content */}
+          <div className={contentClasses}>
+            <PaymentProvider value={contextValue}>
+              <OrderSummary />
+              <PaymentStepErrorBoundary onReset={() => setStep('method')}>
+                {step === 'method' && <PaymentMethodStep />}
+                {step === 'split' && <SplitPaymentStep />}
+                {step === 'tip' && <TipEntryStep />}
+                {step === 'cash' && <CashEntryStep />}
+                {step === 'datacap_card' && <CardProcessingStep />}
+                {step === 'gift_card' && <GiftCardStep />}
+                {step === 'house_account' && <HouseAccountStep />}
+                {step === 'room_charge' && <RoomChargeStep />}
+              </PaymentStepErrorBoundary>
+            </PaymentProvider>
+          </div>
 
-          {/* Dual pricing savings message — show when card method selected */}
-          {pricingProgram?.enabled && (pricingProgram.model === 'dual_price' || pricingProgram.model === 'dual_price_pan_debit') && selectedMethod && selectedMethod !== 'cash' && cardTotal > cashTotal && (
-            <div style={{ marginBottom: 12, padding: '8px 12px', background: 'rgba(34, 197, 94, 0.1)', border: '1px solid rgba(34, 197, 94, 0.2)', borderRadius: 8, fontSize: 13, color: '#4ade80', textAlign: 'center' }}>
-              Save {formatCurrency(cardTotal - cashTotal)} by paying with cash
-            </div>
-          )}
-
-          <PaymentStepErrorBoundary onReset={() => setStep('method')}>
-          {/* Step: Select Payment Method */}
-          {step === 'method' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-
-              {/* Payment Progress — shown when one or more partial payments have been collected */}
-              {pendingPayments.length > 0 && (
-                <div style={{
-                  padding: 12,
-                  borderRadius: 10,
-                  background: 'rgba(15, 23, 42, 0.9)',
-                  border: '1px solid rgba(99, 102, 241, 0.35)',
-                  marginBottom: 4,
-                }}>
-                  <div style={{ fontSize: 11, color: '#818cf8', textTransform: 'uppercase', letterSpacing: 1, fontWeight: 700, marginBottom: 8 }}>
-                    Payment Progress
-                  </div>
-                  {pendingPayments.map((p, i) => (
-                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#94a3b8', marginBottom: 4 }}>
-                      <span style={{ color: '#a5b4fc' }}>
-                        {'\u2713'} {PAYMENT_METHOD_LABELS[p.method] ?? p.method}
-                        {p.cardLast4 ? ` \u2022\u2022\u2022${p.cardLast4}` : ''}
-                        {p.storedOffline && (
-                          <span style={{ marginLeft: 6, fontSize: 10, color: '#f59e0b', background: 'rgba(245, 158, 11, 0.15)', padding: '1px 5px', borderRadius: 3, fontWeight: 700 }}>SAF</span>
-                        )}
-                      </span>
-                      <span style={{ fontFamily: 'ui-monospace, monospace', color: '#c7d2fe' }}>
-                        {formatCurrency(p.amount + p.tipAmount)}
-                      </span>
-                    </div>
-                  ))}
-                  <div style={{ borderTop: '1px solid rgba(99, 102, 241, 0.25)', marginTop: 8, paddingTop: 8, display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: 14 }}>
-                    <span style={{ color: '#f59e0b' }}>Remaining</span>
-                    <span style={{ fontFamily: 'ui-monospace, monospace', color: '#f59e0b' }}>
-                      {formatCurrency(remainingBeforeTip)}
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              <h3 style={sectionLabelStyle}>Select Payment Method</h3>
-
-              {/* Disconnected warning — card payments disabled, cash still available */}
-              {!isConnected && (
-                <div style={{
-                  padding: '12px 16px',
-                  borderRadius: 10,
-                  background: 'rgba(239, 68, 68, 0.15)',
-                  border: '1px solid rgba(239, 68, 68, 0.4)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                  marginBottom: 4,
-                }}>
-                  <div style={{
-                    width: 16,
-                    height: 16,
-                    border: '2px solid #f87171',
-                    borderTopColor: 'transparent',
-                    borderRadius: '50%',
-                    animation: 'spin 1s linear infinite',
-                    flexShrink: 0,
-                  }} />
-                  <span style={{ color: '#f87171', fontSize: 14, fontWeight: 600 }}>
-                    Card payments unavailable — no connection to server. Cash accepted.
-                  </span>
-                </div>
-              )}
-
-              {/* Pre-authed tab cards — charge existing card */}
-              {tabCards.length > 0 && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 4 }}>
-                  <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 1, fontWeight: 600 }}>Cards on Tab</div>
-                  {tabCards.map((card) => (
-                    <button
-                      key={card.id}
-                      onClick={() => handleChargeExistingCard(card)}
-                      disabled={isProcessing || !isConnected}
-                      style={{
-                        width: '100%',
-                        height: 72,
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 16,
-                        padding: '0 20px',
-                        borderRadius: 12,
-                        border: '2px solid rgba(168, 85, 247, 0.6)',
-                        background: 'rgba(168, 85, 247, 0.18)',
-                        cursor: (isProcessing || !isConnected) ? 'not-allowed' : 'pointer',
-                        textAlign: 'left' as const,
-                        boxShadow: '0 2px 8px rgba(168, 85, 247, 0.25)',
-                        opacity: !isConnected ? 0.5 : 1,
-                      }}
-                    >
-                      <span style={{ fontSize: 28 }}>💳</span>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ color: '#f1f5f9', fontSize: 17, fontWeight: 600 }}>
-                          Charge •••{card.cardLast4}
-                          {card.isDefault && <span style={{ marginLeft: 8, fontSize: 11, color: '#a78bfa', background: 'rgba(167, 139, 250, 0.15)', padding: '2px 6px', borderRadius: 4 }}>DEFAULT</span>}
-                        </div>
-                        <div style={{ color: '#c084fc', fontSize: 13 }}>
-                          {card.cardType}{card.cardholderName ? ` — ${card.cardholderName}` : ''}
-                          <span style={{ marginLeft: 8, color: '#94a3b8' }}>Pre-authed ${card.authAmount.toFixed(2)}</span>
-                        </div>
-                      </div>
-                      <div style={{ color: '#e9d5ff', fontSize: 17, fontWeight: 700 }}>{formatCurrency(cardTotal)}</div>
-                    </button>
-                  ))}
-                  <div style={{ height: 1, background: 'rgba(148, 163, 184, 0.15)', margin: '4px 0' }} />
-                  <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 1, fontWeight: 600 }}>Or pay another way</div>
-                </div>
-              )}
-
-              {/* Add Card to Tab — shown for any tab order (even with 0 cards) */}
-              {onTabCardsChanged && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 4 }}>
-                  <button
-                    onClick={handleAddCardToTab}
-                    disabled={addingCard || isProcessing || !isConnected}
-                    style={{
-                      width: '100%',
-                      padding: '14px 20px',
-                      borderRadius: 12,
-                      border: 'none',
-                      background: 'linear-gradient(135deg, #f97316, #ea580c)',
-                      color: '#fff',
-                      fontSize: 16,
-                      fontWeight: 700,
-                      cursor: (addingCard || isProcessing || !isConnected) ? 'not-allowed' : 'pointer',
-                      opacity: (addingCard || isProcessing || !isConnected) ? 0.5 : 1,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 12,
-                      boxShadow: '0 2px 10px rgba(249, 115, 22, 0.4)',
-                      textAlign: 'left' as const,
-                    }}
-                  >
-                    <span style={{ fontSize: 24 }}>{'\uD83D\uDCB3'}</span>
-                    <div>
-                      <div>Add Card to Tab</div>
-                      <div style={{ fontSize: 12, fontWeight: 400, opacity: 0.8 }}>Hold another card on this tab</div>
-                    </div>
-                  </button>
-
-                  {addingCard && (
-                    <div style={{ padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <div style={{ width: 16, height: 16, border: '2px solid #60a5fa', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite', flexShrink: 0 }} />
-                      <span style={{ color: tabAuthSlow ? '#f59e0b' : '#60a5fa', fontSize: 13 }}>
-                        {tabAuthSlow
-                          ? 'Reader is slow. The card has not been charged yet. Try again or use another method.'
-                          : 'Authorizing card...'}
-                      </span>
-                    </div>
-                  )}
-                  {tabAuthSuccess && (
-                    <div style={{ padding: '8px 12px', color: '#22c55e', fontSize: 13, fontWeight: 600 }}>
-                      {'\u2713'} {tabAuthSuccess}
-                    </div>
-                  )}
-                  {addCardError && (
-                    <div style={{ padding: 12, background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.4)', borderRadius: 8, color: '#f87171', fontSize: 14, fontWeight: 600 }}>
-                      {addCardError}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {dualPricing.enabled && (
-                <div style={{ fontSize: 13, color: '#94a3b8', marginBottom: 8, padding: 10, background: 'rgba(34, 197, 94, 0.1)', borderRadius: 8, border: '1px solid rgba(34, 197, 94, 0.15)' }}>
-                  <span style={{ color: '#22c55e', fontWeight: 600 }}>Cash: {formatCurrency(cashTotal)}</span>
-                  <span style={{ margin: '0 8px', color: '#475569' }}>|</span>
-                  <span>Card: {formatCurrency(cardTotal)}</span>
-                </div>
-              )}
-
-              {paymentSettings.acceptCash && (
-                <button
-                  onClick={() => handleSelectMethod('cash')}
-                  style={{
-                    width: '100%',
-                    height: 72,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 16,
-                    padding: '0 20px',
-                    borderRadius: 12,
-                    border: '1px solid rgba(34, 197, 94, 0.3)',
-                    background: 'rgba(34, 197, 94, 0.08)',
-                    cursor: 'pointer',
-                    textAlign: 'left' as const,
-                  }}
-                >
-                  <span style={{ fontSize: 28 }}>💵</span>
-                  <div>
-                    <div style={{ color: '#f1f5f9', fontSize: 17, fontWeight: 600 }}>Cash</div>
-                    <div style={{ color: '#22c55e', fontSize: 13, fontWeight: 500 }}>
-                      {formatCurrency(cashTotal)}
-                      {dualPricing.enabled && dualPricing.showSavingsMessage && (
-                        <span style={{ marginLeft: 8, color: '#4ade80' }}>Save {formatCurrency(cardTotal - cashTotal)}</span>
-                      )}
-                    </div>
-                  </div>
-                </button>
-              )}
-
-              {/* W3-12: Cash Exact — one-tap cash payment, skip entry screen */}
-              {paymentSettings.acceptCash && cashTotal > 0 && (
-                <button
-                  onClick={handleCashExact}
-                  disabled={isProcessing}
-                  style={{
-                    width: '100%',
-                    height: 56,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 16,
-                    padding: '0 20px',
-                    borderRadius: 12,
-                    border: '2px solid rgba(34, 197, 94, 0.5)',
-                    background: 'rgba(34, 197, 94, 0.2)',
-                    cursor: isProcessing ? 'not-allowed' : 'pointer',
-                    textAlign: 'left' as const,
-                    opacity: isProcessing ? 0.5 : 1,
-                  }}
-                >
-                  <span style={{ fontSize: 22, color: '#22c55e', fontWeight: 900 }}>$</span>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ color: '#22c55e', fontSize: 16, fontWeight: 700 }}>
-                      Cash Exact {formatCurrency(cashTotal)}
-                    </div>
-                    <div style={{ color: '#4ade80', fontSize: 12 }}>No change, skip to done</div>
-                  </div>
-                </button>
-              )}
-
-              {paymentSettings.acceptCredit && (
-                <button
-                  onClick={() => handleSelectMethod('credit')}
-                  disabled={!isConnected}
-                  style={{
-                    width: '100%',
-                    height: 72,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 16,
-                    padding: '0 20px',
-                    borderRadius: 12,
-                    border: '1px solid rgba(99, 102, 241, 0.3)',
-                    background: 'rgba(99, 102, 241, 0.08)',
-                    cursor: !isConnected ? 'not-allowed' : 'pointer',
-                    textAlign: 'left' as const,
-                    opacity: !isConnected ? 0.5 : 1,
-                  }}
-                >
-                  <span style={{ fontSize: 28 }}>💳</span>
-                  <div>
-                    <div style={{ color: '#f1f5f9', fontSize: 17, fontWeight: 600 }}>Credit Card</div>
-                    <div style={{ color: '#818cf8', fontSize: 13 }}>{formatCurrency(cardTotal)}</div>
-                  </div>
-                </button>
-              )}
-
-              {paymentSettings.acceptDebit && (
-                <button
-                  onClick={() => handleSelectMethod('debit')}
-                  disabled={!isConnected}
-                  style={{
-                    width: '100%',
-                    height: 72,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 16,
-                    padding: '0 20px',
-                    borderRadius: 12,
-                    border: '1px solid rgba(99, 102, 241, 0.3)',
-                    background: 'rgba(99, 102, 241, 0.08)',
-                    cursor: !isConnected ? 'not-allowed' : 'pointer',
-                    textAlign: 'left' as const,
-                    opacity: !isConnected ? 0.5 : 1,
-                  }}
-                >
-                  <span style={{ fontSize: 28 }}>💳</span>
-                  <div>
-                    <div style={{ color: '#f1f5f9', fontSize: 17, fontWeight: 600 }}>Debit Card</div>
-                    <div style={{ color: '#818cf8', fontSize: 13 }}>{formatCurrency(cardTotal)}</div>
-                  </div>
-                </button>
-              )}
-
-              {paymentSettings.acceptGiftCards && (
-                <button
-                  onClick={() => handleSelectMethod('gift_card')}
-                  disabled={!isConnected}
-                  style={{
-                    width: '100%',
-                    height: 72,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 16,
-                    padding: '0 20px',
-                    borderRadius: 12,
-                    border: '1px solid rgba(168, 85, 247, 0.3)',
-                    background: 'rgba(168, 85, 247, 0.08)',
-                    cursor: !isConnected ? 'not-allowed' : 'pointer',
-                    textAlign: 'left' as const,
-                    opacity: !isConnected ? 0.5 : 1,
-                  }}
-                >
-                  <span style={{ fontSize: 28 }}>🎁</span>
-                  <div>
-                    <div style={{ color: '#f1f5f9', fontSize: 17, fontWeight: 600 }}>Gift Card</div>
-                    <div style={{ color: '#c084fc', fontSize: 13 }}>Enter gift card number</div>
-                  </div>
-                </button>
-              )}
-
-              {paymentSettings.acceptHouseAccounts && (
-                <button
-                  onClick={() => handleSelectMethod('house_account')}
-                  disabled={!isConnected}
-                  style={{
-                    width: '100%',
-                    height: 72,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 16,
-                    padding: '0 20px',
-                    borderRadius: 12,
-                    border: '1px solid rgba(100, 116, 139, 0.3)',
-                    background: 'rgba(100, 116, 139, 0.08)',
-                    cursor: !isConnected ? 'not-allowed' : 'pointer',
-                    textAlign: 'left' as const,
-                    opacity: !isConnected ? 0.5 : 1,
-                  }}
-                >
-                  <span style={{ fontSize: 28 }}>🏢</span>
-                  <div>
-                    <div style={{ color: '#f1f5f9', fontSize: 17, fontWeight: 600 }}>House Account</div>
-                    <div style={{ color: '#94a3b8', fontSize: 13 }}>Charge to account</div>
-                  </div>
-                </button>
-              )}
-
-              {paymentSettings.acceptHotelRoomCharge && (
-                <button
-                  onClick={() => handleSelectMethod('room_charge')}
-                  disabled={!isConnected}
-                  style={{
-                    width: '100%',
-                    height: 72,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 16,
-                    padding: '0 20px',
-                    borderRadius: 12,
-                    border: '1px solid rgba(20, 184, 166, 0.3)',
-                    background: 'rgba(20, 184, 166, 0.08)',
-                    cursor: !isConnected ? 'not-allowed' : 'pointer',
-                    textAlign: 'left' as const,
-                    opacity: !isConnected ? 0.5 : 1,
-                  }}
-                >
-                  <span style={{ fontSize: 28 }}>🏨</span>
-                  <div>
-                    <div style={{ color: '#f1f5f9', fontSize: 17, fontWeight: 600 }}>Bill to Room</div>
-                    <div style={{ color: '#5eead4', fontSize: 13 }}>Charge to hotel room</div>
-                  </div>
-                </button>
-              )}
-
-              {/* Split Payment — pay part cash, part card */}
-              {remainingBeforeTip > 0.01 && paymentSettings.acceptCash && paymentSettings.acceptCredit && (
-                <>
-                  <div style={{ height: 1, background: 'rgba(148, 163, 184, 0.15)', margin: '4px 0' }} />
-                  <button
-                    onClick={handleSplitPayment}
-                    disabled={isProcessing}
-                    style={{
-                      width: '100%',
-                      height: 56,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 16,
-                      padding: '0 20px',
-                      borderRadius: 12,
-                      border: '1px solid rgba(245, 158, 11, 0.3)',
-                      background: 'rgba(245, 158, 11, 0.08)',
-                      cursor: isProcessing ? 'not-allowed' : 'pointer',
-                      textAlign: 'left' as const,
-                      opacity: isProcessing ? 0.5 : 1,
-                    }}
-                  >
-                    <span style={{ fontSize: 22 }}>{'\u2702'}</span>
-                    <div>
-                      <div style={{ color: '#f59e0b', fontSize: 16, fontWeight: 600 }}>Split Payment</div>
-                      <div style={{ color: '#92400e', fontSize: 12 }}>Pay part cash, part card</div>
-                    </div>
-                  </button>
-                </>
-              )}
-
-              {/* Manual Card Entry — manager-only, higher risk */}
-              {canKeyedEntry && paymentSettings.acceptCredit && (
-                <button
-                  onClick={() => { setSelectedMethod('credit'); setShowManualEntry(true) }}
-                  disabled={!isConnected}
-                  style={{
-                    width: '100%',
-                    height: 56,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 16,
-                    padding: '0 20px',
-                    borderRadius: 12,
-                    border: '1px dashed rgba(245, 158, 11, 0.4)',
-                    background: 'rgba(245, 158, 11, 0.06)',
-                    cursor: !isConnected ? 'not-allowed' : 'pointer',
-                    textAlign: 'left' as const,
-                    opacity: !isConnected ? 0.5 : 1,
-                    marginTop: 4,
-                  }}
-                >
-                  <span style={{ fontSize: 22 }}>{'\u2328'}</span>
-                  <div>
-                    <div style={{ color: '#fbbf24', fontSize: 14, fontWeight: 600 }}>Manual Card Entry</div>
-                    <div style={{ color: '#92400e', fontSize: 11 }}>Type card number (manager only)</div>
-                  </div>
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* Step: Split Payment */}
-          {step === 'split' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <h3 style={sectionLabelStyle}>Split Payment</h3>
-              <p style={{ ...mutedTextStyle, marginBottom: 4 }}>
-                Total: {formatCurrency(remainingBeforeTip)}
-              </p>
-
-              {/* Payment 1 */}
-              <div style={{ padding: 12, borderRadius: 10, background: 'rgba(30, 41, 59, 0.6)', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
-                <div style={{ fontSize: 11, color: '#818cf8', textTransform: 'uppercase', letterSpacing: 1, fontWeight: 700, marginBottom: 8 }}>
-                  Payment 1
-                </div>
-                <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                  <button
-                    onClick={() => {
-                      setSplitMethod1('cash')
-                      if (splitMethod2 === 'cash') setSplitMethod2('credit')
-                    }}
-                    style={{
-                      flex: 1,
-                      padding: '8px 12px',
-                      borderRadius: 8,
-                      border: splitMethod1 === 'cash' ? '2px solid #22c55e' : '1px solid rgba(100, 116, 139, 0.3)',
-                      background: splitMethod1 === 'cash' ? 'rgba(34, 197, 94, 0.15)' : 'transparent',
-                      color: splitMethod1 === 'cash' ? '#22c55e' : '#94a3b8',
-                      fontSize: 14,
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Cash
-                  </button>
-                  <button
-                    onClick={() => {
-                      setSplitMethod1('credit')
-                      if (splitMethod2 === 'credit') setSplitMethod2('cash')
-                    }}
-                    disabled={!isConnected}
-                    style={{
-                      flex: 1,
-                      padding: '8px 12px',
-                      borderRadius: 8,
-                      border: splitMethod1 === 'credit' ? '2px solid #6366f1' : '1px solid rgba(100, 116, 139, 0.3)',
-                      background: splitMethod1 === 'credit' ? 'rgba(99, 102, 241, 0.15)' : 'transparent',
-                      color: splitMethod1 === 'credit' ? '#818cf8' : '#94a3b8',
-                      fontSize: 14,
-                      fontWeight: 600,
-                      cursor: !isConnected ? 'not-allowed' : 'pointer',
-                      opacity: !isConnected ? 0.5 : 1,
-                    }}
-                  >
-                    Card
-                  </button>
-                </div>
-                <div style={{ position: 'relative' }}>
-                  <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#64748b', fontSize: 16 }}>$</span>
-                  <input
-                    type="number"
-                    value={splitAmount1}
-                    onChange={e => setSplitAmount1(e.target.value)}
-                    placeholder="0.00"
-                    step="0.01"
-                    min="0.01"
-                    max={remainingBeforeTip - 0.01}
-                    style={{
-                      ...inputStyle,
-                      paddingLeft: 28,
-                      fontSize: 18,
-                      fontWeight: 700,
-                      fontFamily: 'ui-monospace, monospace',
-                    }}
-                  />
-                </div>
-
-                {/* Quick split buttons */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, marginTop: 8 }}>
-                  {[
-                    { label: 'Half', value: roundToCents(remainingBeforeTip / 2) },
-                    { label: '1/3', value: roundToCents(remainingBeforeTip / 3) },
-                    { label: '2/3', value: roundToCents(remainingBeforeTip * 2 / 3) },
-                  ].map(btn => (
-                    <button
-                      key={btn.label}
-                      onClick={() => setSplitAmount1(btn.value.toFixed(2))}
-                      style={{
-                        padding: '6px 8px',
-                        borderRadius: 6,
-                        border: '1px solid rgba(100, 116, 139, 0.3)',
-                        background: 'rgba(255, 255, 255, 0.04)',
-                        color: '#94a3b8',
-                        fontSize: 12,
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      {btn.label} ({formatCurrency(btn.value)})
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Payment 2 — auto-calculated remainder */}
-              <div style={{ padding: 12, borderRadius: 10, background: 'rgba(30, 41, 59, 0.6)', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
-                <div style={{ fontSize: 11, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: 1, fontWeight: 700, marginBottom: 8 }}>
-                  Payment 2 (Remaining)
-                </div>
-                <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                  <button
-                    onClick={() => {
-                      setSplitMethod2('cash')
-                      if (splitMethod1 === 'cash') setSplitMethod1('credit')
-                    }}
-                    style={{
-                      flex: 1,
-                      padding: '8px 12px',
-                      borderRadius: 8,
-                      border: splitMethod2 === 'cash' ? '2px solid #22c55e' : '1px solid rgba(100, 116, 139, 0.3)',
-                      background: splitMethod2 === 'cash' ? 'rgba(34, 197, 94, 0.15)' : 'transparent',
-                      color: splitMethod2 === 'cash' ? '#22c55e' : '#94a3b8',
-                      fontSize: 14,
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Cash
-                  </button>
-                  <button
-                    onClick={() => {
-                      setSplitMethod2('credit')
-                      if (splitMethod1 === 'credit') setSplitMethod1('cash')
-                    }}
-                    disabled={!isConnected}
-                    style={{
-                      flex: 1,
-                      padding: '8px 12px',
-                      borderRadius: 8,
-                      border: splitMethod2 === 'credit' ? '2px solid #6366f1' : '1px solid rgba(100, 116, 139, 0.3)',
-                      background: splitMethod2 === 'credit' ? 'rgba(99, 102, 241, 0.15)' : 'transparent',
-                      color: splitMethod2 === 'credit' ? '#818cf8' : '#94a3b8',
-                      fontSize: 14,
-                      fontWeight: 600,
-                      cursor: !isConnected ? 'not-allowed' : 'pointer',
-                      opacity: !isConnected ? 0.5 : 1,
-                    }}
-                  >
-                    Card
-                  </button>
-                </div>
-                <div style={{
-                  padding: '12px 16px',
-                  borderRadius: 8,
-                  background: 'rgba(245, 158, 11, 0.1)',
-                  border: '1px solid rgba(245, 158, 11, 0.2)',
-                  fontFamily: 'ui-monospace, monospace',
-                  fontSize: 18,
-                  fontWeight: 700,
-                  color: '#f59e0b',
-                  textAlign: 'center',
-                }}>
-                  {splitAmount1 && parseFloat(splitAmount1) > 0
-                    ? formatCurrency(roundToCents(Math.max(0, remainingBeforeTip - parseFloat(splitAmount1))))
-                    : formatCurrency(remainingBeforeTip)
-                  }
-                  <div style={{ fontSize: 11, fontWeight: 500, color: '#92400e', marginTop: 2 }}>
-                    on {splitMethod2 === 'cash' ? 'Cash' : 'Card'}
-                  </div>
-                </div>
-              </div>
-
-              {/* Action buttons */}
-              <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-                <button
-                  onClick={() => setStep('method')}
-                  style={backButtonStyle}
-                >
-                  Back
-                </button>
-                <button
-                  onClick={handleSplitSubmit}
-                  disabled={!splitAmount1 || parseFloat(splitAmount1) <= 0 || parseFloat(splitAmount1) >= remainingBeforeTip}
-                  style={{
-                    ...primaryButtonStyle,
-                    background: (!splitAmount1 || parseFloat(splitAmount1) <= 0 || parseFloat(splitAmount1) >= remainingBeforeTip) ? '#374151' : '#f59e0b',
-                    color: (!splitAmount1 || parseFloat(splitAmount1) <= 0 || parseFloat(splitAmount1) >= remainingBeforeTip) ? '#6b7280' : '#1e293b',
-                    cursor: (!splitAmount1 || parseFloat(splitAmount1) <= 0 || parseFloat(splitAmount1) >= remainingBeforeTip) ? 'not-allowed' : 'pointer',
-                  }}
-                >
-                  Process Split
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Step: Tip Selection */}
-          {step === 'tip' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <h3 style={sectionLabelStyle}>Add Tip</h3>
-              <p style={{ ...mutedTextStyle, marginBottom: 8 }}>
-                Paying with {selectedMethod === 'cash' ? 'Cash' : 'Card'}: {formatCurrency(currentTotal)}
-              </p>
-
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
-                {tipSettings.suggestedPercentages.map(percent => {
-                  const tipForPercent = calculateTip(effectiveSubtotal, percent, tipSettings.calculateOn, effectiveOrderTotal, tipExemptAmount)
-                  const isSelected = tipAmount === tipForPercent
-                  return (
-                    <button
-                      key={percent}
-                      onClick={() => handleSelectTip(percent)}
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        height: 64,
-                        borderRadius: 10,
-                        border: isSelected ? '1px solid rgba(99, 102, 241, 0.5)' : '1px solid rgba(100, 116, 139, 0.3)',
-                        background: isSelected ? 'rgba(99, 102, 241, 0.2)' : 'rgba(30, 41, 59, 0.5)',
-                        color: isSelected ? '#a5b4fc' : '#94a3b8',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      <span style={{ fontWeight: 700, fontSize: 16 }}>{percent}%</span>
-                      <span style={{ fontSize: 12, marginTop: 2 }}>{formatCurrency(tipForPercent)}</span>
-                    </button>
-                  )
-                })}
-              </div>
-
-              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                <button
-                  onClick={() => handleSelectTip(null)}
-                  style={{
-                    flex: 1,
-                    padding: '10px 16px',
-                    borderRadius: 10,
-                    border: tipAmount === 0 && !customTip ? '1px solid rgba(99, 102, 241, 0.5)' : '1px solid rgba(100, 116, 139, 0.3)',
-                    background: tipAmount === 0 && !customTip ? 'rgba(99, 102, 241, 0.2)' : 'rgba(30, 41, 59, 0.5)',
-                    color: tipAmount === 0 && !customTip ? '#a5b4fc' : '#94a3b8',
-                    cursor: 'pointer',
-                    fontSize: 14,
-                    fontWeight: 500,
-                  }}
-                >
-                  No Tip
-                </button>
-                <div style={{ flex: 1, position: 'relative' }}>
-                  <span style={{ position: 'absolute', left: 12, top: 11, color: '#64748b', fontSize: 14 }}>$</span>
-                  <input
-                    type="number"
-                    value={customTip}
-                    onChange={(e) => setCustomTip(e.target.value)}
-                    onBlur={handleCustomTip}
-                    style={{ ...inputStyle, paddingLeft: 28 }}
-                    placeholder="Custom"
-                    step="0.01"
-                    min="0"
-                  />
-                </div>
-              </div>
-
-              <div style={infoPanelStyle('rgba(99, 102, 241, 0.15)')}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, color: '#ffffff', fontSize: 18, fontFamily: 'ui-monospace, monospace' }}>
-                  <span>Total with Tip</span>
-                  <span>{formatCurrency(totalWithTip)}</span>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                <button onClick={() => setStep('method')} style={backButtonStyle}>
-                  Back
-                </button>
-                <button onClick={handleContinueFromTip} style={primaryButtonStyle}>
-                  Continue
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Step: Cash Payment */}
-          {step === 'cash' && !cashComplete && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <h3 style={sectionLabelStyle}>Cash Payment</h3>
-              {/* Amount due and tendered so far */}
-              <div style={infoPanelStyle('rgba(34, 197, 94, 0.12)')}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: 20, fontFamily: 'ui-monospace, monospace' }}>
-                  <span style={{ color: '#94a3b8' }}>Total Due</span>
-                  <span style={{ color: '#22c55e' }}>{formatCurrency(totalWithTip)}</span>
-                </div>
-                {cashTendered > 0 && (
-                  <>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600, fontSize: 16, fontFamily: 'ui-monospace, monospace', marginTop: 6 }}>
-                      <span style={{ color: '#94a3b8' }}>Tendered</span>
-                      <span style={{ color: '#f1f5f9' }}>{formatCurrency(cashTendered)}</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: 18, fontFamily: 'ui-monospace, monospace', marginTop: 4, paddingTop: 6, borderTop: '1px solid rgba(255,255,255,0.1)' }}>
-                      <span style={{ color: '#fbbf24' }}>Remaining</span>
-                      <span style={{ color: '#fbbf24' }}>{formatCurrency(Math.max(0, totalWithTip - cashTendered))}</span>
-                    </div>
-                  </>
-                )}
-              </div>
-
-              <p style={{ ...mutedTextStyle, marginBottom: 4 }}>Tap bills received:</p>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
-                {/* Exact amount button */}
-                <button
-                  onClick={() => handleCashTender(totalWithTip - cashTendered)}
-                  disabled={isProcessing}
-                  style={{
-                    padding: '14px 8px',
-                    borderRadius: 10,
-                    border: '1px solid rgba(34, 197, 94, 0.4)',
-                    background: 'rgba(34, 197, 94, 0.15)',
-                    color: '#22c55e',
-                    cursor: isProcessing ? 'not-allowed' : 'pointer',
-                    fontSize: 15,
-                    fontWeight: 700,
-                    opacity: isProcessing ? 0.5 : 1,
-                    gridColumn: 'span 3',
-                  }}
-                >
-                  Exact {formatCurrency(totalWithTip - cashTendered)}
-                </button>
-                {[1, 5, 10, 20, 50, 100].map(amount => (
-                  <button
-                    key={amount}
-                    onClick={() => handleCashTender(amount)}
-                    disabled={isProcessing}
-                    style={{
-                      padding: '16px 8px',
-                      borderRadius: 10,
-                      border: '1px solid rgba(100, 116, 139, 0.3)',
-                      background: 'rgba(30, 41, 59, 0.5)',
-                      color: '#f1f5f9',
-                      cursor: isProcessing ? 'not-allowed' : 'pointer',
-                      fontSize: 16,
-                      fontWeight: 700,
-                      opacity: isProcessing ? 0.5 : 1,
-                    }}
-                  >
-                    {formatCurrency(amount)}
-                  </button>
-                ))}
-              </div>
-
-              <div style={{ marginTop: 12 }}>
-                <label style={{ color: '#94a3b8', fontSize: 13, display: 'block', marginBottom: 6 }}>Custom amount:</label>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <div style={{ flex: 1, position: 'relative' }}>
-                    <span style={{ position: 'absolute', left: 12, top: 11, color: '#64748b', fontSize: 14 }}>$</span>
-                    <input
-                      type="number"
-                      value={customCashAmount}
-                      onChange={(e) => setCustomCashAmount(e.target.value)}
-                      onKeyDown={(e) => { if (['e','E','+','-'].includes(e.key)) e.preventDefault() }}
-                      style={{ ...inputStyle, paddingLeft: 28 }}
-                      placeholder="0.00"
-                      step="0.01"
-                      min="0"
-                      max="9999.99"
-                    />
-                  </div>
-                  <button
-                    onClick={() => {
-                      const val = parseFloat(customCashAmount) || 0
-                      if (val > 0) { handleCashTender(val); setCustomCashAmount('') }
-                    }}
-                    disabled={isProcessing || !customCashAmount}
-                    style={{
-                      ...primaryButtonStyle,
-                      flex: 'none',
-                      padding: '10px 20px',
-                      opacity: (isProcessing || !customCashAmount) ? 0.5 : 1,
-                      cursor: (isProcessing || !customCashAmount) ? 'not-allowed' : 'pointer',
-                      background: '#16a34a',
-                    }}
-                  >
-                    Add
-                  </button>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                <button
-                  onClick={() => { setCashTendered(0); setStep(tipSettings.enabled ? 'tip' : 'method') }}
-                  style={{ ...backButtonStyle, flex: 1 }}
-                >
-                  Back
-                </button>
-                {cashTendered > 0 && (
-                  <button
-                    onClick={() => setCashTendered(0)}
-                    style={{ ...backButtonStyle, flex: 1, color: '#f87171', borderColor: 'rgba(248, 113, 113, 0.3)' }}
-                  >
-                    Clear
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Cash complete - change due screen */}
-          {step === 'cash' && cashComplete && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16, alignItems: 'center', paddingTop: 16 }}>
-              <div style={{ fontSize: 48, lineHeight: 1 }}>💵</div>
-              <h3 style={{ ...sectionLabelStyle, fontSize: 22, textAlign: 'center', margin: 0 }}>Change Due</h3>
-
-              <div style={{ ...infoPanelStyle('rgba(34, 197, 94, 0.12)'), width: '100%' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600, fontSize: 16, fontFamily: 'ui-monospace, monospace' }}>
-                  <span style={{ color: '#94a3b8' }}>Total</span>
-                  <span style={{ color: '#f1f5f9' }}>{formatCurrency(totalWithTip)}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600, fontSize: 16, fontFamily: 'ui-monospace, monospace', marginTop: 4 }}>
-                  <span style={{ color: '#94a3b8' }}>Tendered</span>
-                  <span style={{ color: '#f1f5f9' }}>{formatCurrency(cashTendered)}</span>
-                </div>
-                {cashTendered > totalWithTip && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: 28, fontFamily: 'ui-monospace, monospace', marginTop: 8, paddingTop: 8, borderTop: '1px solid rgba(255,255,255,0.1)' }}>
-                    <span style={{ color: '#fbbf24' }}>Change Due</span>
-                    <span style={{ color: '#fbbf24' }}>{formatCurrency(cashTendered - totalWithTip)}</span>
-                  </div>
-                )}
-              </div>
-
-              <div style={{ display: 'flex', gap: 10, width: '100%', marginTop: 8 }}>
-                <button
-                  onClick={handleCashFinalize}
-                  disabled={isProcessing}
-                  style={{
-                    ...primaryButtonStyle,
-                    flex: 1,
-                    padding: '16px',
-                    fontSize: 16,
-                    fontWeight: 700,
-                    opacity: isProcessing ? 0.5 : 1,
-                    cursor: isProcessing ? 'not-allowed' : 'pointer',
-                    background: '#16a34a',
-                  }}
-                >
-                  {isProcessing ? 'Processing...' : 'Complete Payment'}
-                </button>
-              </div>
-
-              <button
-                onClick={() => { setCashComplete(false); setCashTendered(0) }}
-                style={{ ...backButtonStyle, width: '100%' }}
-              >
-                Start Over
-              </button>
-            </div>
-          )}
-
-          {/* Step: Datacap Direct Card Payment - No Terminal */}
-          {step === 'datacap_card' && orderId && !terminalId && (
-            <div style={{ textAlign: 'center', padding: '32px 0' }}>
-              <p style={{ color: '#f87171', fontWeight: 700, marginBottom: 8, fontSize: 16 }}>Terminal Not Configured</p>
-              <p style={{ color: '#94a3b8', fontSize: 14, marginBottom: 16 }}>No terminal ID assigned. Card payments require a configured terminal.</p>
-              <button onClick={() => setStep('method')} style={{ ...backButtonStyle, flex: 'none' }}>Back</button>
-            </div>
-          )}
-
-          {/* Step: Datacap Direct Card Payment */}
-          {step === 'datacap_card' && orderId && terminalId && employeeId && locationId && (
-            <>
-            {/* Existing tab cards — charge one of these instead of swiping new */}
-            {tabCards.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
-                <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 1, fontWeight: 600 }}>Cards on Tab</div>
-                {tabCards.map((card) => (
-                  <button
-                    key={card.id}
-                    onClick={() => handleChargeExistingCard(card)}
-                    disabled={isProcessing}
-                    style={{
-                      width: '100%',
-                      padding: '10px 16px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 12,
-                      borderRadius: 10,
-                      border: '2px solid rgba(168, 85, 247, 0.6)',
-                      background: 'rgba(168, 85, 247, 0.18)',
-                      cursor: isProcessing ? 'wait' : 'pointer',
-                      textAlign: 'left' as const,
-                      boxShadow: '0 2px 8px rgba(168, 85, 247, 0.25)',
-                    }}
-                  >
-                    <span style={{ fontSize: 20 }}>{'\uD83D\uDCB3'}</span>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ color: '#f1f5f9', fontSize: 14, fontWeight: 600 }}>
-                        Charge •••{card.cardLast4}
-                        {card.isDefault && <span style={{ marginLeft: 6, fontSize: 10, color: '#a78bfa', background: 'rgba(167, 139, 250, 0.15)', padding: '1px 5px', borderRadius: 4 }}>DEFAULT</span>}
-                      </div>
-                      <div style={{ color: '#c084fc', fontSize: 12 }}>
-                        {card.cardType}{card.cardholderName ? ` — ${card.cardholderName}` : ''}
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-            {/* Add Card to Tab option — visible on card payment step for tab orders */}
-            {onTabCardsChanged && !addingCard && (
-              <button
-                onClick={handleAddCardToTab}
-                disabled={isProcessing}
-                style={{
-                  width: '100%',
-                  padding: '12px 16px',
-                  borderRadius: 10,
-                  border: 'none',
-                  background: 'linear-gradient(135deg, #f97316, #ea580c)',
-                  color: '#fff',
-                  fontSize: 14,
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  marginBottom: 8,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 8,
-                  boxShadow: '0 2px 8px rgba(249, 115, 22, 0.35)',
-                }}
-              >
-                {'\uD83D\uDCB3'} Add Card to Tab Instead
-              </button>
-            )}
-            {addingCard && (
-              <div style={{ padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                <div style={{ width: 16, height: 16, border: '2px solid #60a5fa', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite', flexShrink: 0 }} />
-                <span style={{ color: tabAuthSlow ? '#f59e0b' : '#60a5fa', fontSize: 13 }}>
-                  {tabAuthSlow
-                    ? 'Reader is slow. The card has not been charged yet. Try again or use another method.'
-                    : 'Authorizing card...'}
-                </span>
-              </div>
-            )}
-            {tabAuthSuccess && (
-              <div style={{ padding: '8px 12px', color: '#22c55e', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
-                {'\u2713'} {tabAuthSuccess}
-              </div>
-            )}
-            {addCardError && (
-              <div style={{ padding: 10, background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.4)', borderRadius: 8, color: '#f87171', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
-                {addCardError}
-              </div>
-            )}
-            <DatacapPaymentProcessor
-              orderId={orderId}
-              amount={currentTotal}
-              subtotal={effectiveSubtotal}
-              tipExemptAmount={tipExemptAmount}
-              tipSettings={tipSettings}
-              terminalId={terminalId}
-              employeeId={employeeId}
-              locationId={locationId}
-              pricingModel={pricingProgram?.enabled ? pricingProgram.model : undefined}
-              onCardDetected={(detection, _adjustedAmount) => {
-                setCardDetectionResult(detection)
-              }}
-              onSuccess={handleDatacapSuccess}
-              onPayCashInstead={() => { setSelectedMethod('cash'); setTipAmount(0); setStep('cash') }}
-              onPartialApproval={(result) => {
-                const partialPayment: PendingPayment = {
-                  method: selectedMethod === 'debit' ? 'debit' : 'credit',
-                  amount: result.amountAuthorized,
-                  tipAmount: 0, // Tip is already included in amountAuthorized — don't double-count
-                  cardBrand: result.cardBrand || 'card',
-                  cardLast4: result.cardLast4 || '0000',
-                  datacapRecordNo: result.recordNo,
-                  datacapRefNumber: result.refNumber,
-                  datacapSequenceNo: result.sequenceNo,
-                  authCode: result.authCode,
-                  entryMethod: result.entryMethod,
-                  signatureData: result.signatureData,
-                  amountAuthorized: result.amountAuthorized,
-                }
-                setPendingPayments(prev => [...prev, partialPayment])
-                toast.info(`Partial approval: ${formatCurrency(result.amountAuthorized)} charged. ${formatCurrency(result.remainingBalance)} remaining.`)
-                setStep('method')
-              }}
-              onCancel={() => setStep('method')}
-            />
-            </>
-          )}
-
-          {/* Step: Gift Card Payment */}
-          {step === 'gift_card' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <h3 style={sectionLabelStyle}>Gift Card Payment</h3>
-
-              <div style={infoPanelStyle('rgba(168, 85, 247, 0.12)')}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: 18, fontFamily: 'ui-monospace, monospace' }}>
-                  <span style={{ color: '#94a3b8' }}>Amount Due</span>
-                  <span style={{ color: '#c084fc' }}>{formatCurrency(totalWithTip)}</span>
-                </div>
-              </div>
-
-              <div>
-                <label style={{ color: '#94a3b8', fontSize: 13, display: 'block', marginBottom: 6 }}>Gift Card Number</label>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <input
-                    type="text"
-                    value={giftCardNumber}
-                    onChange={(e) => setGiftCardNumber(e.target.value.toUpperCase())}
-                    style={{ ...inputStyle, flex: 1, textTransform: 'uppercase' as const }}
-                    placeholder="GC-XXXX-XXXX-XXXX"
-                  />
-                  <button
-                    onClick={lookupGiftCard}
-                    disabled={giftCardLoading || !giftCardNumber.trim()}
-                    style={{
-                      ...backButtonStyle,
-                      flex: 'none',
-                      padding: '10px 16px',
-                      opacity: (giftCardLoading || !giftCardNumber.trim()) ? 0.5 : 1,
-                      cursor: (giftCardLoading || !giftCardNumber.trim()) ? 'not-allowed' : 'pointer',
-                    }}
-                  >
-                    {giftCardLoading ? 'Looking...' : 'Lookup'}
-                  </button>
-                </div>
-              </div>
-
-              {giftCardError && (
-                <div style={{ padding: 12, background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: 10, color: '#f87171', fontSize: 14 }}>
-                  {giftCardError}
-                </div>
-              )}
-
-              {giftCardInfo && (
-                <div style={{ padding: 16, background: 'rgba(34, 197, 94, 0.1)', border: '1px solid rgba(34, 197, 94, 0.2)', borderRadius: 10 }}>
-                  <div style={{ color: '#94a3b8', fontSize: 13, marginBottom: 4 }}>Card: {giftCardInfo.cardNumber}</div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ color: '#cbd5e1', fontWeight: 500 }}>Available Balance:</span>
-                    <span style={{ fontSize: 22, fontWeight: 700, color: '#22c55e', fontFamily: 'ui-monospace, monospace' }}>
-                      {formatCurrency(giftCardInfo.currentBalance)}
-                    </span>
-                  </div>
-                  {giftCardInfo.currentBalance < totalWithTip && (
-                    <div style={{ marginTop: 8, fontSize: 13, color: '#fbbf24' }}>
-                      Partial payment of {formatCurrency(giftCardInfo.currentBalance)} will be applied.
-                      Remaining: {formatCurrency(totalWithTip - giftCardInfo.currentBalance)}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                <button
-                  onClick={() => setStep('method')}
-                  disabled={isProcessing}
-                  style={{ ...backButtonStyle, opacity: isProcessing ? 0.5 : 1 }}
-                >
-                  Back
-                </button>
-                <button
-                  onClick={handleGiftCardPayment}
-                  disabled={isProcessing || !giftCardInfo || giftCardInfo.currentBalance === 0}
-                  style={{
-                    ...primaryButtonStyle,
-                    background: '#7c3aed',
-                    opacity: (isProcessing || !giftCardInfo || giftCardInfo?.currentBalance === 0) ? 0.5 : 1,
-                    cursor: (isProcessing || !giftCardInfo || giftCardInfo?.currentBalance === 0) ? 'not-allowed' : 'pointer',
-                  }}
-                >
-                  {isProcessing ? 'Processing...' : giftCardInfo && giftCardInfo.currentBalance >= totalWithTip
-                    ? 'Pay Full Amount'
-                    : giftCardInfo
-                      ? `Pay ${formatCurrency(Math.min(giftCardInfo.currentBalance, totalWithTip))}`
-                      : 'Apply Gift Card'}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Step: House Account Payment */}
-          {step === 'house_account' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <h3 style={sectionLabelStyle}>House Account</h3>
-
-              <div style={infoPanelStyle('rgba(99, 102, 241, 0.12)')}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: 18, fontFamily: 'ui-monospace, monospace' }}>
-                  <span style={{ color: '#94a3b8' }}>Amount to Charge</span>
-                  <span style={{ color: '#818cf8' }}>{formatCurrency(totalWithTip)}</span>
-                </div>
-              </div>
-
-              <div>
-                <label style={{ color: '#94a3b8', fontSize: 13, display: 'block', marginBottom: 6 }}>Search Account</label>
-                <input
-                  type="text"
-                  value={houseAccountSearch}
-                  onChange={(e) => setHouseAccountSearch(e.target.value)}
-                  style={inputStyle}
-                  placeholder="Search by name..."
-                />
-              </div>
-
-              {houseAccountsLoading ? (
-                <div style={{ textAlign: 'center', padding: 16, color: '#94a3b8' }}>Loading accounts...</div>
-              ) : (
-                <div style={{ maxHeight: 192, overflowY: 'auto', borderRadius: 10, border: '1px solid rgba(100, 116, 139, 0.2)' }}>
-                  {houseAccounts
-                    .filter(acc =>
-                      !houseAccountSearch ||
-                      acc.name.toLowerCase().includes(houseAccountSearch.toLowerCase())
-                    )
-                    .map(account => {
-                      const availableCredit = account.creditLimit > 0
-                        ? account.creditLimit - account.currentBalance
-                        : Infinity
-                      const canCharge = availableCredit >= totalWithTip
-                      const isSelected = selectedHouseAccount?.id === account.id
-
-                      return (
-                        <button
-                          key={account.id}
-                          style={{
-                            width: '100%',
-                            padding: 12,
-                            textAlign: 'left' as const,
-                            background: isSelected ? 'rgba(99, 102, 241, 0.15)' : 'transparent',
-                            borderBottom: '1px solid rgba(100, 116, 139, 0.1)',
-                            border: 'none',
-                            borderBlockEnd: '1px solid rgba(100, 116, 139, 0.1)',
-                            cursor: canCharge ? 'pointer' : 'not-allowed',
-                            opacity: canCharge ? 1 : 0.4,
-                          }}
-                          onClick={() => canCharge && setSelectedHouseAccount(account)}
-                          disabled={!canCharge}
-                        >
-                          <div style={{ color: '#f1f5f9', fontWeight: 500 }}>{account.name}</div>
-                          <div style={{ fontSize: 13, color: '#94a3b8', display: 'flex', justifyContent: 'space-between', marginTop: 2 }}>
-                            <span>Balance: {formatCurrency(account.currentBalance)}</span>
-                            <span>
-                              {account.creditLimit > 0
-                                ? `Limit: ${formatCurrency(account.creditLimit)}`
-                                : 'No limit'}
-                            </span>
-                          </div>
-                          {!canCharge && (
-                            <div style={{ fontSize: 12, color: '#f87171', marginTop: 4 }}>
-                              Insufficient credit available
-                            </div>
-                          )}
-                        </button>
-                      )
-                    })}
-                  {houseAccounts.length === 0 && (
-                    <div style={{ padding: 16, textAlign: 'center', color: '#64748b' }}>
-                      No house accounts available
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {selectedHouseAccount && (
-                <div style={{ padding: 12, background: 'rgba(34, 197, 94, 0.1)', border: '1px solid rgba(34, 197, 94, 0.2)', borderRadius: 10 }}>
-                  <div style={{ color: '#f1f5f9', fontWeight: 500 }}>{selectedHouseAccount.name}</div>
-                  <div style={{ fontSize: 13, color: '#94a3b8' }}>
-                    Current balance: {formatCurrency(selectedHouseAccount.currentBalance)}
-                    {selectedHouseAccount.creditLimit > 0 && (
-                      <span style={{ marginLeft: 8 }}>
-                        (Available: {formatCurrency(selectedHouseAccount.creditLimit - selectedHouseAccount.currentBalance)})
-                      </span>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                <button
-                  onClick={() => setStep('method')}
-                  disabled={isProcessing}
-                  style={{ ...backButtonStyle, opacity: isProcessing ? 0.5 : 1 }}
-                >
-                  Back
-                </button>
-                <button
-                  onClick={handleHouseAccountPayment}
-                  disabled={isProcessing || !selectedHouseAccount}
-                  style={{
-                    ...primaryButtonStyle,
-                    opacity: (isProcessing || !selectedHouseAccount) ? 0.5 : 1,
-                    cursor: (isProcessing || !selectedHouseAccount) ? 'not-allowed' : 'pointer',
-                  }}
-                >
-                  {isProcessing ? 'Processing...' : 'Charge to Account'}
-                </button>
-              </div>
-            </div>
-          )}
-          {/* Step: Bill to Room */}
-          {step === 'room_charge' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <h3 style={sectionLabelStyle}>Bill to Room</h3>
-
-              <div style={infoPanelStyle('rgba(20, 184, 166, 0.12)')}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: 18, fontFamily: 'ui-monospace, monospace' }}>
-                  <span style={{ color: '#94a3b8' }}>Amount to Charge</span>
-                  <span style={{ color: '#2dd4bf' }}>{formatCurrency(totalWithTip)}</span>
-                </div>
-              </div>
-
-              {/* Search type toggle */}
-              <div style={{ display: 'flex', gap: 8 }}>
-                {(['room', 'name'] as const).map(type => (
-                  <button
-                    key={type}
-                    onClick={() => { setRoomChargeSearchType(type); setRoomChargeInput(''); setRoomChargeResults([]); setSelectedRoomGuest(null); setRoomChargeLookupError(null) }}
-                    style={{
-                      flex: 1,
-                      padding: '8px 0',
-                      borderRadius: 8,
-                      border: roomChargeSearchType === type ? '2px solid #2dd4bf' : '1px solid rgba(100,116,139,0.3)',
-                      background: roomChargeSearchType === type ? 'rgba(20,184,166,0.12)' : 'transparent',
-                      color: roomChargeSearchType === type ? '#2dd4bf' : '#94a3b8',
-                      fontSize: 13,
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    {type === 'room' ? 'Room Number' : 'Last Name'}
-                  </button>
-                ))}
-              </div>
-
-              {/* Search input */}
-              <div style={{ display: 'flex', gap: 8 }}>
-                <input
-                  type={roomChargeSearchType === 'room' ? 'tel' : 'text'}
-                  value={roomChargeInput}
-                  onChange={e => { setRoomChargeInput(e.target.value); setRoomChargeResults([]); setSelectedRoomGuest(null); setRoomChargeLookupError(null) }}
-                  onKeyDown={e => e.key === 'Enter' && void handleRoomChargeLookup()}
-                  placeholder={roomChargeSearchType === 'room' ? 'Enter room number...' : 'Enter guest last name...'}
-                  style={{ ...inputStyle, flex: 1 }}
-                  autoFocus
-                />
-                <button
-                  onClick={() => void handleRoomChargeLookup()}
-                  disabled={!roomChargeInput.trim() || roomChargeLookupLoading}
-                  style={{
-                    padding: '0 16px',
-                    borderRadius: 8,
-                    background: 'rgba(20,184,166,0.15)',
-                    border: '1px solid rgba(20,184,166,0.4)',
-                    color: '#2dd4bf',
-                    fontWeight: 600,
-                    fontSize: 14,
-                    cursor: !roomChargeInput.trim() || roomChargeLookupLoading ? 'not-allowed' : 'pointer',
-                    opacity: !roomChargeInput.trim() || roomChargeLookupLoading ? 0.5 : 1,
-                  }}
-                >
-                  {roomChargeLookupLoading ? '...' : 'Look Up'}
-                </button>
-              </div>
-
-              {/* Error */}
-              {roomChargeLookupError && (
-                <div style={{ padding: '10px 14px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 8, color: '#fca5a5', fontSize: 13 }}>
-                  {roomChargeLookupError}
-                </div>
-              )}
-
-              {/* Multiple results */}
-              {roomChargeResults.length > 1 && !selectedRoomGuest && (
-                <div style={{ maxHeight: 192, overflowY: 'auto', borderRadius: 10, border: '1px solid rgba(20,184,166,0.2)' }}>
-                  {roomChargeResults.map(guest => (
-                    <button
-                      key={guest.reservationId}
-                      onClick={() => setSelectedRoomGuest(guest)}
-                      style={{
-                        width: '100%',
-                        padding: 12,
-                        textAlign: 'left' as const,
-                        background: 'transparent',
-                        borderBottom: '1px solid rgba(100,116,139,0.1)',
-                        border: 'none',
-                        borderBlockEnd: '1px solid rgba(100,116,139,0.1)',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      <div style={{ color: '#f1f5f9', fontWeight: 500 }}>{guest.guestName}</div>
-                      <div style={{ fontSize: 13, color: '#94a3b8', marginTop: 2 }}>
-                        Room {guest.roomNumber} · Checking out {guest.checkOutDate}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {/* Confirmed guest */}
-              {selectedRoomGuest && (
-                <div style={{ padding: 14, background: 'rgba(20,184,166,0.1)', border: '1px solid rgba(20,184,166,0.25)', borderRadius: 10 }}>
-                  <div style={{ color: '#2dd4bf', fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>
-                    Guest Confirmed
-                  </div>
-                  <div style={{ color: '#f1f5f9', fontWeight: 600, fontSize: 16 }}>{selectedRoomGuest.guestName}</div>
-                  <div style={{ fontSize: 13, color: '#94a3b8', marginTop: 2 }}>Room {selectedRoomGuest.roomNumber}</div>
-                  <button
-                    onClick={() => setSelectedRoomGuest(null)}
-                    style={{ marginTop: 8, fontSize: 12, color: '#64748b', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
-                  >
-                    Wrong guest? Search again
-                  </button>
-                </div>
-              )}
-
-              <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-                <button
-                  onClick={() => setStep('method')}
-                  disabled={isProcessing}
-                  style={{ ...backButtonStyle, opacity: isProcessing ? 0.5 : 1 }}
-                >
-                  Back
-                </button>
-                <button
-                  onClick={handleRoomChargePayment}
-                  disabled={isProcessing || !selectedRoomGuest}
-                  style={{
-                    ...primaryButtonStyle,
-                    background: selectedRoomGuest ? 'linear-gradient(135deg, #0d9488, #14b8a6)' : undefined,
-                    opacity: (isProcessing || !selectedRoomGuest) ? 0.5 : 1,
-                    cursor: (isProcessing || !selectedRoomGuest) ? 'not-allowed' : 'pointer',
-                  }}
-                >
-                  {isProcessing ? 'Processing...' : `Charge Room ${selectedRoomGuest?.roomNumber ?? ''}`}
-                </button>
-              </div>
-            </div>
-          )}
-          </PaymentStepErrorBoundary>
-        </div>
-
-        {/* Footer */}
-        <div style={footerStyle}>
-          <button
-            onClick={onClose}
-            disabled={isProcessing}
-            style={{
-              width: '100%',
-              padding: '12px 16px',
-              borderRadius: 10,
-              border: '1px solid rgba(100, 116, 139, 0.3)',
-              background: 'transparent',
-              color: '#94a3b8',
-              fontSize: 15,
-              fontWeight: 500,
-              cursor: isProcessing ? 'not-allowed' : 'pointer',
-              opacity: isProcessing ? 0.5 : 1,
-            }}
-          >
-            Cancel
-          </button>
+          {/* Footer */}
+          <div className={footerClasses}>
+            <button
+              onClick={onClose}
+              disabled={isProcessing}
+              className={`w-full py-3 px-4 rounded-[10px] border border-slate-600/30 bg-transparent text-slate-400 text-[15px] font-medium ${isProcessing ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-white/[0.03]'}`}
+            >
+              Cancel
+            </button>
+          </div>
         </div>
       </div>
-    </div>
 
-    {/* Manual Card Entry Modal — rendered as overlay on top of payment modal */}
-    {orderId && (
-      <ManualCardEntryModal
-        isOpen={showManualEntry}
-        onClose={() => setShowManualEntry(false)}
-        amount={currentTotal}
-        tipAmount={tipAmount}
-        orderId={orderId}
-        onSuccess={handleManualEntrySuccess}
-        onError={(errMsg) => {
-          toast.error(errMsg)
-        }}
-      />
-    )}
+      {/* Manual Card Entry Modal */}
+      {orderId && (
+        <ManualCardEntryModal
+          isOpen={showManualEntry}
+          onClose={() => setShowManualEntry(false)}
+          amount={currentTotal}
+          tipAmount={tipAmount}
+          orderId={orderId}
+          onSuccess={handleManualEntrySuccess}
+          onError={(errMsg) => toast.error(errMsg)}
+        />
+      )}
 
-    {/* Post-payment feedback prompt */}
-    {showFeedbackPrompt && orderId && locationId && (
-      <FeedbackPrompt
-        orderId={orderId}
-        locationId={locationId}
-        employeeId={employeeId}
-        ratingScale={feedbackSettings?.ratingScale ?? 5}
-        requireComment={feedbackSettings?.requireComment ?? false}
-        onClose={() => {
-          setShowFeedbackPrompt(false)
-          onPaymentComplete(pendingReceiptData)
-        }}
-      />
-    )}
+      {/* Post-payment feedback prompt */}
+      {showFeedbackPrompt && orderId && locationId && (
+        <FeedbackPrompt
+          orderId={orderId}
+          locationId={locationId}
+          employeeId={employeeId}
+          ratingScale={feedbackSettings?.ratingScale ?? 5}
+          requireComment={feedbackSettings?.requireComment ?? false}
+          onClose={() => { setShowFeedbackPrompt(false); onPaymentComplete(pendingReceiptData) }}
+        />
+      )}
     </>
   )
 }

@@ -1,16 +1,17 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, ok } from '@/lib/api-response'
 
 // GET /api/pizza/toppings - Get all pizza toppings
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const { searchParams } = new URL(request.url)
@@ -30,7 +31,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orderBy: [{ category: 'asc' }, { sortOrder: 'asc' }]
     })
 
-    return NextResponse.json(toppings.map(topping => ({
+    return ok(toppings.map(topping => ({
       ...topping,
       price: Number(topping.price),
       extraPrice: topping.extraPrice ? Number(topping.extraPrice) : null,
@@ -40,7 +41,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     })))
   } catch (error) {
     console.error('Failed to get pizza toppings:', error)
-    return NextResponse.json({ error: 'Failed to get pizza toppings' }, { status: 500 })
+    return err('Failed to get pizza toppings', 500)
   }
 })
 
@@ -51,15 +52,15 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     const { name, displayName, description, category, price, extraPrice, color, iconUrl, ingredientId, inventoryItemId, usageQuantity, usageUnit } = body
 
     if (!name?.trim()) {
-      return NextResponse.json({ error: 'Name is required' }, { status: 400 })
+      return err('Name is required')
     }
     if (price === undefined || price < 0) {
-      return NextResponse.json({ error: 'Valid price is required' }, { status: 400 })
+      return err('Valid price is required')
     }
 
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const maxSort = await db.pizzaTopping.aggregate({
@@ -88,13 +89,13 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     })
     pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       ...topping,
       price: Number(topping.price),
       extraPrice: topping.extraPrice ? Number(topping.extraPrice) : null,
-    } })
+    })
   } catch (error) {
     console.error('Failed to create pizza topping:', error)
-    return NextResponse.json({ error: 'Failed to create pizza topping' }, { status: 500 })
+    return err('Failed to create pizza topping', 500)
   }
 }))

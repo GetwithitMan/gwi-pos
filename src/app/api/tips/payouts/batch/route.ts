@@ -5,7 +5,7 @@
  * GET  - Get payable balances (employees owed tips)
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { requireAnyPermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import {
@@ -16,6 +16,7 @@ import {
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
+import { err, forbidden, ok } from '@/lib/api-response'
 
 // ─── POST: Batch payroll payout ──────────────────────────────────────────────
 
@@ -27,32 +28,20 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     // ── Validate required fields ──────────────────────────────────────────
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'locationId is required' },
-        { status: 400 }
-      )
+      return err('locationId is required')
     }
 
     if (!processedById) {
-      return NextResponse.json(
-        { error: 'processedById is required' },
-        { status: 400 }
-      )
+      return err('processedById is required')
     }
 
     // Validate employeeIds format if provided
     if (employeeIds !== undefined && employeeIds !== null) {
       if (!Array.isArray(employeeIds)) {
-        return NextResponse.json(
-          { error: 'employeeIds must be an array of employee IDs' },
-          { status: 400 }
-        )
+        return err('employeeIds must be an array of employee IDs')
       }
       if (employeeIds.length > 0 && employeeIds.some((id: unknown) => typeof id !== 'string')) {
-        return NextResponse.json(
-          { error: 'employeeIds must contain only string IDs' },
-          { status: 400 }
-        )
+        return err('employeeIds must contain only string IDs')
       }
     }
 
@@ -66,10 +55,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       [PERMISSIONS.TIPS_PROCESS_PAYOUT]
     )
     if (!auth.authorized) {
-      return NextResponse.json(
-        { error: 'Not authorized. Batch payroll payouts require tip payout permission.' },
-        { status: 403 }
-      )
+      return forbidden('Not authorized. Batch payroll payouts require tip payout permission.')
     }
 
     // ── Execute batch payout ──────────────────────────────────────────────
@@ -87,13 +73,13 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       }
     } catch (err) {
       if (err instanceof OutageQueueFullError) {
-        return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+        return err('Service temporarily unavailable — outage queue full', 507)
       }
       throw err
     }
 
     // ── Return success ────────────────────────────────────────────────────
-    return NextResponse.json({
+    return ok({
       success: true,
       batch: {
         totalPaidOutCents: result.totalPaidOutCents,
@@ -110,10 +96,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     })
   } catch (error) {
     console.error('Failed to process batch payroll payout:', error)
-    return NextResponse.json(
-      { error: 'Failed to process batch payroll payout' },
-      { status: 500 }
-    )
+    return err('Failed to process batch payroll payout', 500)
   }
 }))
 
@@ -127,10 +110,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
     // ── Validate required fields ──────────────────────────────────────────
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'locationId is required' },
-        { status: 400 }
-      )
+      return err('locationId is required')
     }
 
     // ── Auth check ────────────────────────────────────────────────────────
@@ -143,10 +123,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
       [PERMISSIONS.TIPS_PROCESS_PAYOUT]
     )
     if (!auth.authorized) {
-      return NextResponse.json(
-        { error: auth.error },
-        { status: auth.status }
-      )
+      return err(auth.error, auth.status)
     }
 
     // ── Query payable balances ────────────────────────────────────────────
@@ -157,7 +134,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
       0
     )
 
-    return NextResponse.json({
+    return ok({
       employees: employees.map(emp => ({
         employeeId: emp.employeeId,
         firstName: emp.firstName,
@@ -172,9 +149,6 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
     })
   } catch (error) {
     console.error('Failed to get payable balances:', error)
-    return NextResponse.json(
-      { error: 'Failed to get payable balances' },
-      { status: 500 }
-    )
+    return err('Failed to get payable balances', 500)
   }
 }))

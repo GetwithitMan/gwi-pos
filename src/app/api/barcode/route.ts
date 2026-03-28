@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, ok } from '@/lib/api-response'
 
 // GET — List barcodes for a menu item or inventory item
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -16,7 +17,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const search = searchParams.get('search')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+      return err('Location ID is required')
     }
 
     const where: Record<string, unknown> = {
@@ -37,8 +38,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orderBy: { createdAt: 'desc' },
     })
 
-    return NextResponse.json({
-      data: barcodes.map(b => ({
+    return ok(barcodes.map(b => ({
         id: b.id,
         barcode: b.barcode,
         label: b.label,
@@ -57,11 +57,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           currentStock: Number(b.inventoryItem.currentStock),
         } : null,
         createdAt: b.createdAt.toISOString(),
-      })),
-    })
+      })))
   } catch (error) {
     console.error('Failed to list barcodes:', error)
-    return NextResponse.json({ error: 'Failed to list barcodes' }, { status: 500 })
+    return err('Failed to list barcodes', 500)
   }
 })
 
@@ -74,24 +73,21 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const locationId = bodyLocationId || await getLocationId()
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+      return err('Location ID is required')
     }
 
     // Auth check — require menu.edit_items permission for barcode management
     const actor = await getActorFromRequest(request)
     const resolvedEmployeeId = actor.employeeId ?? bodyEmployeeId
     const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.MENU_EDIT_ITEMS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     if (!barcode) {
-      return NextResponse.json({ error: 'Barcode is required' }, { status: 400 })
+      return err('Barcode is required')
     }
 
     if (!menuItemId && !inventoryItemId) {
-      return NextResponse.json(
-        { error: 'At least one of menuItemId or inventoryItemId is required' },
-        { status: 400 }
-      )
+      return err('At least one of menuItemId or inventoryItemId is required')
     }
 
     const trimmedBarcode = barcode.trim()
@@ -101,10 +97,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       where: { locationId, barcode: trimmedBarcode, deletedAt: null },
     })
     if (existing) {
-      return NextResponse.json(
-        { error: 'A barcode with this value already exists at this location' },
-        { status: 409 }
-      )
+      return err('A barcode with this value already exists at this location', 409)
     }
 
     const created = await db.itemBarcode.create({
@@ -125,8 +118,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     pushUpstream()
 
-    return NextResponse.json({
-      data: {
+    return ok({
         id: created.id,
         barcode: created.barcode,
         label: created.label,
@@ -145,10 +137,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           currentStock: Number(created.inventoryItem.currentStock),
         } : null,
         createdAt: created.createdAt.toISOString(),
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to create barcode:', error)
-    return NextResponse.json({ error: 'Failed to create barcode' }, { status: 500 })
+    return err('Failed to create barcode', 500)
   }
 })

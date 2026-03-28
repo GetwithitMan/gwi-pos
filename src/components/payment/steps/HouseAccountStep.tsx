@@ -1,219 +1,169 @@
+'use client'
+
+import React, { useState, useEffect } from 'react'
+import { formatCurrency } from '@/lib/utils'
+import { usePaymentContext } from '../PaymentContext'
+import type { PendingPayment, HouseAccountInfo } from '../PaymentContext'
+import {
+  sectionLabelClasses,
+  inputClasses,
+  backButtonClasses,
+  primaryButtonClasses,
+  infoPanelBase,
+  infoPanelIndigo,
+} from '../payment-styles'
+
 /**
- * House Account Step
- *
- * Handles house account selection and charging.
- * Shows account search, balance, and credit limit.
+ * HouseAccountStep — search, select, and charge a house account.
  */
+export function HouseAccountStep() {
+  const {
+    totalWithTip,
+    currentTotal,
+    tipAmount,
+    locationId,
+    isProcessing,
+    pendingPayments,
+    processPayments,
+    setStep,
+  } = usePaymentContext()
 
-import React from 'react'
+  // Local house account state
+  const [houseAccounts, setHouseAccounts] = useState<HouseAccountInfo[]>([])
+  const [selectedHouseAccount, setSelectedHouseAccount] = useState<HouseAccountInfo | null>(null)
+  const [houseAccountSearch, setHouseAccountSearch] = useState('')
+  const [houseAccountsLoading, setHouseAccountsLoading] = useState(false)
 
-interface HouseAccountInfo {
-  id: string
-  accountNumber: string
-  customerName: string
-  balance: number
-  creditLimit: number
-  isActive: boolean
-}
+  // Load house accounts on mount
+  useEffect(() => {
+    const loadHouseAccounts = async () => {
+      setHouseAccountsLoading(true)
+      try {
+        const response = await fetch(`/api/house-accounts?locationId=${locationId || ''}&status=active`)
+        if (response.ok) {
+          const raw = await response.json()
+          const data = raw.data ?? raw
+          setHouseAccounts(data)
+        }
+      } catch {
+        console.error('Failed to load house accounts')
+      } finally {
+        setHouseAccountsLoading(false)
+      }
+    }
+    void loadHouseAccounts()
+  }, [locationId])
 
-interface HouseAccountStepProps {
-  amountDue: number
-  accounts: HouseAccountInfo[]
-  selectedAccount: HouseAccountInfo | null
-  searchQuery: string
-  isLoading: boolean
-  onSetSearchQuery: (query: string) => void
-  onSelectAccount: (account: HouseAccountInfo) => void
-  onComplete: () => void
-  onBack: () => void
-}
+  const handleHouseAccountPayment = () => {
+    if (!selectedHouseAccount) return
 
-export function HouseAccountStep({
-  amountDue,
-  accounts,
-  selectedAccount,
-  searchQuery,
-  isLoading,
-  onSetSearchQuery,
-  onSelectAccount,
-  onComplete,
-  onBack,
-}: HouseAccountStepProps) {
-  const filteredAccounts = accounts.filter(
-    (acc) =>
-      acc.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      acc.accountNumber.includes(searchQuery)
-  )
-
-  const canComplete =
-    selectedAccount &&
-    selectedAccount.isActive &&
-    selectedAccount.balance + amountDue <= selectedAccount.creditLimit
-
-  const newBalance = selectedAccount
-    ? selectedAccount.balance + amountDue
-    : 0
+    const payment: PendingPayment = {
+      method: 'house_account',
+      amount: currentTotal,
+      tipAmount,
+      houseAccountId: selectedHouseAccount.id,
+    }
+    processPayments([...pendingPayments, payment], pendingPayments)
+  }
 
   return (
-    <div className="space-y-3">
-      {/* Amount due */}
-      <div className="p-3 bg-orange-50 rounded-lg mb-3">
-        <div className="flex justify-between font-bold text-lg">
-          <span>Amount to Charge:</span>
-          <span className="text-orange-600">${amountDue.toFixed(2)}</span>
+    <div className="flex flex-col gap-2.5">
+      <h3 className={sectionLabelClasses}>House Account</h3>
+
+      <div className={`${infoPanelBase} ${infoPanelIndigo}`}>
+        <div className="flex justify-between font-bold text-lg font-mono">
+          <span className="text-slate-400">Amount to Charge</span>
+          <span className="text-indigo-400">{formatCurrency(totalWithTip)}</span>
         </div>
       </div>
 
-      {/* Search input */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          Search Account
-        </label>
+        <label className="text-slate-400 text-[13px] block mb-1.5">Search Account</label>
         <input
           type="text"
-          value={searchQuery}
-          onChange={(e) => onSetSearchQuery(e.target.value)}
-          placeholder="Search by name or account number"
-          className="w-full px-3 py-2 border rounded-lg"
-          autoFocus
+          value={houseAccountSearch}
+          onChange={(e) => setHouseAccountSearch(e.target.value)}
+          className={inputClasses}
+          placeholder="Search by name..."
         />
       </div>
 
-      {/* Loading state */}
-      {isLoading && (
-        <div className="text-center py-4 text-gray-500">
-          <div className="animate-spin w-6 h-6 border-2 border-orange-500 border-t-transparent rounded-full mx-auto mb-2"></div>
-          Loading accounts...
-        </div>
-      )}
-
-      {/* Account list */}
-      {!isLoading && filteredAccounts.length > 0 && (
-        <div className="max-h-64 overflow-y-auto space-y-2 border rounded-lg p-2">
-          {filteredAccounts.map((account) => {
-            const isSelected = selectedAccount?.id === account.id
-            const availableCredit = account.creditLimit - account.balance
-            const canUse = account.isActive && availableCredit >= amountDue
-
-            return (
-              <button
-                key={account.id}
-                onClick={() => onSelectAccount(account)}
-                disabled={!canUse}
-                className={`w-full p-3 rounded-lg text-left transition-all ${
-                  isSelected
-                    ? 'bg-orange-500 text-white ring-2 ring-orange-300'
-                    : canUse
-                    ? 'bg-white hover:bg-gray-50 border'
-                    : 'bg-gray-100 opacity-50 cursor-not-allowed'
-                }`}
-              >
-                <div className="flex justify-between items-start mb-1">
-                  <div>
-                    <div className="font-bold">{account.customerName}</div>
-                    <div
-                      className={`text-sm ${
-                        isSelected ? 'text-orange-100' : 'text-gray-500'
-                      }`}
-                    >
-                      #{account.accountNumber}
-                    </div>
-                  </div>
-                  {isSelected && <span className="text-xl">✓</span>}
-                </div>
-                <div className="flex justify-between text-sm mt-2">
-                  <span
-                    className={isSelected ? 'text-orange-100' : 'text-gray-600'}
-                  >
-                    Balance: ${account.balance.toFixed(2)}
-                  </span>
-                  <span
-                    className={
-                      isSelected
-                        ? 'text-orange-100'
-                        : availableCredit >= amountDue
-                        ? 'text-green-600 font-medium'
-                        : 'text-red-600 font-medium'
-                    }
-                  >
-                    Available: ${availableCredit.toFixed(2)}
-                  </span>
-                </div>
-                {!account.isActive && (
-                  <div className="text-sm text-red-600 mt-1">Inactive</div>
-                )}
-              </button>
+      {houseAccountsLoading ? (
+        <div className="text-center p-4 text-slate-400">Loading accounts...</div>
+      ) : (
+        <div className="max-h-48 overflow-y-auto rounded-[10px] border border-slate-600/20">
+          {houseAccounts
+            .filter(acc =>
+              !houseAccountSearch ||
+              acc.name.toLowerCase().includes(houseAccountSearch.toLowerCase())
             )
-          })}
+            .map(account => {
+              const availableCredit = account.creditLimit > 0
+                ? account.creditLimit - account.currentBalance
+                : Infinity
+              const canCharge = availableCredit >= totalWithTip
+              const isSelected = selectedHouseAccount?.id === account.id
+
+              return (
+                <button
+                  key={account.id}
+                  className={`w-full p-3 text-left border-b border-slate-600/10 ${isSelected ? 'bg-indigo-500/15' : 'bg-transparent hover:bg-white/[0.03]'} ${canCharge ? 'cursor-pointer' : 'cursor-not-allowed opacity-40'}`}
+                  onClick={() => canCharge && setSelectedHouseAccount(account)}
+                  disabled={!canCharge}
+                >
+                  <div className="text-slate-100 font-medium">{account.name}</div>
+                  <div className="text-[13px] text-slate-400 flex justify-between mt-0.5">
+                    <span>Balance: {formatCurrency(account.currentBalance)}</span>
+                    <span>
+                      {account.creditLimit > 0
+                        ? `Limit: ${formatCurrency(account.creditLimit)}`
+                        : 'No limit'}
+                    </span>
+                  </div>
+                  {!canCharge && (
+                    <div className="text-xs text-red-400 mt-1">
+                      Insufficient credit available
+                    </div>
+                  )}
+                </button>
+              )
+            })}
+          {houseAccounts.length === 0 && (
+            <div className="p-4 text-center text-slate-500">
+              No house accounts available
+            </div>
+          )}
         </div>
       )}
 
-      {/* No accounts found */}
-      {!isLoading && filteredAccounts.length === 0 && searchQuery && (
-        <div className="text-center py-8 text-gray-500">
-          No accounts found matching &quot;{searchQuery}&quot;
-        </div>
-      )}
-
-      {/* No accounts available */}
-      {!isLoading && accounts.length === 0 && !searchQuery && (
-        <div className="text-center py-8 text-gray-500">
-          No house accounts available
-        </div>
-      )}
-
-      {/* Selected account summary */}
-      {selectedAccount && (
-        <div className="p-3 bg-white border rounded-lg space-y-2">
-          <div className="flex justify-between text-sm">
-            <span className="text-gray-600">Current Balance:</span>
-            <span className="font-medium">
-              ${selectedAccount.balance.toFixed(2)}
-            </span>
-          </div>
-          <div className="flex justify-between text-sm">
-            <span className="text-gray-600">This Charge:</span>
-            <span className="font-medium text-orange-600">
-              ${amountDue.toFixed(2)}
-            </span>
-          </div>
-          <div className="flex justify-between text-sm pt-2 border-t">
-            <span className="text-gray-600">New Balance:</span>
-            <span className="font-bold">${newBalance.toFixed(2)}</span>
-          </div>
-          <div className="flex justify-between text-sm">
-            <span className="text-gray-600">Credit Limit:</span>
-            <span
-              className={
-                newBalance <= selectedAccount.creditLimit
-                  ? 'text-green-600'
-                  : 'text-red-600'
-              }
-            >
-              ${selectedAccount.creditLimit.toFixed(2)}
-            </span>
+      {selectedHouseAccount && (
+        <div className="p-3 bg-green-500/10 border border-green-500/20 rounded-[10px]">
+          <div className="text-slate-100 font-medium">{selectedHouseAccount.name}</div>
+          <div className="text-[13px] text-slate-400">
+            Current balance: {formatCurrency(selectedHouseAccount.currentBalance)}
+            {selectedHouseAccount.creditLimit > 0 && (
+              <span className="ml-2">
+                (Available: {formatCurrency(selectedHouseAccount.creditLimit - selectedHouseAccount.currentBalance)})
+              </span>
+            )}
           </div>
         </div>
       )}
 
-      {/* Action buttons */}
-      <div className="flex gap-2 mt-4">
+      <div className="flex gap-2 mt-2">
         <button
-          onClick={onBack}
-          className="flex-1 px-4 py-3 bg-gray-200 hover:bg-gray-300 rounded-lg font-bold"
+          onClick={() => setStep('method')}
+          disabled={isProcessing}
+          className={`${backButtonClasses} ${isProcessing ? 'opacity-50' : ''}`}
         >
           Back
         </button>
         <button
-          onClick={onComplete}
-          disabled={!canComplete}
-          className={`flex-1 px-4 py-3 rounded-lg font-bold ${
-            canComplete
-              ? 'bg-orange-500 hover:bg-orange-600 text-white'
-              : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-          }`}
+          onClick={handleHouseAccountPayment}
+          disabled={isProcessing || !selectedHouseAccount}
+          className={`${primaryButtonClasses} ${(isProcessing || !selectedHouseAccount) ? 'opacity-50 cursor-not-allowed' : ''}`}
         >
-          Charge Account
+          {isProcessing ? 'Processing...' : 'Charge to Account'}
         </button>
       </div>
     </div>

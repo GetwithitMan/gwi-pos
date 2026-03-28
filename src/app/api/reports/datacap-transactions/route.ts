@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { parseSettings } from '@/lib/settings'
+import { err, ok } from '@/lib/api-response'
 
 const REPORTING_CERT_URL = 'https://reporting-cert.dcap.com'
 const REPORTING_PROD_URL = 'https://reporting.dcap.com'
@@ -42,12 +43,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get('page') || '1')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID required' }, { status: 400 })
+      return err('Location ID required')
     }
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_SALES)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     const start = startDate
@@ -193,8 +194,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         t.Response.DSIXReturnCode !== '000000'
     ).length
 
-    return NextResponse.json({
-      data: {
+    return ok({
         localPayments: localWithStatus,
         datacapTransactions,
         hasReportingKey,
@@ -211,10 +211,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           datacapDeclined,
           datacapTotal: datacapTransactions.length,
         },
-      },
-    })
+      })
   } catch (err) {
     console.error('GET /api/reports/datacap-transactions error:', err)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return err('Internal server error', 500)
   }
 })

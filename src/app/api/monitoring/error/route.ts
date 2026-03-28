@@ -13,6 +13,7 @@ import { withAuth } from '@/lib/api-auth-middleware'
 import { createRateLimiter } from '@/lib/rate-limiter'
 import { getClientIp } from '@/lib/get-client-ip'
 import { queueIfOutage } from '@/lib/sync/outage-safe-write'
+import { err, ok } from '@/lib/api-response'
 
 // 30 requests per minute per IP to prevent log flooding
 const errorLogLimiter = createRateLimiter({ maxAttempts: 30, windowMs: 60 * 1000 })
@@ -43,19 +44,13 @@ export const POST = withVenue(withAuth(async function POST(req: NextRequest) {
 
     // Validate required fields
     if (!body.severity || !body.errorType || !body.message) {
-      return NextResponse.json(
-        { error: 'Missing required fields: severity, errorType, message' },
-        { status: 400 }
-      )
+      return err('Missing required fields: severity, errorType, message')
     }
 
     // Validate severity
     const validSeverities = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']
     if (!validSeverities.includes(body.severity)) {
-      return NextResponse.json(
-        { error: `Invalid severity. Must be one of: ${validSeverities.join(', ')}` },
-        { status: 400 }
-      )
+      return err(`Invalid severity. Must be one of: ${validSeverities.join(', ')}`)
     }
 
     // Validate error type
@@ -64,10 +59,7 @@ export const POST = withVenue(withAuth(async function POST(req: NextRequest) {
       'NETWORK', 'BUSINESS_LOGIC', 'PERFORMANCE'
     ]
     if (!validErrorTypes.includes(body.errorType)) {
-      return NextResponse.json(
-        { error: `Invalid errorType. Must be one of: ${validErrorTypes.join(', ')}` },
-        { status: 400 }
-      )
+      return err(`Invalid errorType. Must be one of: ${validErrorTypes.join(', ')}`)
     }
 
     // Check for duplicate/grouping (if groupId provided, increment count)
@@ -86,11 +78,11 @@ export const POST = withVenue(withAuth(async function POST(req: NextRequest) {
           },
         })
 
-        return NextResponse.json({ data: {
+        return ok({
           success: true,
           id: existingError.id,
           grouped: true
-        } })
+        })
       }
     }
 
@@ -187,20 +179,17 @@ export const POST = withVenue(withAuth(async function POST(req: NextRequest) {
       })
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       id: errorLog.id,
       groupId: errorLog.groupId,
-    } })
+    })
 
   } catch (error) {
     // Don't let error logging crash
     console.error('[Monitoring API] Failed to log error:', error)
 
-    return NextResponse.json(
-      { error: 'Failed to log error to monitoring system' },
-      { status: 500 }
-    )
+    return err('Failed to log error to monitoring system', 500)
   }
 }))
 

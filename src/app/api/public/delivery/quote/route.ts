@@ -13,6 +13,7 @@ import { getDbForVenue } from '@/lib/db'
 import { mergeWithDefaults, DEFAULT_DELIVERY } from '@/lib/settings'
 import { checkOnlineRateLimit } from '@/lib/online-rate-limiter'
 import { getClientIp } from '@/lib/get-client-ip'
+import { err, notFound, ok } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -60,14 +61,14 @@ export async function POST(request: NextRequest) {
     try {
       body = (await request.json()) as QuoteBody
     } catch {
-      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+      return err('Invalid JSON body')
     }
 
     if (!body.slug) {
-      return NextResponse.json({ error: 'slug is required' }, { status: 400 })
+      return err('slug is required')
     }
     if (!body.address?.trim()) {
-      return NextResponse.json({ error: 'address is required' }, { status: 400 })
+      return err('address is required')
     }
 
     // ── Resolve venue DB ───────────────────────────────────────────────
@@ -75,7 +76,7 @@ export async function POST(request: NextRequest) {
     try {
       venueDb = await getDbForVenue(body.slug)
     } catch {
-      return NextResponse.json({ error: 'Location not found' }, { status: 404 })
+      return notFound('Location not found')
     }
 
     // ── Get location + settings ────────────────────────────────────────
@@ -85,7 +86,7 @@ export async function POST(request: NextRequest) {
     })
 
     if (!location) {
-      return NextResponse.json({ error: 'Location not found' }, { status: 404 })
+      return notFound('Location not found')
     }
 
     const settings = mergeWithDefaults((location.settings ?? {}) as any)
@@ -93,13 +94,7 @@ export async function POST(request: NextRequest) {
 
     // ── Check delivery enabled ─────────────────────────────────────────
     if (!deliveryConfig.enabled) {
-      return NextResponse.json(
-        { serviceable: false, reason: 'Delivery is not available' },
-        {
-          status: 200,
-          headers: { 'Cache-Control': 'private, no-store' },
-        }
-      )
+      return ok({ serviceable: false, reason: 'Delivery is not available' })
     }
 
     // ── Query active delivery zones (raw SQL — not in Prisma schema) ──
@@ -113,13 +108,7 @@ export async function POST(request: NextRequest) {
     )
 
     if (zones.length === 0) {
-      return NextResponse.json(
-        { serviceable: false, reason: 'Delivery is not available at this time' },
-        {
-          status: 200,
-          headers: { 'Cache-Control': 'private, no-store' },
-        }
-      )
+      return ok({ serviceable: false, reason: 'Delivery is not available at this time' })
     }
 
     // ── Match address against zones (priority: sortOrder ASC) ──────────
@@ -156,17 +145,11 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      return NextResponse.json(
-        {
+      return ok({
           serviceable: false,
           reason: 'Outside our delivery area',
           ...(availableZipcodes.length > 0 ? { availableZipcodes } : {}),
-        },
-        {
-          status: 200,
-          headers: { 'Cache-Control': 'private, no-store' },
-        }
-      )
+        })
     }
 
     // ── Calculate fee ──────────────────────────────────────────────────
@@ -185,17 +168,11 @@ export async function POST(request: NextRequest) {
 
     // Minimum order check
     if (subtotal !== null && subtotal < minimumOrder && minimumOrder > 0) {
-      return NextResponse.json(
-        {
+      return ok({
           serviceable: false,
           reason: `Minimum order of $${minimumOrder.toFixed(2)} required for delivery`,
           minimumOrder,
-        },
-        {
-          status: 200,
-          headers: { 'Cache-Control': 'private, no-store' },
-        }
-      )
+        })
     }
 
     // Estimated time: zone → settings → default 30
@@ -205,8 +182,7 @@ export async function POST(request: NextRequest) {
       30
 
     // ── Return quote ───────────────────────────────────────────────────
-    return NextResponse.json(
-      {
+    return ok({
         serviceable: true,
         fee,
         estimatedMinutes,
@@ -214,17 +190,9 @@ export async function POST(request: NextRequest) {
         zoneId: matchedZone.id,
         zoneName: matchedZone.name,
         freeDeliveryMinimum: deliveryConfig.freeDeliveryMinimum || undefined,
-      },
-      {
-        status: 200,
-        headers: { 'Cache-Control': 'private, no-store' },
-      }
-    )
+      })
   } catch (error) {
     console.error('[Delivery/Quote] POST error:', error)
-    return NextResponse.json(
-      { error: 'Failed to calculate delivery quote' },
-      { status: 500 }
-    )
+    return err('Failed to calculate delivery quote', 500)
   }
 }

@@ -5,11 +5,12 @@
  * Transitions quote → approved, order → approved. Emits socket event.
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import crypto from 'crypto'
 import { getDbForVenue } from '@/lib/db'
 import { verifyOrderViewToken } from '@/lib/portal-auth'
 import { dispatchCakeOrderUpdated } from '@/lib/socket-dispatch'
+import { err, forbidden, notFound, ok } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,27 +22,24 @@ export async function PATCH(
     const { slug, qid } = (await context.params) as { slug: string; qid: string }
 
     if (!slug) {
-      return NextResponse.json({ error: 'Venue slug is required' }, { status: 400 })
+      return err('Venue slug is required')
     }
     if (!qid) {
-      return NextResponse.json({ error: 'Quote ID is required' }, { status: 400 })
+      return err('Quote ID is required')
     }
 
     // ── Validate token ─────────────────────────────────────────────
     const token = request.nextUrl.searchParams.get('token')
     if (!token) {
-      return NextResponse.json({ error: 'Access token is required' }, { status: 403 })
+      return forbidden('Access token is required')
     }
 
     const tokenResult = verifyOrderViewToken(token)
     if (!tokenResult.valid && tokenResult.expired) {
-      return NextResponse.json(
-        { error: 'This link has expired. Please request a new one.' },
-        { status: 410 },
-      )
+      return err('This link has expired. Please request a new one.', 410)
     }
     if (!tokenResult.valid) {
-      return NextResponse.json({ error: 'Invalid access token' }, { status: 403 })
+      return forbidden('Invalid access token')
     }
 
     // ── Resolve venue DB ───────────────────────────────────────────
@@ -49,7 +47,7 @@ export async function PATCH(
     try {
       venueDb = await getDbForVenue(slug)
     } catch {
-      return NextResponse.json({ error: 'Location not found' }, { status: 404 })
+      return notFound('Location not found')
     }
 
     // ── Get location ─────────────────────────────────────────────
@@ -59,7 +57,7 @@ export async function PATCH(
     })
 
     if (!location) {
-      return NextResponse.json({ error: 'Location not found' }, { status: 404 })
+      return notFound('Location not found')
     }
 
     const locationId = location.id
@@ -79,24 +77,18 @@ export async function PATCH(
     )
 
     if (quotes.length === 0) {
-      return NextResponse.json({ error: 'Quote not found' }, { status: 404 })
+      return notFound('Quote not found')
     }
 
     const quote = quotes[0]
 
     // ── Check quote is still active ────────────────────────────────
     if (quote.status === 'voided') {
-      return NextResponse.json(
-        { error: 'Quote no longer active. It has been voided.' },
-        { status: 410 },
-      )
+      return err('Quote no longer active. It has been voided.', 410)
     }
 
     if (quote.status === 'expired') {
-      return NextResponse.json(
-        { error: 'Quote no longer active. It has expired.' },
-        { status: 410 },
-      )
+      return err('Quote no longer active. It has expired.', 410)
     }
 
     // Check validUntilDate expiry
@@ -104,16 +96,13 @@ export async function PATCH(
       const validUntil = new Date(quote.validUntilDate)
       validUntil.setHours(23, 59, 59, 999) // end of day
       if (new Date() > validUntil) {
-        return NextResponse.json(
-          { error: 'Quote no longer active. It has expired.' },
-          { status: 410 },
-        )
+        return err('Quote no longer active. It has expired.', 410)
       }
     }
 
     // ── Already approved — idempotent success ──────────────────────
     if (quote.status === 'approved') {
-      return NextResponse.json({
+      return ok({
         success: true,
         status: 'approved',
         message: 'Quote already accepted.',
@@ -163,12 +152,12 @@ export async function PATCH(
       changeType: 'quote_approved',
     }).catch(err => console.error('[portal-quote-accept] Socket dispatch failed:', err))
 
-    return NextResponse.json({
+    return ok({
       success: true,
       status: 'approved',
     })
   } catch (error) {
     console.error('[PATCH /api/public/portal/[slug]/quote/[qid]/accept] Error:', error)
-    return NextResponse.json({ error: 'Failed to accept quote' }, { status: 500 })
+    return err('Failed to accept quote', 500)
   }
 }

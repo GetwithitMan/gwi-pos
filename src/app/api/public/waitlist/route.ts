@@ -8,6 +8,7 @@ import { dispatchWaitlistChanged } from '@/lib/socket-dispatch'
 import { createRateLimiter } from '@/lib/rate-limiter'
 import { getClientIp } from '@/lib/get-client-ip'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok } from '@/lib/api-response'
 const log = createChildLogger('public-waitlist')
 
 export const dynamic = 'force-dynamic'
@@ -22,7 +23,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const rawSettings = await getLocationSettings(locationId)
@@ -30,14 +31,14 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const waitlistConfig = settings.waitlist ?? DEFAULT_WAITLIST_SETTINGS
 
     if (!waitlistConfig.enabled) {
-      return NextResponse.json({ error: 'Waitlist is not enabled' }, { status: 400 })
+      return err('Waitlist is not enabled')
     }
 
     const { searchParams } = new URL(request.url)
     const phone = searchParams.get('phone')?.trim()
 
     if (!phone) {
-      return NextResponse.json({ error: 'Phone number is required (?phone=XXX)' }, { status: 400 })
+      return err('Phone number is required (?phone=XXX)')
     }
 
     // Look up active entry by phone
@@ -52,7 +53,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     `, locationId, phone)
 
     if (!entries.length) {
-      return NextResponse.json({
+      return ok({
         found: false,
         message: 'No active waitlist entry found for this phone number.',
       })
@@ -72,7 +73,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const livePosition = positionResult[0]?.position ?? entry.position
     const estimatedWaitMinutes = Math.max(0, (livePosition - 1) * waitlistConfig.estimateMinutesPerTurn)
 
-    return NextResponse.json({
+    return ok({
       found: true,
       position: livePosition,
       status: entry.status,
@@ -82,7 +83,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     })
   } catch (error) {
     console.error('[PublicWaitlist] GET error:', error)
-    return NextResponse.json({ error: 'Failed to check waitlist' }, { status: 500 })
+    return err('Failed to check waitlist', 500)
   }
 })
 
@@ -105,7 +106,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const rawSettings = await getLocationSettings(locationId)
@@ -113,22 +114,19 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const waitlistConfig = settings.waitlist ?? DEFAULT_WAITLIST_SETTINGS
 
     if (!waitlistConfig.enabled) {
-      return NextResponse.json({ error: 'Waitlist is not available at this time.' }, { status: 400 })
+      return err('Waitlist is not available at this time.')
     }
 
     const body = await request.json()
     const { customerName, partySize, phone, notes } = body
 
     if (!customerName || typeof customerName !== 'string' || customerName.trim().length === 0) {
-      return NextResponse.json({ error: 'Your name is required.' }, { status: 400 })
+      return err('Your name is required.')
     }
 
     const size = Number(partySize)
     if (!size || size < 1 || size > waitlistConfig.maxPartySize) {
-      return NextResponse.json(
-        { error: `Party size must be between 1 and ${waitlistConfig.maxPartySize}.` },
-        { status: 400 }
-      )
+      return err(`Party size must be between 1 and ${waitlistConfig.maxPartySize}.`)
     }
 
     // Check waitlist capacity
@@ -141,10 +139,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     const currentCount = countResult[0]?.count ?? 0
     if (currentCount >= waitlistConfig.maxWaitlistSize) {
-      return NextResponse.json(
-        { error: 'The waitlist is currently full. Please try again later.' },
-        { status: 409 }
-      )
+      return err('The waitlist is currently full. Please try again later.', 409)
     }
 
     const position = currentCount + 1
@@ -179,6 +174,6 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }, { status: 201 })
   } catch (error) {
     console.error('[PublicWaitlist] POST error:', error)
-    return NextResponse.json({ error: 'Failed to join waitlist' }, { status: 500 })
+    return err('Failed to join waitlist', 500)
   }
 })

@@ -28,6 +28,7 @@ import { db, getDbForVenue } from '@/lib/db'
 import { computeIsOrderableOnline, getStockStatus } from '@/lib/online-availability'
 import { checkOnlineRateLimit } from '@/lib/online-rate-limiter'
 import { getClientIp } from '@/lib/get-client-ip'
+import { err, notFound, ok } from '@/lib/api-response'
 
 export async function GET(request: NextRequest) {
   try {
@@ -36,10 +37,7 @@ export async function GET(request: NextRequest) {
     const slug = searchParams.get('slug')
 
     if (!locationId && !slug) {
-      return NextResponse.json(
-        { error: 'Either slug or locationId query parameter is required' },
-        { status: 400 }
-      )
+      return err('Either slug or locationId query parameter is required')
     }
 
     // Route to venue DB when slug is provided (cloud/Vercel multi-tenant).
@@ -55,10 +53,7 @@ export async function GET(request: NextRequest) {
         orderBy: { createdAt: 'asc' },
       })
       if (!loc) {
-        return NextResponse.json(
-          { error: 'Venue not found' },
-          { status: 404 }
-        )
+        return notFound('Venue not found')
       }
       locationId = loc.id
     }
@@ -85,10 +80,7 @@ export async function GET(request: NextRequest) {
     const onlineSettings = locSettings?.onlineOrdering as Record<string, unknown> | null
 
     if (!onlineSettings?.enabled) {
-      return NextResponse.json(
-        { error: 'Online ordering is not currently available' },
-        { status: 503 }
-      )
+      return err('Online ordering is not currently available', 503)
     }
 
     // Fetch all active categories that are shown online for this location
@@ -181,12 +173,9 @@ export async function GET(request: NextRequest) {
       // Exclude categories with no orderable items
       .filter(cat => cat.items.length > 0)
 
-    return NextResponse.json({ data: { categories: result } })
+    return ok({ categories: result })
   } catch (error) {
     console.error('[GET /api/online/menu] Error:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch online menu' },
-      { status: 500 }
-    )
+    return err('Failed to fetch online menu', 500)
   }
 }

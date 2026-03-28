@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET /api/berg/plu-mappings/[id] — get a single PLU mapping
 export const GET = withVenue(async function GET(
@@ -16,12 +17,12 @@ export const GET = withVenue(async function GET(
     const requestingEmployeeId = searchParams.get('requestingEmployeeId') || searchParams.get('employeeId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.SETTINGS_VIEW)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     const mapping = await db.bergPluMapping.findFirst({
@@ -29,13 +30,13 @@ export const GET = withVenue(async function GET(
     })
 
     if (!mapping) {
-      return NextResponse.json({ error: 'Mapping not found' }, { status: 404 })
+      return notFound('Mapping not found')
     }
 
-    return NextResponse.json({ mapping })
+    return ok({ mapping })
   } catch (err) {
     console.error('[berg/plu-mappings/[id] GET]', err)
-    return NextResponse.json({ error: 'Failed to load mapping' }, { status: 500 })
+    return err('Failed to load mapping', 500)
   }
 })
 
@@ -50,18 +51,18 @@ export const PUT = withVenue(async function PUT(
     const { locationId, deviceId, description, bottleProductId, inventoryItemId, menuItemId, pourSizeOzOverride, modifierRule, trailerRule, isActive } = body
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     const requestingEmployeeId = body.requestingEmployeeId || body.employeeId || ''
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.SETTINGS_EDIT)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     const existing = await db.bergPluMapping.findFirst({ where: { id, locationId } })
     if (!existing) {
-      return NextResponse.json({ error: 'Mapping not found' }, { status: 404 })
+      return notFound('Mapping not found')
     }
 
     const updateData: Record<string, unknown> = {}
@@ -79,10 +80,10 @@ export const PUT = withVenue(async function PUT(
     }
 
     const mapping = await db.bergPluMapping.update({ where: { id }, data: updateData })
-    return NextResponse.json({ mapping })
+    return ok({ mapping })
   } catch (err) {
     console.error('[berg/plu-mappings/[id] PUT]', err)
-    return NextResponse.json({ error: 'Failed to update mapping' }, { status: 500 })
+    return err('Failed to update mapping', 500)
   }
 })
 
@@ -98,23 +99,23 @@ export const DELETE = withVenue(async function DELETE(
     const requestingEmployeeId = searchParams.get('requestingEmployeeId') || searchParams.get('employeeId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.SETTINGS_EDIT)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     const existing = await db.bergPluMapping.findFirst({ where: { id, locationId } })
     if (!existing) {
-      return NextResponse.json({ error: 'Mapping not found' }, { status: 404 })
+      return notFound('Mapping not found')
     }
 
     await db.bergPluMapping.delete({ where: { id } })
-    return NextResponse.json({ success: true })
+    return ok({ success: true })
   } catch (err) {
     console.error('[berg/plu-mappings/[id] DELETE]', err)
-    return NextResponse.json({ error: 'Failed to delete mapping' }, { status: 500 })
+    return err('Failed to delete mapping', 500)
   }
 })

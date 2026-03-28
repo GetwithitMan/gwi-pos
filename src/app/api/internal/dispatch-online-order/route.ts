@@ -19,11 +19,12 @@
  *   { found: number, dispatched: number, errors?: string[] }
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { adminDb } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { createChildLogger } from '@/lib/logger'
+import { ok, unauthorized } from '@/lib/api-response'
 const log = createChildLogger('internal-dispatch-online-order')
 
 const PORT = process.env.PORT || '3005'
@@ -32,7 +33,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   // ── Auth ──────────────────────────────────────────────────────────────────
   const apiKey = request.headers.get('x-api-key')
   if (!apiKey || apiKey !== process.env.PROVISION_API_KEY) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return unauthorized('Unauthorized')
   }
 
   const body = await request.json().catch(() => ({})) as {
@@ -125,7 +126,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
   }
 
-  return NextResponse.json({
+  return ok({
     found: orders.length,
     dispatched,
     ...(errors.length > 0 ? { errors } : {}),

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { normalizeCoord } from '@/lib/table-geometry'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
@@ -8,6 +8,7 @@ import { withVenue } from '@/lib/with-venue'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, ok } from '@/lib/api-response'
 
 interface TablePositionUpdate {
   id: string
@@ -33,23 +34,17 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
     }
 
     if (!tables || !Array.isArray(tables) || tables.length === 0) {
-      return NextResponse.json(
-        { error: 'No tables provided for update' },
-        { status: 400 }
-      )
+      return err('No tables provided for update')
     }
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'locationId is required' },
-        { status: 400 }
-      )
+      return err('locationId is required')
     }
 
     // Auth check — require tables.floor_plan permission
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.TABLES_FLOOR_PLAN)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Normalize all positions to grid alignment before saving
     // This ensures DB values match what the editor displays (same grid snapping)
@@ -90,7 +85,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
     void notifyDataChanged({ locationId, domain: 'floorplan', action: 'updated' })
     void pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       updated: results.length,
       tables: results.map(t => ({
@@ -100,12 +95,9 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
         width: t.width,
         height: t.height,
       })),
-    } })
+    })
   } catch (error) {
     console.error('[Tables Bulk Update] Error:', error)
-    return NextResponse.json(
-      { error: 'Bulk update failed' },
-      { status: 500 }
-    )
+    return err('Bulk update failed', 500)
   }
 }))

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { requirePermission } from '@/lib/api-auth'
@@ -6,6 +6,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - List waste log entries
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -18,7 +19,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const inventoryItemId = searchParams.get('inventoryItemId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID required' }, { status: 400 })
+      return err('Location ID required')
     }
 
     const where: Record<string, unknown> = {
@@ -45,16 +46,16 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orderBy: { wasteDate: 'desc' },
     })
 
-    return NextResponse.json({ data: {
+    return ok({
       entries: entries.map(entry => ({
         ...entry,
         quantity: Number(entry.quantity),
         costImpact: entry.costImpact ? Number(entry.costImpact) : null,
       })),
-    } })
+    })
   } catch (error) {
     console.error('Waste log list error:', error)
-    return NextResponse.json({ error: 'Failed to fetch waste log' }, { status: 500 })
+    return err('Failed to fetch waste log', 500)
   }
 })
 
@@ -73,15 +74,13 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     } = body
 
     if (!locationId || !inventoryItemId || !reason || !quantity || !unit) {
-      return NextResponse.json({
-        error: 'Location ID, inventory item, reason, quantity, and unit required',
-      }, { status: 400 })
+      return err('Location ID, inventory item, reason, quantity, and unit required')
     }
 
     // Permission check — require inventory.waste permission
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.INVENTORY_WASTE)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Get current item cost
@@ -91,7 +90,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     })
 
     if (!item) {
-      return NextResponse.json({ error: 'Inventory item not found' }, { status: 404 })
+      return notFound('Inventory item not found')
     }
 
     const costPerUnit = Number(item.costPerUnit)
@@ -174,15 +173,15 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     void notifyDataChanged({ locationId, domain: 'inventory', action: 'created', entityId: entry.id })
     pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       entry: {
         ...entry,
         quantity: Number(entry.quantity),
         costImpact: entry.costImpact ? Number(entry.costImpact) : null,
       },
-    } })
+    })
   } catch (error) {
     console.error('Create waste log entry error:', error)
-    return NextResponse.json({ error: 'Failed to create waste log entry' }, { status: 500 })
+    return err('Failed to create waste log entry', 500)
   }
 }))

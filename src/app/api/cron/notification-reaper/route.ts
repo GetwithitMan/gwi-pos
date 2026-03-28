@@ -9,10 +9,11 @@
  * Configurable timeout per location via settings.notifications.ghostPagerTimeoutHours (default: 4)
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { verifyCronSecret } from '@/lib/cron-auth'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok } from '@/lib/api-response'
 const log = createChildLogger('cron-notification-reaper')
 
 export const dynamic = 'force-dynamic'
@@ -186,16 +187,13 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({
+    return ok({
       success: true,
       processed: results,
       timestamp: now.toISOString(),
     })
   } catch (error) {
     console.error('[cron:notification-reaper] Fatal error:', error)
-    return NextResponse.json(
-      { error: 'Ghost pager reaper failed', details: error instanceof Error ? error.message : 'Unknown' },
-      { status: 500 }
-    )
+    return err('Ghost pager reaper failed', 500, error instanceof Error ? error.message : 'Unknown')
   }
 }

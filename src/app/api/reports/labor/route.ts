@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { calculateLaborCost, roundMoney } from '@/lib/domain/reports'
 import { getTimeClockEntries, getActiveEmployees, getSalesTotalForPeriod } from '@/lib/query-services'
+import { err, ok } from '@/lib/api-response'
 
 // GET labor report - hours worked, costs, overtime
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -16,15 +17,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const requestingEmployeeId = searchParams.get('requestingEmployeeId') || searchParams.get('employeeId') || employeeId
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'Location ID is required' },
-        { status: 400 }
-      )
+      return err('Location ID is required')
     }
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_LABOR)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Build date filter (B17 fix: explicit date objects, no spread operator)
@@ -263,7 +261,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       laborCostPercent = Math.round((totalLaborCost / totalSales) * 10000) / 100
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       summary: {
         totalShifts,
         totalRegularHours: roundMoney(totalRegularHours),
@@ -289,12 +287,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         locationId,
         employeeId,
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to generate labor report:', error)
-    return NextResponse.json(
-      { error: 'Failed to generate labor report' },
-      { status: 500 }
-    )
+    return err('Failed to generate labor report', 500)
   }
 })

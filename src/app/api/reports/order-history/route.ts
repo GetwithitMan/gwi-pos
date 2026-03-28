@@ -6,6 +6,7 @@ import { withVenue } from '@/lib/with-venue'
 import { getLocationSettings } from '@/lib/location-cache'
 import { parseSettings } from '@/lib/settings'
 import { dateRangeToUTC } from '@/lib/timezone'
+import { err, ok } from '@/lib/api-response'
 
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
@@ -24,12 +25,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const requestingEmployeeId = searchParams.get('requestingEmployeeId') || searchParams.get('employeeId') || employeeId
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID required' }, { status: 400 })
+      return err('Location ID required')
     }
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_VIEW)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Build where clause
@@ -323,7 +324,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       })
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       orders: mappedOrders,
       pagination: {
         page,
@@ -375,9 +376,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         amount: Number(p._sum.amount || 0),
         tips: Number(p._sum.tipAmount || 0),
       })),
-    } })
+    })
   } catch (error) {
     console.error('Order history error:', error)
-    return NextResponse.json({ error: 'Failed to fetch order history' }, { status: 500 })
+    return err('Failed to fetch order history', 500)
   }
 })

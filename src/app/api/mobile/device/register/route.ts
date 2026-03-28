@@ -4,6 +4,7 @@ import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import bcrypt from 'bcryptjs'
 import crypto from 'crypto'
+import { err, unauthorized } from '@/lib/api-response'
 
 // POST: employee enters PIN on mobile device → returns session token + sets cookie
 export const POST = withVenue(withAuth(async function POST(request: NextRequest) {
@@ -12,7 +13,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     const { pin, locationId, deviceName = 'Mobile Device', deviceFingerprint } = body
 
     if (!pin || !locationId) {
-      return NextResponse.json({ error: 'Missing pin or locationId' }, { status: 400 })
+      return err('Missing pin or locationId')
     }
 
     // Find active employees scoped to this location
@@ -38,7 +39,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     }
 
     if (!matchedEmployee) {
-      return NextResponse.json({ error: 'Invalid PIN' }, { status: 401 })
+      return unauthorized('Invalid PIN')
     }
 
     // Find or create a RegisteredDevice for this fingerprint
@@ -106,6 +107,6 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     return response
   } catch (error) {
     console.error('[mobile/device/register] Error:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return err('Internal server error', 500)
   }
 }))

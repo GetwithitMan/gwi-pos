@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { err, ok } from '@/lib/api-response'
 
 // I-3: Overtime check — returns current week hours for employee
 export const GET = withVenue(async function GET(
@@ -48,16 +49,16 @@ export const GET = withVenue(async function GET(
 
     weeklyHours = Math.round(weeklyHours * 100) / 100
 
-    return NextResponse.json({ data: {
+    return ok({
       employeeId,
       weeklyHours,
       threshold,
       isOverThreshold: weeklyHours >= threshold,
       hoursRemaining: Math.max(0, Math.round((threshold - weeklyHours) * 100) / 100),
       weekStart: weekStart.toISOString(),
-    } })
+    })
   } catch (error) {
     console.error('Failed to check overtime:', error)
-    return NextResponse.json({ error: 'Failed to check overtime' }, { status: 500 })
+    return err('Failed to check overtime', 500)
   }
 })

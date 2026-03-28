@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { withVenue } from '@/lib/with-venue'
 import { createServerTiming } from '@/lib/perf-timing'
 import { getFloorPlanSnapshot } from '@/lib/snapshot'
+import { err } from '@/lib/api-response'
 
 /**
  * GET /api/floorplan/snapshot?locationId=...
@@ -14,7 +15,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   const locationId = request.nextUrl.searchParams.get('locationId')
 
   if (!locationId) {
-    return NextResponse.json({ error: 'locationId required' }, { status: 400 })
+    return err('locationId required')
   }
 
   const timing = createServerTiming()
@@ -30,6 +31,6 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     return timing.apply(response)
   } catch (error) {
     console.error('[floorplan/snapshot] GET error:', error)
-    return NextResponse.json({ error: 'Failed to load floor plan' }, { status: 500 })
+    return err('Failed to load floor plan', 500)
   }
 })

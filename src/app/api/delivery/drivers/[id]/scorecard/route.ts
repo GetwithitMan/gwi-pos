@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
+import { err, notFound, ok } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,13 +22,13 @@ export const GET = withVenue(async function GET(
     const { id: driverId } = await params
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Auth check
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.DELIVERY_REPORTS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Feature gate
     const featureGate = await requireDeliveryFeature(locationId)
@@ -41,7 +42,7 @@ export const GET = withVenue(async function GET(
     `, driverId, locationId)
 
     if (!driverRows.length) {
-      return NextResponse.json({ error: 'Driver not found' }, { status: 404 })
+      return notFound('Driver not found')
     }
 
     const driver = driverRows[0]
@@ -139,7 +140,7 @@ export const GET = withVenue(async function GET(
       ? Math.round((completedDeliveries / totalHours) * 10) / 10
       : 0
 
-    return NextResponse.json({
+    return ok({
       scorecard: {
         driverId,
         dateFrom: dateFrom.toISOString(),
@@ -156,6 +157,6 @@ export const GET = withVenue(async function GET(
     })
   } catch (error) {
     console.error('[Delivery/Drivers/Scorecard] GET error:', error)
-    return NextResponse.json({ error: 'Failed to fetch scorecard' }, { status: 500 })
+    return err('Failed to fetch scorecard', 500)
   }
 })

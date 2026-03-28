@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -7,6 +7,7 @@ import { dispatchQuickBarChanged } from '@/lib/socket-dispatch'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok } from '@/lib/api-response'
 const log = createChildLogger('location-quick-bar-default')
 
 // GET — returns location-level default quick bar items
@@ -15,19 +16,17 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     const defaults = await db.quickBarDefault.findUnique({ where: { locationId } })
 
-    return NextResponse.json({
-      data: {
+    return ok({
         itemIds: defaults ? JSON.parse(defaults.itemIds) : [],
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to fetch quick bar defaults:', error)
-    return NextResponse.json({ error: 'Failed to fetch quick bar defaults' }, { status: 500 })
+    return err('Failed to fetch quick bar defaults', 500)
   }
 })
 
@@ -38,16 +37,16 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     const { locationId, itemIds, employeeId } = body
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
     if (!Array.isArray(itemIds)) {
-      return NextResponse.json({ error: 'itemIds must be an array' }, { status: 400 })
+      return err('itemIds must be an array')
     }
 
     // Manager-gated: require settings.menu permission
     if (employeeId) {
       const auth = await requirePermission(employeeId, locationId, PERMISSIONS.SETTINGS_MENU)
-      if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+      if (!auth.authorized) return err(auth.error, auth.status)
     }
 
     await db.quickBarDefault.upsert({
@@ -67,9 +66,9 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     void notifyDataChanged({ locationId, domain: 'quick-bar', action: 'updated' })
     void pushUpstream()
 
-    return NextResponse.json({ data: { itemIds } })
+    return ok({ itemIds })
   } catch (error) {
     console.error('Failed to update quick bar defaults:', error)
-    return NextResponse.json({ error: 'Failed to update quick bar defaults' }, { status: 500 })
+    return err('Failed to update quick bar defaults', 500)
   }
 })

@@ -5,8 +5,9 @@
  * Returns safe order list (no internal notes, no POS IDs).
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { getDbForVenue } from '@/lib/db'
+import { err, notFound, ok, unauthorized } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,16 +19,13 @@ export async function GET(
     const { slug } = (await context.params) as { slug: string }
 
     if (!slug) {
-      return NextResponse.json({ error: 'Venue slug is required' }, { status: 400 })
+      return err('Venue slug is required')
     }
 
     // ── Read session cookie ────────────────────────────────────────
     const sessionToken = request.cookies.get('portal_session')?.value
     if (!sessionToken) {
-      return NextResponse.json(
-        { error: 'Authentication required. Please log in.' },
-        { status: 401 },
-      )
+      return unauthorized('Authentication required. Please log in.')
     }
 
     // ── Resolve venue DB ───────────────────────────────────────────
@@ -35,7 +33,7 @@ export async function GET(
     try {
       venueDb = await getDbForVenue(slug)
     } catch {
-      return NextResponse.json({ error: 'Location not found' }, { status: 404 })
+      return notFound('Location not found')
     }
 
     // ── Get location ─────────────────────────────────────────────
@@ -45,7 +43,7 @@ export async function GET(
     })
 
     if (!location) {
-      return NextResponse.json({ error: 'Location not found' }, { status: 404 })
+      return notFound('Location not found')
     }
 
     const locationId = location.id
@@ -65,10 +63,7 @@ export async function GET(
     )
 
     if (sessions.length === 0) {
-      return NextResponse.json(
-        { error: 'Session expired. Please log in again.' },
-        { status: 401 },
-      )
+      return unauthorized('Session expired. Please log in again.')
     }
 
     const { customerId } = sessions[0]
@@ -99,9 +94,9 @@ export async function GET(
       createdAt: o.createdAt,
     }))
 
-    return NextResponse.json({ orders: safeOrders })
+    return ok({ orders: safeOrders })
   } catch (error) {
     console.error('[GET /api/public/portal/[slug]/my-orders] Error:', error)
-    return NextResponse.json({ error: 'Failed to fetch orders' }, { status: 500 })
+    return err('Failed to fetch orders', 500)
   }
 }

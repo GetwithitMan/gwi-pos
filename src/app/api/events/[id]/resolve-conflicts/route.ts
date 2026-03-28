@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // Helper to parse HH:MM time to minutes from midnight
 function parseTimeToMinutes(time: string): number {
@@ -44,10 +45,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
 
     // Validate action
     if (!['cancel_all', 'cancel_selected', 'ignore'].includes(action)) {
-      return NextResponse.json(
-        { error: 'Invalid action. Must be cancel_all, cancel_selected, or ignore' },
-        { status: 400 }
-      )
+      return err('Invalid action. Must be cancel_all, cancel_selected, or ignore')
     }
 
     const event = await db.event.findUnique({
@@ -63,10 +61,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     })
 
     if (!event) {
-      return NextResponse.json(
-        { error: 'Event not found' },
-        { status: 404 }
-      )
+      return notFound('Event not found')
     }
 
     let reservationsToCancel: { id: string; guestName: string; guestPhone: string | null; guestEmail: string | null }[] = []
@@ -94,10 +89,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
       )
     } else if (action === 'cancel_selected') {
       if (!reservationIds || reservationIds.length === 0) {
-        return NextResponse.json(
-          { error: 'reservationIds required for cancel_selected action' },
-          { status: 400 }
-        )
+        return err('reservationIds required for cancel_selected action')
       }
 
       // Verify the selected reservations exist and conflict
@@ -166,7 +158,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     // In production, send notifications here if notifyGuests is true
     // This would integrate with email/SMS service
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       action,
       cancelledCount: result.length,
@@ -175,12 +167,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
       message: action === 'ignore'
         ? 'Conflicts marked as handled without cancelling reservations'
         : `${result.length} reservation(s) cancelled successfully`,
-    } })
+    })
   } catch (error) {
     console.error('Failed to resolve conflicts:', error)
-    return NextResponse.json(
-      { error: 'Failed to resolve conflicts' },
-      { status: 500 }
-    )
+    return err('Failed to resolve conflicts', 500)
   }
 }))

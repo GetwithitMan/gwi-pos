@@ -5,6 +5,7 @@ import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
+import { err, notFound, ok, unauthorized } from '@/lib/api-response'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -38,28 +39,26 @@ export const GET = withVenue(async function GET(request: NextRequest, { params }
     })
 
     if (!category || category.deletedAt) {
-      return NextResponse.json({ error: 'Category not found' }, { status: 404 })
+      return notFound('Category not found')
     }
 
     const actor = await getActorFromRequest(request)
     if (!actor.employeeId) {
-      return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
+      return unauthorized('Authentication required')
     }
     const auth = await requirePermission(actor.employeeId, category.locationId, PERMISSIONS.MENU_VIEW)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
-    return NextResponse.json({
-      data: {
+    return ok({
         ...category,
         ingredients: category.ingredients.map(ing => ({
           ...ing,
           extraPrice: Number(ing.extraPrice),
         })),
-      },
-    })
+      })
   } catch (error) {
     console.error('Error fetching ingredient category:', error)
-    return NextResponse.json({ error: 'Failed to fetch ingredient category' }, { status: 500 })
+    return err('Failed to fetch ingredient category', 500)
   }
 })
 
@@ -83,15 +82,15 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
     // Check category exists
     const existing = await db.ingredientCategory.findUnique({ where: { id } })
     if (!existing || existing.deletedAt) {
-      return NextResponse.json({ error: 'Category not found' }, { status: 404 })
+      return notFound('Category not found')
     }
 
     const actor = await getActorFromRequest(request)
     if (!actor.employeeId) {
-      return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
+      return unauthorized('Authentication required')
     }
     const auth = await requirePermission(actor.employeeId, existing.locationId, PERMISSIONS.MENU_EDIT_ITEMS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Check for duplicate name (if name is being changed)
     if (name && name !== existing.name) {
@@ -99,10 +98,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
         where: { locationId: existing.locationId, name, deletedAt: null, NOT: { id } },
       })
       if (duplicate) {
-        return NextResponse.json(
-          { error: 'A category with this name already exists' },
-          { status: 409 }
-        )
+        return err('A category with this name already exists', 409)
       }
     }
 
@@ -137,16 +133,14 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
       void emitToLocation(existing.locationId, 'inventory:changed', { action: 'category_updated', entityId: id })
     } catch {}
 
-    return NextResponse.json({
-      data: {
+    return ok({
         ...category,
         ingredientCount: category._count.ingredients,
         _count: undefined,
-      },
-    })
+      })
   } catch (error) {
     console.error('Error updating ingredient category:', error)
-    return NextResponse.json({ error: 'Failed to update ingredient category' }, { status: 500 })
+    return err('Failed to update ingredient category', 500)
   }
 })
 
@@ -184,15 +178,15 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest, { pa
       },
     })
     if (!existing || existing.deletedAt) {
-      return NextResponse.json({ error: 'Category not found' }, { status: 404 })
+      return notFound('Category not found')
     }
 
     const actor = await getActorFromRequest(request)
     if (!actor.employeeId) {
-      return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
+      return unauthorized('Authentication required')
     }
     const auth = await requirePermission(actor.employeeId, existing.locationId, PERMISSIONS.MENU_EDIT_ITEMS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const ingredientCount = existing.ingredients.length
     const childCount = existing.ingredients.reduce(
@@ -249,17 +243,15 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest, { pa
       void emitToLocation(existing.locationId, 'inventory:changed', { action: 'category_deleted', entityId: id })
     } catch {}
 
-    return NextResponse.json({
-      data: {
+    return ok({
         message: totalCount > 0
           ? `Category "${existing.name}" deleted with ${totalCount} item${totalCount !== 1 ? 's' : ''}`
           : `Category "${existing.name}" deleted`,
         deletedIngredients: ingredientCount,
         deletedChildren: childCount,
-      },
-    })
+      })
   } catch (error) {
     console.error('Error deleting ingredient category:', error)
-    return NextResponse.json({ error: 'Failed to delete ingredient category' }, { status: 500 })
+    return err('Failed to delete ingredient category', 500)
   }
 })

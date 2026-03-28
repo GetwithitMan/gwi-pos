@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - Get single void reason
 export const GET = withVenue(async function GET(
@@ -18,13 +19,13 @@ export const GET = withVenue(async function GET(
     })
 
     if (!voidReason || voidReason.deletedAt) {
-      return NextResponse.json({ error: 'Void reason not found' }, { status: 404 })
+      return notFound('Void reason not found')
     }
 
-    return NextResponse.json({ data: { voidReason } })
+    return ok({ voidReason })
   } catch (error) {
     console.error('Get void reason error:', error)
-    return NextResponse.json({ error: 'Failed to fetch void reason' }, { status: 500 })
+    return err('Failed to fetch void reason', 500)
   }
 })
 
@@ -42,7 +43,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     })
 
     if (!existing || existing.deletedAt) {
-      return NextResponse.json({ error: 'Void reason not found' }, { status: 404 })
+      return notFound('Void reason not found')
     }
 
     const updateData: Record<string, unknown> = {}
@@ -62,13 +63,13 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     void notifyDataChanged({ locationId: existing.locationId, domain: 'reasons', action: 'updated', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { voidReason } })
+    return ok({ voidReason })
   } catch (error) {
     console.error('Update void reason error:', error)
     if ((error as { code?: string }).code === 'P2002') {
-      return NextResponse.json({ error: 'Void reason with this name already exists' }, { status: 400 })
+      return err('Void reason with this name already exists')
     }
-    return NextResponse.json({ error: 'Failed to update void reason' }, { status: 500 })
+    return err('Failed to update void reason', 500)
   }
 }))
 
@@ -85,7 +86,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     })
 
     if (!existing || existing.deletedAt) {
-      return NextResponse.json({ error: 'Void reason not found' }, { status: 404 })
+      return notFound('Void reason not found')
     }
 
     await db.voidReason.update({
@@ -96,9 +97,9 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     void notifyDataChanged({ locationId: existing.locationId, domain: 'reasons', action: 'deleted', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Delete void reason error:', error)
-    return NextResponse.json({ error: 'Failed to delete void reason' }, { status: 500 })
+    return err('Failed to delete void reason', 500)
   }
 }))

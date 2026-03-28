@@ -3,42 +3,8 @@
 import { memo, useCallback } from 'react'
 import { StockBadge } from '@/components/menu/StockBadge'
 import { useLongPress } from '@/hooks/useLongPress'
-import type { PricingOptionGroup, PricingOption } from '@/types'
+import type { MenuItemFloorPlan as MenuItem, PricingOption } from '@/types'
 import type { PricingAdjustment } from '@/lib/settings'
-
-interface MenuItem {
-  id: string
-  name: string
-  price: number
-  description?: string
-  categoryId: string
-  categoryType?: string
-  hasModifiers?: boolean
-  isPizza?: boolean
-  itemType?: string
-  entertainmentStatus?: 'available' | 'in_use' | 'maintenance' | 'reserved' | null
-  waitlistCount?: number
-  blockTimeMinutes?: number | null
-  modifierGroupCount?: number
-  timedPricing?: {
-    per15Min?: number
-    per30Min?: number
-    perHour?: number
-    minimum?: number
-  }
-  stockStatus?: 'ok' | 'low' | 'critical' | 'out'
-  stockCount?: number | null
-  stockIngredientName?: string | null
-  is86d?: boolean
-  reasons86d?: string[]
-  pricingOptionGroups?: PricingOptionGroup[]
-  hasPricingOptions?: boolean
-  calories?: number | null
-  // Pour size options (liquor or food sizes)
-  pourSizes?: Record<string, number | { label: string; multiplier: number; customPrice?: number | null }> & { _hideDefaultOnPos?: boolean } | null
-  defaultPourSize?: string | null
-  isLiquorItem?: boolean
-}
 
 export interface FloorPlanMenuItemProps {
   item: MenuItem

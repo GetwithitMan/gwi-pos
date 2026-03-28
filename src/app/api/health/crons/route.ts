@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { verifyCronSecret } from '@/lib/cron-auth'
+import { err, ok } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -76,13 +77,13 @@ export async function GET(request: NextRequest) {
 
     const allHealthy = entries.every(e => e.isHealthy)
 
-    return NextResponse.json({
+    return ok({
       ok: allHealthy,
       crons: entries,
       timestamp: now.toISOString(),
     })
   } catch (err) {
     console.error('[health/crons] Error:', err)
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
+    return err('Internal error', 500)
   }
 }

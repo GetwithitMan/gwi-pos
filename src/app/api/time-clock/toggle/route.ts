@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { emitToLocation } from '@/lib/socket-server'
 import { emitCloudEvent } from '@/lib/cloud-events'
@@ -9,6 +9,7 @@ import { withAuth } from '@/lib/api-auth-middleware'
 import { dispatchAlert } from '@/lib/alert-service'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok } from '@/lib/api-response'
 const log = createChildLogger('time-clock-toggle')
 
 // POST /api/time-clock/toggle - Single-call clock in/out toggle
@@ -22,10 +23,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     }
 
     if (!employeeId || !locationId) {
-      return NextResponse.json(
-        { error: 'employeeId and locationId are required' },
-        { status: 400 }
-      )
+      return err('employeeId and locationId are required')
     }
 
     // Check current clock status
@@ -61,10 +59,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
         const secondsSinceClockOut = (Date.now() - lastClockOut.clockOut.getTime()) / 1000
         if (secondsSinceClockOut < 60) {
           const waitSeconds = Math.ceil(60 - secondsSinceClockOut)
-          return NextResponse.json(
-            { error: `Please wait ${waitSeconds} seconds before clocking back in` },
-            { status: 400 }
-          )
+          return err(`Please wait ${waitSeconds} seconds before clocking back in`)
         }
       }
 
@@ -98,8 +93,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
         clockTime: entry.clockIn.toISOString(),
       }).catch(err => log.warn({ err }, 'Background task failed'))
 
-      return NextResponse.json({
-        data: {
+      return ok({
           action: 'clock_in',
           clockedIn: true,
           entryId: entry.id,
@@ -107,8 +101,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
           clockOutTime: null,
           employeeName,
           message: 'Clocked in successfully',
-        },
-      })
+        })
     } else {
       // ── Clock OUT ─────────────────────────────────────────────────────────
       const now = new Date()
@@ -139,10 +132,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
 
           if (!hasAdequateBreak) {
             if (breakConfig.complianceMode === 'enforce') {
-              return NextResponse.json(
-                { error: 'Cannot clock out without taking a required break. Please clock in for break first.' },
-                { status: 400 }
-              )
+              return err('Cannot clock out without taking a required break. Please clock in for break first.')
             }
             // mode === 'warn'
             breakComplianceWarning = `Break compliance: No break taken during a ${Math.round(shiftHours * 10) / 10}-hour shift`
@@ -168,15 +158,13 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
 
         if (unadjustedTips.length > 0) {
           const totalUnadjusted = unadjustedTips.reduce((sum, p) => sum + Number(p.amount), 0)
-          return NextResponse.json({
-            data: {
+          return ok({
               action: 'clock_out',
               clockedIn: true,
               warning: `You have ${unadjustedTips.length} unadjusted tip${unadjustedTips.length > 1 ? 's' : ''} totaling $${totalUnadjusted.toFixed(2)}. Please adjust tips before clocking out.`,
               unadjustedTipCount: unadjustedTips.length,
               unadjustedTipTotal: totalUnadjusted,
-            },
-          })
+            })
         }
       }
       // ── End requireTipsAdjusted check ──────────────────────────────────
@@ -261,8 +249,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
         })()
       }
 
-      return NextResponse.json({
-        data: {
+      return ok({
           action: 'clock_out',
           clockedIn: false,
           entryId: updated.id,
@@ -271,14 +258,10 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
           employeeName,
           message: 'Clocked out successfully',
           ...(breakComplianceWarning ? { warning: breakComplianceWarning } : {}),
-        },
-      })
+        })
     }
   } catch (error) {
     console.error('Failed to toggle clock:', error)
-    return NextResponse.json(
-      { error: 'Failed to toggle clock' },
-      { status: 500 }
-    )
+    return err('Failed to toggle clock', 500)
   }
 }))

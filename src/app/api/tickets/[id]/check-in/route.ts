@@ -5,6 +5,7 @@ import { withAuth } from '@/lib/api-auth-middleware'
 import { getLocationId } from '@/lib/location-cache'
 import { queueIfOutage, pushUpstream } from '@/lib/sync/outage-safe-write'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // POST - Check in a ticket
 export const POST = withVenue(withAuth(PERMISSIONS.EVENTS_MANAGE, async function POST(
@@ -67,7 +68,7 @@ export const POST = withVenue(withAuth(PERMISSIONS.EVENTS_MANAGE, async function
 
     // Check if already checked in
     if (ticket.status === 'checked_in') {
-      return NextResponse.json({ data: {
+      return ok({
         success: false,
         error: 'Ticket already checked in',
         checkInResult: 'already_checked_in',
@@ -80,7 +81,7 @@ export const POST = withVenue(withAuth(PERMISSIONS.EVENTS_MANAGE, async function
           table: ticket.table,
           pricingTier: ticket.pricingTier,
         },
-      } })
+      })
     }
 
     // Check ticket status
@@ -165,7 +166,7 @@ export const POST = withVenue(withAuth(PERMISSIONS.EVENTS_MANAGE, async function
     const soldCount = checkInStats.find(s => s.status === 'sold')?._count.id || 0
     const totalAttendees = checkedInCount + soldCount
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       checkInResult: 'success',
       checkedInAt: now.toISOString(),
@@ -194,7 +195,7 @@ export const POST = withVenue(withAuth(PERMISSIONS.EVENTS_MANAGE, async function
           ? Math.round((checkedInCount / totalAttendees) * 100)
           : 0,
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to check in ticket:', error)
     return NextResponse.json(
@@ -216,7 +217,7 @@ export const DELETE = withVenue(withAuth(PERMISSIONS.EVENTS_MANAGE, async functi
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const { id } = await params
@@ -234,10 +235,7 @@ export const DELETE = withVenue(withAuth(PERMISSIONS.EVENTS_MANAGE, async functi
     })
 
     if (!ticket) {
-      return NextResponse.json(
-        { error: 'Checked-in ticket not found' },
-        { status: 404 }
-      )
+      return notFound('Checked-in ticket not found')
     }
 
     const updated = await db.ticket.update({
@@ -258,16 +256,13 @@ export const DELETE = withVenue(withAuth(PERMISSIONS.EVENTS_MANAGE, async functi
     queueIfOutage('Ticket', locationId, updated.id, 'UPDATE', updated as unknown as Record<string, unknown>)
     pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       message: 'Check-in reverted',
       ticket: updated,
-    } })
+    })
   } catch (error) {
     console.error('Failed to undo check-in:', error)
-    return NextResponse.json(
-      { error: 'Failed to undo check-in' },
-      { status: 500 }
-    )
+    return err('Failed to undo check-in', 500)
   }
 }))

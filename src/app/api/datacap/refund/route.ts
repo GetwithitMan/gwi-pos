@@ -4,6 +4,7 @@ import { withVenue } from '@/lib/with-venue'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { roundToCents } from '@/lib/pricing'
+import { err, notFound, ok } from '@/lib/api-response'
 
 interface RefundRequest {
   readerId: string
@@ -20,14 +21,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     let { amount } = body
 
     if (!readerId || !recordNo || !invoiceNo || amount === undefined || amount === null) {
-      return Response.json(
-        { error: 'Missing required fields: readerId, recordNo, invoiceNo, amount' },
-        { status: 400 }
-      )
+      return err('Missing required fields: readerId, recordNo, invoiceNo, amount')
     }
 
     if (amount <= 0) {
-      return Response.json({ error: 'Refund amount must be positive' }, { status: 400 })
+      return err('Refund amount must be positive')
     }
 
     amount = roundToCents(amount)
@@ -40,13 +38,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     if (!reader) {
-      return Response.json({ error: 'Payment reader not found' }, { status: 404 })
+      return notFound('Payment reader not found')
     }
 
     // BUG #470 FIX: Require MGR_REFUNDS permission instead of basic card payment permission
     const auth = await requirePermission(employeeId, reader.locationId, PERMISSIONS.MGR_REFUNDS)
     if (!auth.authorized) {
-      return Response.json({ error: auth.error }, { status: auth.status ?? 403 })
+      return err(auth.error, auth.status ?? 403)
     }
 
     // BUG #470 FIX: Cap refund amount — look up original payment by datacapRecordNo
@@ -55,17 +53,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       select: { id: true, amount: true, refundedAmount: true },
     })
     if (!originalPayment) {
-      return Response.json(
-        { error: 'Original payment not found for this recordNo' },
-        { status: 404 }
-      )
+      return notFound('Original payment not found for this recordNo')
     }
     const maxRefundable = Number(originalPayment.amount) - Number(originalPayment.refundedAmount || 0)
     if (amount > maxRefundable) {
-      return Response.json(
-        { error: `Refund amount $${amount.toFixed(2)} exceeds maximum refundable $${maxRefundable.toFixed(2)}` },
-        { status: 400 }
-      )
+      return err(`Refund amount $${amount.toFixed(2)} exceeds maximum refundable $${maxRefundable.toFixed(2)}`)
     }
 
     await validateReader(readerId, reader.locationId)
@@ -82,20 +74,15 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const approved = response.cmdStatus === 'Approved'
 
     if (!approved) {
-      return Response.json(
-        { error: response.textResponse || 'Refund declined' },
-        { status: 422 }
-      )
+      return err(response.textResponse || 'Refund declined', 422)
     }
 
-    return Response.json({
-      data: {
+    return ok({
         approved,
         refNo: response.refNo ?? '',
         authCode: response.authCode ?? '',
         amount: response.authorize ? roundToCents(parseFloat(response.authorize)) : amount,
-      },
-    })
+      })
   } catch (err) {
     return datacapErrorResponse(err)
   }

@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { Prisma } from '@/generated/prisma/client'
+import { err, ok, unauthorized } from '@/lib/api-response'
 
 // GET /api/audit/activity - Global audit log with filters
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -20,16 +21,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const offset = parseInt(searchParams.get('offset') || '0')
 
     if (!employeeId || !locationId) {
-      return NextResponse.json(
-        { error: 'employeeId and locationId query params are required' },
-        { status: 401 }
-      )
+      return unauthorized('employeeId and locationId query params are required')
     }
 
     // Auth: require manager permission
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.MGR_SHIFT_REVIEW)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Build where clause — no entityType filter so all action types surface
@@ -50,10 +48,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     if (rangeStart && rangeEnd) {
       const spanMs = rangeEnd.getTime() - rangeStart.getTime()
       if (spanMs > 31 * 24 * 60 * 60 * 1000) {
-        return NextResponse.json(
-          { error: 'Date range cannot exceed 31 days' },
-          { status: 400 }
-        )
+        return err('Date range cannot exceed 31 days')
       }
     }
 
@@ -96,7 +91,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       db.auditLog.count({ where }),
     ])
 
-    return NextResponse.json({ data: {
+    return ok({
       entries: entries.map(entry => ({
         id: entry.id,
         timestamp: entry.createdAt.toISOString(),
@@ -113,12 +108,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       total,
       limit,
       offset,
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch audit activity log:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch audit activity log' },
-      { status: 500 }
-    )
+    return err('Failed to fetch audit activity log', 500)
   }
 })

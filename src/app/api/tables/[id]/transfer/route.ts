@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { EmployeeRepository, OrderRepository } from '@/lib/repositories'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
@@ -6,6 +6,7 @@ import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // POST - Transfer table to another server
 export const POST = withVenue(withAuth(async function POST(
@@ -18,10 +19,7 @@ export const POST = withVenue(withAuth(async function POST(
     const { toEmployeeId, fromEmployeeId, reason } = body
 
     if (!toEmployeeId) {
-      return NextResponse.json(
-        { error: 'Target employee ID is required' },
-        { status: 400 }
-      )
+      return err('Target employee ID is required')
     }
 
     // Get the table
@@ -33,10 +31,7 @@ export const POST = withVenue(withAuth(async function POST(
     })
 
     if (!table) {
-      return NextResponse.json(
-        { error: 'Table not found' },
-        { status: 404 }
-      )
+      return notFound('Table not found')
     }
 
     // Verify target employee exists
@@ -45,10 +40,7 @@ export const POST = withVenue(withAuth(async function POST(
     })
 
     if (!toEmployee) {
-      return NextResponse.json(
-        { error: 'Target employee not found' },
-        { status: 404 }
-      )
+      return notFound('Target employee not found')
     }
 
     // Find all open orders for this table and transfer them
@@ -129,7 +121,7 @@ export const POST = withVenue(withAuth(async function POST(
     // Notify POS terminals of table transfer
     dispatchFloorPlanUpdate(table.locationId, { async: true })
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       table: {
         id: table.id,
@@ -141,12 +133,9 @@ export const POST = withVenue(withAuth(async function POST(
       },
       ordersTransferred: transferableOrders.length,
       orderIds: transferableOrders.map(o => o.id),
-    } })
+    })
   } catch (error) {
     console.error('Failed to transfer table:', error)
-    return NextResponse.json(
-      { error: 'Failed to transfer table' },
-      { status: 500 }
-    )
+    return err('Failed to transfer table', 500)
   }
 }))

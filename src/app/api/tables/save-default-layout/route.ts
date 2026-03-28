@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok } from '@/lib/api-response'
 const log = createChildLogger('tables-save-default-layout')
 
 /**
@@ -26,17 +27,11 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     const { locationId, tables } = body
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'locationId is required' },
-        { status: 400 }
-      )
+      return err('locationId is required')
     }
 
     if (!tables || !Array.isArray(tables) || tables.length === 0) {
-      return NextResponse.json(
-        { error: 'tables array is required' },
-        { status: 400 }
-      )
+      return err('tables array is required')
     }
 
     // Validate all tables exist and belong to this location
@@ -51,10 +46,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     })
 
     if (existingTables.length !== tableIds.length) {
-      return NextResponse.json(
-        { error: 'Some tables not found or do not belong to this location' },
-        { status: 400 }
-      )
+      return err('Some tables not found or do not belong to this location')
     }
 
     // Update all tables with their default positions
@@ -76,17 +68,12 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     // Notify POS terminals of default layout save
     void dispatchFloorPlanUpdate(locationId, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
 
-    return NextResponse.json({
-      data: {
+    return ok({
         updatedCount: tables.length,
         message: `Default layout saved for ${tables.length} table(s)`,
-      },
-    })
+      })
   } catch (error) {
     console.error('[SaveDefaultLayout] Failed:', error)
-    return NextResponse.json(
-      { error: 'Failed to save default layout' },
-      { status: 500 }
-    )
+    return err('Failed to save default layout', 500)
   }
 }))

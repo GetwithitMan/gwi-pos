@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { checkLoginRateLimit } from '@/lib/auth-rate-limiter'
 import { getClientIp } from '@/lib/get-client-ip'
+import { err } from '@/lib/api-response'
 
 /**
  * POST /api/auth/reset-password
@@ -62,13 +63,13 @@ export async function POST(request: NextRequest) {
   const { code, password } = await request.json().catch(() => ({} as any))
 
   if (!code || !password) {
-    return NextResponse.json({ error: 'Code and password are required' }, { status: 400 })
+    return err('Code and password are required')
   }
 
   // Read the stored reset state from cookie
   const resetStateCookie = request.cookies.get('clerk-reset-state')?.value
   if (!resetStateCookie) {
-    return NextResponse.json({ error: 'Reset session expired. Please start over.' }, { status: 400 })
+    return err('Reset session expired. Please start over.')
   }
 
   let signInId: string
@@ -78,12 +79,12 @@ export async function POST(request: NextRequest) {
     signInId = state.signInId
     clientToken = state.clientToken
   } catch {
-    return NextResponse.json({ error: 'Invalid reset session. Please start over.' }, { status: 400 })
+    return err('Invalid reset session. Please start over.')
   }
 
   const fapiUrl = getClerkFapiUrl()
   if (!fapiUrl) {
-    return NextResponse.json({ error: 'Password reset is not configured' }, { status: 500 })
+    return err('Password reset is not configured', 500)
   }
 
   try {
@@ -108,9 +109,7 @@ export async function POST(request: NextRequest) {
     const attemptData = await attemptRes.json()
 
     if (attemptData.errors?.length) {
-      return NextResponse.json({
-        error: attemptData.errors[0]?.long_message || attemptData.errors[0]?.message || 'Invalid code',
-      }, { status: 400 })
+      return err(attemptData.errors[0]?.long_message || attemptData.errors[0]?.message || 'Invalid code')
     }
 
     if (attemptData.response?.status === 'needs_new_password') {
@@ -137,9 +136,7 @@ export async function POST(request: NextRequest) {
       const resetData = await resetRes.json()
 
       if (resetData.errors?.length) {
-        return NextResponse.json({
-          error: resetData.errors[0]?.long_message || resetData.errors[0]?.message || 'Could not reset password',
-        }, { status: 400 })
+        return err(resetData.errors[0]?.long_message || resetData.errors[0]?.message || 'Could not reset password')
       }
 
       // Success — clear the reset state cookie
@@ -148,9 +145,9 @@ export async function POST(request: NextRequest) {
       return response
     }
 
-    return NextResponse.json({ error: 'Invalid or expired code' }, { status: 400 })
+    return err('Invalid or expired code')
   } catch (err) {
     console.error('[reset-password] Error:', err)
-    return NextResponse.json({ error: 'Connection error. Please try again.' }, { status: 500 })
+    return err('Connection error. Please try again.', 500)
   }
 }

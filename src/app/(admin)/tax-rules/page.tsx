@@ -7,6 +7,7 @@ import { Modal } from '@/components/ui/modal'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { useAdminCRUD } from '@/hooks/useAdminCRUD'
+import type { CategoryBasic as Category } from '@/types'
 
 interface TaxRule {
   id: string
@@ -20,11 +21,6 @@ interface TaxRule {
   priority: number
   isCompounded: boolean
   isActive: boolean
-}
-
-interface Category {
-  id: string
-  name: string
 }
 
 export default function TaxRulesPage() {

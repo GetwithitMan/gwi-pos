@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
@@ -9,6 +9,7 @@ import { advanceDriverSessionStatus } from '@/lib/delivery/state-machine'
 import { dispatchDriverLocationUpdate } from '@/lib/delivery/dispatch-events'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 
 const log = createChildLogger('delivery-driver-status')
 
@@ -26,13 +27,13 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Auth check
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.DELIVERY_VIEW)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Feature gate
     const featureGate = await requireDeliveryFeature(locationId, { subfeature: 'driverAppProvisioned' })
@@ -42,7 +43,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     const { status, lat, lng, accuracy, speed } = body
 
     if (!status && lat == null && lng == null) {
-      return NextResponse.json({ error: 'Provide status and/or GPS data (lat, lng)' }, { status: 400 })
+      return err('Provide status and/or GPS data (lat, lng)')
     }
 
     // Find driver's active session
@@ -57,7 +58,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     `, actor.employeeId, locationId)
 
     if (!sessions.length) {
-      return NextResponse.json({ error: 'No active driver session found' }, { status: 404 })
+      return notFound('No active driver session found')
     }
 
     let session = sessions[0]
@@ -71,7 +72,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
         actor.employeeId ?? 'unknown',
       )
       if (!result.success) {
-        return NextResponse.json({ error: result.error }, { status: 400 })
+        return err(result.error)
       }
       session = result.session
     }
@@ -81,10 +82,10 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       const latNum = Number(lat)
       const lngNum = Number(lng)
       if (isNaN(latNum) || latNum < -90 || latNum > 90) {
-        return NextResponse.json({ error: 'lat must be between -90 and 90' }, { status: 400 })
+        return err('lat must be between -90 and 90')
       }
       if (isNaN(lngNum) || lngNum < -180 || lngNum > 180) {
-        return NextResponse.json({ error: 'lng must be between -180 and 180' }, { status: 400 })
+        return err('lng must be between -180 and 180')
       }
 
       const updated: any[] = await db.$queryRawUnsafe(`
@@ -112,7 +113,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
 
     pushUpstream()
 
-    return NextResponse.json({
+    return ok({
       session: {
         id: session.id,
         driverId: session.driverId,
@@ -127,6 +128,6 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     })
   } catch (error) {
     console.error('[Delivery/Driver/Status] PUT error:', error)
-    return NextResponse.json({ error: 'Failed to update driver status' }, { status: 500 })
+    return err('Failed to update driver status', 500)
   }
 })

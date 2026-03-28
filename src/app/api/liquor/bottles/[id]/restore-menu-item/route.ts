@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchMenuUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
@@ -7,6 +7,7 @@ import { getLocationId } from '@/lib/location-cache'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 /**
  * POST /api/liquor/bottles/[id]/restore-menu-item
@@ -21,12 +22,12 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
 
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const auth = await requirePermission(null, locationId, PERMISSIONS.MENU_EDIT_ITEMS)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Find the soft-deleted menu item for this bottle
@@ -40,10 +41,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     })
 
     if (!deletedMenuItem) {
-      return NextResponse.json(
-        { error: 'No deleted menu item found for this bottle' },
-        { status: 404 }
-      )
+      return notFound('No deleted menu item found for this bottle')
     }
 
     // Restore the menu item
@@ -67,7 +65,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
       name: restoredItem.name,
     }, { async: true })
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       menuItem: {
         id: restoredItem.id,
@@ -75,12 +73,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
         price: Number(restoredItem.price),
         category: restoredItem.category,
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to restore menu item:', error)
-    return NextResponse.json(
-      { error: 'Failed to restore menu item' },
-      { status: 500 }
-    )
+    return err('Failed to restore menu item', 500)
   }
 }))

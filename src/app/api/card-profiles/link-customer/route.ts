@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { emitToLocation } from '@/lib/socket-server'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // POST - Link a CardProfile to a Customer record
 // Used when staff manually associates a recognized card with a customer profile
@@ -13,10 +14,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     const { locationId, cardProfileId, customerId } = body
 
     if (!locationId || !cardProfileId || !customerId) {
-      return NextResponse.json(
-        { error: 'Missing required fields: locationId, cardProfileId, customerId' },
-        { status: 400 }
-      )
+      return err('Missing required fields: locationId, cardProfileId, customerId')
     }
 
     // Verify card profile exists and belongs to this location
@@ -29,7 +27,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     })
 
     if (!profile) {
-      return NextResponse.json({ error: 'Card profile not found' }, { status: 404 })
+      return notFound('Card profile not found')
     }
 
     // Verify customer exists and belongs to this location
@@ -44,7 +42,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     })
 
     if (!customer) {
-      return NextResponse.json({ error: 'Customer not found' }, { status: 404 })
+      return notFound('Customer not found')
     }
 
     // Link the card profile to the customer
@@ -55,20 +53,15 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
 
     void emitToLocation(locationId, 'customers:changed', { locationId }).catch(console.error)
 
-    return NextResponse.json({
-      data: {
+    return ok({
         profileId: updated.id,
         customerId: updated.customerId,
         customerName: customer.displayName || `${customer.firstName} ${customer.lastName}`,
         cardType: updated.cardType,
         cardLast4: updated.cardLast4,
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to link card profile to customer:', error)
-    return NextResponse.json(
-      { error: 'Failed to link card profile to customer' },
-      { status: 500 }
-    )
+    return err('Failed to link card profile to customer', 500)
   }
 }))

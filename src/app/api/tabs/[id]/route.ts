@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { parseSettings } from '@/lib/settings'
 import { generateFakeTransactionId, calculatePreAuthExpiration } from '@/lib/payment'
@@ -13,6 +13,7 @@ import * as OrderRepository from '@/lib/repositories/order-repository'
 import { getLocationId } from '@/lib/location-cache'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('tabs')
 
 // GET - Get tab details
@@ -28,7 +29,7 @@ export const GET = withVenue(async function GET(
 
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const tab = await OrderRepository.getOrderByIdWithInclude(id, locationId, {
@@ -51,30 +52,24 @@ export const GET = withVenue(async function GET(
     })
 
     if (!tab) {
-      return NextResponse.json(
-        { error: 'Tab not found' },
-        { status: 404 }
-      )
+      return notFound('Tab not found')
     }
 
     // Auth check
     const auth = await requirePermission(employeeId, tab.locationId, PERMISSIONS.POS_ACCESS)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     if (tab.orderType !== 'bar_tab') {
-      return NextResponse.json(
-        { error: 'Order is not a bar tab' },
-        { status: 400 }
-      )
+      return err('Order is not a bar tab')
     }
 
     const paidAmount = tab.payments
       .filter(p => p.status === 'completed')
       .reduce((sum, p) => sum + Number(p.totalAmount), 0)
 
-    return NextResponse.json({ data: {
+    return ok({
       id: tab.id,
       tabName: tab.tabName || `Tab #${tab.orderNumber}`,
       orderNumber: tab.orderNumber,
@@ -129,13 +124,10 @@ export const GET = withVenue(async function GET(
       })),
       openedAt: tab.openedAt.toISOString(),
       paidAt: tab.paidAt?.toISOString() || null,
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch tab:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch tab' },
-      { status: 500 }
-    )
+    return err('Failed to fetch tab', 500)
   }
 })
 
@@ -163,7 +155,7 @@ export const PUT = withVenue(async function PUT(
 
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const tab = await OrderRepository.getOrderByIdWithInclude(id, locationId, {
@@ -171,30 +163,21 @@ export const PUT = withVenue(async function PUT(
     })
 
     if (!tab) {
-      return NextResponse.json(
-        { error: 'Tab not found' },
-        { status: 404 }
-      )
+      return notFound('Tab not found')
     }
 
     // Auth check
     const auth = await requirePermission(employeeId, tab.locationId, PERMISSIONS.POS_ACCESS)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     if (tab.orderType !== 'bar_tab') {
-      return NextResponse.json(
-        { error: 'Order is not a bar tab' },
-        { status: 400 }
-      )
+      return err('Order is not a bar tab')
     }
 
     if (tab.status === 'paid' || tab.status === 'closed') {
-      return NextResponse.json(
-        { error: 'Cannot update a closed tab' },
-        { status: 400 }
-      )
+      return err('Cannot update a closed tab')
     }
 
     const settings = parseSettings(tab.location.settings)
@@ -221,10 +204,7 @@ export const PUT = withVenue(async function PUT(
     // Add/update pre-auth
     else if (preAuth && preAuth.cardLast4) {
       if (!/^\d{4}$/.test(preAuth.cardLast4)) {
-        return NextResponse.json(
-          { error: 'Invalid card last 4 digits' },
-          { status: 400 }
-        )
+        return err('Invalid card last 4 digits')
       }
 
       updateData.preAuthId = generateFakeTransactionId()
@@ -278,7 +258,7 @@ export const PUT = withVenue(async function PUT(
       } : {}),
     }).catch(err => log.warn({ err }, 'Background task failed'))
 
-    return NextResponse.json({ data: {
+    return ok({
       id: updated.id,
       tabName: updated.tabName || `Tab #${updated.orderNumber}`,
       tabNickname: updated.tabNickname || null,
@@ -295,13 +275,10 @@ export const PUT = withVenue(async function PUT(
         amount: updated.preAuthAmount ? Number(updated.preAuthAmount) : null,
         expiresAt: updated.preAuthExpiresAt?.toISOString(),
       } : null,
-    } })
+    })
   } catch (error) {
     console.error('Failed to update tab:', error)
-    return NextResponse.json(
-      { error: 'Failed to update tab' },
-      { status: 500 }
-    )
+    return err('Failed to update tab', 500)
   }
 })
 
@@ -318,7 +295,7 @@ export const DELETE = withVenue(async function DELETE(
 
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const tab = await OrderRepository.getOrderByIdWithInclude(id, locationId, {
@@ -327,38 +304,26 @@ export const DELETE = withVenue(async function DELETE(
     })
 
     if (!tab) {
-      return NextResponse.json(
-        { error: 'Tab not found' },
-        { status: 404 }
-      )
+      return notFound('Tab not found')
     }
 
     // Auth check
     const auth = await requirePermission(employeeId, tab.locationId, PERMISSIONS.POS_ACCESS)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     if (tab.orderType !== 'bar_tab') {
-      return NextResponse.json(
-        { error: 'Order is not a bar tab' },
-        { status: 400 }
-      )
+      return err('Order is not a bar tab')
     }
 
     // Can only delete if no items and no payments
     if (tab.items.length > 0) {
-      return NextResponse.json(
-        { error: 'Cannot delete tab with items. Void the tab instead.' },
-        { status: 400 }
-      )
+      return err('Cannot delete tab with items. Void the tab instead.')
     }
 
     if (tab.payments.length > 0) {
-      return NextResponse.json(
-        { error: 'Cannot delete tab with payments' },
-        { status: 400 }
-      )
+      return err('Cannot delete tab with payments')
     }
 
     // Wrap soft-delete + socket outbox in a single atomic transaction
@@ -391,12 +356,9 @@ export const DELETE = withVenue(async function DELETE(
       reason: 'Empty tab deleted',
     }).catch(err => log.warn({ err }, 'Background task failed'))
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Failed to delete tab:', error)
-    return NextResponse.json(
-      { error: 'Failed to delete tab' },
-      { status: 500 }
-    )
+    return err('Failed to delete tab', 500)
   }
 })

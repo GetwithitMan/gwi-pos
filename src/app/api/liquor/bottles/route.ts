@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchMenuUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
@@ -10,6 +10,7 @@ import { emitToLocation } from '@/lib/socket-server'
 import { getDerivedBottleStock } from '@/lib/liquor-inventory'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok } from '@/lib/api-response'
 
 const log = createChildLogger('liquor.bottles')
 
@@ -53,10 +54,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
     // Get the location
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'No location found' },
-        { status: 400 }
-      )
+      return err('No location found')
     }
 
     const bottles = await db.bottleProduct.findMany({
@@ -130,8 +128,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
       skip,
     })
 
-    return NextResponse.json(
-      bottles.map((bottle) => ({
+    return ok(bottles.map((bottle) => ({
         id: bottle.id,
         name: bottle.name,
         brand: bottle.brand,
@@ -186,14 +183,10 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
         hasMenuItem: bottle.linkedMenuItems.length > 0,
         createdAt: bottle.createdAt,
         updatedAt: bottle.updatedAt,
-      }))
-    )
+      })))
   } catch (error) {
     console.error('Failed to fetch bottles:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch bottles' },
-      { status: 500 }
-    )
+    return err('Failed to fetch bottles', 500)
   }
 }))
 
@@ -224,56 +217,38 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
 
     // Validation
     if (!name?.trim()) {
-      return NextResponse.json(
-        { error: 'Name is required' },
-        { status: 400 }
-      )
+      return err('Name is required')
     }
 
     if (!spiritCategoryId) {
-      return NextResponse.json(
-        { error: 'Spirit category is required' },
-        { status: 400 }
-      )
+      return err('Spirit category is required')
     }
 
     if (!tier || !['well', 'call', 'premium', 'top_shelf'].includes(tier)) {
-      return NextResponse.json(
-        { error: 'Valid tier is required (well, call, premium, top_shelf)' },
-        { status: 400 }
-      )
+      return err('Valid tier is required (well, call, premium, top_shelf)')
     }
 
     if (!bottleSizeMl || bottleSizeMl < 50 || bottleSizeMl > 5000) {
-      return NextResponse.json(
-        { error: 'Bottle size must be between 50 and 5000 mL' },
-        { status: 400 }
-      )
+      return err('Bottle size must be between 50 and 5000 mL')
     }
 
     if (unitCost === undefined || unitCost < 0.01 || unitCost > 10000) {
-      return NextResponse.json(
-        { error: 'Unit cost must be between $0.01 and $10,000' },
-        { status: 400 }
-      )
+      return err('Unit cost must be between $0.01 and $10,000')
     }
 
     if (pourSizeOz !== undefined && pourSizeOz !== null && (pourSizeOz < 0.25 || pourSizeOz > 6.0)) {
-      return NextResponse.json(
-        { error: 'Pour size must be between 0.25 and 6.0 oz' },
-        { status: 400 }
-      )
+      return err('Pour size must be between 0.25 and 6.0 oz')
     }
 
     // Get the location for permission check
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const auth = await requirePermission(body.employeeId || null, locationId, PERMISSIONS.MENU_EDIT_ITEMS)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Verify spirit category exists and get location + category name
@@ -283,10 +258,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     })
 
     if (!spiritCategory) {
-      return NextResponse.json(
-        { error: 'Spirit category not found' },
-        { status: 400 }
-      )
+      return err('Spirit category not found')
     }
 
     // Calculate bottle metrics
@@ -404,7 +376,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     }).catch(err => log.warn({ err }, 'fire-and-forget failed in liquor.bottles'))
     void emitToLocation(spiritCategory.locationId, 'menu:updated', { trigger: 'liquor-bottle' }).catch(err => log.warn({ err }, 'socket emit failed'))
 
-    return NextResponse.json({ data: {
+    return ok({
       id: result.bottle.id,
       name: result.bottle.name,
       brand: result.bottle.brand,
@@ -431,12 +403,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       inventoryItemId: result.inventoryItemId,
       createdAt: result.bottle.createdAt,
       updatedAt: result.bottle.updatedAt,
-    } })
+    })
   } catch (error) {
     console.error('Failed to create bottle:', error)
-    return NextResponse.json(
-      { error: 'Failed to create bottle' },
-      { status: 500 }
-    )
+    return err('Failed to create bottle', 500)
   }
 }))

@@ -10,6 +10,7 @@ import { getDerivedBottleStock } from '@/lib/liquor-inventory'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 
 const log = createChildLogger('liquor.categories.id')
 
@@ -68,19 +69,16 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
     })
 
     if (!category) {
-      return NextResponse.json(
-        { error: 'Spirit category not found' },
-        { status: 404 }
-      )
+      return notFound('Spirit category not found')
     }
 
     // Tenant verify
     const locationId = await getLocationId()
     if (locationId && (category as any).locationId && (category as any).locationId !== locationId) {
-      return NextResponse.json({ error: 'Spirit category not found' }, { status: 404 })
+      return notFound('Spirit category not found')
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       id: category.id,
       name: category.name,
       categoryType: category.categoryType,
@@ -105,13 +103,10 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
         upsellPromptText: smg.upsellPromptText,
         defaultTier: smg.defaultTier,
       })),
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch spirit category:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch spirit category' },
-      { status: 500 }
-    )
+    return err('Failed to fetch spirit category', 500)
   }
 }))
 
@@ -130,12 +125,12 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
 
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const auth = await requirePermission(body.employeeId || null, locationId, PERMISSIONS.MENU_EDIT_ITEMS)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     const existing = await db.spiritCategory.findUnique({
@@ -143,10 +138,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     })
 
     if (!existing) {
-      return NextResponse.json(
-        { error: 'Spirit category not found' },
-        { status: 404 }
-      )
+      return notFound('Spirit category not found')
     }
 
     const category = await db.spiritCategory.update({
@@ -174,7 +166,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     void notifyDataChanged({ locationId, domain: 'liquor', action: 'updated', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       id: category.id,
       name: category.name,
       categoryType: category.categoryType,
@@ -186,13 +178,10 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
       modifierGroupCount: category._count.spiritModifierGroups,
       createdAt: category.createdAt,
       updatedAt: category.updatedAt,
-    } })
+    })
   } catch (error) {
     console.error('Failed to update spirit category:', error)
-    return NextResponse.json(
-      { error: 'Failed to update spirit category' },
-      { status: 500 }
-    )
+    return err('Failed to update spirit category', 500)
   }
 }))
 
@@ -209,12 +198,12 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
 
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const auth = await requirePermission(null, locationId, PERMISSIONS.MENU_EDIT_ITEMS)  // DELETE has no body — session fallback handles auth
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Check if category has bottles
@@ -231,10 +220,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     })
 
     if (!usage) {
-      return NextResponse.json(
-        { error: 'Spirit category not found' },
-        { status: 404 }
-      )
+      return notFound('Spirit category not found')
     }
 
     if (usage._count.bottleProducts > 0) {
@@ -263,12 +249,9 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     void notifyDataChanged({ locationId, domain: 'liquor', action: 'deleted', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Failed to delete spirit category:', error)
-    return NextResponse.json(
-      { error: 'Failed to delete spirit category' },
-      { status: 500 }
-    )
+    return err('Failed to delete spirit category', 500)
   }
 }))

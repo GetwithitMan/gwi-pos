@@ -14,8 +14,9 @@
  * Auth: INTERNAL_API_SECRET or HA_SHARED_SECRET (bearer token)
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { updateLocalLeaseExpiry, getLocalLeaseExpiry } from '@/lib/ha-lease-state'
+import { err, ok, unauthorized } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -34,7 +35,7 @@ function authorize(request: NextRequest): boolean {
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   if (!authorize(request)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return unauthorized('Unauthorized')
   }
 
   try {
@@ -43,34 +44,31 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     if (leaseExpiresAt === null || leaseExpiresAt === undefined) {
       updateLocalLeaseExpiry(null)
-      return NextResponse.json({ updated: true, leaseExpiresAt: null })
+      return ok({ updated: true, leaseExpiresAt: null })
     }
 
     const expiry = new Date(leaseExpiresAt)
     if (isNaN(expiry.getTime())) {
-      return NextResponse.json(
-        { error: 'Invalid leaseExpiresAt — must be ISO 8601' },
-        { status: 400 }
-      )
+      return err('Invalid leaseExpiresAt — must be ISO 8601')
     }
 
     updateLocalLeaseExpiry(expiry)
-    return NextResponse.json({ updated: true, leaseExpiresAt: expiry.toISOString() })
+    return ok({ updated: true, leaseExpiresAt: expiry.toISOString() })
   } catch (err) {
     console.error('[ha-lease] POST error:', err)
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
+    return err('Internal error', 500)
   }
 }
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
   if (!authorize(request)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return unauthorized('Unauthorized')
   }
 
   const expiry = getLocalLeaseExpiry()
   const now = new Date()
 
-  return NextResponse.json({
+  return ok({
     leaseExpiresAt: expiry ? expiry.toISOString() : null,
     holdsMcLease: expiry !== null && expiry > now,
     remainingSeconds: expiry ? Math.max(0, Math.round((expiry.getTime() - now.getTime()) / 1000)) : null,

@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDbForVenue } from '@/lib/db'
 import { mergeWithDefaults } from '@/lib/settings'
+import { err, notFound } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,7 +20,7 @@ export async function GET(
     const { slug } = (await context.params) as { slug: string }
 
     if (!slug) {
-      return NextResponse.json({ error: 'Venue slug is required' }, { status: 400 })
+      return err('Venue slug is required')
     }
 
     // ── Resolve venue DB ───────────────────────────────────────────
@@ -27,7 +28,7 @@ export async function GET(
     try {
       venueDb = await getDbForVenue(slug)
     } catch {
-      return NextResponse.json({ error: 'Location not found' }, { status: 404 })
+      return notFound('Location not found')
     }
 
     // ── Get location ─────────────────────────────────────────────
@@ -37,7 +38,7 @@ export async function GET(
     })
 
     if (!location) {
-      return NextResponse.json({ error: 'Location not found' }, { status: 404 })
+      return notFound('Location not found')
     }
 
     const settings = mergeWithDefaults(location.settings as any)
@@ -45,10 +46,7 @@ export async function GET(
 
     // If portal is not enabled, return minimal data
     if (!portal?.enabled) {
-      return NextResponse.json(
-        { error: 'Customer portal is not enabled for this venue' },
-        { status: 404 },
-      )
+      return notFound('Customer portal is not enabled for this venue')
     }
 
     const response = NextResponse.json({
@@ -69,6 +67,6 @@ export async function GET(
     return response
   } catch (error) {
     console.error('[GET /api/public/portal/[slug]/branding] Error:', error)
-    return NextResponse.json({ error: 'Failed to fetch branding' }, { status: 500 })
+    return err('Failed to fetch branding', 500)
   }
 }

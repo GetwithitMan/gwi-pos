@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { EntertainmentWaitlistStatus } from '@/generated/prisma/client'
 import { dispatchFloorPlanUpdate, dispatchEntertainmentWaitlistNotify, dispatchEntertainmentWaitlistChanged } from '@/lib/socket-dispatch'
@@ -10,6 +10,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { calculateWaitMinutes, validateWaitlistStatus } from '@/lib/domain/entertainment'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, forbidden, notFound, ok } from '@/lib/api-response'
 
 // GET - Get a specific waitlist entry
 export const GET = withVenue(async function GET(
@@ -40,15 +41,12 @@ export const GET = withVenue(async function GET(
     })
 
     if (!entry) {
-      return NextResponse.json(
-        { error: 'Waitlist entry not found' },
-        { status: 404 }
-      )
+      return notFound('Waitlist entry not found')
     }
 
     const waitMinutes = calculateWaitMinutes(entry.requestedAt)
 
-    return NextResponse.json({ data: {
+    return ok({
       entry: {
         id: entry.id,
         customerName: entry.customerName,
@@ -76,13 +74,10 @@ export const GET = withVenue(async function GET(
         depositCollectedBy: entry.depositCollectedBy,
         depositRefundedAt: entry.depositRefundedAt?.toISOString() || null,
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch waitlist entry:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch waitlist entry' },
-      { status: 500 }
-    )
+    return err('Failed to fetch waitlist entry', 500)
   }
 })
 
@@ -98,15 +93,12 @@ export const PATCH = withVenue(async function PATCH(
 
     // Verify locationId is provided
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'locationId is required' },
-        { status: 400 }
-      )
+      return err('locationId is required')
     }
 
     // Permission check
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.SETTINGS_ENTERTAINMENT)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const entry = await db.entertainmentWaitlist.findUnique({
       where: { id },
@@ -129,25 +121,16 @@ export const PATCH = withVenue(async function PATCH(
     })
 
     if (!entry) {
-      return NextResponse.json(
-        { error: 'Waitlist entry not found' },
-        { status: 404 }
-      )
+      return notFound('Waitlist entry not found')
     }
 
     // Verify locationId matches
     if (entry.locationId !== locationId) {
-      return NextResponse.json(
-        { error: 'Waitlist entry does not belong to this location' },
-        { status: 403 }
-      )
+      return forbidden('Waitlist entry does not belong to this location')
     }
 
     if (status && !validateWaitlistStatus(status)) {
-      return NextResponse.json(
-        { error: `Invalid status. Must be one of: waiting, notified, seated, cancelled, expired` },
-        { status: 400 }
-      )
+      return err(`Invalid status. Must be one of: waiting, notified, seated, cancelled, expired`)
     }
 
     const updateData: {
@@ -359,7 +342,7 @@ export const PATCH = withVenue(async function PATCH(
       },
     }).catch(err => console.error('[entertainment] Audit log failed:', err))
 
-    return NextResponse.json({ data: {
+    return ok({
       entry: {
         id: updatedEntry.id,
         customerName: updatedEntry.customerName,
@@ -385,13 +368,10 @@ export const PATCH = withVenue(async function PATCH(
         depositRefundedAt: updatedEntry.depositRefundedAt?.toISOString() || null,
       },
       message: `Updated waitlist entry status to ${status || 'modified'}`,
-    } })
+    })
   } catch (error) {
     console.error('Failed to update waitlist entry:', error)
-    return NextResponse.json(
-      { error: 'Failed to update waitlist entry' },
-      { status: 500 }
-    )
+    return err('Failed to update waitlist entry', 500)
   }
 })
 
@@ -408,15 +388,12 @@ export const DELETE = withVenue(async function DELETE(
 
     // Verify locationId is provided
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'locationId is required' },
-        { status: 400 }
-      )
+      return err('locationId is required')
     }
 
     // Permission check
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.SETTINGS_ENTERTAINMENT)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const entry = await db.entertainmentWaitlist.findUnique({
       where: { id },
@@ -434,18 +411,12 @@ export const DELETE = withVenue(async function DELETE(
     })
 
     if (!entry || entry.deletedAt) {
-      return NextResponse.json(
-        { error: 'Waitlist entry not found' },
-        { status: 404 }
-      )
+      return notFound('Waitlist entry not found')
     }
 
     // Verify locationId matches
     if (entry.locationId !== locationId) {
-      return NextResponse.json(
-        { error: 'Waitlist entry does not belong to this location' },
-        { status: 403 }
-      )
+      return forbidden('Waitlist entry does not belong to this location')
     }
 
     // Soft delete and recalculate positions in transaction
@@ -516,15 +487,12 @@ export const DELETE = withVenue(async function DELETE(
       },
     }).catch(err => console.error('[entertainment] Audit log failed:', err))
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       message: `Removed ${entry.customerName || 'entry'} from waitlist`,
-    } })
+    })
   } catch (error) {
     console.error('Failed to delete waitlist entry:', error)
-    return NextResponse.json(
-      { error: 'Failed to delete waitlist entry' },
-      { status: 500 }
-    )
+    return err('Failed to delete waitlist entry', 500)
   }
 })

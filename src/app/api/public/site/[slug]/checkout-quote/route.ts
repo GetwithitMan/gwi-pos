@@ -13,6 +13,7 @@ import { getLocationTaxRate, calculateSplitTax, isItemTaxInclusive, type TaxIncl
 import { computeIsOrderableOnline } from '@/lib/online-availability'
 import { checkOnlineRateLimit } from '@/lib/online-rate-limiter'
 import { getClientIp } from '@/lib/get-client-ip'
+import { err, notFound, ok } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -47,7 +48,7 @@ export async function POST(
     const { slug } = (await context.params) as { slug: string }
 
     if (!slug) {
-      return NextResponse.json({ error: 'Venue slug is required' }, { status: 400 })
+      return err('Venue slug is required')
     }
 
     // ── Rate limit ──────────────────────────────────────────────────────────
@@ -66,13 +67,13 @@ export async function POST(
     try {
       body = (await request.json()) as QuoteBody
     } catch {
-      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+      return err('Invalid JSON body')
     }
 
     const { items, orderType, couponCode, tipPercent, tipAmount } = body
 
     if (!items || items.length === 0) {
-      return NextResponse.json({ error: 'At least one item is required' }, { status: 400 })
+      return err('At least one item is required')
     }
 
     // ── Resolve venue DB ─────────────────────────────────────────────────────
@@ -81,7 +82,7 @@ export async function POST(
     try {
       venueDb = await getDbForVenue(slug)
     } catch {
-      return NextResponse.json({ error: 'Location not found' }, { status: 404 })
+      return notFound('Location not found')
     }
 
     const location = await venueDb.location.findFirst({
@@ -90,7 +91,7 @@ export async function POST(
     })
 
     if (!location) {
-      return NextResponse.json({ error: 'Location not found' }, { status: 404 })
+      return notFound('Location not found')
     }
 
     const locationId = location.id
@@ -98,10 +99,7 @@ export async function POST(
     const onlineSettings = locSettings?.onlineOrdering as Record<string, unknown> | null
 
     if (!onlineSettings?.enabled) {
-      return NextResponse.json(
-        { error: 'Online ordering is not currently available' },
-        { status: 503 }
-      )
+      return err('Online ordering is not currently available', 503)
     }
 
     // ── Fetch menu items from DB (never trust client prices) ─────────────────
@@ -342,14 +340,9 @@ export async function POST(
       validatedItems,
     }
 
-    return NextResponse.json({ data: response }, {
-      headers: { 'Cache-Control': 'private, no-store' },
-    })
+    return ok(response)
   } catch (error) {
     console.error('[POST /api/public/site/[slug]/checkout-quote] Error:', error)
-    return NextResponse.json(
-      { error: 'An unexpected error occurred' },
-      { status: 500 }
-    )
+    return err('An unexpected error occurred', 500)
   }
 }

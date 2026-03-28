@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth, type AuthenticatedContext } from '@/lib/api-auth-middleware'
 import { emitToLocation } from '@/lib/socket-server'
+import { err, notFound, ok } from '@/lib/api-response'
 
 const BILLING_SOURCE = 'api' as never
 
@@ -34,14 +35,11 @@ export const POST = withVenue(withAuth('INVENTORY_MANAGE', async function POST(
     } = body
 
     if (!amount || amount <= 0) {
-      return NextResponse.json({ error: 'Payment amount must be greater than 0' }, { status: 400 })
+      return err('Payment amount must be greater than 0')
     }
 
     if (!paymentMethod || !['cash', 'card', 'check', 'transfer'].includes(paymentMethod)) {
-      return NextResponse.json(
-        { error: 'Payment method must be cash, card, check, or transfer' },
-        { status: 400 }
-      )
+      return err('Payment method must be cash, card, check, or transfer')
     }
 
     const invoice = await db.invoice.findFirst({
@@ -49,15 +47,15 @@ export const POST = withVenue(withAuth('INVENTORY_MANAGE', async function POST(
     })
 
     if (!invoice) {
-      return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
+      return notFound('Invoice not found')
     }
 
     const status = String(invoice.status)
     if (status === 'voided') {
-      return NextResponse.json({ error: 'Cannot record payment on a voided invoice' }, { status: 400 })
+      return err('Cannot record payment on a voided invoice')
     }
     if (status === 'draft') {
-      return NextResponse.json({ error: 'Cannot record payment on a draft invoice. Send it first.' }, { status: 400 })
+      return err('Cannot record payment on a draft invoice. Send it first.')
     }
 
     const totalAmount = Number(invoice.totalAmount)
@@ -66,7 +64,7 @@ export const POST = withVenue(withAuth('INVENTORY_MANAGE', async function POST(
     const paymentAmount = Math.min(Number(amount), balanceDue) // Don't overpay
 
     if (paymentAmount <= 0) {
-      return NextResponse.json({ error: 'Invoice is already fully paid' }, { status: 400 })
+      return err('Invoice is already fully paid')
     }
 
     const newTotalPaid = previouslyPaid + paymentAmount
@@ -117,18 +115,16 @@ export const POST = withVenue(withAuth('INVENTORY_MANAGE', async function POST(
 
     void emitToLocation(locationId, 'invoices:changed', { locationId }).catch(console.error)
 
-    return NextResponse.json({
-      data: {
+    return ok({
         success: true,
         paymentAmount,
         totalPaid: newTotalPaid,
         balanceDue: Math.max(0, newBalanceDue),
         isFullyPaid,
         paymentCount: existingPayments.length,
-      },
-    })
+      })
   } catch (error) {
     console.error('Record payment error:', error)
-    return NextResponse.json({ error: 'Failed to record payment' }, { status: 500 })
+    return err('Failed to record payment', 500)
   }
 }))

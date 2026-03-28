@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { parseSettings } from '@/lib/settings'
 import { sendReservationNotification, type TemplateKey } from '@/lib/reservations/notifications'
+import { err, forbidden, notFound, ok } from '@/lib/api-response'
 
 export const POST = withVenue(async function POST(
   request: NextRequest,
@@ -20,12 +21,12 @@ export const POST = withVenue(async function POST(
     }
 
     if (!templateKey) {
-      return NextResponse.json({ error: 'templateKey is required' }, { status: 400 })
+      return err('templateKey is required')
     }
 
     const callerLocationId = await getLocationId()
     if (!callerLocationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Load reservation with customer
@@ -35,13 +36,13 @@ export const POST = withVenue(async function POST(
     })
 
     if (!reservation || reservation.locationId !== callerLocationId) {
-      return NextResponse.json({ error: 'Reservation not found' }, { status: 404 })
+      return notFound('Reservation not found')
     }
 
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, reservation.locationId, 'tables.reservations')
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error || 'Permission denied' }, { status: 403 })
+      return forbidden(auth.error || 'Permission denied')
     }
 
     const settings = parseSettings(reservation.location.settings)
@@ -63,9 +64,9 @@ export const POST = withVenue(async function POST(
       channels: channel ? [channel] : undefined,
     })
 
-    return NextResponse.json({ data: results })
+    return ok(results)
   } catch (error) {
     console.error('[reservations/[id]/send-message] POST error:', error)
-    return NextResponse.json({ error: 'Failed to send message' }, { status: 500 })
+    return err('Failed to send message', 500)
   }
 })

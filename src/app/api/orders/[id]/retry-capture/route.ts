@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import * as OrderRepository from '@/lib/repositories/order-repository'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
@@ -21,6 +21,7 @@ import { queueSocketEvent, flushOutboxSafe } from '@/lib/socket-outbox'
 import { getRequestLocationId } from '@/lib/request-context'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, forbidden, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-retry-capture')
 
 export const POST = withVenue(withAuth(async function POST(
@@ -36,7 +37,7 @@ export const POST = withVenue(withAuth(async function POST(
     }
 
     if (!employeeId || !retryMode) {
-      return NextResponse.json({ error: 'Missing employeeId or retryMode' }, { status: 400 })
+      return err('Missing employeeId or retryMode')
     }
 
     // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
@@ -47,7 +48,7 @@ export const POST = withVenue(withAuth(async function POST(
         select: { id: true, locationId: true },
       })
       if (!orderCheck) {
-        return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+        return notFound('Order not found')
       }
       locationId = orderCheck.locationId
     }
@@ -60,14 +61,14 @@ export const POST = withVenue(withAuth(async function POST(
     })
 
     if (!order) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      return notFound('Order not found')
     }
     const now = new Date()
 
     if (retryMode === 'same_card') {
       // Re-attempt capture against authorized cards
       if (order.cards.length === 0) {
-        return NextResponse.json({ error: 'No authorized cards on this tab' }, { status: 400 })
+        return err('No authorized cards on this tab')
       }
 
       const purchaseAmount = Number(order.total) - Number(order.tipTotal)
@@ -122,9 +123,7 @@ export const POST = withVenue(withAuth(async function POST(
           lastCaptureError: 'Retry failed - all cards declined',
         }).catch(err => log.warn({ err }, 'Background task failed'))
 
-        return NextResponse.json({
-          data: { success: false, error: 'All cards declined on retry', retryCount: updated?.captureRetryCount || 0 },
-        })
+        return ok({ success: false, error: 'All cards declined on retry', retryCount: updated?.captureRetryCount || 0 })
       }
 
       // Success — close the tab with FSM-validated payment status
@@ -222,14 +221,12 @@ export const POST = withVenue(withAuth(async function POST(
         },
       ]).catch(err => log.warn({ err }, 'Background task failed'))
 
-      return NextResponse.json({
-        data: {
+      return ok({
           success: true,
           cardType: capturedCard.cardType,
           cardLast4: capturedCard.cardLast4,
           amount: purchaseAmount,
-        },
-      })
+        })
 
     } else if (retryMode === 'cash') {
       // Cash payment — void all preauth cards first
@@ -327,13 +324,13 @@ export const POST = withVenue(withAuth(async function POST(
 
       pushUpstream()
 
-      return NextResponse.json({ data: { success: true, paymentMethod: 'cash', amount: paymentAmount } })
+      return ok({ success: true, paymentMethod: 'cash', amount: paymentAmount })
 
     } else if (retryMode === 'manager_void') {
       // Requires manager permission
       const auth = await requireAnyPermission(employeeId, locationId, [PERMISSIONS.MGR_VOID_ORDERS])
       if (!auth.authorized) {
-        return NextResponse.json({ error: auth.error || 'Manager permission required' }, { status: 403 })
+        return forbidden(auth.error || 'Manager permission required')
       }
 
       // Void all authorized cards at Datacap (outside DB transaction)
@@ -402,12 +399,12 @@ export const POST = withVenue(withAuth(async function POST(
 
       pushUpstream()
 
-      return NextResponse.json({ data: { success: true, action: PAYMENT_STATES.VOIDED } })
+      return ok({ success: true, action: PAYMENT_STATES.VOIDED })
     }
 
-    return NextResponse.json({ error: 'Invalid retryMode' }, { status: 400 })
+    return err('Invalid retryMode')
   } catch (error) {
     console.error('[Retry Capture] Error:', error)
-    return NextResponse.json({ error: 'Failed to retry capture' }, { status: 500 })
+    return err('Failed to retry capture', 500)
   }
 }))

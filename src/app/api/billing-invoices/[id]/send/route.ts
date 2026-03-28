@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth, type AuthenticatedContext } from '@/lib/api-auth-middleware'
@@ -6,6 +6,7 @@ import { sendEmail } from '@/lib/email-service'
 import { generateInvoiceHTML } from '@/lib/invoice-generator'
 import { mergeWithDefaults, DEFAULT_INVOICING } from '@/lib/settings'
 import { emitToLocation } from '@/lib/socket-server'
+import { err, notFound, ok } from '@/lib/api-response'
 
 const BILLING_SOURCE = 'api' as never
 
@@ -31,23 +32,17 @@ export const POST = withVenue(withAuth('INVENTORY_MANAGE', async function POST(
     })
 
     if (!invoice) {
-      return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
+      return notFound('Invoice not found')
     }
 
     const status = String(invoice.status)
     if (status === 'paid' || status === 'voided') {
-      return NextResponse.json(
-        { error: `Cannot send a ${status} invoice` },
-        { status: 400 }
-      )
+      return err(`Cannot send a ${status} invoice`)
     }
 
     const customerEmail = invoice.vendor?.email
     if (!customerEmail) {
-      return NextResponse.json(
-        { error: 'Customer has no email address. Please update the customer info first.' },
-        { status: 400 }
-      )
+      return err('Customer has no email address. Please update the customer info first.')
     }
 
     // Load invoicing settings for company info
@@ -109,16 +104,14 @@ export const POST = withVenue(withAuth('INVENTORY_MANAGE', async function POST(
 
     void emitToLocation(locationId, 'invoices:changed', { locationId }).catch(console.error)
 
-    return NextResponse.json({
-      data: {
+    return ok({
         success: true,
         emailSent: emailResult.success,
         emailError: emailResult.error || null,
         sentTo: customerEmail,
-      },
-    })
+      })
   } catch (error) {
     console.error('Send billing invoice error:', error)
-    return NextResponse.json({ error: 'Failed to send invoice' }, { status: 500 })
+    return err('Failed to send invoice', 500)
   }
 }))

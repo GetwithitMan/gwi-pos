@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { err, notFound, ok } from '@/lib/api-response'
 
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
@@ -9,10 +10,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const last4 = searchParams.get('last4')
 
     if (!locationId || !last4) {
-      return NextResponse.json(
-        { error: 'Missing required params: locationId, last4' },
-        { status: 400 }
-      )
+      return err('Missing required params: locationId, last4')
     }
 
     // Find card profile by locationId + cardLast4 (uses @@index([locationId, cardLast4]))
@@ -26,7 +24,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     })
 
     if (!profile) {
-      return NextResponse.json({ error: 'Card not found' }, { status: 404 })
+      return notFound('Card not found')
     }
 
     // Load linked customer info if customerId exists
@@ -84,8 +82,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         createdAt: p.order.createdAt.toISOString(),
       }))
 
-    return NextResponse.json({
-      data: {
+    return ok({
         visitCount: profile.visitCount,
         totalSpend: Number(profile.totalSpend),
         cardType: profile.cardType,
@@ -96,13 +93,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         customerName,
         customerPhone,
         recentOrders,
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to fetch card visit stats:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch card visit stats' },
-      { status: 500 }
-    )
+    return err('Failed to fetch card visit stats', 500)
   }
 })

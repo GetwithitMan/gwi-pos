@@ -5,10 +5,11 @@
  * Also includes a trending issues list (most frequent messages).
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
+import { err, ok } from '@/lib/api-response'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -20,7 +21,7 @@ export const GET = withVenue(async function GET(req: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const params = req.nextUrl.searchParams
@@ -82,8 +83,7 @@ export const GET = withVenue(async function GET(req: NextRequest) {
 
     const levelMap = toMap(byLevel)
 
-    return NextResponse.json({
-      data: {
+    return ok({
         hours,
         since: since.toISOString(),
         total: Number(totalCount[0]?.count ?? 0),
@@ -104,10 +104,9 @@ export const GET = withVenue(async function GET(req: NextRequest) {
           count: Number(t.count),
           latestAt: t.latest,
         })),
-      },
-    })
+      })
   } catch (error) {
     console.error('[venue-logs/stats] GET failed:', error)
-    return NextResponse.json({ error: 'Failed to fetch venue log stats' }, { status: 500 })
+    return err('Failed to fetch venue log stats', 500)
   }
 })

@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
+import { err, ok } from '@/lib/api-response'
 
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
@@ -11,13 +12,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const invoiceNo = sp.get('invoiceNo')
     const datacapRefNo = sp.get('datacapRefNo')
 
-    if (!locationId) return NextResponse.json({ error: 'locationId required' }, { status: 400 })
+    if (!locationId) return err('locationId required')
     if (!invoiceNo && !datacapRefNo) {
-      return NextResponse.json({ error: 'invoiceNo or datacapRefNo required' }, { status: 400 })
+      return err('invoiceNo or datacapRefNo required')
     }
 
     const auth = await requirePermission(employeeId, locationId, 'admin.manage_memberships')
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     let where = `"mc"."locationId" = $1`
     const params: any[] = [locationId]
@@ -44,9 +45,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       LIMIT 10
     `, ...params)
 
-    return NextResponse.json({ data: rows })
+    return ok(rows)
   } catch (err) {
     console.error('[memberships/reconcile] error:', err)
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
+    return err('Internal error', 500)
   }
 })

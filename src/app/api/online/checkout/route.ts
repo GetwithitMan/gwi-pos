@@ -35,6 +35,7 @@ import { upsertOnlineCustomer, accrueOnlineLoyaltyPoints } from '@/lib/customer-
 import { generateOrderViewToken } from '@/app/api/public/order-status/[id]/route'
 import { mergeWithDefaults, DEFAULT_DELIVERY } from '@/lib/settings'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('online-checkout')
 
 // ─── Geo Math Utilities (for radius/polygon delivery zone matching) ──────────
@@ -147,14 +148,11 @@ export async function POST(request: NextRequest) {
     const parsed = CheckoutBodySchema.safeParse(raw)
     if (!parsed.success) {
       const firstIssue = parsed.error.issues[0]
-      return NextResponse.json(
-        { error: firstIssue?.message ?? 'Invalid request body', details: parsed.error.issues },
-        { status: 400 }
-      )
+      return err(firstIssue?.message ?? 'Invalid request body', 400, parsed.error.issues)
     }
     body = parsed.data
   } catch {
-    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+    return err('Invalid JSON body')
   }
 
   // ── 1. Resolve locationId from slug or body ────────────────────────────────
@@ -174,13 +172,13 @@ export async function POST(request: NextRequest) {
       select: { id: true },
     })
     if (!location) {
-      return NextResponse.json({ error: 'Location not found' }, { status: 404 })
+      return notFound('Location not found')
     }
     locationId = location.id
   }
 
   if (!locationId) {
-    return NextResponse.json({ error: 'slug or locationId is required' }, { status: 400 })
+    return err('slug or locationId is required')
   }
 
   // ── 1a. Rate limit (BUG #388) ─────────────────────────────────────────────
@@ -197,7 +195,7 @@ export async function POST(request: NextRequest) {
 
   // Token required unless a gift card number is provided (may cover full amount)
   if (!token && !body.giftCardNumber) {
-    return NextResponse.json({ error: 'Payment token is required' }, { status: 400 })
+    return err('Payment token is required')
   }
 
   // ── 1b. Resolve field name aliases (backward compat) ──────────────────────
@@ -217,10 +215,7 @@ export async function POST(request: NextRequest) {
     const onlineSettings = locSettings?.onlineOrdering as Record<string, unknown> | null
 
     if (!onlineSettings?.enabled) {
-      return NextResponse.json(
-        { error: 'Online ordering is not currently available' },
-        { status: 503 }
-      )
+      return err('Online ordering is not currently available', 503)
     }
 
     // ── 1c½. Check online ordering hours ──────────────────────────────────────
@@ -248,18 +243,12 @@ export async function POST(request: NextRequest) {
       const todaySchedule = onlineHours.find(h => h.day === currentDay)
 
       if (todaySchedule?.closed) {
-        return NextResponse.json(
-          { error: 'Online ordering is closed today' },
-          { status: 503 }
-        )
+        return err('Online ordering is closed today', 503)
       }
 
       if (todaySchedule && todaySchedule.open && todaySchedule.close) {
         if (currentTime < todaySchedule.open || currentTime > todaySchedule.close) {
-          return NextResponse.json(
-            { error: `Online ordering is currently outside operating hours (open ${todaySchedule.open} - ${todaySchedule.close})` },
-            { status: 503 }
-          )
+          return err(`Online ordering is currently outside operating hours (open ${todaySchedule.open} - ${todaySchedule.close})`, 503)
         }
       }
       // If no schedule entry for today or no open/close times: treat as always open
@@ -279,8 +268,7 @@ export async function POST(request: NextRequest) {
 
       if (existingOrder) {
         const prepTimeMinutes = (onlineSettings?.prepTime as number | undefined) ?? 20
-        return NextResponse.json({
-          data: {
+        return ok({
             orderId: existingOrder.id,
             orderNumber: existingOrder.orderNumber,
             subtotal: Number(existingOrder.subtotal),
@@ -290,8 +278,7 @@ export async function POST(request: NextRequest) {
             prepTime: prepTimeMinutes,
             statusToken: generateOrderViewToken(existingOrder.id),
             duplicate: true,
-          },
-        })
+          })
       }
     }
 
@@ -321,10 +308,7 @@ export async function POST(request: NextRequest) {
     // Validate all requested items exist and are orderable
     for (const item of items) {
       if (!menuItemMap.has(item.menuItemId)) {
-        return NextResponse.json(
-          { error: `Menu item ${item.menuItemId} is not available for online ordering` },
-          { status: 422 }
-        )
+        return err(`Menu item ${item.menuItemId} is not available for online ordering`, 422)
       }
     }
 
@@ -370,25 +354,16 @@ export async function POST(request: NextRequest) {
     for (const item of items) {
       for (const mod of item.modifiers) {
         if (!mod.modifierId) {
-          return NextResponse.json(
-            { error: 'Each modifier must include a valid modifierId' },
-            { status: 400 }
-          )
+          return err('Each modifier must include a valid modifierId')
         }
         const dbMod = modifierMap.get(mod.modifierId)
         if (!dbMod) {
-          return NextResponse.json(
-            { error: `Modifier ${mod.modifierId} is not available for online ordering` },
-            { status: 422 }
-          )
+          return err(`Modifier ${mod.modifierId} is not available for online ordering`, 422)
         }
         // BUG #390: Validate modifier belongs to this menu item's modifier group
         // Fix #11: Allow universal modifier groups (menuItemId === null) for any item
         if (dbMod.modifierGroup.menuItemId !== null && dbMod.modifierGroup.menuItemId !== item.menuItemId) {
-          return NextResponse.json(
-            { error: `Modifier ${mod.modifierId} does not belong to the selected item` },
-            { status: 422 }
-          )
+          return err(`Modifier ${mod.modifierId} does not belong to the selected item`, 422)
         }
       }
     }
@@ -538,17 +513,17 @@ export async function POST(request: NextRequest) {
     if (body.orderType === 'delivery') {
       // Require address + zip for delivery
       if (!body.deliveryAddress?.trim()) {
-        return NextResponse.json({ error: 'Delivery address is required' }, { status: 400 })
+        return err('Delivery address is required')
       }
       if (!body.deliveryZip?.trim()) {
-        return NextResponse.json({ error: 'Delivery zip code is required' }, { status: 400 })
+        return err('Delivery zip code is required')
       }
 
       // Check delivery enabled in settings
       const fullSettings = mergeWithDefaults(locSettings as any)
       const deliveryConfig = fullSettings.delivery ?? DEFAULT_DELIVERY
       if (!deliveryConfig.enabled) {
-        return NextResponse.json({ error: 'Delivery is not available' }, { status: 400 })
+        return err('Delivery is not available')
       }
 
       // Query active delivery zones (raw SQL — DeliveryZone not in Prisma)
@@ -622,15 +597,12 @@ export async function POST(request: NextRequest) {
       // The client should geocode the delivery address and send coordinates.
 
       if (!matchedZone) {
-        return NextResponse.json({ error: 'Delivery not available for this address' }, { status: 400 })
+        return err('Delivery not available for this address')
       }
 
       // Minimum order check (against discounted subtotal)
       if (matchedZone.minimumOrder > 0 && discountedSubtotal < matchedZone.minimumOrder) {
-        return NextResponse.json(
-          { error: `Minimum order of $${matchedZone.minimumOrder.toFixed(2)} required for delivery` },
-          { status: 400 }
-        )
+        return err(`Minimum order of $${matchedZone.minimumOrder.toFixed(2)} required for delivery`)
       }
 
       // Calculate delivery fee (with free delivery check)
@@ -701,10 +673,7 @@ export async function POST(request: NextRequest) {
         select: { id: true },
       })
       if (!role) {
-        return NextResponse.json(
-          { error: 'This location is not configured for online ordering yet' },
-          { status: 503 }
-        )
+        return err('This location is not configured for online ordering yet', 503)
       }
       systemEmployee = await venueDb.employee.create({
         data: {
@@ -848,10 +817,7 @@ export async function POST(request: NextRequest) {
           where: { id: order.id },
           data: { status: 'cancelled', deletedAt: new Date(), lastMutatedBy: 'cloud' },
         }).catch(err => log.warn({ err }, 'fire-and-forget failed in online.checkout'))
-        return NextResponse.json(
-          { error: 'Payment token is required for the remaining balance' },
-          { status: 400 }
-        )
+        return err('Payment token is required for the remaining balance')
       }
       try {
         payApiResult = await getPayApiClient().sale({
@@ -866,10 +832,7 @@ export async function POST(request: NextRequest) {
           data: { status: 'cancelled', deletedAt: new Date(), lastMutatedBy: 'cloud' },
         }).catch(err => log.warn({ err }, 'fire-and-forget failed in online.checkout'))
         console.error('[checkout] PayAPI error:', payErr)
-        return NextResponse.json(
-          { error: 'Payment processing failed. Please try again.' },
-          { status: 502 }
-        )
+        return err('Payment processing failed. Please try again.', 502)
       }
 
       // ── 9. Handle payment result ─────────────────────────────────────────────
@@ -1228,8 +1191,7 @@ export async function POST(request: NextRequest) {
     const prepTimeMinutes =
       (onlineSettings?.prepTime as number | undefined) ?? 20
 
-    return NextResponse.json({
-      data: {
+    return ok({
         orderId: order.id,
         orderNumber: order.orderNumber,
         subtotal,
@@ -1246,13 +1208,9 @@ export async function POST(request: NextRequest) {
         prepTime: prepTimeMinutes,
         // Fix #3: Add status token for order tracking
         statusToken: generateOrderViewToken(order.id),
-      },
-    })
+      })
   } catch (error) {
     console.error('[POST /api/online/checkout] Error:', error)
-    return NextResponse.json(
-      { error: 'An unexpected error occurred. Please try again.' },
-      { status: 500 }
-    )
+    return err('An unexpected error occurred. Please try again.', 500)
   }
 }

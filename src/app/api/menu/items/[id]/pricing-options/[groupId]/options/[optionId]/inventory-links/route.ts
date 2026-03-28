@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { invalidateMenuCache } from '@/lib/menu-cache'
@@ -6,6 +6,7 @@ import { dispatchMenuUpdate } from '@/lib/socket-dispatch'
 import { getLocationId } from '@/lib/location-cache'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 
 const log = createChildLogger('menu.items.id.pricing-options.groupId.options.optionId.inventory-links')
 
@@ -19,10 +20,7 @@ export const GET = withVenue(async function GET(
 
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'No location found' },
-        { status: 400 }
-      )
+      return err('No location found')
     }
 
     // Verify the pricing option belongs to this group, item, and location
@@ -37,10 +35,7 @@ export const GET = withVenue(async function GET(
       select: { id: true },
     })
     if (!option) {
-      return NextResponse.json(
-        { error: 'Pricing option not found' },
-        { status: 404 }
-      )
+      return notFound('Pricing option not found')
     }
 
     const links = await db.pricingOptionInventoryLink.findMany({
@@ -78,8 +73,7 @@ export const GET = withVenue(async function GET(
       orderBy: { createdAt: 'asc' },
     })
 
-    return NextResponse.json({
-      data: links.map((link) => ({
+    return ok(links.map((link) => ({
         id: link.id,
         pricingOptionId: link.pricingOptionId,
         inventoryItemId: link.inventoryItemId,
@@ -113,14 +107,10 @@ export const GET = withVenue(async function GET(
               unit: link.ingredient.outputUnit ?? link.ingredient.standardUnit,
             }
           : null,
-      })),
-    })
+      })))
   } catch (error) {
     console.error('Failed to list inventory links:', error)
-    return NextResponse.json(
-      { error: 'Failed to list inventory links' },
-      { status: 500 }
-    )
+    return err('Failed to list inventory links', 500)
   }
 })
 
@@ -157,32 +147,20 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     }
 
     if (!prepItemId && !inventoryItemId && !ingredientId) {
-      return NextResponse.json(
-        { error: 'Either prepItemId, inventoryItemId, or ingredientId is required' },
-        { status: 400 }
-      )
+      return err('Either prepItemId, inventoryItemId, or ingredientId is required')
     }
 
     if (usageQuantity == null || usageQuantity <= 0) {
-      return NextResponse.json(
-        { error: 'usageQuantity must be a positive number' },
-        { status: 400 }
-      )
+      return err('usageQuantity must be a positive number')
     }
 
     if (!usageUnit?.trim()) {
-      return NextResponse.json(
-        { error: 'usageUnit is required' },
-        { status: 400 }
-      )
+      return err('usageUnit is required')
     }
 
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'No location found' },
-        { status: 400 }
-      )
+      return err('No location found')
     }
 
     // Verify the pricing option belongs to this group, item, and location
@@ -197,10 +175,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
       select: { id: true },
     })
     if (!option) {
-      return NextResponse.json(
-        { error: 'Pricing option not found' },
-        { status: 404 }
-      )
+      return notFound('Pricing option not found')
     }
 
     // Look up the linked item's costPerUnit to calculate cost
@@ -212,10 +187,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
         select: { costPerUnit: true },
       })
       if (!invItem) {
-        return NextResponse.json(
-          { error: 'Inventory item not found' },
-          { status: 404 }
-        )
+        return notFound('Inventory item not found')
       }
       if (invItem.costPerUnit != null) {
         calculatedCost = Number(invItem.costPerUnit) * Number(usageQuantity)
@@ -226,10 +198,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
         select: { costPerUnit: true },
       })
       if (!prep) {
-        return NextResponse.json(
-          { error: 'Prep item not found' },
-          { status: 404 }
-        )
+        return notFound('Prep item not found')
       }
       if (prep.costPerUnit != null) {
         calculatedCost = Number(prep.costPerUnit) * Number(usageQuantity)
@@ -284,8 +253,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
       menuItemId,
     }).catch(err => log.warn({ err }, 'fire-and-forget failed in menu.items.id.pricing-options.groupId.options.optionId.inventory-links'))
 
-    return NextResponse.json({
-      data: {
+    return ok({
         id: link.id,
         pricingOptionId: link.pricingOptionId,
         inventoryItemId: link.inventoryItemId,
@@ -319,13 +287,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
               unit: link.ingredient.outputUnit ?? link.ingredient.standardUnit,
             }
           : null,
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to create inventory link:', error)
-    return NextResponse.json(
-      { error: 'Failed to create inventory link' },
-      { status: 500 }
-    )
+    return err('Failed to create inventory link', 500)
   }
 }))

@@ -9,12 +9,13 @@
  * Uses raw SQL for the qrOrderCode column (added via migration 027, not in Prisma schema).
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // Generate a short alphanumeric code (6 chars, no confusable characters)
 function generateOrderCode(): string {
@@ -39,13 +40,13 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
     const requestingEmployeeId = searchParams.get('requestingEmployeeId') || searchParams.get('employeeId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+      return err('Location ID is required')
     }
 
     // Permission check
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.MGR_PAY_IN_OUT)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Get table
@@ -64,7 +65,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
     })
 
     if (!table) {
-      return NextResponse.json({ error: 'Table not found' }, { status: 404 })
+      return notFound('Table not found')
     }
 
     // Get location slug
@@ -74,7 +75,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
     })
 
     if (!location?.slug) {
-      return NextResponse.json({ error: 'Location not configured for QR ordering' }, { status: 400 })
+      return err('Location not configured for QR ordering')
     }
 
     // Check if table already has a qrOrderCode
@@ -106,7 +107,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
       }
 
       if (!tableCode) {
-        return NextResponse.json({ error: 'Failed to generate unique order code' }, { status: 500 })
+        return err('Failed to generate unique order code', 500)
       }
     }
 
@@ -119,18 +120,16 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
     // For production, the client should use a proper QR library to render from the URL
     const qrCodeDataUrl = `data:text/plain;base64,${Buffer.from(orderUrl).toString('base64')}`
 
-    return NextResponse.json({
-      data: {
+    return ok({
         tableId: table.id,
         tableName: table.name,
         tableCode,
         orderUrl,
         qrCodeUrl: qrCodeDataUrl,
         slug: location.slug,
-      },
-    })
+      })
   } catch (error) {
     console.error('[GET /api/tables/[id]/qr-code] Error:', error)
-    return NextResponse.json({ error: 'Failed to generate QR code' }, { status: 500 })
+    return err('Failed to generate QR code', 500)
   }
 }))

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { db } from '@/lib/db'
 import { parseSettings, mergeWithDefaults } from '@/lib/settings'
@@ -9,6 +9,7 @@ import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { dispatchSettingsUpdated } from '@/lib/socket-dispatch'
 import { getClientIp } from '@/lib/get-client-ip'
+import { err, notFound, ok, unauthorized } from '@/lib/api-response'
 
 /**
  * GET /api/payment-config
@@ -20,23 +21,21 @@ export const GET = withVenue(async function GET() {
   try {
     const location = await db.location.findFirst({ select: { id: true, settings: true } })
     if (!location) {
-      return NextResponse.json({ error: 'No location found' }, { status: 404 })
+      return notFound('No location found')
     }
     const settings = parseSettings(location.settings)
     const payments = settings.payments
     const isTestMode = payments.datacapEnvironment
       ? payments.datacapEnvironment === 'cert'
       : payments.testMode
-    return NextResponse.json({
-      data: {
+    return ok({
         isTestMode,
         environment: payments.datacapEnvironment ?? (payments.testMode ? 'cert' : 'production'),
         processor: payments.processor,
-      },
-    })
+      })
   } catch (error) {
     console.error('[payment-config] GET failed:', error)
-    return NextResponse.json({ error: 'Failed to fetch payment config' }, { status: 500 })
+    return err('Failed to fetch payment config', 500)
   }
 })
 
@@ -73,28 +72,25 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       const ip = getClientIp(request)
       const isLocalhost = ['127.0.0.1', '::1', 'localhost'].includes(ip)
       if (!isLocalhost) {
-        return NextResponse.json({ error: 'Unauthorized — internal API secret required' }, { status: 401 })
+        return unauthorized('Unauthorized — internal API secret required')
       }
     }
 
     const body = await request.json().catch(() => null)
     if (!body) {
-      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+      return err('Invalid JSON body')
     }
 
     const parsed = PaymentConfigSchema.safeParse(body)
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: parsed.error.issues.map((i) => i.message).join(', ') },
-        { status: 400 }
-      )
+      return err(parsed.error.issues.map((i) => i.message).join(', '))
     }
 
     const { processor, environment, merchantId, tokenKey } = parsed.data
 
     const location = await db.location.findFirst({ select: { id: true } })
     if (!location) {
-      return NextResponse.json({ error: 'No location found' }, { status: 404 })
+      return notFound('No location found')
     }
 
     // Deep-merge into existing settings so all other settings are preserved
@@ -127,9 +123,9 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     // Emit settings:updated so all terminals refresh payment configuration
     void dispatchSettingsUpdated(location.id, { changedKeys: ['payments'] }).catch(console.error)
 
-    return NextResponse.json({ data: { updated: true, processor, environment } })
+    return ok({ updated: true, processor, environment })
   } catch (error) {
     console.error('[payment-config] Failed to update payment config:', error)
-    return NextResponse.json({ error: 'Failed to update payment config' }, { status: 500 })
+    return err('Failed to update payment config', 500)
   }
 })

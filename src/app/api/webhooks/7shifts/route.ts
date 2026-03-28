@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { createHmac, timingSafeEqual } from 'crypto'
 import { db } from '@/lib/db'
 import { parseSettings } from '@/lib/settings'
 import { listShifts } from '@/lib/7shifts-client'
 import { getBusinessDate, updateSyncStatus } from '../../integrations/7shifts/_helpers'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok, unauthorized } from '@/lib/api-response'
 const log = createChildLogger('webhooks-7shifts')
 
 // Max age for webhook timestamp replay protection (5 minutes)
@@ -16,7 +17,7 @@ export async function POST(request: NextRequest) {
   try {
     payload = JSON.parse(rawBody)
   } catch {
-    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+    return err('Invalid JSON')
   }
 
   // ─── P0: Multi-location routing via x-company-id ──────────────────────────
@@ -70,7 +71,7 @@ export async function POST(request: NextRequest) {
       '[7shifts/webhook] No matching location — possible misconfiguration.',
       { companyId: incomingCompanyIdStr, event, enabledVenueCount: enabledVenues.length }
     )
-    return NextResponse.json({ received: true })
+    return ok({ received: true })
   }
 
   // ─── P0: Correct HMAC verification ────────────────────────────────────────
@@ -84,7 +85,7 @@ export async function POST(request: NextRequest) {
     const tsMs = parseInt(timestamp, 10) * 1000
     if (isNaN(tsMs) || Math.abs(Date.now() - tsMs) > MAX_TIMESTAMP_AGE_MS) {
       console.warn('[7shifts/webhook] Replay attack or stale timestamp:', timestamp)
-      return NextResponse.json({ error: 'Timestamp expired' }, { status: 401 })
+      return unauthorized('Timestamp expired')
     }
 
     // Derive key and compute expected signature (hex output, lowercase)
@@ -101,11 +102,11 @@ export async function POST(request: NextRequest) {
       // Guard against malformed hex that produces a zero-length buffer
       if (sigBuf.length === 0 || sigBuf.length !== expBuf.length || !timingSafeEqual(sigBuf, expBuf)) {
         console.warn('[7shifts/webhook] Invalid HMAC signature')
-        return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+        return unauthorized('Invalid signature')
       }
     } catch {
       console.warn('[7shifts/webhook] Signature comparison failed')
-      return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+      return unauthorized('Invalid signature')
     }
   } else if (matchedWebhookSecret && signature) {
     // Fallback: legacy single-secret HMAC (if deployed before GUID-based signing)
@@ -118,10 +119,10 @@ export async function POST(request: NextRequest) {
       const expBuf = Buffer.from(expected, 'hex')
       if (sigBuf.length === 0 || sigBuf.length !== expBuf.length || !timingSafeEqual(sigBuf, expBuf)) {
         console.warn('[7shifts/webhook] Invalid legacy signature')
-        return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+        return unauthorized('Invalid signature')
       }
     } catch {
-      return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+      return unauthorized('Invalid signature')
     }
   }
 
@@ -133,7 +134,7 @@ export async function POST(request: NextRequest) {
   // switch to a DB job table + cron drain instead.
   void processWebhookEvent(event, payload, matchedLocationId, matchedTimezone).catch(err => log.warn({ err }, 'Background task failed'))
 
-  return NextResponse.json({ received: true })
+  return ok({ received: true })
 }
 
 async function processWebhookEvent(

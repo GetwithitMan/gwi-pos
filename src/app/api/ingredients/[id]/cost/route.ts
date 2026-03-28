@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { convert } from '@/lib/unit-conversions'
 import { withVenue } from '@/lib/with-venue'
+import { err, ok } from '@/lib/api-response'
 
 /**
  * Calculate cost per unit for a single ingredient from DB data (no HTTP calls).
@@ -163,24 +164,21 @@ export const GET = withVenue(async function GET(
     const result = await calculateIngredientCost(id)
 
     if (result.costPerUnit === null) {
-      return NextResponse.json({ data: {
+      return ok({
         costPerUnit: null,
         costUnit: result.costUnit,
         costSource: 'unknown',
         message: 'No cost data available. Set up purchase price or link to inventory.',
-      } })
+      })
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       costPerUnit: result.costPerUnit,
       costUnit: result.costUnit,
       costSource: result.costSource,
-    } })
+    })
   } catch (error) {
     console.error('Failed to calculate ingredient cost:', error)
-    return NextResponse.json(
-      { error: 'Failed to calculate cost' },
-      { status: 500 }
-    )
+    return err('Failed to calculate cost', 500)
   }
 })

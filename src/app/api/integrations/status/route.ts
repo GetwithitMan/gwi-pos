@@ -1,8 +1,8 @@
-import { NextResponse } from 'next/server'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationSettings } from '@/lib/location-cache'
 import { parseSettings, type LocationSettings } from '@/lib/settings'
 import { db } from '@/lib/db'
+import { ok } from '@/lib/api-response'
 
 export const GET = withVenue(async function GET() {
   // Read integration settings from DB (not env vars)
@@ -42,7 +42,7 @@ export const GET = withVenue(async function GET() {
     twilioFromNumber = `***${process.env.TWILIO_FROM_NUMBER.slice(-4)}`
   }
 
-  return NextResponse.json({ data: {
+  return ok({
     twilio: {
       configured: twilioConfigured,
       fromNumber: twilioFromNumber,
@@ -62,5 +62,5 @@ export const GET = withVenue(async function GET() {
     marginEdge: {
       configured: marginEdgeConfigured,
     },
-  } })
+  })
 })

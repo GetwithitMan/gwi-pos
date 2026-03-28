@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchMenuStructureChanged, dispatchMenuUpdate } from '@/lib/socket-dispatch'
 import { invalidateMenuCache } from '@/lib/menu-cache'
@@ -10,6 +10,7 @@ import { getRequestLocationId } from '@/lib/request-context'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 
 const log = createChildLogger('menu.categories.id')
 
@@ -25,20 +26,20 @@ export const PUT = withVenue(async function PUT(
     // Fast path: request context → body → query param → fallback to cached location
     const locationId = getRequestLocationId() || body.locationId || request.nextUrl.searchParams.get('locationId') || await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'Location required' }, { status: 400 })
+      return err('Location required')
     }
 
     // Auth check — require menu.edit_items permission
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.MENU_EDIT_ITEMS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Verify the category belongs to this location before updating
     const existing = await db.category.findFirst({
       where: { id, locationId },
     })
     if (!existing) {
-      return NextResponse.json({ error: 'Category not found' }, { status: 404 })
+      return notFound('Category not found')
     }
 
     const category = await db.category.update({
@@ -73,7 +74,7 @@ export const PUT = withVenue(async function PUT(
     void notifyDataChanged({ locationId: category.locationId, domain: 'menu', action: 'updated', entityId: category.id })
     void pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       id: category.id,
       name: category.name,
       color: category.color,
@@ -82,13 +83,10 @@ export const PUT = withVenue(async function PUT(
       isActive: category.isActive,
       showOnline: category.showOnline,
       printerIds: category.printerIds
-    } })
+    })
   } catch (error) {
     console.error('Failed to update category:', error)
-    return NextResponse.json(
-      { error: 'Failed to update category' },
-      { status: 500 }
-    )
+    return err('Failed to update category', 500)
   }
 })
 
@@ -107,13 +105,13 @@ export const DELETE = withVenue(async function DELETE(
     })
 
     if (!category) {
-      return NextResponse.json({ error: 'Category not found' }, { status: 404 })
+      return notFound('Category not found')
     }
 
     // Auth check — require menu.edit_items permission
     const actorDel = await getActorFromRequest(request)
     const authDel = await requirePermission(actorDel.employeeId, category.locationId, PERMISSIONS.MENU_EDIT_ITEMS)
-    if (!authDel.authorized) return NextResponse.json({ error: authDel.error }, { status: authDel.status })
+    if (!authDel.authorized) return err(authDel.error, authDel.status)
 
     // Check if category has items
     const itemCount = await db.menuItem.count({
@@ -121,10 +119,7 @@ export const DELETE = withVenue(async function DELETE(
     })
 
     if (itemCount > 0) {
-      return NextResponse.json(
-        { error: 'Cannot delete category with items. Move or delete items first.' },
-        { status: 400 }
-      )
+      return err('Cannot delete category with items. Move or delete items first.')
     }
 
     await db.category.update({ where: { id }, data: { deletedAt: new Date() } })
@@ -148,12 +143,9 @@ export const DELETE = withVenue(async function DELETE(
       void pushUpstream()
     }
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Failed to delete category:', error)
-    return NextResponse.json(
-      { error: 'Failed to delete category' },
-      { status: 500 }
-    )
+    return err('Failed to delete category', 500)
   }
 })

@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - Get a single print route by ID
 export const GET = withVenue(withAuth('ADMIN', async function GET(
@@ -31,13 +32,13 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
     })
 
     if (!route) {
-      return NextResponse.json({ error: 'Print route not found' }, { status: 404 })
+      return notFound('Print route not found')
     }
 
-    return NextResponse.json({ data: { route } })
+    return ok({ route })
   } catch (error) {
     console.error('Failed to fetch print route:', error)
-    return NextResponse.json({ error: 'Failed to fetch print route' }, { status: 500 })
+    return err('Failed to fetch print route', 500)
   }
 }))
 
@@ -56,7 +57,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     })
 
     if (!existingRoute) {
-      return NextResponse.json({ error: 'Print route not found' }, { status: 404 })
+      return notFound('Print route not found')
     }
 
     const {
@@ -77,10 +78,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     if (routeType !== undefined) {
       const validRouteTypes = ['category', 'item_type', 'station', 'custom']
       if (!validRouteTypes.includes(routeType)) {
-        return NextResponse.json(
-          { error: `Invalid route type. Must be one of: ${validRouteTypes.join(', ')}` },
-          { status: 400 }
-        )
+        return err(`Invalid route type. Must be one of: ${validRouteTypes.join(', ')}`)
       }
     }
 
@@ -90,10 +88,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
         where: { id: printerId, locationId: existingRoute.locationId, deletedAt: null },
       })
       if (!printer) {
-        return NextResponse.json(
-          { error: 'Primary printer not found at this location' },
-          { status: 400 }
-        )
+        return err('Primary printer not found at this location')
       }
     }
 
@@ -103,10 +98,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
         where: { id: backupPrinterId, locationId: existingRoute.locationId, deletedAt: null },
       })
       if (!backupPrinter) {
-        return NextResponse.json(
-          { error: 'Backup printer not found at this location' },
-          { status: 400 }
-        )
+        return err('Backup printer not found at this location')
       }
     }
 
@@ -143,10 +135,10 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     void notifyDataChanged({ locationId: existingRoute.locationId, domain: 'hardware', action: 'updated', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { route } })
+    return ok({ route })
   } catch (error) {
     console.error('Failed to update print route:', error)
-    return NextResponse.json({ error: 'Failed to update print route' }, { status: 500 })
+    return err('Failed to update print route', 500)
   }
 }))
 
@@ -164,7 +156,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     })
 
     if (!route) {
-      return NextResponse.json({ error: 'Print route not found' }, { status: 404 })
+      return notFound('Print route not found')
     }
 
     // Soft delete
@@ -176,9 +168,9 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     void notifyDataChanged({ locationId: route.locationId, domain: 'hardware', action: 'deleted', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Failed to delete print route:', error)
-    return NextResponse.json({ error: 'Failed to delete print route' }, { status: 500 })
+    return err('Failed to delete print route', 500)
   }
 }))

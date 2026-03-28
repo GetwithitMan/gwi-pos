@@ -11,6 +11,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { executeUpdate, getUpdateAgentStatus, reportDeployHealth } from '@/lib/update-agent'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok } from '@/lib/api-response'
 const log = createChildLogger('system-update')
 
 export const dynamic = 'force-dynamic'
@@ -20,24 +21,24 @@ export async function POST(req: NextRequest) {
   const secret = process.env.INTERNAL_API_SECRET
   if (!secret) {
     console.error('[UpdateAPI] INTERNAL_API_SECRET not set — rejecting update request for safety')
-    return NextResponse.json({ success: false, error: 'INTERNAL_API_SECRET not configured' }, { status: 503 })
+    return err('INTERNAL_API_SECRET not configured')
   }
   const authHeader = req.headers.get('authorization')
   if (authHeader !== `Bearer ${secret}`) {
-    return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+    return err('Unauthorized')
   }
 
   let body: { targetVersion?: string }
   try {
     body = await req.json()
   } catch {
-    return NextResponse.json({ success: false, error: 'Invalid JSON body' }, { status: 400 })
+    return err('Invalid JSON body')
   }
 
   const { targetVersion } = body
 
   if (!targetVersion || typeof targetVersion !== 'string') {
-    return NextResponse.json({ success: false, error: 'targetVersion required' }, { status: 400 })
+    return err('targetVersion required')
   }
 
   // Check if already updating
@@ -64,7 +65,7 @@ export async function POST(req: NextRequest) {
     } catch {}
   }).catch(err => log.warn({ err }, 'Background task failed'))
 
-  return NextResponse.json({
+  return ok({
     success: true,
     message: `Update to ${targetVersion} initiated`,
     currentVersion: status.currentVersion,
@@ -76,5 +77,5 @@ export async function POST(req: NextRequest) {
  */
 export async function GET() {
   const status = getUpdateAgentStatus()
-  return NextResponse.json(status)
+  return ok(status)
 }

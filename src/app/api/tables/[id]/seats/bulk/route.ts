@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { SeatType } from '@/generated/prisma/client'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 interface SeatUpdate {
   id: string
@@ -27,10 +28,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     const { seats } = body as { seats: SeatUpdate[] }
 
     if (!seats || !Array.isArray(seats)) {
-      return NextResponse.json(
-        { error: 'Seats array is required' },
-        { status: 400 }
-      )
+      return err('Seats array is required')
     }
 
     // Verify table exists
@@ -40,10 +38,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     })
 
     if (!table) {
-      return NextResponse.json(
-        { error: 'Table not found' },
-        { status: 404 }
-      )
+      return notFound('Table not found')
     }
 
     // Verify all seats belong to this table
@@ -58,10 +53,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     })
 
     if (existingSeats.length !== seatIds.length) {
-      return NextResponse.json(
-        { error: 'One or more seats not found or do not belong to this table' },
-        { status: 400 }
-      )
+      return err('One or more seats not found or do not belong to this table')
     }
 
     // Update all seats in a transaction
@@ -86,7 +78,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
 
     dispatchFloorPlanUpdate(table.locationId, { async: true })
 
-    return NextResponse.json({ data: {
+    return ok({
       seats: updatedSeats.map(seat => ({
         id: seat.id,
         tableId: seat.tableId,
@@ -98,12 +90,9 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
         seatType: seat.seatType,
       })),
       updated: updatedSeats.length,
-    } })
+    })
   } catch (error) {
     console.error('Failed to bulk update seats:', error)
-    return NextResponse.json(
-      { error: 'Failed to bulk update seats' },
-      { status: 500 }
-    )
+    return err('Failed to bulk update seats', 500)
   }
 }))

@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { emitToLocation } from '@/lib/socket-server'
+import { err, ok } from '@/lib/api-response'
 
 // POST - Recognize or create a card profile after payment
 // Called automatically when a card is used (if card recognition is enabled)
@@ -21,7 +22,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     } = body
 
     if (!locationId || !cardholderIdHash || !cardType || !cardLast4) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+      return err('Missing required fields')
     }
 
     const now = new Date()
@@ -80,8 +81,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
 
       void emitToLocation(locationId, 'customers:changed', { locationId }).catch(console.error)
 
-      return NextResponse.json({
-        data: {
+      return ok({
           isNewCustomer: false,
           profileId: updated.id,
           visitCount: updated.visitCount,
@@ -94,8 +94,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
           customerName: updated.customer
             ? (updated.customer.displayName || `${updated.customer.firstName} ${updated.customer.lastName}`)
             : null,
-        },
-      })
+        })
     }
 
     // Create new profile — link to customer if order has one
@@ -116,8 +115,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
 
     void emitToLocation(locationId, 'customers:changed', { locationId }).catch(console.error)
 
-    return NextResponse.json({
-      data: {
+    return ok({
         isNewCustomer: true,
         profileId: profile.id,
         visitCount: 1,
@@ -127,11 +125,10 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
         cardholderName: profile.cardholderName,
         customerId: profile.customerId,
         customerName: null, // New profile — no name to return (caller can fetch if needed)
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to process card profile:', error)
-    return NextResponse.json({ error: 'Failed to process card profile' }, { status: 500 })
+    return err('Failed to process card profile', 500)
   }
 }))
 
@@ -144,7 +141,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const cardLast4 = searchParams.get('cardLast4')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Missing locationId' }, { status: 400 })
+      return err('Missing locationId')
     }
 
     // Exact lookup by hash (preferred)
@@ -164,11 +161,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       })
 
       if (!profile) {
-        return NextResponse.json({ data: null })
+        return ok(null)
       }
 
-      return NextResponse.json({
-        data: {
+      return ok({
           id: profile.id,
           cardType: profile.cardType,
           cardLast4: profile.cardLast4,
@@ -182,8 +178,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
             ? (profile.customer.displayName || `${profile.customer.firstName} ${profile.customer.lastName}`)
             : null,
           customerPhone: profile.customer?.phone ?? null,
-        },
-      })
+        })
     }
 
     // Fuzzy lookup by last4 (may return multiple)
@@ -199,8 +194,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         },
       })
 
-      return NextResponse.json({
-        data: profiles.map(p => ({
+      return ok(profiles.map(p => ({
           id: p.id,
           cardType: p.cardType,
           cardLast4: p.cardLast4,
@@ -213,13 +207,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           customerName: p.customer
             ? (p.customer.displayName || `${p.customer.firstName} ${p.customer.lastName}`)
             : null,
-        })),
-      })
+        })))
     }
 
-    return NextResponse.json({ error: 'Provide cardholderIdHash or cardLast4' }, { status: 400 })
+    return err('Provide cardholderIdHash or cardLast4')
   } catch (error) {
     console.error('Failed to lookup card profile:', error)
-    return NextResponse.json({ error: 'Failed to lookup card profile' }, { status: 500 })
+    return err('Failed to lookup card profile', 500)
   }
 })

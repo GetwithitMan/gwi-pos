@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -6,6 +6,7 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, ok } from '@/lib/api-response'
 
 // Helper to parse HH:MM time to minutes from midnight
 function parseTimeToMinutes(time: string): number {
@@ -40,10 +41,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
     const upcoming = searchParams.get('upcoming') === 'true'
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'Location ID is required' },
-        { status: 400 }
-      )
+      return err('Location ID is required')
     }
 
     const where: Record<string, unknown> = {
@@ -84,7 +82,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
       ],
     })
 
-    return NextResponse.json({ data: {
+    return ok({
       events: events.map(event => ({
         id: event.id,
         name: event.name,
@@ -112,13 +110,10 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
         })),
         createdAt: event.createdAt.toISOString(),
       })),
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch events:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch events' },
-      { status: 500 }
-    )
+    return err('Failed to fetch events', 500)
   }
 }))
 
@@ -149,17 +144,14 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
 
     // Validation
     if (!locationId || !name || !eventDate || !doorsOpen || !startTime || !totalCapacity) {
-      return NextResponse.json(
-        { error: 'Missing required fields: locationId, name, eventDate, doorsOpen, startTime, totalCapacity' },
-        { status: 400 }
-      )
+      return err('Missing required fields: locationId, name, eventDate, doorsOpen, startTime, totalCapacity')
     }
 
     // Auth check — require events.manage permission
     const actor = await getActorFromRequest(request)
     const resolvedEmployeeId = actor.employeeId ?? createdBy
     const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.EVENTS_MANAGE)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Check for conflicting reservations
     const eventDateObj = new Date(eventDate)
@@ -257,7 +249,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     void notifyDataChanged({ locationId, domain: 'events', action: 'created', entityId: event.id })
     void pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       event: {
         id: event.id,
         name: event.name,
@@ -280,12 +272,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       message: conflicts.length > 0
         ? `Event created as draft. ${conflicts.length} reservation(s) conflict with this event and must be resolved before publishing.`
         : 'Event created successfully. Use the publish endpoint to make it available for sale.',
-    } })
+    })
   } catch (error) {
     console.error('Failed to create event:', error)
-    return NextResponse.json(
-      { error: 'Failed to create event' },
-      { status: 500 }
-    )
+    return err('Failed to create event', 500)
   }
 }))

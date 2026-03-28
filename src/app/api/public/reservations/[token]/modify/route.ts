@@ -8,6 +8,7 @@ import { createRateLimiter } from '@/lib/rate-limiter'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('public-reservations-modify')
 
 export const dynamic = 'force-dynamic'
@@ -38,12 +39,12 @@ export const POST = withVenue(async function POST(
     const { date, time } = body
 
     if (!date && !time) {
-      return NextResponse.json({ error: 'At least date or time must be provided' }, { status: 400 })
+      return err('At least date or time must be provided')
     }
 
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'Location not found' }, { status: 400 })
+      return err('Location not found')
     }
 
     const rawSettings = await getLocationSettings(locationId)
@@ -64,15 +65,12 @@ export const POST = withVenue(async function POST(
     })
 
     if (!reservation) {
-      return NextResponse.json({ error: 'Reservation not found' }, { status: 404 })
+      return notFound('Reservation not found')
     }
 
     const terminalStatuses = ['completed', 'cancelled', 'no_show']
     if (terminalStatuses.includes(reservation.status)) {
-      return NextResponse.json(
-        { error: `Cannot modify a ${reservation.status} reservation` },
-        { status: 400 }
-      )
+      return err(`Cannot modify a ${reservation.status} reservation`)
     }
 
     // TODO: Load operating hours
@@ -149,7 +147,7 @@ export const POST = withVenue(async function POST(
       },
     }).catch(err => log.warn({ err }, 'Background task failed'))
 
-    return NextResponse.json({
+    return ok({
       id: updated.id,
       status: updated.status,
       reservationDate: updated.reservationDate,
@@ -160,6 +158,6 @@ export const POST = withVenue(async function POST(
     })
   } catch (error) {
     console.error('[Public Modify] Error:', error)
-    return NextResponse.json({ error: 'Failed to modify reservation' }, { status: 500 })
+    return err('Failed to modify reservation', 500)
   }
 })

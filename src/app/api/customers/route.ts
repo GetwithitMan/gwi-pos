@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -7,6 +7,7 @@ import { withVenue } from '@/lib/with-venue'
 import { normalizePhone } from '@/lib/utils'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, ok } from '@/lib/api-response'
 
 // GET - List customers with optional search
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -21,17 +22,14 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const offset = parseInt(searchParams.get('offset') || '0')
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'Location ID is required' },
-        { status: 400 }
-      )
+      return err('Location ID is required')
     }
 
     // Auth check — POS search (has search param) only needs pos.access;
     // full admin customer list requires customers.view permission
     const requiredPerm = search ? PERMISSIONS.POS_ACCESS : PERMISSIONS.CUSTOMERS_VIEW
     const auth = await requirePermission(requestingEmployeeId, locationId, requiredPerm)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Build search filter (case-insensitive)
     // For phone search, also try normalized digits for consistent matching
@@ -74,7 +72,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({ data: {
+    return ok({
       customers: customers.map(c => {
         const tags = (c.tags ?? []) as string[]
         return {
@@ -104,13 +102,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       total,
       limit,
       offset,
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch customers:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch customers' },
-      { status: 500 }
-    )
+    return err('Failed to fetch customers', 500)
   }
 })
 
@@ -140,13 +135,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Auth check — require customers.edit permission
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.CUSTOMERS_EDIT)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     if (!locationId || !firstName || !lastName) {
-      return NextResponse.json(
-        { error: 'Location ID, first name, and last name are required' },
-        { status: 400 }
-      )
+      return err('Location ID, first name, and last name are required')
     }
 
     // Normalize phone for consistent storage and dedup
@@ -158,10 +150,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         where: { locationId, email, isActive: true },
       })
       if (existingEmail) {
-        return NextResponse.json(
-          { error: 'A customer with this email already exists' },
-          { status: 409 }
-        )
+        return err('A customer with this email already exists', 409)
       }
     }
 
@@ -170,10 +159,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         where: { locationId, phone: normalizedPhone, isActive: true },
       })
       if (existingPhone) {
-        return NextResponse.json(
-          { error: 'A customer with this phone number already exists' },
-          { status: 409 }
-        )
+        return err('A customer with this phone number already exists', 409)
       }
     }
 
@@ -210,7 +196,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     void notifyDataChanged({ locationId, domain: 'customers', action: 'created', entityId: customer.id })
     void pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       id: customer.id,
       firstName: customer.firstName,
       lastName: customer.lastName,
@@ -231,12 +217,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       marketingOptIn: customer.marketingOptIn,
       birthday: customer.birthday?.toISOString() || null,
       createdAt: customer.createdAt.toISOString(),
-    } })
+    })
   } catch (error) {
     console.error('Failed to create customer:', error)
-    return NextResponse.json(
-      { error: 'Failed to create customer' },
-      { status: 500 }
-    )
+    return err('Failed to create customer', 500)
   }
 })

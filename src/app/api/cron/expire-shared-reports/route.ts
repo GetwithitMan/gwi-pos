@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { verifyCronSecret } from '@/lib/cron-auth'
 import { forAllVenues } from '@/lib/cron-venue-helper'
+import { ok } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
@@ -24,8 +25,5 @@ export async function GET(request: NextRequest) {
     allResults[slug] = { deleted: result }
   }, { label: 'cron:expire-shared-reports' })
 
-  return NextResponse.json({
-    ...summary,
-    data: allResults,
-  })
+  return ok(allResults)
 }

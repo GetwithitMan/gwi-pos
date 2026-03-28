@@ -7,6 +7,7 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, forbidden, ok } from '@/lib/api-response'
 
 /** Validate IPv4 address — each octet must be 0-255 with no leading zeros */
 function isValidIPv4(ip: string): boolean {
@@ -24,7 +25,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // Auth check — require settings.hardware permission (read access)
@@ -32,7 +33,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
     const actor = await getActorFromRequest(request)
     const resolvedEmployeeId = actor.employeeId ?? searchParams.get('employeeId')
     const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.SETTINGS_HARDWARE)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const category = searchParams.get('category') as TerminalCategory | null
 
@@ -118,10 +119,10 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
       })
     }
 
-    return NextResponse.json({ data: { terminals } })
+    return ok({ terminals })
   } catch (error) {
     console.error('Failed to fetch terminals:', error)
-    return NextResponse.json({ error: 'Failed to fetch terminals' }, { status: 500 })
+    return err('Failed to fetch terminals', 500)
   }
 }))
 
@@ -143,7 +144,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     } = body
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // Auth check — require settings.hardware permission
@@ -151,7 +152,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     const actor = await getActorFromRequest(request)
     const resolvedEmployeeId = actor.employeeId ?? body.employeeId
     const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.SETTINGS_HARDWARE)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Device count limit check (subscription-gated)
     const { checkDeviceLimit } = await import('@/lib/device-limits')
@@ -171,29 +172,23 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
 
     // Validate required fields
     if (!name) {
-      return NextResponse.json({ error: 'Name is required' }, { status: 400 })
+      return err('Name is required')
     }
 
     // Validate category
     if (!['FIXED_STATION', 'HANDHELD'].includes(category)) {
-      return NextResponse.json(
-        { error: 'Category must be FIXED_STATION or HANDHELD' },
-        { status: 400 }
-      )
+      return err('Category must be FIXED_STATION or HANDHELD')
     }
 
     // Validate platform
     if (!['BROWSER', 'ANDROID', 'IOS'].includes(platform)) {
-      return NextResponse.json(
-        { error: 'Platform must be BROWSER, ANDROID, or IOS' },
-        { status: 400 }
-      )
+      return err('Platform must be BROWSER, ANDROID, or IOS')
     }
 
     // Validate IP address format if provided
     if (staticIp) {
       if (!isValidIPv4(staticIp)) {
-        return NextResponse.json({ error: 'Invalid IP address format' }, { status: 400 })
+        return err('Invalid IP address format')
       }
     }
 
@@ -213,19 +208,13 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       for (const check of printerChecks) {
         const printer = printers.find((p) => p.id === check.id)
         if (!printer) {
-          return NextResponse.json({ error: `${check.label} not found` }, { status: 400 })
+          return err(`${check.label} not found`)
         }
         if (printer.locationId !== locationId) {
-          return NextResponse.json(
-            { error: `${check.label} belongs to a different location` },
-            { status: 403 }
-          )
+          return forbidden(`${check.label} belongs to a different location`)
         }
         if (check.requiredRole && printer.printerRole !== check.requiredRole) {
-          return NextResponse.json(
-            { error: `${check.label} must have ${check.requiredRole} role` },
-            { status: 400 }
-          )
+          return err(`${check.label} must have ${check.requiredRole} role`)
         }
       }
     }
@@ -238,13 +227,10 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
           where: { id: cleanScaleId, deletedAt: null },
         })
         if (!scale) {
-          return NextResponse.json({ error: 'Scale not found' }, { status: 400 })
+          return err('Scale not found')
         }
         if (scale.locationId !== locationId) {
-          return NextResponse.json(
-            { error: 'Scale belongs to a different location' },
-            { status: 403 }
-          )
+          return forbidden('Scale belongs to a different location')
         }
       } catch {
         // Scale table doesn't exist on un-migrated DB — ignore scaleId
@@ -349,23 +335,17 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     void notifyDataChanged({ locationId, domain: 'hardware', action: 'created', entityId: terminal.id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { terminal } })
+    return ok({ terminal })
   } catch (error: any) {
     console.error('Failed to create terminal:', error)
     if (error?.code === 'P2002') {
       const target = error.meta?.target as string[] | undefined
       if (target?.includes('scaleId')) {
-        return NextResponse.json(
-          { error: 'This scale is already assigned to another terminal' },
-          { status: 409 }
-        )
+        return err('This scale is already assigned to another terminal', 409)
       }
-      return NextResponse.json(
-        { error: 'A terminal with this name already exists' },
-        { status: 409 }
-      )
+      return err('A terminal with this name already exists', 409)
     }
     const msg = error instanceof Error ? error.message : 'Unknown error'
-    return NextResponse.json({ error: `Failed to create terminal: ${msg}` }, { status: 500 })
+    return err(`Failed to create terminal: ${msg}`, 500)
   }
 }))

@@ -5,11 +5,12 @@
  * Returns an array of suggestions with matched items and savings amounts.
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { parseSettings } from '@/lib/settings'
 import { findMatchingCombos, type MatcherComboTemplate, type MatcherOrderItem } from '@/lib/combo-matcher'
+import { err, notFound, ok } from '@/lib/api-response'
 
 export const GET = withVenue(async function GET(
   request: NextRequest,
@@ -46,18 +47,18 @@ export const GET = withVenue(async function GET(
     })
 
     if (!order) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      return notFound('Order not found')
     }
 
     // Check if combo auto-suggest is enabled (default: true)
     const settings = parseSettings(order.location?.settings)
     if (settings.comboAutoSuggest === false) {
-      return NextResponse.json({ data: { suggestions: [] } })
+      return ok({ suggestions: [] })
     }
 
     // Need at least 2 items to form a combo
     if (order.items.length < 2) {
-      return NextResponse.json({ data: { suggestions: [] } })
+      return ok({ suggestions: [] })
     }
 
     // Load active combo templates for this location
@@ -96,7 +97,7 @@ export const GET = withVenue(async function GET(
     })
 
     if (comboTemplates.length === 0) {
-      return NextResponse.json({ data: { suggestions: [] } })
+      return ok({ suggestions: [] })
     }
 
     // Map to matcher types
@@ -127,8 +128,7 @@ export const GET = withVenue(async function GET(
     // Run the pure matcher
     const matches = findMatchingCombos(matcherItems, matcherTemplates)
 
-    return NextResponse.json({
-      data: {
+    return ok({
         suggestions: matches.map(m => ({
           comboTemplateId: m.comboTemplateId,
           comboName: m.comboName,
@@ -142,13 +142,9 @@ export const GET = withVenue(async function GET(
             price: i.price,
           })),
         })),
-      },
-    })
+      })
   } catch (error) {
     console.error('[combo-suggestions] Failed:', error)
-    return NextResponse.json(
-      { error: 'Failed to check combo suggestions' },
-      { status: 500 }
-    )
+    return err('Failed to check combo suggestions', 500)
   }
 })

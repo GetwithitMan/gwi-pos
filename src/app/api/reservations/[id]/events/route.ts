@@ -4,6 +4,7 @@ import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { getRequestLocationId } from '@/lib/request-context'
+import { err, forbidden, notFound } from '@/lib/api-response'
 
 export const GET = withVenue(async function GET(
   request: NextRequest,
@@ -14,13 +15,13 @@ export const GET = withVenue(async function GET(
     // Fast path: request context (JWT/cellular). Fallback: cached location.
     const locationId = getRequestLocationId() || await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, 'tables.reservations')
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error || 'Permission denied' }, { status: 403 })
+      return forbidden(auth.error || 'Permission denied')
     }
 
     // Verify the reservation belongs to this location
@@ -29,7 +30,7 @@ export const GET = withVenue(async function GET(
       select: { locationId: true },
     })
     if (!reservation || reservation.locationId !== locationId) {
-      return NextResponse.json({ error: 'Reservation not found' }, { status: 404 })
+      return notFound('Reservation not found')
     }
 
     const sp = request.nextUrl.searchParams
@@ -52,6 +53,6 @@ export const GET = withVenue(async function GET(
     })
   } catch (error) {
     console.error('[reservations/[id]/events] GET error:', error)
-    return NextResponse.json({ error: 'Failed to fetch events' }, { status: 500 })
+    return err('Failed to fetch events', 500)
   }
 })

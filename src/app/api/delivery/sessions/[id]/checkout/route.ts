@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId, getLocationSettings } from '@/lib/location-cache'
@@ -10,6 +10,7 @@ import { writeDeliveryAuditLog } from '@/lib/delivery/state-machine'
 import { canEndDriverShift, requiresCashShortageApproval } from '@/lib/delivery/dispatch-policy'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok } from '@/lib/api-response'
 const log = createChildLogger('delivery-sessions-checkout')
 
 export const dynamic = 'force-dynamic'
@@ -30,13 +31,13 @@ export const POST = withVenue(async function POST(
     const { id } = await params
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Auth check
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.DELIVERY_DISPATCH)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Feature gate
     const featureGate = await requireDeliveryFeature(locationId)
@@ -46,7 +47,7 @@ export const POST = withVenue(async function POST(
     const { cashTipsDeclaredCents, endOdometer, managerOverrideEmployeeId } = body
 
     if (cashTipsDeclaredCents == null || typeof cashTipsDeclaredCents !== 'number') {
-      return NextResponse.json({ error: 'cashTipsDeclaredCents is required' }, { status: 400 })
+      return err('cashTipsDeclaredCents is required')
     }
 
     // Load delivery config for policy checks
@@ -200,7 +201,7 @@ export const POST = withVenue(async function POST(
         response.requiresManagerOverride = result.requiresManagerOverride
         response.varianceCents = result.varianceCents
       }
-      return NextResponse.json(response, { status: result.status })
+      return ok(response)
     }
 
     pushUpstream()
@@ -214,9 +215,9 @@ export const POST = withVenue(async function POST(
       newValue: result.checkout,
     }).catch(err => log.warn({ err }, 'Background task failed'))
 
-    return NextResponse.json({ checkout: result.checkout, session: result.session })
+    return ok({ checkout: result.checkout, session: result.session })
   } catch (error) {
     console.error('[Delivery/Sessions/Checkout] POST error:', error)
-    return NextResponse.json({ error: 'Failed to process checkout' }, { status: 500 })
+    return err('Failed to process checkout', 500)
   }
 })

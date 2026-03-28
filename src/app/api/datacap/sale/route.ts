@@ -9,6 +9,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { roundToCents } from '@/lib/pricing'
 import { db } from '@/lib/db'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, ok } from '@/lib/api-response'
 
 interface SaleRequest {
   locationId: string
@@ -34,17 +35,17 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     let { amount } = body
 
     if (!locationId || !readerId || !invoiceNo || amount === undefined || amount === null) {
-      return Response.json({ error: 'Missing required fields: locationId, readerId, invoiceNo, amount' }, { status: 400 })
+      return err('Missing required fields: locationId, readerId, invoiceNo, amount')
     }
 
     if (amount <= 0) {
-      return Response.json({ error: 'Amount must be positive' }, { status: 400 })
+      return err('Amount must be positive')
     }
     if (tipAmount !== undefined && tipAmount !== null && tipAmount < 0) {
-      return Response.json({ error: 'Tip amount must be non-negative' }, { status: 400 })
+      return err('Tip amount must be non-negative')
     }
     if (tipAmount !== undefined && tipAmount !== null && tipAmount > amount) {
-      return Response.json({ error: 'Tip amount cannot exceed purchase amount' }, { status: 400 })
+      return err('Tip amount cannot exceed purchase amount')
     }
 
     amount = roundToCents(amount)
@@ -68,7 +69,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
 
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.POS_CARD_PAYMENTS)
     if (!auth.authorized) {
-      return Response.json({ error: auth.error }, { status: auth.status ?? 403 })
+      return err(auth.error, auth.status ?? 403)
     }
 
     await validateReader(readerId, locationId)
@@ -151,8 +152,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       }).catch(err => console.warn('[Card Recognition] Background update failed:', err))
     }
 
-    return Response.json({
-      data: {
+    return ok({
         approved: response.cmdStatus === 'Approved',
         authCode: response.authCode,
         recordNo: response.recordNo,
@@ -168,8 +168,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
         level2Status: response.level2Status,
         sequenceNo: response.sequenceNo,
         error: error ? { code: error.code, message: error.text, isRetryable: error.isRetryable } : null,
-      },
-    })
+      })
   } catch (err) {
     return datacapErrorResponse(err)
   }

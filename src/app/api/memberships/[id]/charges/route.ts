@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
+import { err } from '@/lib/api-response'
 
 // GET — list charges for a membership (no admin perm needed — read-only POS query)
 export const GET = withVenue(async function GET(
@@ -15,7 +16,7 @@ export const GET = withVenue(async function GET(
     const limit = parseInt(sp.get('limit') || '50')
     const offset = parseInt(sp.get('offset') || '0')
 
-    if (!locationId) return NextResponse.json({ error: 'locationId required' }, { status: 400 })
+    if (!locationId) return err('locationId required')
 
     const rows: any[] = await db.$queryRawUnsafe(`
       SELECT * FROM "MembershipCharge"
@@ -32,6 +33,6 @@ export const GET = withVenue(async function GET(
     return NextResponse.json({ data: rows, total: countResult[0]?.total ?? 0 })
   } catch (err) {
     console.error('[memberships/charges] error:', err)
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
+    return err('Internal error', 500)
   }
 })

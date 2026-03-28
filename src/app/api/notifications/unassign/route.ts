@@ -14,6 +14,7 @@ import { getLocationId } from '@/lib/location-cache'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { createChildLogger } from '@/lib/logger'
+import { err } from '@/lib/api-response'
 const log = createChildLogger('notifications-unassign')
 
 export const dynamic = 'force-dynamic'
@@ -31,25 +32,22 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.POS_ASSIGN_DEVICE)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const body = await request.json()
     const { subjectType, subjectId } = body
 
     // Validate inputs
     if (!subjectType || !VALID_SUBJECT_TYPES.includes(subjectType)) {
-      return NextResponse.json(
-        { error: `subjectType must be one of: ${VALID_SUBJECT_TYPES.join(', ')}` },
-        { status: 400 }
-      )
+      return err(`subjectType must be one of: ${VALID_SUBJECT_TYPES.join(', ')}`)
     }
     if (!subjectId || typeof subjectId !== 'string') {
-      return NextResponse.json({ error: 'subjectId is required' }, { status: 400 })
+      return err('subjectId is required')
     }
 
     // Wrap all DB operations in a transaction to prevent orphaned state
@@ -180,6 +178,6 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
   } catch (error) {
     console.error('[Notification Unassign] POST error:', error)
-    return NextResponse.json({ error: 'Failed to unassign device' }, { status: 500 })
+    return err('Failed to unassign device', 500)
   }
 })

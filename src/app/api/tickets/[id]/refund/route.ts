@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // POST - Refund a ticket
 export const POST = withVenue(withAuth('MGR_REFUNDS', async function POST(
@@ -30,24 +31,15 @@ export const POST = withVenue(withAuth('MGR_REFUNDS', async function POST(
     })
 
     if (!ticket) {
-      return NextResponse.json(
-        { error: 'Ticket not found' },
-        { status: 404 }
-      )
+      return notFound('Ticket not found')
     }
 
     if (ticket.status === 'refunded') {
-      return NextResponse.json(
-        { error: 'Ticket has already been refunded' },
-        { status: 400 }
-      )
+      return err('Ticket has already been refunded')
     }
 
     if (!['sold', 'checked_in', 'cancelled'].includes(ticket.status)) {
-      return NextResponse.json(
-        { error: 'Only sold, checked-in, or cancelled tickets can be refunded' },
-        { status: 400 }
-      )
+      return err('Only sold, checked-in, or cancelled tickets can be refunded')
     }
 
     const wasSoldOrCheckedIn = ['sold', 'checked_in'].includes(ticket.status)
@@ -91,7 +83,7 @@ export const POST = withVenue(withAuth('MGR_REFUNDS', async function POST(
 
     pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       message: 'Ticket refunded successfully',
       refund: {
@@ -109,12 +101,9 @@ export const POST = withVenue(withAuth('MGR_REFUNDS', async function POST(
         id: ticket.event.id,
         name: ticket.event.name,
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to refund ticket:', error)
-    return NextResponse.json(
-      { error: 'Failed to refund ticket' },
-      { status: 500 }
-    )
+    return err('Failed to refund ticket', 500)
   }
 }))

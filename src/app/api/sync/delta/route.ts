@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db, adminDb } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { buildSpiritTiersFromItem } from '@/lib/spirit-tiers'
 import { authenticateTerminal } from '@/lib/terminal-auth'
+import { err, ok } from '@/lib/api-response'
 
 export const GET = withVenue(async function GET(request: NextRequest) {
   const auth = await authenticateTerminal(request)
@@ -12,11 +13,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const sinceParam = searchParams.get('since')
   if (!sinceParam) {
-    return NextResponse.json({ error: 'since parameter required' }, { status: 400 })
+    return err('since parameter required')
   }
   const since = new Date(Number(sinceParam))
   if (isNaN(since.getTime())) {
-    return NextResponse.json({ error: 'Invalid since timestamp' }, { status: 400 })
+    return err('Invalid since timestamp')
   }
 
   const [menuItems, categories, employees, tables, orderTypes, orders, pricingOptionGroups, sharedModifierGroups] = await Promise.all([
@@ -120,7 +121,5 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     })),
   }))
 
-  return NextResponse.json({
-    data: { menuItems: mappedMenuItems, categories, employees, tables, orderTypes, orders: mappedOrders, pricingOptionGroups: mappedPricingOptionGroups, sharedModifierGroups, syncVersion: Date.now(), hasMore: orders.length >= 100 },
-  })
+  return ok({ menuItems: mappedMenuItems, categories, employees, tables, orderTypes, orders: mappedOrders, pricingOptionGroups: mappedPricingOptionGroups, sharedModifierGroups, syncVersion: Date.now(), hasMore: orders.length >= 100 })
 })

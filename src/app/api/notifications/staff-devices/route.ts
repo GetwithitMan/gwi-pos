@@ -18,6 +18,7 @@ import { getLocationId } from '@/lib/location-cache'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('notifications-staff-devices')
 
 export const dynamic = 'force-dynamic'
@@ -28,12 +29,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.NOTIFICATIONS_VIEW_LOG)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Get all staff pager assignments with device + employee info
     const assignments: any[] = await db.$queryRawUnsafe(
@@ -82,8 +83,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       locationId
     )
 
-    return NextResponse.json({
-      data: {
+    return ok({
         assignments: assignments.map(a => ({
           assignmentId: a.assignmentId,
           employeeId: a.employeeId,
@@ -103,11 +103,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           createdByEmployeeId: a.createdByEmployeeId,
         })),
         availableDevices,
-      },
-    })
+      })
   } catch (error) {
     console.error('[Staff Devices] GET error:', error)
-    return NextResponse.json({ error: 'Failed to fetch staff device assignments' }, { status: 500 })
+    return err('Failed to fetch staff device assignments', 500)
   }
 })
 
@@ -117,25 +116,25 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.NOTIFICATIONS_MANAGE_DEVICES)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const body = await request.json()
     const { employeeId, deviceNumber, deviceType } = body
 
     // Validate required fields
     if (!employeeId || typeof employeeId !== 'string') {
-      return NextResponse.json({ error: 'employeeId is required' }, { status: 400 })
+      return err('employeeId is required')
     }
     if (!deviceNumber || typeof deviceNumber !== 'string') {
-      return NextResponse.json({ error: 'deviceNumber is required' }, { status: 400 })
+      return err('deviceNumber is required')
     }
     if (deviceType && deviceType !== 'staff_pager') {
-      return NextResponse.json({ error: 'deviceType must be "staff_pager"' }, { status: 400 })
+      return err('deviceType must be "staff_pager"')
     }
 
     // Validate employee exists at this location
@@ -147,7 +146,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       locationId
     )
     if (employees.length === 0) {
-      return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
+      return notFound('Employee not found')
     }
     const employee = employees[0]
 
@@ -165,10 +164,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       employeeId
     )
     if (existingAssignment.length > 0) {
-      return NextResponse.json(
-        { error: `Employee already has pager ${existingAssignment[0].targetValue} assigned. Unbind first.` },
-        { status: 409 }
-      )
+      return err(`Employee already has pager ${existingAssignment[0].targetValue} assigned. Unbind first.`, 409)
     }
 
     // W4: Wrap device update, assignment creation, and event logging in a transaction
@@ -317,10 +313,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }, { status: 201 })
   } catch (error: any) {
     if (error?.code === 'DEVICE_UNAVAILABLE') {
-      return NextResponse.json({ error: error.message }, { status: 409 })
+      return err(error.message, 409)
     }
     console.error('[Staff Devices] POST error:', error)
-    return NextResponse.json({ error: 'Failed to bind staff device' }, { status: 500 })
+    return err('Failed to bind staff device', 500)
   }
 })
 
@@ -330,18 +326,18 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.NOTIFICATIONS_MANAGE_DEVICES)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const body = await request.json()
     const { employeeId, deviceNumber } = body
 
     if (!employeeId && !deviceNumber) {
-      return NextResponse.json({ error: 'employeeId or deviceNumber is required' }, { status: 400 })
+      return err('employeeId or deviceNumber is required')
     }
 
     // Build condition to find the active assignment
@@ -375,7 +371,7 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
     )
 
     if (assignments.length === 0) {
-      return NextResponse.json({ error: 'No active staff pager assignment found' }, { status: 404 })
+      return notFound('No active staff pager assignment found')
     }
 
     const assignment = assignments[0]
@@ -457,6 +453,6 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
     })
   } catch (error) {
     console.error('[Staff Devices] DELETE error:', error)
-    return NextResponse.json({ error: 'Failed to unbind staff device' }, { status: 500 })
+    return err('Failed to unbind staff device', 500)
   }
 })

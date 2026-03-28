@@ -10,9 +10,10 @@
  * Auth: verifyCronSecret() (Bearer token from CRON_SECRET)
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { verifyCronSecret } from '@/lib/cron-auth'
+import { err, ok } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60 // Allow up to 60s for large datasets
@@ -134,16 +135,13 @@ export async function GET(request: NextRequest) {
       (summary.errors.length > 0 ? ` (${summary.errors.length} errors)` : '')
     )
 
-    return NextResponse.json({
+    return ok({
       success: summary.errors.length === 0,
       summary,
       timestamp: now.toISOString(),
     })
   } catch (error) {
     console.error('[cron:notification-archive] Fatal error:', error)
-    return NextResponse.json(
-      { error: 'Notification archive cron failed', details: error instanceof Error ? error.message : 'Unknown' },
-      { status: 500 }
-    )
+    return err('Notification archive cron failed', 500, error instanceof Error ? error.message : 'Unknown')
   }
 }

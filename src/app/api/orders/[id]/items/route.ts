@@ -36,6 +36,7 @@ import {
   recalculateParentOrderTotals,
 } from '@/lib/domain/order-items'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-items')
 
 /**
@@ -170,7 +171,7 @@ export const POST = withVenue(async function POST(
         await validateCellularOrderAccess(true, orderId, 'mutate', db)
       } catch (err) {
         if (err instanceof CellularAuthError) {
-          return NextResponse.json({ error: err.message }, { status: err.status })
+          return err(err.message, err.status)
         }
         throw err
       }
@@ -185,7 +186,7 @@ export const POST = withVenue(async function POST(
       // Guard: editing another employee's order requires pos.edit_others_orders
       if (orderMeta?.employeeId && orderMeta.employeeId !== requestingEmployeeId) {
         const auth = await requirePermission(requestingEmployeeId, orderMeta.locationId, PERMISSIONS.POS_EDIT_OTHERS_ORDERS)
-        if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+        if (!auth.authorized) return err(auth.error, auth.status)
       }
 
       // Guard: custom-priced items require manager.open_items
@@ -213,7 +214,7 @@ export const POST = withVenue(async function POST(
 
           if (hasOpenPricedItems(items, menuItemPrices, pricingOptionPrices)) {
             const auth = await requirePermission(requestingEmployeeId, orderMeta.locationId, PERMISSIONS.MGR_OPEN_ITEMS)
-            if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+            if (!auth.authorized) return err(auth.error, auth.status)
           }
         }
       }
@@ -250,7 +251,7 @@ export const POST = withVenue(async function POST(
           },
         })
         if (!order) return apiError.notFound('Order not found', ERROR_CODES.ORDER_NOT_FOUND)
-        return NextResponse.json({ data: mapOrderForResponse(order) })
+        return ok(mapOrderForResponse(order))
       }
     }
 
@@ -661,14 +662,14 @@ export const POST = withVenue(async function POST(
     void evaluateAutoDiscounts(result.updatedOrder.id, result.updatedOrder.locationId).catch(err => log.warn({ err }, 'Background task failed'))
     pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       ...response,
       addedItems: result.createdItems.map(item => ({
         id: item.id,
         name: item.name,
         correlationId: (item as { correlationId?: string }).correlationId,
       })),
-    } })
+    })
   } catch (error) {
     console.error('Failed to add items to order:', error)
     if (error instanceof Error) {
@@ -684,10 +685,7 @@ export const POST = withVenue(async function POST(
       return apiError.conflict('Cannot modify a closed order', ERROR_CODES.ORDER_CLOSED)
     }
     if (message === 'ORDER_NOT_MODIFIABLE') {
-      return NextResponse.json(
-        { error: 'Order cannot be modified — it may have been paid or closed by another terminal' },
-        { status: 409 }
-      )
+      return err('Order cannot be modified — it may have been paid or closed by another terminal', 409)
     }
     if (message === 'TAB_CLOSING') {
       return NextResponse.json(
@@ -696,47 +694,29 @@ export const POST = withVenue(async function POST(
       )
     }
     if (message === 'ORDER_HAS_PAYMENTS') {
-      return NextResponse.json(
-        { error: 'Cannot modify an order with existing payments. Void the payment first.' },
-        { status: 400 }
-      )
+      return err('Cannot modify an order with existing payments. Void the payment first.')
     }
     if (message.startsWith('ITEM_86D:')) {
       const itemName = message.replace('ITEM_86D:', '')
-      return NextResponse.json(
-        { error: `"${itemName}" is currently 86'd (unavailable)` },
-        { status: 400 }
-      )
+      return err(`"${itemName}" is currently 86'd (unavailable)`)
     }
     if (message.startsWith('ITEM_INACTIVE:') || message.startsWith('ITEM_DELETED:')) {
       const itemName = message.split(':')[1]
-      return NextResponse.json(
-        { error: `"${itemName}" is no longer available` },
-        { status: 400 }
-      )
+      return err(`"${itemName}" is no longer available`)
     }
     if (message.startsWith('COMBO_COMPONENT_86D:')) {
       const itemName = message.replace('COMBO_COMPONENT_86D:', '')
-      return NextResponse.json(
-        { error: `Combo component "${itemName}" is currently 86'd (unavailable)` },
-        { status: 400 }
-      )
+      return err(`Combo component "${itemName}" is currently 86'd (unavailable)`)
     }
     if (message.startsWith('COMBO_COMPONENT_INACTIVE:')) {
       const itemName = message.replace('COMBO_COMPONENT_INACTIVE:', '')
-      return NextResponse.json(
-        { error: `Combo component "${itemName}" is no longer available` },
-        { status: 400 }
-      )
+      return err(`Combo component "${itemName}" is no longer available`)
     }
     if (message.startsWith('REQUIRED_MODIFIER_MISSING:')) {
       const parts = message.replace('REQUIRED_MODIFIER_MISSING:', '').split(':')
       const itemName = parts[0]
       const groupName = parts[1]
-      return NextResponse.json(
-        { error: `Required modifier group "${groupName}" is not satisfied for item "${itemName}"` },
-        { status: 400 }
-      )
+      return err(`Required modifier group "${groupName}" is not satisfied for item "${itemName}"`)
     }
     if (message.startsWith('MENU_ITEM_NOT_FOUND:')) {
       const missingIds = message.replace('MENU_ITEM_NOT_FOUND:', '')

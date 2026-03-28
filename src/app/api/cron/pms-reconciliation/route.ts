@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { verifyCronSecret } from '@/lib/cron-auth'
 import { forAllVenues } from '@/lib/cron-venue-helper'
+import { ok } from '@/lib/api-response'
 
 /**
  * GET /api/cron/pms-reconciliation
@@ -176,7 +177,7 @@ export async function GET(request: NextRequest) {
   const totalOrphans = allResults.reduce((n, r) => n + r.orphansFound, 0)
   const totalLogs = allResults.reduce((n, r) => n + r.auditLogsCreated, 0)
 
-  return NextResponse.json({
+  return ok({
     ...summary,
     orphansFound: totalOrphans,
     auditLogsCreated: totalLogs,

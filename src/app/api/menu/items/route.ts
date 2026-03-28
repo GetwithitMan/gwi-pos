@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchMenuItemChanged, dispatchMenuUpdate } from '@/lib/socket-dispatch'
 import { invalidateMenuCache } from '@/lib/menu-cache'
@@ -10,6 +10,7 @@ import { getRequestLocationId } from '@/lib/request-context'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok } from '@/lib/api-response'
 
 const log = createChildLogger('menu.items')
 
@@ -22,7 +23,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const includeStock = searchParams.get('includeStock') === 'true'
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // Build filter
@@ -137,7 +138,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       return { status: worstStatus, lowestIngredient }
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       items: items.map(item => {
         // Check if this is a pizza item based on category type OR item type
         const isPizzaItem = item.itemType === 'pizza' || item.category?.categoryType === 'pizza'
@@ -205,13 +206,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           } : {}),
         }
       })
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch items:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch items' },
-      { status: 500 }
-    )
+    return err('Failed to fetch items', 500)
   }
 })
 
@@ -273,17 +271,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     } = body
 
     if (!name?.trim()) {
-      return NextResponse.json(
-        { error: 'Name is required' },
-        { status: 400 }
-      )
+      return err('Name is required')
     }
 
     if (price === undefined || price < 0) {
-      return NextResponse.json(
-        { error: 'Valid price is required' },
-        { status: 400 }
-      )
+      return err('Valid price is required')
     }
 
     // Auto-resolve entertainment category when categoryId is missing for timed_rental items
@@ -322,16 +314,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     if (!category) {
-      return NextResponse.json(
-        { error: 'Category not found' },
-        { status: 400 }
-      )
+      return err('Category not found')
     }
 
     // Auth check — require menu.edit_items permission
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, category.locationId, PERMISSIONS.MENU_EDIT_ITEMS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Get max sort order in category (scoped to location)
     const maxSortOrder = await db.menuItem.aggregate({
@@ -424,7 +413,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     void notifyDataChanged({ locationId: category.locationId, domain: 'menu', action: 'created', entityId: item.id })
     void pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       id: item.id,
       categoryId: item.categoryId,
       name: item.name,
@@ -440,13 +429,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       printerIds: item.printerIds,
       backupPrinterIds: item.backupPrinterIds,
       comboPrintMode: item.comboPrintMode,
-    } })
+    })
   } catch (error) {
     console.error('Failed to create item:', error)
     const message = error instanceof Error ? error.message : 'Unknown error'
-    return NextResponse.json(
-      { error: `Failed to create item: ${message}` },
-      { status: 500 }
-    )
+    return err(`Failed to create item: ${message}`, 500)
   }
 })

@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { getLocationId } from '@/lib/location-cache'
+import { err, ok } from '@/lib/api-response'
 
 /**
  * GET /api/liquor/recipes
@@ -17,10 +18,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
     // Get the location
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'No location found' },
-        { status: 400 }
-      )
+      return err('No location found')
     }
 
     // Find all menu items in liquor categories (or optionally filtered by category)
@@ -128,7 +126,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
       ? withRecipes.reduce((sum, c) => sum + c.profitMargin, 0) / withRecipes.length
       : 0
 
-    return NextResponse.json({ data: {
+    return ok({
       cocktails,
       summary: {
         total: cocktails.length,
@@ -136,12 +134,9 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
         withoutRecipes: cocktails.length - withRecipes.length,
         averageMargin: Math.round(avgMargin * 10) / 10,
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch cocktail recipes:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch cocktail recipes' },
-      { status: 500 }
-    )
+    return err('Failed to fetch cocktail recipes', 500)
   }
 }))

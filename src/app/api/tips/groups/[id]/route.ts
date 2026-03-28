@@ -6,7 +6,7 @@
  * DELETE - Close group
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { requireAnyPermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { db } from '@/lib/db'
@@ -19,6 +19,7 @@ import { dispatchTipGroupUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { queueIfOutageOrFail, OutageQueueFullError, pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, forbidden, notFound, ok, unauthorized } from '@/lib/api-response'
 
 // ─── GET: Get group details ─────────────────────────────────────────────────
 
@@ -31,10 +32,7 @@ export const GET = withVenue(withAuth({ allowCellular: true }, async function GE
     const requestingEmployeeId = request.headers.get('x-employee-id')
 
     if (!requestingEmployeeId) {
-      return NextResponse.json(
-        { error: 'Employee ID is required' },
-        { status: 401 }
-      )
+      return unauthorized('Employee ID is required')
     }
 
     // ── Fetch group ───────────────────────────────────────────────────────
@@ -42,10 +40,7 @@ export const GET = withVenue(withAuth({ allowCellular: true }, async function GE
     const group = await getGroupInfo(id)
 
     if (!group) {
-      return NextResponse.json(
-        { error: 'Tip group not found' },
-        { status: 404 }
-      )
+      return notFound('Tip group not found')
     }
 
     // ── Auth check ────────────────────────────────────────────────────────
@@ -61,10 +56,7 @@ export const GET = withVenue(withAuth({ allowCellular: true }, async function GE
         [PERMISSIONS.TIPS_MANAGE_GROUPS]
       )
       if (!auth.authorized) {
-        return NextResponse.json(
-          { error: 'Not authorized. Must be a group member or have tip management permission.' },
-          { status: 403 }
-        )
+        return forbidden('Not authorized. Must be a group member or have tip management permission.')
       }
     }
 
@@ -121,13 +113,10 @@ export const GET = withVenue(withAuth({ allowCellular: true }, async function GE
       }))
     }
 
-    return NextResponse.json({ group, segments })
+    return ok({ group, segments })
   } catch (error) {
     console.error('Failed to get tip group:', error)
-    return NextResponse.json(
-      { error: 'Failed to get tip group' },
-      { status: 500 }
-    )
+    return err('Failed to get tip group', 500)
   }
 }))
 
@@ -144,19 +133,13 @@ export const PUT = withVenue(withAuth({ allowCellular: true }, async function PU
     const requestingEmployeeId = request.headers.get('x-employee-id')
 
     if (!requestingEmployeeId) {
-      return NextResponse.json(
-        { error: 'Employee ID is required' },
-        { status: 401 }
-      )
+      return unauthorized('Employee ID is required')
     }
 
     // ── Validate at least one field ───────────────────────────────────────
 
     if (!newOwnerId && !splitMode) {
-      return NextResponse.json(
-        { error: 'At least one of newOwnerId or splitMode is required' },
-        { status: 400 }
-      )
+      return err('At least one of newOwnerId or splitMode is required')
     }
 
     // ── Fetch group ───────────────────────────────────────────────────────
@@ -164,17 +147,11 @@ export const PUT = withVenue(withAuth({ allowCellular: true }, async function PU
     const existingGroup = await getGroupInfo(id)
 
     if (!existingGroup) {
-      return NextResponse.json(
-        { error: 'Tip group not found' },
-        { status: 404 }
-      )
+      return notFound('Tip group not found')
     }
 
     if (existingGroup.status !== 'active') {
-      return NextResponse.json(
-        { error: 'Tip group is not active' },
-        { status: 409 }
-      )
+      return err('Tip group is not active', 409)
     }
 
     // ── Auth check ────────────────────────────────────────────────────────
@@ -188,10 +165,7 @@ export const PUT = withVenue(withAuth({ allowCellular: true }, async function PU
         [PERMISSIONS.TIPS_MANAGE_GROUPS]
       )
       if (!auth.authorized) {
-        return NextResponse.json(
-          { error: 'Not authorized. Must be group owner or have tip management permission.' },
-          { status: 403 }
-        )
+        return forbidden('Not authorized. Must be group owner or have tip management permission.')
       }
     }
 
@@ -203,10 +177,7 @@ export const PUT = withVenue(withAuth({ allowCellular: true }, async function PU
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
         if (message === 'NEW_OWNER_NOT_ACTIVE_MEMBER') {
-          return NextResponse.json(
-            { error: 'New owner must be an active member of the group' },
-            { status: 400 }
-          )
+          return err('New owner must be an active member of the group')
         }
         throw err
       }
@@ -233,7 +204,7 @@ export const PUT = withVenue(withAuth({ allowCellular: true }, async function PU
       await queueIfOutageOrFail('TipGroup', existingGroup.locationId, id, 'UPDATE')
     } catch (err) {
       if (err instanceof OutageQueueFullError) {
-        return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+        return err('Service temporarily unavailable — outage queue full', 507)
       }
       throw err
     }
@@ -244,13 +215,10 @@ export const PUT = withVenue(withAuth({ allowCellular: true }, async function PU
 
     const updatedGroup = await getGroupInfo(id)
 
-    return NextResponse.json({ group: updatedGroup })
+    return ok({ group: updatedGroup })
   } catch (error) {
     console.error('Failed to update tip group:', error)
-    return NextResponse.json(
-      { error: 'Failed to update tip group' },
-      { status: 500 }
-    )
+    return err('Failed to update tip group', 500)
   }
 }))
 
@@ -265,10 +233,7 @@ export const DELETE = withVenue(withAuth({ allowCellular: true }, async function
     const requestingEmployeeId = request.headers.get('x-employee-id')
 
     if (!requestingEmployeeId) {
-      return NextResponse.json(
-        { error: 'Employee ID is required' },
-        { status: 401 }
-      )
+      return unauthorized('Employee ID is required')
     }
 
     // ── Fetch group ───────────────────────────────────────────────────────
@@ -276,17 +241,11 @@ export const DELETE = withVenue(withAuth({ allowCellular: true }, async function
     const existingGroup = await getGroupInfo(id)
 
     if (!existingGroup) {
-      return NextResponse.json(
-        { error: 'Tip group not found' },
-        { status: 404 }
-      )
+      return notFound('Tip group not found')
     }
 
     if (existingGroup.status !== 'active') {
-      return NextResponse.json(
-        { error: 'Tip group is already closed' },
-        { status: 409 }
-      )
+      return err('Tip group is already closed', 409)
     }
 
     // ── Auth check ────────────────────────────────────────────────────────
@@ -300,10 +259,7 @@ export const DELETE = withVenue(withAuth({ allowCellular: true }, async function
         [PERMISSIONS.TIPS_MANAGE_GROUPS]
       )
       if (!auth.authorized) {
-        return NextResponse.json(
-          { error: 'Not authorized. Must be group owner or have tip management permission.' },
-          { status: 403 }
-        )
+        return forbidden('Not authorized. Must be group owner or have tip management permission.')
       }
     }
 
@@ -316,7 +272,7 @@ export const DELETE = withVenue(withAuth({ allowCellular: true }, async function
       await queueIfOutageOrFail('TipGroup', existingGroup.locationId, id, 'UPDATE')
     } catch (err) {
       if (err instanceof OutageQueueFullError) {
-        return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+        return err('Service temporarily unavailable — outage queue full', 507)
       }
       throw err
     }
@@ -331,12 +287,9 @@ export const DELETE = withVenue(withAuth({ allowCellular: true }, async function
       { async: true }
     ).catch((err) => console.error('[TipGroups] Socket dispatch failed:', err))
 
-    return NextResponse.json({ success: true })
+    return ok({ success: true })
   } catch (error) {
     console.error('Failed to close tip group:', error)
-    return NextResponse.json(
-      { error: 'Failed to close tip group' },
-      { status: 500 }
-    )
+    return err('Failed to close tip group', 500)
   }
 }))

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { ShiftStatus } from '@/generated/prisma/client'
 import { emitToLocation } from '@/lib/socket-server'
@@ -7,6 +7,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { queueIfOutage, pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok } from '@/lib/api-response'
 
 const log = createChildLogger('shifts')
 
@@ -21,10 +22,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const endDate = searchParams.get('endDate')
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'Location ID is required' },
-        { status: 400 }
-      )
+      return err('Location ID is required')
     }
 
     const shifts = await db.shift.findMany({
@@ -55,7 +53,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orderBy: { startedAt: 'desc' },
     })
 
-    return NextResponse.json({ data: {
+    return ok({
       shifts: shifts.map(shift => ({
         id: shift.id,
         employee: {
@@ -77,13 +75,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         drawerId: shift.drawerId || null,
         notes: shift.notes,
       })),
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch shifts:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch shifts' },
-      { status: 500 }
-    )
+    return err('Failed to fetch shifts', 500)
   }
 })
 
@@ -102,40 +97,28 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     if (!locationId || !employeeId) {
-      return NextResponse.json(
-        { error: 'Location ID and Employee ID are required' },
-        { status: 400 }
-      )
+      return err('Location ID and Employee ID are required')
     }
 
     // Auth check — require manager shift review permission
     const actor = await getActorFromRequest(request)
     const resolvedEmployeeId = actor.employeeId ?? employeeId
     const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.MGR_SHIFT_REVIEW)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const mode = cashHandlingMode || 'drawer'
 
     // Validate based on cash handling mode
     if (mode === 'drawer') {
       if (startingCash === undefined || startingCash < 0) {
-        return NextResponse.json(
-          { error: 'Starting cash amount is required for drawer mode' },
-          { status: 400 }
-        )
+        return err('Starting cash amount is required for drawer mode')
       }
       if (!drawerId) {
-        return NextResponse.json(
-          { error: 'Drawer selection is required for drawer mode' },
-          { status: 400 }
-        )
+        return err('Drawer selection is required for drawer mode')
       }
     } else if (mode === 'purse') {
       if (startingCash === undefined || startingCash < 0) {
-        return NextResponse.json(
-          { error: 'Starting purse amount is required' },
-          { status: 400 }
-        )
+        return err('Starting purse amount is required')
       }
     }
     // mode === 'none' — no cash validation needed
@@ -150,10 +133,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     if (existingShift) {
-      return NextResponse.json(
-        { error: 'Employee already has an open shift. Please close it first.' },
-        { status: 400 }
-      )
+      return err('Employee already has an open shift. Please close it first.')
     }
 
     // If drawer mode, verify drawer isn't already claimed
@@ -173,10 +153,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       if (drawerClaimed) {
         const claimedBy = drawerClaimed.employee.displayName
           || `${drawerClaimed.employee.firstName} ${drawerClaimed.employee.lastName}`
-        return NextResponse.json(
-          { error: `Drawer already claimed by ${claimedBy}` },
-          { status: 409 }
-        )
+        return err(`Drawer already claimed by ${claimedBy}`, 409)
       }
     }
 
@@ -221,7 +198,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Real-time cross-terminal update
     void emitToLocation(locationId, 'shifts:changed', { action: 'started', shiftId: shift.id, employeeId }).catch(err => log.warn({ err }, 'socket emit failed'))
 
-    return NextResponse.json({ data: {
+    return ok({
       shift: {
         id: shift.id,
         employee: {
@@ -233,12 +210,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         status: shift.status,
       },
       message: 'Shift started successfully',
-    } })
+    })
   } catch (error) {
     console.error('Failed to start shift:', error)
-    return NextResponse.json(
-      { error: 'Failed to start shift' },
-      { status: 500 }
-    )
+    return err('Failed to start shift', 500)
   }
 })

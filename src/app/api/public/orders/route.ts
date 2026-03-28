@@ -7,7 +7,7 @@
  * Rate limited: 5 orders per minute per IP.
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { getDbForVenue } from '@/lib/db'
 import { getCurrentBusinessDay } from '@/lib/business-day'
 import { parseSettings } from '@/lib/settings'
@@ -16,6 +16,7 @@ import { isItemTaxInclusive, calculateSplitTax } from '@/lib/order-calculations'
 import { createRateLimiter } from '@/lib/rate-limiter'
 import { getClientIp } from '@/lib/get-client-ip'
 import { createChildLogger } from '@/lib/logger'
+import { err, forbidden, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('public-orders')
 
 // ── Rate limiter (5 orders/min/IP) ──────────────────────────────────────────
@@ -33,10 +34,7 @@ export async function POST(request: NextRequest) {
     const ip = getClientIp(request)
 
     if (!limiter.check(ip).allowed) {
-      return NextResponse.json(
-        { error: 'Too many orders. Please wait a minute before trying again.' },
-        { status: 429 }
-      )
+      return err('Too many orders. Please wait a minute before trying again.', 429)
     }
 
     const body = await request.json()
@@ -57,13 +55,13 @@ export async function POST(request: NextRequest) {
     }
 
     if (!slug) {
-      return NextResponse.json({ error: 'slug is required' }, { status: 400 })
+      return err('slug is required')
     }
     if (!orderCode) {
-      return NextResponse.json({ error: 'orderCode is required' }, { status: 400 })
+      return err('orderCode is required')
     }
     if (!items || !Array.isArray(items) || items.length === 0) {
-      return NextResponse.json({ error: 'At least one item is required' }, { status: 400 })
+      return err('At least one item is required')
     }
 
     // Resolve venue DB
@@ -71,7 +69,7 @@ export async function POST(request: NextRequest) {
     try {
       venueDb = await getDbForVenue(slug)
     } catch {
-      return NextResponse.json({ error: 'Location not found' }, { status: 404 })
+      return notFound('Location not found')
     }
 
     // Get location + settings
@@ -81,7 +79,7 @@ export async function POST(request: NextRequest) {
     })
 
     if (!location) {
-      return NextResponse.json({ error: 'Location not found' }, { status: 404 })
+      return notFound('Location not found')
     }
 
     const settings = parseSettings(location.settings as Record<string, unknown>)
@@ -89,17 +87,14 @@ export async function POST(request: NextRequest) {
 
     // Check QR ordering enabled (default to allowed if not explicitly configured)
     if (qrSettings?.enabled === false) {
-      return NextResponse.json({ error: 'QR ordering is not available' }, { status: 403 })
+      return forbidden('QR ordering is not available')
     }
 
     // Max items check
     const maxItems = qrSettings?.maxItemsPerOrder || 50
     const totalItems = items.reduce((sum: number, i: OrderItemInput) => sum + (i.quantity || 1), 0)
     if (totalItems > maxItems) {
-      return NextResponse.json(
-        { error: `Order exceeds maximum of ${maxItems} items` },
-        { status: 400 }
-      )
+      return err(`Order exceeds maximum of ${maxItems} items`)
     }
 
     // Resolve table via qrOrderCode
@@ -112,7 +107,7 @@ export async function POST(request: NextRequest) {
     )
 
     if (tableRows.length === 0) {
-      return NextResponse.json({ error: 'Invalid order code' }, { status: 400 })
+      return err('Invalid order code')
     }
 
     const table = tableRows[0]
@@ -145,10 +140,7 @@ export async function POST(request: NextRequest) {
     // Validate every requested item exists
     for (const item of items) {
       if (!menuItemMap.has(item.menuItemId)) {
-        return NextResponse.json(
-          { error: `Menu item not found or unavailable: ${item.menuItemId}` },
-          { status: 400 }
-        )
+        return err(`Menu item not found or unavailable: ${item.menuItemId}`)
       }
     }
 
@@ -337,8 +329,7 @@ export async function POST(request: NextRequest) {
     // Estimated wait time (rough: 15 minutes base + 2 min per item beyond 3)
     const estimatedWaitMinutes = Math.max(10, 15 + Math.max(0, totalItems - 3) * 2)
 
-    return NextResponse.json({
-      data: {
+    return ok({
         orderId: order.id,
         orderNumber,
         tableName: table.name,
@@ -347,10 +338,9 @@ export async function POST(request: NextRequest) {
         estimatedWaitMinutes,
         status: 'sent',
         message: 'Your order has been sent to the kitchen!',
-      },
-    })
+      })
   } catch (error) {
     console.error('[POST /api/public/orders] Error:', error)
-    return NextResponse.json({ error: 'Failed to submit order' }, { status: 500 })
+    return err('Failed to submit order', 500)
   }
 }

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import * as OrderRepository from '@/lib/repositories/order-repository'
 import * as OrderItemRepository from '@/lib/repositories/order-item-repository'
@@ -14,6 +14,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { getRequestLocationId } from '@/lib/request-context'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-advance-course')
 
 // POST - Advance to next course
@@ -44,10 +45,7 @@ export const POST = withVenue(async function POST(
       })
 
       if (!orderCheck) {
-        return NextResponse.json(
-          { error: 'Order not found' },
-          { status: 404 }
-        )
+        return notFound('Order not found')
       }
       locationId = orderCheck.locationId
     }
@@ -60,16 +58,13 @@ export const POST = withVenue(async function POST(
     })
 
     if (!order) {
-      return NextResponse.json(
-        { error: 'Order not found' },
-        { status: 404 }
-      )
+      return notFound('Order not found')
     }
 
     // Auth check
     const auth = await requirePermission(employeeId, order.locationId, PERMISSIONS.POS_ACCESS)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Get unique course numbers from items
@@ -80,10 +75,7 @@ export const POST = withVenue(async function POST(
     )].sort((a, b) => a - b)
 
     if (courseNumbers.length === 0) {
-      return NextResponse.json(
-        { error: 'No courses assigned to items' },
-        { status: 400 }
-      )
+      return err('No courses assigned to items')
     }
 
     // Find current course items
@@ -206,13 +198,13 @@ export const POST = withVenue(async function POST(
 
       pushUpstream()
 
-      return NextResponse.json({ data: {
+      return ok({
         success: true,
         previousCourse: currentCourse,
         currentCourse: nextCourse,
         itemsFired: firedItems.count,
         hasMoreCourses: courseNumbers.indexOf(nextCourse) < courseNumbers.length - 1,
-      } })
+      })
     }
 
     // Mark current course items as served + queue order:updated inside transaction (tenant-safe)
@@ -280,19 +272,16 @@ export const POST = withVenue(async function POST(
     pushUpstream()
 
     // No more courses
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       previousCourse: currentCourse,
       currentCourse: currentCourse,
       itemsFired: 0,
       hasMoreCourses: false,
       message: 'All courses have been served',
-    } })
+    })
   } catch (error) {
     console.error('Failed to advance course:', error)
-    return NextResponse.json(
-      { error: 'Failed to advance course' },
-      { status: 500 }
-    )
+    return err('Failed to advance course', 500)
   }
 })

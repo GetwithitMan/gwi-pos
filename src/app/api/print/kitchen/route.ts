@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { sendToPrinter } from '@/lib/printer-connection'
 import { getEligibleKitchenItems } from '@/lib/kitchen-item-filter'
+import { err, notFound, ok } from '@/lib/api-response'
 
 import {
   buildDocument,
@@ -93,7 +94,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     })
 
     if (!order) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      return notFound('Order not found')
     }
 
     // Fetch delivery customer info from DeliveryOrder table (raw SQL, not in Prisma schema)
@@ -137,7 +138,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     })
 
     if (itemsToPrint.length === 0) {
-      return NextResponse.json({ data: { message: 'No items to print' } })
+      return ok({ message: 'No items to print' })
     }
 
     // Pre-fetch PizzaSpecialty names for pizza items (keyed by menuItemId)
@@ -465,13 +466,13 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
 
     pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       success: results.some(r => r.success),
       results,
-    } })
+    })
   } catch (error) {
     console.error('Failed to print kitchen ticket:', error)
-    return NextResponse.json({ error: 'Failed to print kitchen ticket' }, { status: 500 })
+    return err('Failed to print kitchen ticket', 500)
   }
 }))
 

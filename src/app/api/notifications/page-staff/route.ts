@@ -20,6 +20,7 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import crypto from 'crypto'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound } from '@/lib/api-response'
 const log = createChildLogger('notifications-page-staff')
 
 export const dynamic = 'force-dynamic'
@@ -28,18 +29,18 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.NOTIFICATIONS_MANUAL_PAGE)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const body = await request.json()
     const { employeeId, message, eventType } = body
 
     if (!employeeId || typeof employeeId !== 'string') {
-      return NextResponse.json({ error: 'employeeId is required' }, { status: 400 })
+      return err('employeeId is required')
     }
 
     // Validate employee exists
@@ -51,7 +52,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       locationId
     )
     if (employees.length === 0) {
-      return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
+      return notFound('Employee not found')
     }
     const employee = employees[0]
 
@@ -79,10 +80,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Validate event type is one of the staff-related types
     const validStaffEvents = ['server_needed', 'staff_alert', 'expo_recall']
     if (!validStaffEvents.includes(resolvedEventType)) {
-      return NextResponse.json(
-        { error: `eventType must be one of: ${validStaffEvents.join(', ')}` },
-        { status: 400 }
-      )
+      return err(`eventType must be one of: ${validStaffEvents.join(', ')}`)
     }
 
     // Build context
@@ -212,6 +210,6 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
   } catch (error) {
     console.error('[Page Staff] POST error:', error)
-    return NextResponse.json({ error: 'Failed to page staff member' }, { status: 500 })
+    return err('Failed to page staff member', 500)
   }
 })

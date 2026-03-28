@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { mergeWithDefaults } from '@/lib/settings'
+import { err, forbidden, notFound, ok } from '@/lib/api-response'
 
 // GET - List campaigns for a location
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -16,7 +17,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const to = searchParams.get('to')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+      return err('Location ID is required')
     }
 
     const where: Record<string, unknown> = {
@@ -48,10 +49,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       ORDER BY c."createdAt" DESC
     `, locationId, ...(status ? [status] : []), ...(type ? [type] : []))
 
-    return NextResponse.json(campaigns)
+    return ok(campaigns)
   } catch (error) {
     console.error('[Marketing] Failed to list campaigns:', error)
-    return NextResponse.json({ error: 'Failed to list campaigns' }, { status: 500 })
+    return err('Failed to list campaigns', 500)
   }
 })
 
@@ -71,21 +72,18 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     } = body
 
     if (!locationId || !name || !type) {
-      return NextResponse.json(
-        { error: 'locationId, name, and type are required' },
-        { status: 400 }
-      )
+      return err('locationId, name, and type are required')
     }
 
     if (!['email', 'sms'].includes(type)) {
-      return NextResponse.json({ error: 'type must be email or sms' }, { status: 400 })
+      return err('type must be email or sms')
     }
 
     // Auth check — require manager permission
     const actor = await getActorFromRequest(request)
     const resolvedEmployeeId = actor.employeeId ?? employeeId
     const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.MGR_DISCOUNTS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Validate marketing is enabled
     const location = await db.location.findUnique({
@@ -94,22 +92,22 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     if (!location) {
-      return NextResponse.json({ error: 'Location not found' }, { status: 404 })
+      return notFound('Location not found')
     }
 
     const settings = mergeWithDefaults(location.settings as Record<string, unknown>)
     const marketing = settings.marketing
 
     if (!marketing?.enabled) {
-      return NextResponse.json({ error: 'Marketing is not enabled for this location' }, { status: 403 })
+      return forbidden('Marketing is not enabled for this location')
     }
 
     if (type === 'sms' && !marketing.smsEnabled) {
-      return NextResponse.json({ error: 'SMS campaigns are not enabled' }, { status: 403 })
+      return forbidden('SMS campaigns are not enabled')
     }
 
     if (type === 'email' && !marketing.emailEnabled) {
-      return NextResponse.json({ error: 'Email campaigns are not enabled' }, { status: 403 })
+      return forbidden('Email campaigns are not enabled')
     }
 
     // Create campaign
@@ -130,9 +128,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       resolvedEmployeeId || null
     ) as unknown[]
 
-    return NextResponse.json({ data: (result as Record<string, unknown>[])[0] })
+    return ok((result as Record<string, unknown>[]))
   } catch (error) {
     console.error('[Marketing] Failed to create campaign:', error)
-    return NextResponse.json({ error: 'Failed to create campaign' }, { status: 500 })
+    return err('Failed to create campaign', 500)
   }
 })

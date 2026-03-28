@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -7,6 +7,7 @@ import { getBusinessDayRange, getCurrentBusinessDay } from '@/lib/business-day'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings, getLocationTimezone } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
+import { err, ok } from '@/lib/api-response'
 
 // GET - Return today's paid card transactions for tip adjustment
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -19,7 +20,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       searchParams.get('requestingEmployeeId') || searchParams.get('employeeId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     const auth = await requirePermission(
@@ -28,7 +29,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       PERMISSIONS.TIPS_PERFORM_ADJUSTMENTS
     )
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Resolve business-day boundaries
@@ -170,22 +171,17 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const avgTipPct =
       totalSubtotal > 0 ? (totalTips / totalSubtotal) * 100 : 0
 
-    return NextResponse.json({
-      data: {
+    return ok({
         transactions,
         summary: {
           totalTransactions,
           totalTips: round(totalTips),
           avgTipPct: round(avgTipPct),
         },
-      },
-    })
+      })
   } catch (error) {
     console.error('[tip-adjustment] Failed to load report:', error)
-    return NextResponse.json(
-      { error: 'Failed to load tip adjustment report' },
-      { status: 500 }
-    )
+    return err('Failed to load tip adjustment report', 500)
   }
 })
 

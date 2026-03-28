@@ -38,8 +38,10 @@ const ADJUSTMENT_BUTTONS: { type: PricingRule['adjustmentType']; label: string }
   { type: 'override-price', label: 'Set Price' },
 ]
 
-type Category = { id: string; name: string; categoryType: string; _count?: { menuItems: number } }
-type MenuItem = { id: string; name: string; price: number; categoryId: string; category?: { name: string } }
+import type { MenuItem as BaseMenuItem, Category as BaseCategory } from '@/types'
+
+type Category = Pick<BaseCategory, 'id' | 'name' | 'categoryType'> & { _count?: { menuItems: number } }
+type MenuItem = Pick<BaseMenuItem, 'id' | 'name' | 'price' | 'categoryId'> & { category?: { name: string } }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 

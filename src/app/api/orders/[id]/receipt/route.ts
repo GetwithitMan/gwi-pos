@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { parseSettings, getPricingProgram } from '@/lib/settings'
 import { calculateCardPrice, calculateDebitPrice, roundToCents } from '@/lib/pricing'
+import { err, forbidden, notFound, ok } from '@/lib/api-response'
 
 const DEFAULT_CASH_DISCOUNT_DISCLOSURE =
   'Posted prices reflect a non-cash adjustment. Cash payments receive a discount.'
@@ -66,18 +67,12 @@ export const GET = withVenue(async function GET(
     })
 
     if (!order) {
-      return NextResponse.json(
-        { error: 'Order not found' },
-        { status: 404 }
-      )
+      return notFound('Order not found')
     }
 
     // Verify location access if locationId provided
     if (locationId && order.locationId !== locationId) {
-      return NextResponse.json(
-        { error: 'Order does not belong to this location' },
-        { status: 403 }
-      )
+      return forbidden('Order does not belong to this location')
     }
 
     const settings = parseSettings(order.location.settings)
@@ -259,12 +254,9 @@ export const GET = withVenue(async function GET(
       taxExemptId: (order as any).taxExemptId ?? null,
     }
 
-    return NextResponse.json({ data: receiptData })
+    return ok(receiptData)
   } catch (error) {
     console.error('Failed to fetch receipt:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch receipt' },
-      { status: 500 }
-    )
+    return err('Failed to fetch receipt', 500)
   }
 })

@@ -12,6 +12,7 @@ import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { offerSlotToWaitlist } from '@/lib/reservations/waitlist-bridge'
 import type { OperatingHours } from '@/lib/reservations/availability'
 import { createChildLogger } from '@/lib/logger'
+import { err, forbidden, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('reservations')
 
 // GET - Single reservation with full details
@@ -23,7 +24,7 @@ export const GET = withVenue(async function GET(
     const { id } = await params
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const reservation = await db.reservation.findUnique({
@@ -47,13 +48,13 @@ export const GET = withVenue(async function GET(
     })
 
     if (!reservation || reservation.locationId !== locationId) {
-      return NextResponse.json({ error: 'Reservation not found' }, { status: 404 })
+      return notFound('Reservation not found')
     }
 
-    return NextResponse.json({ data: { reservation } })
+    return ok({ reservation })
   } catch (error) {
     console.error('[reservations/[id]] GET error:', error)
-    return NextResponse.json({ error: 'Failed to fetch reservation' }, { status: 500 })
+    return err('Failed to fetch reservation', 500)
   }
 })
 
@@ -68,7 +69,7 @@ export const PUT = withVenue(async function PUT(
 
     const callerLocationId = await getLocationId()
     if (!callerLocationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Load current reservation with location settings
@@ -78,13 +79,13 @@ export const PUT = withVenue(async function PUT(
     })
 
     if (!current || current.locationId !== callerLocationId) {
-      return NextResponse.json({ error: 'Reservation not found' }, { status: 404 })
+      return notFound('Reservation not found')
     }
 
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, current.locationId, 'tables.reservations')
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error || 'Permission denied' }, { status: 403 })
+      return forbidden(auth.error || 'Permission denied')
     }
 
     const locationSettings = current.location as any
@@ -115,7 +116,7 @@ export const PUT = withVenue(async function PUT(
         void notifyDataChanged({ locationId: current.locationId, domain: 'reservations', action: 'updated', entityId: id })
         void pushUpstream()
 
-        return NextResponse.json({ data: { reservation: updated } })
+        return ok({ reservation: updated })
       } catch (err) {
         if (err instanceof TransitionError) {
           return NextResponse.json({ error: err.message, code: err.code }, { status: 422 })
@@ -239,10 +240,10 @@ export const PUT = withVenue(async function PUT(
     void notifyDataChanged({ locationId: current.locationId, domain: 'reservations', action: 'updated', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { reservation: updated } })
+    return ok({ reservation: updated })
   } catch (error) {
     console.error('[reservations/[id]] PUT error:', error)
-    return NextResponse.json({ error: 'Failed to update reservation' }, { status: 500 })
+    return err('Failed to update reservation', 500)
   }
 })
 
@@ -258,12 +259,12 @@ export const DELETE = withVenue(async function DELETE(
 
     const callerLocationId = await getLocationId()
     if (!callerLocationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const reservation = await db.reservation.findUnique({ where: { id } })
     if (!reservation || reservation.locationId !== callerLocationId) {
-      return NextResponse.json({ error: 'Reservation not found' }, { status: 404 })
+      return notFound('Reservation not found')
     }
 
     if (cancel) {
@@ -325,7 +326,7 @@ export const DELETE = withVenue(async function DELETE(
         void notifyDataChanged({ locationId: reservation.locationId, domain: 'reservations', action: 'deleted', entityId: id })
         void pushUpstream()
 
-        return NextResponse.json({ data: { success: true, message: 'Reservation cancelled' } })
+        return ok({ success: true, message: 'Reservation cancelled' })
       } catch (err) {
         if (err instanceof TransitionError) {
           return NextResponse.json({ error: err.message, code: err.code }, { status: 422 })
@@ -345,9 +346,9 @@ export const DELETE = withVenue(async function DELETE(
     void notifyDataChanged({ locationId: reservation.locationId, domain: 'reservations', action: 'deleted', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('[reservations/[id]] DELETE error:', error)
-    return NextResponse.json({ error: 'Failed to delete reservation' }, { status: 500 })
+    return err('Failed to delete reservation', 500)
   }
 })

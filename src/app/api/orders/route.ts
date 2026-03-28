@@ -27,6 +27,7 @@ import { SOCKET_EVENTS } from '@/lib/socket-events'
 import type { OrderTotalsUpdatedPayload, OrdersListChangedPayload, OrderSummaryUpdatedPayload } from '@/lib/socket-events'
 import { queueSocketEvent, flushOutboxSafe } from '@/lib/socket-outbox'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok } from '@/lib/api-response'
 const log = createChildLogger('orders')
 
 // POST - Create a new order
@@ -60,7 +61,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
       employeeId = validateCellularEmployeeFromHeaders(request, claimedEmployeeId)
     } catch (err) {
       if (err instanceof CellularAuthError) {
-        return NextResponse.json({ error: err.message }, { status: err.status })
+        return err(err.message, err.status)
       }
       throw err
     }
@@ -96,7 +97,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
 
     // Auth check — require POS access
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.POS_ACCESS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Compute business day for this order (uses cached location settings — FIX-005)
     // TZ-FIX: Pass venue timezone so Vercel (UTC) computes correct business day
@@ -365,7 +366,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
       }
 
       // No socket dispatches for drafts — invisible to Open Orders & Floor Plan
-      return NextResponse.json({ data: {
+      return ok({
         id: order.id,
         orderNumber: order.orderNumber,
         status: 'draft',
@@ -381,7 +382,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
         total: 0,
         openedAt: order.createdAt.toISOString(),
         items: [],
-      } })
+      })
     }
 
     // === STANDARD PATH: Full order creation with items ===
@@ -942,7 +943,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
     // Trigger upstream sync (fire-and-forget, debounced)
     pushUpstream()
 
-    return NextResponse.json({ data: response })
+    return ok(response)
   } catch (error) {
     console.error('Failed to create order:', error)
 
@@ -981,20 +982,17 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const includeRolledOver = searchParams.get('includeRolledOver') === 'true'
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'Location ID is required' },
-        { status: 400 }
-      )
+      return err('Location ID is required')
     }
 
     // Auth check — require POS access
     const requestingEmployeeId = request.headers.get('x-employee-id') || searchParams.get('requestingEmployeeId')
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.POS_ACCESS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
     // Viewing another employee's orders requires explicit permission
     if (employeeId && requestingEmployeeId && employeeId !== requestingEmployeeId) {
       const othersAuth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.POS_VIEW_OTHERS_ORDERS)
-      if (!othersAuth.authorized) return NextResponse.json({ error: othersAuth.error }, { status: othersAuth.status })
+      if (!othersAuth.authorized) return err(othersAuth.error, othersAuth.status)
     }
 
     // Build date range filter on createdAt
@@ -1056,7 +1054,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       take: limit,
     })
 
-    return NextResponse.json({ data: {
+    return ok({
       orders: orders.map(order => ({
         ...mapOrderForResponse(order),
         // Add summary fields for list view
@@ -1065,7 +1063,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           .filter(p => p.status === 'completed')
           .reduce((sum, p) => sum + Number(p.totalAmount), 0),
       })),
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch orders:', error)
 
@@ -1086,9 +1084,6 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       log.warn({ err }, 'error event logging failed during order fetch')
     })
 
-    return NextResponse.json(
-      { error: 'Failed to fetch orders' },
-      { status: 500 }
-    )
+    return err('Failed to fetch orders', 500)
   }
 })

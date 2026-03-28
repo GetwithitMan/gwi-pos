@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
@@ -8,6 +8,7 @@ import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 import { dispatchExceptionEvent } from '@/lib/delivery/dispatch-events'
 import { writeDeliveryAuditLog } from '@/lib/delivery/state-machine'
 import { createChildLogger } from '@/lib/logger'
+import { created, err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('delivery-exceptions')
 
 export const dynamic = 'force-dynamic'
@@ -51,7 +52,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Feature gate
@@ -61,7 +62,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Auth check
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.DELIVERY_EXCEPTIONS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const searchParams = request.nextUrl.searchParams
     const status = searchParams.get('status')
@@ -132,10 +133,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       driverName: row.driverFirstName ? `${row.driverFirstName} ${row.driverLastName}`.trim() : null,
     }))
 
-    return NextResponse.json({ exceptions })
+    return ok({ exceptions })
   } catch (error) {
     console.error('[Delivery/Exceptions] GET error:', error)
-    return NextResponse.json({ error: 'Failed to fetch delivery exceptions' }, { status: 500 })
+    return err('Failed to fetch delivery exceptions', 500)
   }
 })
 
@@ -148,7 +149,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Feature gate
@@ -158,14 +159,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Auth check
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.DELIVERY_EXCEPTIONS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Rate limit: 30/min per location
     if (!limiter.check(locationId).allowed) {
-      return NextResponse.json(
-        { error: 'Rate limit exceeded. Maximum 30 exceptions per minute per location.' },
-        { status: 429 }
-      )
+      return err('Rate limit exceeded. Maximum 30 exceptions per minute per location.', 429)
     }
 
     const body = await request.json()
@@ -173,23 +171,17 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Validate type
     if (!type || !(VALID_EXCEPTION_TYPES as readonly string[]).includes(type)) {
-      return NextResponse.json(
-        { error: `Invalid exception type. Must be one of: ${VALID_EXCEPTION_TYPES.join(', ')}` },
-        { status: 400 }
-      )
+      return err(`Invalid exception type. Must be one of: ${VALID_EXCEPTION_TYPES.join(', ')}`)
     }
 
     // Validate severity
     if (!severity || !(VALID_SEVERITIES as readonly string[]).includes(severity)) {
-      return NextResponse.json(
-        { error: `Invalid severity. Must be one of: ${VALID_SEVERITIES.join(', ')}` },
-        { status: 400 }
-      )
+      return err(`Invalid severity. Must be one of: ${VALID_SEVERITIES.join(', ')}`)
     }
 
     // Validate description
     if (!description || typeof description !== 'string' || description.trim().length === 0) {
-      return NextResponse.json({ error: 'Description is required' }, { status: 400 })
+      return err('Description is required')
     }
 
     // Validate foreign keys exist if provided
@@ -199,7 +191,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         deliveryOrderId, locationId,
       )
       if (!orderExists.length) {
-        return NextResponse.json({ error: 'Delivery order not found' }, { status: 404 })
+        return notFound('Delivery order not found')
       }
     }
 
@@ -209,7 +201,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         runId, locationId,
       )
       if (!runExists.length) {
-        return NextResponse.json({ error: 'Delivery run not found' }, { status: 404 })
+        return notFound('Delivery run not found')
       }
     }
 
@@ -219,7 +211,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         driverId, locationId,
       )
       if (!driverExists.length) {
-        return NextResponse.json({ error: 'Driver not found' }, { status: 404 })
+        return notFound('Driver not found')
       }
     }
 
@@ -247,7 +239,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     )
 
     if (!inserted.length) {
-      return NextResponse.json({ error: 'Failed to create exception' }, { status: 500 })
+      return err('Failed to create exception', 500)
     }
 
     const exception = inserted[0]
@@ -266,9 +258,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Fire socket event
     void dispatchExceptionEvent(locationId, 'delivery:exception_created', exception).catch(err => log.warn({ err }, 'Background task failed'))
 
-    return NextResponse.json({ exception }, { status: 201 })
+    return created({ exception })
   } catch (error) {
     console.error('[Delivery/Exceptions] POST error:', error)
-    return NextResponse.json({ error: 'Failed to create delivery exception' }, { status: 500 })
+    return err('Failed to create delivery exception', 500)
   }
 })

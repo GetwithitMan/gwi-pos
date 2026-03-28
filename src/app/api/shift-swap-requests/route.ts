@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { Prisma, ShiftSwapRequestStatus } from '@/generated/prisma/client'
+import { err, ok } from '@/lib/api-response'
 
 // GET - List shift requests for the current location
 // Query params: locationId (required), status? (filter), employeeId? (filter as requestedToEmployeeId),
@@ -16,7 +17,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const type = searchParams.get('type')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+      return err('Location ID is required')
     }
 
     const where: Prisma.ShiftSwapRequestWhereInput = {
@@ -80,9 +81,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orderBy: { createdAt: 'desc' },
     })
 
-    return NextResponse.json({ data: { requests } })
+    return ok({ requests })
   } catch (error) {
     console.error('Failed to fetch shift requests:', error)
-    return NextResponse.json({ error: 'Failed to fetch shift requests' }, { status: 500 })
+    return err('Failed to fetch shift requests', 500)
   }
 })

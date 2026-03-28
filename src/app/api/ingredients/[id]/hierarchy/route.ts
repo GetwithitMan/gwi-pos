@@ -1,8 +1,9 @@
 'use server'
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { err, notFound, ok } from '@/lib/api-response'
 
 /**
  * GET /api/ingredients/[id]/hierarchy
@@ -48,18 +49,12 @@ export const GET = withVenue(async function GET(
     })
 
     if (!inventoryItem) {
-      return NextResponse.json(
-        { error: 'Inventory item not found' },
-        { status: 404 }
-      )
+      return notFound('Inventory item not found')
     }
 
     // If this is a prep item (has a parent), redirect to parent hierarchy
     if (inventoryItem.parentIngredientId) {
-      return NextResponse.json(
-        { error: 'This is a prep item. Use the parent inventory item ID instead.' },
-        { status: 400 }
-      )
+      return err('This is a prep item. Use the parent inventory item ID instead.')
     }
 
     // Transform recipe components into recipeIngredients format
@@ -122,16 +117,13 @@ export const GET = withVenue(async function GET(
       prepCount: prepItems.length,
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       inventoryItem: formattedInventoryItem,
       recipeIngredients,
       prepItems,
-    } })
+    })
   } catch (error) {
     console.error('Error fetching ingredient hierarchy:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch hierarchy' },
-      { status: 500 }
-    )
+    return err('Failed to fetch hierarchy', 500)
   }
 })

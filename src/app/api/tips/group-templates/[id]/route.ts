@@ -6,13 +6,14 @@
  * DELETE - Soft delete template
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { queueIfOutageOrFail, OutageQueueFullError, pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 type RouteContext = { params: Promise<{ id: string }> }
 
@@ -24,10 +25,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
     const locationId = request.nextUrl.searchParams.get('locationId')
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'locationId is required' },
-        { status: 400 }
-      )
+      return err('locationId is required')
     }
 
     // Auth check
@@ -38,10 +36,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
       PERMISSIONS.TIPS_MANAGE_RULES
     )
     if (!auth.authorized) {
-      return NextResponse.json(
-        { error: auth.error },
-        { status: auth.status }
-      )
+      return err(auth.error, auth.status)
     }
 
     const template = await db.tipGroupTemplate.findFirst({
@@ -49,14 +44,10 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
     })
 
     if (!template) {
-      return NextResponse.json(
-        { error: 'Template not found' },
-        { status: 404 }
-      )
+      return notFound('Template not found')
     }
 
-    return NextResponse.json({
-      data: {
+    return ok({
         id: template.id,
         locationId: template.locationId,
         name: template.name,
@@ -64,14 +55,10 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
         defaultSplitMode: template.defaultSplitMode,
         active: template.active,
         sortOrder: template.sortOrder,
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to get tip group template:', error)
-    return NextResponse.json(
-      { error: 'Failed to get tip group template' },
-      { status: 500 }
-    )
+    return err('Failed to get tip group template', 500)
   }
 }))
 
@@ -91,10 +78,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
     }
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'locationId is required' },
-        { status: 400 }
-      )
+      return err('locationId is required')
     }
 
     // Auth check
@@ -105,10 +89,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
       PERMISSIONS.TIPS_MANAGE_RULES
     )
     if (!auth.authorized) {
-      return NextResponse.json(
-        { error: auth.error },
-        { status: auth.status }
-      )
+      return err(auth.error, auth.status)
     }
 
     const existing = await db.tipGroupTemplate.findFirst({
@@ -116,10 +97,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
     })
 
     if (!existing) {
-      return NextResponse.json(
-        { error: 'Template not found' },
-        { status: 404 }
-      )
+      return notFound('Template not found')
     }
 
     const updateData: Record<string, unknown> = {}
@@ -139,15 +117,14 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
       await queueIfOutageOrFail('TipGroupTemplate', locationId, id, 'UPDATE')
     } catch (err) {
       if (err instanceof OutageQueueFullError) {
-        return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+        return err('Service temporarily unavailable — outage queue full', 507)
       }
       throw err
     }
 
     pushUpstream()
 
-    return NextResponse.json({
-      data: {
+    return ok({
         id: template.id,
         locationId: template.locationId,
         name: template.name,
@@ -155,14 +132,10 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
         defaultSplitMode: template.defaultSplitMode,
         active: template.active,
         sortOrder: template.sortOrder,
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to update tip group template:', error)
-    return NextResponse.json(
-      { error: 'Failed to update tip group template' },
-      { status: 500 }
-    )
+    return err('Failed to update tip group template', 500)
   }
 }))
 
@@ -174,10 +147,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(request:
     const locationId = request.nextUrl.searchParams.get('locationId')
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'locationId is required' },
-        { status: 400 }
-      )
+      return err('locationId is required')
     }
 
     // Auth check
@@ -188,10 +158,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(request:
       PERMISSIONS.TIPS_MANAGE_RULES
     )
     if (!auth.authorized) {
-      return NextResponse.json(
-        { error: auth.error },
-        { status: auth.status }
-      )
+      return err(auth.error, auth.status)
     }
 
     const existing = await db.tipGroupTemplate.findFirst({
@@ -199,10 +166,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(request:
     })
 
     if (!existing) {
-      return NextResponse.json(
-        { error: 'Template not found' },
-        { status: 404 }
-      )
+      return notFound('Template not found')
     }
 
     await db.tipGroupTemplate.update({
@@ -215,19 +179,16 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(request:
       await queueIfOutageOrFail('TipGroupTemplate', locationId, id, 'DELETE')
     } catch (err) {
       if (err instanceof OutageQueueFullError) {
-        return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+        return err('Service temporarily unavailable — outage queue full', 507)
       }
       throw err
     }
 
     pushUpstream()
 
-    return NextResponse.json({ success: true })
+    return ok({ success: true })
   } catch (error) {
     console.error('Failed to delete tip group template:', error)
-    return NextResponse.json(
-      { error: 'Failed to delete tip group template' },
-      { status: 500 }
-    )
+    return err('Failed to delete tip group template', 500)
   }
 }))

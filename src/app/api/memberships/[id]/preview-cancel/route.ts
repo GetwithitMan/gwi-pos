@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
+import { err, notFound, ok } from '@/lib/api-response'
 
 export const POST = withVenue(async function POST(
   request: NextRequest,
@@ -12,31 +13,29 @@ export const POST = withVenue(async function POST(
     const body = await request.json()
     const { locationId, requestingEmployeeId } = body
 
-    if (!locationId) return NextResponse.json({ error: 'locationId required' }, { status: 400 })
+    if (!locationId) return err('locationId required')
 
     const auth = await requirePermission(requestingEmployeeId, locationId, 'admin.manage_memberships')
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const rows: any[] = await db.$queryRawUnsafe(`
       SELECT "currentPeriodEnd", "status" FROM "Membership"
       WHERE "id" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
       LIMIT 1
     `, id, locationId)
-    if (rows.length === 0) return NextResponse.json({ error: 'Membership not found' }, { status: 404 })
+    if (rows.length === 0) return notFound('Membership not found')
 
     const mbr = rows[0]
     const now = new Date()
     const periodEnd = mbr.currentPeriodEnd ? new Date(mbr.currentPeriodEnd) : now
 
-    return NextResponse.json({
-      data: {
+    return ok({
         effectiveDate: periodEnd,
         currentPeriodActive: periodEnd > now,
         refundEligible: false, // v1: no refunds on cancel
-      },
-    })
+      })
   } catch (err) {
     console.error('[memberships/preview-cancel] error:', err)
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
+    return err('Internal error', 500)
   }
 })

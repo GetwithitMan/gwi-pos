@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId, getLocationSettings } from '@/lib/location-cache'
@@ -9,6 +9,7 @@ import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 import { writeDeliveryAuditLog } from '@/lib/delivery/state-machine'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { created, err, ok } from '@/lib/api-response'
 const log = createChildLogger('delivery-sessions')
 
 export const dynamic = 'force-dynamic'
@@ -20,13 +21,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Auth check
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.DELIVERY_VIEW)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Feature gate
     const featureGate = await requireDeliveryFeature(locationId)
@@ -58,10 +59,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       employeeDisplayName: row.employeeDisplayName,
     }))
 
-    return NextResponse.json({ sessions })
+    return ok({ sessions })
   } catch (error) {
     console.error('[Delivery/Sessions] GET error:', error)
-    return NextResponse.json({ error: 'Failed to fetch sessions' }, { status: 500 })
+    return err('Failed to fetch sessions', 500)
   }
 })
 
@@ -74,13 +75,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Auth check
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.DELIVERY_DISPATCH)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Feature gate
     const featureGate = await requireDeliveryFeature(locationId)
@@ -91,12 +92,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     let { startingBankCents } = body
 
     if (!employeeId || typeof employeeId !== 'string') {
-      return NextResponse.json({ error: 'employeeId is required' }, { status: 400 })
+      return err('employeeId is required')
     }
 
     // Validate startingBankCents is non-negative if provided
     if (startingBankCents != null && startingBankCents < 0) {
-      return NextResponse.json({ error: 'startingBankCents must be >= 0' }, { status: 400 })
+      return err('startingBankCents must be >= 0')
     }
 
     // Get delivery settings for startingBank defaults
@@ -179,7 +180,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Check for error from transaction
     if ('error' in result) {
-      return NextResponse.json({ error: result.error }, { status: result.status })
+      return err(result.error, result.status)
     }
 
     pushUpstream()
@@ -196,9 +197,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
     }).catch(err => log.warn({ err }, 'Background task failed'))
 
-    return NextResponse.json({ session: result.session }, { status: 201 })
+    return created({ session: result.session })
   } catch (error) {
     console.error('[Delivery/Sessions] POST error:', error)
-    return NextResponse.json({ error: 'Failed to start session' }, { status: 500 })
+    return err('Failed to start session', 500)
   }
 })

@@ -7,6 +7,7 @@ import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { dispatchReservationChanged } from '@/lib/socket-dispatch'
 import { createChildLogger } from '@/lib/logger'
+import { err, forbidden, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('reservation-deposit')
 
 // GET - Get deposit status for a reservation
@@ -18,7 +19,7 @@ export const GET = withVenue(async function GET(
     const { id } = await params
     const callerLocationId = await getLocationId()
     if (!callerLocationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const reservation = await db.$queryRawUnsafe<Array<{
@@ -39,7 +40,7 @@ export const GET = withVenue(async function GET(
     )
 
     if (!reservation.length) {
-      return NextResponse.json({ error: 'Reservation not found' }, { status: 404 })
+      return notFound('Reservation not found')
     }
 
     const res = reservation[0]
@@ -93,8 +94,7 @@ export const GET = withVenue(async function GET(
       ? Math.max(0, paidAmount - nonRefundableAmount)
       : 0 // Outside refund window — nothing refundable
 
-    return NextResponse.json({
-      data: {
+    return ok({
         reservationId: id,
         depositRequired: res.depositRequired,
         depositAmount: Number(res.depositAmount),
@@ -118,11 +118,10 @@ export const GET = withVenue(async function GET(
           refundReason: d.refundReason,
           createdAt: d.createdAt,
         })),
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to get deposit status:', error)
-    return NextResponse.json({ error: 'Failed to get deposit status' }, { status: 500 })
+    return err('Failed to get deposit status', 500)
   }
 })
 
@@ -135,12 +134,12 @@ export const POST = withVenue(async function POST(
     const { id } = await params
     const callerLocationId = await getLocationId()
     if (!callerLocationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, callerLocationId, 'tables.reservations')
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error || 'Permission denied' }, { status: 403 })
+      return forbidden(auth.error || 'Permission denied')
     }
 
     const body = await request.json()
@@ -148,7 +147,7 @@ export const POST = withVenue(async function POST(
     const employeeId = actor.employeeId
 
     if (!amount || amount <= 0) {
-      return NextResponse.json({ error: 'Amount must be positive' }, { status: 400 })
+      return err('Amount must be positive')
     }
 
     // Idempotency guard — prevent double-deposit from rapid clicks
@@ -172,7 +171,7 @@ export const POST = withVenue(async function POST(
     }
 
     if (!paymentMethod || !['cash', 'card'].includes(paymentMethod)) {
-      return NextResponse.json({ error: 'Payment method must be "cash" or "card"' }, { status: 400 })
+      return err('Payment method must be "cash" or "card"')
     }
 
     // Validate reservation exists and is not cancelled
@@ -188,12 +187,12 @@ export const POST = withVenue(async function POST(
     )
 
     if (!reservation.length) {
-      return NextResponse.json({ error: 'Reservation not found' }, { status: 404 })
+      return notFound('Reservation not found')
     }
 
     const res = reservation[0]
     if (res.status === 'cancelled') {
-      return NextResponse.json({ error: 'Cannot deposit on a cancelled reservation' }, { status: 400 })
+      return err('Cannot deposit on a cancelled reservation')
     }
 
     // Check existing deposits
@@ -207,7 +206,7 @@ export const POST = withVenue(async function POST(
     const depositTarget = Number(res.depositAmount)
 
     if (depositTarget > 0 && currentPaid >= depositTarget) {
-      return NextResponse.json({ error: 'Deposit already fully paid' }, { status: 400 })
+      return err('Deposit already fully paid')
     }
 
     // Create deposit record (use crypto UUID instead of predictable ID)
@@ -264,8 +263,7 @@ export const POST = withVenue(async function POST(
       action: 'deposit_updated',
     }).catch(err => log.warn({ err }, 'Background task failed'))
 
-    return NextResponse.json({
-      data: {
+    return ok({
         depositId,
         reservationId: id,
         amount,
@@ -274,11 +272,10 @@ export const POST = withVenue(async function POST(
         newTotal: Math.round(newTotal * 100) / 100,
         fullyPaid,
         autoConfirmed: fullyPaid && res.status === 'pending',
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to record deposit:', error)
-    return NextResponse.json({ error: 'Failed to record deposit' }, { status: 500 })
+    return err('Failed to record deposit', 500)
   }
 })
 
@@ -291,12 +288,12 @@ export const DELETE = withVenue(async function DELETE(
     const { id } = await params
     const callerLocationId = await getLocationId()
     if (!callerLocationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, callerLocationId, 'tables.reservations')
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error || 'Permission denied' }, { status: 403 })
+      return forbidden(auth.error || 'Permission denied')
     }
 
     const { searchParams } = new URL(request.url)
@@ -316,7 +313,7 @@ export const DELETE = withVenue(async function DELETE(
     )
 
     if (!reservation.length) {
-      return NextResponse.json({ error: 'Reservation not found' }, { status: 404 })
+      return notFound('Reservation not found')
     }
 
     const res = reservation[0]
@@ -347,7 +344,7 @@ export const DELETE = withVenue(async function DELETE(
         depositId, id
       )
       if (!depositsToRefund.length) {
-        return NextResponse.json({ error: 'Deposit not found' }, { status: 404 })
+        return notFound('Deposit not found')
       }
     } else {
       depositsToRefund = await db.$queryRawUnsafe<Array<{ id: string; amount: string; refundedAmount: string }>>(
@@ -358,7 +355,7 @@ export const DELETE = withVenue(async function DELETE(
     }
 
     if (!depositsToRefund.length) {
-      return NextResponse.json({ error: 'No refundable deposits found' }, { status: 400 })
+      return err('No refundable deposits found')
     }
 
     let totalRefunded = 0
@@ -398,11 +395,9 @@ export const DELETE = withVenue(async function DELETE(
     }
 
     if (totalRefunded === 0) {
-      return NextResponse.json({
-        error: hoursUntilReservation < refundableBeforeHours
+      return err(hoursUntilReservation < refundableBeforeHours
           ? `Refund window has closed. Deposits are non-refundable within ${refundableBeforeHours} hours of reservation.`
-          : 'No refundable amount available',
-      }, { status: 400 })
+          : 'No refundable amount available')
     }
 
     // Notify host terminals of deposit refund in real-time
@@ -411,16 +406,14 @@ export const DELETE = withVenue(async function DELETE(
       action: 'deposit_updated',
     }).catch(err => log.warn({ err }, 'Background task failed'))
 
-    return NextResponse.json({
-      data: {
+    return ok({
         reservationId: id,
         totalRefunded: Math.round(totalRefunded * 100) / 100,
         reason,
         withinRefundWindow: hoursUntilReservation >= refundableBeforeHours,
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to refund deposit:', error)
-    return NextResponse.json({ error: 'Failed to refund deposit' }, { status: 500 })
+    return err('Failed to refund deposit', 500)
   }
 })

@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { HouseAccountStatus } from '@/generated/prisma/client'
 import { withVenue } from '@/lib/with-venue'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { getHouseAccountsWithCharges, getLastHouseAccountPayments } from '@/lib/query-services'
+import { err, ok } from '@/lib/api-response'
 
 // GET - House Accounts Aging Report (P1-03)
 // Returns all accounts with balances grouped by how long they have been outstanding.
@@ -15,14 +16,14 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const includeZeroBalance = searchParams.get('includeZeroBalance') === 'true'
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+      return err('Location ID is required')
     }
 
     // Auth check — require reports.view permission
     const actor = await getActorFromRequest(request)
     const employeeId = actor.employeeId ?? searchParams.get('employeeId')
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.REPORTS_VIEW)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const today = new Date()
 
@@ -148,17 +149,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       overdueCount,
     }
 
-    return NextResponse.json({
-      data: {
+    return ok({
         accounts: accountRows,
         summary,
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to generate house accounts aging report:', error)
-    return NextResponse.json(
-      { error: 'Failed to generate house accounts aging report' },
-      { status: 500 }
-    )
+    return err('Failed to generate house accounts aging report', 500)
   }
 })

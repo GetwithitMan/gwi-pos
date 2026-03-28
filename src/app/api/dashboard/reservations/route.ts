@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db as prisma } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { Prisma } from '@/generated/prisma/client'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, ok } from '@/lib/api-response'
 
 /**
  * GET /api/dashboard/reservations
@@ -15,7 +16,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
     const locationId = searchParams.get('locationId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID required' }, { status: 400 })
+      return err('Location ID required')
     }
 
     const now = new Date()
@@ -133,14 +134,12 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
       checkedIn: r.checkedInAt !== null,
     }))
 
-    return NextResponse.json({
-      data: {
+    return ok({
         upcoming,
         todayStats,
-      },
-    })
+      })
   } catch (error) {
     console.error('Dashboard reservations error:', error)
-    return NextResponse.json({ error: 'Failed to load reservation dashboard data' }, { status: 500 })
+    return err('Failed to load reservation dashboard data', 500)
   }
 }))

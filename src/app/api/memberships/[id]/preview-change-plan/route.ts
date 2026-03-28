@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
 import { calculateProration } from '@/lib/membership/proration'
+import { err, notFound, ok } from '@/lib/api-response'
 
 export const POST = withVenue(async function POST(
   request: NextRequest,
@@ -14,11 +15,11 @@ export const POST = withVenue(async function POST(
     const { locationId, requestingEmployeeId, newPlanId } = body
 
     if (!locationId || !newPlanId) {
-      return NextResponse.json({ error: 'locationId and newPlanId required' }, { status: 400 })
+      return err('locationId and newPlanId required')
     }
 
     const auth = await requirePermission(requestingEmployeeId, locationId, 'admin.manage_memberships')
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const mbrs: any[] = await db.$queryRawUnsafe(`
       SELECT "priceAtSignup", "currentPeriodStart", "currentPeriodEnd"
@@ -26,20 +27,20 @@ export const POST = withVenue(async function POST(
       WHERE "id" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
       LIMIT 1
     `, id, locationId)
-    if (mbrs.length === 0) return NextResponse.json({ error: 'Membership not found' }, { status: 404 })
+    if (mbrs.length === 0) return notFound('Membership not found')
 
     const plans: any[] = await db.$queryRawUnsafe(`
       SELECT "price", "name" FROM "MembershipPlan"
       WHERE "id" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
       LIMIT 1
     `, newPlanId, locationId)
-    if (plans.length === 0) return NextResponse.json({ error: 'Plan not found' }, { status: 404 })
+    if (plans.length === 0) return notFound('Plan not found')
 
     const mbr = mbrs[0]
     const plan = plans[0]
 
     if (!mbr.currentPeriodStart || !mbr.currentPeriodEnd) {
-      return NextResponse.json({ data: { creditAmount: 0, chargeAmount: 0, netAmount: 0, newPlanName: plan.name } })
+      return ok({ creditAmount: 0, chargeAmount: 0, netAmount: 0, newPlanName: plan.name })
     }
 
     const proration = calculateProration({
@@ -50,11 +51,9 @@ export const POST = withVenue(async function POST(
       effectiveDate: new Date(),
     })
 
-    return NextResponse.json({
-      data: { ...proration, newPlanName: plan.name, newPrice: parseFloat(plan.price) },
-    })
+    return ok({ ...proration, newPlanName: plan.name, newPrice: parseFloat(plan.price) })
   } catch (err) {
     console.error('[memberships/preview-change-plan] error:', err)
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
+    return err('Internal error', 500)
   }
 })

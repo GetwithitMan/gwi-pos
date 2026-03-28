@@ -12,6 +12,7 @@ import { getMaxOrdersPerDriver } from '@/lib/delivery/dispatch-policy'
 import { dispatchDeliveryStatusChanged, dispatchDriverAssigned } from '@/lib/delivery/dispatch-events'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('delivery')
 
 export const dynamic = 'force-dynamic'
@@ -27,7 +28,7 @@ export const GET = withVenue(async function GET(
     const { id } = await params
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Feature gate
@@ -37,7 +38,7 @@ export const GET = withVenue(async function GET(
     // Auth check
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.POS_ACCESS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const rows: any[] = await db.$queryRawUnsafe(`
       SELECT d.*,
@@ -52,7 +53,7 @@ export const GET = withVenue(async function GET(
     `, id, locationId)
 
     if (!rows.length) {
-      return NextResponse.json({ error: 'Delivery order not found' }, { status: 404 })
+      return notFound('Delivery order not found')
     }
 
     const row = rows[0]
@@ -69,18 +70,16 @@ export const GET = withVenue(async function GET(
       `, row.orderId)
     }
 
-    return NextResponse.json({
-      data: {
+    return ok({
         ...row,
         deliveryFee: Number(row.deliveryFee),
         driverName: row.driverFirstName ? `${row.driverFirstName} ${row.driverLastName}`.trim() : null,
         creatorName: row.creatorFirstName ? `${row.creatorFirstName} ${row.creatorLastName}`.trim() : null,
         items,
-      },
-    })
+      })
   } catch (error) {
     console.error('[Delivery/Detail] GET error:', error)
-    return NextResponse.json({ error: 'Failed to fetch delivery order' }, { status: 500 })
+    return err('Failed to fetch delivery order', 500)
   }
 })
 
@@ -101,7 +100,7 @@ export const PUT = withVenue(async function PUT(
     const { id } = await params
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Feature gate
@@ -111,7 +110,7 @@ export const PUT = withVenue(async function PUT(
     // Auth check
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.POS_ACCESS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const body = await request.json()
     const { status, driverId, estimatedMinutes, notes, cancelReason } = body
@@ -127,7 +126,7 @@ export const PUT = withVenue(async function PUT(
       })
 
       if (!result.success) {
-        return NextResponse.json({ error: result.error }, { status: 400 })
+        return err(result.error)
       }
 
       let delivery = result.deliveryOrder
@@ -206,7 +205,7 @@ export const PUT = withVenue(async function PUT(
     `, id, locationId)
 
     if (!existing.length) {
-      return NextResponse.json({ error: 'Delivery order not found' }, { status: 404 })
+      return notFound('Delivery order not found')
     }
 
     const current = existing[0]
@@ -232,7 +231,7 @@ export const PUT = withVenue(async function PUT(
         locationId,
       )
       if (!driverRows.length) {
-        return NextResponse.json({ error: 'Driver not found' }, { status: 404 })
+        return notFound('Driver not found')
       }
 
       const activeCount: any[] = await db.$queryRawUnsafe(
@@ -246,10 +245,7 @@ export const PUT = withVenue(async function PUT(
       )
       const currentDriverOrders = activeCount[0]?.count ?? 0
       if (currentDriverOrders >= maxPerDriver) {
-        return NextResponse.json(
-          { error: `Driver at capacity (${currentDriverOrders}/${maxPerDriver} active orders)` },
-          { status: 409 }
-        )
+        return err(`Driver at capacity (${currentDriverOrders}/${maxPerDriver} active orders)`, 409)
       }
     }
 
@@ -284,7 +280,7 @@ export const PUT = withVenue(async function PUT(
     }
 
     if (updateParams.length === 0) {
-      return NextResponse.json({ error: 'No fields to update' }, { status: 400 })
+      return err('No fields to update')
     }
 
     // Add id and locationId params at the end
@@ -300,7 +296,7 @@ export const PUT = withVenue(async function PUT(
     `, ...updateParams)
 
     if (!updated.length) {
-      return NextResponse.json({ error: 'Failed to update delivery order' }, { status: 500 })
+      return err('Failed to update delivery order', 500)
     }
 
     const delivery = updated[0]
@@ -344,6 +340,6 @@ export const PUT = withVenue(async function PUT(
     })
   } catch (error) {
     console.error('[Delivery/Detail] PUT error:', error)
-    return NextResponse.json({ error: 'Failed to update delivery order' }, { status: 500 })
+    return err('Failed to update delivery order', 500)
   }
 })

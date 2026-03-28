@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { withVenue } from '@/lib/with-venue'
+import { err, ok } from '@/lib/api-response'
 
 // GET - List available serial ports on the system
 export const GET = withVenue(async function GET() {
@@ -11,13 +12,12 @@ export const GET = withVenue(async function GET() {
       SerialPort = await import('serialport').then((m) => m.SerialPort)
     } catch {
       // serialport not installed or not available in this environment
-      return NextResponse.json({ data: { ports: [], note: 'Serial port detection not available in this environment' } })
+      return ok({ ports: [], note: 'Serial port detection not available in this environment' })
     }
 
     const ports = await SerialPort.list()
 
-    return NextResponse.json({
-      data: {
+    return ok({
         ports: ports.map((p) => ({
           path: p.path,
           manufacturer: p.manufacturer || null,
@@ -26,10 +26,9 @@ export const GET = withVenue(async function GET() {
           vendorId: p.vendorId || null,
           productId: p.productId || null,
         })),
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to list serial ports:', error)
-    return NextResponse.json({ error: 'Failed to list serial ports' }, { status: 500 })
+    return err('Failed to list serial ports', 500)
   }
 })

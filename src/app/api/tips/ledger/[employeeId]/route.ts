@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { getLedgerBalance, getLedgerEntries, centsToDollars } from '@/lib/domain/tips'
 import type { LedgerSourceType, LedgerEntriesFilter } from '@/lib/domain/tips'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, ok } from '@/lib/api-response'
 
 const VALID_SOURCE_TYPES: LedgerSourceType[] = [
   'DIRECT_TIP',
@@ -35,10 +36,7 @@ export const GET = withVenue(withAuth({ allowCellular: true }, async function GE
     const offsetParam = searchParams.get('offset')
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'Location ID is required' },
-        { status: 400 }
-      )
+      return err('Location ID is required')
     }
 
     // Self-access: employees can always view their own ledger
@@ -46,16 +44,13 @@ export const GET = withVenue(withAuth({ allowCellular: true }, async function GE
     if (!isSelfAccess) {
       const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.TIPS_VIEW_LEDGER)
       if (!auth.authorized) {
-        return NextResponse.json({ error: auth.error }, { status: auth.status })
+        return err(auth.error, auth.status)
       }
     }
 
     // Validate sourceType if provided
     if (sourceType && !VALID_SOURCE_TYPES.includes(sourceType as LedgerSourceType)) {
-      return NextResponse.json(
-        { error: `Invalid sourceType. Must be one of: ${VALID_SOURCE_TYPES.join(', ')}` },
-        { status: 400 }
-      )
+      return err(`Invalid sourceType. Must be one of: ${VALID_SOURCE_TYPES.join(', ')}`)
     }
 
     const limit = limitParam ? Math.max(1, Math.min(500, parseInt(limitParam, 10) || 50)) : 50
@@ -83,7 +78,7 @@ export const GET = withVenue(withAuth({ allowCellular: true }, async function GE
     const balance = await getLedgerBalance(targetEmployeeId)
     const { entries, total } = await getLedgerEntries(targetEmployeeId, filters)
 
-    return NextResponse.json({
+    return ok({
       balance: balance
         ? {
             currentBalanceCents: balance.currentBalanceCents,
@@ -121,9 +116,6 @@ export const GET = withVenue(withAuth({ allowCellular: true }, async function GE
     })
   } catch (error) {
     console.error('Failed to get tip ledger statement:', error)
-    return NextResponse.json(
-      { error: 'Failed to get tip ledger statement' },
-      { status: 500 }
-    )
+    return err('Failed to get tip ledger statement', 500)
   }
 }))

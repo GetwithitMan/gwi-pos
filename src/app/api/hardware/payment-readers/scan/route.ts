@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { exec } from 'child_process'
 import { promisify } from 'util'
 import { db } from '@/lib/db'
 import { discoverAllDevices } from '@/lib/datacap/discovery'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, ok } from '@/lib/api-response'
 
 const execAsync = promisify(exec)
 
@@ -103,7 +104,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
   const { searchParams } = new URL(request.url)
   const locationId = searchParams.get('locationId')
   if (!locationId) {
-    return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+    return err('locationId is required')
   }
 
   const rawTimeout = parseInt(searchParams.get('networkTimeoutMs') || '4000', 10)
@@ -138,12 +139,10 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
     readerId: registeredBySerial.get(d.serialNumber)?.id ?? null,
   }))
 
-  return NextResponse.json({
-    data: {
+  return ok({
       usb,
       network,
       total: usb.length + network.length,
       scannedAt: new Date().toISOString(),
-    },
-  })
+    })
 }))

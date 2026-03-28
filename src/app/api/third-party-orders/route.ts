@@ -7,11 +7,12 @@
  * Includes linked POS order info if accepted.
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { err, ok } from '@/lib/api-response'
 
 interface ThirdPartyOrderRow {
   id: string
@@ -55,13 +56,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const offset = Number(searchParams.get('offset') || 0)
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+      return err('Location ID is required')
     }
 
     // Permission check — reuse reports.view since this is an operational view
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.REPORTS_VIEW)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Build query with filters
@@ -140,7 +141,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       updatedAt: row.updatedAt.toISOString(),
     }))
 
-    return NextResponse.json({
+    return ok({
       data,
       pagination: {
         total: totalCount,
@@ -151,6 +152,6 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     })
   } catch (error) {
     console.error('[GET /api/third-party-orders] Error:', error)
-    return NextResponse.json({ error: 'Failed to fetch third-party orders' }, { status: 500 })
+    return err('Failed to fetch third-party orders', 500)
   }
 })

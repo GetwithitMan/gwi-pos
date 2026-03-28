@@ -8,7 +8,7 @@
  * Trend data by day.
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -16,6 +16,7 @@ import { withVenue } from '@/lib/with-venue'
 import { getBusinessDayRange } from '@/lib/business-day'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings, getLocationTimezone } from '@/lib/location-cache'
+import { err, ok } from '@/lib/api-response'
 
 function toNum(val: unknown): number {
   if (typeof val === 'object' && val && 'toNumber' in val) {
@@ -45,15 +46,15 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const endDate = searchParams.get('endDate')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+      return err('Location ID is required')
     }
     if (!startDate) {
-      return NextResponse.json({ error: 'startDate is required' }, { status: 400 })
+      return err('startDate is required')
     }
 
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.REPORTS_SALES)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     const locationSettings = parseSettings(await getLocationSettings(locationId))
@@ -189,8 +190,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     const dailyTrend = Array.from(dailyMap.values()).sort((a, b) => a.date.localeCompare(b.date))
 
-    return NextResponse.json({
-      data: {
+    return ok({
         summary: {
           totalOrders,
           totalCancelled,
@@ -211,10 +211,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           start: startRange.start.toISOString(),
           end: endRange.end.toISOString(),
         },
-      },
-    })
+      })
   } catch (error) {
     console.error('[GET /api/reports/third-party-delivery] Error:', error)
-    return NextResponse.json({ error: 'Failed to generate delivery report' }, { status: 500 })
+    return err('Failed to generate delivery report', 500)
   }
 })

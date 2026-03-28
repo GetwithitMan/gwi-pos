@@ -5,10 +5,11 @@
  * PUT /api/monitoring/errors/[id] - Update error (resolve, add notes, etc.)
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, notFound, ok } from '@/lib/api-response'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -45,13 +46,10 @@ export const GET = withVenue(withAuth(async function GET(
     })
 
     if (!error) {
-      return NextResponse.json(
-        { error: 'Error log not found' },
-        { status: 404 }
-      )
+      return notFound('Error log not found')
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       error: {
         ...error,
@@ -60,15 +58,12 @@ export const GET = withVenue(withAuth(async function GET(
           name: error.employee.displayName || `${error.employee.firstName} ${error.employee.lastName}`,
         } : null,
       },
-    } })
+    })
 
   } catch (error) {
     console.error('[Monitoring API] Failed to fetch error details:', error)
 
-    return NextResponse.json(
-      { error: 'Failed to fetch error details' },
-      { status: 500 }
-    )
+    return err('Failed to fetch error details', 500)
   }
 }))
 
@@ -88,10 +83,7 @@ export const PUT = withVenue(withAuth(async function PUT(
     if (body.status) {
       const validStatuses = ['NEW', 'INVESTIGATING', 'RESOLVED', 'IGNORED']
       if (!validStatuses.includes(body.status)) {
-        return NextResponse.json(
-          { error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` },
-          { status: 400 }
-        )
+        return err(`Invalid status. Must be one of: ${validStatuses.join(', ')}`)
       }
     }
 
@@ -133,7 +125,7 @@ export const PUT = withVenue(withAuth(async function PUT(
       },
     })
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       error: {
         ...updatedError,
@@ -142,15 +134,12 @@ export const PUT = withVenue(withAuth(async function PUT(
           name: updatedError.employee.displayName || `${updatedError.employee.firstName} ${updatedError.employee.lastName}`,
         } : null,
       },
-    } })
+    })
 
   } catch (error) {
     console.error('[Monitoring API] Failed to update error:', error)
 
-    return NextResponse.json(
-      { error: 'Failed to update error' },
-      { status: 500 }
-    )
+    return err('Failed to update error', 500)
   }
 }))
 
@@ -171,17 +160,14 @@ export const DELETE = withVenue(withAuth(async function DELETE(
       data: { deletedAt: new Date() },
     })
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       message: 'Error log deleted',
-    } })
+    })
 
   } catch (error) {
     console.error('[Monitoring API] Failed to delete error:', error)
 
-    return NextResponse.json(
-      { error: 'Failed to delete error' },
-      { status: 500 }
-    )
+    return err('Failed to delete error', 500)
   }
 }))

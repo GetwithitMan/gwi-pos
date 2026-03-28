@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { OrderStatus, TabStatus } from '@/generated/prisma/client'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
@@ -16,6 +16,7 @@ import { emitOrderEvents } from '@/lib/order-events/emitter'
 import { OrderRepository } from '@/lib/repositories'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-pat-complete')
 
 // POST /api/orders/[id]/pat-complete
@@ -42,16 +43,10 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
 
     // Validate required fields
     if (!employeeId) {
-      return NextResponse.json(
-        { error: 'Missing required field: employeeId' },
-        { status: 400 }
-      )
+      return err('Missing required field: employeeId')
     }
     if (totalPaid === undefined || totalPaid === null) {
-      return NextResponse.json(
-        { error: 'Missing required field: totalPaid' },
-        { status: 400 }
-      )
+      return err('Missing required field: totalPaid')
     }
 
     // Fetch the order -- use getLocationId() to bootstrap locationId, then use repository
@@ -69,14 +64,14 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     })
 
     if (!order) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      return notFound('Order not found')
     }
 
     const locationId = order.locationId
 
     // Idempotent: if order already paid, return success silently
     if (order.status === 'paid') {
-      return NextResponse.json({ data: { success: true } })
+      return ok({ success: true })
     }
 
     // Calculate totals from splits if provided, otherwise use body values
@@ -230,12 +225,9 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
 
     pushUpstream()
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('[pat-complete] Failed to complete pay-at-table payment:', error)
-    return NextResponse.json(
-      { error: 'Failed to complete pay-at-table payment' },
-      { status: 500 }
-    )
+    return err('Failed to complete pay-at-table payment', 500)
   }
 }))

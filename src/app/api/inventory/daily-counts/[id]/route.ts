@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -45,11 +46,10 @@ export const GET = withVenue(async function GET(request: NextRequest, { params }
     })
 
     if (!count || count.deletedAt) {
-      return NextResponse.json({ error: 'Daily count not found' }, { status: 404 })
+      return notFound('Daily count not found')
     }
 
-    return NextResponse.json({
-      data: {
+    return ok({
         ...count,
         countItems: count.countItems.map(item => ({
           ...item,
@@ -81,11 +81,10 @@ export const GET = withVenue(async function GET(request: NextRequest, { params }
           unitCost: t.unitCost ? Number(t.unitCost) : null,
           totalCost: t.totalCost ? Number(t.totalCost) : null,
         })),
-      },
-    })
+      })
   } catch (error) {
     console.error('Get daily count error:', error)
-    return NextResponse.json({ error: 'Failed to fetch daily count' }, { status: 500 })
+    return err('Failed to fetch daily count', 500)
   }
 })
 
@@ -98,11 +97,11 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
 
     const existing = await db.dailyPrepCount.findUnique({ where: { id } })
     if (!existing || existing.deletedAt) {
-      return NextResponse.json({ error: 'Daily count not found' }, { status: 404 })
+      return notFound('Daily count not found')
     }
 
     if (existing.status !== 'draft') {
-      return NextResponse.json({ error: 'Can only update draft counts' }, { status: 400 })
+      return err('Can only update draft counts')
     }
 
     // Update notes if provided
@@ -189,8 +188,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
     void notifyDataChanged({ locationId: existing.locationId, domain: 'inventory', action: 'updated', entityId: id })
     pushUpstream()
 
-    return NextResponse.json({
-      data: {
+    return ok({
         ...updatedCount,
         countItems: updatedCount?.countItems.map(item => ({
           ...item,
@@ -199,11 +197,10 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
           variance: item.variance ? Number(item.variance) : null,
           variancePercent: item.variancePercent ? Number(item.variancePercent) : null,
         })),
-      },
-    })
+      })
   } catch (error) {
     console.error('Update daily count error:', error)
-    return NextResponse.json({ error: 'Failed to update daily count' }, { status: 500 })
+    return err('Failed to update daily count', 500)
   }
 }))
 
@@ -214,11 +211,11 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(request:
 
     const existing = await db.dailyPrepCount.findUnique({ where: { id } })
     if (!existing || existing.deletedAt) {
-      return NextResponse.json({ error: 'Daily count not found' }, { status: 404 })
+      return notFound('Daily count not found')
     }
 
     if (existing.status === 'approved') {
-      return NextResponse.json({ error: 'Cannot delete approved counts' }, { status: 400 })
+      return err('Cannot delete approved counts')
     }
 
     await db.dailyPrepCount.update({
@@ -229,9 +226,9 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(request:
     void notifyDataChanged({ locationId: existing.locationId, domain: 'inventory', action: 'deleted', entityId: id })
     pushUpstream()
 
-    return NextResponse.json({ data: { message: 'Daily count deleted' } })
+    return ok({ message: 'Daily count deleted' })
   } catch (error) {
     console.error('Delete daily count error:', error)
-    return NextResponse.json({ error: 'Failed to delete daily count' }, { status: 500 })
+    return err('Failed to delete daily count', 500)
   }
 }))

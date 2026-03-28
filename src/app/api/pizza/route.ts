@@ -1,15 +1,15 @@
-import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, ok } from '@/lib/api-response'
 
 // GET /api/pizza - Get all pizza builder data at once (for PizzaBuilderModal)
 export const GET = withVenue(async function GET() {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Fetch all pizza data in parallel
@@ -93,7 +93,7 @@ export const GET = withVenue(async function GET() {
       toppingsByCategory[cat].push(topping)
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       config: {
         ...config,
         sectionOptions: config.sectionOptions as number[],
@@ -170,9 +170,9 @@ export const GET = withVenue(async function GET() {
       toppingCategories: ['meat', 'veggie', 'cheese', 'premium', 'specialty', 'seafood', 'standard'].filter(
         cat => toppingsByCategory[cat]?.length > 0
       ),
-    } })
+    })
   } catch (error) {
     console.error('Failed to get pizza data:', error)
-    return NextResponse.json({ error: 'Failed to get pizza data' }, { status: 500 })
+    return err('Failed to get pizza data', 500)
   }
 })

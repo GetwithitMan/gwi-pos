@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
@@ -9,6 +9,7 @@ import { dispatchExceptionEvent } from '@/lib/delivery/dispatch-events'
 import { writeDeliveryAuditLog } from '@/lib/delivery/state-machine'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('delivery-exceptions')
 
 export const dynamic = 'force-dynamic'
@@ -38,7 +39,7 @@ export const PUT = withVenue(async function PUT(
     const { id } = await params
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Feature gate
@@ -48,17 +49,14 @@ export const PUT = withVenue(async function PUT(
     // Auth check
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.DELIVERY_EXCEPTIONS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const body = await request.json()
     const { status, resolution, resolvedBy } = body
 
     // Validate status
     if (!status || !['acknowledged', 'resolved'].includes(status)) {
-      return NextResponse.json(
-        { error: 'Status must be "acknowledged" or "resolved"' },
-        { status: 400 }
-      )
+      return err('Status must be "acknowledged" or "resolved"')
     }
 
     // Fetch existing exception
@@ -68,7 +66,7 @@ export const PUT = withVenue(async function PUT(
     )
 
     if (!existing.length) {
-      return NextResponse.json({ error: 'Exception not found' }, { status: 404 })
+      return notFound('Exception not found')
     }
 
     const current = existing[0]
@@ -76,10 +74,7 @@ export const PUT = withVenue(async function PUT(
     // Validate status transition
     const allowedNext = VALID_EXCEPTION_TRANSITIONS[current.status] || []
     if (!allowedNext.includes(status)) {
-      return NextResponse.json(
-        { error: `Cannot transition from '${current.status}' to '${status}'. Allowed: ${allowedNext.join(', ') || 'none (terminal)'}` },
-        { status: 400 }
-      )
+      return err(`Cannot transition from '${current.status}' to '${status}'. Allowed: ${allowedNext.join(', ') || 'none (terminal)'}`)
     }
 
     // Build update
@@ -128,7 +123,7 @@ export const PUT = withVenue(async function PUT(
     `, ...updateParams)
 
     if (!updated.length) {
-      return NextResponse.json({ error: 'Failed to update exception' }, { status: 500 })
+      return err('Failed to update exception', 500)
     }
 
     const exception = updated[0]
@@ -151,9 +146,9 @@ export const PUT = withVenue(async function PUT(
     // Fire socket event
     void dispatchExceptionEvent(locationId, 'delivery:exception_resolved', exception).catch(err => log.warn({ err }, 'Background task failed'))
 
-    return NextResponse.json({ exception })
+    return ok({ exception })
   } catch (error) {
     console.error('[Delivery/Exceptions] PUT error:', error)
-    return NextResponse.json({ error: 'Failed to update delivery exception' }, { status: 500 })
+    return err('Failed to update delivery exception', 500)
   }
 })

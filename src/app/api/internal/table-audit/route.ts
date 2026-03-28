@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { config } from '@/lib/system-config'
 import { withVenue } from '@/lib/with-venue'
 import { SYNC_MODELS, LOCAL_ONLY_TABLES, SYSTEM_TABLES } from '@/lib/sync/sync-config'
 import { readSchemaState } from '@/lib/venue-schema-state'
 import { EXPECTED_SCHEMA_VERSION, EXPECTED_SEED_VERSION, PROVISIONER_VERSION } from '@/lib/version-contract'
+import { err, ok, unauthorized } from '@/lib/api-response'
 
 /**
  * GET /api/internal/table-audit
@@ -21,7 +22,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   const apiKey = request.headers.get('x-api-key')
   const validKey = config.provisionApiKey || process.env.INTERNAL_API_KEY
   if (!apiKey || !validKey || apiKey !== validKey) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return unauthorized('Unauthorized')
   }
 
   try {
@@ -75,7 +76,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const schemaState = await readSchemaState(db)
 
     // ── 5. Build report ─────────────────────────────────────────────
-    return NextResponse.json({
+    return ok({
       generatedAt: new Date().toISOString(),
       summary: {
         totalDbTables: actualTableNames.length,
@@ -100,9 +101,6 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     })
   } catch (error) {
     console.error('[table-audit] Failed:', error)
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Table audit failed' },
-      { status: 500 }
-    )
+    return err(error instanceof Error ? error.message : 'Table audit failed', 500)
   }
 })

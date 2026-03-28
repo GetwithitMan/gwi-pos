@@ -11,6 +11,7 @@ import { mergeWithDefaults, DEFAULT_DELIVERY } from '@/lib/settings'
 import { getMaxOrdersPerDriver } from '@/lib/delivery/dispatch-policy'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound } from '@/lib/api-response'
 const log = createChildLogger('delivery-orders-assign')
 
 export const dynamic = 'force-dynamic'
@@ -36,7 +37,7 @@ export const PATCH = withVenue(async function PATCH(
     const { id } = await params
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Feature gate
@@ -46,13 +47,13 @@ export const PATCH = withVenue(async function PATCH(
     // Auth check — dispatch permission required for driver assignment
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.DELIVERY_DISPATCH)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const body = await request.json()
     const { driverId } = body
 
     if (!driverId || typeof driverId !== 'string') {
-      return NextResponse.json({ error: 'driverId is required' }, { status: 400 })
+      return err('driverId is required')
     }
 
     // Validate the delivery order exists
@@ -62,7 +63,7 @@ export const PATCH = withVenue(async function PATCH(
     )
 
     if (!orders.length) {
-      return NextResponse.json({ error: 'Delivery order not found' }, { status: 404 })
+      return notFound('Delivery order not found')
     }
 
     const order = orders[0]
@@ -78,13 +79,13 @@ export const PATCH = withVenue(async function PATCH(
     )
 
     if (!driverRows.length) {
-      return NextResponse.json({ error: 'Driver not found' }, { status: 404 })
+      return notFound('Driver not found')
     }
 
     const driver = driverRows[0]
 
     if (driver.isSuspended) {
-      return NextResponse.json({ error: 'Driver is suspended' }, { status: 409 })
+      return err('Driver is suspended', 409)
     }
 
     // Check driver capacity
@@ -109,10 +110,7 @@ export const PATCH = withVenue(async function PATCH(
     )
     const currentDriverOrders = activeCount[0]?.count ?? 0
     if (currentDriverOrders >= maxPerDriver) {
-      return NextResponse.json(
-        { error: `Driver at capacity (${currentDriverOrders}/${maxPerDriver} active orders)` },
-        { status: 409 },
-      )
+      return err(`Driver at capacity (${currentDriverOrders}/${maxPerDriver} active orders)`, 409)
     }
 
     // Set driverId on the delivery order
@@ -131,7 +129,7 @@ export const PATCH = withVenue(async function PATCH(
     })
 
     if (!result.success) {
-      return NextResponse.json({ error: result.error }, { status: 400 })
+      return err(result.error)
     }
 
     const deliveryOrder = result.deliveryOrder
@@ -169,6 +167,6 @@ export const PATCH = withVenue(async function PATCH(
     })
   } catch (error) {
     console.error('[Delivery/Orders/Assign] PATCH error:', error)
-    return NextResponse.json({ error: 'Failed to assign driver' }, { status: 500 })
+    return err('Failed to assign driver', 500)
   }
 })

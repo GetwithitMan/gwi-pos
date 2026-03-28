@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
+import { err, ok } from '@/lib/api-response'
 
 // GET discount usage report
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -17,15 +18,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const requestingEmployeeId = searchParams.get('requestingEmployeeId') || searchParams.get('employeeId') || employeeId
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'Location ID is required' },
-        { status: 400 }
-      )
+      return err('Location ID is required')
     }
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_SALES)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Build date filter on order with businessDayDate OR-fallback
@@ -482,7 +480,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }))
       .sort((a, b) => b.totalAmount - a.totalAmount)
 
-    return NextResponse.json({ data: {
+    return ok({
       summary: {
         totalDiscountCount,
         totalDiscountAmount: Math.round(totalDiscountAmount * 100) / 100,
@@ -525,12 +523,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         employeeId,
         discountRuleId,
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to generate discount report:', error)
-    return NextResponse.json(
-      { error: 'Failed to generate discount report' },
-      { status: 500 }
-    )
+    return err('Failed to generate discount report', 500)
   }
 })

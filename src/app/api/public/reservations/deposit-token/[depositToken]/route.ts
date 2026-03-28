@@ -5,6 +5,7 @@ import { getLocationId } from '@/lib/location-cache'
 import { validateDepositToken, markDepositTokenUsed } from '@/lib/reservations/deposit-rules'
 import { transition } from '@/lib/reservations/state-machine'
 import { createRateLimiter } from '@/lib/rate-limiter'
+import { err, ok } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -34,7 +35,7 @@ export const POST = withVenue(async function POST(
 
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'Location not found' }, { status: 400 })
+      return err('Location not found')
     }
 
     // Validate the deposit token
@@ -46,20 +47,17 @@ export const POST = withVenue(async function POST(
         used: 'This deposit has already been paid',
         reservation_cancelled: 'This reservation has been cancelled',
       }
-      return NextResponse.json(
-        { error: messages[tokenCheck.reason!] || 'Invalid token' },
-        { status: tokenCheck.reason === 'expired' ? 410 : 400 }
-      )
+      return err(messages[tokenCheck.reason!] || 'Invalid token', tokenCheck.reason === 'expired' ? 410 : 400)
     }
 
     const reservation = tokenCheck.reservation
     if (reservation.locationId !== locationId) {
-      return NextResponse.json({ error: 'Invalid token' }, { status: 400 })
+      return err('Invalid token')
     }
 
     const depositAmountCents = reservation.depositAmountCents ?? 0
     if (depositAmountCents <= 0) {
-      return NextResponse.json({ error: 'No deposit required' }, { status: 400 })
+      return err('No deposit required')
     }
 
     // TODO: Process payment via Datacap PayAPI
@@ -73,7 +71,7 @@ export const POST = withVenue(async function POST(
     }
 
     if (!paymentResult.success) {
-      return NextResponse.json({ error: 'Payment failed. Please try again.' }, { status: 402 })
+      return err('Payment failed. Please try again.', 402)
     }
 
     // Record deposit, mark token used, update reservation, transition — all in one tx
@@ -131,7 +129,7 @@ export const POST = withVenue(async function POST(
       }
     })
 
-    return NextResponse.json({
+    return ok({
       id: reservation.id,
       status: 'confirmed',
       depositPaid: true,
@@ -140,9 +138,9 @@ export const POST = withVenue(async function POST(
     })
   } catch (error: any) {
     if (error?.name === 'TransitionError') {
-      return NextResponse.json({ error: error.message }, { status: 400 })
+      return err(error.message)
     }
     console.error('[Public Deposit Token] Error:', error)
-    return NextResponse.json({ error: 'Failed to process deposit' }, { status: 500 })
+    return err('Failed to process deposit', 500)
   }
 })

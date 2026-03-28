@@ -8,6 +8,7 @@ import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok } from '@/lib/api-response'
 
 const log = createChildLogger('ingredients')
 
@@ -26,12 +27,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const deletedOnly = searchParams.get('deletedOnly') === 'true' // Only get soft-deleted ingredients
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // Auth check — require menu.view permission
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.MENU_VIEW)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Build visibility filter
     const visibilityFilter = visibility === 'all'
@@ -311,19 +312,17 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         grouped[catId].ingredients.push(ing)
       }
 
-      return NextResponse.json({
-        data: Object.values(grouped).sort((a, b) => {
+      return ok(Object.values(grouped).sort((a, b) => {
           if (!a.category) return 1
           if (!b.category) return -1
           return 0
-        }),
-      })
+        }))
     }
 
-    return NextResponse.json({ data: formattedIngredients })
+    return ok(formattedIngredients)
   } catch (error) {
     console.error('Error fetching ingredients:', error)
-    return NextResponse.json({ error: 'Failed to fetch ingredients' }, { status: 500 })
+    return err('Failed to fetch ingredients', 500)
   }
 })
 
@@ -377,13 +376,10 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
 
     // Auth check — require menu.edit_items permission
     const authCheck = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.MENU_EDIT_ITEMS)
-    if (!authCheck.authorized) return NextResponse.json({ error: authCheck.error }, { status: authCheck.status })
+    if (!authCheck.authorized) return err(authCheck.error, authCheck.status)
 
     if (!locationId || !name) {
-      return NextResponse.json(
-        { error: 'locationId and name are required' },
-        { status: 400 }
-      )
+      return err('locationId and name are required')
     }
 
     // Check for duplicate name — but allow a prep item to share a name with its parent inventory item
@@ -419,10 +415,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     if (categoryId) {
       const category = await db.ingredientCategory.findUnique({ where: { id: categoryId } })
       if (!category || category.deletedAt) {
-        return NextResponse.json(
-          { error: 'Invalid category' },
-          { status: 400 }
-        )
+        return err('Invalid category')
       }
     }
 
@@ -431,10 +424,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     if (parentIngredientId) {
       parentIngredient = await db.ingredient.findUnique({ where: { id: parentIngredientId } })
       if (!parentIngredient || parentIngredient.deletedAt) {
-        return NextResponse.json(
-          { error: 'Invalid parent ingredient' },
-          { status: 400 }
-        )
+        return err('Invalid parent ingredient')
       }
     }
 
@@ -531,8 +521,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       },
     }).catch(err => log.warn({ err }, 'fire-and-forget failed in ingredients'))
 
-    return NextResponse.json({
-      data: {
+    return ok({
         ...ingredient,
         standardQuantity: ingredient.standardQuantity ? Number(ingredient.standardQuantity) : null,
         purchaseCost: ingredient.purchaseCost ? Number(ingredient.purchaseCost) : null,
@@ -543,8 +532,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
         swapUpcharge: Number(ingredient.swapUpcharge),
         yieldPercent: ingredient.yieldPercent ? Number(ingredient.yieldPercent) : null,
         needsVerification: ingredient.needsVerification,
-      },
-    })
+      })
   } catch (error) {
     console.error('Error creating ingredient:', error)
     const message = error instanceof Error ? error.message : 'Unknown error'

@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { dispatchOrderClaimed, dispatchOrderReleased } from '@/lib/socket-dispatch'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-claim')
 
 /** Claim expiry window in seconds — stale claims are treated as unclaimed */
@@ -21,7 +22,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     const { employeeId, terminalId } = body
 
     if (!employeeId) {
-      return NextResponse.json({ error: 'Missing required field: employeeId' }, { status: 400 })
+      return err('Missing required field: employeeId')
     }
 
     const now = new Date()
@@ -106,7 +107,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       if ('claimedBy' in result) {
         response.claimedBy = result.claimedBy
       }
-      return NextResponse.json(response, { status: result.status })
+      return ok(response)
     }
 
     // Look up employee name for socket event
@@ -129,10 +130,10 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
 
     pushUpstream()
 
-    return NextResponse.json({ claimed: true })
+    return ok({ claimed: true })
   } catch (error) {
     console.error('Failed to claim order:', error)
-    return NextResponse.json({ error: 'Failed to claim order' }, { status: 500 })
+    return err('Failed to claim order', 500)
   }
 }))
 
@@ -160,7 +161,7 @@ export const DELETE = withVenue(withAuth({ allowCellular: true }, async function
     }
 
     if (!employeeId) {
-      return NextResponse.json({ error: 'Missing required field: employeeId' }, { status: 400 })
+      return err('Missing required field: employeeId')
     }
 
     const now = new Date()
@@ -213,7 +214,7 @@ export const DELETE = withVenue(withAuth({ allowCellular: true }, async function
 
     // Handle error responses from transaction
     if ('error' in result) {
-      return NextResponse.json({ error: result.error }, { status: result.status })
+      return err(result.error, result.status)
     }
 
     // Fire-and-forget socket dispatch
@@ -223,9 +224,9 @@ export const DELETE = withVenue(withAuth({ allowCellular: true }, async function
 
     pushUpstream()
 
-    return NextResponse.json({ released: true })
+    return ok({ released: true })
   } catch (error) {
     console.error('Failed to release order claim:', error)
-    return NextResponse.json({ error: 'Failed to release order claim' }, { status: 500 })
+    return err('Failed to release order claim', 500)
   }
 }))

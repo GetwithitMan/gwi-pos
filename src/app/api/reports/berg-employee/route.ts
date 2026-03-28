@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { err, ok } from '@/lib/api-response'
 
 /**
  * GET /api/reports/berg-employee
@@ -17,10 +18,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const format = searchParams.get('format') || 'json'
     const requestingEmployeeId = searchParams.get('employeeId') || ''
 
-    if (!locationId) return NextResponse.json({ error: 'locationId required' }, { status: 400 })
+    if (!locationId) return err('locationId required')
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_INVENTORY)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Date filter: prefer businessDate, fallback to receivedAt
     const bergDateFilter: Record<string, unknown> = {}
@@ -137,7 +138,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       })
     }
 
-    return NextResponse.json({
+    return ok({
       period: { startDate, endDate },
       generatedAt: new Date().toISOString(),
       employees: employeeRows,
@@ -145,6 +146,6 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     })
   } catch (err) {
     console.error('[reports/berg-employee]', err)
-    return NextResponse.json({ error: 'Failed to load employee accountability report' }, { status: 500 })
+    return err('Failed to load employee accountability report', 500)
   }
 })

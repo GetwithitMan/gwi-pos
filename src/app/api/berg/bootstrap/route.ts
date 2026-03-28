@@ -1,5 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
+import { err, forbidden, ok, unauthorized } from '@/lib/api-response'
 
 // NUC-only endpoint: BERG_ENABLED guard prevents this from running on Vercel.
 //
@@ -10,17 +11,17 @@ const BERG_ENABLED = process.env.BERG_ENABLED === 'true'
 
 export async function GET(request: NextRequest) {
   if (!BERG_ENABLED) {
-    return NextResponse.json({ error: 'Berg not enabled' }, { status: 403 })
+    return forbidden('Berg not enabled')
   }
 
   const bootstrapSecret = process.env.BRIDGE_BOOTSTRAP_SECRET
   if (!bootstrapSecret) {
-    return NextResponse.json({ error: 'BRIDGE_BOOTSTRAP_SECRET not configured' }, { status: 503 })
+    return err('BRIDGE_BOOTSTRAP_SECRET not configured', 503)
   }
 
   const authHeader = request.headers.get('authorization')
   if (authHeader !== `Bearer ${bootstrapSecret}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return unauthorized('Unauthorized')
   }
 
   // Scope to a specific location when BERG_LOCATION_ID is set.
@@ -48,9 +49,9 @@ export async function GET(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({ devices, locationId: locationId ?? null })
+    return ok({ devices, locationId: locationId ?? null })
   } catch (err) {
     console.error('[berg/bootstrap]', err)
-    return NextResponse.json({ error: 'Failed to load devices' }, { status: 500 })
+    return err('Failed to load devices', 500)
   }
 }

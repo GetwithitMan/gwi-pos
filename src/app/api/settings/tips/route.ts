@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { parseSettings } from '@/lib/settings'
 import type { TipBankSettings, TipShareSettings } from '@/lib/settings'
@@ -9,6 +9,7 @@ import { withVenue } from '@/lib/with-venue'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { dispatchSettingsUpdated } from '@/lib/socket-dispatch'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET tip settings for a location
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -18,32 +19,26 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const employeeId = searchParams.get('employeeId')
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'locationId is required' },
-        { status: 400 }
-      )
+      return err('locationId is required')
     }
 
     // Permission check (soft mode — allow through if no employeeId sent yet)
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.TIPS_MANAGE_SETTINGS)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Use cached location settings instead of direct DB query (FIX-021)
     const cachedSettings = await getLocationSettings(locationId)
     const settings = parseSettings(cachedSettings)
 
-    return NextResponse.json({ data: {
+    return ok({
       tipBank: settings.tipBank,
       tipShares: settings.tipShares,
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch tip settings:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch tip settings' },
-      { status: 500 }
-    )
+    return err('Failed to fetch tip settings', 500)
   }
 })
 
@@ -59,16 +54,13 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     }
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'locationId is required' },
-        { status: 400 }
-      )
+      return err('locationId is required')
     }
 
     // Permission check
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.TIPS_MANAGE_SETTINGS)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     const location = await db.location.findUnique({
@@ -77,10 +69,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     })
 
     if (!location) {
-      return NextResponse.json(
-        { error: 'Location not found' },
-        { status: 404 }
-      )
+      return notFound('Location not found')
     }
 
     // Parse current settings
@@ -133,15 +122,12 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     // Emit settings:updated so all terminals refresh tip configuration
     void dispatchSettingsUpdated(locationId, { changedKeys: ['tipBank', 'tipShares'] }).catch(console.error)
 
-    return NextResponse.json({ data: {
+    return ok({
       tipBank: mergedTipBank,
       tipShares: mergedTipShares,
-    } })
+    })
   } catch (error) {
     console.error('Failed to update tip settings:', error)
-    return NextResponse.json(
-      { error: 'Failed to update tip settings' },
-      { status: 500 }
-    )
+    return err('Failed to update tip settings', 500)
   }
 })

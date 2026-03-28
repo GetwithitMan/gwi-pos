@@ -5,9 +5,10 @@
  * Returns safe customer-facing fields only (no internal notes, no POS IDs).
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { getDbForVenue } from '@/lib/db'
 import { verifyOrderViewToken } from '@/lib/portal-auth'
+import { err, forbidden, notFound, ok } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,27 +20,24 @@ export async function GET(
     const { slug, id } = (await context.params) as { slug: string; id: string }
 
     if (!slug) {
-      return NextResponse.json({ error: 'Venue slug is required' }, { status: 400 })
+      return err('Venue slug is required')
     }
     if (!id) {
-      return NextResponse.json({ error: 'Order ID is required' }, { status: 400 })
+      return err('Order ID is required')
     }
 
     // ── Validate token ─────────────────────────────────────────────
     const token = request.nextUrl.searchParams.get('token')
     if (!token) {
-      return NextResponse.json({ error: 'Access token is required' }, { status: 403 })
+      return forbidden('Access token is required')
     }
 
     const tokenResult = verifyOrderViewToken(token)
     if (!tokenResult.valid && tokenResult.expired) {
-      return NextResponse.json(
-        { error: 'This link has expired. Please request a new one.' },
-        { status: 410 },
-      )
+      return err('This link has expired. Please request a new one.', 410)
     }
     if (!tokenResult.valid) {
-      return NextResponse.json({ error: 'Invalid access token' }, { status: 403 })
+      return forbidden('Invalid access token')
     }
 
     // ── Resolve venue DB ───────────────────────────────────────────
@@ -47,7 +45,7 @@ export async function GET(
     try {
       venueDb = await getDbForVenue(slug)
     } catch {
-      return NextResponse.json({ error: 'Location not found' }, { status: 404 })
+      return notFound('Location not found')
     }
 
     // ── Get location ─────────────────────────────────────────────
@@ -57,7 +55,7 @@ export async function GET(
     })
 
     if (!location) {
-      return NextResponse.json({ error: 'Location not found' }, { status: 404 })
+      return notFound('Location not found')
     }
 
     // ── Fetch CakeOrder ────────────────────────────────────────────
@@ -77,14 +75,14 @@ export async function GET(
     )
 
     if (orders.length === 0) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      return notFound('Order not found')
     }
 
     const order = orders[0]
 
     // ── Cancelled order — return minimal info ──────────────────────
     if (order.status === 'cancelled') {
-      return NextResponse.json({
+      return ok({
         id: order.id,
         orderNumber: Number(order.orderNumber),
         status: 'cancelled',
@@ -170,7 +168,7 @@ export async function GET(
     }))
 
     // ── Build response ─────────────────────────────────────────────
-    return NextResponse.json({
+    return ok({
       id: order.id,
       orderNumber: Number(order.orderNumber),
       status: order.status,
@@ -189,6 +187,6 @@ export async function GET(
     })
   } catch (error) {
     console.error('[GET /api/public/portal/[slug]/order/[id]] Error:', error)
-    return NextResponse.json({ error: 'Failed to fetch order' }, { status: 500 })
+    return err('Failed to fetch order', 500)
   }
 }

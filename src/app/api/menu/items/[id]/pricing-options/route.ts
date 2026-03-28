@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { invalidateMenuCache } from '@/lib/menu-cache'
@@ -8,6 +8,7 @@ import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 
 const log = createChildLogger('menu.items.id.pricing-options')
 
@@ -21,10 +22,7 @@ export const GET = withVenue(async function GET(
 
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'No location found' },
-        { status: 400 }
-      )
+      return err('No location found')
     }
 
     const groups = await db.pricingOptionGroup.findMany({
@@ -42,8 +40,7 @@ export const GET = withVenue(async function GET(
       },
     })
 
-    return NextResponse.json({
-      data: {
+    return ok({
         groups: groups.map((group) => ({
           id: group.id,
           menuItemId: group.menuItemId,
@@ -63,14 +60,10 @@ export const GET = withVenue(async function GET(
             color: opt.color,
           })),
         })),
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to fetch pricing option groups:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch pricing option groups' },
-      { status: 500 }
-    )
+    return err('Failed to fetch pricing option groups', 500)
   }
 })
 
@@ -85,18 +78,12 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     const { name, sortOrder, isRequired, showAsQuickPick, options } = body
 
     if (!name?.trim()) {
-      return NextResponse.json(
-        { error: 'Name is required' },
-        { status: 400 }
-      )
+      return err('Name is required')
     }
 
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'No location found' },
-        { status: 400 }
-      )
+      return err('No location found')
     }
 
     // Verify menu item exists and belongs to this location
@@ -105,10 +92,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
       select: { id: true },
     })
     if (!menuItem) {
-      return NextResponse.json(
-        { error: 'Menu item not found' },
-        { status: 404 }
-      )
+      return notFound('Menu item not found')
     }
 
     // Check if a soft-deleted group with the same name exists (unique constraint includes deleted)
@@ -225,8 +209,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     void notifyDataChanged({ locationId, domain: 'pricing', action: 'created', entityId: group.id })
     void pushUpstream()
 
-    return NextResponse.json({
-      data: {
+    return ok({
         group: {
           id: group.id,
           menuItemId: group.menuItemId,
@@ -246,13 +229,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
             color: opt.color,
           })),
         },
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to create pricing option group:', error)
-    return NextResponse.json(
-      { error: 'Failed to create pricing option group' },
-      { status: 500 }
-    )
+    return err('Failed to create pricing option group', 500)
   }
 }))

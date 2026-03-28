@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { withVenue } from '@/lib/with-venue'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { db } from '@/lib/db'
+import { err, notFound, ok } from '@/lib/api-response'
 
 interface LinkBody {
   employeeId: string
@@ -15,18 +16,18 @@ interface LinkBody {
 
 export const POST = withVenue(async function POST(request: NextRequest) {
   const location = await db.location.findFirst({ select: { id: true } })
-  if (!location) return NextResponse.json({ error: 'No location' }, { status: 404 })
+  if (!location) return notFound('No location')
 
   const body = await request.json().catch(() => ({})) as Partial<LinkBody>
   if (!body.employeeId || !body.adminEmployeeId) {
-    return NextResponse.json({ error: 'employeeId and adminEmployeeId are required' }, { status: 400 })
+    return err('employeeId and adminEmployeeId are required')
   }
 
   const actor = await getActorFromRequest(request)
   const resolvedEmployeeId = actor.employeeId ?? body.adminEmployeeId
   const auth = await requirePermission(resolvedEmployeeId, location.id, PERMISSIONS.SETTINGS_INTEGRATIONS)
   if (!auth.authorized) {
-    return NextResponse.json({ error: auth.error }, { status: auth.status })
+    return err(auth.error, auth.status)
   }
 
   // Unlink: null clears all fields
@@ -42,5 +43,5 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     },
   })
 
-  return NextResponse.json({ data: { success: true } })
+  return ok({ success: true })
 })

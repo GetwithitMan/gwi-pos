@@ -15,6 +15,7 @@ import { OrderRepository } from '@/lib/repositories'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { resolveDetection, ListenerError } from '@/lib/domain/payment-readers/listener-service'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 
 const log = createChildLogger('orders.id.open-tab')
 
@@ -40,7 +41,7 @@ export const POST = withVenue(async function POST(
     const { readerId, employeeId, detectionId, expectedOrderVersion } = body
 
     if (!readerId || !employeeId) {
-      return NextResponse.json({ error: 'Missing required fields: readerId, employeeId' }, { status: 400 })
+      return err('Missing required fields: readerId, employeeId')
     }
 
     // Get the order -- use repository for tenant-safe access, then fetch location settings
@@ -51,7 +52,7 @@ export const POST = withVenue(async function POST(
     })
 
     if (!order) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      return notFound('Order not found')
     }
 
     const locationId = order.locationId
@@ -59,7 +60,7 @@ export const POST = withVenue(async function POST(
     // Auth check
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.POS_ACCESS)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // ── Optimistic concurrency check ──────────────────────────────────
@@ -117,7 +118,7 @@ export const POST = withVenue(async function POST(
           select: { id: true },
         })
         if (!fallbackReader) {
-          return NextResponse.json({ error: 'No active payment reader found for this location' }, { status: 400 })
+          return err('No active payment reader found for this location')
         }
         resolvedReaderId = fallbackReader.id
       }
@@ -151,8 +152,7 @@ export const POST = withVenue(async function POST(
           tabName: declineFirstName || order.tabName || null,
         }).catch(err => console.error('[order-events] open-tab detection decline:', err))
 
-        return NextResponse.json({
-          data: {
+        return ok({
             approved: false,
             tabStatus: 'auth_failed',
             cardholderName: declineFirstName,
@@ -161,8 +161,7 @@ export const POST = withVenue(async function POST(
             error: preAuthError
               ? { code: preAuthError.code, message: preAuthError.text, isRetryable: preAuthError.isRetryable }
               : { code: 'DECLINED', message: 'Pre-authorization declined', isRetryable: true },
-          },
-        })
+          })
       }
 
       const finalRecordNo = preAuthResponse.recordNo || recordNo
@@ -189,8 +188,7 @@ export const POST = withVenue(async function POST(
 
         pushUpstream()
 
-        return NextResponse.json({
-          data: {
+        return ok({
             approved: true,
             tabStatus: 'open',
             cardholderName: finalCardholderName,
@@ -199,20 +197,17 @@ export const POST = withVenue(async function POST(
             authAmount: preAuthAmount,
             recordNo: finalRecordNo,
             orderCardId: result.orderCardId,
-          },
-        })
+          })
       } catch (err) {
         if (err instanceof DuplicateTabError) {
           void client.voidSale(resolvedReaderId, { recordNo: finalRecordNo }).catch(voidErr =>
             console.error('[Tab Open] Failed to void duplicate hold (detection path):', voidErr)
           )
           void OrderRepository.updateOrder(orderId, locationId, { tabStatus: 'open' }).catch(err => log.warn({ err }, 'order repository update failed'))
-          return NextResponse.json({
-            data: {
+          return ok({
               tabStatus: 'existing_tab_found',
               existingTab: err.existingTab,
-            },
-          })
+            })
         }
         throw err
       }
@@ -237,7 +232,7 @@ export const POST = withVenue(async function POST(
         select: { id: true },
       })
       if (!fallbackReader) {
-        return NextResponse.json({ error: 'No active payment reader found for this location' }, { status: 400 })
+        return err('No active payment reader found for this location')
       }
       resolvedReaderId = fallbackReader.id
     }
@@ -297,8 +292,7 @@ export const POST = withVenue(async function POST(
           if (existing) {
             // Reset order status (don't leave it as pending_auth)
             void OrderRepository.updateOrder(orderId, locationId, { tabStatus: 'open' }).catch(err => log.warn({ err }, 'order repository update failed'))
-            return NextResponse.json({
-              data: {
+            return ok({
                 tabStatus: 'existing_tab_found',
                 existingTab: {
                   orderId: existing.order.id,
@@ -308,8 +302,7 @@ export const POST = withVenue(async function POST(
                   brand: existing.cardType,
                   last4: existing.cardLast4,
                 },
-              },
-            })
+              })
           }
         }
       }
@@ -358,8 +351,7 @@ export const POST = withVenue(async function POST(
         tabName: declineFirstName || order.tabName || null,
       }).catch(err => console.error('[order-events] open-tab decline emit failed:', err))
 
-      return NextResponse.json({
-        data: {
+      return ok({
           approved: false,
           tabStatus: 'auth_failed',
           cardholderName: declineFirstName,
@@ -368,8 +360,7 @@ export const POST = withVenue(async function POST(
           error: preAuthError
             ? { code: preAuthError.code, message: preAuthError.text, isRetryable: preAuthError.isRetryable }
             : { code: 'DECLINED', message: 'Pre-authorization declined', isRetryable: true },
-        },
-      })
+        })
     }
 
     // Step 4: Card approved — normalize cardholder name for display (LAST/FIRST → First Last)
@@ -381,7 +372,7 @@ export const POST = withVenue(async function POST(
 
     if (!recordNo) {
       console.error('[Tab Open] PreAuth approved but no RecordNo returned')
-      return NextResponse.json({ error: 'Pre-auth approved but no RecordNo token received' }, { status: 500 })
+      return err('Pre-auth approved but no RecordNo token received', 500)
     }
 
     // Stage 2 + record: use shared recordTab() for duplicate check, OrderCard creation,
@@ -411,8 +402,7 @@ export const POST = withVenue(async function POST(
 
       pushUpstream()
 
-      return NextResponse.json({
-        data: {
+      return ok({
           approved: true,
           tabStatus: 'open',
           cardholderName: finalCardholderName,
@@ -421,8 +411,7 @@ export const POST = withVenue(async function POST(
           authAmount: preAuthAmount,
           recordNo,
           orderCardId: result.orderCardId,
-        },
-      })
+        })
     } catch (err) {
       if (err instanceof DuplicateTabError) {
         // Void the new hold -- RecordNo-based, no card present needed
@@ -430,12 +419,10 @@ export const POST = withVenue(async function POST(
           console.error('[Tab Open] Failed to void duplicate hold:', voidErr)
         )
         void OrderRepository.updateOrder(orderId, locationId, { tabStatus: 'open' }).catch(err => log.warn({ err }, 'order repository update failed'))
-        return NextResponse.json({
-          data: {
+        return ok({
             tabStatus: 'existing_tab_found',
             existingTab: err.existingTab,
-          },
-        })
+          })
       }
       throw err
     }
@@ -472,6 +459,6 @@ export const POST = withVenue(async function POST(
       timestamp: new Date().toISOString(),
     })
 
-    return NextResponse.json({ error: 'Failed to open tab' }, { status: 500 })
+    return err('Failed to open tab', 500)
   }
 })

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -9,6 +9,7 @@ import { renderEmailHtml, renderSmsBody, buildTemplateVars } from '@/lib/marketi
 import { sendEmail } from '@/lib/email-service'
 import { sendSMS, formatPhoneE164 } from '@/lib/twilio'
 import crypto from 'crypto'
+import { err, forbidden, notFound, ok } from '@/lib/api-response'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 3005}`
 
@@ -23,14 +24,14 @@ export const POST = withVenue(async function POST(
     const { locationId, employeeId } = body
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+      return err('Location ID is required')
     }
 
     // Auth check
     const actor = await getActorFromRequest(request)
     const resolvedEmployeeId = actor.employeeId ?? employeeId
     const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.MGR_DISCOUNTS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Load campaign
     const campaigns = await db.$queryRawUnsafe(`
@@ -40,16 +41,13 @@ export const POST = withVenue(async function POST(
     `, id, locationId) as Record<string, unknown>[]
 
     if (campaigns.length === 0) {
-      return NextResponse.json({ error: 'Campaign not found' }, { status: 404 })
+      return notFound('Campaign not found')
     }
 
     const campaign = campaigns[0]
 
     if (!['draft', 'scheduled'].includes(campaign.status as string)) {
-      return NextResponse.json(
-        { error: `Cannot send campaign in '${campaign.status}' status` },
-        { status: 400 }
-      )
+      return err(`Cannot send campaign in '${campaign.status}' status`)
     }
 
     // Load location settings
@@ -59,14 +57,14 @@ export const POST = withVenue(async function POST(
     })
 
     if (!location) {
-      return NextResponse.json({ error: 'Location not found' }, { status: 404 })
+      return notFound('Location not found')
     }
 
     const settings = mergeWithDefaults(location.settings as Record<string, unknown>)
     const marketing = settings.marketing
 
     if (!marketing?.enabled) {
-      return NextResponse.json({ error: 'Marketing is not enabled' }, { status: 403 })
+      return forbidden('Marketing is not enabled')
     }
 
     const campaignType = campaign.type as 'email' | 'sms'
@@ -96,16 +94,13 @@ export const POST = withVenue(async function POST(
     )
 
     if (customers.length === 0) {
-      return NextResponse.json({ error: 'No eligible recipients found for this segment' }, { status: 400 })
+      return err('No eligible recipients found for this segment')
     }
 
     // Check if sending would exceed daily limit
     const remainingToday = maxPerDay - sentTodayCount
     if (remainingToday <= 0) {
-      return NextResponse.json(
-        { error: `Daily ${campaignType} send limit (${maxPerDay}) reached. Try again tomorrow.` },
-        { status: 429 }
-      )
+      return err(`Daily ${campaignType} send limit (${maxPerDay}) reached. Try again tomorrow.`, 429)
     }
 
     // Cap recipients at remaining daily limit
@@ -145,17 +140,15 @@ export const POST = withVenue(async function POST(
       marketing.unsubscribeUrl || `${BASE_URL}/api/public/unsubscribe`
     ).catch((err) => console.error(`[Marketing] Campaign ${id} send error:`, err))
 
-    return NextResponse.json({
-      data: {
+    return ok({
         campaignId: id,
         recipientCount: eligibleCustomers.length,
         status: 'sending',
         message: `Sending to ${eligibleCustomers.length} recipients...`,
-      },
-    })
+      })
   } catch (error) {
     console.error('[Marketing] Failed to initiate send:', error)
-    return NextResponse.json({ error: 'Failed to send campaign' }, { status: 500 })
+    return err('Failed to send campaign', 500)
   }
 })
 

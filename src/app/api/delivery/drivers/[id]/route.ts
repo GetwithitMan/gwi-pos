@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
@@ -8,6 +8,7 @@ import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 import { writeDeliveryAuditLog } from '@/lib/delivery/state-machine'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('delivery-drivers')
 
 export const dynamic = 'force-dynamic'
@@ -23,13 +24,13 @@ export const GET = withVenue(async function GET(
     const { id } = await params
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Auth check
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.DELIVERY_VIEW)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Feature gate
     const featureGate = await requireDeliveryFeature(locationId)
@@ -49,7 +50,7 @@ export const GET = withVenue(async function GET(
     `, id, locationId)
 
     if (!rows.length) {
-      return NextResponse.json({ error: 'Driver not found' }, { status: 404 })
+      return notFound('Driver not found')
     }
 
     const row = rows[0]
@@ -89,10 +90,10 @@ export const GET = withVenue(async function GET(
       documents,
     }
 
-    return NextResponse.json({ driver })
+    return ok({ driver })
   } catch (error) {
     console.error('[Delivery/Drivers/Detail] GET error:', error)
-    return NextResponse.json({ error: 'Failed to fetch driver' }, { status: 500 })
+    return err('Failed to fetch driver', 500)
   }
 })
 
@@ -110,13 +111,13 @@ export const PUT = withVenue(async function PUT(
     const { id } = await params
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Auth check
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.DELIVERY_DRIVERS_MANAGE)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Feature gate
     const featureGate = await requireDeliveryFeature(locationId)
@@ -139,7 +140,7 @@ export const PUT = withVenue(async function PUT(
     // Validate vehicleType if provided
     const VALID_VEHICLE_TYPES = ['car', 'bike', 'scooter', 'other'] as const
     if (vehicleType != null && vehicleType !== '' && !(VALID_VEHICLE_TYPES as readonly string[]).includes(vehicleType)) {
-      return NextResponse.json({ error: 'vehicleType must be one of: car, bike, scooter, other' }, { status: 400 })
+      return err('vehicleType must be one of: car, bike, scooter, other')
     }
 
     // Fetch existing driver
@@ -149,7 +150,7 @@ export const PUT = withVenue(async function PUT(
     `, id, locationId)
 
     if (!existing.length) {
-      return NextResponse.json({ error: 'Driver not found' }, { status: 404 })
+      return notFound('Driver not found')
     }
 
     const current = existing[0]
@@ -239,7 +240,7 @@ export const PUT = withVenue(async function PUT(
     `, ...updateParams)
 
     if (!updated.length) {
-      return NextResponse.json({ error: 'Failed to update driver' }, { status: 500 })
+      return err('Failed to update driver', 500)
     }
 
     // Write audit log for suspend/unsuspend actions
@@ -258,7 +259,7 @@ export const PUT = withVenue(async function PUT(
 
     pushUpstream()
 
-    return NextResponse.json({
+    return ok({
       driver: {
         ...updated[0],
         mileageRateOverride: updated[0].mileageRateOverride != null ? Number(updated[0].mileageRateOverride) : null,
@@ -266,6 +267,6 @@ export const PUT = withVenue(async function PUT(
     })
   } catch (error) {
     console.error('[Delivery/Drivers/Detail] PUT error:', error)
-    return NextResponse.json({ error: 'Failed to update driver' }, { status: 500 })
+    return err('Failed to update driver', 500)
   }
 })

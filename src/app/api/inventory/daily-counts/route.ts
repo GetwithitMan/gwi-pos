@@ -4,6 +4,7 @@ import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, ok } from '@/lib/api-response'
 
 // GET - List daily prep count sessions
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -16,7 +17,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '50')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID required' }, { status: 400 })
+      return err('Location ID required')
     }
 
     const where: Record<string, unknown> = {
@@ -56,8 +57,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       take: limit,
     })
 
-    return NextResponse.json({
-      data: counts.map(count => ({
+    return ok(counts.map(count => ({
         ...count,
         countItems: count.countItems.map(item => ({
           ...item,
@@ -68,11 +68,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           costPerUnit: item.costPerUnit ? Number(item.costPerUnit) : null,
           totalCost: item.totalCost ? Number(item.totalCost) : null,
         })),
-      })),
-    })
+      })))
   } catch (error) {
     console.error('Daily counts list error:', error)
-    return NextResponse.json({ error: 'Failed to fetch daily counts' }, { status: 500 })
+    return err('Failed to fetch daily counts', 500)
   }
 })
 
@@ -88,9 +87,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     } = body
 
     if (!locationId || !createdById) {
-      return NextResponse.json({
-        error: 'Location ID and created by ID required',
-      }, { status: 400 })
+      return err('Location ID and created by ID required')
     }
 
     // Check if there's already a count for today
@@ -139,9 +136,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     void notifyDataChanged({ locationId, domain: 'inventory', action: 'created', entityId: count.id })
     pushUpstream()
 
-    return NextResponse.json({ data: count })
+    return ok(count)
   } catch (error) {
     console.error('Create daily count error:', error)
-    return NextResponse.json({ error: 'Failed to create daily count' }, { status: 500 })
+    return err('Failed to create daily count', 500)
   }
 }))

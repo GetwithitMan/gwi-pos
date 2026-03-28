@@ -5,6 +5,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET /api/loyalty/tiers/[id]
 export const GET = withVenue(async function GET(
@@ -17,7 +18,7 @@ export const GET = withVenue(async function GET(
     const locationId = searchParams.get('locationId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     const actor = await getActorFromRequest(request)
@@ -40,16 +41,16 @@ export const GET = withVenue(async function GET(
     )
 
     if (rows.length === 0) {
-      return NextResponse.json({ error: 'Tier not found' }, { status: 404 })
+      return notFound('Tier not found')
     }
 
-    return NextResponse.json({ data: rows[0] })
+    return ok(rows[0])
   } catch (error: any) {
     if (error?.message?.includes('does not exist') || error?.code === '42P01') {
-      return NextResponse.json({ error: 'Loyalty system not yet configured. Please run database migrations.' }, { status: 503 })
+      return err('Loyalty system not yet configured. Please run database migrations.', 503)
     }
     console.error('Failed to fetch loyalty tier:', error)
-    return NextResponse.json({ error: 'Failed to fetch loyalty tier' }, { status: 500 })
+    return err('Failed to fetch loyalty tier', 500)
   }
 })
 
@@ -67,7 +68,7 @@ export const PUT = withVenue(async function PUT(
     const locationId = actor.locationId || body.locationId
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.SETTINGS_EDIT)
@@ -88,7 +89,7 @@ export const PUT = withVenue(async function PUT(
     )
 
     if (existing.length === 0) {
-      return NextResponse.json({ error: 'Tier not found' }, { status: 404 })
+      return notFound('Tier not found')
     }
 
     const setClauses: string[] = ['"updatedAt" = NOW()']
@@ -118,7 +119,7 @@ export const PUT = withVenue(async function PUT(
     }
 
     if (setClauses.length === 1) {
-      return NextResponse.json({ error: 'No fields to update' }, { status: 400 })
+      return err('No fields to update')
     }
 
     setParams.push(id)
@@ -138,13 +139,13 @@ export const PUT = withVenue(async function PUT(
     pushUpstream()
     void notifyDataChanged({ locationId, domain: 'loyalty', action: 'updated', entityId: id })
 
-    return NextResponse.json({ data: updated[0] })
+    return ok(updated[0])
   } catch (error: any) {
     if (error?.message?.includes('does not exist') || error?.code === '42P01') {
-      return NextResponse.json({ error: 'Loyalty system not yet configured. Please run database migrations.' }, { status: 503 })
+      return err('Loyalty system not yet configured. Please run database migrations.', 503)
     }
     console.error('Failed to update loyalty tier:', error)
-    return NextResponse.json({ error: 'Failed to update loyalty tier' }, { status: 500 })
+    return err('Failed to update loyalty tier', 500)
   }
 })
 
@@ -159,7 +160,7 @@ export const DELETE = withVenue(async function DELETE(
     const locationId = searchParams.get('locationId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     const actor = await getActorFromRequest(request)
@@ -183,7 +184,7 @@ export const DELETE = withVenue(async function DELETE(
     )
 
     if (existing.length === 0) {
-      return NextResponse.json({ error: 'Tier not found' }, { status: 404 })
+      return notFound('Tier not found')
     }
 
     // Unlink customers from this tier (scoped to location)
@@ -204,12 +205,12 @@ export const DELETE = withVenue(async function DELETE(
     pushUpstream()
     void notifyDataChanged({ locationId: locationId!, domain: 'loyalty', action: 'deleted', entityId: id })
 
-    return NextResponse.json({ success: true })
+    return ok({ success: true })
   } catch (error: any) {
     if (error?.message?.includes('does not exist') || error?.code === '42P01') {
-      return NextResponse.json({ error: 'Loyalty system not yet configured. Please run database migrations.' }, { status: 503 })
+      return err('Loyalty system not yet configured. Please run database migrations.', 503)
     }
     console.error('Failed to delete loyalty tier:', error)
-    return NextResponse.json({ error: 'Failed to delete loyalty tier' }, { status: 500 })
+    return err('Failed to delete loyalty tier', 500)
   }
 })

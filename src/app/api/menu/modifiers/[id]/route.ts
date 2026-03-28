@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { Prisma, ModifierPrinterRouting } from '@/generated/prisma/client'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
@@ -10,6 +10,7 @@ import { getRequestLocationId } from '@/lib/request-context'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 
 const log = createChildLogger('menu.modifiers.id')
 
@@ -53,13 +54,10 @@ export const GET = withVenue(async function GET(
     })
 
     if (!modifierGroup) {
-      return NextResponse.json(
-        { error: 'Modifier group not found' },
-        { status: 404 }
-      )
+      return notFound('Modifier group not found')
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       id: modifierGroup.id,
       name: modifierGroup.name,
       displayName: modifierGroup.displayName,
@@ -114,13 +112,10 @@ export const GET = withVenue(async function GET(
         showAsHotButton: (mod as any).showAsHotButton ?? false,
       })),
       linkedItems: modifierGroup.menuItem ? [{ id: modifierGroup.menuItem.id, name: modifierGroup.menuItem.name }] : []
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch modifier group:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch modifier group' },
-      { status: 500 }
-    )
+    return err('Failed to fetch modifier group', 500)
   }
 })
 
@@ -137,11 +132,11 @@ export const PUT = withVenue(async function PUT(
     // Auth check — require menu.edit_items permission
     const existingGroup = await db.modifierGroup.findUnique({ where: { id }, select: { locationId: true } })
     if (!existingGroup) {
-      return NextResponse.json({ error: 'Modifier group not found' }, { status: 404 })
+      return notFound('Modifier group not found')
     }
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, existingGroup.locationId, PERMISSIONS.MENU_EDIT_ITEMS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Update modifier group
     const modifierGroup = await db.modifierGroup.update({
@@ -297,7 +292,7 @@ export const PUT = withVenue(async function PUT(
       entityType: 'modifier-group',
     }).catch(err => log.warn({ err }, 'fire-and-forget failed in menu.modifiers.id'))
 
-    return NextResponse.json({ data: {
+    return ok({
       id: updated!.id,
       name: updated!.name,
       displayName: updated!.displayName,
@@ -343,13 +338,10 @@ export const PUT = withVenue(async function PUT(
           pourCost: mod.linkedBottleProduct.pourCost ? Number(mod.linkedBottleProduct.pourCost) : null,
         } : null,
       }))
-    } })
+    })
   } catch (error) {
     console.error('Failed to update modifier group:', error)
-    return NextResponse.json(
-      { error: 'Failed to update modifier group' },
-      { status: 500 }
-    )
+    return err('Failed to update modifier group', 500)
   }
 })
 
@@ -368,13 +360,13 @@ export const DELETE = withVenue(async function DELETE(
       : await db.modifierGroup.findUnique({ where: { id }, select: { locationId: true } })
 
     if (!group) {
-      return NextResponse.json({ error: 'Modifier group not found' }, { status: 404 })
+      return notFound('Modifier group not found')
     }
 
     // Auth check — require menu.edit_items permission
     const actorDel = await getActorFromRequest(request)
     const authDel = await requirePermission(actorDel.employeeId, group.locationId, PERMISSIONS.MENU_EDIT_ITEMS)
-    if (!authDel.authorized) return NextResponse.json({ error: authDel.error }, { status: authDel.status })
+    if (!authDel.authorized) return err(authDel.error, authDel.status)
 
     // Soft delete modifier group
     await db.modifierGroup.update({ where: { id }, data: { deletedAt: new Date() } })
@@ -393,12 +385,9 @@ export const DELETE = withVenue(async function DELETE(
       }).catch(err => log.warn({ err }, 'fire-and-forget failed in menu.modifiers.id'))
     }
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Failed to delete modifier group:', error)
-    return NextResponse.json(
-      { error: 'Failed to delete modifier group' },
-      { status: 500 }
-    )
+    return err('Failed to delete modifier group', 500)
   }
 })

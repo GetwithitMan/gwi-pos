@@ -11,13 +11,14 @@
  * 2. Reconciliation: total ledger credits vs total tip payments for the period
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { requireAnyPermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { db } from '@/lib/db'
 import { recalculateBalance } from '@/lib/domain/tips/tip-ledger'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, forbidden, ok } from '@/lib/api-response'
 
 // TODO: Migrate db.tipLedger, db.tipLedgerEntry, and db.payment.aggregate calls
 // to repositories once TipLedgerRepository and extended PaymentRepository aggregates exist.
@@ -54,10 +55,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
     // ── Validate ──────────────────────────────────────────────────────────
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'locationId is required' },
-        { status: 400 }
-      )
+      return err('locationId is required')
     }
 
     // ── Auth: requires manager-level tip permission ───────────────────────
@@ -68,10 +66,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
       [PERMISSIONS.TIPS_MANAGE_GROUPS]
     )
     if (!auth.authorized) {
-      return NextResponse.json(
-        { error: 'Not authorized. Integrity checks require tip management permission.' },
-        { status: 403 }
-      )
+      return forbidden('Not authorized. Integrity checks require tip management permission.')
     }
 
     // ── 1. Balance mismatch check ─────────────────────────────────────────
@@ -211,7 +206,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
 
     // ── Response ──────────────────────────────────────────────────────────
 
-    return NextResponse.json({
+    return ok({
       checkedAt: new Date().toISOString(),
       locationId,
       totalLedgers: ledgers.length,
@@ -222,9 +217,6 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
     })
   } catch (error) {
     console.error('Tip ledger integrity check failed:', error)
-    return NextResponse.json(
-      { error: 'Tip ledger integrity check failed' },
-      { status: 500 }
-    )
+    return err('Tip ledger integrity check failed', 500)
   }
 }))

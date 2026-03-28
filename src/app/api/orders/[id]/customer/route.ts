@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import * as OrderRepository from '@/lib/repositories/order-repository'
 import { parseSettings } from '@/lib/settings'
@@ -12,6 +12,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { getRequestLocationId } from '@/lib/request-context'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-customer')
 
 // PUT - Link or unlink customer to/from order
@@ -39,10 +40,7 @@ export const PUT = withVenue(async function PUT(
       })
 
       if (!orderCheck) {
-        return NextResponse.json(
-          { error: 'Order not found' },
-          { status: 404 }
-        )
+        return notFound('Order not found')
       }
       postLocationId = orderCheck.locationId
     }
@@ -53,16 +51,13 @@ export const PUT = withVenue(async function PUT(
     })
 
     if (!order) {
-      return NextResponse.json(
-        { error: 'Order not found' },
-        { status: 404 }
-      )
+      return notFound('Order not found')
     }
 
     // Auth check
     const auth = await requirePermission(employeeId, order.locationId, PERMISSIONS.POS_ACCESS)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Verify customer exists if linking
@@ -73,18 +68,12 @@ export const PUT = withVenue(async function PUT(
       })
 
       if (!customer) {
-        return NextResponse.json(
-          { error: 'Customer not found' },
-          { status: 404 }
-        )
+        return notFound('Customer not found')
       }
 
       // Ensure customer belongs to same location
       if (customer.locationId !== order.locationId) {
-        return NextResponse.json(
-          { error: 'Customer does not belong to this location' },
-          { status: 400 }
-        )
+        return err('Customer does not belong to this location')
       }
     }
 
@@ -115,7 +104,7 @@ export const PUT = withVenue(async function PUT(
 
     const customerTags = customer ? ((customer.tags ?? []) as string[]) : []
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       customerId: customerId || null,
       customer: customer ? {
@@ -139,13 +128,10 @@ export const PUT = withVenue(async function PUT(
         minimumRedemptionPoints: settings.loyalty.minimumRedemptionPoints,
         maximumRedemptionPercent: settings.loyalty.maximumRedemptionPercent,
       } : null,
-    } })
+    })
   } catch (error) {
     console.error('Failed to link customer:', error)
-    return NextResponse.json(
-      { error: 'Failed to link customer' },
-      { status: 500 }
-    )
+    return err('Failed to link customer', 500)
   }
 })
 
@@ -172,10 +158,7 @@ export const GET = withVenue(async function GET(
       })
 
       if (!orderCheck) {
-        return NextResponse.json(
-          { error: 'Order not found' },
-          { status: 404 }
-        )
+        return notFound('Order not found')
       }
       orderLocationId = orderCheck.locationId
     }
@@ -186,23 +169,20 @@ export const GET = withVenue(async function GET(
     })
 
     if (!order) {
-      return NextResponse.json(
-        { error: 'Order not found' },
-        { status: 404 }
-      )
+      return notFound('Order not found')
     }
 
     // Auth check
     const auth = await requirePermission(employeeId, order.locationId, PERMISSIONS.POS_ACCESS)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     const settings = parseSettings(order.location.settings)
 
     const orderCustomerTags = order.customer ? ((order.customer.tags ?? []) as string[]) : []
 
-    return NextResponse.json({ data: {
+    return ok({
       customerId: order.customerId,
       isTaxExempt: order.isTaxExempt,
       customer: order.customer ? {
@@ -226,12 +206,9 @@ export const GET = withVenue(async function GET(
         minimumRedemptionPoints: settings.loyalty.minimumRedemptionPoints,
         maximumRedemptionPercent: settings.loyalty.maximumRedemptionPercent,
       } : null,
-    } })
+    })
   } catch (error) {
     console.error('Failed to get customer:', error)
-    return NextResponse.json(
-      { error: 'Failed to get customer' },
-      { status: 500 }
-    )
+    return err('Failed to get customer', 500)
   }
 })

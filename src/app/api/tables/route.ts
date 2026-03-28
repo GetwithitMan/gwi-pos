@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { notifyDataChanged } from '@/lib/cloud-notify'
@@ -7,6 +7,7 @@ import { withVenue } from '@/lib/with-venue'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, ok } from '@/lib/api-response'
 
 // Table status validation
 const VALID_STATUSES = ['available', 'occupied', 'dirty', 'reserved'] as const
@@ -28,10 +29,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const includeOrderItems = searchParams.get('includeOrderItems') === 'true'
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'Location ID is required' },
-        { status: 400 }
-      )
+      return err('Location ID is required')
     }
 
     // Validate status parameter
@@ -108,7 +106,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       ],
     })
 
-    return NextResponse.json({ data: {
+    return ok({
       tables: tables.map(table => ({
         id: table.id,
         name: table.name,
@@ -150,13 +148,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
             : undefined,
         } : null,
       })),
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch tables:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch tables' },
-      { status: 500 }
-    )
+    return err('Failed to fetch tables', 500)
   }
 })
 
@@ -180,17 +175,14 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     } = body
 
     if (!locationId || !name) {
-      return NextResponse.json(
-        { error: 'Location ID and name are required' },
-        { status: 400 }
-      )
+      return err('Location ID and name are required')
     }
 
     // Auth check — require tables.edit permission
     const actor = await getActorFromRequest(request)
     const resolvedEmployeeId = actor.employeeId ?? body.employeeId
     const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.TABLES_EDIT)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Check for duplicate table name across ALL rooms/sections in this location
     const duplicate = await db.table.findFirst({
@@ -204,10 +196,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     })
 
     if (duplicate) {
-      return NextResponse.json(
-        { error: `A table named "${duplicate.name}" already exists` },
-        { status: 409 }
-      )
+      return err(`A table named "${duplicate.name}" already exists`, 409)
     }
 
     const tableCapacity = capacity ?? 4
@@ -281,7 +270,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     void notifyDataChanged({ locationId, domain: 'floorplan', action: 'created', entityId: table.id })
     void pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       table: {
         id: table.id,
         name: table.name,
@@ -300,12 +289,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
         isLocked: false,
         currentOrder: null,
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to create table:', error)
-    return NextResponse.json(
-      { error: 'Failed to create table' },
-      { status: 500 }
-    )
+    return err('Failed to create table', 500)
   }
 }))

@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
+import { err, ok } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,7 +14,7 @@ export const dynamic = 'force-dynamic'
 export const GET = withVenue(async (req: NextRequest) => {
   const locationId = await getLocationId()
   if (!locationId) {
-    return NextResponse.json({ error: 'No location found' }, { status: 400 })
+    return err('No location found')
   }
 
   const groups = await db.modifierGroup.findMany({
@@ -37,5 +38,5 @@ export const GET = withVenue(async (req: NextRequest) => {
     orderBy: { sortOrder: 'asc' },
   })
 
-  return NextResponse.json({ data: groups })
+  return ok(groups)
 })

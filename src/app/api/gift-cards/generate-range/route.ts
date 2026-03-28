@@ -17,6 +17,7 @@ import { withAuth, type AuthenticatedContext } from '@/lib/api-auth-middleware'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { generateRangeSchema } from '@/lib/domain/gift-cards/schemas'
+import { err, ok } from '@/lib/api-response'
 
 function generateCardNumbers(prefix: string, start: number, end: number, zeroPad: number): string[] {
   const numbers: string[] = []
@@ -40,27 +41,21 @@ export const POST = withVenue(withAuth('CUSTOMERS_GIFT_CARDS', async function PO
 
     const parsed = generateRangeSchema.safeParse(body)
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: 'Validation failed', details: parsed.error.flatten().fieldErrors },
-        { status: 400 }
-      )
+      return err('Validation failed', 400, parsed.error.flatten().fieldErrors)
     }
 
     const { prefix, start, end, zeroPad, dryRun } = parsed.data
     const count = end - start + 1
 
     if (count > 5000) {
-      return NextResponse.json(
-        { error: 'Maximum 5000 cards per batch. Reduce the range.' },
-        { status: 400 }
-      )
+      return err('Maximum 5000 cards per batch. Reduce the range.')
     }
 
     const cardNumbers = generateCardNumbers(prefix, start, end, zeroPad)
 
     // ── Dry run: preview only ─────────────────────────────────────────────
     if (dryRun) {
-      return NextResponse.json({
+      return ok({
         preview: cardNumbers,
         count: cardNumbers.length,
       })
@@ -108,16 +103,13 @@ export const POST = withVenue(withAuth('CUSTOMERS_GIFT_CARDS', async function PO
     pushUpstream()
     void notifyDataChanged({ locationId, domain: 'gift-cards', action: 'created' })
 
-    return NextResponse.json({
+    return ok({
       generated: toCreate.length,
       skipped,
       batchId,
     })
   } catch (error) {
     console.error('Failed to generate gift card range:', error)
-    return NextResponse.json(
-      { error: 'Failed to generate gift card range' },
-      { status: 500 }
-    )
+    return err('Failed to generate gift card range', 500)
   }
 }))

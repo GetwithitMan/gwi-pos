@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import * as EmployeeRepository from '@/lib/repositories/employee-repository'
 import { getLocationId } from '@/lib/location-cache'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -6,6 +6,7 @@ import { requireAnyPermission, getActorFromRequest } from '@/lib/api-auth'
 import { emitToLocation } from '@/lib/socket-server'
 import { withVenue } from '@/lib/with-venue'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 
 const log = createChildLogger('employees.id.payment')
 
@@ -18,7 +19,7 @@ export const GET = withVenue(async function GET(
     const { id } = await params
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'Location required' }, { status: 400 })
+      return err('Location required')
     }
 
     const employee = await EmployeeRepository.getEmployeeByIdWithSelect(id, locationId, {
@@ -60,14 +61,14 @@ export const GET = withVenue(async function GET(
     })
 
     if (!employee) {
-      return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
+      return notFound('Employee not found')
     }
 
     // Require payroll or staff wages permission — bank account info is highly sensitive
     const actor = await getActorFromRequest(request)
     const resolvedActorId = actor.employeeId
     const authResult = await requireAnyPermission(resolvedActorId, employee.locationId, [PERMISSIONS.PAYROLL_MANAGE, PERMISSIONS.STAFF_EDIT_WAGES])
-    if (!authResult.authorized) return NextResponse.json({ error: authResult.error }, { status: authResult.status })
+    if (!authResult.authorized) return err(authResult.error, authResult.status)
 
     // Mask sensitive data — strip locationId (added for auth only)
     const { locationId: _loc, ...employeeData } = employee
@@ -92,13 +93,10 @@ export const GET = withVenue(async function GET(
       bankAccountNumber: null, // Never return full account number
     }
 
-    return NextResponse.json({ data: { employee: safeEmployee } })
+    return ok({ employee: safeEmployee })
   } catch (error) {
     console.error('Failed to fetch employee payment info:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch employee payment info' },
-      { status: 500 }
-    )
+    return err('Failed to fetch employee payment info', 500)
   }
 })
 
@@ -113,19 +111,19 @@ export const PUT = withVenue(async function PUT(
 
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'Location required' }, { status: 400 })
+      return err('Location required')
     }
 
     const employee = await EmployeeRepository.getEmployeeById(id, locationId)
     if (!employee) {
-      return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
+      return notFound('Employee not found')
     }
 
     // Require payroll or staff wages permission — updating bank account info is highly sensitive
     const actor = await getActorFromRequest(request)
     const resolvedActorId = actor.employeeId
     const authResult = await requireAnyPermission(resolvedActorId, employee.locationId, [PERMISSIONS.PAYROLL_MANAGE, PERMISSIONS.STAFF_EDIT_WAGES])
-    if (!authResult.authorized) return NextResponse.json({ error: authResult.error }, { status: authResult.status })
+    if (!authResult.authorized) return err(authResult.error, authResult.status)
 
     const updateData: Record<string, unknown> = {}
 
@@ -162,10 +160,7 @@ export const PUT = withVenue(async function PUT(
     if (body.bankRoutingNumber) {
       // Validate routing number (9 digits)
       if (!/^\d{9}$/.test(body.bankRoutingNumber)) {
-        return NextResponse.json(
-          { error: 'Routing number must be 9 digits' },
-          { status: 400 }
-        )
+        return err('Routing number must be 9 digits')
       }
       updateData.bankRoutingNumber = body.bankRoutingNumber
     }
@@ -173,10 +168,7 @@ export const PUT = withVenue(async function PUT(
     if (body.bankAccountNumber) {
       // Validate account number (basic check)
       if (!/^\d{4,17}$/.test(body.bankAccountNumber)) {
-        return NextResponse.json(
-          { error: 'Invalid account number format' },
-          { status: 400 }
-        )
+        return err('Invalid account number format')
       }
       updateData.bankAccountNumber = body.bankAccountNumber
       updateData.bankAccountLast4 = body.bankAccountNumber.slice(-4)
@@ -186,24 +178,21 @@ export const PUT = withVenue(async function PUT(
     await EmployeeRepository.updateEmployee(id, locationId, updateData as any)
     const updated = await EmployeeRepository.getEmployeeById(id, locationId)
     if (!updated) {
-      return NextResponse.json({ error: 'Employee not found after update' }, { status: 500 })
+      return err('Employee not found after update', 500)
     }
 
     // Real-time cross-terminal update
     void emitToLocation(employee.locationId, 'employees:changed', { action: 'updated', employeeId: id }).catch(err => log.warn({ err }, 'socket emit failed'))
 
-    return NextResponse.json({ data: {
+    return ok({
       message: 'Payment preferences updated',
       employee: {
         id: updated.id,
         paymentMethod: updated.paymentMethod,
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to update employee payment info:', error)
-    return NextResponse.json(
-      { error: 'Failed to update employee payment info' },
-      { status: 500 }
-    )
+    return err('Failed to update employee payment info', 500)
   }
 })

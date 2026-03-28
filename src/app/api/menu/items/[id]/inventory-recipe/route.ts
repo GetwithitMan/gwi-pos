@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import {
   calculateIngredientCosts,
@@ -12,6 +12,7 @@ import { withAuth } from '@/lib/api-auth-middleware'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 
 const log = createChildLogger('menu.items.id.inventory-recipe')
 
@@ -29,7 +30,7 @@ export const GET = withVenue(async function GET(
     })
 
     if (!menuItem) {
-      return NextResponse.json({ error: 'Menu item not found' }, { status: 404 })
+      return notFound('Menu item not found')
     }
 
     const recipe = await db.menuItemRecipe.findUnique({
@@ -60,7 +61,7 @@ export const GET = withVenue(async function GET(
     })
 
     if (!recipe) {
-      return NextResponse.json({ data: { recipe: null, menuItem } })
+      return ok({ recipe: null, menuItem })
     }
 
     // Calculate ingredient costs using shared utility
@@ -70,7 +71,7 @@ export const GET = withVenue(async function GET(
     const sellPrice = toNumber(menuItem.price)
     const costing = calculateRecipeCosting(totalCost, sellPrice)
 
-    return NextResponse.json({ data: {
+    return ok({
       recipe: {
         ...recipe,
         totalCost,
@@ -81,10 +82,10 @@ export const GET = withVenue(async function GET(
         price: sellPrice,
       },
       costing,
-    } })
+    })
   } catch (error) {
     console.error('Get menu item inventory recipe error:', error)
-    return NextResponse.json({ error: 'Failed to fetch recipe' }, { status: 500 })
+    return err('Failed to fetch recipe', 500)
   }
 })
 
@@ -100,7 +101,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     // Validate request body
     const validation = validateRequest(createMenuItemRecipeSchema, body)
     if (!validation.success) {
-      return NextResponse.json({ error: validation.error }, { status: 400 })
+      return err(validation.error)
     }
 
     const { portionSize, portionUnit, prepInstructions, ingredients } = validation.data
@@ -111,7 +112,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     })
 
     if (!menuItem) {
-      return NextResponse.json({ error: 'Menu item not found' }, { status: 404 })
+      return notFound('Menu item not found')
     }
 
     // Use a transaction to ensure atomic updates
@@ -243,7 +244,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     void notifyDataChanged({ locationId: menuItem.locationId, domain: 'menu', action: 'updated', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       recipe: {
         ...recipe,
         totalCost,
@@ -251,10 +252,10 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
         ingredients: processedIngredients,
       },
       costing,
-    } })
+    })
   } catch (error) {
     console.error('Save menu item inventory recipe error:', error)
-    return NextResponse.json({ error: 'Failed to save recipe' }, { status: 500 })
+    return err('Failed to save recipe', 500)
   }
 }))
 
@@ -271,7 +272,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     })
 
     if (!recipe) {
-      return NextResponse.json({ error: 'Recipe not found' }, { status: 404 })
+      return notFound('Recipe not found')
     }
 
     // Use transaction for atomic soft delete
@@ -296,9 +297,9 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
       changes: { recipe: true },
     }).catch(err => log.warn({ err }, 'fire-and-forget failed in menu.items.id.inventory-recipe'))
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Delete menu item inventory recipe error:', error)
-    return NextResponse.json({ error: 'Failed to delete recipe' }, { status: 500 })
+    return err('Failed to delete recipe', 500)
   }
 }))

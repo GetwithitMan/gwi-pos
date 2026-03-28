@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - Match a customer by saved card last4 (+ optional cardBrand)
 // Checks both SavedCard and CardProfile tables for maximum recognition coverage.
@@ -15,17 +16,17 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const cardBrand = searchParams.get('cardBrand')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
     if (!last4 || !/^\d{4}$/.test(last4)) {
-      return NextResponse.json({ error: 'last4 must be exactly 4 digits' }, { status: 400 })
+      return err('last4 must be exactly 4 digits')
     }
 
     // Auth check — require customers.view permission
     const actor = await getActorFromRequest(request)
     const resolvedEmployeeId = actor.employeeId ?? searchParams.get('employeeId')
     const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.CUSTOMERS_VIEW)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Strategy 1: Check SavedCard table (explicit card-on-file)
     let query: string
@@ -78,8 +79,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     if (savedCardRows.length) {
       const row = savedCardRows[0]
       const tags = (row.tags ?? []) as string[]
-      return NextResponse.json({
-        data: {
+      return ok({
           customerId: row.customerId,
           firstName: row.firstName,
           lastName: row.lastName,
@@ -88,8 +88,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           totalOrders: row.totalOrders,
           tags,
           matchSource: 'saved_card',
-        },
-      })
+        })
     }
 
     // Strategy 2: Check CardProfile table (auto-recognized from previous payments)
@@ -120,8 +119,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     if (cardProfile?.customer && !cardProfile.customer.deletedAt) {
       const c = cardProfile.customer
       const tags = (c.tags ?? []) as string[]
-      return NextResponse.json({
-        data: {
+      return ok({
           customerId: c.id,
           firstName: c.firstName,
           lastName: c.lastName,
@@ -130,13 +128,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           totalOrders: c.totalOrders,
           tags,
           matchSource: 'card_profile',
-        },
-      })
+        })
     }
 
-    return NextResponse.json({ error: 'No matching customer found' }, { status: 404 })
+    return notFound('No matching customer found')
   } catch (error) {
     console.error('Failed to match customer by card:', error)
-    return NextResponse.json({ error: 'Failed to match customer by card' }, { status: 500 })
+    return err('Failed to match customer by card', 500)
   }
 })

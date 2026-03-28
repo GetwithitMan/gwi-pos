@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationSettings } from '@/lib/location-cache'
 import { parseSettings } from '@/lib/settings'
@@ -7,6 +7,7 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { db } from '@/lib/db'
 import { EmployeeRepository } from '@/lib/repositories'
+import { err, notFound, ok } from '@/lib/api-response'
 
 /**
  * POST /api/integrations/7shifts/sync-employees
@@ -24,20 +25,20 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     where: { deletedAt: null },
     select: { id: true, timezone: true, settings: true },
   })
-  if (!location) return NextResponse.json({ error: 'No location' }, { status: 404 })
+  if (!location) return notFound('No location')
 
   const body = await request.json().catch(() => ({})) as { employeeId?: string }
   const actor = await getActorFromRequest(request)
   const resolvedEmployeeId = actor.employeeId ?? body.employeeId
   const auth = await requirePermission(resolvedEmployeeId, location.id, PERMISSIONS.SETTINGS_INTEGRATIONS)
   if (!auth.authorized) {
-    return NextResponse.json({ error: auth.error }, { status: auth.status })
+    return err(auth.error, auth.status)
   }
 
   const settings = parseSettings(await getLocationSettings(location.id))
   const s = settings.sevenShifts
   if (!s?.enabled || !s.clientId || !s.companyId) {
-    return NextResponse.json({ error: '7shifts not configured' }, { status: 400 })
+    return err('7shifts not configured')
   }
 
   let users
@@ -45,7 +46,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     users = await getCompanyUsers(s, location.id)
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unknown error'
-    return NextResponse.json({ error: `Failed to fetch 7shifts users: ${msg}` }, { status: 502 })
+    return err(`Failed to fetch 7shifts users: ${msg}`, 502)
   }
 
   let synced = 0
@@ -61,7 +62,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   })
 
   if (!defaultRole) {
-    return NextResponse.json({ error: 'No roles configured in POS — cannot sync employees' }, { status: 400 })
+    return err('No roles configured in POS — cannot sync employees')
   }
 
   for (const user of users) {
@@ -128,12 +129,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     synced++
   }
 
-  return NextResponse.json({
-    data: {
+  return ok({
       synced,
       skipped,
       deactivated,
       reasons,
-    },
-  })
+    })
 })

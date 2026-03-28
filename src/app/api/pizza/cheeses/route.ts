@@ -1,16 +1,17 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, ok } from '@/lib/api-response'
 
 // GET /api/pizza/cheeses - Get all pizza cheeses
 export const GET = withVenue(async function GET() {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const cheeses = await db.pizzaCheese.findMany({
@@ -18,14 +19,14 @@ export const GET = withVenue(async function GET() {
       orderBy: { sortOrder: 'asc' }
     })
 
-    return NextResponse.json(cheeses.map(cheese => ({
+    return ok(cheeses.map(cheese => ({
       ...cheese,
       price: Number(cheese.price),
       extraPrice: Number(cheese.extraPrice),
     })))
   } catch (error) {
     console.error('Failed to get pizza cheeses:', error)
-    return NextResponse.json({ error: 'Failed to get pizza cheeses' }, { status: 500 })
+    return err('Failed to get pizza cheeses', 500)
   }
 })
 
@@ -36,12 +37,12 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     const { name, displayName, description, price, allowLight, allowExtra, extraPrice, isDefault, ingredientId, inventoryItemId, usageQuantity, usageUnit } = body
 
     if (!name?.trim()) {
-      return NextResponse.json({ error: 'Name is required' }, { status: 400 })
+      return err('Name is required')
     }
 
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const maxSort = await db.pizzaCheese.aggregate({
@@ -77,13 +78,13 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     })
     pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       ...cheese,
       price: Number(cheese.price),
       extraPrice: Number(cheese.extraPrice),
-    } })
+    })
   } catch (error) {
     console.error('Failed to create pizza cheese:', error)
-    return NextResponse.json({ error: 'Failed to create pizza cheese' }, { status: 500 })
+    return err('Failed to create pizza cheese', 500)
   }
 }))

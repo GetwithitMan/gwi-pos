@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { writeFile, mkdir } from 'fs/promises'
 import path from 'path'
 import crypto from 'crypto'
@@ -7,6 +7,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { validateMagicBytes } from '@/lib/file-validation'
+import { err, ok } from '@/lib/api-response'
 
 const UPLOAD_DIR = path.join(process.cwd(), 'public', 'uploads', 'menu-items')
 const MAX_SIZE = 5 * 1024 * 1024 // 5MB
@@ -23,34 +24,31 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Resolve locationId — form data → fallback to cached location
     const locationId = formLocationId || await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'Location required' }, { status: 400 })
+      return err('Location required')
     }
 
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.MENU_EDIT_ITEMS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const file = formData.get('file') as File | null
 
     if (!file) {
-      return NextResponse.json({ error: 'No file provided' }, { status: 400 })
+      return err('No file provided')
     }
 
     if (!ALLOWED_TYPES.includes(file.type)) {
-      return NextResponse.json({ error: 'Only JPEG, PNG, WebP, and GIF images are allowed' }, { status: 400 })
+      return err('Only JPEG, PNG, WebP, and GIF images are allowed')
     }
 
     if (file.size > MAX_SIZE) {
-      return NextResponse.json({ error: 'Image must be under 5MB' }, { status: 400 })
+      return err('Image must be under 5MB')
     }
 
     // Validate magic bytes match claimed Content-Type (prevents spoofed uploads)
     const fileBytes = await file.arrayBuffer()
     const buffer = Buffer.from(fileBytes)
     if (!validateMagicBytes(buffer, file.type)) {
-      return NextResponse.json(
-        { error: 'File content does not match declared type. Upload a valid image file.' },
-        { status: 400 }
-      )
+      return err('File content does not match declared type. Upload a valid image file.')
     }
 
     // Generate unique filename
@@ -65,9 +63,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     const url = `/uploads/menu-items/${filename}`
 
-    return NextResponse.json({ data: { url } })
+    return ok({ url })
   } catch (error) {
     console.error('Upload failed:', error)
-    return NextResponse.json({ error: 'Upload failed' }, { status: 500 })
+    return err('Upload failed', 500)
   }
 })

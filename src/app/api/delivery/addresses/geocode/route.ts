@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
+import { err, ok } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,13 +24,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Auth check
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.DELIVERY_VIEW)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Feature gate
     const featureGate = await requireDeliveryFeature(locationId)
@@ -39,7 +40,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const { address, city, state, zipCode, latitude, longitude } = body
 
     if (!zipCode || typeof zipCode !== 'string' || zipCode.trim().length === 0) {
-      return NextResponse.json({ error: 'zipCode is required' }, { status: 400 })
+      return err('zipCode is required')
     }
 
     let matchedZone: any = null
@@ -107,7 +108,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({
+    return ok({
       latitude: latitude != null ? Number(latitude) : null,
       longitude: longitude != null ? Number(longitude) : null,
       geocodePrecision: null, // Deferred: actual geocoding not yet implemented
@@ -125,6 +126,6 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
   } catch (error) {
     console.error('[Delivery/Addresses/Geocode] POST error:', error)
-    return NextResponse.json({ error: 'Failed to geocode address' }, { status: 500 })
+    return err('Failed to geocode address', 500)
   }
 })

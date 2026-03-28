@@ -4,6 +4,7 @@ import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - Get a single pricing tier
 export const GET = withVenue(withAuth('ADMIN', async function GET(
@@ -32,10 +33,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
     })
 
     if (!tier) {
-      return NextResponse.json(
-        { error: 'Pricing tier not found' },
-        { status: 404 }
-      )
+      return notFound('Pricing tier not found')
     }
 
     // Get ticket breakdown by status
@@ -50,7 +48,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
       return acc
     }, {} as Record<string, number>)
 
-    return NextResponse.json({ data: {
+    return ok({
       tier: {
         id: tier.id,
         eventId: tier.eventId,
@@ -81,13 +79,10 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
         createdAt: tier.createdAt.toISOString(),
         updatedAt: tier.updatedAt.toISOString(),
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch pricing tier:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch pricing tier' },
-      { status: 500 }
-    )
+    return err('Failed to fetch pricing tier', 500)
   }
 }))
 
@@ -121,10 +116,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     })
 
     if (!tier) {
-      return NextResponse.json(
-        { error: 'Pricing tier not found' },
-        { status: 404 }
-      )
+      return notFound('Pricing tier not found')
     }
 
     const hasSoldTickets = tier._count.tickets > 0
@@ -146,16 +138,10 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     // If tickets sold, only allow certain updates
     if (hasSoldTickets) {
       if (price !== undefined && price !== Number(tier.price)) {
-        return NextResponse.json(
-          { error: 'Cannot change price after tickets have been sold' },
-          { status: 400 }
-        )
+        return err('Cannot change price after tickets have been sold')
       }
       if (quantityAvailable !== undefined && quantityAvailable < tier.quantitySold) {
-        return NextResponse.json(
-          { error: `Cannot reduce quantity below ${tier.quantitySold} (already sold)` },
-          { status: 400 }
-        )
+        return err(`Cannot reduce quantity below ${tier.quantitySold} (already sold)`)
       }
     }
 
@@ -178,7 +164,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     void notifyDataChanged({ locationId: tier.locationId, domain: 'events', action: 'updated', entityId: tierId })
     void pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       tier: {
         id: updated.id,
@@ -194,13 +180,10 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
         sortOrder: updated.sortOrder,
         isActive: updated.isActive,
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to update pricing tier:', error)
-    return NextResponse.json(
-      { error: 'Failed to update pricing tier' },
-      { status: 500 }
-    )
+    return err('Failed to update pricing tier', 500)
   }
 }))
 
@@ -232,10 +215,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     })
 
     if (!tier) {
-      return NextResponse.json(
-        { error: 'Pricing tier not found' },
-        { status: 404 }
-      )
+      return notFound('Pricing tier not found')
     }
 
     // Can't delete tier with sold tickets
@@ -263,10 +243,10 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
       void notifyDataChanged({ locationId: tier.locationId, domain: 'events', action: 'deleted', entityId: tierId })
       void pushUpstream()
 
-      return NextResponse.json({ data: {
+      return ok({
         success: true,
         message: 'Pricing tier permanently deleted',
-      } })
+      })
     } else {
       // Soft delete
       await db.eventPricingTier.update({
@@ -280,16 +260,13 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
       void notifyDataChanged({ locationId: tier.locationId, domain: 'events', action: 'deleted', entityId: tierId })
       void pushUpstream()
 
-      return NextResponse.json({ data: {
+      return ok({
         success: true,
         message: 'Pricing tier deactivated',
-      } })
+      })
     }
   } catch (error) {
     console.error('Failed to delete pricing tier:', error)
-    return NextResponse.json(
-      { error: 'Failed to delete pricing tier' },
-      { status: 500 }
-    )
+    return err('Failed to delete pricing tier', 500)
   }
 }))

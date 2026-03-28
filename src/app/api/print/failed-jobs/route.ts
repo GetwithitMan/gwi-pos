@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { retryFailedPrintJobs } from '@/lib/print-retry'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, ok } from '@/lib/api-response'
 
 /**
  * GET  /api/print/failed-jobs — List failed print jobs for printer status UI
@@ -17,7 +18,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const locationId = searchParams.get('locationId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // Fetch failed/queued jobs with printer + order details
@@ -119,8 +120,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Overall health: red if any printer has failures, green otherwise
     const hasAnyFailures = printerStatuses.some(p => p.status === 'error' || p.status === 'offline')
 
-    return NextResponse.json({
-      data: {
+    return ok({
         health: hasAnyFailures ? 'error' : 'ok',
         printers: printerStatuses,
         jobs: jobs.map(job => ({
@@ -140,11 +140,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         })),
         totalFailed: jobs.filter(j => j.status === 'failed' || j.status === 'failed_permanent').length,
         totalPending: jobs.filter(j => j.status === 'queued').length,
-      },
-    })
+      })
   } catch (error) {
     console.error('[Print Failed Jobs] GET error:', error)
-    return NextResponse.json({ error: 'Failed to fetch print job status' }, { status: 500 })
+    return err('Failed to fetch print job status', 500)
   }
 })
 
@@ -155,7 +154,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     const { locationId, jobIds } = body as { locationId: string; jobIds?: string[] }
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     if (jobIds && Array.isArray(jobIds) && jobIds.length > 0) {
@@ -179,17 +178,15 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     // Run the retry processor
     const result = await retryFailedPrintJobs(locationId)
 
-    return NextResponse.json({
-      data: {
+    return ok({
         retried: result.retried,
         succeeded: result.succeeded,
         stillFailed: result.failed,
         message: `Retried ${result.retried} jobs: ${result.succeeded} succeeded, ${result.failed} still failed`,
-      },
-    })
+      })
   } catch (error) {
     console.error('[Print Failed Jobs] POST error:', error)
-    return NextResponse.json({ error: 'Failed to retry print jobs' }, { status: 500 })
+    return err('Failed to retry print jobs', 500)
   }
 }))
 
@@ -201,7 +198,7 @@ export const DELETE = withVenue(withAuth(async function DELETE(request: NextRequ
     const jobIds = searchParams.get('jobIds')?.split(',').filter(Boolean)
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     const where: Record<string, unknown> = {
@@ -219,14 +216,12 @@ export const DELETE = withVenue(withAuth(async function DELETE(request: NextRequ
       data: { deletedAt: new Date() },
     })
 
-    return NextResponse.json({
-      data: {
+    return ok({
         acknowledged: result.count,
         message: `Cleared ${result.count} permanently failed print jobs`,
-      },
-    })
+      })
   } catch (error) {
     console.error('[Print Failed Jobs] DELETE error:', error)
-    return NextResponse.json({ error: 'Failed to clear print jobs' }, { status: 500 })
+    return err('Failed to clear print jobs', 500)
   }
 }))

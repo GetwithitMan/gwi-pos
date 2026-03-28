@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import crypto from 'crypto'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok, unauthorized } from '@/lib/api-response'
 const log = createChildLogger('webhooks-pour-control')
 
 // Validate webhook signature based on provider
@@ -43,19 +44,19 @@ export async function POST(request: NextRequest) {
 
     // Fail-closed: reject if webhook secret is not configured
     if (!webhookSecret) {
-      return NextResponse.json({ error: 'Webhook secret not configured' }, { status: 401 })
+      return unauthorized('Webhook secret not configured')
     }
 
     // Validate signature against configured secret
     if (!validateSignature(provider, rawBody, signature, webhookSecret)) {
-      return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+      return unauthorized('Invalid signature')
     }
 
     let body: Record<string, unknown>
     try {
       body = JSON.parse(rawBody)
     } catch {
-      return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+      return err('Invalid JSON')
     }
 
     const {
@@ -77,7 +78,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (!locationId || typeof targetOz !== 'number' || typeof actualOz !== 'number') {
-      return NextResponse.json({ error: 'locationId, targetOz, and actualOz are required' }, { status: 400 })
+      return err('locationId, targetOz, and actualOz are required')
     }
 
     // Load pour control settings for threshold
@@ -86,7 +87,7 @@ export async function POST(request: NextRequest) {
       locationId,
     )
     if (locationRows.length === 0) {
-      return NextResponse.json({ error: 'Location not found' }, { status: 404 })
+      return notFound('Location not found')
     }
 
     const settings = locationRows[0]?.settings as Record<string, unknown> | undefined
@@ -94,7 +95,7 @@ export async function POST(request: NextRequest) {
 
     if (!pourSettings?.trackWaste && pourSettings?.trackWaste !== undefined) {
       // Pour tracking disabled — acknowledge but don't store
-      return NextResponse.json({ data: { success: true, stored: false } })
+      return ok({ success: true, stored: false })
     }
 
     const threshold = pourSettings?.overPourThresholdPercent ?? 15
@@ -176,9 +177,9 @@ export async function POST(request: NextRequest) {
       }).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
-    return NextResponse.json({ data: { success: true, stored: true, isOverPour } })
+    return ok({ success: true, stored: true, isOverPour })
   } catch (error) {
     console.error('[webhooks/pour-control/POST] Error:', error)
-    return NextResponse.json({ error: 'Webhook processing failed' }, { status: 500 })
+    return err('Webhook processing failed', 500)
   }
 }

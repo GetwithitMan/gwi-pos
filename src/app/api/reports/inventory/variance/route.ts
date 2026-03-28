@@ -5,6 +5,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { checkReportRateLimit } from '@/lib/report-rate-limiter'
 import { calculateTheoreticalUsage, toNumber } from '@/lib/inventory-calculations'
+import { err, ok } from '@/lib/api-response'
 
 /**
  * Inventory Variance Report — Expected vs Actual Usage
@@ -29,16 +30,16 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const category = searchParams.get('category') || undefined
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+      return err('Location ID is required')
     }
 
     if (![7, 14, 30].includes(days)) {
-      return NextResponse.json({ error: 'Days must be 7, 14, or 30' }, { status: 400 })
+      return err('Days must be 7, 14, or 30')
     }
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_INVENTORY)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     const rateCheck = checkReportRateLimit(requestingEmployeeId || 'anonymous')
@@ -160,8 +161,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const highVarianceCount = varianceItems.filter(i => i.status === 'high_variance').length
     const totalVarianceCost = varianceItems.reduce((sum, i) => sum + i.varianceCost, 0)
 
-    return NextResponse.json({
-      data: {
+    return ok({
         items: varianceItems,
         period: {
           from: startDate.toISOString().split('T')[0],
@@ -175,10 +175,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           highVariance: highVarianceCount,
           totalVarianceCost: Math.round(totalVarianceCost * 100) / 100,
         },
-      },
-    })
+      })
   } catch (error) {
     console.error('Inventory variance report error:', error)
-    return NextResponse.json({ error: 'Failed to generate variance report' }, { status: 500 })
+    return err('Failed to generate variance report', 500)
   }
 })

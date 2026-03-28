@@ -5,8 +5,9 @@
  * Protected: requires valid pos-cloud-session (admin only).
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { getAccessLogs, getAccessStats } from '@/lib/access-log'
+import { ok, unauthorized } from '@/lib/api-response'
 
 export async function GET(req: NextRequest) {
   // Accept either a cloud session cookie (admin UI) or INTERNAL_API_SECRET bearer token (MC proxy)
@@ -16,7 +17,7 @@ export async function GET(req: NextRequest) {
   const hasBearerAuth = internalSecret && bearer === `Bearer ${internalSecret}`
 
   if (!session && !hasBearerAuth) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return unauthorized('Unauthorized')
   }
 
   const limitParam = req.nextUrl.searchParams.get('limit')
@@ -27,5 +28,5 @@ export async function GET(req: NextRequest) {
     getAccessStats(),
   ])
 
-  return NextResponse.json({ logs, stats })
+  return ok({ logs, stats })
 }

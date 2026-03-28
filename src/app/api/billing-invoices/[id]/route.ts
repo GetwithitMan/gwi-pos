@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth, type AuthenticatedContext } from '@/lib/api-auth-middleware'
 import { emitToLocation } from '@/lib/socket-server'
+import { err, notFound, ok } from '@/lib/api-response'
 
 const BILLING_SOURCE = 'api' as never
 
@@ -65,7 +66,7 @@ export const GET = withVenue(async function GET(
     const { id } = await params
     const locationId = request.nextUrl.searchParams.get('locationId')
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     const invoice = await db.invoice.findFirst({
@@ -80,13 +81,13 @@ export const GET = withVenue(async function GET(
     })
 
     if (!invoice) {
-      return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
+      return notFound('Invoice not found')
     }
 
-    return NextResponse.json({ data: serializeInvoice(invoice) })
+    return ok(serializeInvoice(invoice))
   } catch (error) {
     console.error('Get billing invoice error:', error)
-    return NextResponse.json({ error: 'Failed to fetch invoice' }, { status: 500 })
+    return err('Failed to fetch invoice', 500)
   }
 })
 
@@ -107,10 +108,10 @@ export const PUT = withVenue(withAuth('INVENTORY_MANAGE', async function PUT(
     })
 
     if (!existing) {
-      return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
+      return notFound('Invoice not found')
     }
     if (String(existing.status) !== 'draft') {
-      return NextResponse.json({ error: 'Only draft invoices can be edited' }, { status: 400 })
+      return err('Only draft invoices can be edited')
     }
 
     const {
@@ -216,10 +217,10 @@ export const PUT = withVenue(withAuth('INVENTORY_MANAGE', async function PUT(
 
     void emitToLocation(locationId, 'invoices:changed', { locationId }).catch(console.error)
 
-    return NextResponse.json({ data: serializeInvoice(invoice) })
+    return ok(serializeInvoice(invoice))
   } catch (error) {
     console.error('Update billing invoice error:', error)
-    return NextResponse.json({ error: 'Failed to update invoice' }, { status: 500 })
+    return err('Failed to update invoice', 500)
   }
 }))
 
@@ -238,12 +239,12 @@ export const DELETE = withVenue(withAuth('INVENTORY_MANAGE', async function DELE
     })
 
     if (!existing) {
-      return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
+      return notFound('Invoice not found')
     }
 
     const status = String(existing.status)
     if (status === 'paid') {
-      return NextResponse.json({ error: 'Cannot void a paid invoice' }, { status: 400 })
+      return err('Cannot void a paid invoice')
     }
 
     // Void the invoice (set status to voided)
@@ -254,9 +255,9 @@ export const DELETE = withVenue(withAuth('INVENTORY_MANAGE', async function DELE
 
     void emitToLocation(locationId, 'invoices:changed', { locationId }).catch(console.error)
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Void billing invoice error:', error)
-    return NextResponse.json({ error: 'Failed to void invoice' }, { status: 500 })
+    return err('Failed to void invoice', 500)
   }
 }))

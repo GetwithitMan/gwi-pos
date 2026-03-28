@@ -16,6 +16,7 @@ import { getClientIp } from '@/lib/get-client-ip'
 import { logVenueEventsBatch, cleanupExpiredLogs } from '@/lib/venue-logger'
 import type { VenueLogEntry } from '@/lib/venue-logger'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok } from '@/lib/api-response'
 const log = createChildLogger('venue-logs')
 
 export const runtime = 'nodejs'
@@ -36,7 +37,7 @@ export const GET = withVenue(async function GET(req: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const params = req.nextUrl.searchParams
@@ -127,7 +128,7 @@ export const GET = withVenue(async function GET(req: NextRequest) {
     })
   } catch (error) {
     console.error('[venue-logs] GET failed:', error)
-    return NextResponse.json({ error: 'Failed to fetch venue logs' }, { status: 500 })
+    return err('Failed to fetch venue logs', 500)
   }
 })
 
@@ -150,41 +151,32 @@ export const POST = withVenue(withAuth(async function POST(req: NextRequest) {
     const body = await req.json()
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Support both single entry and batch
     const entries: VenueLogEntry[] = Array.isArray(body) ? body : [body]
 
     if (entries.length === 0) {
-      return NextResponse.json({ error: 'No entries provided' }, { status: 400 })
+      return err('No entries provided')
     }
     if (entries.length > 500) {
-      return NextResponse.json({ error: 'Batch size exceeds 500 limit' }, { status: 400 })
+      return err('Batch size exceeds 500 limit')
     }
 
     // Validate each entry
     for (const entry of entries) {
       if (!entry.message || typeof entry.message !== 'string') {
-        return NextResponse.json({ error: 'Each entry requires a message string' }, { status: 400 })
+        return err('Each entry requires a message string')
       }
       if (entry.level && !VALID_LEVELS.includes(entry.level)) {
-        return NextResponse.json(
-          { error: `Invalid level "${entry.level}". Must be one of: ${VALID_LEVELS.join(', ')}` },
-          { status: 400 }
-        )
+        return err(`Invalid level "${entry.level}". Must be one of: ${VALID_LEVELS.join(', ')}`)
       }
       if (entry.source && !VALID_SOURCES.includes(entry.source)) {
-        return NextResponse.json(
-          { error: `Invalid source "${entry.source}". Must be one of: ${VALID_SOURCES.join(', ')}` },
-          { status: 400 }
-        )
+        return err(`Invalid source "${entry.source}". Must be one of: ${VALID_SOURCES.join(', ')}`)
       }
       if (entry.category && !VALID_CATEGORIES.includes(entry.category)) {
-        return NextResponse.json(
-          { error: `Invalid category "${entry.category}". Must be one of: ${VALID_CATEGORIES.join(', ')}` },
-          { status: 400 }
-        )
+        return err(`Invalid category "${entry.category}". Must be one of: ${VALID_CATEGORIES.join(', ')}`)
       }
     }
 
@@ -195,15 +187,13 @@ export const POST = withVenue(withAuth(async function POST(req: NextRequest) {
       void cleanupExpiredLogs().catch(err => log.warn({ err }, 'Background task failed'))
     }
 
-    return NextResponse.json({
-      data: {
+    return ok({
         success: true,
         written: result.written,
         errors: result.errors,
-      },
-    })
+      })
   } catch (error) {
     console.error('[venue-logs] POST failed:', error)
-    return NextResponse.json({ error: 'Failed to write venue logs' }, { status: 500 })
+    return err('Failed to write venue logs', 500)
   }
 }))

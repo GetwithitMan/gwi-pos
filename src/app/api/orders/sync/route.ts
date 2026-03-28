@@ -8,6 +8,7 @@ import { emitOrderEvents } from '@/lib/order-events/emitter'
 import { OrderRepository, EmployeeRepository } from '@/lib/repositories'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-sync')
 
 // POST sync an offline order
@@ -28,7 +29,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     } = body
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // Check for duplicate sync (idempotency) — read from Order (where sync creates records)
@@ -49,16 +50,13 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
 
     // Validate required fields
     if (!employeeId || !items || !Array.isArray(items) || items.length === 0) {
-      return NextResponse.json(
-        { error: 'Employee ID and items are required' },
-        { status: 400 }
-      )
+      return err('Employee ID and items are required')
     }
 
     // Validate employee exists
     const employee = await EmployeeRepository.getEmployeeById(employeeId, locationId)
     if (!employee) {
-      return NextResponse.json({ error: 'Employee not found' }, { status: 400 })
+      return err('Employee not found')
     }
 
     // Validate table if provided
@@ -68,7 +66,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
         where: { id: tableId },
       })
       if (!table) {
-        return NextResponse.json({ error: 'Table not found' }, { status: 400 })
+        return err('Table not found')
       }
     }
 
@@ -285,17 +283,14 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
 
     pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       order: completeOrder,
       localId,
       message: 'Offline order synced successfully',
-    } })
+    })
   } catch (error) {
     console.error('Failed to sync offline order:', error)
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to sync order' },
-      { status: 500 }
-    )
+    return err(error instanceof Error ? error.message : 'Failed to sync order', 500)
   }
 }))

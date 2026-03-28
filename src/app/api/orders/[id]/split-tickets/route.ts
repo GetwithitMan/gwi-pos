@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import * as OrderRepository from '@/lib/repositories/order-repository'
 import * as OrderItemRepository from '@/lib/repositories/order-item-repository'
@@ -18,6 +18,7 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { created, err, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-split-tickets')
 
 // ============================================
@@ -127,7 +128,7 @@ export const GET = withVenue(async function GET(
       throw new NotFoundError('Order')
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       parentOrderId: order.id,
       splitOrders: order.splitOrders.map(split => ({
         id: split.id,
@@ -178,7 +179,7 @@ export const GET = withVenue(async function GET(
           })),
         })),
       })),
-    } })
+    })
   } catch (error) {
     return handleApiError(error, 'Failed to get split tickets')
   }
@@ -231,7 +232,7 @@ export const POST = withVenue(withAuth(async function POST(
     const actor = await getActorFromRequest(request)
     const splitEmployeeId = (body as any).employeeId || actor.employeeId
     const splitAuth = await requirePermission(splitEmployeeId, postLocationId, PERMISSIONS.POS_SPLIT_CHECKS)
-    if (!splitAuth.authorized) return NextResponse.json({ error: splitAuth.error }, { status: splitAuth.status })
+    if (!splitAuth.authorized) return err(splitAuth.error, splitAuth.status)
 
     // Get the parent order with all items
     const parentOrder = await OrderRepository.getOrderByIdWithInclude(id, postLocationId, {
@@ -722,7 +723,7 @@ export const POST = withVenue(withAuth(async function POST(
 
     pushUpstream()
 
-    return NextResponse.json({ data: {
+    return created({
       message: 'Split tickets created successfully',
       parentOrderId: parentOrder.id,
       splitOrders: createdSplits.map(split => ({
@@ -736,7 +737,7 @@ export const POST = withVenue(withAuth(async function POST(
         total: Number(split.total),
         itemCount: split.items.length,
       })),
-    } }, { status: 201 })
+    })
   } catch (error) {
     return handleApiError(error, 'Failed to create split tickets')
   }
@@ -905,7 +906,7 @@ export const PATCH = withVenue(withAuth(async function PATCH(
 
       pushUpstream()
 
-      return NextResponse.json({ data: { message: `Item split ${ways} ways` } })
+      return ok({ message: `Item split ${ways} ways` })
     }
 
     // Move item between splits (default action)
@@ -1025,7 +1026,7 @@ export const PATCH = withVenue(withAuth(async function PATCH(
 
     pushUpstream()
 
-    return NextResponse.json({ data: { message: 'Item moved successfully' } })
+    return ok({ message: 'Item moved successfully' })
   } catch (error) {
     return handleApiError(error, 'Failed to move split item')
   }
@@ -1208,10 +1209,10 @@ export const DELETE = withVenue(withAuth(async function DELETE(
 
     pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       message: 'Split tickets merged successfully',
       parentOrderId: id,
-    } })
+    })
   } catch (error) {
     return handleApiError(error, 'Failed to merge split tickets')
   }

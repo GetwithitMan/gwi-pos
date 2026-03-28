@@ -21,6 +21,7 @@ import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { queueIfOutageOrFail, OutageQueueFullError, pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, forbidden, ok } from '@/lib/api-response'
 const log = createChildLogger('tips-payouts')
 
 // ─── POST: Cash out tips for a single employee ──────────────────────────────
@@ -33,26 +34,17 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     // ── Validate required fields ──────────────────────────────────────────
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'locationId is required' },
-        { status: 400 }
-      )
+      return err('locationId is required')
     }
 
     if (!employeeId) {
-      return NextResponse.json(
-        { error: 'employeeId is required' },
-        { status: 400 }
-      )
+      return err('employeeId is required')
     }
 
     // If amount is provided, validate it is a positive number
     if (amount !== undefined && amount !== null) {
       if (typeof amount !== 'number' || amount <= 0) {
-        return NextResponse.json(
-          { error: 'amount must be a positive number' },
-          { status: 400 }
-        )
+        return err('amount must be a positive number')
       }
     }
 
@@ -69,10 +61,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
         [PERMISSIONS.TIPS_PROCESS_PAYOUT]
       )
       if (!auth.authorized) {
-        return NextResponse.json(
-          { error: 'Not authorized. Only the employee or a manager with tip payout permission can process payouts.' },
-          { status: 403 }
-        )
+        return forbidden('Not authorized. Only the employee or a manager with tip payout permission can process payouts.')
       }
     }
 
@@ -115,7 +104,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       await queueIfOutageOrFail('TipLedgerEntry', locationId, result.ledgerEntryId, 'INSERT')
     } catch (err) {
       if (err instanceof OutageQueueFullError) {
-        return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+        return err('Service temporarily unavailable — outage queue full', 507)
       }
       throw err
     }
@@ -134,7 +123,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     }).catch(err => log.warn({ err }, 'Background task failed'))
 
     // ── Return success ────────────────────────────────────────────────────
-    return NextResponse.json({
+    return ok({
       success: true,
       payout: {
         employeeId,
@@ -149,10 +138,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     })
   } catch (error) {
     console.error('Failed to process tip payout:', error)
-    return NextResponse.json(
-      { error: 'Failed to process tip payout' },
-      { status: 500 }
-    )
+    return err('Failed to process tip payout', 500)
   }
 }))
 
@@ -172,10 +158,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
     // ── Validate required fields ──────────────────────────────────────────
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'locationId is required' },
-        { status: 400 }
-      )
+      return err('locationId is required')
     }
 
     // ── Auth check ────────────────────────────────────────────────────────
@@ -191,20 +174,14 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
         [PERMISSIONS.TIPS_VIEW_LEDGER]
       )
       if (!auth.authorized) {
-        return NextResponse.json(
-          { error: auth.error },
-          { status: auth.status }
-        )
+        return err(auth.error, auth.status)
       }
     }
 
     // ── Preview mode: return payout breakdown before actual cash-out ─────
     if (preview === 'true') {
       if (!employeeId) {
-        return NextResponse.json(
-          { error: 'employeeId is required for preview' },
-          { status: 400 }
-        )
+        return err('employeeId is required for preview')
       }
 
       const todayStart = new Date()
@@ -281,7 +258,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
       )
       const previousBalanceCents = totalAvailableCents - todayNetCents
 
-      return NextResponse.json({
+      return ok({
         todaysTips: centsToDollars(todaysTipsCents),
         previousBalance: centsToDollars(Math.max(0, previousBalanceCents)),
         totalAvailable: centsToDollars(totalAvailableCents),
@@ -329,7 +306,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
       ...filters,
     })
 
-    return NextResponse.json({
+    return ok({
       payouts: entries.map(entry => ({
         id: entry.id,
         employeeId: entry.employeeId,
@@ -346,9 +323,6 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
     })
   } catch (error) {
     console.error('Failed to get payout history:', error)
-    return NextResponse.json(
-      { error: 'Failed to get payout history' },
-      { status: 500 }
-    )
+    return err('Failed to get payout history', 500)
   }
 }))

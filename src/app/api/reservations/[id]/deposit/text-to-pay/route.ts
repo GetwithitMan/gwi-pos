@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
@@ -8,6 +8,7 @@ import { generateDepositToken } from '@/lib/reservations/deposit-rules'
 import { sendReservationNotification } from '@/lib/reservations/notifications'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, forbidden, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('reservations-deposit-text-to-pay')
 
 export const POST = withVenue(async function POST(
@@ -19,7 +20,7 @@ export const POST = withVenue(async function POST(
 
     const callerLocationId = await getLocationId()
     if (!callerLocationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Load reservation
@@ -33,21 +34,21 @@ export const POST = withVenue(async function POST(
     })
 
     if (!reservation || reservation.locationId !== callerLocationId) {
-      return NextResponse.json({ error: 'Reservation not found' }, { status: 404 })
+      return notFound('Reservation not found')
     }
 
     if (reservation.depositStatus === 'paid') {
-      return NextResponse.json({ error: 'Deposit already paid' }, { status: 400 })
+      return err('Deposit already paid')
     }
 
     if (reservation.depositStatus === 'not_required') {
-      return NextResponse.json({ error: 'No deposit required for this reservation' }, { status: 400 })
+      return err('No deposit required for this reservation')
     }
 
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, reservation.locationId, 'tables.reservations')
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error || 'Permission denied' }, { status: 403 })
+      return forbidden(auth.error || 'Permission denied')
     }
 
     const settings = parseSettings(reservation.location.settings)
@@ -95,11 +96,9 @@ export const POST = withVenue(async function POST(
       channels: ['sms'],
     }).catch(err => log.warn({ err }, 'Background task failed'))
 
-    return NextResponse.json({
-      data: { sent: true, expiresAt, token },
-    })
+    return ok({ sent: true, expiresAt, token })
   } catch (error) {
     console.error('[reservations/[id]/deposit/text-to-pay] POST error:', error)
-    return NextResponse.json({ error: 'Failed to send deposit link' }, { status: 500 })
+    return err('Failed to send deposit link', 500)
   }
 })

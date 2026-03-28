@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
 import { MembershipEventType } from '@/lib/membership/types'
 import { dispatchMembershipUpdate } from '@/lib/socket-dispatch'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('memberships-replace-card')
 
 export const POST = withVenue(async function POST(
@@ -17,11 +18,11 @@ export const POST = withVenue(async function POST(
     const { locationId, requestingEmployeeId, savedCardId } = body
 
     if (!locationId || !savedCardId) {
-      return NextResponse.json({ error: 'locationId and savedCardId required' }, { status: 400 })
+      return err('locationId and savedCardId required')
     }
 
     const auth = await requirePermission(requestingEmployeeId, locationId, 'admin.manage_memberships')
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Fetch membership
     const mbrs: any[] = await db.$queryRawUnsafe(`
@@ -30,12 +31,12 @@ export const POST = withVenue(async function POST(
       WHERE "id" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
       LIMIT 1
     `, id, locationId)
-    if (mbrs.length === 0) return NextResponse.json({ error: 'Membership not found' }, { status: 404 })
+    if (mbrs.length === 0) return notFound('Membership not found')
     const mbr = mbrs[0]
 
     // Reject if billing lock active
     if (mbr.billingLockId) {
-      return NextResponse.json({ error: 'Cannot replace card while billing is in progress' }, { status: 409 })
+      return err('Cannot replace card while billing is in progress', 409)
     }
 
     // Validate new card belongs to same customer
@@ -45,7 +46,7 @@ export const POST = withVenue(async function POST(
       LIMIT 1
     `, savedCardId, locationId, mbr.customerId)
     if (cards.length === 0) {
-      return NextResponse.json({ error: 'Card not found or does not belong to this customer' }, { status: 400 })
+      return err('Card not found or does not belong to this customer')
     }
     const card = cards[0]
 
@@ -70,9 +71,9 @@ export const POST = withVenue(async function POST(
       action: 'card_updated', membershipId: id, customerId: mbr.customerId,
     }).catch(err => log.warn({ err }, 'Background task failed'))
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (err) {
     console.error('[memberships/replace-card] error:', err)
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
+    return err('Internal error', 500)
   }
 })

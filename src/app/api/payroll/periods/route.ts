@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { PayrollPeriodStatus } from '@/generated/prisma/client'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, ok } from '@/lib/api-response'
 // TODO: Phase 1 - No PayrollPeriodRepository yet.
 // db.payrollPeriod calls remain direct.
 
@@ -17,7 +18,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '20')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID required' }, { status: 400 })
+      return err('Location ID required')
     }
 
     const periods = await db.payrollPeriod.findMany({
@@ -40,7 +41,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       take: limit,
     })
 
-    return NextResponse.json({ data: {
+    return ok({
       periods: periods.map(p => ({
         id: p.id,
         periodStart: p.periodStart.toISOString(),
@@ -61,10 +62,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         employeeCount: p.payStubs.length,
         notes: p.notes,
       })),
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch payroll periods:', error)
-    return NextResponse.json({ error: 'Failed to fetch payroll periods' }, { status: 500 })
+    return err('Failed to fetch payroll periods', 500)
   }
 })
 
@@ -75,10 +76,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     const { locationId, periodStart, periodEnd, periodType } = body
 
     if (!locationId || !periodStart || !periodEnd) {
-      return NextResponse.json(
-        { error: 'locationId, periodStart, and periodEnd are required' },
-        { status: 400 }
-      )
+      return err('locationId, periodStart, and periodEnd are required')
     }
 
     // Check for overlapping periods
@@ -95,10 +93,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     })
 
     if (existing) {
-      return NextResponse.json(
-        { error: 'A payroll period already exists that overlaps with these dates' },
-        { status: 400 }
-      )
+      return err('A payroll period already exists that overlaps with these dates')
     }
 
     const period = await db.payrollPeriod.create({
@@ -115,7 +110,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     void notifyDataChanged({ locationId, domain: 'payroll', action: 'created', entityId: period.id })
     void pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       period: {
         id: period.id,
         periodStart: period.periodStart.toISOString(),
@@ -123,9 +118,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
         periodType: period.periodType,
         status: period.status,
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to create payroll period:', error)
-    return NextResponse.json({ error: 'Failed to create payroll period' }, { status: 500 })
+    return err('Failed to create payroll period', 500)
   }
 }))

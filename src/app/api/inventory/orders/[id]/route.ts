@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
@@ -6,6 +6,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - Full PO detail
 export const GET = withVenue(async function GET(
@@ -19,12 +20,12 @@ export const GET = withVenue(async function GET(
     const employeeId = searchParams.get('employeeId')
 
     if (!locationId || !employeeId) {
-      return NextResponse.json({ error: 'locationId and employeeId required' }, { status: 400 })
+      return err('locationId and employeeId required')
     }
 
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.INVENTORY_MANAGE)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     const order = await db.vendorOrder.findFirst({
@@ -52,11 +53,10 @@ export const GET = withVenue(async function GET(
     })
 
     if (!order) {
-      return NextResponse.json({ error: 'Purchase order not found' }, { status: 404 })
+      return notFound('Purchase order not found')
     }
 
-    return NextResponse.json({
-      data: {
+    return ok({
         order: {
           ...order,
           totalEstimated: order.totalEstimated ? Number(order.totalEstimated) : 0,
@@ -76,11 +76,10 @@ export const GET = withVenue(async function GET(
             } : null,
           })),
         },
-      },
-    })
+      })
   } catch (error) {
     console.error('Get purchase order error:', error)
-    return NextResponse.json({ error: 'Failed to fetch purchase order' }, { status: 500 })
+    return err('Failed to fetch purchase order', 500)
   }
 })
 
@@ -95,14 +94,14 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     const { employeeId, locationId, orderNumber, expectedDelivery, notes, lineItems } = body
 
     if (!locationId || !employeeId) {
-      return NextResponse.json({ error: 'locationId and employeeId required' }, { status: 400 })
+      return err('locationId and employeeId required')
     }
 
     const actor = await getActorFromRequest(request)
     const resolvedEmployeeId = actor.employeeId ?? employeeId
     const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.INVENTORY_MANAGE)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     const existing = await db.vendorOrder.findFirst({
@@ -110,11 +109,11 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     })
 
     if (!existing) {
-      return NextResponse.json({ error: 'Purchase order not found' }, { status: 404 })
+      return notFound('Purchase order not found')
     }
 
     if (existing.status !== 'draft') {
-      return NextResponse.json({ error: 'Can only edit draft purchase orders' }, { status: 400 })
+      return err('Can only edit draft purchase orders')
     }
 
     const order = await db.$transaction(async (tx) => {
@@ -182,10 +181,10 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     void notifyDataChanged({ locationId, domain: 'inventory', action: 'updated', entityId: id })
     pushUpstream()
 
-    return NextResponse.json({ data: { order } })
+    return ok({ order })
   } catch (error) {
     console.error('Update purchase order error:', error)
-    return NextResponse.json({ error: 'Failed to update purchase order' }, { status: 500 })
+    return err('Failed to update purchase order', 500)
   }
 }))
 
@@ -201,12 +200,12 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     const employeeId = searchParams.get('employeeId')
 
     if (!locationId || !employeeId) {
-      return NextResponse.json({ error: 'locationId and employeeId required' }, { status: 400 })
+      return err('locationId and employeeId required')
     }
 
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.INVENTORY_MANAGE)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     const existing = await db.vendorOrder.findFirst({
@@ -214,11 +213,11 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     })
 
     if (!existing) {
-      return NextResponse.json({ error: 'Purchase order not found' }, { status: 404 })
+      return notFound('Purchase order not found')
     }
 
     if (existing.status !== 'draft' && existing.status !== 'cancelled') {
-      return NextResponse.json({ error: 'Can only delete draft or cancelled purchase orders' }, { status: 400 })
+      return err('Can only delete draft or cancelled purchase orders')
     }
 
     const now = new Date()
@@ -230,9 +229,9 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     void notifyDataChanged({ locationId, domain: 'inventory', action: 'deleted', entityId: id })
     pushUpstream()
 
-    return NextResponse.json({ data: { id, deletedAt: now } })
+    return ok({ id, deletedAt: now })
   } catch (error) {
     console.error('Delete purchase order error:', error)
-    return NextResponse.json({ error: 'Failed to delete purchase order' }, { status: 500 })
+    return err('Failed to delete purchase order', 500)
   }
 }))

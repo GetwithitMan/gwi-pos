@@ -15,6 +15,7 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { requireCakeFeature } from '@/lib/cake-orders/require-cake-feature'
+import { err, ok } from '@/lib/api-response'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -52,13 +53,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const dateTo = searchParams.get('dateTo')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
     if (!reportType || !VALID_REPORT_TYPES.includes(reportType)) {
-      return NextResponse.json(
-        { error: `reportType must be one of: ${VALID_REPORT_TYPES.join(', ')}` },
-        { status: 400 },
-      )
+      return err(`reportType must be one of: ${VALID_REPORT_TYPES.join(', ')}`)
     }
 
     // ── Permission check ──────────────────────────────────────────────
@@ -92,10 +90,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         break
     }
 
-    return NextResponse.json({ data })
+    return ok({ data })
   } catch (error) {
     console.error('[cake-reports] Failed:', error)
-    return NextResponse.json({ error: 'Failed to generate cake report' }, { status: 500 })
+    return err('Failed to generate cake report', 500)
   }
 })
 

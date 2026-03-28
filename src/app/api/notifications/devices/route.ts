@@ -12,6 +12,7 @@ import { getLocationId } from '@/lib/location-cache'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { createChildLogger } from '@/lib/logger'
+import { created, err, notFound } from '@/lib/api-response'
 const log = createChildLogger('notifications-devices')
 
 export const dynamic = 'force-dynamic'
@@ -30,12 +31,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.NOTIFICATIONS_VIEW_LOG)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const searchParams = request.nextUrl.searchParams
     const statusFilter = searchParams.get('status')
@@ -166,7 +167,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     if (msg.includes('does not exist') || msg.includes('relation')) {
       return NextResponse.json({ data: [], counts: {}, total: 0 })
     }
-    return NextResponse.json({ error: `Failed to fetch devices: ${msg}` }, { status: 500 })
+    return err(`Failed to fetch devices: ${msg}`, 500)
   }
 })
 
@@ -185,29 +186,29 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.NOTIFICATIONS_MANAGE_DEVICES)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const body = await request.json()
     const { deviceNumber, deviceType, providerId, humanLabel, capcode, metadata } = body
 
     // Validate required fields
     if (!deviceNumber || typeof deviceNumber !== 'string' || deviceNumber.trim().length === 0) {
-      return NextResponse.json({ error: 'deviceNumber is required' }, { status: 400 })
+      return err('deviceNumber is required')
     }
     // W4: Validate deviceNumber format (1-4 digits only)
     if (!/^\d{1,4}$/.test(deviceNumber.trim())) {
-      return NextResponse.json({ error: 'Device number must be 1-4 digits' }, { status: 400 })
+      return err('Device number must be 1-4 digits')
     }
     if (!deviceType || typeof deviceType !== 'string') {
-      return NextResponse.json({ error: 'deviceType is required' }, { status: 400 })
+      return err('deviceType is required')
     }
     if (!providerId || typeof providerId !== 'string') {
-      return NextResponse.json({ error: 'providerId is required' }, { status: 400 })
+      return err('providerId is required')
     }
 
     // Validate provider exists and is active
@@ -218,7 +219,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       locationId
     )
     if (providers.length === 0) {
-      return NextResponse.json({ error: 'Provider not found or inactive' }, { status: 404 })
+      return notFound('Provider not found or inactive')
     }
 
     // Check for duplicate device number (active, non-retired/disabled)
@@ -232,10 +233,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       deviceNumber.trim()
     )
     if (existing.length > 0) {
-      return NextResponse.json(
-        { error: `Device number ${deviceNumber} already exists and is active` },
-        { status: 409 }
-      )
+      return err(`Device number ${deviceNumber} already exists and is active`, 409)
     }
 
     // Create the device
@@ -287,9 +285,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
     }).catch(err => log.warn({ err }, 'Background task failed'))
 
-    return NextResponse.json({ data: device }, { status: 201 })
+    return created(device)
   } catch (error) {
     console.error('[Notification Devices] POST error:', error)
-    return NextResponse.json({ error: 'Failed to add device' }, { status: 500 })
+    return err('Failed to add device', 500)
   }
 })

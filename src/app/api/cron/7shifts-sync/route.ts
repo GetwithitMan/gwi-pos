@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { adminDb } from '@/lib/db'
 import { parseSettings } from '@/lib/settings'
 import { createReceipt, createTimePunch, listShifts } from '@/lib/7shifts-client'
 import { verifyCronSecret } from '@/lib/cron-auth'
 import { forAllVenues } from '@/lib/cron-venue-helper'
+import { ok } from '@/lib/api-response'
 
 // TODO: Migrate db.location, db.sevenShiftsDailySalesPush, adminDb.order.findMany, adminDb.payment.aggregate,
 // db.timeClockEntry, db.schedule, and db.scheduledShift calls to repositories once those repos exist.
@@ -230,5 +231,5 @@ export async function GET(request: NextRequest) {
     allResults[slug] = results
   }, { label: 'cron:7shifts-sync' })
 
-  return NextResponse.json({ ...summary, data: allResults })
+  return ok(allResults)
 }

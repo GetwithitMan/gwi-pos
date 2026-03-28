@@ -24,6 +24,7 @@ import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { err } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -36,19 +37,16 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.NOTIFICATIONS_VIEW_LOG)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Rate limit
     if (!limiter.check(auth.employee.id).allowed) {
-      return NextResponse.json(
-        { error: 'Rate limit exceeded. Max 30 requests per minute.' },
-        { status: 429 }
-      )
+      return err('Rate limit exceeded. Max 30 requests per minute.', 429)
     }
 
     const { searchParams } = new URL(request.url)
@@ -242,6 +240,6 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     })
   } catch (error) {
     console.error('[Notification Log] GET error:', error)
-    return NextResponse.json({ error: 'Failed to search notification log' }, { status: 500 })
+    return err('Failed to search notification log', 500)
   }
 })

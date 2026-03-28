@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { created, err, notFound } from '@/lib/api-response'
 
 // POST - Quick-create a house account for a customer
 export const POST = withVenue(withAuth('ADMIN', async function POST(
@@ -16,7 +17,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     const { locationId, creditLimit } = body
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+      return err('Location ID is required')
     }
 
     // Verify customer exists
@@ -26,7 +27,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     })
 
     if (!customer) {
-      return NextResponse.json({ error: 'Customer not found' }, { status: 404 })
+      return notFound('Customer not found')
     }
 
     // Check if customer already has a house account at this location
@@ -35,10 +36,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     })
 
     if (existing) {
-      return NextResponse.json(
-        { error: 'Customer already has a house account' },
-        { status: 409 }
-      )
+      return err('Customer already has a house account', 409)
     }
 
     // Default name to customer's full name
@@ -59,19 +57,16 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     void notifyDataChanged({ locationId, domain: 'house-accounts', action: 'created', entityId: account.id })
     void pushUpstream()
 
-    return NextResponse.json({ data: {
+    return created({
       id: account.id,
       name: account.name,
       status: account.status,
       currentBalance: Number(account.currentBalance),
       creditLimit: Number(account.creditLimit),
       paymentTerms: account.paymentTerms,
-    } }, { status: 201 })
+    })
   } catch (error) {
     console.error('Failed to create house account for customer:', error)
-    return NextResponse.json(
-      { error: 'Failed to create house account' },
-      { status: 500 }
-    )
+    return err('Failed to create house account', 500)
   }
 }))

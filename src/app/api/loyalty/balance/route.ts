@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET /api/loyalty/balance?customerId=X — returns points balance, tier info, recent transactions
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -12,10 +13,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const customerId = searchParams.get('customerId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
     if (!customerId) {
-      return NextResponse.json({ error: 'customerId is required' }, { status: 400 })
+      return err('customerId is required')
     }
 
     const actor = await getActorFromRequest(request)
@@ -42,7 +43,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     )
 
     if (customers.length === 0) {
-      return NextResponse.json({ error: 'Customer not found' }, { status: 404 })
+      return notFound('Customer not found')
     }
 
     const customer = customers[0]
@@ -92,8 +93,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       locationId,
     )
 
-    return NextResponse.json({
-      data: {
+    return ok({
         customerId: customer.id,
         customerName: `${customer.firstName} ${customer.lastName}`,
         points: Number(customer.loyaltyPoints),
@@ -121,13 +121,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           : null,
         program,
         recentTransactions: transactions,
-      },
-    })
+      })
   } catch (error: any) {
     if (error?.message?.includes('does not exist') || error?.code === '42P01') {
-      return NextResponse.json({ error: 'Loyalty system not yet configured. Please run database migrations.' }, { status: 503 })
+      return err('Loyalty system not yet configured. Please run database migrations.', 503)
     }
     console.error('Failed to fetch loyalty balance:', error)
-    return NextResponse.json({ error: 'Failed to fetch loyalty balance' }, { status: 500 })
+    return err('Failed to fetch loyalty balance', 500)
   }
 })

@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
+import { err, ok } from '@/lib/api-response'
 
 // Standard allergen list — used as default options in the UI
 export const STANDARD_ALLERGENS = [
@@ -23,7 +24,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const locationId = request.nextUrl.searchParams.get('locationId') || await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // Fetch all distinct allergens currently in use across menu items
@@ -45,15 +46,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Merge standard list with any custom allergens already in use
     const allAllergens = new Set([...STANDARD_ALLERGENS, ...inUseSet])
 
-    return NextResponse.json({
-      data: {
+    return ok({
         standard: [...STANDARD_ALLERGENS],
         inUse: [...inUseSet].sort(),
         all: [...allAllergens].sort(),
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to fetch allergens:', error)
-    return NextResponse.json({ error: 'Failed to fetch allergens' }, { status: 500 })
+    return err('Failed to fetch allergens', 500)
   }
 })

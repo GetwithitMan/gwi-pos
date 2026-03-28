@@ -4,6 +4,7 @@ import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - Get a single event with full details
 export const GET = withVenue(withAuth('ADMIN', async function GET(
@@ -39,10 +40,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
     })
 
     if (!event) {
-      return NextResponse.json(
-        { error: 'Event not found' },
-        { status: 404 }
-      )
+      return notFound('Event not found')
     }
 
     // Get ticket counts by status
@@ -57,7 +55,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
       return acc
     }, {} as Record<string, number>)
 
-    return NextResponse.json({ data: {
+    return ok({
       event: {
         id: event.id,
         locationId: event.locationId,
@@ -119,13 +117,10 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
           refunded: ticketCounts['refunded'] || 0,
         },
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch event:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch event' },
-      { status: 500 }
-    )
+    return err('Failed to fetch event', 500)
   }
 }))
 
@@ -145,10 +140,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     })
 
     if (!existing) {
-      return NextResponse.json(
-        { error: 'Event not found' },
-        { status: 404 }
-      )
+      return notFound('Event not found')
     }
 
     // Don't allow editing certain fields if event is on sale and has sold tickets
@@ -164,10 +156,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
         const disallowedFields = updateFields.filter(f => !allowedFields.includes(f))
 
         if (disallowedFields.length > 0) {
-          return NextResponse.json(
-            { error: `Cannot modify ${disallowedFields.join(', ')} after tickets have been sold` },
-            { status: 400 }
-          )
+          return err(`Cannot modify ${disallowedFields.join(', ')} after tickets have been sold`)
         }
       }
     }
@@ -224,7 +213,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     void notifyDataChanged({ locationId: event.locationId, domain: 'events', action: 'updated', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       event: {
         id: event.id,
         name: event.name,
@@ -241,13 +230,10 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
           price: Number(tier.price),
         })),
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to update event:', error)
-    return NextResponse.json(
-      { error: 'Failed to update event' },
-      { status: 500 }
-    )
+    return err('Failed to update event', 500)
   }
 }))
 
@@ -275,10 +261,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     })
 
     if (!event) {
-      return NextResponse.json(
-        { error: 'Event not found' },
-        { status: 404 }
-      )
+      return notFound('Event not found')
     }
 
     // Check for sold tickets
@@ -305,10 +288,10 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
       void notifyDataChanged({ locationId: event.locationId, domain: 'events', action: 'deleted', entityId: id })
       void pushUpstream()
 
-      return NextResponse.json({ data: {
+      return ok({
         success: true,
         message: 'Event permanently deleted',
-      } })
+      })
     } else {
       // Soft delete - set status to cancelled
       await db.event.update({
@@ -322,16 +305,13 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
       void notifyDataChanged({ locationId: event.locationId, domain: 'events', action: 'deleted', entityId: id })
       void pushUpstream()
 
-      return NextResponse.json({ data: {
+      return ok({
         success: true,
         message: 'Event cancelled',
-      } })
+      })
     }
   } catch (error) {
     console.error('Failed to delete event:', error)
-    return NextResponse.json(
-      { error: 'Failed to delete event' },
-      { status: 500 }
-    )
+    return err('Failed to delete event', 500)
   }
 }))

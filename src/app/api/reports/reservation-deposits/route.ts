@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { err, ok } from '@/lib/api-response'
 
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
@@ -13,12 +14,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const requestingEmployeeId = searchParams.get('requestingEmployeeId') || searchParams.get('employeeId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID required' }, { status: 400 })
+      return err('Location ID required')
     }
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_VIEW)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Build date conditions
@@ -116,8 +117,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       return acc
     }, {} as Record<string, { date: string; collected: number; refunded: number; count: number }>)
 
-    return NextResponse.json({
-      data: {
+    return ok({
         summary: {
           totalCollected: Math.round(totalCollected * 100) / 100,
           totalRefunded: Math.round(totalRefunded * 100) / 100,
@@ -153,10 +153,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           refundedAt: d.refundedAt,
           createdAt: d.createdAt,
         })),
-      },
-    })
+      })
   } catch (error) {
     console.error('Reservation deposits report error:', error)
-    return NextResponse.json({ error: 'Failed to generate deposits report' }, { status: 500 })
+    return err('Failed to generate deposits report', 500)
   }
 })

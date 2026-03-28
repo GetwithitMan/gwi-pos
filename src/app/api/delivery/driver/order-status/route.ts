@@ -8,6 +8,7 @@ import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 import { advanceDeliveryStatus } from '@/lib/delivery/state-machine'
 import { canMarkDelivered } from '@/lib/delivery/dispatch-policy'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -24,13 +25,13 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Auth check
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.DELIVERY_CREATE)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Feature gate
     const featureGate = await requireDeliveryFeature(locationId, { subfeature: 'driverAppProvisioned' })
@@ -40,15 +41,12 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     const { deliveryOrderId, status, reason } = body
 
     if (!deliveryOrderId || typeof deliveryOrderId !== 'string') {
-      return NextResponse.json({ error: 'deliveryOrderId is required' }, { status: 400 })
+      return err('deliveryOrderId is required')
     }
 
     const validStatuses = ['arrived', 'delivered', 'attempted', 'failed_delivery']
     if (!status || !validStatuses.includes(status)) {
-      return NextResponse.json(
-        { error: `status must be one of: ${validStatuses.join(', ')}` },
-        { status: 400 },
-      )
+      return err(`status must be one of: ${validStatuses.join(', ')}`)
     }
 
     // Find the driver for this employee
@@ -59,7 +57,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     `, actor.employeeId, locationId)
 
     if (!drivers.length) {
-      return NextResponse.json({ error: 'No driver profile found' }, { status: 404 })
+      return notFound('No driver profile found')
     }
 
     const driverId = drivers[0].id
@@ -77,10 +75,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     `, deliveryOrderId, locationId, driverId)
 
     if (!orderRows.length) {
-      return NextResponse.json(
-        { error: 'Order not found or not assigned to your active run' },
-        { status: 404 },
-      )
+      return notFound('Order not found or not assigned to your active run')
     }
 
     const deliveryOrder = orderRows[0]
@@ -122,7 +117,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     })
 
     if (!result.success) {
-      return NextResponse.json({ error: result.error }, { status: 400 })
+      return err(result.error)
     }
 
     pushUpstream()
@@ -131,7 +126,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     // when an order reaches a terminal state (delivered, cancelled_before_dispatch,
     // cancelled_after_dispatch). No need for a separate call here.
 
-    return NextResponse.json({
+    return ok({
       deliveryOrder: {
         ...result.deliveryOrder,
         deliveryFee: Number(result.deliveryOrder.deliveryFee),
@@ -139,7 +134,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     })
   } catch (error) {
     console.error('[Delivery/Driver/OrderStatus] PUT error:', error)
-    return NextResponse.json({ error: 'Failed to update order status' }, { status: 500 })
+    return err('Failed to update order status', 500)
   }
 })
 

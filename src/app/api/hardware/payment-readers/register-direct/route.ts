@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { parseSettings } from '@/lib/settings'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, ok } from '@/lib/api-response'
 
 /**
  * POST /api/hardware/payment-readers/register-direct
@@ -25,10 +26,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     const { serialNumber, connectionType, name, locationId, terminalId } = body
 
     if (!serialNumber || !locationId || !terminalId) {
-      return NextResponse.json(
-        { error: 'serialNumber, locationId, and terminalId are required' },
-        { status: 400 }
-      )
+      return err('serialNumber, locationId, and terminalId are required')
     }
 
     const resolvedConnectionType = (connectionType === 'BLUETOOTH' ? 'BLUETOOTH' : 'USB') as string
@@ -104,8 +102,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
       })
     }
 
-    return NextResponse.json({
-      data: {
+    return ok({
         reader: {
           ...reader,
           serialNumberMasked: reader.serialNumber.length > 6
@@ -113,10 +110,9 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
             : reader.serialNumber,
         },
         conflict,
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to register direct reader:', error)
-    return NextResponse.json({ error: 'Failed to register reader' }, { status: 500 })
+    return err('Failed to register reader', 500)
   }
 }))

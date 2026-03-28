@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -24,18 +25,16 @@ export const GET = withVenue(async function GET(request: NextRequest, { params }
     })
 
     if (!config || config.deletedAt) {
-      return NextResponse.json({ error: 'Tray config not found' }, { status: 404 })
+      return notFound('Tray config not found')
     }
 
-    return NextResponse.json({
-      data: {
+    return ok({
         ...config,
         capacity: Number(config.capacity),
-      },
-    })
+      })
   } catch (error) {
     console.error('Get tray config error:', error)
-    return NextResponse.json({ error: 'Failed to fetch tray config' }, { status: 500 })
+    return err('Failed to fetch tray config', 500)
   }
 })
 
@@ -48,7 +47,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
 
     const existing = await db.prepTrayConfig.findUnique({ where: { id } })
     if (!existing || existing.deletedAt) {
-      return NextResponse.json({ error: 'Tray config not found' }, { status: 404 })
+      return notFound('Tray config not found')
     }
 
     const updateData: Record<string, unknown> = {}
@@ -66,18 +65,16 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
     void notifyDataChanged({ locationId: existing.locationId, domain: 'inventory', action: 'updated', entityId: id })
     pushUpstream()
 
-    return NextResponse.json({
-      data: {
+    return ok({
         ...config,
         capacity: Number(config.capacity),
-      },
-    })
+      })
   } catch (error) {
     console.error('Update tray config error:', error)
     if ((error as { code?: string }).code === 'P2002') {
-      return NextResponse.json({ error: 'A tray config with this name already exists for this prep item' }, { status: 400 })
+      return err('A tray config with this name already exists for this prep item')
     }
-    return NextResponse.json({ error: 'Failed to update tray config' }, { status: 500 })
+    return err('Failed to update tray config', 500)
   }
 }))
 
@@ -88,7 +85,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(request:
 
     const existing = await db.prepTrayConfig.findUnique({ where: { id } })
     if (!existing || existing.deletedAt) {
-      return NextResponse.json({ error: 'Tray config not found' }, { status: 404 })
+      return notFound('Tray config not found')
     }
 
     await db.prepTrayConfig.update({
@@ -99,9 +96,9 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(request:
     void notifyDataChanged({ locationId: existing.locationId, domain: 'inventory', action: 'deleted', entityId: id })
     pushUpstream()
 
-    return NextResponse.json({ data: { message: 'Tray config deleted' } })
+    return ok({ message: 'Tray config deleted' })
   } catch (error) {
     console.error('Delete tray config error:', error)
-    return NextResponse.json({ error: 'Failed to delete tray config' }, { status: 500 })
+    return err('Failed to delete tray config', 500)
   }
 }))

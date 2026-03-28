@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchMenuItemChanged } from '@/lib/socket-dispatch'
 import { invalidateMenuCache } from '@/lib/menu-cache'
@@ -8,6 +8,7 @@ import { withVenue } from '@/lib/with-venue'
 import { getRequestLocationId } from '@/lib/request-context'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 
 const log = createChildLogger('menu.items.id.ingredients')
 
@@ -27,7 +28,7 @@ export const GET = withVenue(async function GET(request: NextRequest, { params }
     })
 
     if (!menuItem) {
-      return NextResponse.json({ error: 'Menu item not found' }, { status: 404 })
+      return notFound('Menu item not found')
     }
 
     const ingredients = await db.menuItemIngredient.findMany({
@@ -59,8 +60,7 @@ export const GET = withVenue(async function GET(request: NextRequest, { params }
     // Filter out any links where the ingredient itself was soft-deleted
     const activeIngredients = ingredients.filter(mi => mi.ingredient && !mi.ingredient.deletedAt)
 
-    return NextResponse.json({
-      data: activeIngredients.map(mi => ({
+    return ok(activeIngredients.map(mi => ({
         id: mi.id,
         ingredientId: mi.ingredientId,
         name: mi.ingredient.name,
@@ -88,11 +88,10 @@ export const GET = withVenue(async function GET(request: NextRequest, { params }
         } : null,
         // Override flags
         hasExtraPriceOverride: mi.extraPrice !== null,
-      })),
-    })
+      })))
   } catch (error) {
     console.error('Error fetching menu item ingredients:', error)
-    return NextResponse.json({ error: 'Failed to fetch ingredients' }, { status: 500 })
+    return err('Failed to fetch ingredients', 500)
   }
 })
 
@@ -106,7 +105,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     const { ingredients } = body
 
     if (!Array.isArray(ingredients)) {
-      return NextResponse.json({ error: 'ingredients array is required' }, { status: 400 })
+      return err('ingredients array is required')
     }
 
     // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
@@ -119,7 +118,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       })
 
       if (!menuItem) {
-        return NextResponse.json({ error: 'Menu item not found' }, { status: 404 })
+        return notFound('Menu item not found')
       }
       locationId = menuItem.locationId
     }
@@ -144,10 +143,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     const existingIds = new Set(existingIngredients.map(i => i.id))
     const invalidIds = ingredientIds.filter(id => !existingIds.has(id))
     if (invalidIds.length > 0) {
-      return NextResponse.json(
-        { error: `Invalid ingredient IDs: ${invalidIds.join(', ')}` },
-        { status: 400 }
-      )
+      return err(`Invalid ingredient IDs: ${invalidIds.join(', ')}`)
     }
 
     // Replace all existing links in a transaction
@@ -224,8 +220,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     void notifyDataChanged({ locationId, domain: 'menu', action: 'updated', entityId: menuItemId })
     void pushUpstream()
 
-    return NextResponse.json({
-      data: activeUpdated.map(mi => ({
+    return ok(activeUpdated.map(mi => ({
         id: mi.id,
         ingredientId: mi.ingredientId,
         name: mi.ingredient.name,
@@ -250,10 +245,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
           })),
         } : null,
         hasExtraPriceOverride: mi.extraPrice !== null,
-      })),
-    })
+      })))
   } catch (error) {
     console.error('Error saving menu item ingredients:', error)
-    return NextResponse.json({ error: 'Failed to save ingredients' }, { status: 500 })
+    return err('Failed to save ingredients', 500)
   }
 }))

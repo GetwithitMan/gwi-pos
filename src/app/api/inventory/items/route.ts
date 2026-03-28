@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -6,6 +6,7 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, ok } from '@/lib/api-response'
 
 // GET - List inventory items with filtering and pagination
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -26,7 +27,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const cursor = searchParams.get('cursor') // For cursor-based pagination (alternative)
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID required' }, { status: 400 })
+      return err('Location ID required')
     }
 
     const where: Record<string, unknown> = {
@@ -103,7 +104,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     // Return with pagination info if paginating
     if (take) {
-      return NextResponse.json({ data: {
+      return ok({
         items: mappedItems,
         pagination: {
           total,
@@ -112,14 +113,14 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           hasMore,
           nextCursor: hasMore && returnItems.length > 0 ? returnItems[returnItems.length - 1].id : null,
         },
-      } })
+      })
     }
 
     // Legacy response format (no pagination)
-    return NextResponse.json({ data: { items: mappedItems } })
+    return ok({ items: mappedItems })
   } catch (error) {
     console.error('Inventory items list error:', error)
-    return NextResponse.json({ error: 'Failed to fetch inventory items' }, { status: 500 })
+    return err('Failed to fetch inventory items', 500)
   }
 })
 
@@ -158,21 +159,17 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
 
     // Validate required fields
     if (!locationId || !name || !department || !itemType || !revenueCenter || !category) {
-      return NextResponse.json({
-        error: 'Missing required fields: locationId, name, department, itemType, revenueCenter, category',
-      }, { status: 400 })
+      return err('Missing required fields: locationId, name, department, itemType, revenueCenter, category')
     }
 
     // Auth check — require inventory.manage permission
     const actor = await getActorFromRequest(request)
     const resolvedEmployeeId = actor.employeeId ?? bodyEmployeeId
     const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.INVENTORY_MANAGE)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     if (!purchaseUnit || !purchaseSize || !purchaseCost || !storageUnit || !unitsPerPurchase) {
-      return NextResponse.json({
-        error: 'Missing required purchase/storage fields',
-      }, { status: 400 })
+      return err('Missing required purchase/storage fields')
     }
 
     // Calculate cost per unit
@@ -227,7 +224,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     void notifyDataChanged({ locationId, domain: 'inventory', action: 'created', entityId: item.id })
     void pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       item: {
         ...item,
         purchaseSize: Number(item.purchaseSize),
@@ -238,12 +235,12 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
         yieldCostPerUnit: item.yieldCostPerUnit ? Number(item.yieldCostPerUnit) : null,
         currentStock: Number(item.currentStock),
       },
-    } })
+    })
   } catch (error) {
     console.error('Create inventory item error:', error)
     if ((error as { code?: string }).code === 'P2002') {
-      return NextResponse.json({ error: 'Item with this name already exists' }, { status: 400 })
+      return err('Item with this name already exists')
     }
-    return NextResponse.json({ error: 'Failed to create inventory item' }, { status: 500 })
+    return err('Failed to create inventory item', 500)
   }
 }))

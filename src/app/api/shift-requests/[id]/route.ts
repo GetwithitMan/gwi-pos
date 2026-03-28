@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
@@ -6,6 +6,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { dispatchShiftRequestUpdate } from '@/lib/socket-dispatch'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, forbidden, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('shift-requests')
 
 // PUT - Update a shift request
@@ -27,10 +28,10 @@ export const PUT = withVenue(async function PUT(
     }
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+      return err('Location ID is required')
     }
     if (!action || !['approve', 'reject', 'accept', 'decline'].includes(action)) {
-      return NextResponse.json({ error: 'action must be approve, reject, accept, or decline' }, { status: 400 })
+      return err('action must be approve, reject, accept, or decline')
     }
 
     const actor = await getActorFromRequest(request)
@@ -39,18 +40,18 @@ export const PUT = withVenue(async function PUT(
     // Manager actions require SCHEDULING_MANAGE permission
     if (action === 'approve' || action === 'reject') {
       const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.SCHEDULING_MANAGE)
-      if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+      if (!auth.authorized) return err(auth.error, auth.status)
     }
 
     const swapRequest = await db.shiftSwapRequest.findUnique({ where: { id: requestId } })
     if (!swapRequest) {
-      return NextResponse.json({ error: 'Request not found' }, { status: 404 })
+      return notFound('Request not found')
     }
     if (swapRequest.locationId !== locationId) {
-      return NextResponse.json({ error: 'Request does not belong to this location' }, { status: 403 })
+      return forbidden('Request does not belong to this location')
     }
     if (swapRequest.deletedAt !== null) {
-      return NextResponse.json({ error: 'Request has been cancelled' }, { status: 404 })
+      return notFound('Request has been cancelled')
     }
 
     const requestType = (swapRequest.type || 'swap') as 'swap' | 'cover' | 'drop'
@@ -59,10 +60,7 @@ export const PUT = withVenue(async function PUT(
     // ── Accept ──
     if (action === 'accept') {
       if (swapRequest.status !== 'pending') {
-        return NextResponse.json(
-          { error: `Cannot accept a request with status '${swapRequest.status}'` },
-          { status: 400 }
-        )
+        return err(`Cannot accept a request with status '${swapRequest.status}'`)
       }
       const updateData: Record<string, unknown> = {
         status: 'accepted',
@@ -80,23 +78,17 @@ export const PUT = withVenue(async function PUT(
         requestedToEmployeeId: (updated.requestedToEmployeeId as string) || null,
         shiftId: swapRequest.shiftId,
       }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
-      return NextResponse.json({ data: { request: updated } })
+      return ok({ request: updated })
     }
 
     // ── Decline ──
     if (action === 'decline') {
       if (swapRequest.status !== 'pending') {
-        return NextResponse.json(
-          { error: `Cannot decline a request with status '${swapRequest.status}'` },
-          { status: 400 }
-        )
+        return err(`Cannot decline a request with status '${swapRequest.status}'`)
       }
       // Only the target employee can decline a swap request
       if (swapRequest.requestedToEmployeeId && resolvedEmployeeId !== swapRequest.requestedToEmployeeId) {
-        return NextResponse.json(
-          { error: 'Only the target employee can decline this request' },
-          { status: 403 }
-        )
+        return forbidden('Only the target employee can decline this request')
       }
       const updated = await db.shiftSwapRequest.update({
         where: { id: requestId },
@@ -109,17 +101,14 @@ export const PUT = withVenue(async function PUT(
         requestedToEmployeeId: swapRequest.requestedToEmployeeId,
         shiftId: swapRequest.shiftId,
       }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
-      return NextResponse.json({ data: { request: updated } })
+      return ok({ request: updated })
     }
 
     // ── Approve ──
     if (action === 'approve') {
       if (requestType === 'drop') {
         if (!['pending', 'accepted'].includes(swapRequest.status)) {
-          return NextResponse.json(
-            { error: `Cannot approve a request with status '${swapRequest.status}'` },
-            { status: 400 }
-          )
+          return err(`Cannot approve a request with status '${swapRequest.status}'`)
         }
         const [updatedReq, updatedShift] = await db.$transaction([
           db.shiftSwapRequest.update({
@@ -141,21 +130,15 @@ export const PUT = withVenue(async function PUT(
           requestedByEmployeeId: swapRequest.requestedByEmployeeId,
           shiftId: swapRequest.shiftId,
         }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
-        return NextResponse.json({ data: { request: updatedReq, shift: updatedShift } })
+        return ok({ request: updatedReq, shift: updatedShift })
       }
 
       // Swap or Cover
       if (swapRequest.status !== 'accepted') {
-        return NextResponse.json(
-          { error: `Cannot approve: employee must accept first (current status: '${swapRequest.status}')` },
-          { status: 400 }
-        )
+        return err(`Cannot approve: employee must accept first (current status: '${swapRequest.status}')`)
       }
       if (!swapRequest.requestedToEmployeeId) {
-        return NextResponse.json(
-          { error: 'Cannot approve: no target employee' },
-          { status: 400 }
-        )
+        return err('Cannot approve: no target employee')
       }
       const [updatedReq, updatedShift] = await db.$transaction([
         db.shiftSwapRequest.update({
@@ -183,15 +166,12 @@ export const PUT = withVenue(async function PUT(
         requestedToEmployeeId: swapRequest.requestedToEmployeeId,
         shiftId: swapRequest.shiftId,
       }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
-      return NextResponse.json({ data: { request: updatedReq, shift: updatedShift } })
+      return ok({ request: updatedReq, shift: updatedShift })
     }
 
     // ── Reject ──
     if (!['pending', 'accepted'].includes(swapRequest.status)) {
-      return NextResponse.json(
-        { error: `Cannot reject a request with status '${swapRequest.status}'` },
-        { status: 400 }
-      )
+      return err(`Cannot reject a request with status '${swapRequest.status}'`)
     }
     const updated = await db.shiftSwapRequest.update({
       where: { id: requestId },
@@ -210,10 +190,10 @@ export const PUT = withVenue(async function PUT(
       requestedToEmployeeId: swapRequest.requestedToEmployeeId,
       shiftId: swapRequest.shiftId,
     }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
-    return NextResponse.json({ data: { request: updated } })
+    return ok({ request: updated })
   } catch (error) {
     console.error('Failed to update shift request:', error)
-    return NextResponse.json({ error: 'Failed to update shift request' }, { status: 500 })
+    return err('Failed to update shift request', 500)
   }
 })
 
@@ -228,24 +208,21 @@ export const DELETE = withVenue(async function DELETE(
     const locationId = searchParams.get('locationId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+      return err('Location ID is required')
     }
 
     const swapRequest = await db.shiftSwapRequest.findUnique({ where: { id: requestId } })
     if (!swapRequest) {
-      return NextResponse.json({ error: 'Request not found' }, { status: 404 })
+      return notFound('Request not found')
     }
     if (swapRequest.locationId !== locationId) {
-      return NextResponse.json({ error: 'Request does not belong to this location' }, { status: 403 })
+      return forbidden('Request does not belong to this location')
     }
     if (swapRequest.deletedAt !== null) {
-      return NextResponse.json({ error: 'Request already cancelled' }, { status: 404 })
+      return notFound('Request already cancelled')
     }
     if (swapRequest.status !== 'pending') {
-      return NextResponse.json(
-        { error: `Cannot cancel a request with status '${swapRequest.status}'` },
-        { status: 400 }
-      )
+      return err(`Cannot cancel a request with status '${swapRequest.status}'`)
     }
 
     const requestType = (swapRequest.type || 'swap') as 'swap' | 'cover' | 'drop'
@@ -264,9 +241,9 @@ export const DELETE = withVenue(async function DELETE(
       shiftId: swapRequest.shiftId,
     }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
 
-    return NextResponse.json({ data: { message: 'Request cancelled' } })
+    return ok({ message: 'Request cancelled' })
   } catch (error) {
     console.error('Failed to cancel request:', error)
-    return NextResponse.json({ error: 'Failed to cancel request' }, { status: 500 })
+    return err('Failed to cancel request', 500)
   }
 })

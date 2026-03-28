@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId, getLocationSettings } from '@/lib/location-cache'
@@ -9,6 +9,7 @@ import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 import { advanceDriverSessionStatus, writeDeliveryAuditLog } from '@/lib/delivery/state-machine'
 import { shouldForceCashDrop } from '@/lib/delivery/dispatch-policy'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('delivery-sessions')
 
 export const dynamic = 'force-dynamic'
@@ -26,13 +27,13 @@ export const PUT = withVenue(async function PUT(
     const { id } = await params
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Auth check
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.DELIVERY_DISPATCH)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Feature gate
     const featureGate = await requireDeliveryFeature(locationId)
@@ -49,13 +50,13 @@ export const PUT = withVenue(async function PUT(
     `, id, locationId)
 
     if (!sessions.length) {
-      return NextResponse.json({ error: 'Session not found' }, { status: 404 })
+      return notFound('Session not found')
     }
 
     const session = sessions[0]
 
     if (session.endedAt) {
-      return NextResponse.json({ error: 'Session has already ended' }, { status: 400 })
+      return err('Session has already ended')
     }
 
     let updatedSession = session
@@ -71,7 +72,7 @@ export const PUT = withVenue(async function PUT(
       )
 
       if (!result.success) {
-        return NextResponse.json({ error: result.error }, { status: 400 })
+        return err(result.error)
       }
 
       updatedSession = result.session
@@ -135,9 +136,9 @@ export const PUT = withVenue(async function PUT(
       response.warning = warning
     }
 
-    return NextResponse.json(response)
+    return ok(response)
   } catch (error) {
     console.error('[Delivery/Sessions/Detail] PUT error:', error)
-    return NextResponse.json({ error: 'Failed to update session' }, { status: 500 })
+    return err('Failed to update session', 500)
   }
 })

@@ -8,6 +8,7 @@ import { Pool } from '@neondatabase/serverless'
 import fs from 'fs'
 import path from 'path'
 import { withVenue } from '@/lib/with-venue'
+import { err, ok, unauthorized } from '@/lib/api-response'
 
 // Allow up to 60s for seed (schema push via direct SQL is fast)
 export const maxDuration = 60
@@ -77,7 +78,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   // ── Auth ──────────────────────────────────────────────────────────────
   const apiKey = request.headers.get('x-api-key')
   if (!apiKey || apiKey !== process.env.PROVISION_API_KEY) {
-    return Response.json({ error: 'Unauthorized' }, { status: 401 })
+    return unauthorized('Unauthorized')
   }
 
   const body = await request.json()
@@ -87,24 +88,18 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
   // ── Validate slug ────────────────────────────────────────────────────
   if (!slug || !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug)) {
-    return Response.json(
-      { error: 'Invalid slug. Use lowercase alphanumeric with hyphens.' },
-      { status: 400 }
-    )
+    return err('Invalid slug. Use lowercase alphanumeric with hyphens.')
   }
 
   // gwi_pos_ prefix = 8 chars, slug with hyphens→underscores, PG limit = 63
   if (slug.length > 50) {
-    return Response.json({ error: 'Slug too long (max 50 characters)' }, { status: 400 })
+    return err('Slug too long (max 50 characters)')
   }
 
   const mode = request.nextUrl.searchParams.get('mode') || 'full'
   const VALID_MODES = ['full', 'seed-only', 'schema-only'] as const
   if (!VALID_MODES.includes(mode as any)) {
-    return Response.json(
-      { error: `Invalid mode "${mode}". Must be one of: ${VALID_MODES.join(', ')}` },
-      { status: 400 }
-    )
+    return err(`Invalid mode "${mode}". Must be one of: ${VALID_MODES.join(', ')}`)
   }
 
   const dbName = venueDbName(slug)
@@ -180,10 +175,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           // Don't mask the original schema push error
           console.error('[Provision] Failed to clean up database after schema push failure:', dropErr)
         }
-        return Response.json(
-          { error: 'Schema push failed. Database has been cleaned up for retry.' },
-          { status: 500 }
-        )
+        return err('Schema push failed. Database has been cleaned up for retry.', 500)
       }
     } else {
       if (process.env.NODE_ENV !== 'production') console.log(`[Provision] mode=${mode} — skipping schema push for ${slug}`)
@@ -210,7 +202,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       // Register venue in cron registry (master DB) for multi-tenant cron iteration
       await upsertCronVenueRegistry(slug, dbName, nucBaseUrl)
 
-      return Response.json({
+      return ok({
         success: true,
         databaseName: dbName,
         posLocationId: seedResult.locationId,
@@ -225,7 +217,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     await upsertCronVenueRegistry(slug, dbName, nucBaseUrl)
 
     // schema-only response (no seed data to return)
-    return Response.json({
+    return ok({
       success: true,
       databaseName: dbName,
       slug,
@@ -234,10 +226,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
   } catch (error) {
     console.error('[Provision] Error:', error)
-    return Response.json(
-      { error: error instanceof Error ? error.message : 'Provisioning failed' },
-      { status: 500 }
-    )
+    return err(error instanceof Error ? error.message : 'Provisioning failed', 500)
   }
 })
 

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
@@ -6,6 +6,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { getLocationId } from '@/lib/location-cache'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { created, err, ok } from '@/lib/api-response'
 
 // GET - List house accounts (no admin perm needed — read-only POS query)
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -15,7 +16,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const status = sp.get('status')
     const search = sp.get('search')
 
-    if (!locationId) return NextResponse.json({ error: 'locationId required' }, { status: 400 })
+    if (!locationId) return err('locationId required')
 
     const where: Record<string, unknown> = { locationId }
 
@@ -50,17 +51,14 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }
     })
 
-    return NextResponse.json(accounts.map(account => ({
+    return ok(accounts.map(account => ({
       ...account,
       creditLimit: Number(account.creditLimit),
       currentBalance: Number(account.currentBalance),
     })))
   } catch (error) {
     console.error('Failed to fetch house accounts:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch house accounts' },
-      { status: 500 }
-    )
+    return err('Failed to fetch house accounts', 500)
   }
 })
 
@@ -87,16 +85,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const requestingEmployeeId = actor.employeeId ?? bodyEmployeeId
     const locationId = body.locationId || actor.locationId || await getLocationId()
 
-    if (!locationId) return NextResponse.json({ error: 'locationId required' }, { status: 400 })
+    if (!locationId) return err('locationId required')
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.CUSTOMERS_HOUSE_ACCOUNTS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     if (!name) {
-      return NextResponse.json(
-        { error: 'Account name is required' },
-        { status: 400 }
-      )
+      return err('Account name is required')
     }
 
     // Check for duplicate name at location
@@ -107,10 +102,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     if (existing) {
-      return NextResponse.json(
-        { error: 'An account with this name already exists' },
-        { status: 400 }
-      )
+      return err('An account with this name already exists')
     }
 
     const account = await db.houseAccount.create({
@@ -145,16 +137,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     void notifyDataChanged({ locationId, domain: 'house-accounts', action: 'created', entityId: account.id })
     void pushUpstream()
 
-    return NextResponse.json({ data: {
+    return created({
       ...account,
       creditLimit: Number(account.creditLimit),
       currentBalance: Number(account.currentBalance),
-    } }, { status: 201 })
+    })
   } catch (error) {
     console.error('Failed to create house account:', error)
-    return NextResponse.json(
-      { error: 'Failed to create house account' },
-      { status: 500 }
-    )
+    return err('Failed to create house account', 500)
   }
 })

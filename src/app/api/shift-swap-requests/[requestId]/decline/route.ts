@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { dispatchShiftRequestUpdate } from '@/lib/socket-dispatch'
 import { queueIfOutageOrFail, OutageQueueFullError, pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, forbidden, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('shift-swap-requests-decline')
 
 // POST - Employee declines a shift request
@@ -19,7 +20,7 @@ export const POST = withVenue(withAuth(async function POST(
     const { locationId, reason } = body as { locationId: string; reason?: string }
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+      return err('Location ID is required')
     }
 
     const swapRequest = await db.shiftSwapRequest.findUnique({
@@ -27,22 +28,19 @@ export const POST = withVenue(withAuth(async function POST(
     })
 
     if (!swapRequest) {
-      return NextResponse.json({ error: 'Request not found' }, { status: 404 })
+      return notFound('Request not found')
     }
 
     if (swapRequest.locationId !== locationId) {
-      return NextResponse.json({ error: 'Request does not belong to this location' }, { status: 403 })
+      return forbidden('Request does not belong to this location')
     }
 
     if (swapRequest.deletedAt !== null) {
-      return NextResponse.json({ error: 'Request has been cancelled' }, { status: 404 })
+      return notFound('Request has been cancelled')
     }
 
     if (swapRequest.status !== 'pending') {
-      return NextResponse.json(
-        { error: `Cannot decline a request with status '${swapRequest.status}'` },
-        { status: 400 }
-      )
+      return err(`Cannot decline a request with status '${swapRequest.status}'`)
     }
 
     const requestType = swapRequest.type || 'swap'
@@ -62,7 +60,7 @@ export const POST = withVenue(withAuth(async function POST(
       await queueIfOutageOrFail('ShiftSwapRequest', locationId, requestId, 'UPDATE')
     } catch (err) {
       if (err instanceof OutageQueueFullError) {
-        return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+        return err('Service temporarily unavailable — outage queue full', 507)
       }
       throw err
     }
@@ -79,9 +77,9 @@ export const POST = withVenue(withAuth(async function POST(
       shiftId: swapRequest.shiftId,
     }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
 
-    return NextResponse.json({ data: { request: updated } })
+    return ok({ request: updated })
   } catch (error) {
     console.error('Failed to decline request:', error)
-    return NextResponse.json({ error: 'Failed to decline request' }, { status: 500 })
+    return err('Failed to decline request', 500)
   }
 }))

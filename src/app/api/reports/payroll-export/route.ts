@@ -10,6 +10,7 @@ import { requireAnyPermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { aggregatePayrollData, formatPayrollCSV } from '@/lib/domain/tips/tip-payroll-export'
 import { withVenue } from '@/lib/with-venue'
+import { err, ok } from '@/lib/api-response'
 
 // ─── GET: Generate payroll export ────────────────────────────────────────────
 
@@ -24,31 +25,19 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // ── Validate required fields ──────────────────────────────────────────
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'locationId is required' },
-        { status: 400 }
-      )
+      return err('locationId is required')
     }
 
     if (!periodStart) {
-      return NextResponse.json(
-        { error: 'periodStart is required' },
-        { status: 400 }
-      )
+      return err('periodStart is required')
     }
 
     if (!periodEnd) {
-      return NextResponse.json(
-        { error: 'periodEnd is required' },
-        { status: 400 }
-      )
+      return err('periodEnd is required')
     }
 
     if (format !== 'csv' && format !== 'json') {
-      return NextResponse.json(
-        { error: 'format must be "csv" or "json"' },
-        { status: 400 }
-      )
+      return err('format must be "csv" or "json"')
     }
 
     // ── Auth check ────────────────────────────────────────────────────────
@@ -61,10 +50,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       [PERMISSIONS.TIPS_PROCESS_PAYOUT]
     )
     if (!auth.authorized) {
-      return NextResponse.json(
-        { error: auth.error },
-        { status: auth.status }
-      )
+      return err(auth.error, auth.status)
     }
 
     // ── Parse dates ─────────────────────────────────────────────────────
@@ -98,12 +84,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     // JSON format
-    return NextResponse.json({ data })
+    return ok({ data })
   } catch (error) {
     console.error('Failed to generate payroll export:', error)
-    return NextResponse.json(
-      { error: 'Failed to generate payroll export' },
-      { status: 500 }
-    )
+    return err('Failed to generate payroll export', 500)
   }
 })

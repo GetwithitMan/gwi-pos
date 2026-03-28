@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
@@ -6,6 +6,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // POST - Submit PO: draft → sent
 export const POST = withVenue(withAuth('ADMIN', async function POST(
@@ -18,14 +19,14 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     const { employeeId, locationId } = body
 
     if (!locationId || !employeeId) {
-      return NextResponse.json({ error: 'locationId and employeeId required' }, { status: 400 })
+      return err('locationId and employeeId required')
     }
 
     const actor = await getActorFromRequest(request)
     const resolvedEmployeeId = actor.employeeId ?? employeeId
     const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.INVENTORY_MANAGE)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     const order = await db.vendorOrder.findFirst({
@@ -33,11 +34,11 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     })
 
     if (!order) {
-      return NextResponse.json({ error: 'Purchase order not found' }, { status: 404 })
+      return notFound('Purchase order not found')
     }
 
     if (order.status !== 'draft') {
-      return NextResponse.json({ error: 'Can only submit draft purchase orders' }, { status: 400 })
+      return err('Can only submit draft purchase orders')
     }
 
     await db.vendorOrder.update({
@@ -48,9 +49,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     void notifyDataChanged({ locationId, domain: 'inventory', action: 'updated', entityId: id })
     pushUpstream()
 
-    return NextResponse.json({ data: { id, status: 'sent' } })
+    return ok({ id, status: 'sent' })
   } catch (error) {
     console.error('Submit purchase order error:', error)
-    return NextResponse.json({ error: 'Failed to submit purchase order' }, { status: 500 })
+    return err('Failed to submit purchase order', 500)
   }
 }))

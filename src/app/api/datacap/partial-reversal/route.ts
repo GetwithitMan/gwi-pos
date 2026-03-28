@@ -5,6 +5,7 @@ import { withVenue } from '@/lib/with-venue'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { db } from '@/lib/db'
+import { err, ok } from '@/lib/api-response'
 
 interface PartialReversalRequest {
   locationId: string
@@ -20,17 +21,17 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const { locationId, readerId, recordNo, reversalAmount, employeeId } = body
 
     if (!locationId || !readerId || !recordNo || reversalAmount === undefined) {
-      return Response.json({ error: 'Missing required fields: locationId, readerId, recordNo, reversalAmount' }, { status: 400 })
+      return err('Missing required fields: locationId, readerId, recordNo, reversalAmount')
     }
 
     if (reversalAmount <= 0) {
-      return Response.json({ error: 'reversalAmount must be positive' }, { status: 400 })
+      return err('reversalAmount must be positive')
     }
 
     // BUG #471 FIX: Enforce permission check on monetary endpoint
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.POS_CARD_PAYMENTS)
     if (!auth.authorized) {
-      return Response.json({ error: auth.error }, { status: auth.status ?? 403 })
+      return err(auth.error, auth.status ?? 403)
     }
 
     // BUG #471 FIX: Cap reversal at original auth amount
@@ -39,10 +40,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       select: { authAmount: true },
     })
     if (orderCard && reversalAmount > Number(orderCard.authAmount)) {
-      return Response.json(
-        { error: `Reversal amount $${reversalAmount.toFixed(2)} exceeds authorized amount $${Number(orderCard.authAmount).toFixed(2)}` },
-        { status: 400 }
-      )
+      return err(`Reversal amount $${reversalAmount.toFixed(2)} exceeds authorized amount $${Number(orderCard.authAmount).toFixed(2)}`)
     }
 
     await validateReader(readerId, locationId)
@@ -51,16 +49,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const response = await client.partialReversal(readerId, { recordNo, reversalAmount })
     const error = parseError(response)
 
-    return Response.json({
-      data: {
+    return ok({
         approved: response.cmdStatus === 'Approved',
         authCode: response.authCode,
         recordNo: response.recordNo,
         amountReversed: response.authorize,
         sequenceNo: response.sequenceNo,
         error: error ? { code: error.code, message: error.text, isRetryable: error.isRetryable } : null,
-      },
-    })
+      })
   } catch (err) {
     return datacapErrorResponse(err)
   }

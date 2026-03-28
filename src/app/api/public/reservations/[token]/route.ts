@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { createRateLimiter } from '@/lib/rate-limiter'
+import { err, notFound, ok } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -29,7 +30,7 @@ export const GET = withVenue(async function GET(
     const { token } = params
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'Location not found' }, { status: 400 })
+      return err('Location not found')
     }
 
     const reservation = await db.reservation.findFirst({
@@ -41,7 +42,7 @@ export const GET = withVenue(async function GET(
     })
 
     if (!reservation) {
-      return NextResponse.json({ error: 'Reservation not found' }, { status: 404 })
+      return notFound('Reservation not found')
     }
 
     const terminalStatuses = ['completed', 'cancelled', 'no_show']
@@ -55,7 +56,7 @@ export const GET = withVenue(async function GET(
       ? `${reservation.guestEmail.slice(0, 2)}***@${reservation.guestEmail.split('@')[1] || '***'}`
       : null
 
-    return NextResponse.json({
+    return ok({
       id: reservation.id,
       status: reservation.status,
       readonly,
@@ -76,6 +77,6 @@ export const GET = withVenue(async function GET(
     })
   } catch (error) {
     console.error('[Public View Reservation] Error:', error)
-    return NextResponse.json({ error: 'Failed to load reservation' }, { status: 500 })
+    return err('Failed to load reservation', 500)
   }
 })

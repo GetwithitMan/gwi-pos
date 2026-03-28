@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationDateRange, dateRangeToUTC, getHourInTimezone } from '@/lib/timezone'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
+import { err, ok } from '@/lib/api-response'
 
 interface DaypartConfig {
   name: string
@@ -46,14 +47,14 @@ export const GET = withVenue(async (request: NextRequest) => {
     const endDate = searchParams.get('endDate')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // Auth check — require reports.view permission
     const actor = await getActorFromRequest(request)
     const employeeId = actor.employeeId ?? searchParams.get('employeeId')
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.REPORTS_VIEW)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const dayparts = DEFAULT_DAYPARTS
 
@@ -137,8 +138,7 @@ export const GET = withVenue(async (request: NextRequest) => {
     const totalCovers = buckets.reduce((s, b) => s + b.covers, 0)
     const totalTips = buckets.reduce((s, b) => s + b.tipTotal, 0)
 
-    return NextResponse.json({
-      data: {
+    return ok({
         dayparts: buckets,
         totals: {
           orderCount: totalOrders,
@@ -151,10 +151,9 @@ export const GET = withVenue(async (request: NextRequest) => {
           startDate: start.toISOString().split('T')[0],
           endDate: end.toISOString().split('T')[0],
         },
-      },
-    })
+      })
   } catch (error) {
     console.error('Daypart report error:', error)
-    return NextResponse.json({ error: 'Failed to generate daypart report' }, { status: 500 })
+    return err('Failed to generate daypart report', 500)
   }
 })

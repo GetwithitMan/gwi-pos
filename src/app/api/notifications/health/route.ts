@@ -12,12 +12,13 @@
  * Permission: notifications.view_log
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { err, ok } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -48,12 +49,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.NOTIFICATIONS_VIEW_LOG)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Gather all metrics in parallel
     const [
@@ -169,8 +170,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       overallHealth = 'degraded'
     }
 
-    return NextResponse.json({
-      data: {
+    return ok({
         overallHealth,
         totalPending,
         deadLetterCount,
@@ -179,10 +179,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         providers,
         workerHeartbeats,
         timestamp: new Date().toISOString(),
-      },
-    })
+      })
   } catch (error) {
     console.error('[Notification Health] GET error:', error)
-    return NextResponse.json({ error: 'Failed to fetch notification health' }, { status: 500 })
+    return err('Failed to fetch notification health', 500)
   }
 })

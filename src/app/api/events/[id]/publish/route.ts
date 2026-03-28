@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // POST - Publish an event (set status to on_sale)
 export const POST = withVenue(withAuth('ADMIN', async function POST(
@@ -27,20 +28,14 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     })
 
     if (!event) {
-      return NextResponse.json(
-        { error: 'Event not found' },
-        { status: 404 }
-      )
+      return notFound('Event not found')
     }
 
     // Validate event can be published
     const errors: string[] = []
 
     if (event.status === 'on_sale') {
-      return NextResponse.json(
-        { error: 'Event is already on sale' },
-        { status: 400 }
-      )
+      return err('Event is already on sale')
     }
 
     if (event.status === 'cancelled') {
@@ -64,10 +59,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     }
 
     if (errors.length > 0) {
-      return NextResponse.json(
-        { error: 'Cannot publish event', errors },
-        { status: 400 }
-      )
+      return err('Cannot publish event')
     }
 
     // Update status to on_sale
@@ -88,7 +80,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
 
     pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       message: 'Event is now on sale',
       event: {
@@ -98,12 +90,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
         eventDate: updatedEvent.eventDate.toISOString().split('T')[0],
         totalCapacity: updatedEvent.totalCapacity,
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to publish event:', error)
-    return NextResponse.json(
-      { error: 'Failed to publish event' },
-      { status: 500 }
-    )
+    return err('Failed to publish event', 500)
   }
 }))

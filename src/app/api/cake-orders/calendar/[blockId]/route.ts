@@ -4,6 +4,7 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { requireCakeFeature } from '@/lib/cake-orders/require-cake-feature'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // PATCH /api/cake-orders/calendar/[blockId] — update a calendar block
 export const PATCH = withVenue(async function PATCH(
@@ -20,7 +21,7 @@ export const PATCH = withVenue(async function PATCH(
     const locationId = actor.locationId || body.locationId
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // ── Permission check ──────────────────────────────────────────────
@@ -46,7 +47,7 @@ export const PATCH = withVenue(async function PATCH(
     )
 
     if (existing.length === 0) {
-      return NextResponse.json({ error: 'Calendar block not found' }, { status: 404 })
+      return notFound('Calendar block not found')
     }
 
     // ── Build dynamic SET clause ──────────────────────────────────────
@@ -56,7 +57,7 @@ export const PATCH = withVenue(async function PATCH(
 
     if (body.title !== undefined) {
       if (typeof body.title !== 'string' || body.title.trim().length === 0) {
-        return NextResponse.json({ error: 'title cannot be empty' }, { status: 400 })
+        return err('title cannot be empty')
       }
       setClauses.push(`"title" = $${paramIdx}`)
       setParams.push(body.title.trim())
@@ -78,10 +79,7 @@ export const PATCH = withVenue(async function PATCH(
     if (body.blockType !== undefined) {
       const validBlockTypes = ['production', 'decoration', 'delivery', 'blocked']
       if (!validBlockTypes.includes(body.blockType)) {
-        return NextResponse.json(
-          { error: `blockType must be one of: ${validBlockTypes.join(', ')}` },
-          { status: 400 },
-        )
+        return err(`blockType must be one of: ${validBlockTypes.join(', ')}`)
       }
       setClauses.push(`"blockType" = $${paramIdx}`)
       setParams.push(body.blockType)
@@ -96,7 +94,7 @@ export const PATCH = withVenue(async function PATCH(
           locationId,
         )
         if (orderExists.length === 0) {
-          return NextResponse.json({ error: 'Referenced cake order not found' }, { status: 404 })
+          return notFound('Referenced cake order not found')
         }
       }
       setClauses.push(`"cakeOrderId" = $${paramIdx}`)
@@ -111,7 +109,7 @@ export const PATCH = withVenue(async function PATCH(
           body.employeeId,
         )
         if (empExists.length === 0) {
-          return NextResponse.json({ error: 'Referenced employee not found' }, { status: 404 })
+          return notFound('Referenced employee not found')
         }
       }
       setClauses.push(`"employeeId" = $${paramIdx}`)
@@ -126,7 +124,7 @@ export const PATCH = withVenue(async function PATCH(
     }
 
     if (setClauses.length === 0) {
-      return NextResponse.json({ error: 'No fields to update' }, { status: 400 })
+      return err('No fields to update')
     }
 
     // Always update updatedAt
@@ -136,7 +134,7 @@ export const PATCH = withVenue(async function PATCH(
     const resolvedStartDate = body.startDate ?? existing[0].startDate
     const resolvedEndDate = body.endDate ?? existing[0].endDate
     if (new Date(resolvedEndDate as string) < new Date(resolvedStartDate as string)) {
-      return NextResponse.json({ error: 'endDate must be >= startDate' }, { status: 400 })
+      return err('endDate must be >= startDate')
     }
 
     // ── Execute UPDATE ────────────────────────────────────────────────
@@ -155,10 +153,10 @@ export const PATCH = withVenue(async function PATCH(
       blockId,
     )
 
-    return NextResponse.json({ data: updated[0] })
+    return ok(updated[0])
   } catch (error) {
     console.error('Failed to update cake calendar block:', error)
-    return NextResponse.json({ error: 'Failed to update cake calendar block' }, { status: 500 })
+    return err('Failed to update cake calendar block', 500)
   }
 })
 
@@ -173,7 +171,7 @@ export const DELETE = withVenue(async function DELETE(
     const locationId = searchParams.get('locationId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // ── Permission check ──────────────────────────────────────────────
@@ -202,7 +200,7 @@ export const DELETE = withVenue(async function DELETE(
     )
 
     if (existing.length === 0) {
-      return NextResponse.json({ error: 'Calendar block not found' }, { status: 404 })
+      return notFound('Calendar block not found')
     }
 
     // ── Soft delete ───────────────────────────────────────────────────
@@ -214,9 +212,9 @@ export const DELETE = withVenue(async function DELETE(
       locationId,
     )
 
-    return NextResponse.json({ data: { id: blockId, deleted: true } })
+    return ok({ id: blockId, deleted: true })
   } catch (error) {
     console.error('Failed to delete cake calendar block:', error)
-    return NextResponse.json({ error: 'Failed to delete cake calendar block' }, { status: 500 })
+    return err('Failed to delete cake calendar block', 500)
   }
 })

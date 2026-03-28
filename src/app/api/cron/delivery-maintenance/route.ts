@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { verifyCronSecret } from '@/lib/cron-auth'
 import { isDeliveryFeatureActive } from '@/lib/delivery/feature-check'
 import { forAllVenues } from '@/lib/cron-venue-helper'
+import { ok } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
@@ -150,7 +151,7 @@ export async function GET(request: NextRequest) {
     }
   }, { label: 'cron:delivery-maintenance' })
 
-  return NextResponse.json({
+  return ok({
     ...summary,
     processed: allResults,
     timestamp: now.toISOString(),

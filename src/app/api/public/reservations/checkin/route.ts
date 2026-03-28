@@ -8,6 +8,7 @@ import { createRateLimiter } from '@/lib/rate-limiter'
 import { dispatchReservationChanged } from '@/lib/socket-dispatch'
 import crypto from 'crypto'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('public-reservations-checkin')
 
 export const dynamic = 'force-dynamic'
@@ -32,12 +33,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     const { phone } = await request.json()
     if (!phone) {
-      return NextResponse.json({ error: 'Phone number is required' }, { status: 400 })
+      return err('Phone number is required')
     }
 
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'Location not found' }, { status: 400 })
+      return err('Location not found')
     }
 
     const normalizedPhone = formatPhoneE164(phone)
@@ -70,10 +71,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     if (matches.length === 0) {
-      return NextResponse.json(
-        { error: 'No reservation found for today with this phone number' },
-        { status: 404 }
-      )
+      return notFound('No reservation found for today with this phone number')
     }
 
     // Ambiguous — multiple matches. Privacy: NEVER expose other guests' details
@@ -115,7 +113,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       reservationId: reservation.id, action: 'checked_in',
     }).catch(err => log.warn({ err }, 'Background task failed'))
 
-    return NextResponse.json({
+    return ok({
       id: updated.id,
       status: 'checked_in',
       guestName: reservation.guestName,
@@ -126,9 +124,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
   } catch (error: any) {
     if (error?.name === 'TransitionError') {
-      return NextResponse.json({ error: error.message }, { status: 400 })
+      return err(error.message)
     }
     console.error('[Public Check-in] Error:', error)
-    return NextResponse.json({ error: 'Failed to check in' }, { status: 500 })
+    return err('Failed to check in', 500)
   }
 })

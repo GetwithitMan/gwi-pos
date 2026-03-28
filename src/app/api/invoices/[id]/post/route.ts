@@ -5,6 +5,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { cascadeCostUpdate, type CostUpdateResult } from '@/lib/cost-cascade'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // POST /api/invoices/[id]/post — finalize invoice and cascade costs
 export const POST = withVenue(async function POST(
@@ -17,11 +18,11 @@ export const POST = withVenue(async function POST(
     const { locationId, requestingEmployeeId } = body
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.INVENTORY_MANAGE)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Load invoice with line items
     const invoice = await db.invoice.findFirst({
@@ -38,15 +39,12 @@ export const POST = withVenue(async function POST(
     })
 
     if (!invoice) {
-      return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
+      return notFound('Invoice not found')
     }
 
     const invoiceStatus = String(invoice.status)
     if (invoiceStatus !== 'draft' && invoiceStatus !== 'pending') {
-      return NextResponse.json(
-        { error: `Invoice is already ${invoice.status}. Only draft or pending invoices can be posted.` },
-        { status: 400 }
-      )
+      return err(`Invoice is already ${invoice.status}. Only draft or pending invoices can be posted.`)
     }
 
     // Cascade cost updates for each line item with an inventoryItemId
@@ -88,8 +86,7 @@ export const POST = withVenue(async function POST(
     // Identify significant cost changes (>5%)
     const significantChanges = costResults.filter(r => Math.abs(r.changePercent) > 5)
 
-    return NextResponse.json({
-      data: {
+    return ok({
         success: true,
         costsUpdated: costResults.length,
         recipesRecalculated: costResults.reduce((sum, r) => sum + r.recipesRecalculated, 0),
@@ -101,8 +98,7 @@ export const POST = withVenue(async function POST(
           menuItemsAffected: c.menuItemsUpdated,
         })),
         errors: errors.length > 0 ? errors : undefined,
-      },
-    })
+      })
   } catch (error) {
     console.error('Post invoice error:', error)
     const message = error instanceof Error ? error.message : 'Unknown error'

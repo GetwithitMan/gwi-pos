@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { verifyCronSecret } from '@/lib/cron-auth'
 import { forAllVenues } from '@/lib/cron-venue-helper'
+import { ok } from '@/lib/api-response'
 
 /**
  * GET /api/cron/datacap-reconciliation
@@ -193,7 +194,7 @@ export async function GET(request: NextRequest) {
     allResults.push(result)
   }, { label: 'cron:datacap-reconciliation', concurrency: 3 })
 
-  return NextResponse.json({
+  return ok({
     ...summary,
     reconciliation: allResults,
     timestamp: new Date().toISOString(),

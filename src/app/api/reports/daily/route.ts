@@ -29,6 +29,7 @@ import {
   getTimeClockEntries,
   type BusinessDayRange,
 } from '@/lib/query-services'
+import { err, ok } from '@/lib/api-response'
 
 // ============================================================
 // SQL-AGGREGATE DAILY REPORT (replaces in-memory iteration)
@@ -50,12 +51,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const useLegacy = searchParams.get('legacy') === 'true'
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID required' }, { status: 400 })
+      return err('Location ID required')
     }
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_VIEW)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     const rateCheck = checkReportRateLimit(requestingEmployeeId || 'anonymous')
@@ -602,7 +603,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // BUILD RESPONSE (identical shape to legacy)
     // ============================================
 
-    return NextResponse.json({ data: {
+    return ok({
       reportDate: date.toISOString().split('T')[0],
       generatedAt: new Date().toISOString(),
 
@@ -811,13 +812,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           topItem: ent.top_item_name || null,
         }
       })(),
-    } })
+    })
   } catch (error) {
     console.error('Failed to generate daily report:', error)
-    return NextResponse.json(
-      { error: 'Failed to generate daily report' },
-      { status: 500 }
-    )
+    return err('Failed to generate daily report', 500)
   }
 })
 
@@ -1569,7 +1567,7 @@ async function legacyReport(
   // BUILD RESPONSE
   // ============================================
 
-  return NextResponse.json({ data: {
+  return ok({
     reportDate: date.toISOString().split('T')[0],
     generatedAt: new Date().toISOString(),
 
@@ -1764,7 +1762,7 @@ async function legacyReport(
       ccTipFees: round(Number(ccTipFees._sum.ccFeeAmountCents || 0) / 100),
       ccTipFeeTransactions: ccTipFees._count || 0,
     },
-  } })
+  })
 }
 
 function round(value: number): number {

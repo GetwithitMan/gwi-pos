@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { emitToLocation } from '@/lib/socket-server'
@@ -6,6 +6,7 @@ import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('hardware-printers')
 
 // GET single printer
@@ -21,13 +22,13 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
     })
 
     if (!printer) {
-      return NextResponse.json({ error: 'Printer not found' }, { status: 404 })
+      return notFound('Printer not found')
     }
 
-    return NextResponse.json({ data: { printer } })
+    return ok({ printer })
   } catch (error) {
     console.error('Failed to fetch printer:', error)
-    return NextResponse.json({ error: 'Failed to fetch printer' }, { status: 500 })
+    return err('Failed to fetch printer', 500)
   }
 }))
 
@@ -45,7 +46,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     })
 
     if (!existingPrinter) {
-      return NextResponse.json({ error: 'Printer not found' }, { status: 404 })
+      return notFound('Printer not found')
     }
 
     const {
@@ -99,10 +100,10 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     void notifyDataChanged({ locationId: existingPrinter.locationId, domain: 'hardware', action: 'updated', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { printer } })
+    return ok({ printer })
   } catch (error) {
     console.error('Failed to update printer:', error)
-    return NextResponse.json({ error: 'Failed to update printer' }, { status: 500 })
+    return err('Failed to update printer', 500)
   }
 }))
 
@@ -120,7 +121,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     })
 
     if (!printer) {
-      return NextResponse.json({ error: 'Printer not found' }, { status: 404 })
+      return notFound('Printer not found')
     }
 
     // Soft delete the printer
@@ -134,9 +135,9 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     void notifyDataChanged({ locationId: printer.locationId, domain: 'hardware', action: 'deleted', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Failed to delete printer:', error)
-    return NextResponse.json({ error: 'Failed to delete printer' }, { status: 500 })
+    return err('Failed to delete printer', 500)
   }
 }))

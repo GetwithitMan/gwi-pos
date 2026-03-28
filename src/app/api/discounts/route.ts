@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { Prisma } from '@/generated/prisma/client'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth, type AuthenticatedContext } from '@/lib/api-auth-middleware'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, ok } from '@/lib/api-response'
 
 // GET - List all discount rules for a location
 // No auth required — POS terminals need discount list for order screen
@@ -19,7 +20,7 @@ export const GET = withVenue(async function GET(
 
     const locationId = searchParams.get('locationId')
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     const where: {
@@ -49,7 +50,7 @@ export const GET = withVenue(async function GET(
       ],
     })
 
-    return NextResponse.json({ data: {
+    return ok({
       discounts: discounts.map(d => ({
         id: d.id,
         name: d.name,
@@ -67,13 +68,10 @@ export const GET = withVenue(async function GET(
         isAutomatic: d.isAutomatic,
         isEmployeeDiscount: d.isEmployeeDiscount,
       })),
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch discounts:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch discounts' },
-      { status: 500 }
-    )
+    return err('Failed to fetch discounts', 500)
   }
 })
 
@@ -125,10 +123,7 @@ export const POST = withVenue(withAuth('SETTINGS_MENU', async function POST(
     const locationId = ctx.auth.locationId
 
     if (!name || !displayText || !discountType || !discountConfig) {
-      return NextResponse.json(
-        { error: 'Missing required fields' },
-        { status: 400 }
-      )
+      return err('Missing required fields')
     }
 
     const discount = await db.discountRule.create({
@@ -154,19 +149,16 @@ export const POST = withVenue(withAuth('SETTINGS_MENU', async function POST(
     void notifyDataChanged({ locationId, domain: 'discounts', action: 'created', entityId: discount.id })
     void pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       id: discount.id,
       name: discount.name,
       displayText: discount.displayText,
       discountType: discount.discountType,
       discountConfig: discount.discountConfig,
       isActive: discount.isActive,
-    } })
+    })
   } catch (error) {
     console.error('Failed to create discount:', error)
-    return NextResponse.json(
-      { error: 'Failed to create discount' },
-      { status: 500 }
-    )
+    return err('Failed to create discount', 500)
   }
 }))

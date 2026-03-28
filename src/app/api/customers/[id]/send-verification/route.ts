@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { sendSMS, isTwilioConfigured } from '@/lib/twilio'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // POST - Send SMS verification to customer
 export const POST = withVenue(withAuth(async function POST(
@@ -15,14 +16,11 @@ export const POST = withVenue(withAuth(async function POST(
     const { locationId, message: customMessage } = body
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+      return err('Location ID is required')
     }
 
     if (!isTwilioConfigured()) {
-      return NextResponse.json(
-        { error: 'SMS is not configured. Set Twilio credentials in environment.' },
-        { status: 503 }
-      )
+      return err('SMS is not configured. Set Twilio credentials in environment.', 503)
     }
 
     // Verify customer exists and has a phone number
@@ -32,14 +30,11 @@ export const POST = withVenue(withAuth(async function POST(
     })
 
     if (!customer) {
-      return NextResponse.json({ error: 'Customer not found' }, { status: 404 })
+      return notFound('Customer not found')
     }
 
     if (!customer.phone) {
-      return NextResponse.json(
-        { error: 'Customer does not have a phone number on file' },
-        { status: 400 }
-      )
+      return err('Customer does not have a phone number on file')
     }
 
     // Get location name for the default message
@@ -58,21 +53,15 @@ export const POST = withVenue(withAuth(async function POST(
     })
 
     if (!result.success) {
-      return NextResponse.json(
-        { error: result.error || 'Failed to send SMS' },
-        { status: 502 }
-      )
+      return err(result.error || 'Failed to send SMS', 502)
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       messageSid: result.messageSid,
-    } })
+    })
   } catch (error) {
     console.error('Failed to send verification SMS:', error)
-    return NextResponse.json(
-      { error: 'Failed to send verification SMS' },
-      { status: 500 }
-    )
+    return err('Failed to send verification SMS', 500)
   }
 }))

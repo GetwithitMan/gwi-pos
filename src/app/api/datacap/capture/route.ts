@@ -6,6 +6,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { roundToCents } from '@/lib/pricing'
 import { db } from '@/lib/db'
+import { err, notFound, ok } from '@/lib/api-response'
 
 interface CaptureRequest {
   locationId: string
@@ -23,21 +24,21 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     let { purchaseAmount } = body
 
     if (!locationId || !readerId || !recordNo || purchaseAmount === undefined) {
-      return Response.json({ error: 'Missing required fields: locationId, readerId, recordNo, purchaseAmount' }, { status: 400 })
+      return err('Missing required fields: locationId, readerId, recordNo, purchaseAmount')
     }
 
     if (purchaseAmount <= 0) {
-      return Response.json({ error: 'purchaseAmount must be positive' }, { status: 400 })
+      return err('purchaseAmount must be positive')
     }
     if (gratuityAmount !== undefined && gratuityAmount < 0) {
-      return Response.json({ error: 'gratuityAmount must be non-negative' }, { status: 400 })
+      return err('gratuityAmount must be non-negative')
     }
 
     purchaseAmount = roundToCents(purchaseAmount)
 
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.POS_CARD_PAYMENTS)
     if (!auth.authorized) {
-      return Response.json({ error: auth.error }, { status: auth.status ?? 403 })
+      return err(auth.error, auth.status ?? 403)
     }
 
     const orderCard = await db.orderCard.findFirst({
@@ -45,13 +46,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       select: { authAmount: true },
     })
     if (!orderCard) {
-      return Response.json({ error: 'No pre-auth found for this recordNo' }, { status: 404 })
+      return notFound('No pre-auth found for this recordNo')
     }
     if (purchaseAmount + (gratuityAmount || 0) > Number(orderCard.authAmount)) {
-      return Response.json(
-        { error: `Capture amount $${(purchaseAmount + (gratuityAmount || 0)).toFixed(2)} exceeds authorized amount $${Number(orderCard.authAmount).toFixed(2)}` },
-        { status: 400 }
-      )
+      return err(`Capture amount $${(purchaseAmount + (gratuityAmount || 0)).toFixed(2)} exceeds authorized amount $${Number(orderCard.authAmount).toFixed(2)}`)
     }
 
     await validateReader(readerId, locationId)
@@ -65,15 +63,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     const error = parseError(response)
 
-    return Response.json({
-      data: {
+    return ok({
         approved: response.cmdStatus === 'Approved',
         authCode: response.authCode,
         amountAuthorized: response.authorize,
         sequenceNo: response.sequenceNo,
         error: error ? { code: error.code, message: error.text, isRetryable: error.isRetryable } : null,
-      },
-    })
+      })
   } catch (err) {
     return datacapErrorResponse(err)
   }

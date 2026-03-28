@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { verifyCronSecret } from '@/lib/cron-auth'
 import { forAllVenues } from '@/lib/cron-venue-helper'
 import { notifyNuc } from '@/lib/cron-nuc-notify'
 import { createChildLogger } from '@/lib/logger'
+import { ok } from '@/lib/api-response'
 
 const log = createChildLogger('cron.process-scheduled-orders')
 
@@ -123,5 +124,5 @@ export async function GET(request: NextRequest) {
     }
   }, { label: 'cron:process-scheduled-orders' })
 
-  return NextResponse.json({ ...summary, data: allResults })
+  return ok(allResults)
 }

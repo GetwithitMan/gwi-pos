@@ -4,6 +4,7 @@ import { withVenue } from '@/lib/with-venue'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { acquireLease, pollForCard, ListenerError } from '@/lib/domain/payment-readers/listener-service'
+import { err, ok } from '@/lib/api-response'
 
 // ─── Rate limit: reject if same terminal called within 2s ─────────────
 interface ListenRateLimitEntry {
@@ -51,7 +52,7 @@ export const POST = withVenue(async function POST(
     const { terminalId, employeeId, sessionId, leaseVersion, timeoutSeconds } = body
 
     if (!terminalId || !employeeId) {
-      return NextResponse.json({ error: 'Missing required fields: terminalId, employeeId' }, { status: 400 })
+      return err('Missing required fields: terminalId, employeeId')
     }
 
     // Rate limit: reject rapid re-calls from the same terminal
@@ -122,7 +123,7 @@ export const POST = withVenue(async function POST(
     )
 
     // Return result — recordNo is NEVER included
-    return NextResponse.json({ data: result })
+    return ok(result)
   } catch (error) {
     if (error instanceof ListenerError) {
       return NextResponse.json(
@@ -131,6 +132,6 @@ export const POST = withVenue(async function POST(
       )
     }
     console.error('Failed to listen for card:', error)
-    return NextResponse.json({ error: 'Failed to listen for card' }, { status: 500 })
+    return err('Failed to listen for card', 500)
   }
 })

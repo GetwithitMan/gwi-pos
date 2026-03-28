@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, ok } from '@/lib/api-response'
 
 // GET - List invoices
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -16,7 +17,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const endDate = searchParams.get('endDate')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID required' }, { status: 400 })
+      return err('Location ID required')
     }
 
     const where: Record<string, unknown> = {
@@ -46,15 +47,15 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orderBy: { invoiceDate: 'desc' },
     })
 
-    return NextResponse.json({ data: {
+    return ok({
       invoices: invoices.map(inv => ({
         ...inv,
         totalAmount: Number(inv.totalAmount),
       })),
-    } })
+    })
   } catch (error) {
     console.error('Invoices list error:', error)
-    return NextResponse.json({ error: 'Failed to fetch invoices' }, { status: 500 })
+    return err('Failed to fetch invoices', 500)
   }
 })
 
@@ -73,15 +74,11 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     } = body
 
     if (!locationId || !vendorId || !invoiceNumber || !invoiceDate) {
-      return NextResponse.json({
-        error: 'Location ID, vendor, invoice number, and date required',
-      }, { status: 400 })
+      return err('Location ID, vendor, invoice number, and date required')
     }
 
     if (!lineItems || lineItems.length === 0) {
-      return NextResponse.json({
-        error: 'At least one line item required',
-      }, { status: 400 })
+      return err('At least one line item required')
     }
 
     // Calculate totals and prepare line items
@@ -140,7 +137,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     void notifyDataChanged({ locationId, domain: 'inventory', action: 'created', entityId: invoice.id })
     pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       invoice: {
         ...invoice,
         totalAmount: Number(invoice.totalAmount),
@@ -151,12 +148,12 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
           totalCost: Number(li.totalCost),
         })),
       },
-    } })
+    })
   } catch (error) {
     console.error('Create invoice error:', error)
     if ((error as { code?: string }).code === 'P2002') {
-      return NextResponse.json({ error: 'Invoice with this number already exists' }, { status: 400 })
+      return err('Invoice with this number already exists')
     }
-    return NextResponse.json({ error: 'Failed to create invoice' }, { status: 500 })
+    return err('Failed to create invoice', 500)
   }
 }))

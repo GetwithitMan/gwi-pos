@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
@@ -8,6 +8,7 @@ import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 import { writeDeliveryAuditLog } from '@/lib/delivery/state-machine'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('delivery-addresses')
 
 export const dynamic = 'force-dynamic'
@@ -32,13 +33,13 @@ export const PUT = withVenue(async function PUT(
     const { id } = await params
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Auth check
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.DELIVERY_MANAGE)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Feature gate
     const featureGate = await requireDeliveryFeature(locationId)
@@ -51,7 +52,7 @@ export const PUT = withVenue(async function PUT(
     `, id, locationId)
 
     if (!existing.length) {
-      return NextResponse.json({ error: 'Address not found' }, { status: 404 })
+      return notFound('Address not found')
     }
 
     const current = existing[0]
@@ -205,7 +206,7 @@ export const PUT = withVenue(async function PUT(
     `, ...updateParams)
 
     if (!updated.length) {
-      return NextResponse.json({ error: 'Failed to update address' }, { status: 500 })
+      return err('Failed to update address', 500)
     }
 
     // Write audit log for flagging/restricting
@@ -231,7 +232,7 @@ export const PUT = withVenue(async function PUT(
 
     pushUpstream()
 
-    return NextResponse.json({
+    return ok({
       address: {
         ...saved,
         latitude: saved.latitude != null ? Number(saved.latitude) : null,
@@ -240,7 +241,7 @@ export const PUT = withVenue(async function PUT(
     })
   } catch (error) {
     console.error('[Delivery/Addresses] PUT error:', error)
-    return NextResponse.json({ error: 'Failed to update address' }, { status: 500 })
+    return err('Failed to update address', 500)
   }
 })
 
@@ -255,13 +256,13 @@ export const DELETE = withVenue(async function DELETE(
     const { id } = await params
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Auth check
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.DELIVERY_MANAGE)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Feature gate
     const featureGate = await requireDeliveryFeature(locationId)
@@ -274,14 +275,14 @@ export const DELETE = withVenue(async function DELETE(
     `, id, locationId)
 
     if (result === 0) {
-      return NextResponse.json({ error: 'Address not found' }, { status: 404 })
+      return notFound('Address not found')
     }
 
     pushUpstream()
 
-    return NextResponse.json({ success: true })
+    return ok({ success: true })
   } catch (error) {
     console.error('[Delivery/Addresses] DELETE error:', error)
-    return NextResponse.json({ error: 'Failed to delete address' }, { status: 500 })
+    return err('Failed to delete address', 500)
   }
 })

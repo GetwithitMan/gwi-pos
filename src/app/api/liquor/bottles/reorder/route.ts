@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchMenuUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
@@ -7,6 +7,7 @@ import { getLocationId } from '@/lib/location-cache'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 
 const log = createChildLogger('liquor.bottles.reorder')
 
@@ -20,18 +21,12 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
     const { bottleIds } = body
 
     if (!bottleIds || !Array.isArray(bottleIds)) {
-      return NextResponse.json(
-        { error: 'bottleIds array is required' },
-        { status: 400 }
-      )
+      return err('bottleIds array is required')
     }
 
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'No location found' },
-        { status: 400 }
-      )
+      return err('No location found')
     }
 
     // Verify all bottles belong to this location
@@ -45,10 +40,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
     })
 
     if (bottles.length !== bottleIds.length) {
-      return NextResponse.json(
-        { error: 'One or more bottles not found' },
-        { status: 404 }
-      )
+      return notFound('One or more bottles not found')
     }
 
     // Update sortOrder for each bottle
@@ -73,12 +65,9 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
       name: 'bottles-reorder',
     }).catch(err => log.warn({ err }, 'fire-and-forget failed in liquor.bottles.reorder'))
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Failed to reorder bottles:', error)
-    return NextResponse.json(
-      { error: 'Failed to reorder bottles' },
-      { status: 500 }
-    )
+    return err('Failed to reorder bottles', 500)
   }
 }))

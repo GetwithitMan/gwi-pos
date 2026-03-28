@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - List tickets for an event
 export const GET = withVenue(withAuth('ADMIN', async function GET(
@@ -31,10 +32,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
     })
 
     if (!event) {
-      return NextResponse.json(
-        { error: 'Event not found' },
-        { status: 404 }
-      )
+      return notFound('Event not found')
     }
 
     // Build where clause
@@ -120,7 +118,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
       return acc
     }, {} as Record<string, number>)
 
-    return NextResponse.json({ data: {
+    return ok({
       event: {
         id: event.id,
         name: event.name,
@@ -190,12 +188,9 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
         offset,
         hasMore: offset + tickets.length < total,
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch event tickets:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch event tickets' },
-      { status: 500 }
-    )
+    return err('Failed to fetch event tickets', 500)
   }
 }))

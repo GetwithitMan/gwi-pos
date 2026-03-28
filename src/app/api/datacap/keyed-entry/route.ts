@@ -7,6 +7,7 @@ import { withAuth, type AuthenticatedContext } from '@/lib/api-auth-middleware'
 import { db } from '@/lib/db'
 import { logger } from '@/lib/logger'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, ok } from '@/lib/api-response'
 
 // ─── Validation Helpers ─────────────────────────────────────────────────────
 
@@ -77,10 +78,10 @@ export const POST = withVenue(withAuth('manager.keyed_entry', async function POS
 
     // ─── Validate required fields ──────────────────────────────────────
     if (!orderId || amount === undefined || amount === null || amount <= 0) {
-      return Response.json({ error: 'Missing required fields: orderId, amount (positive)' }, { status: 400 })
+      return err('Missing required fields: orderId, amount (positive)')
     }
     if (!cardNumber || !expiryMonth || !expiryYear || !cvv) {
-      return Response.json({ error: 'Missing required card fields: cardNumber, expiryMonth, expiryYear, cvv' }, { status: 400 })
+      return err('Missing required card fields: cardNumber, expiryMonth, expiryYear, cvv')
     }
     // Auto-resolve reader for sequence tracking if not provided
     let resolvedReaderId = readerId
@@ -90,7 +91,7 @@ export const POST = withVenue(withAuth('manager.keyed_entry', async function POS
         select: { id: true },
       })
       if (!reader) {
-        return Response.json({ error: 'No active payment reader found for this location. A reader is needed for keyed entry processing.' }, { status: 400 })
+        return err('No active payment reader found for this location. A reader is needed for keyed entry processing.')
       }
       resolvedReaderId = reader.id
     }
@@ -98,13 +99,13 @@ export const POST = withVenue(withAuth('manager.keyed_entry', async function POS
     // ─── Validate card data ────────────────────────────────────────────
     const cleanCardNumber = cardNumber.replace(/[\s-]/g, '')
     if (!isValidCardNumber(cleanCardNumber)) {
-      return Response.json({ error: 'Invalid card number. Must be 13-19 digits.' }, { status: 400 })
+      return err('Invalid card number. Must be 13-19 digits.')
     }
     if (!isValidExpiry(expiryMonth, expiryYear)) {
-      return Response.json({ error: 'Invalid or expired card date.' }, { status: 400 })
+      return err('Invalid or expired card date.')
     }
     if (!isValidCVV(cvv)) {
-      return Response.json({ error: 'Invalid CVV. Must be 3-4 digits.' }, { status: 400 })
+      return err('Invalid CVV. Must be 3-4 digits.')
     }
 
     // ─── Extract safe data BEFORE processing (never log full PAN) ──────
@@ -169,8 +170,7 @@ export const POST = withVenue(withAuth('manager.keyed_entry', async function POS
 
     pushUpstream()
 
-    return Response.json({
-      data: {
+    return ok({
         approved: response.cmdStatus === 'Approved',
         authCode: response.authCode,
         recordNo: response.recordNo,
@@ -182,8 +182,7 @@ export const POST = withVenue(withAuth('manager.keyed_entry', async function POS
         gratuity: response.gratuityAmount,
         sequenceNo: response.sequenceNo,
         error: error ? { code: error.code, message: error.text, isRetryable: error.isRetryable } : null,
-      },
-    })
+      })
   } catch (err) {
     return datacapErrorResponse(err)
   }

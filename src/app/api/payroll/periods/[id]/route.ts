@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { calculateTaxes, TaxCalculationInput } from '@/lib/payroll/tax-calculator'
 import { withVenue } from '@/lib/with-venue'
@@ -6,6 +6,7 @@ import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - Get payroll period details with pay stubs
 export const GET = withVenue(async function GET(
@@ -35,15 +36,15 @@ export const GET = withVenue(async function GET(
     })
 
     if (!period) {
-      return NextResponse.json({ error: 'Payroll period not found' }, { status: 404 })
+      return notFound('Payroll period not found')
     }
 
     // Auth check — require reports.labor permission
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, period.locationId, PERMISSIONS.REPORTS_LABOR)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
-    return NextResponse.json({ data: {
+    return ok({
       period: {
         id: period.id,
         periodStart: period.periodStart.toISOString(),
@@ -88,10 +89,10 @@ export const GET = withVenue(async function GET(
         paymentMethod: stub.paymentMethod,
         paidAt: stub.paidAt?.toISOString() || null,
       })),
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch payroll period:', error)
-    return NextResponse.json({ error: 'Failed to fetch payroll period' }, { status: 500 })
+    return err('Failed to fetch payroll period', 500)
   }
 })
 
@@ -111,13 +112,13 @@ export const PUT = withVenue(async function PUT(
     })
 
     if (!period) {
-      return NextResponse.json({ error: 'Payroll period not found' }, { status: 404 })
+      return notFound('Payroll period not found')
     }
 
     // Auth check — require reports.labor permission
     const actorPut = await getActorFromRequest(request)
     const authPut = await requirePermission(actorPut.employeeId, period.locationId, PERMISSIONS.REPORTS_LABOR)
-    if (!authPut.authorized) return NextResponse.json({ error: authPut.error }, { status: authPut.status })
+    if (!authPut.authorized) return err(authPut.error, authPut.status)
 
     // Get payroll settings for tax calculation
     const payrollSettings = await db.payrollSettings.findUnique({
@@ -345,7 +346,7 @@ export const PUT = withVenue(async function PUT(
         },
       })
 
-      return NextResponse.json({ data: {
+      return ok({
         message: 'Payroll processed successfully',
         totals: {
           regularHours: totalRegularHours,
@@ -356,7 +357,7 @@ export const PUT = withVenue(async function PUT(
           bankedTips: totalBankedTips,
           grandTotal,
         },
-      } })
+      })
     }
 
     if (action === 'close') {
@@ -377,7 +378,7 @@ export const PUT = withVenue(async function PUT(
         data: { status: 'approved', lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local' },
       })
 
-      return NextResponse.json({ data: { message: 'Payroll period closed' } })
+      return ok({ message: 'Payroll period closed' })
     }
 
     if (action === 'pay') {
@@ -449,13 +450,13 @@ export const PUT = withVenue(async function PUT(
         },
       })
 
-      return NextResponse.json({ data: { message: 'Payroll marked as paid, YTD updated' } })
+      return ok({ message: 'Payroll marked as paid, YTD updated' })
     }
 
-    return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
+    return err('Invalid action')
   } catch (error) {
     console.error('Failed to update payroll period:', error)
-    return NextResponse.json({ error: 'Failed to update payroll period' }, { status: 500 })
+    return err('Failed to update payroll period', 500)
   }
 })
 
@@ -469,19 +470,16 @@ export const DELETE = withVenue(async function DELETE(
 
     const period = await db.payrollPeriod.findUnique({ where: { id } })
     if (!period) {
-      return NextResponse.json({ error: 'Payroll period not found' }, { status: 404 })
+      return notFound('Payroll period not found')
     }
 
     // Auth check — require reports.labor permission
     const actorDel = await getActorFromRequest(request)
     const authDel = await requirePermission(actorDel.employeeId, period.locationId, PERMISSIONS.REPORTS_LABOR)
-    if (!authDel.authorized) return NextResponse.json({ error: authDel.error }, { status: authDel.status })
+    if (!authDel.authorized) return err(authDel.error, authDel.status)
 
     if (period.status !== 'open') {
-      return NextResponse.json(
-        { error: 'Can only delete open payroll periods' },
-        { status: 400 }
-      )
+      return err('Can only delete open payroll periods')
     }
 
     // Soft delete pay stubs first
@@ -493,9 +491,9 @@ export const DELETE = withVenue(async function DELETE(
     void notifyDataChanged({ locationId: period.locationId, domain: 'payroll', action: 'deleted', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { message: 'Payroll period deleted' } })
+    return ok({ message: 'Payroll period deleted' })
   } catch (error) {
     console.error('Failed to delete payroll period:', error)
-    return NextResponse.json({ error: 'Failed to delete payroll period' }, { status: 500 })
+    return err('Failed to delete payroll period', 500)
   }
 })

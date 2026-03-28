@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch';
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // POST - Reflow seats when table is resized
 export const POST = withVenue(withAuth('ADMIN', async function POST(
@@ -16,10 +17,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     const { oldWidth, oldHeight, newWidth, newHeight, availableSpace } = body;
 
     if (!oldWidth || !oldHeight || !newWidth || !newHeight) {
-      return NextResponse.json(
-        { error: 'Missing dimension parameters' },
-        { status: 400 }
-      );
+      return err('Missing dimension parameters');
     }
 
     // Helper to calculate dynamic clearance based on available space
@@ -46,10 +44,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     });
 
     if (!table) {
-      return NextResponse.json(
-        { error: 'Table not found' },
-        { status: 404 }
-      );
+      return notFound('Table not found');
     }
 
     // Calculate dynamic clearance for each side
@@ -143,7 +138,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     // Notify POS terminals of floor plan update
     dispatchFloorPlanUpdate(table.locationId, { async: true });
 
-    return NextResponse.json({ data: {
+    return ok({
       seats: updatedSeats.map((s) => ({
         id: s.id,
         seatNumber: s.seatNumber,
@@ -153,12 +148,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
         angle: s.angle,
       })),
       message: `Reflowed ${updatedSeats.length} seats`,
-    } });
+    });
   } catch (error) {
     console.error('Failed to reflow seats:', error);
-    return NextResponse.json(
-      { error: 'Failed to reflow seats' },
-      { status: 500 }
-    );
+    return err('Failed to reflow seats', 500);
   }
 }))

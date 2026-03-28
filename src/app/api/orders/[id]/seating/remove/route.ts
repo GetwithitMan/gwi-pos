@@ -1,6 +1,5 @@
 import { db } from '@/lib/db'
 import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
-import { NextResponse } from 'next/server'
 import { dispatchOrderUpdated, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
@@ -9,6 +8,7 @@ import { getRequestLocationId } from '@/lib/request-context'
 import { recalculateOrderTotals } from '@/lib/domain/order-items/order-totals'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-seating-remove')
 
 export const POST = withVenue(withAuth({ allowCellular: true }, async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -23,7 +23,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       select: { id: true, locationId: true },
     })
     if (!orderCheck) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      return notFound('Order not found')
     }
     locationId = orderCheck.locationId
   }
@@ -38,16 +38,13 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       ` as Array<{ id: string; status: string; locationId: string; tableId: string | null; baseSeatCount: number; extraSeatCount: number; tipTotal: any; isTaxExempt: boolean }>
 
       if (!lockedOrder) {
-        return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+        return notFound('Order not found')
       }
 
       // Status guard: cannot remove seats from settled orders
       const blockedStatuses = ['paid', 'closed', 'voided', 'cancelled']
       if (blockedStatuses.includes(lockedOrder.status)) {
-        return NextResponse.json(
-          { error: `Cannot remove seat from ${lockedOrder.status} order` },
-          { status: 400 }
-        )
+        return err(`Cannot remove seat from ${lockedOrder.status} order`)
       }
 
       // 2. Soft-delete items assigned to the seat being removed (preserve audit trail)
@@ -110,10 +107,10 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
 
       pushUpstream()
 
-      return NextResponse.json({ data: { success: true } })
+      return ok({ success: true })
     })
   } catch (error) {
     console.error('[seating/remove] Failed:', error)
-    return NextResponse.json({ error: 'SEAT_REMOVE_FAILED' }, { status: 500 })
+    return err('SEAT_REMOVE_FAILED', 500)
   }
 }))

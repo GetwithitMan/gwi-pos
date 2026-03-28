@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { parseSettings, mergeWithDefaults, LocationSettings } from '@/lib/settings'
 import { requirePermission } from '@/lib/api-auth'
@@ -11,6 +11,7 @@ import { invalidatePaymentSettings } from '@/lib/payment-settings-cache'
 import { invalidateMenuCache } from '@/lib/menu-cache'
 import { withVenue } from '@/lib/with-venue'
 import { getActorFromRequest } from '@/lib/api-auth'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // Category types that map to liquor/food tax-inclusive flags
 const LIQUOR_CATEGORY_TYPES = ['liquor', 'drinks']
@@ -44,10 +45,7 @@ export const GET = withVenue(async function GET() {
     // Settings are already read from cache below via getLocationSettings().
     const location = await db.location.findFirst({ select: { id: true, name: true, updatedAt: true } })
     if (!location) {
-      return NextResponse.json(
-        { error: 'No location found' },
-        { status: 404 }
-      )
+      return notFound('No location found')
     }
 
     const settings = parseSettings(await getLocationSettings(location.id))
@@ -140,18 +138,15 @@ export const GET = withVenue(async function GET() {
       }
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       locationId: location.id,
       locationName: location.name,
       settingsUpdatedAt: location.updatedAt?.toISOString() ?? null,
       settings: responseSettings,
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch settings:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch settings' },
-      { status: 500 }
-    )
+    return err('Failed to fetch settings', 500)
   }
 })
 
@@ -162,15 +157,12 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     const { settings, employeeId: bodyEmployeeId } = body as { settings: Partial<LocationSettings>; employeeId?: string }
 
     if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
-      return NextResponse.json({ error: 'Invalid settings payload' }, { status: 400 })
+      return err('Invalid settings payload')
     }
 
     const location = await db.location.findFirst({ select: { id: true } })
     if (!location) {
-      return NextResponse.json(
-        { error: 'No location found' },
-        { status: 404 }
-      )
+      return notFound('No location found')
     }
 
     // H16: Prefer session-based employeeId over body-supplied value
@@ -180,28 +172,28 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     // Auth: editing settings requires settings.edit permission (or admin/all)
     const auth = await requirePermission(employeeId, location.id, PERMISSIONS.SETTINGS_EDIT)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // P1.2: SSRF guardrail — validate baseUrl before saving
     if (settings.hotelPms?.baseUrl) {
       const ssrfError = validatePmsBaseUrl(settings.hotelPms.baseUrl)
       if (ssrfError) {
-        return NextResponse.json({ error: `Invalid Oracle PMS base URL: ${ssrfError}` }, { status: 400 })
+        return err(`Invalid Oracle PMS base URL: ${ssrfError}`)
       }
     }
 
     // Validate pricingRules array if provided
     if (settings.pricingRules !== undefined) {
       if (!Array.isArray(settings.pricingRules)) {
-        return NextResponse.json({ error: 'pricingRules must be an array' }, { status: 400 })
+        return err('pricingRules must be an array')
       }
       if (settings.pricingRules.length > 500) {
-        return NextResponse.json({ error: 'Maximum 500 pricing rules allowed' }, { status: 400 })
+        return err('Maximum 500 pricing rules allowed')
       }
       for (const rule of settings.pricingRules) {
         if (!rule || typeof rule !== 'object') {
-          return NextResponse.json({ error: 'Invalid pricing rule entry' }, { status: 400 })
+          return err('Invalid pricing rule entry')
         }
         // Sanitize string fields — strip HTML tags
         if (typeof rule.name === 'string') rule.name = rule.name.replace(/<[^>]*>/g, '')
@@ -209,7 +201,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
         if (typeof rule.description === 'string') rule.description = rule.description.replace(/<[^>]*>/g, '')
         // Guard against NaN/Infinity in numeric fields
         if (typeof rule.adjustmentValue === 'number' && !isFinite(rule.adjustmentValue)) {
-          return NextResponse.json({ error: `Pricing rule "${rule.name}" has invalid adjustment value` }, { status: 400 })
+          return err(`Pricing rule "${rule.name}" has invalid adjustment value`)
         }
         if (typeof rule.priority === 'number' && !isFinite(rule.priority)) {
           rule.priority = 10 // Fallback to default
@@ -221,10 +213,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     if (settings.dualPricing?.cashDiscountPercent !== undefined) {
       const pct = settings.dualPricing.cashDiscountPercent
       if (typeof pct !== 'number' || !Number.isFinite(pct) || pct < 0 || pct > 100) {
-        return NextResponse.json(
-          { error: 'Cash discount percent must be between 0 and 100' },
-          { status: 400 }
-        )
+        return err('Cash discount percent must be between 0 and 100')
       }
     }
 
@@ -235,10 +224,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     ) {
       const markup = settings.pricingProgram.creditMarkupPercent
       if (markup > 10) {
-        return NextResponse.json(
-          { error: 'Credit markup exceeds maximum allowed (10%)' },
-          { status: 400 }
-        )
+        return err('Credit markup exceeds maximum allowed (10%)')
       }
       if (markup > 4) {
         console.warn(
@@ -256,10 +242,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
         settings.pricingProgram.venueState
       )
       if (!compliance.valid) {
-        return NextResponse.json(
-          { error: compliance.errors.join(' ') },
-          { status: 400 }
-        )
+        return err(compliance.errors.join(' '))
       }
     }
 
@@ -417,15 +400,12 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       locationId: location.id,
       settings: responseSettings,
-    } })
+    })
   } catch (error) {
     console.error('Failed to update settings:', error)
-    return NextResponse.json(
-      { error: 'Failed to update settings' },
-      { status: 500 }
-    )
+    return err('Failed to update settings', 500)
   }
 })

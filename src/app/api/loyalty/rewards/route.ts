@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { err, ok } from '@/lib/api-response'
 
 const VALID_REWARD_TYPES = ['free_item', 'discount_percent', 'discount_fixed', 'free_delivery', 'custom']
 
@@ -14,7 +15,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const locationId = searchParams.get('locationId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // ── Permission check ──────────────────────────────────────────────
@@ -50,13 +51,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       ...params,
     )
 
-    return NextResponse.json({ data: rewards })
+    return ok(rewards)
   } catch (error: any) {
     if (error?.message?.includes('does not exist') || error?.code === '42P01') {
-      return NextResponse.json({ error: 'Loyalty system not yet configured. Please run database migrations.' }, { status: 503 })
+      return err('Loyalty system not yet configured. Please run database migrations.', 503)
     }
     console.error('Failed to list loyalty rewards:', error)
-    return NextResponse.json({ error: 'Failed to list loyalty rewards' }, { status: 500 })
+    return err('Failed to list loyalty rewards', 500)
   }
 })
 
@@ -71,7 +72,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const locationId = actor.locationId || body.locationId
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // ── Permission check ──────────────────────────────────────────────
@@ -87,19 +88,16 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const { name, description, imageUrl, pointCost, rewardType, rewardValue, applicableTo, maxRedemptionsPerCustomer, totalAvailable, startsAt, expiresAt, isActive, sortOrder } = body
 
     if (!name || typeof name !== 'string' || name.trim().length === 0) {
-      return NextResponse.json({ error: 'name is required' }, { status: 400 })
+      return err('name is required')
     }
 
     if (!pointCost || typeof pointCost !== 'number' || pointCost <= 0) {
-      return NextResponse.json({ error: 'pointCost must be greater than 0' }, { status: 400 })
+      return err('pointCost must be greater than 0')
     }
 
     const resolvedRewardType = rewardType || 'custom'
     if (!VALID_REWARD_TYPES.includes(resolvedRewardType)) {
-      return NextResponse.json(
-        { error: `rewardType must be one of: ${VALID_REWARD_TYPES.join(', ')}` },
-        { status: 400 },
-      )
+      return err(`rewardType must be one of: ${VALID_REWARD_TYPES.join(', ')}`)
     }
 
     // ── Insert ──────────────────────────────────────────────────────
@@ -142,12 +140,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       id,
     )
 
-    return NextResponse.json({ data: created[0] })
+    return ok(created[0])
   } catch (error: any) {
     if (error?.message?.includes('does not exist') || error?.code === '42P01') {
-      return NextResponse.json({ error: 'Loyalty system not yet configured. Please run database migrations.' }, { status: 503 })
+      return err('Loyalty system not yet configured. Please run database migrations.', 503)
     }
     console.error('Failed to create loyalty reward:', error)
-    return NextResponse.json({ error: 'Failed to create loyalty reward' }, { status: 500 })
+    return err('Failed to create loyalty reward', 500)
   }
 })

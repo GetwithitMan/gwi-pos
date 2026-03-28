@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId, getLocationSettings } from '@/lib/location-cache'
@@ -6,6 +6,7 @@ import { mergeWithDefaults, DEFAULT_DELIVERY } from '@/lib/settings'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
+import { err, ok } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -27,13 +28,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Auth check
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.DELIVERY_REPORTS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Feature gate
     const featureGate = await requireDeliveryFeature(locationId, { subfeature: 'deliveryReportsProvisioned' })
@@ -235,7 +236,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       ? Math.round(totalCostCents / completedCount) / 100
       : 0
 
-    return NextResponse.json({
+    return ok({
       report: {
         dateRange: {
           from: startDate.toISOString(),
@@ -261,6 +262,6 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     })
   } catch (error) {
     console.error('[Reports/Delivery] GET error:', error)
-    return NextResponse.json({ error: 'Failed to generate delivery report' }, { status: 500 })
+    return err('Failed to generate delivery report', 500)
   }
 })

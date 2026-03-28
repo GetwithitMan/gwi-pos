@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchMenuItemChanged } from '@/lib/socket-dispatch'
 import { invalidateMenuCache } from '@/lib/menu-cache'
@@ -7,6 +7,7 @@ import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 
 const log = createChildLogger('menu.items.id.ingredients.ingredientId')
 
@@ -47,10 +48,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
     })
 
     if (!menuItemIngredient) {
-      return NextResponse.json(
-        { error: 'Ingredient not found on this menu item' },
-        { status: 404 }
-      )
+      return notFound('Ingredient not found on this menu item')
     }
 
     // Update the override fields
@@ -105,8 +103,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
     void notifyDataChanged({ locationId: updated.locationId, domain: 'menu', action: 'updated', entityId: menuItemId })
     void pushUpstream()
 
-    return NextResponse.json({
-      data: {
+    return ok({
         id: updated.id,
         ingredientId: updated.ingredientId,
         name: updated.ingredient.name,
@@ -125,13 +122,9 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
           allowExtra: updated.allowExtra !== null,
           extraPrice: updated.extraPrice !== null,
         },
-      },
-    })
+      })
   } catch (error) {
     console.error('Error updating ingredient settings:', error)
-    return NextResponse.json(
-      { error: 'Failed to update ingredient settings' },
-      { status: 500 }
-    )
+    return err('Failed to update ingredient settings', 500)
   }
 }))

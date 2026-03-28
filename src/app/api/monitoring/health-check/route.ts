@@ -5,11 +5,12 @@
  * Monitors order creation, payment processing, database queries, etc.
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchLocationAlert } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { getActorFromRequest } from '@/lib/api-auth'
+import { err, forbidden, ok, unauthorized } from '@/lib/api-response'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -24,10 +25,7 @@ export const POST = withVenue(async function POST(req: NextRequest) {
 
     // Validate required fields
     if (!body.checkType || !body.status || !body.locationId) {
-      return NextResponse.json(
-        { error: 'Missing required fields: checkType, status, locationId' },
-        { status: 400 }
-      )
+      return err('Missing required fields: checkType, status, locationId')
     }
 
     // Validate check type
@@ -41,19 +39,13 @@ export const POST = withVenue(async function POST(req: NextRequest) {
       'NETWORK_CONNECTIVITY',
     ]
     if (!validCheckTypes.includes(body.checkType)) {
-      return NextResponse.json(
-        { error: `Invalid checkType. Must be one of: ${validCheckTypes.join(', ')}` },
-        { status: 400 }
-      )
+      return err(`Invalid checkType. Must be one of: ${validCheckTypes.join(', ')}`)
     }
 
     // Validate status
     const validStatuses = ['HEALTHY', 'DEGRADED', 'DOWN']
     if (!validStatuses.includes(body.status)) {
-      return NextResponse.json(
-        { error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` },
-        { status: 400 }
-      )
+      return err(`Invalid status. Must be one of: ${validStatuses.join(', ')}`)
     }
 
     // Create health check record
@@ -102,19 +94,16 @@ export const POST = withVenue(async function POST(req: NextRequest) {
       })
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       id: healthCheck.id,
       status: healthCheck.status,
-    } })
+    })
 
   } catch (error) {
     console.error('[Monitoring API] Failed to log health check:', error)
 
-    return NextResponse.json(
-      { error: 'Failed to log health check' },
-      { status: 500 }
-    )
+    return err('Failed to log health check', 500)
   }
 })
 
@@ -128,10 +117,7 @@ export const GET = withVenue(async function GET(req: NextRequest) {
     const locationId = searchParams.get('locationId')
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'locationId query parameter required' },
-        { status: 400 }
-      )
+      return err('locationId query parameter required')
     }
 
     // Auth gate: require INTERNAL_API_SECRET or validate requesting user owns this locationId
@@ -142,10 +128,10 @@ export const GET = withVenue(async function GET(req: NextRequest) {
     if (!hasApiKey) {
       const actor = await getActorFromRequest(req)
       if (!actor.employeeId || !actor.locationId) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+        return unauthorized('Unauthorized')
       }
       if (actor.locationId !== locationId) {
-        return NextResponse.json({ error: 'Forbidden: location mismatch' }, { status: 403 })
+        return forbidden('Forbidden: location mismatch')
       }
     }
 
@@ -186,20 +172,17 @@ export const GET = withVenue(async function GET(req: NextRequest) {
 
     const overallStatus = hasDown ? 'DOWN' : hasDegraded ? 'DEGRADED' : 'HEALTHY'
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       overallStatus,
       checks: healthStatus,
       timestamp: new Date(),
-    } })
+    })
 
   } catch (error) {
     console.error('[Monitoring API] Failed to get health status:', error)
 
-    return NextResponse.json(
-      { error: 'Failed to get health status' },
-      { status: 500 }
-    )
+    return err('Failed to get health status', 500)
   }
 })
 

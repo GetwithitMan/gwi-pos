@@ -7,7 +7,7 @@
  * Recalculates order totals and emits order events + socket dispatches.
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
 import { withVenue } from '@/lib/with-venue'
@@ -32,6 +32,7 @@ import {
 import { emitOrderEvents } from '@/lib/order-events/emitter'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-apply-combo')
 
 export const POST = withVenue(async function POST(
@@ -52,10 +53,7 @@ export const POST = withVenue(async function POST(
     const mutationOrigin = isCellularCombo ? 'cloud' : 'local'
 
     if (!comboTemplateId || !itemIds?.length) {
-      return NextResponse.json(
-        { error: 'comboTemplateId and itemIds are required' },
-        { status: 400 }
-      )
+      return err('comboTemplateId and itemIds are required')
     }
 
     // Permission check: POS_ACCESS required to apply combos
@@ -66,10 +64,10 @@ export const POST = withVenue(async function POST(
       select: { locationId: true },
     })
     if (!orderCheck) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      return notFound('Order not found')
     }
     const auth = await requirePermission(resolvedEmployeeId, orderCheck.locationId, PERMISSIONS.POS_ACCESS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const result = await db.$transaction(async (tx) => {
       // Lock the order row
@@ -380,8 +378,7 @@ export const POST = withVenue(async function POST(
 
     pushUpstream()
 
-    return NextResponse.json({
-      data: {
+    return ok({
         success: true,
         comboItemId: result.comboItem.id,
         comboName: result.comboItem.name,
@@ -389,55 +386,33 @@ export const POST = withVenue(async function POST(
         savings: result.removedItems.reduce((sum, i) => sum + Number(i.price), 0) - Number(result.comboItem.price),
         removedItemIds: result.removedItems.map(i => i.id),
         newTotal: Number(result.updatedOrder.total),
-      },
-    })
+      })
   } catch (error) {
     console.error('[apply-combo] Failed:', error)
     const message = error instanceof Error ? error.message : ''
 
     if (message === 'ORDER_NOT_FOUND') {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      return notFound('Order not found')
     }
     if (message === 'ORDER_NOT_MODIFIABLE') {
-      return NextResponse.json(
-        { error: 'Order cannot be modified' },
-        { status: 409 }
-      )
+      return err('Order cannot be modified', 409)
     }
     if (message === 'ORDER_HAS_PAYMENTS') {
-      return NextResponse.json(
-        { error: 'Cannot modify an order with existing payments' },
-        { status: 400 }
-      )
+      return err('Cannot modify an order with existing payments')
     }
     if (message === 'COMBO_NOT_FOUND') {
-      return NextResponse.json(
-        { error: 'Combo template not found' },
-        { status: 404 }
-      )
+      return notFound('Combo template not found')
     }
     if (message === 'COMBO_UNAVAILABLE') {
-      return NextResponse.json(
-        { error: 'This combo is no longer available' },
-        { status: 400 }
-      )
+      return err('This combo is no longer available')
     }
     if (message === 'ITEMS_NOT_FOUND') {
-      return NextResponse.json(
-        { error: 'One or more items are no longer active on this order' },
-        { status: 400 }
-      )
+      return err('One or more items are no longer active on this order')
     }
     if (message === 'ITEMS_ALREADY_SENT') {
-      return NextResponse.json(
-        { error: 'Cannot convert items that have already been sent to the kitchen' },
-        { status: 400 }
-      )
+      return err('Cannot convert items that have already been sent to the kitchen')
     }
 
-    return NextResponse.json(
-      { error: 'Failed to apply combo' },
-      { status: 500 }
-    )
+    return err('Failed to apply combo', 500)
   }
 })

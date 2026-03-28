@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { authenticateTerminal } from '@/lib/terminal-auth'
+import { ok } from '@/lib/api-response'
 
 export const GET = withVenue(async function GET(request: NextRequest) {
   const auth = await authenticateTerminal(request)
@@ -28,11 +29,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }),
   ])
 
-  return NextResponse.json({
-    data: {
+  return ok({
       sections: sections.map(s => ({ ...s, assignedEmployeeIds: s.assignments.map(a => a.employeeId), assignments: undefined })),
       tables,
       floorPlanElements,
-    },
-  })
+    })
 })

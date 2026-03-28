@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { sendEmail } from '@/lib/email-service'
 import { withVenue } from '@/lib/with-venue'
@@ -9,6 +9,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
 import { getLocationSettings } from '@/lib/location-cache'
 import { parseSettings } from '@/lib/settings'
+import { err, forbidden, ok } from '@/lib/api-response'
 
 export const POST = withVenue(async (request: NextRequest) => {
   try {
@@ -16,13 +17,13 @@ export const POST = withVenue(async (request: NextRequest) => {
     const { reportType, reportDate, recipientEmail, locationId } = body
 
     if (!recipientEmail || !locationId) {
-      return NextResponse.json({ error: 'recipientEmail and locationId are required' }, { status: 400 })
+      return err('recipientEmail and locationId are required')
     }
 
     // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
     if (!emailRegex.test(recipientEmail)) {
-      return NextResponse.json({ error: 'Invalid email address' }, { status: 400 })
+      return err('Invalid email address')
     }
 
     // Security: restrict report email recipients to employees at this location
@@ -42,10 +43,7 @@ export const POST = withVenue(async (request: NextRequest) => {
       const settings = parseSettings(rawSettings)
       const allowlist: string[] = (settings as any)?.reports?.emailAllowlist || []
       if (!allowlist.includes(recipientEmail)) {
-        return NextResponse.json(
-          { error: 'Recipient not in employee list or report email allowlist' },
-          { status: 403 }
-        )
+        return forbidden('Recipient not in employee list or report email allowlist')
       }
     }
 
@@ -57,7 +55,7 @@ export const POST = withVenue(async (request: NextRequest) => {
       if (employeeId) {
         const auth = await requirePermission(employeeId, locationId, PERMISSIONS.REPORTS_EXPORT)
         if (!auth.authorized) {
-          return NextResponse.json({ error: auth.error }, { status: auth.status })
+          return err(auth.error, auth.status)
         }
       }
 
@@ -142,12 +140,12 @@ export const POST = withVenue(async (request: NextRequest) => {
         html,
       }).catch(err => console.error('[reports/email] Failed to send generic report:', err))
 
-      return NextResponse.json({ data: { sent: true } })
+      return ok({ sent: true })
     }
 
     // ── Legacy daily report email path ───────────────────────────────────
     if (reportType !== 'daily') {
-      return NextResponse.json({ error: 'Only daily report type is supported for legacy email path' }, { status: 400 })
+      return err('Only daily report type is supported for legacy email path')
     }
 
     // Get location name
@@ -270,13 +268,13 @@ export const POST = withVenue(async (request: NextRequest) => {
     })
 
     if (!result.success) {
-      return NextResponse.json({ error: result.error || 'Failed to send email' }, { status: 500 })
+      return err(result.error || 'Failed to send email', 500)
     }
 
-    return NextResponse.json({ data: { success: true, messageId: result.messageId } })
+    return ok({ success: true, messageId: result.messageId })
   } catch (error) {
     console.error('Email report error:', error)
-    return NextResponse.json({ error: 'Failed to send report email' }, { status: 500 })
+    return err('Failed to send report email', 500)
   }
 })
 

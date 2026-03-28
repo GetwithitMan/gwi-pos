@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { sendToPrinter } from '@/lib/printer-connection'
 import { executeHardwareCommand } from '@/lib/hardware-command'
@@ -15,6 +15,7 @@ import { PrinterSettings } from '@/types/print'
 import { withVenue } from '@/lib/with-venue'
 import { queueIfOutage } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // POST print test page
 export const POST = withVenue(withAuth('ADMIN', async function POST(
@@ -29,7 +30,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     })
 
     if (!printer) {
-      return NextResponse.json({ error: 'Printer not found' }, { status: 404 })
+      return notFound('Printer not found')
     }
 
     // Cloud mode: route through NUC via HardwareCommand
@@ -40,14 +41,14 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
         targetDeviceId: id,
       })
 
-      return NextResponse.json({ data: {
+      return ok({
         success: result.success,
         error: result.error || result.resultPayload?.error,
         printer: {
           id: printer.id,
           name: printer.name,
         },
-      } })
+      })
     }
 
     // Determine paper width
@@ -189,16 +190,16 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
       queueIfOutage('PrintJob', printer.locationId, pj.id, 'INSERT')
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       success: result.success,
       error: result.error,
       printer: {
         id: printer.id,
         name: printer.name,
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to print test page:', error)
-    return NextResponse.json({ error: 'Failed to print test page' }, { status: 500 })
+    return err('Failed to print test page', 500)
   }
 }))

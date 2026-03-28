@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { CashHandlingMode } from '@/generated/prisma/client'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
@@ -8,6 +8,7 @@ import { emitToLocation } from '@/lib/socket-server'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('roles')
 
 // roleType/accessLevel: UX display metadata only — never used for authorization
@@ -31,12 +32,12 @@ export const GET = withVenue(async function GET(
     const locationId = request.nextUrl.searchParams.get('locationId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.STAFF_MANAGE_ROLES)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     const role = await db.role.findFirst({
@@ -49,13 +50,10 @@ export const GET = withVenue(async function GET(
     })
 
     if (!role) {
-      return NextResponse.json(
-        { error: 'Role not found' },
-        { status: 404 }
-      )
+      return notFound('Role not found')
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       role: {
         id: role.id,
         name: role.name,
@@ -70,13 +68,10 @@ export const GET = withVenue(async function GET(
         createdAt: role.createdAt.toISOString(),
         updatedAt: role.updatedAt.toISOString(),
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch role:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch role' },
-      { status: 500 }
-    )
+    return err('Failed to fetch role', 500)
   }
 })
 
@@ -106,15 +101,12 @@ export const PUT = withVenue(async function PUT(
     })
 
     if (!existing) {
-      return NextResponse.json(
-        { error: 'Role not found' },
-        { status: 404 }
-      )
+      return notFound('Role not found')
     }
 
     const auth = await requirePermission(requestingEmployeeId, existing.locationId, PERMISSIONS.STAFF_MANAGE_ROLES)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Check for duplicate name if changing
@@ -128,10 +120,7 @@ export const PUT = withVenue(async function PUT(
       })
 
       if (duplicate) {
-        return NextResponse.json(
-          { error: 'A role with this name already exists' },
-          { status: 409 }
-        )
+        return err('A role with this name already exists', 409)
       }
     }
 
@@ -179,7 +168,7 @@ export const PUT = withVenue(async function PUT(
     void notifyDataChanged({ locationId: existing.locationId, domain: 'roles', action: 'updated', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       role: {
         id: role.id,
         name: role.name,
@@ -192,13 +181,10 @@ export const PUT = withVenue(async function PUT(
         trackLaborCost: role.trackLaborCost,
         updatedAt: role.updatedAt.toISOString(),
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to update role:', error)
-    return NextResponse.json(
-      { error: 'Failed to update role' },
-      { status: 500 }
-    )
+    return err('Failed to update role', 500)
   }
 })
 
@@ -222,23 +208,17 @@ export const DELETE = withVenue(async function DELETE(
     })
 
     if (!role) {
-      return NextResponse.json(
-        { error: 'Role not found' },
-        { status: 404 }
-      )
+      return notFound('Role not found')
     }
 
     const auth = await requirePermission(requestingEmployeeId, role.locationId, PERMISSIONS.STAFF_MANAGE_ROLES)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Prevent deletion if employees are assigned
     if (role._count.employees > 0) {
-      return NextResponse.json(
-        { error: `Cannot delete role with ${role._count.employees} assigned employee(s). Reassign them first.` },
-        { status: 409 }
-      )
+      return err(`Cannot delete role with ${role._count.employees} assigned employee(s). Reassign them first.`, 409)
     }
 
     await db.role.update({
@@ -249,12 +229,9 @@ export const DELETE = withVenue(async function DELETE(
     void notifyDataChanged({ locationId: role.locationId, domain: 'roles', action: 'deleted', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Failed to delete role:', error)
-    return NextResponse.json(
-      { error: 'Failed to delete role' },
-      { status: 500 }
-    )
+    return err('Failed to delete role', 500)
   }
 })

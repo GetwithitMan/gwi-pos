@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db as prisma } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -6,6 +6,7 @@ import { getBusinessDayRange } from '@/lib/business-day'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
+import { err, ok } from '@/lib/api-response'
 
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
@@ -16,12 +17,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const requestingEmployeeId = searchParams.get('requestingEmployeeId') || searchParams.get('employeeId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID required' }, { status: 400 })
+      return err('Location ID required')
     }
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_SALES)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Resolve business day boundaries for date filtering
@@ -156,7 +157,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         }
       })
 
-    return NextResponse.json({ data: {
+    return ok({
       summary: {
         totalCoupons: coupons.length,
         activeCoupons: coupons.filter(c => c.isActive).length,
@@ -169,9 +170,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       dailyTrend: Object.values(dailyTrend).sort((a, b) => a.date.localeCompare(b.date)),
       byType: Object.values(byType),
       recentRedemptions,
-    } })
+    })
   } catch (error) {
     console.error('Coupon report error:', error)
-    return NextResponse.json({ error: 'Failed to generate coupon report' }, { status: 500 })
+    return err('Failed to generate coupon report', 500)
   }
 })

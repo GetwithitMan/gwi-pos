@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { sendEmail } from '@/lib/email-service'
 import { mergeWithDefaults, DEFAULT_INVOICING } from '@/lib/settings'
 import { verifyCronSecret } from '@/lib/cron-auth'
 import { forAllVenues } from '@/lib/cron-venue-helper'
 import { createChildLogger } from '@/lib/logger'
+import { ok } from '@/lib/api-response'
 const log = createChildLogger('cron-invoice-overdue')
 
 export const dynamic = 'force-dynamic'
@@ -192,5 +193,5 @@ export async function GET(request: NextRequest) {
     }
   }, { label: 'cron:invoice-overdue' })
 
-  return NextResponse.json({ ...summary, data: allResults })
+  return ok(allResults)
 }

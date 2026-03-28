@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { emitToLocation } from '@/lib/socket-server'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - Get a single bottle service tier
 export const GET = withVenue(async function GET(
@@ -14,7 +15,7 @@ export const GET = withVenue(async function GET(
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const { id } = await params
@@ -24,11 +25,10 @@ export const GET = withVenue(async function GET(
     })
 
     if (!tier) {
-      return NextResponse.json({ error: 'Tier not found' }, { status: 404 })
+      return notFound('Tier not found')
     }
 
-    return NextResponse.json({
-      data: {
+    return ok({
         id: tier.id,
         name: tier.name,
         description: tier.description,
@@ -38,11 +38,10 @@ export const GET = withVenue(async function GET(
         autoGratuityPercent: tier.autoGratuityPercent ? Number(tier.autoGratuityPercent) : null,
         sortOrder: tier.sortOrder,
         isActive: tier.isActive,
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to get bottle service tier:', error)
-    return NextResponse.json({ error: 'Failed to get bottle service tier' }, { status: 500 })
+    return err('Failed to get bottle service tier', 500)
   }
 })
 
@@ -54,7 +53,7 @@ export const PUT = withVenue(async function PUT(
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const { id } = await params
@@ -63,7 +62,7 @@ export const PUT = withVenue(async function PUT(
 
     const auth = await requirePermission(body.employeeId || null, locationId, PERMISSIONS.SETTINGS_EDIT)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     const existing = await db.bottleServiceTier.findFirst({
@@ -71,7 +70,7 @@ export const PUT = withVenue(async function PUT(
     })
 
     if (!existing) {
-      return NextResponse.json({ error: 'Tier not found' }, { status: 404 })
+      return notFound('Tier not found')
     }
 
     // Check active orders before deactivation
@@ -84,10 +83,7 @@ export const PUT = withVenue(async function PUT(
         },
       })
       if (activeOrders > 0) {
-        return NextResponse.json(
-          { error: `Cannot deactivate tier with ${activeOrders} active order(s)` },
-          { status: 400 }
-        )
+        return err(`Cannot deactivate tier with ${activeOrders} active order(s)`)
       }
     }
 
@@ -108,8 +104,7 @@ export const PUT = withVenue(async function PUT(
 
     void emitToLocation(locationId, 'settings:updated', { source: 'bottle-service-tier', action: 'updated', tierId: id }).catch(console.error)
 
-    return NextResponse.json({
-      data: {
+    return ok({
         id: tier.id,
         name: tier.name,
         description: tier.description,
@@ -119,11 +114,10 @@ export const PUT = withVenue(async function PUT(
         autoGratuityPercent: tier.autoGratuityPercent ? Number(tier.autoGratuityPercent) : null,
         sortOrder: tier.sortOrder,
         isActive: tier.isActive,
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to update bottle service tier:', error)
-    return NextResponse.json({ error: 'Failed to update bottle service tier' }, { status: 500 })
+    return err('Failed to update bottle service tier', 500)
   }
 })
 
@@ -135,14 +129,14 @@ export const DELETE = withVenue(async function DELETE(
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const { id } = await params
 
     const auth = await requirePermission(null, locationId, PERMISSIONS.SETTINGS_EDIT)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     const existing = await db.bottleServiceTier.findFirst({
@@ -150,7 +144,7 @@ export const DELETE = withVenue(async function DELETE(
     })
 
     if (!existing) {
-      return NextResponse.json({ error: 'Tier not found' }, { status: 404 })
+      return notFound('Tier not found')
     }
 
     // Check active orders before deletion
@@ -162,10 +156,7 @@ export const DELETE = withVenue(async function DELETE(
       },
     })
     if (activeOrders > 0) {
-      return NextResponse.json(
-        { error: `Cannot delete tier with ${activeOrders} active order(s)` },
-        { status: 400 }
-      )
+      return err(`Cannot delete tier with ${activeOrders} active order(s)`)
     }
 
     await db.bottleServiceTier.update({
@@ -175,9 +166,9 @@ export const DELETE = withVenue(async function DELETE(
 
     void emitToLocation(locationId, 'settings:updated', { source: 'bottle-service-tier', action: 'deleted', tierId: id }).catch(console.error)
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Failed to delete bottle service tier:', error)
-    return NextResponse.json({ error: 'Failed to delete bottle service tier' }, { status: 500 })
+    return err('Failed to delete bottle service tier', 500)
   }
 })

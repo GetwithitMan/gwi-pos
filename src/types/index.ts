@@ -5,13 +5,28 @@ import type { IngredientModification } from './orders'
 
 /**
  * Category for menu organization
+ *
+ * This is the canonical Category type. All consumers MUST import from here.
+ * Use Pick<Category, ...> for lightweight subsets — do NOT define local interfaces.
  */
 export interface Category {
   id: string
   name: string
-  color: string
-  categoryType?: 'food' | 'drinks' | 'liquor' | 'entertainment' | 'combos' | 'pizza'
+  color?: string
+  categoryType?: 'food' | 'drinks' | 'liquor' | 'entertainment' | 'combos' | 'pizza' | 'retail' | string
+  categoryShow?: string  // 'bar' | 'food' | 'entertainment' | 'all'
+  itemCount?: number
+  isActive?: boolean
+  printerIds?: string[] | null
 }
+
+// ─── Category Pick Types ─────────────────────────────────────────────────────
+
+/** Minimal fields for category selection / display */
+export type CategoryBasic = Pick<Category, 'id' | 'name'>
+
+/** Fields for the floor plan categories bar */
+export type CategoryFloorPlan = Pick<Category, 'id' | 'name' | 'color' | 'itemCount' | 'categoryType' | 'categoryShow'>
 
 /**
  * Pricing option within a pricing option group (e.g., "Small", "Large", "Hot")
@@ -41,21 +56,29 @@ export interface PricingOptionGroup {
 
 /**
  * Menu item with pricing and availability
+ *
+ * This is the canonical MenuItem type. All consumers MUST import from here.
+ * Use Pick<MenuItem, ...> for lightweight subsets — do NOT define local interfaces.
  */
 export interface MenuItem {
   id: string
   categoryId: string
   name: string
   price: number
+  description?: string | null
+  isActive?: boolean
   isAvailable: boolean
   modifierGroupCount?: number
   itemType?: string
+  categoryType?: string
+  hasModifiers?: boolean
+  isPizza?: boolean
   timedPricing?: {
     per15Min?: number
     per30Min?: number
     perHour?: number
     minimum?: number
-  }
+  } | null
   // Entertainment item fields
   entertainmentStatus?: 'available' | 'in_use' | 'maintenance' | 'reserved' | null
   currentOrderId?: string | null
@@ -64,6 +87,13 @@ export interface MenuItem {
   prepaidPackages?: any[] | null
   happyHourEnabled?: boolean | null
   happyHourPrice?: number | null
+  waitlistCount?: number
+  // Prep stock / 86 status
+  stockStatus?: 'ok' | 'low' | 'critical' | 'out'
+  stockCount?: number | null
+  stockIngredientName?: string | null
+  is86d?: boolean
+  reasons86d?: string[]
   // Pour size options for liquor items (can be old or new format)
   // Old format: { shot: 1.0, double: 2.0 }
   // New format: { shot: { label: "Shot", multiplier: 1.0, customPrice?: 11.00 }, double: { label: "Double", multiplier: 2.0 } }
@@ -82,13 +112,44 @@ export interface MenuItem {
   hasPricingOptions?: boolean
   // Allergen tracking
   allergens?: string[]
+  // Calories (informational)
+  calories?: number | null
   // Age verification
   isAgeRestricted?: boolean
   // Force-open modifier modal on every tap
   alwaysOpenModifiers?: boolean
   // Tip-exempt — excluded from tip suggestion calculations
   tipExempt?: boolean
+  // Image URL (online ordering, menu display)
+  imageUrl?: string | null
+  // Printer routing
+  printerIds?: string[] | null
+  backupPrinterIds?: string[] | null
 }
+
+// ─── MenuItem Pick Types ─────────────────────────────────────────────────────
+// Use these for lightweight consumers instead of defining local interfaces.
+
+/** Minimal fields for search results */
+export type MenuItemSearch = Pick<MenuItem, 'id' | 'name' | 'price' | 'categoryId' | 'is86d'>
+
+/** Fields needed for the floor plan / POS item grid */
+export type MenuItemFloorPlan = Pick<MenuItem,
+  | 'id' | 'name' | 'price' | 'description' | 'categoryId' | 'categoryType'
+  | 'hasModifiers' | 'isPizza' | 'itemType' | 'entertainmentStatus' | 'waitlistCount'
+  | 'blockTimeMinutes' | 'modifierGroupCount' | 'timedPricing'
+  | 'stockStatus' | 'stockCount' | 'stockIngredientName' | 'is86d' | 'reasons86d'
+  | 'pricingOptionGroups' | 'hasPricingOptions' | 'calories' | 'alwaysOpenModifiers'
+  | 'pourSizes' | 'defaultPourSize' | 'applyPourToModifiers' | 'isLiquorItem'
+>
+
+/** Minimal fields for prep station assignment */
+export type MenuItemPrepStation = Pick<MenuItem, 'id' | 'name' | 'categoryId'>
+
+/** Minimal fields for basic item editor display */
+export type MenuItemEditorSummary = Pick<MenuItem,
+  'id' | 'name' | 'price' | 'description' | 'categoryId' | 'categoryType' | 'isActive' | 'isAvailable'
+>
 
 /**
  * Custom pre-modifier for a modifier (e.g., "Well Done", "Medium Rare")
@@ -611,6 +672,55 @@ export interface PizzaOrderConfig {
     toppingsPrice: number
   }
 }
+
+// ─── OpenOrder Types ─────────────────────────────────────────────────────────
+
+/**
+ * Open order summary for list panels and dashboards.
+ *
+ * This is the canonical OpenOrder type. All consumers MUST import from here.
+ * Use Pick<OpenOrder, ...> for lightweight subsets.
+ */
+export interface OpenOrder {
+  id: string
+  orderNumber: number
+  displayNumber?: string
+  isSplitTicket?: boolean
+  status?: string
+  orderType: string
+  orderTypeConfig?: { name: string; color?: string | null; icon?: string | null } | null
+  customFields?: Record<string, string> | null
+  tabName?: string | null
+  tabStatus?: string | null
+  cardholderName?: string | null
+  tableId?: string | null
+  tableName?: string | null
+  table?: { id: string; name: string; section: string | null } | null
+  customer?: { id: string; firstName: string; lastName: string; phone: string | null } | null
+  employee?: { id: string; name: string } | null
+  employeeName?: string
+  itemCount: number
+  subtotal?: number
+  taxTotal?: number
+  tipTotal?: number
+  total: number
+  ageMinutes?: number
+  isRolledOver?: boolean
+  rolledOverAt?: string | null
+  rolledOverFrom?: string | null
+  isCaptureDeclined?: boolean
+  captureRetryCount?: number
+  openedAt?: string
+  createdAt?: string
+}
+
+/** Minimal open order for shift handoff */
+export type OpenOrderHandoff = Pick<OpenOrder, 'id' | 'orderNumber' | 'tabName' | 'status' | 'total'>
+
+/** Open order for floor plan display */
+export type OpenOrderFloorPlan = Pick<OpenOrder,
+  'id' | 'orderNumber' | 'tableId' | 'tableName' | 'tabName' | 'orderType' | 'total' | 'itemCount' | 'openedAt' | 'employeeName'
+>
 
 // Re-export payment types
 export type {

@@ -1,9 +1,9 @@
 import { db } from '@/lib/db'
-import { NextResponse } from 'next/server'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // PUT - Reorder sections by updating sortOrder
 export const PUT = withVenue(withAuth('ADMIN', async function PUT(req: Request) {
@@ -12,11 +12,11 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(req: Request) 
     const { locationId, roomIds } = body
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     if (!roomIds || !Array.isArray(roomIds)) {
-      return NextResponse.json({ error: 'roomIds array required' }, { status: 400 })
+      return err('roomIds array required')
     }
 
     // Verify all sections belong to this location before updating
@@ -30,7 +30,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(req: Request) 
     })
 
     if (sections.length !== roomIds.length) {
-      return NextResponse.json({ error: 'One or more sections not found or access denied' }, { status: 404 })
+      return notFound('One or more sections not found or access denied')
     }
 
     // Update sortOrder for each section in order
@@ -47,9 +47,9 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(req: Request) 
 
     dispatchFloorPlanUpdate(locationId, { async: true })
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('[sections/reorder] PUT error:', error)
-    return NextResponse.json({ error: 'Failed to reorder sections' }, { status: 500 })
+    return err('Failed to reorder sections', 500)
   }
 }))

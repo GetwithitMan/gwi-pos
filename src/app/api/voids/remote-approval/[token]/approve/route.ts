@@ -5,12 +5,13 @@
  * Generates a 6-digit code and sends socket notification.
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { generateApprovalCode, sendApprovalCodeSMS } from '@/lib/twilio'
 import { dispatchVoidApprovalUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 export const POST = withVenue(async function POST(
   request: NextRequest,
@@ -21,10 +22,7 @@ export const POST = withVenue(async function POST(
 
     // Validate token format
     if (!token || token.length !== 32 || !/^[a-f0-9]+$/i.test(token)) {
-      return NextResponse.json(
-        { error: 'Invalid approval token' },
-        { status: 400 }
-      )
+      return err('Invalid approval token')
     }
 
     const approval = await db.remoteVoidApproval.findUnique({
@@ -50,19 +48,13 @@ export const POST = withVenue(async function POST(
     })
 
     if (!approval) {
-      return NextResponse.json(
-        { error: 'Approval request not found' },
-        { status: 404 }
-      )
+      return notFound('Approval request not found')
     }
 
     // Check if token has expired
     const now = new Date()
     if (approval.approvalTokenExpiry < now) {
-      return NextResponse.json(
-        { error: 'This approval request has expired' },
-        { status: 400 }
-      )
+      return err('This approval request has expired')
     }
 
     // Check if already processed
@@ -74,20 +66,15 @@ export const POST = withVenue(async function POST(
         approval.approvalCodeExpiry &&
         approval.approvalCodeExpiry > now
       ) {
-        return NextResponse.json({
-          data: {
+        return ok({
             success: true,
             approvalCode: approval.approvalCode,
             expiresAt: approval.approvalCodeExpiry.toISOString(),
             message: 'Already approved - here is your code',
-          },
-        })
+          })
       }
 
-      return NextResponse.json(
-        { error: `This request has already been ${approval.status}` },
-        { status: 400 }
-      )
+      return err(`This request has already been ${approval.status}`)
     }
 
     // Generate approval code
@@ -130,19 +117,14 @@ export const POST = withVenue(async function POST(
       managerName,
     }).catch(err => console.error('[RemoteVoidApproval] Socket dispatch failed:', err))
 
-    return NextResponse.json({
-      data: {
+    return ok({
         success: true,
         approvalCode,
         expiresAt: approvalCodeExpiry.toISOString(),
         message: `Give code ${approvalCode} to ${serverName}. Valid for 5 minutes.`,
-      },
-    })
+      })
   } catch (error) {
     console.error('[RemoteVoidApproval] Error approving:', error)
-    return NextResponse.json(
-      { error: 'Failed to approve request' },
-      { status: 500 }
-    )
+    return err('Failed to approve request', 500)
   }
 })

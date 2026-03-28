@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET: Get a single tip-out rule
 export const GET = withVenue(async function GET(
@@ -26,27 +27,19 @@ export const GET = withVenue(async function GET(
     })
 
     if (!rule) {
-      return NextResponse.json(
-        { error: 'Tip-out rule not found' },
-        { status: 404 }
-      )
+      return notFound('Tip-out rule not found')
     }
 
-    return NextResponse.json({
-      data: {
+    return ok({
         ...rule,
         percentage: Number(rule.percentage),
         maxPercentage: rule.maxPercentage ? Number(rule.maxPercentage) : null,
         effectiveDate: rule.effectiveDate?.toISOString() || null,
         expiresAt: rule.expiresAt?.toISOString() || null,
-      }
-    })
+      })
   } catch (error) {
     console.error('Error fetching tip-out rule:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch tip-out rule' },
-      { status: 500 }
-    )
+    return err('Failed to fetch tip-out rule', 500)
   }
 })
 
@@ -66,10 +59,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     })
 
     if (!existingRule) {
-      return NextResponse.json(
-        { error: 'Tip-out rule not found' },
-        { status: 404 }
-      )
+      return notFound('Tip-out rule not found')
     }
 
     // Valid basisType values
@@ -77,20 +67,14 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
 
     // Validate basisType if provided
     if (basisType !== undefined && !VALID_BASIS_TYPES.includes(basisType)) {
-      return NextResponse.json(
-        { error: `Invalid basisType. Must be one of: ${VALID_BASIS_TYPES.join(', ')}` },
-        { status: 400 }
-      )
+      return err(`Invalid basisType. Must be one of: ${VALID_BASIS_TYPES.join(', ')}`)
     }
 
     // Validate maxPercentage if provided
     if (maxPercentage !== undefined && maxPercentage !== null) {
       const maxPctNum = Number(maxPercentage)
       if (isNaN(maxPctNum) || maxPctNum < 0 || maxPctNum > 100) {
-        return NextResponse.json(
-          { error: 'maxPercentage must be between 0 and 100' },
-          { status: 400 }
-        )
+        return err('maxPercentage must be between 0 and 100')
       }
     }
 
@@ -100,10 +84,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     if (percentage !== undefined) {
       const percentageNum = Number(percentage)
       if (isNaN(percentageNum) || percentageNum <= 0 || percentageNum > 100) {
-        return NextResponse.json(
-          { error: 'Percentage must be between 0 and 100' },
-          { status: 400 }
-        )
+        return err('Percentage must be between 0 and 100')
       }
       updateData.percentage = percentageNum
     }
@@ -142,21 +123,16 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     void notifyDataChanged({ locationId: existingRule.locationId, domain: 'tip-out-rules', action: 'updated', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({
-      data: {
+    return ok({
         ...rule,
         percentage: Number(rule.percentage),
         maxPercentage: rule.maxPercentage ? Number(rule.maxPercentage) : null,
         effectiveDate: rule.effectiveDate?.toISOString() || null,
         expiresAt: rule.expiresAt?.toISOString() || null,
-      }
-    })
+      })
   } catch (error) {
     console.error('Error updating tip-out rule:', error)
-    return NextResponse.json(
-      { error: 'Failed to update tip-out rule' },
-      { status: 500 }
-    )
+    return err('Failed to update tip-out rule', 500)
   }
 }))
 
@@ -174,10 +150,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     })
 
     if (!existingRule) {
-      return NextResponse.json(
-        { error: 'Tip-out rule not found' },
-        { status: 404 }
-      )
+      return notFound('Tip-out rule not found')
     }
 
     // Check if rule has been used in any tip shares or ledger entries (Skill 273)
@@ -193,9 +166,9 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
         where: { id },
         data: { isActive: false, lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local' }
       })
-      return NextResponse.json({ data: {
+      return ok({
         message: 'Tip-out rule has been deactivated (it has historical tip data)'
-      } })
+      })
     }
 
     // Soft delete the rule
@@ -207,14 +180,11 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     void notifyDataChanged({ locationId: existingRule.locationId, domain: 'tip-out-rules', action: 'deleted', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       message: 'Tip-out rule deleted successfully'
-    } })
+    })
   } catch (error) {
     console.error('Error deleting tip-out rule:', error)
-    return NextResponse.json(
-      { error: 'Failed to delete tip-out rule' },
-      { status: 500 }
-    )
+    return err('Failed to delete tip-out rule', 500)
   }
 }))

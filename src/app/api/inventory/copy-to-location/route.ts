@@ -23,6 +23,7 @@ import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, forbidden, notFound, ok } from '@/lib/api-response'
 
 export const POST = withVenue(withAuth('ADMIN', async function POST(request: NextRequest) {
   try {
@@ -38,17 +39,11 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
 
     // ── Validation ─────────────────────────────────────────────────────
     if (!sourceLocationId || !targetLocationId) {
-      return NextResponse.json(
-        { error: 'sourceLocationId and targetLocationId are required' },
-        { status: 400 },
-      )
+      return err('sourceLocationId and targetLocationId are required')
     }
 
     if (sourceLocationId === targetLocationId) {
-      return NextResponse.json(
-        { error: 'Source and target locations must be different' },
-        { status: 400 },
-      )
+      return err('Source and target locations must be different')
     }
 
     // ── Permission ─────────────────────────────────────────────────────
@@ -59,7 +54,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       PERMISSIONS.ADMIN,
     )
     if (!authSource.authorized) {
-      return NextResponse.json({ error: authSource.error }, { status: authSource.status })
+      return err(authSource.error, authSource.status)
     }
 
     // ── Verify both locations belong to the same organization ──────────
@@ -75,17 +70,11 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     ])
 
     if (!sourceLoc || !targetLoc) {
-      return NextResponse.json(
-        { error: 'One or both locations not found' },
-        { status: 404 },
-      )
+      return notFound('One or both locations not found')
     }
 
     if (sourceLoc.organizationId !== targetLoc.organizationId) {
-      return NextResponse.json(
-        { error: 'Locations must belong to the same organization' },
-        { status: 403 },
-      )
+      return forbidden('Locations must belong to the same organization')
     }
 
     // ── Fetch source ingredients ───────────────────────────────────────
@@ -105,10 +94,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     })
 
     if (sourceIngredients.length === 0) {
-      return NextResponse.json(
-        { error: 'No ingredients found at source location' },
-        { status: 404 },
-      )
+      return notFound('No ingredients found at source location')
     }
 
     // ── Fetch existing ingredients at target (for skipExisting) ────────
@@ -373,16 +359,14 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     void notifyDataChanged({ locationId: targetLocationId, domain: 'inventory', action: 'created', entityId: targetLocationId })
     pushUpstream()
 
-    return NextResponse.json({
-      data: {
+    return ok({
         copied: result.copied,
         skipped: result.skipped,
         recipesLinked: result.recipesLinked,
         failed: result.failed,
         sourceLocation: sourceLoc.name,
         targetLocation: targetLoc.name,
-      },
-    })
+      })
   } catch (error) {
     console.error('Error copying ingredients to location:', error)
     const message = error instanceof Error ? error.message : 'Unknown error'

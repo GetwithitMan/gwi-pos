@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getRequestLocationId } from '@/lib/request-context'
@@ -6,6 +6,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, forbidden, notFound, ok } from '@/lib/api-response'
 
 // GET — returns employee's quick bar items and location defaults
 export const GET = withVenue(async function GET(
@@ -23,7 +24,7 @@ export const GET = withVenue(async function GET(
         select: { locationId: true },
       })
       if (!employee) {
-        return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
+        return notFound('Employee not found')
       }
       qbLocationId = employee.locationId
     }
@@ -33,15 +34,13 @@ export const GET = withVenue(async function GET(
       db.quickBarDefault.findUnique({ where: { locationId: qbLocationId } }),
     ])
 
-    return NextResponse.json({
-      data: {
+    return ok({
         itemIds: pref ? JSON.parse(pref.itemIds) : [],
         defaultItemIds: defaults ? JSON.parse(defaults.itemIds) : [],
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to fetch quick bar preferences:', error)
-    return NextResponse.json({ error: 'Failed to fetch quick bar preferences' }, { status: 500 })
+    return err('Failed to fetch quick bar preferences', 500)
   }
 })
 
@@ -56,7 +55,7 @@ export const PUT = withVenue(async function PUT(
     const { itemIds } = body
 
     if (!Array.isArray(itemIds)) {
-      return NextResponse.json({ error: 'itemIds must be an array' }, { status: 400 })
+      return err('itemIds must be an array')
     }
 
     // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
@@ -67,7 +66,7 @@ export const PUT = withVenue(async function PUT(
         select: { locationId: true },
       })
       if (!employee) {
-        return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
+        return notFound('Employee not found')
       }
       putLocationId = employee.locationId
     }
@@ -76,9 +75,9 @@ export const PUT = withVenue(async function PUT(
     const actor = await getActorFromRequest(request)
     const resolvedActorId = actor.employeeId ?? employeeId
     const auth = await requirePermission(resolvedActorId, putLocationId, PERMISSIONS.POS_ACCESS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
     if (auth.employee.id !== employeeId) {
-      return NextResponse.json({ error: 'You can only edit your own quick bar' }, { status: 403 })
+      return forbidden('You can only edit your own quick bar')
     }
 
     await db.quickBarPreference.upsert({
@@ -96,9 +95,9 @@ export const PUT = withVenue(async function PUT(
     void notifyDataChanged({ locationId: putLocationId, domain: 'quick-bar', action: 'updated', entityId: employeeId })
     void pushUpstream()
 
-    return NextResponse.json({ data: { itemIds } })
+    return ok({ itemIds })
   } catch (error) {
     console.error('Failed to update quick bar preferences:', error)
-    return NextResponse.json({ error: 'Failed to update quick bar preferences' }, { status: 500 })
+    return err('Failed to update quick bar preferences', 500)
   }
 })

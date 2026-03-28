@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - Get table configuration for an event
 export const GET = withVenue(withAuth('ADMIN', async function GET(
@@ -24,10 +25,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
     })
 
     if (!event) {
-      return NextResponse.json(
-        { error: 'Event not found' },
-        { status: 404 }
-      )
+      return notFound('Event not found')
     }
 
     const table = await db.table.findFirst({
@@ -57,10 +55,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
     })
 
     if (!table) {
-      return NextResponse.json(
-        { error: 'Table not found' },
-        { status: 404 }
-      )
+      return notFound('Table not found')
     }
 
     // Get event-specific configuration
@@ -120,7 +115,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
     const heldCount = seatsWithStatus.filter(s => s.status === 'held').length
     const soldCount = seatsWithStatus.filter(s => s.status === 'sold').length
 
-    return NextResponse.json({ data: {
+    return ok({
       eventId: id,
       eventName: event.name,
       ticketingMode: event.ticketingMode,
@@ -157,13 +152,10 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
             ? 'partial'
             : 'available',
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch table configuration:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch table configuration' },
-      { status: 500 }
-    )
+    return err('Failed to fetch table configuration', 500)
   }
 }))
 
@@ -189,10 +181,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     })
 
     if (!event) {
-      return NextResponse.json(
-        { error: 'Event not found' },
-        { status: 404 }
-      )
+      return notFound('Event not found')
     }
 
     // Verify table exists
@@ -205,10 +194,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     })
 
     if (!table) {
-      return NextResponse.json(
-        { error: 'Table not found' },
-        { status: 404 }
-      )
+      return notFound('Table not found')
     }
 
     // If excluding table, check for sold tickets
@@ -222,13 +208,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
       })
 
       if (soldTickets > 0) {
-        return NextResponse.json(
-          {
-            error: 'Cannot exclude table with sold tickets',
-            soldTickets,
-          },
-          { status: 400 }
-        )
+        return err('Cannot exclude table with sold tickets')
       }
     }
 
@@ -238,10 +218,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
         where: { id: pricingTierId, eventId: id, deletedAt: null },
       })
       if (!tier) {
-        return NextResponse.json(
-          { error: 'Invalid pricing tier' },
-          { status: 400 }
-        )
+        return err('Invalid pricing tier')
       }
     }
 
@@ -280,7 +257,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     void notifyDataChanged({ locationId: event.locationId, domain: 'events', action: 'updated', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       configuration: {
         tableId: config.tableId,
@@ -293,13 +270,10 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
         minPartySize: config.minPartySize,
         maxPartySize: config.maxPartySize,
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to update table configuration:', error)
-    return NextResponse.json(
-      { error: 'Failed to update table configuration' },
-      { status: 500 }
-    )
+    return err('Failed to update table configuration', 500)
   }
 }))
 
@@ -318,10 +292,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     })
 
     if (!config) {
-      return NextResponse.json(
-        { error: 'Table configuration not found' },
-        { status: 404 }
-      )
+      return notFound('Table configuration not found')
     }
 
     // Check for sold tickets
@@ -334,13 +305,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     })
 
     if (soldTickets > 0) {
-      return NextResponse.json(
-        {
-          error: 'Cannot remove configuration for table with sold tickets',
-          soldTickets,
-        },
-        { status: 400 }
-      )
+      return err('Cannot remove configuration for table with sold tickets')
     }
 
     // Soft delete
@@ -352,15 +317,12 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     void notifyDataChanged({ locationId: config.locationId, domain: 'events', action: 'deleted', entityId: config.id })
     void pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       message: 'Table configuration removed (reset to defaults)',
-    } })
+    })
   } catch (error) {
     console.error('Failed to delete table configuration:', error)
-    return NextResponse.json(
-      { error: 'Failed to delete table configuration' },
-      { status: 500 }
-    )
+    return err('Failed to delete table configuration', 500)
   }
 }))

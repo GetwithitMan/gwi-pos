@@ -24,6 +24,7 @@ import { SOCKET_EVENTS } from '@/lib/socket-events'
 import type { OrdersListChangedPayload, OrderSummaryUpdatedPayload, OrderCreatedPayload } from '@/lib/socket-events'
 import { queueSocketEvent, flushOutboxSafe } from '@/lib/socket-outbox'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-send')
 
 // POST /api/orders/[id]/send - Send order items to kitchen
@@ -61,7 +62,7 @@ export const POST = withVenue(withTiming(async function POST(
         await validateCellularOrderAccess(true, id, 'mutate', db)
       } catch (err) {
         if (err instanceof CellularAuthError) {
-          return NextResponse.json({ error: err.message }, { status: err.status })
+          return err(err.message, err.status)
         }
         throw err
       }
@@ -336,25 +337,16 @@ export const POST = withVenue(withTiming(async function POST(
 
     // Handle early-return cases from the unified transaction
     if (sendResult.type === 'not_found') {
-      return NextResponse.json(
-        { error: 'Order not found' },
-        { status: 404 }
-      )
+      return notFound('Order not found')
     }
     if (sendResult.type === 'status_error') {
-      return NextResponse.json(
-        { error: `Cannot send order in '${sendResult.status}' status` },
-        { status: 400 }
-      )
+      return err(`Cannot send order in '${sendResult.status}' status`)
     }
     if (sendResult.type === 'auth_error') {
-      return NextResponse.json(
-        { error: sendResult.error },
-        { status: sendResult.authStatus }
-      )
+      return err(sendResult.error, sendResult.authStatus)
     }
     if (sendResult.type === 'empty') {
-      return NextResponse.json({ data: {
+      return ok({
         success: true,
         sentItemCount: 0,
         sentItemIds: [],
@@ -362,7 +354,7 @@ export const POST = withVenue(withTiming(async function POST(
         delayedItemCount: sendResult.delayedItemCount,
         heldItemCount: sendResult.heldItemCount,
         routing: { stations: [], unroutedCount: 0 },
-      } })
+      })
     }
 
     // Destructure successful result for the rest of the route
@@ -656,9 +648,6 @@ export const POST = withVenue(withTiming(async function POST(
     }
     // Return more detailed error info for debugging
     const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-    return NextResponse.json(
-      { error: 'Failed to send order to kitchen', details: errorMessage },
-      { status: 500 }
-    )
+    return err('Failed to send order to kitchen', 500, errorMessage)
   }
 }, 'orders-send'))

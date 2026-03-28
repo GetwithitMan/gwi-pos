@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchNewOrder, dispatchOrderUpdated } from '@/lib/socket-dispatch'
@@ -11,6 +11,7 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 
 const log = createChildLogger('orders.id.courses')
 
@@ -35,7 +36,7 @@ export const GET = withVenue(async function GET(
     // Resolve locationId for tenant-safe queries
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'Location not found' }, { status: 400 })
+      return err('Location not found')
     }
 
     // Tenant-safe order fetch via OrderRepository
@@ -50,10 +51,7 @@ export const GET = withVenue(async function GET(
     })
 
     if (!order) {
-      return NextResponse.json(
-        { error: 'Order not found' },
-        { status: 404 }
-      )
+      return notFound('Order not found')
     }
 
     // Get course configuration for this location
@@ -149,18 +147,15 @@ export const GET = withVenue(async function GET(
       }
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       orderId,
       currentCourse: order.currentCourse,
       courseMode: order.courseMode,
       courses: Object.values(courses).sort((a, b) => a.courseNumber - b.courseNumber),
-    } })
+    })
   } catch (error) {
     console.error('Failed to get courses:', error)
-    return NextResponse.json(
-      { error: 'Failed to get courses' },
-      { status: 500 }
-    )
+    return err('Failed to get courses', 500)
   }
 })
 
@@ -181,32 +176,26 @@ export const POST = withVenue(async function POST(
     // Resolve locationId for tenant-safe queries
     const postLocationId = await getLocationId()
     if (!postLocationId) {
-      return NextResponse.json({ error: 'Location not found' }, { status: 400 })
+      return err('Location not found')
     }
 
     // Permission check: POS_ACCESS required for course operations
     const actor = await getActorFromRequest(request)
     const courseEmployeeId = (body as any).employeeId || actor.employeeId
     const courseAuth = await requirePermission(courseEmployeeId, postLocationId, PERMISSIONS.POS_ACCESS)
-    if (!courseAuth.authorized) return NextResponse.json({ error: courseAuth.error }, { status: courseAuth.status })
+    if (!courseAuth.authorized) return err(courseAuth.error, courseAuth.status)
 
     // Tenant-safe order fetch via OrderRepository
     const order = await OrderRepository.getOrderById(orderId, postLocationId)
 
     if (!order) {
-      return NextResponse.json(
-        { error: 'Order not found' },
-        { status: 404 }
-      )
+      return notFound('Order not found')
     }
 
     // Handle course mode update
     if (action === 'set_mode' && courseMode) {
       if (!['off', 'manual', 'auto'].includes(courseMode)) {
-        return NextResponse.json(
-          { error: 'Invalid course mode. Use: off, manual, auto' },
-          { status: 400 }
-        )
+        return err('Invalid course mode. Use: off, manual, auto')
       }
 
       await OrderRepository.updateOrder(orderId, postLocationId, { courseMode, lastMutatedBy: mutationOrigin })
@@ -214,10 +203,10 @@ export const POST = withVenue(async function POST(
       void dispatchOrderUpdated(order.locationId, { orderId, changes: ['courseMode'] }).catch(err => log.warn({ err }, 'order updated dispatch failed'))
       void emitOrderEvent(order.locationId, orderId, 'ORDER_METADATA_UPDATED', { courseMode })
 
-      return NextResponse.json({ data: {
+      return ok({
         success: true,
         courseMode,
-      } })
+      })
     }
 
     // Handle set current course
@@ -227,18 +216,15 @@ export const POST = withVenue(async function POST(
       void dispatchOrderUpdated(order.locationId, { orderId, changes: ['currentCourse'] }).catch(err => log.warn({ err }, 'order updated dispatch failed'))
       void emitOrderEvent(order.locationId, orderId, 'ORDER_METADATA_UPDATED', { currentCourse: courseNumber })
 
-      return NextResponse.json({ data: {
+      return ok({
         success: true,
         currentCourse: courseNumber,
-      } })
+      })
     }
 
     // For other actions, courseNumber is required
     if (courseNumber === undefined) {
-      return NextResponse.json(
-        { error: 'Course number is required' },
-        { status: 400 }
-      )
+      return err('Course number is required')
     }
 
     // Wrap batch item updates in a transaction with row-level lock
@@ -491,17 +477,14 @@ export const POST = withVenue(async function POST(
     })
 
     if ('error' in result) {
-      return NextResponse.json({ error: result.error }, { status: result.status })
+      return err(result.error, result.status)
     }
 
     pushUpstream()
 
-    return NextResponse.json(result)
+    return ok(result)
   } catch (error) {
     console.error('Failed to update course:', error)
-    return NextResponse.json(
-      { error: 'Failed to update course' },
-      { status: 500 }
-    )
+    return err('Failed to update course', 500)
   }
 })

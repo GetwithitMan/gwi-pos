@@ -126,13 +126,4 @@ export interface ModifierGroup {
   isSpiritGroup?: boolean
 }
 
-export interface MenuItem {
-  id: string
-  name: string
-  price: number
-  description?: string
-  categoryId: string
-  categoryType?: string
-  isActive: boolean
-  isAvailable: boolean
-}
+export type { MenuItemEditorSummary as MenuItem } from '@/types'

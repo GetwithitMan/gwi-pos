@@ -6,12 +6,13 @@
  * Returns per-platform status: enabled, credentials configured, storeId set, DaaS enabled.
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationSettings } from '@/lib/location-cache'
 import { parseSettings } from '@/lib/settings'
+import { err, ok } from '@/lib/api-response'
 
 interface PlatformStatus {
   platform: string
@@ -29,12 +30,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const employeeId = searchParams.get('employeeId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+      return err('Location ID is required')
     }
 
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.SETTINGS_VIEW)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Load settings
@@ -91,9 +92,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       })
     }
 
-    return NextResponse.json({ data: { platforms } })
+    return ok({ platforms })
   } catch (error) {
     console.error('[GET /api/delivery/platforms] Error:', error)
-    return NextResponse.json({ error: 'Failed to check platform status' }, { status: 500 })
+    return err('Failed to check platform status', 500)
   }
 })

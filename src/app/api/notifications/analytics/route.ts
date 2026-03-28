@@ -16,12 +16,13 @@
  * Permission: notifications.view_log
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { err, ok } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -29,26 +30,26 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.NOTIFICATIONS_VIEW_LOG)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const { searchParams } = new URL(request.url)
     const startDate = searchParams.get('startDate')
     const endDate = searchParams.get('endDate')
 
     if (!startDate || !endDate) {
-      return NextResponse.json({ error: 'startDate and endDate are required' }, { status: 400 })
+      return err('startDate and endDate are required')
     }
 
     const start = new Date(startDate)
     const end = new Date(endDate)
 
     if (isNaN(start.getTime()) || isNaN(end.getTime())) {
-      return NextResponse.json({ error: 'Invalid date format' }, { status: 400 })
+      return err('Invalid date format')
     }
 
     // Run all analytics queries in parallel
@@ -218,8 +219,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       lostCount: Number(deviceLostRows[0]?.count ?? 0),
     }
 
-    return NextResponse.json({
-      data: {
+    return ok({
         period: { startDate: start.toISOString(), endDate: end.toISOString() },
         overall: {
           totalProcessed,
@@ -234,10 +234,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         perProvider,
         perEventType,
         deviceUtilization,
-      },
-    })
+      })
   } catch (error) {
     console.error('[Notification Analytics] GET error:', error)
-    return NextResponse.json({ error: 'Failed to fetch notification analytics' }, { status: 500 })
+    return err('Failed to fetch notification analytics', 500)
   }
 })

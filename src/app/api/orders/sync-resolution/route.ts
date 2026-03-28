@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
@@ -9,6 +9,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok } from '@/lib/api-response'
 
 const log = createChildLogger('orders.sync-resolution')
 
@@ -94,7 +95,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const { transactions, locationId } = await request.json()
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // Auth check — require pos.card_payments or pos.access
@@ -103,13 +104,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       PERMISSIONS.POS_CARD_PAYMENTS,
       PERMISSIONS.POS_ACCESS,
     ])
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     if (!transactions || !Array.isArray(transactions)) {
-      return NextResponse.json(
-        { error: 'transactions array is required' },
-        { status: 400 }
-      )
+      return err('transactions array is required')
     }
 
     const results: SyncResult[] = []
@@ -405,7 +403,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       void pushUpstream()
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       results,
       summary: {
@@ -415,13 +413,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         voided: voidedCount,
         failed: failedSyncs,
       },
-    } })
+    })
   } catch (error) {
     console.error('Sync resolution batch failed:', error)
-    return NextResponse.json(
-      { error: 'Batch sync failed', details: error instanceof Error ? error.message : 'Unknown error' },
-      { status: 500 }
-    )
+    return err('Batch sync failed', 500, error instanceof Error ? error.message : 'Unknown error')
   }
 })
 
@@ -435,13 +430,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // Auth check — require pos.access permission
     const actorGet = await getActorFromRequest(request)
     const authGet = await requirePermission(actorGet.employeeId, locationId, PERMISSIONS.POS_ACCESS)
-    if (!authGet.authorized) return NextResponse.json({ error: authGet.error }, { status: authGet.status })
+    if (!authGet.authorized) return err(authGet.error, authGet.status)
 
     const dateStr = searchParams.get('date') // YYYY-MM-DD format
 
@@ -516,7 +511,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       take: 20,
     })
 
-    return NextResponse.json({ data: {
+    return ok({
       summary: {
         totalTransactions,
         offlineCaptures,
@@ -536,12 +531,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         syncAttempts: p.syncAttempts,
         needsReconciliation: p.needsReconciliation,
       })),
-    } })
+    })
   } catch (error) {
     console.error('Failed to get sync audit stats:', error)
-    return NextResponse.json(
-      { error: 'Failed to get sync statistics' },
-      { status: 500 }
-    )
+    return err('Failed to get sync statistics', 500)
   }
 })

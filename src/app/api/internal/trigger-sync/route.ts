@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { triggerImmediateDownstreamSync } from '@/lib/sync/downstream-sync-worker'
+import { err, ok, unauthorized } from '@/lib/api-response'
 
 export async function POST(request: Request) {
   // Always require INTERNAL_API_SECRET Bearer token — no localhost bypass
@@ -7,7 +8,7 @@ export async function POST(request: Request) {
   const apiKey = request.headers.get('x-api-key') || authHeader?.replace('Bearer ', '')
   const isAuthed = !!apiKey && apiKey === process.env.INTERNAL_API_SECRET
   if (!isAuthed) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return unauthorized('Unauthorized')
   }
 
   try {
@@ -19,8 +20,8 @@ export async function POST(request: Request) {
 
     await triggerImmediateDownstreamSync(domain, models)
 
-    return NextResponse.json({ success: true, domain, models })
+    return ok({ success: true })
   } catch {
-    return NextResponse.json({ error: 'Sync trigger failed' }, { status: 500 })
+    return err('Sync trigger failed', 500)
   }
 }

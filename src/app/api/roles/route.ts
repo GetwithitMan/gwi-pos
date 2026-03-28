@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { CashHandlingMode } from '@/generated/prisma/client'
 import { db } from '@/lib/db'
 import { PERMISSIONS } from '@/lib/auth'
@@ -7,6 +7,7 @@ import { withAuth, type AuthenticatedContext } from '@/lib/api-auth-middleware'
 import { requirePermission } from '@/lib/api-auth'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, ok } from '@/lib/api-response'
 
 // roleType/accessLevel: UX display metadata only — never used for authorization
 
@@ -27,10 +28,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const locationId = searchParams.get('locationId')
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'Location ID is required' },
-        { status: 400 }
-      )
+      return err('Location ID is required')
     }
 
     const roles = await db.role.findMany({
@@ -76,13 +74,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }))
     }
 
-    return NextResponse.json({ data: responseData })
+    return ok(responseData)
   } catch (error) {
     console.error('Failed to fetch roles:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch roles' },
-      { status: 500 }
-    )
+    return err('Failed to fetch roles', 500)
   }
 })
 
@@ -109,10 +104,7 @@ export const POST = withVenue(withAuth('STAFF_MANAGE_ROLES', async function POST
     const locationId = ctx.auth.locationId
 
     if (!name) {
-      return NextResponse.json(
-        { error: 'Role name is required' },
-        { status: 400 }
-      )
+      return err('Role name is required')
     }
 
     // Check for duplicate role name
@@ -124,10 +116,7 @@ export const POST = withVenue(withAuth('STAFF_MANAGE_ROLES', async function POST
     })
 
     if (existing) {
-      return NextResponse.json(
-        { error: 'A role with this name already exists' },
-        { status: 409 }
-      )
+      return err('A role with this name already exists', 409)
     }
 
     const role = await db.role.create({
@@ -147,7 +136,7 @@ export const POST = withVenue(withAuth('STAFF_MANAGE_ROLES', async function POST
     void notifyDataChanged({ locationId, domain: 'roles', action: 'created', entityId: role.id })
     void pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       id: role.id,
       name: role.name,
       permissions: getPermissionsArray(role.permissions),
@@ -158,12 +147,9 @@ export const POST = withVenue(withAuth('STAFF_MANAGE_ROLES', async function POST
       cashHandlingMode: role.cashHandlingMode,
       trackLaborCost: role.trackLaborCost,
       createdAt: role.createdAt.toISOString(),
-    } })
+    })
   } catch (error) {
     console.error('Failed to create role:', error)
-    return NextResponse.json(
-      { error: 'Failed to create role' },
-      { status: 500 }
-    )
+    return err('Failed to create role', 500)
   }
 }))

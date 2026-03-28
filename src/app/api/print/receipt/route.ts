@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { sendToPrinter } from '@/lib/printer-connection'
 import { buildCustomerReceipt, type CustomerReceiptData } from '@/lib/escpos/customer-receipt'
@@ -8,6 +8,7 @@ import { parseSettings, getPricingProgram } from '@/lib/settings'
 import { calculateCardPrice } from '@/lib/pricing'
 import type { PrintTemplateSettings } from '@/types/print'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('print-receipt')
 
 /**
@@ -28,7 +29,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     const { orderId, printerId } = body
 
     if (!orderId) {
-      return NextResponse.json({ error: 'orderId is required' }, { status: 400 })
+      return err('orderId is required')
     }
 
     // ── Load order with all receipt-relevant includes ──
@@ -72,7 +73,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     })
 
     if (!order) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      return notFound('Order not found')
     }
 
     const locationId = order.locationId
@@ -91,10 +92,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
         where: { id: printerId, locationId, isActive: true, deletedAt: null },
       })
       if (!printer) {
-        return NextResponse.json(
-          { error: 'Specified printer not found or inactive' },
-          { status: 400 }
-        )
+        return err('Specified printer not found or inactive')
       }
     } else {
       // Find default receipt printer, then fallback to any active receipt printer
@@ -109,10 +107,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     }
 
     if (!printer) {
-      return NextResponse.json(
-        { error: 'No receipt printer configured for this location' },
-        { status: 400 }
-      )
+      return err('No receipt printer configured for this location')
     }
 
     // ── Parse location settings for dual pricing / surcharge ──
@@ -276,10 +271,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
         })
         .catch(err => log.warn({ err }, 'Background task failed'))
 
-      return NextResponse.json(
-        { error: result.error || 'Failed to send to printer' },
-        { status: 500 }
-      )
+      return err(result.error || 'Failed to send to printer', 500)
     }
 
     // ── Log successful print job ──
@@ -296,18 +288,13 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
       })
       .catch(err => log.warn({ err }, 'Background task failed'))
 
-    return NextResponse.json({
-      data: {
+    return ok({
         success: true,
         printerName: printer.name,
         orderId,
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to print receipt:', error)
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Print failed' },
-      { status: 500 }
-    )
+    return err(error instanceof Error ? error.message : 'Print failed', 500)
   }
 }))

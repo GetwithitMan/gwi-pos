@@ -12,6 +12,7 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 
 const log = createChildLogger('orders.id.fire-course')
 
@@ -31,23 +32,20 @@ export const POST = withVenue(async function POST(
     const mutationOrigin = isCellularFireCourse ? 'cloud' : 'local'
 
     if (courseNumber === undefined || courseNumber === null) {
-      return NextResponse.json(
-        { error: 'courseNumber is required' },
-        { status: 400 }
-      )
+      return err('courseNumber is required')
     }
 
     // Resolve locationId for tenant-safe queries
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'Location not found' }, { status: 400 })
+      return err('Location not found')
     }
 
     // Permission check: POS_ACCESS required to fire courses
     const actor = await getActorFromRequest(request)
     const fireCourseEmployeeId = employeeId || actor.employeeId
     const fireCourseAuth = await requirePermission(fireCourseEmployeeId, locationId, PERMISSIONS.POS_ACCESS)
-    if (!fireCourseAuth.authorized) return NextResponse.json({ error: fireCourseAuth.error }, { status: fireCourseAuth.status })
+    if (!fireCourseAuth.authorized) return err(fireCourseAuth.error, fireCourseAuth.status)
 
     // Validate course ordering: prior courses should be fired first (tenant-safe)
     if (courseNumber > 1 && !body.force) {
@@ -87,29 +85,23 @@ export const POST = withVenue(async function POST(
     })
 
     if (!order) {
-      return NextResponse.json(
-        { error: 'Order not found' },
-        { status: 404 }
-      )
+      return notFound('Order not found')
     }
 
     // Bug 18 fix: Validate order status — don't fire courses on completed orders
     // K17: Allow fire-course on 'paid' orders — restaurants need to fire remaining
     // courses after payment (e.g. dessert course after check has been settled).
     if (['closed', 'voided', 'cancelled'].includes(order.status)) {
-      return NextResponse.json(
-        { error: `Cannot fire course on ${order.status} order` },
-        { status: 400 }
-      )
+      return err(`Cannot fire course on ${order.status} order`)
     }
 
     if (order.items.length === 0) {
-      return NextResponse.json({ data: {
+      return ok({
         success: true,
         sentItemCount: 0,
         sentItemIds: [],
         message: 'No pending items for this course',
-      } })
+      })
     }
 
     const now = new Date()
@@ -230,7 +222,7 @@ export const POST = withVenue(async function POST(
 
     pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       courseNumber,
       sentItemCount: updatedItemIds.length,
@@ -243,13 +235,10 @@ export const POST = withVenue(async function POST(
           itemCount: m.primaryItems.length,
         })),
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to fire course:', error)
     const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-    return NextResponse.json(
-      { error: 'Failed to fire course', details: errorMessage },
-      { status: 500 }
-    )
+    return err('Failed to fire course', 500, errorMessage)
   }
 })

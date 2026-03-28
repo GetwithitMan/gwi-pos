@@ -20,6 +20,7 @@ import { recordPaymentSchema } from '@/lib/cake-orders/schemas'
 import { createSettlementOrder, recordCakePayment } from '@/lib/cake-orders/cake-payment-service'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { requireCakeFeature } from '@/lib/cake-orders/require-cake-feature'
+import { ok } from '@/lib/api-response'
 
 export const POST = withVenue(async function POST(
   request: NextRequest,
@@ -248,8 +249,7 @@ export const POST = withVenue(async function POST(
     }).catch(err => console.error('[cake-payment] Socket dispatch failed:', err))
 
     // ── Return payment record ───────────────────────────────────────────
-    return NextResponse.json({
-      data: {
+    return ok({
         cakePaymentId,
         cakeOrderId,
         type: input.type,
@@ -261,8 +261,7 @@ export const POST = withVenue(async function POST(
         reference: input.reference || null,
         notes: input.notes || null,
         processedBy: auth.employee.id,
-      },
-    })
+      })
   } catch (error) {
     console.error('[cake-payment] Failed to record payment:', error)
 

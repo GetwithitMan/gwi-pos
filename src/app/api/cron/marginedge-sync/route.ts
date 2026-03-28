@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { parseSettings } from '@/lib/settings'
 import { MarginEdgeClient } from '@/lib/marginedge-client'
 import { syncInvoicesForLocation } from '@/app/api/integrations/marginedge/_helpers'
 import { verifyCronSecret } from '@/lib/cron-auth'
 import { forAllVenues } from '@/lib/cron-venue-helper'
+import { ok } from '@/lib/api-response'
 
 export async function GET(request: NextRequest) {
   // Verify cron secret
@@ -80,5 +81,5 @@ export async function GET(request: NextRequest) {
     allResults[slug] = results
   }, { label: 'cron:marginedge-sync' })
 
-  return NextResponse.json({ ...summary, data: allResults })
+  return ok(allResults)
 }

@@ -1,17 +1,18 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { emitToLocation } from '@/lib/socket-server'
+import { err, ok } from '@/lib/api-response'
 
 // GET - List bottle service tiers for a location
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const tiers = await db.bottleServiceTier.findMany({
@@ -19,8 +20,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orderBy: { sortOrder: 'asc' },
     })
 
-    return NextResponse.json({
-      data: tiers.map(t => ({
+    return ok(tiers.map(t => ({
         id: t.id,
         name: t.name,
         description: t.description,
@@ -30,11 +30,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         autoGratuityPercent: t.autoGratuityPercent ? Number(t.autoGratuityPercent) : null,
         sortOrder: t.sortOrder,
         isActive: t.isActive,
-      })),
-    })
+      })))
   } catch (error) {
     console.error('Failed to list bottle service tiers:', error)
-    return NextResponse.json({ error: 'Failed to list bottle service tiers' }, { status: 500 })
+    return err('Failed to list bottle service tiers', 500)
   }
 })
 
@@ -46,16 +45,16 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     if (!name || depositAmount == null || minimumSpend == null) {
-      return NextResponse.json({ error: 'Missing required fields: name, depositAmount, minimumSpend' }, { status: 400 })
+      return err('Missing required fields: name, depositAmount, minimumSpend')
     }
 
     const auth = await requirePermission(body.employeeId || null, locationId, PERMISSIONS.SETTINGS_EDIT)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // App-level uniqueness guard
@@ -63,7 +62,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       where: { locationId, name, deletedAt: null },
     })
     if (existing) {
-      return NextResponse.json({ error: `A tier named "${name}" already exists` }, { status: 409 })
+      return err(`A tier named "${name}" already exists`, 409)
     }
 
     const tier = await db.bottleServiceTier.create({
@@ -82,8 +81,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     void emitToLocation(locationId, 'settings:updated', { source: 'bottle-service-tier', action: 'created', tierId: tier.id }).catch(console.error)
 
-    return NextResponse.json({
-      data: {
+    return ok({
         id: tier.id,
         name: tier.name,
         description: tier.description,
@@ -93,10 +91,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         autoGratuityPercent: tier.autoGratuityPercent ? Number(tier.autoGratuityPercent) : null,
         sortOrder: tier.sortOrder,
         isActive: tier.isActive,
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to create bottle service tier:', error)
-    return NextResponse.json({ error: 'Failed to create bottle service tier' }, { status: 500 })
+    return err('Failed to create bottle service tier', 500)
   }
 })

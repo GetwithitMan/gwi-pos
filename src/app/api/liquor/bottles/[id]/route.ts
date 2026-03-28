@@ -11,6 +11,7 @@ import { getDerivedBottleStock } from '@/lib/liquor-inventory'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 
 const log = createChildLogger('liquor.bottles.id')
 
@@ -76,19 +77,16 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
     })
 
     if (!bottle) {
-      return NextResponse.json(
-        { error: 'Bottle not found' },
-        { status: 404 }
-      )
+      return notFound('Bottle not found')
     }
 
     // Tenant verify
     const locationId = await getLocationId()
     if (locationId && bottle.locationId !== locationId) {
-      return NextResponse.json({ error: 'Bottle not found' }, { status: 404 })
+      return notFound('Bottle not found')
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       id: bottle.id,
       name: bottle.name,
       brand: bottle.brand,
@@ -116,13 +114,10 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
         modifiers: bottle._count.spiritModifiers,
         recipes: bottle._count.recipeIngredients,
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch bottle:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch bottle' },
-      { status: 500 }
-    )
+    return err('Failed to fetch bottle', 500)
   }
 }))
 
@@ -161,23 +156,23 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
 
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const auth = await requirePermission(body.employeeId || null, locationId, PERMISSIONS.MENU_EDIT_ITEMS)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Bounds validation
     if (bottleSizeMl !== undefined && (bottleSizeMl < 50 || bottleSizeMl > 5000)) {
-      return NextResponse.json({ error: 'Bottle size must be between 50 and 5000 mL' }, { status: 400 })
+      return err('Bottle size must be between 50 and 5000 mL')
     }
     if (unitCost !== undefined && (unitCost < 0.01 || unitCost > 10000)) {
-      return NextResponse.json({ error: 'Unit cost must be between $0.01 and $10,000' }, { status: 400 })
+      return err('Unit cost must be between $0.01 and $10,000')
     }
     if (pourSizeOz !== undefined && pourSizeOz !== null && (pourSizeOz < 0.25 || pourSizeOz > 6.0)) {
-      return NextResponse.json({ error: 'Pour size must be between 0.25 and 6.0 oz' }, { status: 400 })
+      return err('Pour size must be between 0.25 and 6.0 oz')
     }
 
     // Get existing bottle to check if metrics need recalculation
@@ -189,18 +184,12 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     })
 
     if (!existing) {
-      return NextResponse.json(
-        { error: 'Bottle not found' },
-        { status: 404 }
-      )
+      return notFound('Bottle not found')
     }
 
     // Validate tier if provided
     if (tier !== undefined && !['well', 'call', 'premium', 'top_shelf'].includes(tier)) {
-      return NextResponse.json(
-        { error: 'Invalid tier (well, call, premium, top_shelf)' },
-        { status: 400 }
-      )
+      return err('Invalid tier (well, call, premium, top_shelf)')
     }
 
     // Validate spiritCategoryId if provided and get category name
@@ -211,10 +200,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
         select: { name: true },
       })
       if (!category) {
-        return NextResponse.json(
-          { error: 'Spirit category not found' },
-          { status: 400 }
-        )
+        return err('Spirit category not found')
       }
       newCategoryName = category.name
     }
@@ -332,7 +318,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     void notifyDataChanged({ locationId: existing.locationId, domain: 'liquor', action: 'updated', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       id: bottle.id,
       name: bottle.name,
       brand: bottle.brand,
@@ -359,13 +345,10 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
       inventoryItemId: existing.inventoryItemId,
       createdAt: bottle.createdAt,
       updatedAt: bottle.updatedAt,
-    } })
+    })
   } catch (error) {
     console.error('Failed to update bottle:', error)
-    return NextResponse.json(
-      { error: 'Failed to update bottle' },
-      { status: 500 }
-    )
+    return err('Failed to update bottle', 500)
   }
 }))
 
@@ -383,12 +366,12 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
 
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const auth = await requirePermission(null, locationId, PERMISSIONS.MENU_EDIT_ITEMS)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Check if bottle is used in any modifiers or recipes
@@ -406,10 +389,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     })
 
     if (!bottle) {
-      return NextResponse.json(
-        { error: 'Bottle not found' },
-        { status: 404 }
-      )
+      return notFound('Bottle not found')
     }
 
     if (bottle._count.spiritModifiers > 0 || bottle._count.recipeIngredients > 0) {
@@ -446,12 +426,9 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     void notifyDataChanged({ locationId, domain: 'liquor', action: 'deleted', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Failed to delete bottle:', error)
-    return NextResponse.json(
-      { error: 'Failed to delete bottle' },
-      { status: 500 }
-    )
+    return err('Failed to delete bottle', 500)
   }
 }))

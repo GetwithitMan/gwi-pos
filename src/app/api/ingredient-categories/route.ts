@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
+import { err, ok, unauthorized } from '@/lib/api-response'
 
 // GET /api/ingredient-categories - List all categories for location
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -14,15 +15,15 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const includeInactive = searchParams.get('includeInactive') === 'true'
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     const actor = await getActorFromRequest(request)
     if (!actor.employeeId) {
-      return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
+      return unauthorized('Authentication required')
     }
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.MENU_VIEW)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const categories = await db.ingredientCategory.findMany({
       where: {
@@ -42,16 +43,14 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orderBy: { sortOrder: 'asc' },
     })
 
-    return NextResponse.json({
-      data: categories.map(cat => ({
+    return ok(categories.map(cat => ({
         ...cat,
         ingredientCount: cat._count.ingredients,
         _count: undefined,
-      })),
-    })
+      })))
   } catch (error) {
     console.error('Error fetching ingredient categories:', error)
-    return NextResponse.json({ error: 'Failed to fetch ingredient categories' }, { status: 500 })
+    return err('Failed to fetch ingredient categories', 500)
   }
 })
 
@@ -70,28 +69,22 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     } = body
 
     if (!locationId || !name) {
-      return NextResponse.json(
-        { error: 'locationId and name are required' },
-        { status: 400 }
-      )
+      return err('locationId and name are required')
     }
 
     const actor = await getActorFromRequest(request)
     if (!actor.employeeId) {
-      return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
+      return unauthorized('Authentication required')
     }
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.MENU_EDIT_ITEMS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Check for duplicate name
     const existing = await db.ingredientCategory.findFirst({
       where: { locationId, name, deletedAt: null },
     })
     if (existing) {
-      return NextResponse.json(
-        { error: 'A category with this name already exists' },
-        { status: 409 }
-      )
+      return err('A category with this name already exists', 409)
     }
 
     // Auto-assign the next code number (IMMUTABLE after creation)
@@ -132,14 +125,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       void emitToLocation(locationId, 'inventory:changed', { action: 'category_created', entityId: category.id })
     } catch {}
 
-    return NextResponse.json({
-      data: {
+    return ok({
         ...category,
         ingredientCount: 0,
-      },
-    })
+      })
   } catch (error) {
     console.error('Error creating ingredient category:', error)
-    return NextResponse.json({ error: 'Failed to create ingredient category' }, { status: 500 })
+    return err('Failed to create ingredient category', 500)
   }
 })

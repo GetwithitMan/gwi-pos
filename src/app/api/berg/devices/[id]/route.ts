@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { generateBridgeSecret, encryptBridgeSecret } from '@/lib/berg/hmac'
 import { createHash } from 'crypto'
+import { err, notFound, ok } from '@/lib/api-response'
 
 export const PUT = withVenue(async function PUT(
   request: NextRequest,
@@ -17,10 +18,10 @@ export const PUT = withVenue(async function PUT(
     const requestingEmployeeId = body.employeeId || ''
 
     const auth = await requirePermission(requestingEmployeeId, locationId || '', PERMISSIONS.SETTINGS_EDIT)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const existing = await db.bergDevice.findFirst({ where: { id, locationId } })
-    if (!existing) return NextResponse.json({ error: 'Device not found' }, { status: 404 })
+    if (!existing) return notFound('Device not found')
 
     const data: Record<string, unknown> = {}
     if (name !== undefined) data.name = name
@@ -40,10 +41,10 @@ export const PUT = withVenue(async function PUT(
 
     const device = await db.bergDevice.update({ where: { id }, data })
     const { bridgeSecretHash: _, ...deviceData } = device
-    return NextResponse.json({ device: deviceData })
+    return ok({ device: deviceData })
   } catch (err) {
     console.error('[berg/devices/[id] PUT]', err)
-    return NextResponse.json({ error: 'Failed to update device' }, { status: 500 })
+    return err('Failed to update device', 500)
   }
 })
 
@@ -58,14 +59,14 @@ export const PATCH = withVenue(async function PATCH(
     const requestingEmployeeId = body.employeeId || ''
 
     if (!confirmDeviceId || confirmDeviceId !== id) {
-      return NextResponse.json({ error: 'confirmDeviceId must match the device ID in the URL' }, { status: 400 })
+      return err('confirmDeviceId must match the device ID in the URL')
     }
 
     const auth = await requirePermission(requestingEmployeeId, locationId || '', PERMISSIONS.SETTINGS_EDIT)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const existing = await db.bergDevice.findFirst({ where: { id, isActive: true } })
-    if (!existing) return NextResponse.json({ error: 'Device not found' }, { status: 404 })
+    if (!existing) return notFound('Device not found')
 
     const newSecret = generateBridgeSecret()
     const newHash = createHash('sha256').update(newSecret).digest('hex')
@@ -78,19 +79,19 @@ export const PATCH = withVenue(async function PATCH(
         updateData.bridgeSecretKeyVersion = keyVersion
       } catch (encErr) {
         console.error('[berg/devices PATCH] Failed to re-encrypt rotated secret:', encErr)
-        return NextResponse.json({ error: 'Secret rotation failed — encryption error' }, { status: 500 })
+        return err('Secret rotation failed — encryption error', 500)
       }
     }
     await db.bergDevice.update({ where: { id }, data: updateData })
 
-    return NextResponse.json({
+    return ok({
       bridgeSecret: newSecret,
       warning: 'Save this secret now — it cannot be retrieved again.',
       encryptedUpdated: Boolean(process.env.BRIDGE_MASTER_KEY),
     })
   } catch (err) {
     console.error('[berg/devices/[id] PATCH]', err)
-    return NextResponse.json({ error: 'Failed to rotate secret' }, { status: 500 })
+    return err('Failed to rotate secret', 500)
   }
 })
 
@@ -104,15 +105,15 @@ export const DELETE = withVenue(async function DELETE(
     const requestingEmployeeId = request.nextUrl.searchParams.get('employeeId') || ''
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.SETTINGS_EDIT)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const existing = await db.bergDevice.findFirst({ where: { id, locationId } })
-    if (!existing) return NextResponse.json({ error: 'Device not found' }, { status: 404 })
+    if (!existing) return notFound('Device not found')
 
     await db.bergDevice.update({ where: { id }, data: { isActive: false } })
-    return NextResponse.json({ success: true })
+    return ok({ success: true })
   } catch (err) {
     console.error('[berg/devices/[id] DELETE]', err)
-    return NextResponse.json({ error: 'Failed to deactivate device' }, { status: 500 })
+    return err('Failed to deactivate device', 500)
   }
 })

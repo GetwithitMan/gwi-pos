@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { requireDatacapClient, validateReader, parseBody, datacapErrorResponse } from '@/lib/datacap/helpers'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, ok } from '@/lib/api-response'
 
 interface DevicePromptRequest {
   locationId: string
@@ -18,7 +19,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     const { locationId, readerId, promptType, promptText, suggestions, buttonLabels } = body
 
     if (!locationId || !readerId || !promptType) {
-      return Response.json({ error: 'Missing required fields: locationId, readerId, promptType' }, { status: 400 })
+      return err('Missing required fields: locationId, readerId, promptType')
     }
 
     await validateReader(readerId, locationId)
@@ -43,17 +44,15 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
         )
         break
       default:
-        return Response.json({ error: `Invalid promptType: ${promptType}` }, { status: 400 })
+        return err(`Invalid promptType: ${promptType}`)
     }
 
-    return Response.json({
-      data: {
+    return ok({
         success: response.cmdStatus === 'Success',
         response: response.textResponse,
         gratuity: response.gratuityAmount,
         signatureData: response.signatureData,
-      },
-    })
+      })
   } catch (err) {
     return datacapErrorResponse(err)
   }

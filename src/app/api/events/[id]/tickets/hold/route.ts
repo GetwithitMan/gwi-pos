@@ -4,6 +4,7 @@ import { randomBytes } from 'crypto'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // Generate ticket number: EVT-YYYYMMDD-XXXXX
 function generateTicketNumber(eventDate: Date, sequence: number): string {
@@ -50,26 +51,17 @@ export const POST = withVenue(withAuth(async function POST(
     })
 
     if (!event) {
-      return NextResponse.json(
-        { error: 'Event not found' },
-        { status: 404 }
-      )
+      return notFound('Event not found')
     }
 
     if (!['on_sale', 'draft'].includes(event.status)) {
-      return NextResponse.json(
-        { error: 'Event is not available for ticket sales' },
-        { status: 400 }
-      )
+      return err('Event is not available for ticket sales')
     }
 
     // Validate pricing tier
     const pricingTier = event.pricingTiers.find(t => t.id === pricingTierId)
     if (!pricingTier) {
-      return NextResponse.json(
-        { error: 'Invalid pricing tier' },
-        { status: 400 }
-      )
+      return err('Invalid pricing tier')
     }
 
     const now = new Date()
@@ -103,10 +95,7 @@ export const POST = withVenue(withAuth(async function POST(
       })
 
       if (seats.length !== seatIds.length) {
-        return NextResponse.json(
-          { error: 'One or more seats not found' },
-          { status: 400 }
-        )
+        return err('One or more seats not found')
       }
 
       // Check if any seats are already taken
@@ -163,10 +152,7 @@ export const POST = withVenue(withAuth(async function POST(
       })
 
       if (!table) {
-        return NextResponse.json(
-          { error: 'Table not found' },
-          { status: 400 }
-        )
+        return err('Table not found')
       }
 
       // Check if table already has tickets
@@ -186,10 +172,7 @@ export const POST = withVenue(withAuth(async function POST(
       })
 
       if (existingTableTickets) {
-        return NextResponse.json(
-          { error: 'Table is not available' },
-          { status: 409 }
-        )
+        return err('Table is not available', 409)
       }
 
       // Create tickets for all seats at the table
@@ -208,10 +191,7 @@ export const POST = withVenue(withAuth(async function POST(
         const soldCount = pricingTier.quantitySold
         const remaining = pricingTier.quantityAvailable - soldCount
         if (quantity > remaining) {
-          return NextResponse.json(
-            { error: `Only ${remaining} tickets available` },
-            { status: 400 }
-          )
+          return err(`Only ${remaining} tickets available`)
         }
       }
 
@@ -223,10 +203,7 @@ export const POST = withVenue(withAuth(async function POST(
         })
       }
     } else {
-      return NextResponse.json(
-        { error: 'Invalid request for this ticketing mode' },
-        { status: 400 }
-      )
+      return err('Invalid request for this ticketing mode')
     }
 
     // Create tickets in transaction
@@ -272,7 +249,7 @@ export const POST = withVenue(withAuth(async function POST(
       0
     )
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       holdExpiresAt: holdUntil.toISOString(),
       holdDurationMinutes,
@@ -292,12 +269,9 @@ export const POST = withVenue(withAuth(async function POST(
         totalPrice: Number(ticket.totalPrice),
         status: ticket.status,
       })),
-    } })
+    })
   } catch (error) {
     console.error('Failed to hold tickets:', error)
-    return NextResponse.json(
-      { error: 'Failed to hold tickets' },
-      { status: 500 }
-    )
+    return err('Failed to hold tickets', 500)
   }
 }))

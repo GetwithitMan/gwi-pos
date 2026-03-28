@@ -11,6 +11,7 @@ import { transition } from '@/lib/reservations/state-machine'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound } from '@/lib/api-response'
 const log = createChildLogger('host-seat')
 
 export const dynamic = 'force-dynamic'
@@ -26,7 +27,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const rawSettings = await getLocationSettings(locationId)
@@ -37,7 +38,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     const { tableId, partySize, waitlistEntryId, reservationId, serverId, guestName } = body
 
     if (!tableId || typeof tableId !== 'string') {
-      return NextResponse.json({ error: 'tableId is required' }, { status: 400 })
+      return err('tableId is required')
     }
 
     const size = Number(partySize) || 1
@@ -49,11 +50,11 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     })
 
     if (!table) {
-      return NextResponse.json({ error: 'Table not found' }, { status: 404 })
+      return notFound('Table not found')
     }
 
     if (table.status === 'occupied') {
-      return NextResponse.json({ error: 'Table is already occupied' }, { status: 409 })
+      return err('Table is already occupied', 409)
     }
 
     // Determine which server to assign
@@ -140,7 +141,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
         select: { id: true },
       })
       if (!resCheck) {
-        return NextResponse.json({ error: 'Reservation not found' }, { status: 404 })
+        return notFound('Reservation not found')
       }
       try {
         await db.$transaction(async (tx: any) => {
@@ -259,6 +260,6 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     }, { status: 201 })
   } catch (error) {
     console.error('[Host/Seat] POST error:', error)
-    return NextResponse.json({ error: 'Failed to seat party' }, { status: 500 })
+    return err('Failed to seat party', 500)
   }
 }))

@@ -5,6 +5,7 @@ import { createModifierInventoryLinkSchema, validateRequest } from '@/lib/valida
 import { withVenue } from '@/lib/with-venue'
 import { areUnitsCompatible, getUnitCategory } from '@/lib/inventory/unit-conversion'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - Get inventory link for modifier
 export const GET = withVenue(async function GET(
@@ -37,25 +38,25 @@ export const GET = withVenue(async function GET(
     })
 
     if (!modifier) {
-      return NextResponse.json({ error: 'Modifier not found' }, { status: 404 })
+      return notFound('Modifier not found')
     }
 
     if (!modifier.inventoryLink) {
-      return NextResponse.json({ data: {
+      return ok({
         modifier: {
           id: modifier.id,
           name: modifier.name,
           price: toNumber(modifier.price),
         },
         inventoryLink: null
-      } })
+      })
     }
 
     const link = modifier.inventoryLink
     const unitCost = link.inventoryItem ? getEffectiveCost(link.inventoryItem) : 0
     const totalCost = toNumber(link.usageQuantity) * unitCost
 
-    return NextResponse.json({ data: {
+    return ok({
       modifier: {
         id: modifier.id,
         name: modifier.name,
@@ -71,10 +72,10 @@ export const GET = withVenue(async function GET(
         unitCost,
         totalCost,
       },
-    } })
+    })
   } catch (error) {
     console.error('Get modifier inventory link error:', error)
-    return NextResponse.json({ error: 'Failed to fetch inventory link' }, { status: 500 })
+    return err('Failed to fetch inventory link', 500)
   }
 })
 
@@ -90,7 +91,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     // Validate request body
     const validation = validateRequest(createModifierInventoryLinkSchema, body)
     if (!validation.success) {
-      return NextResponse.json({ error: validation.error }, { status: 400 })
+      return err(validation.error)
     }
 
     const { inventoryItemId, usageQuantity, usageUnit } = validation.data
@@ -114,11 +115,11 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     ])
 
     if (!modifier) {
-      return NextResponse.json({ error: 'Modifier not found' }, { status: 404 })
+      return notFound('Modifier not found')
     }
 
     if (!inventoryItem) {
-      return NextResponse.json({ error: 'Inventory item not found' }, { status: 404 })
+      return notFound('Inventory item not found')
     }
 
     // Check for cross-category unit mismatch (e.g. volume usageUnit vs weight storageUnit)
@@ -211,7 +212,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     })
   } catch (error) {
     console.error('Save modifier inventory link error:', error)
-    return NextResponse.json({ error: 'Failed to save inventory link' }, { status: 500 })
+    return err('Failed to save inventory link', 500)
   }
 }))
 
@@ -228,7 +229,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     })
 
     if (!link) {
-      return NextResponse.json({ error: 'Inventory link not found' }, { status: 404 })
+      return notFound('Inventory link not found')
     }
 
     await db.modifierInventoryLink.update({
@@ -236,9 +237,9 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
       data: { deletedAt: new Date() },
     })
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Delete modifier inventory link error:', error)
-    return NextResponse.json({ error: 'Failed to delete inventory link' }, { status: 500 })
+    return err('Failed to delete inventory link', 500)
   }
 }))

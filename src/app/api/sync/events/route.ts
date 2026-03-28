@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import type { EventReplayResponse } from '@/lib/order-events/types'
 import { authenticateTerminal } from '@/lib/terminal-auth'
+import { err, ok } from '@/lib/api-response'
 
 /**
  * GET /api/sync/events?orderId=xxx&afterSequence=0&limit=200
@@ -26,10 +27,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
   const orderId = searchParams.get('orderId')
   if (!orderId) {
-    return NextResponse.json(
-      { error: 'orderId query parameter is required' },
-      { status: 400 }
-    )
+    return err('orderId query parameter is required')
   }
 
   const afterSequence = Math.max(
@@ -77,7 +75,5 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     deviceCreatedAt: row.deviceCreatedAt.toISOString(),
   }))
 
-  return NextResponse.json({
-    data: { events, hasMore } satisfies EventReplayResponse,
-  })
+  return ok({ events, hasMore })
 })

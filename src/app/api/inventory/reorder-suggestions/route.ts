@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { err, ok } from '@/lib/api-response'
 
 // GET - Return reorder suggestions for items below reorder point or par level
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -9,7 +10,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const locationId = searchParams.get('locationId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID required' }, { status: 400 })
+      return err('Location ID required')
     }
 
     // Get all trackable active items
@@ -87,18 +88,16 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const criticalCount = suggestions.filter(s => s.severity === 'critical').length
     const warningCount = suggestions.filter(s => s.severity === 'warning').length
 
-    return NextResponse.json({
-      data: {
+    return ok({
         suggestions,
         summary: {
           critical: criticalCount,
           warning: warningCount,
           total: suggestions.length,
         },
-      },
-    })
+      })
   } catch (error) {
     console.error('Reorder suggestions error:', error)
-    return NextResponse.json({ error: 'Failed to fetch reorder suggestions' }, { status: 500 })
+    return err('Failed to fetch reorder suggestions', 500)
   }
 })

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth'
@@ -7,6 +7,7 @@ import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - List active assignments for this section
 export const GET = withVenue(async function GET(
@@ -19,7 +20,7 @@ export const GET = withVenue(async function GET(
     const locationId = searchParams.get('locationId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     const section = await db.section.findFirst({
@@ -28,7 +29,7 @@ export const GET = withVenue(async function GET(
     })
 
     if (!section) {
-      return NextResponse.json({ error: 'Section not found' }, { status: 404 })
+      return notFound('Section not found')
     }
 
     const assignments = await db.sectionAssignment.findMany({
@@ -47,8 +48,7 @@ export const GET = withVenue(async function GET(
       orderBy: { assignedAt: 'asc' },
     })
 
-    return NextResponse.json({
-      data: {
+    return ok({
         assignments: assignments.map(a => ({
           id: a.id,
           employeeId: a.employee.id,
@@ -56,11 +56,10 @@ export const GET = withVenue(async function GET(
           roleName: a.employee.role.name,
           assignedAt: a.assignedAt,
         })),
-      },
-    })
+      })
   } catch (error) {
     console.error('[sections/[id]/assignments] GET error:', error)
-    return NextResponse.json({ error: 'Failed to fetch assignments' }, { status: 500 })
+    return err('Failed to fetch assignments', 500)
   }
 })
 
@@ -75,16 +74,13 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     const { locationId, employeeId, requestingEmployeeId } = body
 
     if (!locationId || !employeeId) {
-      return NextResponse.json(
-        { error: 'locationId and employeeId are required' },
-        { status: 400 }
-      )
+      return err('locationId and employeeId are required')
     }
 
     const authEmployeeId = request.headers.get('x-employee-id') || requestingEmployeeId
     const auth = await requirePermission(authEmployeeId, locationId, PERMISSIONS.TABLES_FLOOR_PLAN)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     const section = await db.section.findFirst({
@@ -93,7 +89,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     })
 
     if (!section) {
-      return NextResponse.json({ error: 'Section not found' }, { status: 404 })
+      return notFound('Section not found')
     }
 
     const employee = await db.employee.findFirst({
@@ -108,7 +104,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     })
 
     if (!employee) {
-      return NextResponse.json({ error: 'Employee not found or inactive' }, { status: 404 })
+      return notFound('Employee not found or inactive')
     }
 
     const existing = await db.sectionAssignment.findFirst({
@@ -116,10 +112,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     })
 
     if (existing) {
-      return NextResponse.json(
-        { error: 'Employee is already assigned to this section' },
-        { status: 409 }
-      )
+      return err('Employee is already assigned to this section', 409)
     }
 
     const assignment = await db.sectionAssignment.create({
@@ -134,8 +127,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     void notifyDataChanged({ locationId, domain: 'floorplan', action: 'updated', entityId: sectionId })
     void pushUpstream()
 
-    return NextResponse.json({
-      data: {
+    return ok({
         assignment: {
           id: assignment.id,
           employeeId: employee.id,
@@ -143,11 +135,10 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
           roleName: employee.role.name,
           assignedAt: assignment.assignedAt,
         },
-      },
-    })
+      })
   } catch (error) {
     console.error('[sections/[id]/assignments] POST error:', error)
-    return NextResponse.json({ error: 'Failed to create assignment' }, { status: 500 })
+    return err('Failed to create assignment', 500)
   }
 }))
 
@@ -164,15 +155,12 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     const requestingEmployeeId = request.headers.get('x-employee-id') || searchParams.get('requestingEmployeeId')
 
     if (!locationId || !employeeId) {
-      return NextResponse.json(
-        { error: 'locationId and employeeId are required' },
-        { status: 400 }
-      )
+      return err('locationId and employeeId are required')
     }
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.TABLES_FLOOR_PLAN)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     const section = await db.section.findFirst({
@@ -181,7 +169,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     })
 
     if (!section) {
-      return NextResponse.json({ error: 'Section not found' }, { status: 404 })
+      return notFound('Section not found')
     }
 
     const assignment = await db.sectionAssignment.findFirst({
@@ -189,7 +177,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     })
 
     if (!assignment) {
-      return NextResponse.json({ error: 'Assignment not found' }, { status: 404 })
+      return notFound('Assignment not found')
     }
 
     await db.sectionAssignment.update({
@@ -201,9 +189,9 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     void notifyDataChanged({ locationId, domain: 'floorplan', action: 'updated', entityId: sectionId })
     void pushUpstream()
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('[sections/[id]/assignments] DELETE error:', error)
-    return NextResponse.json({ error: 'Failed to remove assignment' }, { status: 500 })
+    return err('Failed to remove assignment', 500)
   }
 }))

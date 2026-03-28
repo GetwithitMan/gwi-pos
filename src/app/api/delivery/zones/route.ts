@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
@@ -7,6 +7,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 import { writeDeliveryAuditLog } from '@/lib/delivery/state-machine'
 import { createChildLogger } from '@/lib/logger'
+import { created, err, ok } from '@/lib/api-response'
 const log = createChildLogger('delivery-zones')
 
 export const dynamic = 'force-dynamic'
@@ -23,13 +24,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Auth check
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.DELIVERY_VIEW)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Feature gate
     const featureGate = await requireDeliveryFeature(locationId)
@@ -51,10 +52,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       centerLng: z.centerLng != null ? Number(z.centerLng) : null,
     }))
 
-    return NextResponse.json({ zones: enriched })
+    return ok({ zones: enriched })
   } catch (error) {
     console.error('[Delivery/Zones] GET error:', error)
-    return NextResponse.json({ error: 'Failed to fetch delivery zones' }, { status: 500 })
+    return err('Failed to fetch delivery zones', 500)
   }
 })
 
@@ -69,13 +70,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Auth check
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.DELIVERY_ZONES_MANAGE)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Feature gate
     const featureGate = await requireDeliveryFeature(locationId)
@@ -100,71 +101,71 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // --- Validation ---
 
     if (!name || typeof name !== 'string' || name.trim().length === 0) {
-      return NextResponse.json({ error: 'Zone name is required' }, { status: 400 })
+      return err('Zone name is required')
     }
 
     const sanitizedName = sanitizeHtml(name)
     if (sanitizedName.length === 0) {
-      return NextResponse.json({ error: 'Zone name is required' }, { status: 400 })
+      return err('Zone name is required')
     }
 
     const validZoneTypes = ['radius', 'polygon', 'zipcode']
     if (!zoneType || !validZoneTypes.includes(zoneType)) {
-      return NextResponse.json({ error: `zoneType must be one of: ${validZoneTypes.join(', ')}` }, { status: 400 })
+      return err(`zoneType must be one of: ${validZoneTypes.join(', ')}`)
     }
 
     const fee = Number(deliveryFee)
     if (isNaN(fee) || fee < 0) {
-      return NextResponse.json({ error: 'deliveryFee must be >= 0' }, { status: 400 })
+      return err('deliveryFee must be >= 0')
     }
 
     const minOrder = Number(minimumOrder)
     if (isNaN(minOrder) || minOrder < 0) {
-      return NextResponse.json({ error: 'minimumOrder must be >= 0' }, { status: 400 })
+      return err('minimumOrder must be >= 0')
     }
 
     const estMinutes = Number(estimatedMinutes)
     if (isNaN(estMinutes) || estMinutes <= 0) {
-      return NextResponse.json({ error: 'estimatedMinutes must be > 0' }, { status: 400 })
+      return err('estimatedMinutes must be > 0')
     }
 
     // Type-specific validation
     if (zoneType === 'radius') {
       if (centerLat == null || centerLng == null || radiusMiles == null) {
-        return NextResponse.json({ error: 'Radius zones require centerLat, centerLng, and radiusMiles' }, { status: 400 })
+        return err('Radius zones require centerLat, centerLng, and radiusMiles')
       }
       const lat = Number(centerLat)
       const lng = Number(centerLng)
       const radius = Number(radiusMiles)
       if (isNaN(lat) || lat < -90 || lat > 90) {
-        return NextResponse.json({ error: 'centerLat must be between -90 and 90' }, { status: 400 })
+        return err('centerLat must be between -90 and 90')
       }
       if (isNaN(lng) || lng < -180 || lng > 180) {
-        return NextResponse.json({ error: 'centerLng must be between -180 and 180' }, { status: 400 })
+        return err('centerLng must be between -180 and 180')
       }
       if (isNaN(radius) || radius <= 0) {
-        return NextResponse.json({ error: 'radiusMiles must be > 0' }, { status: 400 })
+        return err('radiusMiles must be > 0')
       }
     }
 
     if (zoneType === 'polygon') {
       if (!polygonJson || typeof polygonJson !== 'object') {
-        return NextResponse.json({ error: 'Polygon zones require polygonJson (valid GeoJSON)' }, { status: 400 })
+        return err('Polygon zones require polygonJson (valid GeoJSON)')
       }
       // Basic GeoJSON validation
       if (!polygonJson.type || !polygonJson.coordinates || !Array.isArray(polygonJson.coordinates)) {
-        return NextResponse.json({ error: 'polygonJson must be valid GeoJSON with type and coordinates' }, { status: 400 })
+        return err('polygonJson must be valid GeoJSON with type and coordinates')
       }
     }
 
     if (zoneType === 'zipcode') {
       if (!zipCodes || !Array.isArray(zipCodes) || zipCodes.length === 0) {
-        return NextResponse.json({ error: 'Zipcode zones require a non-empty zipCodes array' }, { status: 400 })
+        return err('Zipcode zones require a non-empty zipCodes array')
       }
       // Validate each zip code is a non-empty string
       for (const zip of zipCodes) {
         if (typeof zip !== 'string' || zip.trim().length === 0) {
-          return NextResponse.json({ error: 'Each zipCode must be a non-empty string' }, { status: 400 })
+          return err('Each zipCode must be a non-empty string')
         }
       }
     }
@@ -213,7 +214,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       newValue: { id: zone.id, name: sanitizedName, zoneType },
     }).catch(err => log.warn({ err }, 'Background task failed'))
 
-    return NextResponse.json({
+    return created({
       zone: {
         ...zone,
         deliveryFee: Number(zone.deliveryFee),
@@ -222,9 +223,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         centerLat: zone.centerLat != null ? Number(zone.centerLat) : null,
         centerLng: zone.centerLng != null ? Number(zone.centerLng) : null,
       },
-    }, { status: 201 })
+    })
   } catch (error) {
     console.error('[Delivery/Zones] POST error:', error)
-    return NextResponse.json({ error: 'Failed to create delivery zone' }, { status: 500 })
+    return err('Failed to create delivery zone', 500)
   }
 })

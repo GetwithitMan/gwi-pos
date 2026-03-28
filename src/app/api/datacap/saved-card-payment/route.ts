@@ -6,6 +6,7 @@ import { requireAnyPermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { getDatacapClient } from '@/lib/datacap/helpers'
 import { roundToCents } from '@/lib/pricing'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // POST - Process a payment using a saved card token (SaleByRecordNo)
 export const POST = withVenue(async function POST(request: NextRequest) {
@@ -14,20 +15,17 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const { orderId, savedCardId, amount, tipAmount, employeeId, locationId, terminalId } = body
 
     if (!orderId || !savedCardId || !amount || !locationId) {
-      return NextResponse.json(
-        { error: 'orderId, savedCardId, amount, and locationId are required' },
-        { status: 400 }
-      )
+      return err('orderId, savedCardId, amount, and locationId are required')
     }
 
     if (amount <= 0) {
-      return NextResponse.json({ error: 'Amount must be positive' }, { status: 400 })
+      return err('Amount must be positive')
     }
     if (tipAmount !== undefined && tipAmount !== null && tipAmount < 0) {
-      return NextResponse.json({ error: 'Tip amount must be non-negative' }, { status: 400 })
+      return err('Tip amount must be non-negative')
     }
     if (tipAmount !== undefined && tipAmount !== null && tipAmount > amount) {
-      return NextResponse.json({ error: 'Tip amount cannot exceed purchase amount' }, { status: 400 })
+      return err('Tip amount cannot exceed purchase amount')
     }
 
     // Permission check — card payment permission
@@ -36,7 +34,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       [PERMISSIONS.POS_CARD_PAYMENTS]
     )
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Check card-on-file is enabled
@@ -47,7 +45,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const settings = parseSettings(location?.settings)
 
     if (!settings.cardOnFile?.enabled) {
-      return NextResponse.json({ error: 'Card on file is not enabled' }, { status: 400 })
+      return err('Card on file is not enabled')
     }
 
     // Look up the saved card — retrieve token for processing
@@ -65,7 +63,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     )
 
     if (!savedCards.length) {
-      return NextResponse.json({ error: 'Saved card not found' }, { status: 404 })
+      return notFound('Saved card not found')
     }
 
     const card = savedCards[0]
@@ -77,11 +75,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     if (!order) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      return notFound('Order not found')
     }
 
     if (order.status === 'paid' || order.status === 'cancelled') {
-      return NextResponse.json({ error: `Order is already ${order.status}` }, { status: 400 })
+      return err(`Order is already ${order.status}`)
     }
 
     // Resolve reader from terminal
@@ -106,7 +104,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     if (!readerId) {
-      return NextResponse.json({ error: 'No payment reader available' }, { status: 400 })
+      return err('No payment reader available')
     }
 
     // Process via Datacap SaleByRecordNo using the stored token
@@ -135,8 +133,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Payment was approved — the caller should use the standard /pay route
     // to record the payment with the Datacap fields from this response
-    return NextResponse.json({
-      data: {
+    return ok({
         approved: true,
         orderId,
         savedCardId: card.id,
@@ -152,10 +149,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         datacapSequenceNo: result.sequenceNo,
         authCode: result.authCode,
         invoiceNo,
-      },
-    })
+      })
   } catch (error) {
     console.error('Saved card payment failed:', error)
-    return NextResponse.json({ error: 'Failed to process saved card payment' }, { status: 500 })
+    return err('Failed to process saved card payment', 500)
   }
 })

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import * as OrderRepository from '@/lib/repositories/order-repository'
 import { parseSettings } from '@/lib/settings'
@@ -12,6 +12,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 
 const log = createChildLogger('orders.id.bottle-service')
 
@@ -26,7 +27,7 @@ export const POST = withVenue(async function POST(
     const { readerId, employeeId, tierId } = body
 
     if (!readerId || !employeeId || !tierId) {
-      return NextResponse.json({ error: 'Missing required fields: readerId, employeeId, tierId' }, { status: 400 })
+      return err('Missing required fields: readerId, employeeId, tierId')
     }
 
     // Permission check: POS_ACCESS required to open bottle service tabs
@@ -38,12 +39,12 @@ export const POST = withVenue(async function POST(
         select: { locationId: true },
       })
       if (!bottleOrderCheck) {
-        return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+        return notFound('Order not found')
       }
       bottleCheckLocationId = bottleOrderCheck.locationId
     }
     const bottleAuth = await requirePermission(employeeId, bottleCheckLocationId, PERMISSIONS.POS_ACCESS)
-    if (!bottleAuth.authorized) return NextResponse.json({ error: bottleAuth.error }, { status: bottleAuth.status })
+    if (!bottleAuth.authorized) return err(bottleAuth.error, bottleAuth.status)
 
     // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
     let orderLocationId = getRequestLocationId()
@@ -55,7 +56,7 @@ export const POST = withVenue(async function POST(
       })
 
       if (!orderCheck) {
-        return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+        return notFound('Order not found')
       }
       orderLocationId = orderCheck.locationId
     }
@@ -66,19 +67,17 @@ export const POST = withVenue(async function POST(
     })
 
     if (!order) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      return notFound('Order not found')
     }
 
     // Idempotency: if already bottle service, return existing state
     if (order.isBottleService === true) {
-      return NextResponse.json({
-        data: {
+      return ok({
           approved: true,
           tabStatus: order.tabStatus,
           isBottleService: true,
           alreadyActive: true,
-        },
-      })
+        })
     }
 
     // Get tier
@@ -87,7 +86,7 @@ export const POST = withVenue(async function POST(
     })
 
     if (!tier) {
-      return NextResponse.json({ error: 'Bottle service tier not found or inactive' }, { status: 404 })
+      return notFound('Bottle service tier not found or inactive')
     }
 
     const locationId = order.locationId
@@ -132,8 +131,7 @@ export const POST = withVenue(async function POST(
         tabName: cardholderName || order.tabName,
       })
 
-      return NextResponse.json({
-        data: {
+      return ok({
           approved: false,
           tabStatus: 'no_card',
           cardholderName,
@@ -142,8 +140,7 @@ export const POST = withVenue(async function POST(
           error: preAuthError
             ? { code: preAuthError.code, message: preAuthError.text, isRetryable: preAuthError.isRetryable }
             : { code: 'DECLINED', message: 'Deposit pre-authorization declined', isRetryable: true },
-        },
-      })
+        })
     }
 
     // Step 4: Approved — set up bottle service tab
@@ -154,7 +151,7 @@ export const POST = withVenue(async function POST(
 
     if (!recordNo) {
       console.error('[Bottle Service] PreAuth approved but no RecordNo returned')
-      return NextResponse.json({ error: 'Pre-auth approved but no RecordNo token received' }, { status: 500 })
+      return err('Pre-auth approved but no RecordNo token received', 500)
     }
 
     // Create OrderCard + update Order in a transaction
@@ -211,8 +208,7 @@ export const POST = withVenue(async function POST(
 
     pushUpstream()
 
-    return NextResponse.json({
-      data: {
+    return ok({
         approved: true,
         tabStatus: 'open',
         isBottleService: true,
@@ -230,11 +226,10 @@ export const POST = withVenue(async function POST(
         authAmount: depositAmount,
         recordNo,
         orderCardId: orderCard.id,
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to open bottle service tab:', error)
-    return NextResponse.json({ error: 'Failed to open bottle service tab' }, { status: 500 })
+    return err('Failed to open bottle service tab', 500)
   }
 })
 
@@ -256,7 +251,7 @@ export const GET = withVenue(async function GET(
       })
 
       if (!getCheck) {
-        return NextResponse.json({ error: 'Bottle service order not found' }, { status: 404 })
+        return notFound('Bottle service order not found')
       }
       getLocationId = getCheck.locationId
     }
@@ -270,7 +265,7 @@ export const GET = withVenue(async function GET(
     })
 
     if (!order) {
-      return NextResponse.json({ error: 'Bottle service order not found' }, { status: 404 })
+      return notFound('Bottle service order not found')
     }
 
     const settings = parseSettings(order.location.settings)
@@ -302,8 +297,7 @@ export const GET = withVenue(async function GET(
       }
     }
 
-    return NextResponse.json({
-      data: {
+    return ok({
         orderId,
         isBottleService: true,
         tierId: order.bottleServiceTierId,
@@ -325,10 +319,9 @@ export const GET = withVenue(async function GET(
           isDefault: c.isDefault,
           status: c.status,
         })),
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to get bottle service status:', error)
-    return NextResponse.json({ error: 'Failed to get bottle service status' }, { status: 500 })
+    return err('Failed to get bottle service status', 500)
   }
 })

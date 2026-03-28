@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { err, ok } from '@/lib/api-response'
 
 interface ValidateCodeBody {
   orderId: string
@@ -22,10 +23,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const { orderId, orderItemId, code, employeeId } = body
 
     if (!orderId || !code || !employeeId) {
-      return NextResponse.json(
-        { error: 'Missing required fields: orderId, code, employeeId' },
-        { status: 400 }
-      )
+      return err('Missing required fields: orderId, code, employeeId')
     }
 
     // Atomically find + lock + mark-as-used to prevent double-use race condition
@@ -104,8 +102,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       approval.manager.displayName ||
       `${approval.manager.firstName} ${approval.manager.lastName}`
 
-    return NextResponse.json({
-      data: {
+    return ok({
         valid: true,
         approvalId: approval.id,
         managerId: approval.managerId,
@@ -115,8 +112,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         amount: Number(approval.amount),
         itemName: approval.itemName,
         approvedAt: approval.approvedAt?.toISOString(),
-      },
-    })
+      })
   } catch (error) {
     console.error('[RemoteVoidApproval] Error validating code:', error)
     return NextResponse.json(

@@ -10,6 +10,7 @@ import { dispatchAlert } from '@/lib/alert-service'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok } from '@/lib/api-response'
 const log = createChildLogger('print-cash-drawer')
 
 /**
@@ -55,7 +56,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     // Auth check — require pos.no_sale permission
     if (body.employeeId) {
       const auth = await requirePermission(body.employeeId, locationId, PERMISSIONS.POS_NO_SALE)
-      if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+      if (!auth.authorized) return err(auth.error, auth.status)
     }
 
     // Find receipt printer: terminal-specific first, then location default
@@ -148,7 +149,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
       })()
     }
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('[CashDrawer API] Unexpected error:', error)
     // W1-PR3: Return 500 on unexpected errors

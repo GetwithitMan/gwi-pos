@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -6,6 +6,7 @@ import { getLocationSettings, invalidateLocationCache } from '@/lib/location-cac
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withVenue } from '@/lib/with-venue'
+import { err, notFound, ok } from '@/lib/api-response'
 
 const DEFAULTS = {
   enabled: false,
@@ -42,28 +43,22 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const requestingEmployeeId = searchParams.get('requestingEmployeeId')
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'locationId is required' },
-        { status: 400 }
-      )
+      return err('locationId is required')
     }
 
     // Auth check — require settings.venue permission
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.SETTINGS_VENUE)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Use cached location settings instead of direct DB query (FIX-021)
     const cachedSettings = await getLocationSettings(locationId)
     const rawSettings = (cachedSettings ?? {}) as Record<string, unknown>
     const onlineOrdering = rawSettings.onlineOrdering as Record<string, unknown> | undefined
 
-    return NextResponse.json({ data: { ...DEFAULTS, ...onlineOrdering } })
+    return ok({ ...DEFAULTS, ...onlineOrdering })
   } catch (error) {
     console.error('Failed to fetch online ordering settings:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch online ordering settings' },
-      { status: 500 }
-    )
+    return err('Failed to fetch online ordering settings', 500)
   }
 })
 
@@ -78,16 +73,13 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     }
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'locationId is required' },
-        { status: 400 }
-      )
+      return err('locationId is required')
     }
 
     // Permission check
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.SETTINGS_VENUE)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     const location = await db.location.findUnique({
@@ -96,10 +88,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     })
 
     if (!location) {
-      return NextResponse.json(
-        { error: 'Location not found' },
-        { status: 404 }
-      )
+      return notFound('Location not found')
     }
 
     const rawSettings = (location.settings as Record<string, unknown>) || {}
@@ -122,12 +111,9 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     void notifyDataChanged({ locationId, domain: 'settings', action: 'updated', entityId: locationId })
     void pushUpstream()
 
-    return NextResponse.json({ data: mergedOO })
+    return ok(mergedOO)
   } catch (error) {
     console.error('Failed to update online ordering settings:', error)
-    return NextResponse.json(
-      { error: 'Failed to update online ordering settings' },
-      { status: 500 }
-    )
+    return err('Failed to update online ordering settings', 500)
   }
 })

@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { err, notFound, ok, unauthorized } from '@/lib/api-response'
 
 interface TimelineEntry {
   id: string
@@ -43,16 +44,16 @@ export const GET = withVenue(async function GET(
     })
 
     if (!order) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      return notFound('Order not found')
     }
 
     // Auth: require manager permission
     if (!employeeId) {
-      return NextResponse.json({ error: 'employeeId query param is required' }, { status: 401 })
+      return unauthorized('employeeId query param is required')
     }
     const auth = await requirePermission(employeeId, order.locationId, PERMISSIONS.MGR_SHIFT_REVIEW)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Gather all timeline sources in parallel
@@ -222,16 +223,13 @@ export const GET = withVenue(async function GET(
       return true
     })
 
-    return NextResponse.json({ data: {
+    return ok({
       orderId,
       orderNumber: order.orderNumber,
       timeline: deduped,
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch order timeline:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch order timeline' },
-      { status: 500 }
-    )
+    return err('Failed to fetch order timeline', 500)
   }
 })

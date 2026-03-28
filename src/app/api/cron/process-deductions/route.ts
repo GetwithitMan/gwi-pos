@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { processAllPending } from '@/lib/deduction-processor'
 import { verifyCronSecret } from '@/lib/cron-auth'
 import { forAllVenues } from '@/lib/cron-venue-helper'
+import { ok } from '@/lib/api-response'
 
 export const maxDuration = 60
 
@@ -19,5 +20,5 @@ export async function GET(request: NextRequest) {
     allResults[slug] = result
   }, { label: 'cron:process-deductions' })
 
-  return NextResponse.json({ ...summary, data: allResults })
+  return ok(allResults)
 }

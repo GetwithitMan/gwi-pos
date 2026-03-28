@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchMenuStructureChanged, dispatchMenuUpdate } from '@/lib/socket-dispatch'
 import { invalidateMenuCache } from '@/lib/menu-cache'
@@ -9,6 +9,7 @@ import { withVenue } from '@/lib/with-venue'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok } from '@/lib/api-response'
 
 const log = createChildLogger('menu.categories')
 
@@ -18,10 +19,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Get the location ID (cached)
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'No location found' },
-        { status: 400 }
-      )
+      return err('No location found')
     }
 
     const categories = await db.category.findMany({
@@ -36,7 +34,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }
     })
 
-    return NextResponse.json({ data: {
+    return ok({
       categories: categories.map(c => ({
         id: c.id,
         name: c.name,
@@ -46,13 +44,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         isActive: c.isActive,
         itemCount: c._count.menuItems,
       })),
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch categories:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch categories' },
-      { status: 500 }
-    )
+    return err('Failed to fetch categories', 500)
   }
 })
 
@@ -62,25 +57,19 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const { name, color, categoryType, categoryShow, printerIds } = body
 
     if (!name?.trim()) {
-      return NextResponse.json(
-        { error: 'Name is required' },
-        { status: 400 }
-      )
+      return err('Name is required')
     }
 
     // Get the location ID (cached)
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'No location found' },
-        { status: 400 }
-      )
+      return err('No location found')
     }
 
     // Auth check — require menu.edit_items permission
     const requestingEmployeeId = request.headers.get('x-employee-id') || body.requestingEmployeeId
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.MENU_EDIT_ITEMS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Get max sort order
     const maxSortOrder = await db.category.aggregate({
@@ -117,7 +106,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     void notifyDataChanged({ locationId, domain: 'menu', action: 'created', entityId: category.id })
     void pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       id: category.id,
       name: category.name,
       color: category.color,
@@ -126,12 +115,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       isActive: category.isActive,
       printerIds: category.printerIds,
       itemCount: 0
-    } })
+    })
   } catch (error) {
     console.error('Failed to create category:', error)
-    return NextResponse.json(
-      { error: 'Failed to create category' },
-      { status: 500 }
-    )
+    return err('Failed to create category', 500)
   }
 })

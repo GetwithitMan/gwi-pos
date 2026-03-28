@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
@@ -9,6 +9,7 @@ import { ChargeType, MembershipEventType } from '@/lib/membership/types'
 import { dispatchMembershipUpdate } from '@/lib/socket-dispatch'
 import { randomUUID } from 'crypto'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('memberships-retry')
 
 export const POST = withVenue(async function POST(
@@ -20,21 +21,21 @@ export const POST = withVenue(async function POST(
     const body = await request.json()
     const { locationId, requestingEmployeeId } = body
 
-    if (!locationId) return NextResponse.json({ error: 'locationId required' }, { status: 400 })
+    if (!locationId) return err('locationId required')
 
     const auth = await requirePermission(requestingEmployeeId, locationId, 'admin.retry_membership_charge')
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const mbrs: any[] = await db.$queryRawUnsafe(`
       SELECT * FROM "Membership"
       WHERE "id" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
       LIMIT 1
     `, id, locationId)
-    if (mbrs.length === 0) return NextResponse.json({ error: 'Membership not found' }, { status: 404 })
+    if (mbrs.length === 0) return notFound('Membership not found')
     const mbr = mbrs[0]
 
     if (!mbr.lastToken) {
-      return NextResponse.json({ error: 'No card on file' }, { status: 422 })
+      return err('No card on file', 422)
     }
 
     const requestId = randomUUID()
@@ -103,7 +104,7 @@ export const POST = withVenue(async function POST(
         action: 'charged', membershipId: id, customerId: mbr.customerId,
       }).catch(err => log.warn({ err }, 'Background task failed'))
 
-      return NextResponse.json({ data: { success: true, refNo: resp.refNo } })
+      return ok({ success: true, refNo: resp.refNo })
     } catch (err) {
       if (err instanceof PayApiError) {
         const decline = classifyDecline(err.response?.returnCode, err.response?.message)
@@ -135,13 +136,13 @@ export const POST = withVenue(async function POST(
           action: 'declined', membershipId: id, customerId: mbr.customerId,
         }).catch(err => log.warn({ err }, 'Background task failed'))
 
-        return NextResponse.json({ error: `Charge declined: ${decline.message}` }, { status: 402 })
+        return err(`Charge declined: ${decline.message}`, 402)
       }
       throw err
     }
   } catch (err) {
     console.error('[memberships/retry] error:', err)
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
+    return err('Internal error', 500)
   }
 })
 

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db as prisma } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -9,6 +9,7 @@ import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { dispatchSettingsUpdated } from '@/lib/socket-dispatch'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok } from '@/lib/api-response'
 const log = createChildLogger('tax-rules')
 
 // GET - List tax rules
@@ -19,19 +20,19 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const requestingEmployeeId = searchParams.get('requestingEmployeeId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID required' }, { status: 400 })
+      return err('Location ID required')
     }
 
     // Auth check — require settings.tax permission
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.SETTINGS_TAX)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const taxRules = await prisma.taxRule.findMany({
       where: { locationId },
       orderBy: { priority: 'asc' },
     })
 
-    return NextResponse.json({ data: {
+    return ok({
       taxRules: taxRules.map(r => ({
         id: r.id,
         name: r.name,
@@ -45,10 +46,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         isCompounded: r.isCompounded,
         isActive: r.isActive,
       })),
-    } })
+    })
   } catch (error) {
     console.error('Tax rules error:', error)
-    return NextResponse.json({ error: 'Failed to fetch tax rules' }, { status: 500 })
+    return err('Failed to fetch tax rules', 500)
   }
 })
 
@@ -71,10 +72,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Auth check — require settings.tax permission
     const authCheck = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.SETTINGS_TAX)
-    if (!authCheck.authorized) return NextResponse.json({ error: authCheck.error }, { status: authCheck.status })
+    if (!authCheck.authorized) return err(authCheck.error, authCheck.status)
 
     if (!locationId || !name || rate === undefined) {
-      return NextResponse.json({ error: 'Location ID, name, and rate required' }, { status: 400 })
+      return err('Location ID, name, and rate required')
     }
 
     const taxRule = await prisma.taxRule.create({
@@ -100,7 +101,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     void notifyDataChanged({ locationId, domain: 'tax', action: 'created', entityId: taxRule.id })
     void pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       taxRule: {
         id: taxRule.id,
         name: taxRule.name,
@@ -109,9 +110,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         appliesTo: taxRule.appliesTo,
         isActive: taxRule.isActive,
       },
-    } })
+    })
   } catch (error) {
     console.error('Create tax rule error:', error)
-    return NextResponse.json({ error: 'Failed to create tax rule' }, { status: 500 })
+    return err('Failed to create tax rule', 500)
   }
 })

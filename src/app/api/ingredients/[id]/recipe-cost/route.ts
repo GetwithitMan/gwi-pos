@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { err, notFound, ok } from '@/lib/api-response'
 
 /**
  * GET /api/ingredients/:id/recipe-cost
@@ -45,10 +46,7 @@ export const GET = withVenue(async function GET(
     })
 
     if (!ingredient) {
-      return NextResponse.json(
-        { error: 'Ingredient not found' },
-        { status: 404 }
-      )
+      return notFound('Ingredient not found')
     }
 
     // Calculate total recipe cost
@@ -94,21 +92,16 @@ export const GET = withVenue(async function GET(
       costPerOutputUnit = totalCost / Number(ingredient.recipeYieldQuantity)
     }
 
-    return NextResponse.json({
-      data: {
+    return ok({
         ingredientId: ingredient.id,
         totalRecipeCost: totalCost,
         recipeYieldQuantity: ingredient.recipeYieldQuantity ? Number(ingredient.recipeYieldQuantity) : null,
         recipeYieldUnit: ingredient.recipeYieldUnit,
         costPerOutputUnit,
         componentCosts,
-      },
-    })
+      })
   } catch (error) {
     console.error('Recipe cost calculation error:', error)
-    return NextResponse.json(
-      { error: 'Failed to calculate recipe cost' },
-      { status: 500 }
-    )
+    return err('Failed to calculate recipe cost', 500)
   }
 })

@@ -9,7 +9,7 @@
  */
 
 import crypto from 'crypto'
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
@@ -20,6 +20,7 @@ import { sendSMS } from '@/lib/twilio'
 import { sendEmail } from '@/lib/email-service'
 import { withVenue } from '@/lib/with-venue'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, forbidden, notFound, ok } from '@/lib/api-response'
 
 const CreatePaymentLinkSchema = z.object({
   employeeId: z.string().min(1),
@@ -38,31 +39,25 @@ export const POST = withVenue(async (
     const parsed = CreatePaymentLinkSchema.safeParse(body)
 
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: 'Invalid request', details: parsed.error.flatten().fieldErrors },
-        { status: 400 }
-      )
+      return err('Invalid request', 400, parsed.error.flatten().fieldErrors)
     }
 
     const { employeeId, phoneNumber, email, expirationMinutes } = parsed.data
 
     // Must provide at least one delivery method
     if (!phoneNumber && !email) {
-      return NextResponse.json(
-        { error: 'At least one of phoneNumber or email is required' },
-        { status: 400 }
-      )
+      return err('At least one of phoneNumber or email is required')
     }
 
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'Location not found' }, { status: 400 })
+      return err('Location not found')
     }
 
     // Auth check
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.POS_CARD_PAYMENTS)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Get location settings
@@ -71,7 +66,7 @@ export const POST = withVenue(async (
       select: { name: true, settings: true, slug: true },
     })
     if (!location) {
-      return NextResponse.json({ error: 'Location not found' }, { status: 404 })
+      return notFound('Location not found')
     }
 
     const settings = parseSettings(location.settings)
@@ -80,10 +75,7 @@ export const POST = withVenue(async (
       : DEFAULT_TEXT_TO_PAY
 
     if (!textToPaySettings.enabled) {
-      return NextResponse.json(
-        { error: 'Text-to-Pay is not enabled for this location' },
-        { status: 403 }
-      )
+      return forbidden('Text-to-Pay is not enabled for this location')
     }
 
     // Fetch order
@@ -103,16 +95,13 @@ export const POST = withVenue(async (
     })
 
     if (!order) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      return notFound('Order not found')
     }
     if (order.locationId !== locationId) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      return notFound('Order not found')
     }
     if (order.status === 'paid' || order.status === 'voided' || order.status === 'cancelled') {
-      return NextResponse.json(
-        { error: `Cannot create payment link for ${order.status} order` },
-        { status: 400 }
-      )
+      return err(`Cannot create payment link for ${order.status} order`)
     }
 
     // Calculate outstanding balance
@@ -121,10 +110,7 @@ export const POST = withVenue(async (
     const balance = Math.max(0, total - paidAmount)
 
     if (balance <= 0) {
-      return NextResponse.json(
-        { error: 'Order is already fully paid' },
-        { status: 400 }
-      )
+      return err('Order is already fully paid')
     }
 
     // Cancel any existing pending links for this order
@@ -191,8 +177,7 @@ export const POST = withVenue(async (
 
     pushUpstream()
 
-    return NextResponse.json({
-      data: {
+    return ok({
         link: payUrl,
         token,
         amount: balance,
@@ -201,11 +186,10 @@ export const POST = withVenue(async (
           phone: phoneNumber || null,
           email: email || null,
         },
-      },
-    })
+      })
   } catch (error) {
     console.error('[POST /api/orders/[id]/payment-link] Error:', error)
-    return NextResponse.json({ error: 'Failed to create payment link' }, { status: 500 })
+    return err('Failed to create payment link', 500)
   }
 })
 

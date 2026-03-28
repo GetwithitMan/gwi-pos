@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { sendToPrinter } from '@/lib/printer-connection'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, ok } from '@/lib/api-response'
 
 // Maximum recommended print buffer size (16KB)
 // Larger buffers (logos, high-res bitmaps) can hang sockets on degraded networks
@@ -16,11 +17,11 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     const { printerIp, printerPort = 9100, data, skipSizeCheck = false } = await request.json()
 
     if (!printerIp) {
-      return NextResponse.json({ error: 'Printer IP is required' }, { status: 400 })
+      return err('Printer IP is required')
     }
 
     if (!data || !Array.isArray(data)) {
-      return NextResponse.json({ error: 'Print data is required' }, { status: 400 })
+      return err('Print data is required')
     }
 
     // Convert data array to Buffer
@@ -60,12 +61,12 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
       )
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       message: `Sent ${buffer.length} bytes to ${printerIp}:${printerPort}`,
       bytesSent: buffer.length,
       ...(warning && { warning }),
-    } })
+    })
   } catch (error) {
     console.error('Direct print failed:', error)
     return NextResponse.json(

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { ok } from '@/lib/api-response'
 
 /**
  * GET /api/auth/validate-session?locationId=X&employeeId=Y
@@ -52,5 +53,5 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
   }
 
-  return NextResponse.json({ data: { valid: true } })
+  return ok({ valid: true })
 })

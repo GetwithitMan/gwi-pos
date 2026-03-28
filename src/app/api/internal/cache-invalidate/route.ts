@@ -1,7 +1,7 @@
-import { NextResponse } from 'next/server'
 import { invalidateMenuCache } from '@/lib/menu-cache'
 import { invalidateLocationCache } from '@/lib/location-cache'
 import { emitToLocation } from '@/lib/socket-server'
+import { err, ok, unauthorized } from '@/lib/api-response'
 
 const VALID_DOMAINS = ['menu', 'floorplan', 'settings', 'employees', 'order-types'] as const
 type Domain = typeof VALID_DOMAINS[number]
@@ -11,7 +11,7 @@ export async function POST(request: Request) {
     // Internal route — require API key auth
     const apiKey = request.headers.get('x-api-key')
     if (!apiKey || apiKey !== process.env.PROVISION_API_KEY) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return unauthorized('Unauthorized')
     }
 
     const body = await request.json()
@@ -23,7 +23,7 @@ export async function POST(request: Request) {
     }
 
     if (!domain || !VALID_DOMAINS.includes(domain)) {
-      return NextResponse.json({ error: 'Invalid domain' }, { status: 400 })
+      return err('Invalid domain')
     }
 
     if (process.env.NODE_ENV !== 'production') console.log(`[Cache Invalidate] domain=${domain} action=${action || ''} entityId=${entityId || ''}`)
@@ -58,9 +58,9 @@ export async function POST(request: Request) {
         break
     }
 
-    return NextResponse.json({ data: { success: true, domain, action } })
+    return ok({ success: true, domain, action })
   } catch (err) {
     console.error('[Cache Invalidate] Error:', err)
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
+    return err('Internal error', 500)
   }
 }

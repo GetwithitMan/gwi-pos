@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
@@ -8,6 +8,7 @@ import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 import { dispatchDriverLocationUpdate } from '@/lib/delivery/dispatch-events'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('delivery-driver-location')
 
 export const dynamic = 'force-dynamic'
@@ -28,13 +29,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Auth check
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.DELIVERY_VIEW)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Feature gate
     const featureGate = await requireDeliveryFeature(locationId, { subfeature: 'driverAppProvisioned' })
@@ -44,11 +45,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const { points } = body
 
     if (!Array.isArray(points) || points.length === 0) {
-      return NextResponse.json({ error: 'points array is required and must not be empty' }, { status: 400 })
+      return err('points array is required and must not be empty')
     }
 
     if (points.length > 100) {
-      return NextResponse.json({ error: 'Maximum 100 points per batch' }, { status: 400 })
+      return err('Maximum 100 points per batch')
     }
 
     // Find driver + active session + active run
@@ -68,7 +69,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     `, actor.employeeId, locationId)
 
     if (!sessionRows.length) {
-      return NextResponse.json({ error: 'No active driver session found' }, { status: 404 })
+      return notFound('No active driver session found')
     }
 
     const { sessionId, driverId, runId } = sessionRows[0]
@@ -124,7 +125,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     if (validPoints.length === 0) {
-      return NextResponse.json({ accepted: 0 })
+      return ok({ accepted: 0 })
     }
 
     // Bulk insert tracking points
@@ -179,9 +180,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       recordedAt: latest.recordedAt.toISOString(),
     }).catch(err => log.warn({ err }, 'Background task failed'))
 
-    return NextResponse.json({ accepted: validPoints.length })
+    return ok({ accepted: validPoints.length })
   } catch (error) {
     console.error('[Delivery/Driver/Location] POST error:', error)
-    return NextResponse.json({ error: 'Failed to record GPS data' }, { status: 500 })
+    return err('Failed to record GPS data', 500)
   }
 })

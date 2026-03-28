@@ -17,6 +17,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getLocalLeaseExpiry } from '@/lib/ha-lease-state'
+import { err, forbidden, unauthorized } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -51,29 +52,20 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   // HA must be configured
   const sharedSecret = process.env.HA_SHARED_SECRET
   if (!sharedSecret) {
-    return NextResponse.json(
-      { error: 'HA not configured' },
-      { status: 503 }
-    )
+    return err('HA not configured', 503)
   }
 
   // Check caller IP — internal network only
   const forwardedFor = request.headers.get('x-forwarded-for')
   const callerIp = forwardedFor?.split(',')[0]?.trim() || '127.0.0.1'
   if (!isInternalIp(callerIp)) {
-    return NextResponse.json(
-      { error: 'Forbidden' },
-      { status: 403 }
-    )
+    return forbidden('Forbidden')
   }
 
   // Verify shared secret
   const headerSecret = request.headers.get('x-ha-secret')
   if (headerSecret !== sharedSecret) {
-    return NextResponse.json(
-      { error: 'Unauthorized' },
-      { status: 401 }
-    )
+    return unauthorized('Unauthorized')
   }
 
   // Determine node health + PG recovery state

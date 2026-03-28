@@ -5,6 +5,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { err, ok } from '@/lib/api-response'
 
 // GET /api/invoices — list invoices with filters
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -21,11 +22,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '50')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.INVENTORY_VIEW)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const where: Record<string, unknown> = {
       locationId,
@@ -55,8 +56,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       db.invoice.count({ where }),
     ])
 
-    return NextResponse.json({
-      data: {
+    return ok({
         // NOTE: deliveryDate, source, marginEdgeInvoiceId fields resolve after prisma generate
         invoices: invoices.map((inv: any) => ({
           id: inv.id,
@@ -81,11 +81,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         total,
         page,
         totalPages: Math.ceil(total / limit),
-      },
-    })
+      })
   } catch (error) {
     console.error('Invoice list error:', error)
-    return NextResponse.json({ error: 'Failed to fetch invoices' }, { status: 500 })
+    return err('Failed to fetch invoices', 500)
   }
 })
 
@@ -105,14 +104,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     } = body
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.INVENTORY_MANAGE)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     if (!invoiceDate) {
-      return NextResponse.json({ error: 'invoiceDate is required' }, { status: 400 })
+      return err('invoiceDate is required')
     }
 
     // Calculate totals from line items
@@ -201,8 +200,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     void notifyDataChanged({ locationId, domain: 'invoices', action: 'created' })
     void pushUpstream()
 
-    return NextResponse.json({
-      data: {
+    return ok({
         invoice: {
           ...invoice,
           subtotal: Number(invoice.subtotal),
@@ -219,8 +217,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
             costChangePct: li.costChangePct ? Number(li.costChangePct) : null,
           })),
         },
-      },
-    })
+      })
   } catch (error) {
     console.error('Create invoice error:', error)
     const message = error instanceof Error ? error.message : 'Unknown error'

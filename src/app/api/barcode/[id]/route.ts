@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET — Get single barcode by ID
 export const GET = withVenue(async function GET(
@@ -21,11 +22,10 @@ export const GET = withVenue(async function GET(
     })
 
     if (!barcode) {
-      return NextResponse.json({ error: 'Barcode not found' }, { status: 404 })
+      return notFound('Barcode not found')
     }
 
-    return NextResponse.json({
-      data: {
+    return ok({
         id: barcode.id,
         barcode: barcode.barcode,
         label: barcode.label,
@@ -44,11 +44,10 @@ export const GET = withVenue(async function GET(
           currentStock: Number(barcode.inventoryItem.currentStock),
         } : null,
         createdAt: barcode.createdAt.toISOString(),
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to fetch barcode:', error)
-    return NextResponse.json({ error: 'Failed to fetch barcode' }, { status: 500 })
+    return err('Failed to fetch barcode', 500)
   }
 })
 
@@ -68,7 +67,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     })
 
     if (!existing) {
-      return NextResponse.json({ error: 'Barcode not found' }, { status: 404 })
+      return notFound('Barcode not found')
     }
 
     // If barcode value is changing, check for duplicates
@@ -82,10 +81,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
         },
       })
       if (duplicate) {
-        return NextResponse.json(
-          { error: 'A barcode with this value already exists at this location' },
-          { status: 409 }
-        )
+        return err('A barcode with this value already exists at this location', 409)
       }
     }
 
@@ -108,8 +104,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
 
     pushUpstream()
 
-    return NextResponse.json({
-      data: {
+    return ok({
         id: updated.id,
         barcode: updated.barcode,
         label: updated.label,
@@ -128,11 +123,10 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
           currentStock: Number(updated.inventoryItem.currentStock),
         } : null,
         createdAt: updated.createdAt.toISOString(),
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to update barcode:', error)
-    return NextResponse.json({ error: 'Failed to update barcode' }, { status: 500 })
+    return err('Failed to update barcode', 500)
   }
 }))
 
@@ -149,7 +143,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     })
 
     if (!existing) {
-      return NextResponse.json({ error: 'Barcode not found' }, { status: 404 })
+      return notFound('Barcode not found')
     }
 
     await db.itemBarcode.update({
@@ -159,9 +153,9 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
 
     pushUpstream()
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Failed to delete barcode:', error)
-    return NextResponse.json({ error: 'Failed to delete barcode' }, { status: 500 })
+    return err('Failed to delete barcode', 500)
   }
 }))

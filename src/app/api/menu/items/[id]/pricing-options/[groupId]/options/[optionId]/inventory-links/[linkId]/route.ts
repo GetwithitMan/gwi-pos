@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { invalidateMenuCache } from '@/lib/menu-cache'
@@ -6,6 +6,7 @@ import { dispatchMenuUpdate } from '@/lib/socket-dispatch'
 import { getLocationId } from '@/lib/location-cache'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 
 const log = createChildLogger('menu.items.id.pricing-options.groupId.options.optionId.inventory-links.linkId')
 
@@ -21,10 +22,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
 
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'No location found' },
-        { status: 400 }
-      )
+      return err('No location found')
     }
 
     // Verify the link belongs to this pricing option, group, item, and location
@@ -48,29 +46,20 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
       },
     })
     if (!existing) {
-      return NextResponse.json(
-        { error: 'Inventory link not found' },
-        { status: 404 }
-      )
+      return notFound('Inventory link not found')
     }
 
     // Build update data
     const updateData: Record<string, unknown> = {}
     if (usageQuantity !== undefined) {
       if (usageQuantity <= 0) {
-        return NextResponse.json(
-          { error: 'usageQuantity must be a positive number' },
-          { status: 400 }
-        )
+        return err('usageQuantity must be a positive number')
       }
       updateData.usageQuantity = usageQuantity
     }
     if (usageUnit !== undefined) {
       if (!usageUnit?.trim()) {
-        return NextResponse.json(
-          { error: 'usageUnit cannot be empty' },
-          { status: 400 }
-        )
+        return err('usageUnit cannot be empty')
       }
       updateData.usageUnit = usageUnit.trim()
     }
@@ -131,8 +120,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
       menuItemId,
     }).catch(err => log.warn({ err }, 'fire-and-forget failed in menu.items.id.pricing-options.groupId.options.optionId.inventory-links.linkId'))
 
-    return NextResponse.json({
-      data: {
+    return ok({
         id: updated.id,
         pricingOptionId: updated.pricingOptionId,
         inventoryItemId: updated.inventoryItemId,
@@ -158,14 +146,10 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
               costPerUnit: updated.prepItem.costPerUnit != null ? Number(updated.prepItem.costPerUnit) : null,
             }
           : null,
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to update inventory link:', error)
-    return NextResponse.json(
-      { error: 'Failed to update inventory link' },
-      { status: 500 }
-    )
+    return err('Failed to update inventory link', 500)
   }
 }))
 
@@ -179,10 +163,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
 
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'No location found' },
-        { status: 400 }
-      )
+      return err('No location found')
     }
 
     // Verify the link belongs to this pricing option, group, item, and location
@@ -201,10 +182,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
       select: { id: true },
     })
     if (!existing) {
-      return NextResponse.json(
-        { error: 'Inventory link not found' },
-        { status: 404 }
-      )
+      return notFound('Inventory link not found')
     }
 
     await db.pricingOptionInventoryLink.update({
@@ -221,12 +199,9 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
       menuItemId,
     }).catch(err => log.warn({ err }, 'fire-and-forget failed in menu.items.id.pricing-options.groupId.options.optionId.inventory-links.linkId'))
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Failed to delete inventory link:', error)
-    return NextResponse.json(
-      { error: 'Failed to delete inventory link' },
-      { status: 500 }
-    )
+    return err('Failed to delete inventory link', 500)
   }
 }))

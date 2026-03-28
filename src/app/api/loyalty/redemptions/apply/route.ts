@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { requireAnyPermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // POST /api/loyalty/redemptions/apply — apply a pending redemption to an order
 export const POST = withVenue(async function POST(request: NextRequest) {
@@ -15,7 +16,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const locationId = actor.locationId || body.locationId
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // ── Permission check (pos.access OR cake.payment) ─────────────────
@@ -34,7 +35,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const { redemptionCode, orderId, cakeOrderId } = body
 
     if (!redemptionCode || typeof redemptionCode !== 'string') {
-      return NextResponse.json({ error: 'redemptionCode is required' }, { status: 400 })
+      return err('redemptionCode is required')
     }
 
     // ── Find pending redemption ───────────────────────────────────────
@@ -48,7 +49,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     )
 
     if (rows.length === 0) {
-      return NextResponse.json({ error: 'Redemption code not found or already used' }, { status: 404 })
+      return notFound('Redemption code not found or already used')
     }
 
     const redemption = rows[0]
@@ -60,7 +61,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         `UPDATE "LoyaltyRedemption" SET "status" = 'expired', "updatedAt" = NOW() WHERE "id" = $1`,
         redemption.id,
       )
-      return NextResponse.json({ error: 'Redemption code has expired' }, { status: 410 })
+      return err('Redemption code has expired', 410)
     }
 
     // ── Apply redemption ──────────────────────────────────────────────
@@ -85,7 +86,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       redemption.rewardId,
     )
 
-    return NextResponse.json({
+    return ok({
       success: true,
       reward: {
         name: redemption.rewardName,
@@ -96,9 +97,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
   } catch (error: any) {
     if (error?.message?.includes('does not exist') || error?.code === '42P01') {
-      return NextResponse.json({ error: 'Loyalty system not yet configured. Please run database migrations.' }, { status: 503 })
+      return err('Loyalty system not yet configured. Please run database migrations.', 503)
     }
     console.error('Failed to apply loyalty redemption:', error)
-    return NextResponse.json({ error: 'Failed to apply loyalty redemption' }, { status: 500 })
+    return err('Failed to apply loyalty redemption', 500)
   }
 })

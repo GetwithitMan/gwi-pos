@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - Get a single prep station
 export const GET = withVenue(withAuth('ADMIN', async function GET(
@@ -19,13 +20,13 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
     })
 
     if (!station || station.deletedAt) {
-      return NextResponse.json({ error: 'Prep station not found' }, { status: 404 })
+      return notFound('Prep station not found')
     }
 
-    return NextResponse.json({ data: { station } })
+    return ok({ station })
   } catch (error) {
     console.error('Failed to fetch prep station:', error)
-    return NextResponse.json({ error: 'Failed to fetch prep station' }, { status: 500 })
+    return err('Failed to fetch prep station', 500)
   }
 }))
 
@@ -40,7 +41,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
 
     const existing = await db.prepStation.findUnique({ where: { id } })
     if (!existing || existing.deletedAt) {
-      return NextResponse.json({ error: 'Prep station not found' }, { status: 404 })
+      return notFound('Prep station not found')
     }
 
     const station = await db.prepStation.update({
@@ -61,10 +62,10 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     void notifyDataChanged({ locationId: existing.locationId, domain: 'prep', action: 'updated', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { station } })
+    return ok({ station })
   } catch (error) {
     console.error('Failed to update prep station:', error)
-    return NextResponse.json({ error: 'Failed to update prep station' }, { status: 500 })
+    return err('Failed to update prep station', 500)
   }
 }))
 
@@ -78,7 +79,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
 
     const station = await db.prepStation.findUnique({ where: { id } })
     if (!station || station.deletedAt) {
-      return NextResponse.json({ error: 'Prep station not found' }, { status: 404 })
+      return notFound('Prep station not found')
     }
 
     await db.prepStation.update({ where: { id }, data: { deletedAt: new Date() } })
@@ -86,9 +87,9 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     void notifyDataChanged({ locationId: station.locationId, domain: 'prep', action: 'deleted', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Failed to delete prep station:', error)
-    return NextResponse.json({ error: 'Failed to delete prep station' }, { status: 500 })
+    return err('Failed to delete prep station', 500)
   }
 }))

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { SOCKET_EVENTS } from '@/lib/socket-events'
@@ -7,6 +7,7 @@ import { queueSocketEvent, flushOutboxSafe } from '@/lib/socket-outbox'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - Get single inventory item
 export const GET = withVenue(async function GET(
@@ -36,10 +37,10 @@ export const GET = withVenue(async function GET(
     })
 
     if (!item || item.deletedAt) {
-      return NextResponse.json({ error: 'Item not found' }, { status: 404 })
+      return notFound('Item not found')
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       item: {
         ...item,
         purchaseSize: Number(item.purchaseSize),
@@ -60,10 +61,10 @@ export const GET = withVenue(async function GET(
           parLevel: sl.parLevel ? Number(sl.parLevel) : null,
         })),
       },
-    } })
+    })
   } catch (error) {
     console.error('Get inventory item error:', error)
-    return NextResponse.json({ error: 'Failed to fetch inventory item' }, { status: 500 })
+    return err('Failed to fetch inventory item', 500)
   }
 })
 
@@ -82,7 +83,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     })
 
     if (!existing || existing.deletedAt) {
-      return NextResponse.json({ error: 'Item not found' }, { status: 404 })
+      return notFound('Item not found')
     }
 
     // Build update data
@@ -181,7 +182,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     void notifyDataChanged({ locationId: existing.locationId, domain: 'inventory', action: 'updated', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       item: {
         ...item,
         purchaseSize: Number(item.purchaseSize),
@@ -192,13 +193,13 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
         yieldCostPerUnit: item.yieldCostPerUnit ? Number(item.yieldCostPerUnit) : null,
         currentStock: Number(item.currentStock),
       },
-    } })
+    })
   } catch (error) {
     console.error('Update inventory item error:', error)
     if ((error as { code?: string }).code === 'P2002') {
-      return NextResponse.json({ error: 'Item with this name already exists' }, { status: 400 })
+      return err('Item with this name already exists')
     }
-    return NextResponse.json({ error: 'Failed to update inventory item' }, { status: 500 })
+    return err('Failed to update inventory item', 500)
   }
 }))
 
@@ -215,7 +216,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     })
 
     if (!existing || existing.deletedAt) {
-      return NextResponse.json({ error: 'Item not found' }, { status: 404 })
+      return notFound('Item not found')
     }
 
     // Wrap soft-delete + socket outbox in a single atomic transaction
@@ -243,9 +244,9 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     void notifyDataChanged({ locationId: existing.locationId, domain: 'inventory', action: 'deleted', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Delete inventory item error:', error)
-    return NextResponse.json({ error: 'Failed to delete inventory item' }, { status: 500 })
+    return err('Failed to delete inventory item', 500)
   }
 }))

@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { emitToLocation } from '@/lib/socket-server'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 
 const log = createChildLogger('ingredients.id.recipe')
 
@@ -35,8 +36,7 @@ export const GET = withVenue(async function GET(request: NextRequest, { params }
       orderBy: { sortOrder: 'asc' },
     })
 
-    return NextResponse.json({
-      data: components.map(c => ({
+    return ok(components.map(c => ({
         id: c.id,
         componentId: c.componentId,
         component: c.component,
@@ -45,11 +45,10 @@ export const GET = withVenue(async function GET(request: NextRequest, { params }
         batchSize: c.batchSize ? Number(c.batchSize) : null,
         batchUnit: c.batchUnit,
         sortOrder: c.sortOrder,
-      })),
-    })
+      })))
   } catch (error) {
     console.error('Error fetching ingredient recipe:', error)
-    return NextResponse.json({ error: 'Failed to fetch recipe' }, { status: 500 })
+    return err('Failed to fetch recipe', 500)
   }
 })
 
@@ -61,27 +60,24 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     const { componentId, quantity, unit, batchSize, batchUnit } = body
 
     if (!componentId || !quantity || !unit) {
-      return NextResponse.json(
-        { error: 'componentId, quantity, and unit are required' },
-        { status: 400 }
-      )
+      return err('componentId, quantity, and unit are required')
     }
 
     // Get the ingredient to get its locationId
     const ingredient = await db.ingredient.findUnique({ where: { id } })
     if (!ingredient || ingredient.deletedAt) {
-      return NextResponse.json({ error: 'Ingredient not found' }, { status: 404 })
+      return notFound('Ingredient not found')
     }
 
     // Verify component exists
     const component = await db.ingredient.findUnique({ where: { id: componentId } })
     if (!component || component.deletedAt) {
-      return NextResponse.json({ error: 'Component ingredient not found' }, { status: 404 })
+      return notFound('Component ingredient not found')
     }
 
     // Prevent circular reference
     if (componentId === id) {
-      return NextResponse.json({ error: 'Cannot use ingredient as its own component' }, { status: 400 })
+      return err('Cannot use ingredient as its own component')
     }
 
     // Get max sortOrder
@@ -96,10 +92,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       where: { outputId: id, componentId, deletedAt: null },
     })
     if (existing) {
-      return NextResponse.json(
-        { error: 'This component is already in the recipe' },
-        { status: 409 }
-      )
+      return err('This component is already in the recipe', 409)
     }
 
     const recipe = await db.ingredientRecipe.create({
@@ -131,8 +124,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     // Real-time cross-terminal update
     void emitToLocation(ingredient.locationId, 'inventory:changed', { ingredientId: id }).catch(err => log.warn({ err }, 'socket emit failed'))
 
-    return NextResponse.json({
-      data: {
+    return ok({
         id: recipe.id,
         componentId: recipe.componentId,
         component: recipe.component,
@@ -141,11 +133,10 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
         batchSize: recipe.batchSize ? Number(recipe.batchSize) : null,
         batchUnit: recipe.batchUnit,
         sortOrder: recipe.sortOrder,
-      },
-    })
+      })
   } catch (error) {
     console.error('Error adding recipe component:', error)
-    return NextResponse.json({ error: 'Failed to add component' }, { status: 500 })
+    return err('Failed to add component', 500)
   }
 }))
 
@@ -157,7 +148,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
     const { recipeId, quantity, unit, batchSize, batchUnit } = body
 
     if (!recipeId) {
-      return NextResponse.json({ error: 'recipeId is required' }, { status: 400 })
+      return err('recipeId is required')
     }
 
     const recipe = await db.ingredientRecipe.update({
@@ -183,8 +174,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
 
     pushUpstream()
 
-    return NextResponse.json({
-      data: {
+    return ok({
         id: recipe.id,
         componentId: recipe.componentId,
         component: recipe.component,
@@ -193,11 +183,10 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
         batchSize: recipe.batchSize ? Number(recipe.batchSize) : null,
         batchUnit: recipe.batchUnit,
         sortOrder: recipe.sortOrder,
-      },
-    })
+      })
   } catch (error) {
     console.error('Error updating recipe component:', error)
-    return NextResponse.json({ error: 'Failed to update component' }, { status: 500 })
+    return err('Failed to update component', 500)
   }
 }))
 
@@ -208,7 +197,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(request:
     const recipeId = searchParams.get('recipeId')
 
     if (!recipeId) {
-      return NextResponse.json({ error: 'recipeId is required' }, { status: 400 })
+      return err('recipeId is required')
     }
 
     await db.ingredientRecipe.update({
@@ -218,9 +207,9 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(request:
 
     pushUpstream()
 
-    return NextResponse.json({ data: { message: 'Component removed' } })
+    return ok({ message: 'Component removed' })
   } catch (error) {
     console.error('Error removing recipe component:', error)
-    return NextResponse.json({ error: 'Failed to remove component' }, { status: 500 })
+    return err('Failed to remove component', 500)
   }
 }))

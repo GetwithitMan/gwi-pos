@@ -6,6 +6,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // POST /api/loyalty/tier-check — recalculate customer's tier based on lifetime points
 export const POST = withVenue(async function POST(request: NextRequest) {
@@ -17,7 +18,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const locationId = actor.locationId || body.locationId
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.POS_ACCESS)
@@ -31,7 +32,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const { customerId } = body
 
     if (!customerId) {
-      return NextResponse.json({ error: 'customerId is required' }, { status: 400 })
+      return err('customerId is required')
     }
 
     // Fetch customer
@@ -43,13 +44,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     )
 
     if (customers.length === 0) {
-      return NextResponse.json({ error: 'Customer not found' }, { status: 404 })
+      return notFound('Customer not found')
     }
 
     const customer = customers[0]
 
     if (!customer.loyaltyProgramId) {
-      return NextResponse.json({ error: 'Customer is not enrolled in a loyalty program' }, { status: 400 })
+      return err('Customer is not enrolled in a loyalty program')
     }
 
     const lifetimePoints = Number(customer.lifetimePoints)
@@ -106,21 +107,19 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       void notifyDataChanged({ locationId, domain: 'loyalty', action: 'updated' })
     }
 
-    return NextResponse.json({
-      data: {
+    return ok({
         customerId,
         lifetimePoints,
         previousTierId,
         newTierId,
         newTierName,
         changed,
-      },
-    })
+      })
   } catch (error: any) {
     if (error?.message?.includes('does not exist') || error?.code === '42P01') {
-      return NextResponse.json({ error: 'Loyalty system not yet configured. Please run database migrations.' }, { status: 503 })
+      return err('Loyalty system not yet configured. Please run database migrations.', 503)
     }
     console.error('Failed to check loyalty tier:', error)
-    return NextResponse.json({ error: 'Failed to check loyalty tier' }, { status: 500 })
+    return err('Failed to check loyalty tier', 500)
   }
 })

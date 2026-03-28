@@ -23,10 +23,11 @@
  * }
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { timingSafeEqual } from 'crypto'
 import type { RoutingResult } from '@/types/routing'
 import { withVenue } from '@/lib/with-venue'
+import { err, ok, unauthorized } from '@/lib/api-response'
 
 // In production, verify internal API secret
 const INTERNAL_SECRET = process.env.INTERNAL_API_SECRET
@@ -41,7 +42,7 @@ interface BroadcastRequest {
 export const POST = withVenue(async function POST(request: NextRequest) {
   // Verify internal secret
   if (!INTERNAL_SECRET) {
-    return NextResponse.json({ error: 'Internal API secret not configured' }, { status: 500 })
+    return err('Internal API secret not configured', 500)
   }
   const secret = request.headers.get('X-Internal-Secret') || request.headers.get('x-api-key')
   if (
@@ -50,7 +51,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     Buffer.byteLength(secret) !== Buffer.byteLength(INTERNAL_SECRET) ||
     !timingSafeEqual(Buffer.from(secret), Buffer.from(INTERNAL_SECRET))
   ) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return unauthorized('Unauthorized')
   }
 
   try {
@@ -77,16 +78,16 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       // Socket server not available (serverless deployment or socket.io not initialized)
       console.warn('[Socket Broadcast] Socket server not available:', error)
       // In serverless mode, just log and return success (events will be polled instead)
-      return NextResponse.json({ data: {
+      return ok({
         success: true,
         warning: 'Socket server not available. KDS will use polling fallback.',
-      } })
+      })
     }
 
     switch (type) {
       case 'NEW_ORDER': {
         if (!routingResult) {
-          return NextResponse.json({ error: 'Missing routingResult' }, { status: 400 })
+          return err('Missing routingResult')
         }
 
         // Emit to each station's tags
@@ -141,7 +142,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
       case 'ITEM_STATUS': {
         if (!payload) {
-          return NextResponse.json({ error: 'Missing payload' }, { status: 400 })
+          return err('Missing payload')
         }
         // Emit to expo and location
         await emitToTags(['expo'], 'kds:item-status', payload, locationId)
@@ -151,7 +152,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
       case 'ORDER_BUMPED': {
         if (!payload) {
-          return NextResponse.json({ error: 'Missing payload' }, { status: 400 })
+          return err('Missing payload')
         }
         await emitToTags(['expo'], 'kds:order-bumped', payload, locationId)
         await emitToLocation(locationId, 'kds:order-bumped', payload)
@@ -160,7 +161,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
       case 'ENTERTAINMENT_UPDATE': {
         if (!payload) {
-          return NextResponse.json({ error: 'Missing payload' }, { status: 400 })
+          return err('Missing payload')
         }
         await emitToTags(['entertainment'], 'entertainment:session-update', payload, locationId)
         await emitToLocation(locationId, 'entertainment:session-update', payload)
@@ -169,7 +170,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
       case 'LOCATION_ALERT': {
         if (!payload) {
-          return NextResponse.json({ error: 'Missing payload' }, { status: 400 })
+          return err('Missing payload')
         }
         await emitToLocation(locationId, 'location:alert', payload)
         break
@@ -177,7 +178,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
       case 'VOID_APPROVAL': {
         if (!payload) {
-          return NextResponse.json({ error: 'Missing payload' }, { status: 400 })
+          return err('Missing payload')
         }
         const voidPayload = payload as {
           type: 'approved' | 'rejected' | 'expired'
@@ -213,7 +214,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       case 'INGREDIENT_LIBRARY_UPDATE': {
         // Notify all menu builder terminals to add new ingredient to local library
         if (!payload) {
-          return NextResponse.json({ error: 'Missing payload' }, { status: 400 })
+          return err('Missing payload')
         }
         await emitToLocation(locationId, 'ingredient:library-update', payload)
         break
@@ -222,7 +223,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       case 'INVENTORY_ADJUSTMENT': {
         // Notify all terminals of bulk inventory adjustment
         if (!payload) {
-          return NextResponse.json({ error: 'Missing payload' }, { status: 400 })
+          return err('Missing payload')
         }
         await emitToLocation(locationId, 'inventory:adjustment', payload)
         break
@@ -231,7 +232,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       case 'STOCK_LEVEL_CHANGE': {
         // Notify terminals of single stock level change
         if (!payload) {
-          return NextResponse.json({ error: 'Missing payload' }, { status: 400 })
+          return err('Missing payload')
         }
         await emitToLocation(locationId, 'inventory:stock-change', payload)
         break
@@ -240,7 +241,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       case 'MENU_ITEM_CHANGED': {
         // Notify online ordering and POS of menu item changes
         if (!payload) {
-          return NextResponse.json({ error: 'Missing payload' }, { status: 400 })
+          return err('Missing payload')
         }
         await emitToLocation(locationId, 'menu:item-changed', payload)
         break
@@ -249,7 +250,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       case 'MENU_STOCK_CHANGED': {
         // Notify online ordering of stock status changes
         if (!payload) {
-          return NextResponse.json({ error: 'Missing payload' }, { status: 400 })
+          return err('Missing payload')
         }
         await emitToLocation(locationId, 'menu:stock-changed', payload)
         break
@@ -258,7 +259,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       case 'MENU_STRUCTURE_CHANGED': {
         // Notify menu builders of category/modifier group changes
         if (!payload) {
-          return NextResponse.json({ error: 'Missing payload' }, { status: 400 })
+          return err('Missing payload')
         }
         await emitToLocation(locationId, 'menu:structure-changed', payload)
         break
@@ -267,7 +268,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       case 'ENTERTAINMENT_STATUS_CHANGED': {
         // Notify terminals of entertainment item status changes (replaces polling)
         if (!payload) {
-          return NextResponse.json({ error: 'Missing payload' }, { status: 400 })
+          return err('Missing payload')
         }
         await emitToLocation(locationId, 'entertainment:status-changed', payload)
         break
@@ -275,7 +276,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
       case 'ORDER_TOTALS_UPDATE': {
         if (!payload) {
-          return NextResponse.json({ error: 'Missing payload' }, { status: 400 })
+          return err('Missing payload')
         }
         await emitToLocation(locationId, 'order:totals-updated', payload)
         break
@@ -288,22 +289,19 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
       case 'TIP_GROUP_UPDATE': {
         if (!payload) {
-          return NextResponse.json({ error: 'Missing payload' }, { status: 400 })
+          return err('Missing payload')
         }
         await emitToLocation(locationId, 'tip-group:updated', payload)
         break
       }
 
       default:
-        return NextResponse.json({ error: `Unknown event type: ${type}` }, { status: 400 })
+        return err(`Unknown event type: ${type}`)
     }
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('[Socket Broadcast] Error:', error)
-    return NextResponse.json(
-      { error: 'Failed to broadcast event' },
-      { status: 500 }
-    )
+    return err('Failed to broadcast event', 500)
   }
 })

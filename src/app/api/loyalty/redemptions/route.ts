@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { err, ok } from '@/lib/api-response'
 
 // GET /api/loyalty/redemptions — list redemptions for a location
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -11,7 +12,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const locationId = searchParams.get('locationId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // ── Permission check ──────────────────────────────────────────────
@@ -76,12 +77,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       ...params,
     )
 
-    return NextResponse.json({ data: redemptions })
+    return ok(redemptions)
   } catch (error: any) {
     if (error?.message?.includes('does not exist') || error?.code === '42P01') {
-      return NextResponse.json({ error: 'Loyalty system not yet configured. Please run database migrations.' }, { status: 503 })
+      return err('Loyalty system not yet configured. Please run database migrations.', 503)
     }
     console.error('Failed to list loyalty redemptions:', error)
-    return NextResponse.json({ error: 'Failed to list loyalty redemptions' }, { status: 500 })
+    return err('Failed to list loyalty redemptions', 500)
   }
 })

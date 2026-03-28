@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getDatacapClient, datacapErrorResponse } from '@/lib/datacap/helpers'
 import { roundToCents } from '@/lib/pricing'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, notFound, ok } from '@/lib/api-response'
 
 /**
  * Cloud reader transaction proxy
@@ -26,16 +27,16 @@ export const POST = withVenue(withAuth(async function POST(
     })
 
     if (!reader) {
-      return NextResponse.json({ error: 'Reader not found or inactive' }, { status: 404 })
+      return notFound('Reader not found or inactive')
     }
 
     if (reader.communicationMode !== 'cloud') {
-      return NextResponse.json({ error: 'Reader is not in cloud mode' }, { status: 400 })
+      return err('Reader is not in cloud mode')
     }
 
     const amount = roundToCents(parseFloat(body.Amount))
     if (isNaN(amount) || amount <= 0) {
-      return NextResponse.json({ error: 'Invalid Amount' }, { status: 400 })
+      return err('Invalid Amount')
     }
 
     const tranType: 'Sale' | 'Auth' = body.TranType === 'Auth' ? 'Auth' : 'Sale'
@@ -68,7 +69,7 @@ export const POST = withVenue(withAuth(async function POST(
     const approved = response.cmdStatus === 'Approved'
     const amountAuthorized = response.authorize ? roundToCents(parseFloat(response.authorize)) : amount
 
-    return NextResponse.json({
+    return ok({
       approved,
       status: approved ? 'APPROVED' : 'DECLINED',
       authCode: response.authCode,

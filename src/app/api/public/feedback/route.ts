@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { createRateLimiter } from '@/lib/rate-limiter'
 import { getClientIp } from '@/lib/get-client-ip'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // Rate limiter: 5 submissions per minute per IP
 const limiter = createRateLimiter({ maxAttempts: 5, windowMs: 60_000 })
@@ -13,17 +14,17 @@ export async function POST(request: NextRequest) {
 
     const rateCheck = limiter.check(ip)
     if (!rateCheck.allowed) {
-      return NextResponse.json({ error: 'Too many requests. Please wait a moment.' }, { status: 429 })
+      return err('Too many requests. Please wait a moment.', 429)
     }
 
     const body = await request.json()
     const { locationSlug, orderNumber, rating, comment, customerName, customerEmail } = body
 
     if (!locationSlug) {
-      return NextResponse.json({ error: 'Location is required' }, { status: 400 })
+      return err('Location is required')
     }
     if (typeof rating !== 'number' || rating < 1 || rating > 10) {
-      return NextResponse.json({ error: 'Rating must be between 1 and 10' }, { status: 400 })
+      return err('Rating must be between 1 and 10')
     }
 
     // Resolve locationId from slug
@@ -33,7 +34,7 @@ export async function POST(request: NextRequest) {
     )
 
     if (locations.length === 0) {
-      return NextResponse.json({ error: 'Location not found' }, { status: 404 })
+      return notFound('Location not found')
     }
     const locationId = locations[0].id
 
@@ -64,9 +65,9 @@ export async function POST(request: NextRequest) {
       fullComment || null,
     )
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('[public/feedback/POST] Error:', error)
-    return NextResponse.json({ error: 'Failed to submit feedback' }, { status: 500 })
+    return err('Failed to submit feedback', 500)
   }
 }

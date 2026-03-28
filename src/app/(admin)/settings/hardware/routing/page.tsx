@@ -7,18 +7,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { useAuthStore } from '@/stores/auth-store'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import type { MenuItem as BaseMenuItem, Category as BaseCategory } from '@/types'
 
-interface Category {
-  id: string
-  name: string
-  categoryType: string
+type Category = Pick<BaseCategory, 'id' | 'name' | 'categoryType'> & {
   printerIds: string[] | null
 }
 
-interface MenuItem {
-  id: string
-  name: string
-  categoryId: string
+type MenuItem = Pick<BaseMenuItem, 'id' | 'name' | 'categoryId'> & {
   printerIds: string[] | null
   backupPrinterIds: string[] | null
 }

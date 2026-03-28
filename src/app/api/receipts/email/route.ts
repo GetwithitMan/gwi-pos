@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { sendEmail } from '@/lib/email-service'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { formatCurrency } from '@/lib/utils'
+import { err, forbidden, notFound, ok } from '@/lib/api-response'
 
 function escapeHtml(text: string): string {
   const map: Record<string, string> = {
@@ -48,18 +49,12 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     const { orderId, email, locationId } = body
 
     if (!orderId || !email || !locationId) {
-      return NextResponse.json(
-        { error: 'orderId, email, and locationId are required' },
-        { status: 400 }
-      )
+      return err('orderId, email, and locationId are required')
     }
 
     // Basic email validation
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      return NextResponse.json(
-        { error: 'Invalid email address' },
-        { status: 400 }
-      )
+      return err('Invalid email address')
     }
 
     // Fetch order with all related data
@@ -92,11 +87,11 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     })
 
     if (!order) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      return notFound('Order not found')
     }
 
     if (order.locationId !== locationId) {
-      return NextResponse.json({ error: 'Order does not belong to this location' }, { status: 403 })
+      return forbidden('Order does not belong to this location')
     }
 
     const serverName = escapeHtml(order.employee.displayName || `${order.employee.firstName} ${order.employee.lastName}`)
@@ -274,10 +269,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
         },
       }).catch(err => console.error('[receipt-email] audit log (failed) failed:', err))
 
-      return NextResponse.json(
-        { error: result.error || 'Failed to send email' },
-        { status: 500 }
-      )
+      return err(result.error || 'Failed to send email', 500)
     }
 
     void db.auditLog.create({
@@ -291,12 +283,9 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
       },
     }).catch(err => console.error('[receipt-email] audit log (sent) failed:', err))
 
-    return NextResponse.json({ data: { success: true, messageId: result.messageId } })
+    return ok({ success: true, messageId: result.messageId })
   } catch (error) {
     console.error('Failed to send email receipt:', error)
-    return NextResponse.json(
-      { error: 'Failed to send email receipt' },
-      { status: 500 }
-    )
+    return err('Failed to send email receipt', 500)
   }
 }))

@@ -32,6 +32,7 @@ import { OrderRepository, PaymentRepository } from '@/lib/repositories'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-close-tab')
 
 // POST - Close tab by capturing against cards
@@ -63,17 +64,17 @@ export const POST = withVenue(async function POST(
     } = body
 
     if (!employeeId) {
-      return NextResponse.json({ error: 'Missing required field: employeeId' }, { status: 400 })
+      return err('Missing required field: employeeId')
     }
 
     // Permission check — closing a tab is a card payment operation
     const orderForAuth = await db.order.findUnique({ where: { id: orderId }, select: { locationId: true } })
     if (!orderForAuth) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      return notFound('Order not found')
     }
     const auth = await requirePermission(employeeId, orderForAuth.locationId, PERMISSIONS.POS_CARD_PAYMENTS)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Order claim check — block if another employee has an active claim
@@ -103,12 +104,9 @@ export const POST = withVenue(async function POST(
       }
       // For other failures with extra context (tabStatus, conflict, etc.)
       if (phase1Result.extra) {
-        return NextResponse.json(
-          { error: phase1Result.error, ...phase1Result.extra },
-          { status: phase1Result.status }
-        )
+        return err(phase1Result.error, phase1Result.status)
       }
-      return NextResponse.json({ error: phase1Result.error }, { status: phase1Result.status })
+      return err(phase1Result.error, phase1Result.status)
     }
 
     const { order, versionBeforeClose } = phase1Result
@@ -360,15 +358,13 @@ export const POST = withVenue(async function POST(
       // Notify all terminals
       dispatchOpenOrdersChanged(locationId, { trigger: 'updated' as any, orderId }, { async: true }).catch(err => log.warn({ err }, 'open orders dispatch failed'))
 
-      return NextResponse.json({
-        data: {
+      return ok({
           success: false,
           error: 'All cards failed to capture',
           tabStatus: 'declined_capture',
           retryCount: failResult.retryCount,
           maxRetries: failResult.maxRetries,
-        },
-      })
+        })
     }
 
     // Check if capture was approved
@@ -388,8 +384,7 @@ export const POST = withVenue(async function POST(
       // Notify all terminals
       dispatchOpenOrdersChanged(locationId, { trigger: 'updated' as any, orderId }, { async: true }).catch(err => log.warn({ err }, 'open orders dispatch failed'))
 
-      return NextResponse.json({
-        data: {
+      return ok({
           success: false,
           cardType: capturedCard.cardType,
           cardLast4: capturedCard.cardLast4,
@@ -399,8 +394,7 @@ export const POST = withVenue(async function POST(
           tabStatus: 'declined_capture',
           retryCount: declineResult.retryCount,
           maxRetries: declineResult.maxRetries,
-        },
-      })
+        })
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -761,8 +755,7 @@ export const POST = withVenue(async function POST(
     // Trigger upstream sync (fire-and-forget, debounced)
     pushUpstream()
 
-    return NextResponse.json({
-      data: {
+    return ok({
         success: true,
         captured: {
           cardType: capturedCard.cardType,
@@ -776,8 +769,7 @@ export const POST = withVenue(async function POST(
         // For receipt tip mode: bartender enters tip later via /api/datacap/adjust
         pendingTipAdjust: tipMode === 'receipt',
         recordNo: capturedCard.recordNo,
-      },
-    })
+      })
   } catch (error) {
     // PAYMENT-SAFETY: Unhandled error during tab close. The capture may or may not have
     // succeeded. Log for reconciliation. The order stays in its current status (not paid).
@@ -788,6 +780,6 @@ export const POST = withVenue(async function POST(
       error: error instanceof Error ? error.message : String(error),
       timestamp: new Date().toISOString(),
     })
-    return NextResponse.json({ error: 'Failed to close tab' }, { status: 500 })
+    return err('Failed to close tab', 500)
   }
 })

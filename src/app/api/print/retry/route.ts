@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { retryFailedPrintJobs } from '@/lib/print-retry'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, ok } from '@/lib/api-response'
 
 /**
  * POST /api/print/retry — Trigger retry of queued print jobs for a location.
@@ -16,26 +17,18 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     const { locationId } = body as { locationId: string }
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'locationId is required' },
-        { status: 400 }
-      )
+      return err('locationId is required')
     }
 
     const result = await retryFailedPrintJobs(locationId)
 
-    return NextResponse.json({
-      data: {
+    return ok({
         ...result,
         message: `Retried ${result.retried} jobs: ${result.succeeded} succeeded, ${result.failed} failed`,
-      },
-    })
+      })
   } catch (error) {
     console.error('[Print Retry] Error retrying print jobs:', error)
-    return NextResponse.json(
-      { error: 'Failed to retry print jobs' },
-      { status: 500 }
-    )
+    return err('Failed to retry print jobs', 500)
   }
 }))
 
@@ -48,10 +41,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const limit = Math.min(parseInt(searchParams.get('limit') || '50', 10), 200)
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'locationId is required' },
-        { status: 400 }
-      )
+      return err('locationId is required')
     }
 
     const where: Record<string, unknown> = {
@@ -112,8 +102,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({
-      data: {
+    return ok({
         jobs: jobs.map(job => ({
           id: job.id,
           jobType: job.jobType,
@@ -128,13 +117,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           order: job.order,
         })),
         summary,
-      },
-    })
+      })
   } catch (error) {
     console.error('[Print Retry] Error listing print jobs:', error)
-    return NextResponse.json(
-      { error: 'Failed to list print jobs' },
-      { status: 500 }
-    )
+    return err('Failed to list print jobs', 500)
   }
 })

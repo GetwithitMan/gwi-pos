@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { Prisma } from '@/generated/prisma/client'
 import { dispatchMenuStructureChanged } from '@/lib/socket-dispatch'
@@ -9,6 +9,7 @@ import { withVenue } from '@/lib/with-venue'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 
 const log = createChildLogger('menu.items.id.modifier-groups.groupId.modifiers')
 
@@ -64,61 +65,61 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
     })
 
     if (!group) {
-      return NextResponse.json({ error: 'Modifier group not found' }, { status: 404 })
+      return notFound('Modifier group not found')
     }
 
     // Auth check — require menu.edit_items permission
     const actor = await getActorFromRequest(request)
     const authCheck = await requirePermission(actor.employeeId, group.locationId, PERMISSIONS.MENU_EDIT_ITEMS)
-    if (!authCheck.authorized) return NextResponse.json({ error: authCheck.error }, { status: authCheck.status })
+    if (!authCheck.authorized) return err(authCheck.error, authCheck.status)
 
     // Validate inputs
     if (!name || (typeof name === 'string' && name.trim() === '')) {
-      return NextResponse.json({ error: 'Modifier name is required' }, { status: 400 })
+      return err('Modifier name is required')
     }
     if (price !== undefined && (typeof price !== 'number' || !Number.isFinite(price))) {
-      return NextResponse.json({ error: 'Price must be a valid number' }, { status: 400 })
+      return err('Price must be a valid number')
     }
     if (price !== undefined && price < 0) {
-      return NextResponse.json({ error: 'Modifier price cannot be negative' }, { status: 400 })
+      return err('Modifier price cannot be negative')
     }
     if (extraPrice !== undefined && (typeof extraPrice !== 'number' || !Number.isFinite(extraPrice))) {
-      return NextResponse.json({ error: 'Extra price must be a valid number' }, { status: 400 })
+      return err('Extra price must be a valid number')
     }
     if (extraPrice !== undefined && extraPrice < 0) {
-      return NextResponse.json({ error: 'Extra price cannot be negative' }, { status: 400 })
+      return err('Extra price cannot be negative')
     }
     if (liteMultiplier !== undefined && liteMultiplier !== null && liteMultiplier < 0) {
-      return NextResponse.json({ error: 'Lite multiplier cannot be negative' }, { status: 400 })
+      return err('Lite multiplier cannot be negative')
     }
     if (liteMultiplier !== undefined && liteMultiplier === 0) {
-      return NextResponse.json({ error: 'Lite multiplier cannot be zero — use 0.5 for half portion' }, { status: 400 })
+      return err('Lite multiplier cannot be zero — use 0.5 for half portion')
     }
     if (extraMultiplier !== undefined && extraMultiplier !== null && extraMultiplier < 0) {
-      return NextResponse.json({ error: 'Extra multiplier cannot be negative' }, { status: 400 })
+      return err('Extra multiplier cannot be negative')
     }
 
     // Validate swapTargets
     if (swapEnabled && (!swapTargets || !Array.isArray(swapTargets) || swapTargets.length === 0)) {
-      return NextResponse.json({ error: 'Swap enabled requires at least one swap target' }, { status: 400 })
+      return err('Swap enabled requires at least one swap target')
     }
     if (swapTargets && Array.isArray(swapTargets)) {
       const seenIds = new Set()
       for (const target of swapTargets) {
         if (!target.menuItemId || !target.name || target.snapshotPrice === undefined || !target.pricingMode) {
-          return NextResponse.json({ error: 'Each swap target must have menuItemId, name, snapshotPrice, and pricingMode' }, { status: 400 })
+          return err('Each swap target must have menuItemId, name, snapshotPrice, and pricingMode')
         }
         if (!['target_price', 'fixed_price', 'no_charge'].includes(target.pricingMode)) {
-          return NextResponse.json({ error: 'Invalid pricingMode. Must be target_price, fixed_price, or no_charge' }, { status: 400 })
+          return err('Invalid pricingMode. Must be target_price, fixed_price, or no_charge')
         }
         if (target.pricingMode === 'fixed_price' && (target.fixedPrice === undefined || target.fixedPrice === null)) {
-          return NextResponse.json({ error: 'fixedPrice is required when pricingMode is fixed_price' }, { status: 400 })
+          return err('fixedPrice is required when pricingMode is fixed_price')
         }
         if (target.name && target.name.length > 100) {
-          return NextResponse.json({ error: 'Swap target name must be 100 characters or less' }, { status: 400 })
+          return err('Swap target name must be 100 characters or less')
         }
         if (seenIds.has(target.menuItemId)) {
-          return NextResponse.json({ error: 'Duplicate menuItemId in swap targets' }, { status: 400 })
+          return err('Duplicate menuItemId in swap targets')
         }
         seenIds.add(target.menuItemId)
       }
@@ -126,42 +127,42 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
 
     // Validate inventoryDeductionAmount
     if (inventoryDeductionAmount !== undefined && inventoryDeductionAmount !== null && inventoryDeductionAmount < 0) {
-      return NextResponse.json({ error: 'inventoryDeductionAmount must be >= 0' }, { status: 400 })
+      return err('inventoryDeductionAmount must be >= 0')
     }
     if (!ingredientId && (inventoryDeductionAmount !== undefined || inventoryDeductionUnit !== undefined)) {
       // Clear orphaned deduction config if no ingredient linked
     }
     if (ingredientId && inventoryDeductionAmount !== undefined && inventoryDeductionAmount !== null && !inventoryDeductionUnit) {
-      return NextResponse.json({ error: 'inventoryDeductionUnit is required when inventoryDeductionAmount is set' }, { status: 400 })
+      return err('inventoryDeductionUnit is required when inventoryDeductionAmount is set')
     }
 
     // Validate customPreModifiers
     if (customPreModifiers !== undefined && customPreModifiers !== null) {
       if (!Array.isArray(customPreModifiers)) {
-        return NextResponse.json({ error: 'customPreModifiers must be an array' }, { status: 400 })
+        return err('customPreModifiers must be an array')
       }
       for (const cpm of customPreModifiers) {
         if (!cpm.name || typeof cpm.name !== 'string' || cpm.name.trim() === '') {
-          return NextResponse.json({ error: 'Each custom pre-modifier must have a name' }, { status: 400 })
+          return err('Each custom pre-modifier must have a name')
         }
         if (cpm.name.length > 100) {
-          return NextResponse.json({ error: 'Custom pre-modifier name must be 100 characters or less' }, { status: 400 })
+          return err('Custom pre-modifier name must be 100 characters or less')
         }
         if (cpm.shortLabel && cpm.shortLabel.length > 12) {
-          return NextResponse.json({ error: 'Custom pre-modifier shortLabel must be 12 characters or less' }, { status: 400 })
+          return err('Custom pre-modifier shortLabel must be 12 characters or less')
         }
         if (typeof cpm.priceAdjustment !== 'number' || !Number.isFinite(cpm.priceAdjustment)) {
-          return NextResponse.json({ error: 'Custom pre-modifier priceAdjustment must be a valid number' }, { status: 400 })
+          return err('Custom pre-modifier priceAdjustment must be a valid number')
         }
         if (typeof cpm.multiplier !== 'number' || !Number.isFinite(cpm.multiplier) || cpm.multiplier < 0) {
-          return NextResponse.json({ error: 'Custom pre-modifier multiplier must be a non-negative number' }, { status: 400 })
+          return err('Custom pre-modifier multiplier must be a non-negative number')
         }
       }
     }
 
     // Validate commission
     if (commissionType === 'percent' && commissionValue !== undefined && commissionValue > 100) {
-      return NextResponse.json({ error: 'Percent commission cannot exceed 100' }, { status: 400 })
+      return err('Percent commission cannot exceed 100')
     }
 
     // Get max sort order
@@ -233,8 +234,7 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
     void notifyDataChanged({ locationId: group.locationId, domain: 'menu', action: 'created', entityId: modifier.id })
     void pushUpstream()
 
-    return NextResponse.json({
-      data: {
+    return ok({
         id: modifier.id,
         name: modifier.name,
         price: Number(modifier.price),
@@ -272,17 +272,13 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
         customPreModifiers: modifier.customPreModifiers,
         spiritTier: modifier.spiritTier,
         linkedBottleProductId: modifier.linkedBottleProductId,
-      },
-    })
+      })
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-      return NextResponse.json(
-        { error: 'A modifier with this name already exists in this group' },
-        { status: 409 }
-      )
+      return err('A modifier with this name already exists in this group', 409)
     }
     console.error('Error creating modifier:', error)
-    return NextResponse.json({ error: 'Failed to create modifier' }, { status: 500 })
+    return err('Failed to create modifier', 500)
   }
 })
 
@@ -329,7 +325,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
     } = body
 
     if (!modifierId) {
-      return NextResponse.json({ error: 'modifierId is required' }, { status: 400 })
+      return err('modifierId is required')
     }
 
     // Verify modifier belongs to this group
@@ -338,66 +334,66 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
     })
 
     if (!modifier) {
-      return NextResponse.json({ error: 'Modifier not found' }, { status: 404 })
+      return notFound('Modifier not found')
     }
 
     // Auth check — require menu.edit_items permission
     const actorPut = await getActorFromRequest(request)
     const authPut = await requirePermission(actorPut.employeeId, modifier.locationId, PERMISSIONS.MENU_EDIT_ITEMS)
-    if (!authPut.authorized) return NextResponse.json({ error: authPut.error }, { status: authPut.status })
+    if (!authPut.authorized) return err(authPut.error, authPut.status)
 
     // Validate inputs
     if (price !== undefined && typeof price !== 'number') {
       const parsed = Number(price)
       if (!Number.isFinite(parsed)) {
-        return NextResponse.json({ error: 'Price must be a valid number' }, { status: 400 })
+        return err('Price must be a valid number')
       }
     }
     if (price !== undefined && Number(price) < 0) {
-      return NextResponse.json({ error: 'Modifier price cannot be negative' }, { status: 400 })
+      return err('Modifier price cannot be negative')
     }
     if (extraPrice !== undefined && typeof extraPrice !== 'number') {
       const parsed = Number(extraPrice)
       if (!Number.isFinite(parsed)) {
-        return NextResponse.json({ error: 'Extra price must be a valid number' }, { status: 400 })
+        return err('Extra price must be a valid number')
       }
     }
     if (extraPrice !== undefined && Number(extraPrice) < 0) {
-      return NextResponse.json({ error: 'Extra price cannot be negative' }, { status: 400 })
+      return err('Extra price cannot be negative')
     }
     if (liteMultiplier !== undefined && liteMultiplier !== null && Number(liteMultiplier) < 0) {
-      return NextResponse.json({ error: 'Lite multiplier cannot be negative' }, { status: 400 })
+      return err('Lite multiplier cannot be negative')
     }
     if (liteMultiplier !== undefined && liteMultiplier === 0) {
-      return NextResponse.json({ error: 'Lite multiplier cannot be zero — use 0.5 for half portion' }, { status: 400 })
+      return err('Lite multiplier cannot be zero — use 0.5 for half portion')
     }
     if (extraMultiplier !== undefined && extraMultiplier !== null && Number(extraMultiplier) < 0) {
-      return NextResponse.json({ error: 'Extra multiplier cannot be negative' }, { status: 400 })
+      return err('Extra multiplier cannot be negative')
     }
 
     // Validate swapTargets — check existing DB targets when payload doesn't include new ones
     const effectiveSwapEnabled = swapEnabled !== undefined ? swapEnabled : modifier.swapEnabled
     const effectiveSwapTargets = swapTargets !== undefined ? swapTargets : (modifier.swapTargets as any[] | null)
     if (effectiveSwapEnabled && (!effectiveSwapTargets || !Array.isArray(effectiveSwapTargets) || effectiveSwapTargets.length === 0)) {
-      return NextResponse.json({ error: 'Swap enabled requires at least one swap target' }, { status: 400 })
+      return err('Swap enabled requires at least one swap target')
     }
     if (swapTargets && Array.isArray(swapTargets)) {
       const seenIds = new Set()
       for (const target of swapTargets) {
         if (!target.menuItemId || !target.name || target.snapshotPrice === undefined || !target.pricingMode) {
-          return NextResponse.json({ error: 'Each swap target must have menuItemId, name, snapshotPrice, and pricingMode' }, { status: 400 })
+          return err('Each swap target must have menuItemId, name, snapshotPrice, and pricingMode')
         }
         if (!['target_price', 'fixed_price', 'no_charge'].includes(target.pricingMode)) {
-          return NextResponse.json({ error: 'Invalid pricingMode. Must be target_price, fixed_price, or no_charge' }, { status: 400 })
+          return err('Invalid pricingMode. Must be target_price, fixed_price, or no_charge')
         }
         if (target.pricingMode === 'fixed_price' && (target.fixedPrice === undefined || target.fixedPrice === null)) {
-          return NextResponse.json({ error: 'fixedPrice is required when pricingMode is fixed_price' }, { status: 400 })
+          return err('fixedPrice is required when pricingMode is fixed_price')
         }
         if (target.name && target.name.length > 100) {
-          return NextResponse.json({ error: 'Swap target name must be 100 characters or less' }, { status: 400 })
+          return err('Swap target name must be 100 characters or less')
         }
         if (seenIds.has(target.menuItemId)) {
-          return NextResponse.json({ error: 'Duplicate menuItemId in swap targets' }, { status: 400 })
+          return err('Duplicate menuItemId in swap targets')
         }
         seenIds.add(target.menuItemId)
       }
@@ -405,7 +401,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
 
     // Validate inventoryDeductionAmount
     if (inventoryDeductionAmount !== undefined && inventoryDeductionAmount !== null && inventoryDeductionAmount < 0) {
-      return NextResponse.json({ error: 'inventoryDeductionAmount must be >= 0' }, { status: 400 })
+      return err('inventoryDeductionAmount must be >= 0')
     }
     // Clear orphaned deduction config if ingredient is being removed
     const effectiveIngredientId = ingredientId !== undefined ? ingredientId : modifier.ingredientId
@@ -414,29 +410,29 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
     }
     const effectiveUnit = inventoryDeductionUnit !== undefined ? inventoryDeductionUnit : modifier.inventoryDeductionUnit
     if (effectiveIngredientId && inventoryDeductionAmount !== undefined && inventoryDeductionAmount !== null && !effectiveUnit) {
-      return NextResponse.json({ error: 'inventoryDeductionUnit is required when inventoryDeductionAmount is set' }, { status: 400 })
+      return err('inventoryDeductionUnit is required when inventoryDeductionAmount is set')
     }
 
     // Validate customPreModifiers
     if (customPreModifiers !== undefined && customPreModifiers !== null) {
       if (!Array.isArray(customPreModifiers)) {
-        return NextResponse.json({ error: 'customPreModifiers must be an array' }, { status: 400 })
+        return err('customPreModifiers must be an array')
       }
       for (const cpm of customPreModifiers) {
         if (!cpm.name || typeof cpm.name !== 'string' || cpm.name.trim() === '') {
-          return NextResponse.json({ error: 'Each custom pre-modifier must have a name' }, { status: 400 })
+          return err('Each custom pre-modifier must have a name')
         }
         if (cpm.name.length > 100) {
-          return NextResponse.json({ error: 'Custom pre-modifier name must be 100 characters or less' }, { status: 400 })
+          return err('Custom pre-modifier name must be 100 characters or less')
         }
         if (cpm.shortLabel && cpm.shortLabel.length > 12) {
-          return NextResponse.json({ error: 'Custom pre-modifier shortLabel must be 12 characters or less' }, { status: 400 })
+          return err('Custom pre-modifier shortLabel must be 12 characters or less')
         }
         if (typeof cpm.priceAdjustment !== 'number' || !Number.isFinite(cpm.priceAdjustment)) {
-          return NextResponse.json({ error: 'Custom pre-modifier priceAdjustment must be a valid number' }, { status: 400 })
+          return err('Custom pre-modifier priceAdjustment must be a valid number')
         }
         if (typeof cpm.multiplier !== 'number' || !Number.isFinite(cpm.multiplier) || cpm.multiplier < 0) {
-          return NextResponse.json({ error: 'Custom pre-modifier multiplier must be a non-negative number' }, { status: 400 })
+          return err('Custom pre-modifier multiplier must be a non-negative number')
         }
       }
     }
@@ -444,7 +440,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
     // Validate commission — check existing commissionType when not in payload
     const effectiveCommissionType = commissionType !== undefined ? commissionType : modifier.commissionType
     if (effectiveCommissionType === 'percent' && commissionValue !== undefined && commissionValue > 100) {
-      return NextResponse.json({ error: 'Percent commission cannot exceed 100' }, { status: 400 })
+      return err('Percent commission cannot exceed 100')
     }
 
     // Enforce maxSelections when setting isDefault: true
@@ -533,8 +529,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
     void notifyDataChanged({ locationId: modifier.locationId, domain: 'menu', action: 'updated', entityId: modifierId })
     void pushUpstream()
 
-    return NextResponse.json({
-      data: {
+    return ok({
         id: updated.id,
         name: updated.name,
         price: Number(updated.price),
@@ -572,11 +567,10 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
         customPreModifiers: updated.customPreModifiers,
         spiritTier: updated.spiritTier,
         linkedBottleProductId: updated.linkedBottleProductId,
-      },
-    })
+      })
   } catch (error) {
     console.error('Error updating modifier:', error)
-    return NextResponse.json({ error: 'Failed to update modifier' }, { status: 500 })
+    return err('Failed to update modifier', 500)
   }
 })
 
@@ -588,7 +582,7 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest, { pa
     const modifierId = searchParams.get('modifierId')
 
     if (!modifierId) {
-      return NextResponse.json({ error: 'modifierId is required' }, { status: 400 })
+      return err('modifierId is required')
     }
 
     // Verify modifier belongs to this group
@@ -597,13 +591,13 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest, { pa
     })
 
     if (!modifier) {
-      return NextResponse.json({ error: 'Modifier not found' }, { status: 404 })
+      return notFound('Modifier not found')
     }
 
     // Auth check — require menu.edit_items permission
     const actorDel = await getActorFromRequest(request)
     const authDel = await requirePermission(actorDel.employeeId, modifier.locationId, PERMISSIONS.MENU_EDIT_ITEMS)
-    if (!authDel.authorized) return NextResponse.json({ error: authDel.error }, { status: authDel.status })
+    if (!authDel.authorized) return err(authDel.error, authDel.status)
 
     // Soft delete
     await db.modifier.update({
@@ -637,9 +631,9 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest, { pa
     void notifyDataChanged({ locationId: modifier.locationId, domain: 'menu', action: 'deleted', entityId: modifierId! })
     void pushUpstream()
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Error deleting modifier:', error)
-    return NextResponse.json({ error: 'Failed to delete modifier' }, { status: 500 })
+    return err('Failed to delete modifier', 500)
   }
 })

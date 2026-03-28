@@ -6,12 +6,13 @@
  *       Used at clock-in to show the group selection picker.
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, notFound, ok } from '@/lib/api-response'
 
 export const GET = withVenue(withAuth({ allowCellular: true }, async function GET(request: NextRequest) {
   try {
@@ -20,10 +21,7 @@ export const GET = withVenue(withAuth({ allowCellular: true }, async function GE
     const employeeId = searchParams.get('employeeId')
 
     if (!locationId || !employeeId) {
-      return NextResponse.json(
-        { error: 'locationId and employeeId are required' },
-        { status: 400 }
-      )
+      return err('locationId and employeeId are required')
     }
 
     // Look up the employee's current role
@@ -33,10 +31,7 @@ export const GET = withVenue(withAuth({ allowCellular: true }, async function GE
     })
 
     if (!employee) {
-      return NextResponse.json(
-        { error: 'Employee not found' },
-        { status: 404 }
-      )
+      return notFound('Employee not found')
     }
 
     // Fetch location settings for allowStandaloneServers
@@ -68,7 +63,7 @@ export const GET = withVenue(withAuth({ allowCellular: true }, async function GE
       return roleIds.includes(employee.roleId)
     })
 
-    return NextResponse.json({
+    return ok({
       templates: eligible.map(t => ({
         id: t.id,
         name: t.name,
@@ -78,9 +73,6 @@ export const GET = withVenue(withAuth({ allowCellular: true }, async function GE
     })
   } catch (error) {
     console.error('Failed to get eligible templates:', error)
-    return NextResponse.json(
-      { error: 'Failed to get eligible templates' },
-      { status: 500 }
-    )
+    return err('Failed to get eligible templates', 500)
   }
 }))

@@ -9,6 +9,7 @@ import { checkReportRateLimit } from '@/lib/report-rate-limiter'
 import { getBusinessDayRange } from '@/lib/business-day'
 import { getHourInTimezone } from '@/lib/timezone'
 import { REVENUE_ORDER_STATUSES, calculateSurchargeAmount, roundMoney } from '@/lib/domain/reports'
+import { err, ok } from '@/lib/api-response'
 
 // GET sales report with comprehensive groupings
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -23,15 +24,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const requestingEmployeeId = searchParams.get('requestingEmployeeId') || searchParams.get('employeeId') || employeeId
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'Location ID is required' },
-        { status: 400 }
-      )
+      return err('Location ID is required')
     }
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_SALES)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     const rateCheck = checkReportRateLimit(requestingEmployeeId || 'anonymous')
@@ -465,7 +463,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }))
       .sort((a, b) => b.amount - a.amount)
 
-    return NextResponse.json({ data: {
+    return ok({
       summary: {
         orderCount,
         itemCount,
@@ -512,12 +510,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         orderType,
         tableId,
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to generate sales report:', error)
-    return NextResponse.json(
-      { error: 'Failed to generate sales report' },
-      { status: 500 }
-    )
+    return err('Failed to generate sales report', 500)
   }
 })

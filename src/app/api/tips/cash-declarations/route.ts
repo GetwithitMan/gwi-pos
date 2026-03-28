@@ -5,7 +5,7 @@
  * GET  - List cash tip declarations with filters
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { requireAnyPermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { db } from '@/lib/db'
@@ -13,6 +13,7 @@ import { checkDeclarationMinimum } from '@/lib/domain/tips/tip-compliance'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { queueIfOutageOrFail, OutageQueueFullError, pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, forbidden, ok } from '@/lib/api-response'
 
 // ─── POST: Declare cash tips ─────────────────────────────────────────────────
 
@@ -24,31 +25,19 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     // ── Validate required fields ──────────────────────────────────────────
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'locationId is required' },
-        { status: 400 }
-      )
+      return err('locationId is required')
     }
 
     if (!employeeId) {
-      return NextResponse.json(
-        { error: 'employeeId is required' },
-        { status: 400 }
-      )
+      return err('employeeId is required')
     }
 
     if (amountCents === undefined || amountCents === null) {
-      return NextResponse.json(
-        { error: 'amountCents is required' },
-        { status: 400 }
-      )
+      return err('amountCents is required')
     }
 
     if (typeof amountCents !== 'number' || amountCents < 0) {
-      return NextResponse.json(
-        { error: 'amountCents must be a non-negative number' },
-        { status: 400 }
-      )
+      return err('amountCents must be a non-negative number')
     }
 
     // ── Auth check ────────────────────────────────────────────────────────
@@ -64,10 +53,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
         [PERMISSIONS.TIPS_MANAGE_GROUPS]
       )
       if (!auth.authorized) {
-        return NextResponse.json(
-          { error: 'Not authorized. Only the declaring employee or a manager with tip management permission can create declarations.' },
-          { status: 403 }
-        )
+        return forbidden('Not authorized. Only the declaring employee or a manager with tip management permission can create declarations.')
       }
     }
 
@@ -93,7 +79,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
       await queueIfOutageOrFail('CashTipDeclaration', locationId, declaration.id, 'INSERT')
     } catch (err) {
       if (err instanceof OutageQueueFullError) {
-        return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+        return err('Service temporarily unavailable — outage queue full', 507)
       }
       throw err
     }
@@ -161,13 +147,10 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
       response.complianceWarnings = complianceWarnings
     }
 
-    return NextResponse.json(response)
+    return ok(response)
   } catch (error) {
     console.error('Failed to create cash tip declaration:', error)
-    return NextResponse.json(
-      { error: 'Failed to create cash tip declaration' },
-      { status: 500 }
-    )
+    return err('Failed to create cash tip declaration', 500)
   }
 }))
 
@@ -187,10 +170,7 @@ export const GET = withVenue(withAuth(async function GET(request: NextRequest) {
     // ── Validate required fields ──────────────────────────────────────────
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'locationId is required' },
-        { status: 400 }
-      )
+      return err('locationId is required')
     }
 
     // ── Auth check ────────────────────────────────────────────────────────
@@ -205,10 +185,7 @@ export const GET = withVenue(withAuth(async function GET(request: NextRequest) {
         [PERMISSIONS.TIPS_VIEW_LEDGER]
       )
       if (!auth.authorized) {
-        return NextResponse.json(
-          { error: auth.error },
-          { status: auth.status }
-        )
+        return err(auth.error, auth.status)
       }
     } else {
       // Specific employee filter: self-access or permission
@@ -221,10 +198,7 @@ export const GET = withVenue(withAuth(async function GET(request: NextRequest) {
           [PERMISSIONS.TIPS_VIEW_LEDGER]
         )
         if (!auth.authorized) {
-          return NextResponse.json(
-            { error: auth.error },
-            { status: auth.status }
-          )
+          return err(auth.error, auth.status)
         }
       }
     }
@@ -275,7 +249,7 @@ export const GET = withVenue(withAuth(async function GET(request: NextRequest) {
       db.cashTipDeclaration.count({ where }),
     ])
 
-    return NextResponse.json({
+    return ok({
       declarations: declarations.map((d) => ({
         id: d.id,
         employeeId: d.employeeId,
@@ -293,9 +267,6 @@ export const GET = withVenue(withAuth(async function GET(request: NextRequest) {
     })
   } catch (error) {
     console.error('Failed to get cash tip declarations:', error)
-    return NextResponse.json(
-      { error: 'Failed to get cash tip declarations' },
-      { status: 500 }
-    )
+    return err('Failed to get cash tip declarations', 500)
   }
 }))

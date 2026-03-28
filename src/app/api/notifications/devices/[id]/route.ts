@@ -19,6 +19,7 @@ import {
   type DeviceStatus,
 } from '@/lib/notifications/device-state-machine'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('notifications-devices')
 
 export const dynamic = 'force-dynamic'
@@ -40,12 +41,12 @@ export const PATCH = withVenue(async function PATCH(
     const { id } = await params
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.NOTIFICATIONS_MANAGE_DEVICES)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const body = await request.json()
     const { status: newStatus, force, humanLabel, metadata } = body as {
@@ -66,7 +67,7 @@ export const PATCH = withVenue(async function PATCH(
     )
 
     if (existing.length === 0) {
-      return NextResponse.json({ error: 'Device not found' }, { status: 404 })
+      return notFound('Device not found')
     }
 
     const device = existing[0]
@@ -149,7 +150,7 @@ export const PATCH = withVenue(async function PATCH(
     )
 
     if (updated.length === 0) {
-      return NextResponse.json({ error: 'Device not found' }, { status: 404 })
+      return notFound('Device not found')
     }
 
     // Log device event for status change
@@ -238,10 +239,10 @@ export const PATCH = withVenue(async function PATCH(
       }
     }
 
-    return NextResponse.json({ data: updated[0] })
+    return ok(updated[0])
   } catch (error) {
     console.error('[Notification Devices] PATCH error:', error)
-    return NextResponse.json({ error: 'Failed to update device' }, { status: 500 })
+    return err('Failed to update device', 500)
   }
 })
 
@@ -256,12 +257,12 @@ export const DELETE = withVenue(async function DELETE(
     const { id } = await params
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.NOTIFICATIONS_MANAGE_DEVICES)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Check device exists and is not currently assigned
     const existing: any[] = await db.$queryRawUnsafe(
@@ -272,14 +273,11 @@ export const DELETE = withVenue(async function DELETE(
     )
 
     if (existing.length === 0) {
-      return NextResponse.json({ error: 'Device not found' }, { status: 404 })
+      return notFound('Device not found')
     }
 
     if (existing[0].status === 'assigned') {
-      return NextResponse.json(
-        { error: 'Cannot delete an assigned device. Release it first.' },
-        { status: 409 }
-      )
+      return err('Cannot delete an assigned device. Release it first.', 409)
     }
 
     // Soft delete + set status to retired
@@ -316,9 +314,9 @@ export const DELETE = withVenue(async function DELETE(
       },
     }).catch(err => log.warn({ err }, 'Background task failed'))
 
-    return NextResponse.json({ success: true })
+    return ok({ success: true })
   } catch (error) {
     console.error('[Notification Devices] DELETE error:', error)
-    return NextResponse.json({ error: 'Failed to delete device' }, { status: 500 })
+    return err('Failed to delete device', 500)
   }
 })

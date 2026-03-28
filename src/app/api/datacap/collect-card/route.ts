@@ -4,6 +4,7 @@ import { parseError } from '@/lib/datacap/xml-parser'
 import { withVenue } from '@/lib/with-venue'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { err, ok } from '@/lib/api-response'
 
 interface CollectCardRequest {
   locationId: string
@@ -17,14 +18,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const { locationId, readerId, placeholderAmount } = body
 
     if (!locationId || !readerId) {
-      return Response.json({ error: 'Missing required fields: locationId, readerId' }, { status: 400 })
+      return err('Missing required fields: locationId, readerId')
     }
 
     // Permission check — require POS_CARD_PAYMENTS
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.POS_CARD_PAYMENTS)
     if (!auth.authorized) {
-      return Response.json({ error: auth.error }, { status: auth.status ?? 403 })
+      return err(auth.error, auth.status ?? 403)
     }
 
     await validateReader(readerId, locationId)
@@ -34,8 +35,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     const error = parseError(response)
 
-    return Response.json({
-      data: {
+    return ok({
         success: response.cmdStatus === 'Success' || response.cmdStatus === 'Approved',
         cardholderName: response.cardholderName,
         cardType: response.cardType,
@@ -43,8 +43,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         cardholderIdHash: response.cardholderIdHash,
         entryMethod: response.entryMethod,
         error: error ? { code: error.code, message: error.text, isRetryable: error.isRetryable } : null,
-      },
-    })
+      })
   } catch (err) {
     return datacapErrorResponse(err)
   }

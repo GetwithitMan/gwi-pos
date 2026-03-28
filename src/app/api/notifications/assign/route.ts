@@ -15,6 +15,7 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { getTargetFamily } from '@/lib/notifications/device-state-machine'
 import { createChildLogger } from '@/lib/logger'
+import { created, err } from '@/lib/api-response'
 const log = createChildLogger('notifications-assign')
 
 export const dynamic = 'force-dynamic'
@@ -36,30 +37,27 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.POS_ASSIGN_DEVICE)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const body = await request.json()
     const { subjectType, subjectId, deviceType = 'pager', providerId, deviceNumber, replaceExisting } = body
 
     // Validate inputs
     if (!subjectType || !VALID_SUBJECT_TYPES.includes(subjectType)) {
-      return NextResponse.json(
-        { error: `subjectType must be one of: ${VALID_SUBJECT_TYPES.join(', ')}` },
-        { status: 400 }
-      )
+      return err(`subjectType must be one of: ${VALID_SUBJECT_TYPES.join(', ')}`)
     }
     if (!subjectId || typeof subjectId !== 'string') {
-      return NextResponse.json({ error: 'subjectId is required' }, { status: 400 })
+      return err('subjectId is required')
     }
 
     // W4: Validate deviceNumber format (1-4 digits only)
     if (deviceNumber && !/^\d{1,4}$/.test(deviceNumber)) {
-      return NextResponse.json({ error: 'Device number must be 1-4 digits' }, { status: 400 })
+      return err('Device number must be 1-4 digits')
     }
 
     // W6: Move pre-check inside the transaction to prevent race conditions
@@ -363,12 +361,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
     }).catch(err => log.warn({ err }, 'Background task failed'))
 
-    return NextResponse.json({ data: result }, { status: 201 })
+    return created(result)
   } catch (error: any) {
     if (error?.code === 'DEVICE_UNAVAILABLE' || error?.code === 'NO_DEVICES_AVAILABLE') {
-      return NextResponse.json({ error: error.message }, { status: 409 })
+      return err(error.message, 409)
     }
     console.error('[Notification Assign] POST error:', error)
-    return NextResponse.json({ error: 'Failed to assign device' }, { status: 500 })
+    return err('Failed to assign device', 500)
   }
 })

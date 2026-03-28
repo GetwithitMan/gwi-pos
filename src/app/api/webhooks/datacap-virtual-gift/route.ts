@@ -7,6 +7,7 @@ import { createChildLogger } from '@/lib/logger'
 import type { VirtualGiftWebhookPayload } from '@/lib/datacap/virtual-gift-client'
 import { dispatchGiftCardBalanceChanged } from '@/lib/socket-dispatch'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { unauthorized } from '@/lib/api-response'
 
 const log = createChildLogger('datacap-virtual-gift-webhook')
 
@@ -84,12 +85,12 @@ export async function POST(request: NextRequest) {
 
     if (!signatureValid) {
       log.warn({ locationId }, 'Datacap Virtual Gift webhook: invalid signature')
-      return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+      return unauthorized('Invalid signature')
     }
   } else if (webhookSecret && !signatureHeader) {
     // Secret configured but no signature header — reject
     log.warn({ locationId }, 'Datacap Virtual Gift webhook: missing signature header')
-    return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+    return unauthorized('Invalid signature')
   }
   // If no webhook secret configured, skip verification (initial setup / cert environment)
 

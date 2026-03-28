@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { adminDb } from '@/lib/db'
 import { MenuItemRepository } from '@/lib/repositories'
 import { resolvePlu } from '@/lib/berg/plu-resolver'
@@ -6,6 +6,7 @@ import { isItemTaxInclusive } from '@/lib/order-calculations'
 import { verifyCronSecret } from '@/lib/cron-auth'
 import { forAllVenues } from '@/lib/cron-venue-helper'
 import { createChildLogger } from '@/lib/logger'
+import { ok } from '@/lib/api-response'
 const log = createChildLogger('cron-berg-reprocess')
 
 // TODO: Migrate adminDb.bergDispenseEvent, db.terminal, and adminDb.orderItem.create calls
@@ -227,5 +228,5 @@ export async function GET(request: NextRequest) {
     allResults[slug] = { processed: events.length, succeeded, failed }
   }, { label: 'cron:berg-reprocess' })
 
-  return NextResponse.json({ ...summary, data: allResults })
+  return ok(allResults)
 }

@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - Get single prep item
 export const GET = withVenue(async function GET(
@@ -39,10 +40,10 @@ export const GET = withVenue(async function GET(
     })
 
     if (!prepItem || prepItem.deletedAt) {
-      return NextResponse.json({ error: 'Prep item not found' }, { status: 404 })
+      return notFound('Prep item not found')
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       prepItem: {
         ...prepItem,
         batchYield: Number(prepItem.batchYield),
@@ -57,10 +58,10 @@ export const GET = withVenue(async function GET(
           } : null,
         })),
       },
-    } })
+    })
   } catch (error) {
     console.error('Get prep item error:', error)
-    return NextResponse.json({ error: 'Failed to fetch prep item' }, { status: 500 })
+    return err('Failed to fetch prep item', 500)
   }
 })
 
@@ -79,7 +80,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     })
 
     if (!existing || existing.deletedAt) {
-      return NextResponse.json({ error: 'Prep item not found' }, { status: 404 })
+      return notFound('Prep item not found')
     }
 
     const updateData: Record<string, unknown> = {}
@@ -159,7 +160,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     void notifyDataChanged({ locationId: existing.locationId, domain: 'inventory', action: 'updated', entityId: id })
     pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       prepItem: {
         ...prepItem,
         batchYield: Number(prepItem.batchYield),
@@ -169,13 +170,13 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
           quantity: Number(ing.quantity),
         })),
       },
-    } })
+    })
   } catch (error) {
     console.error('Update prep item error:', error)
     if ((error as { code?: string }).code === 'P2002') {
-      return NextResponse.json({ error: 'Prep item with this name already exists' }, { status: 400 })
+      return err('Prep item with this name already exists')
     }
-    return NextResponse.json({ error: 'Failed to update prep item' }, { status: 500 })
+    return err('Failed to update prep item', 500)
   }
 }))
 
@@ -195,13 +196,11 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     })
 
     if (!existing || existing.deletedAt) {
-      return NextResponse.json({ error: 'Prep item not found' }, { status: 404 })
+      return notFound('Prep item not found')
     }
 
     if (existing.recipeUsages.length > 0) {
-      return NextResponse.json({
-        error: 'Cannot delete prep item that is used in menu item recipes',
-      }, { status: 400 })
+      return err('Cannot delete prep item that is used in menu item recipes')
     }
 
     await db.prepItem.update({
@@ -212,9 +211,9 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     void notifyDataChanged({ locationId: existing.locationId, domain: 'inventory', action: 'deleted', entityId: id })
     pushUpstream()
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Delete prep item error:', error)
-    return NextResponse.json({ error: 'Failed to delete prep item' }, { status: 500 })
+    return err('Failed to delete prep item', 500)
   }
 }))

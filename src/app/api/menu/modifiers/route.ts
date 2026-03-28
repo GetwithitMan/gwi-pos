@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { Prisma } from '@/generated/prisma/client'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
@@ -10,6 +10,7 @@ import { getLocationId } from '@/lib/location-cache'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok } from '@/lib/api-response'
 
 const log = createChildLogger('menu.modifiers')
 
@@ -24,10 +25,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Get the location ID (cached)
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'No location found' },
-        { status: 400 }
-      )
+      return err('No location found')
     }
 
     const modifierGroups = await db.modifierGroup.findMany({
@@ -59,7 +57,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }
     })
 
-    return NextResponse.json({ data: {
+    return ok({
       modifierGroups: modifierGroups.map(group => {
         // Filter modifiers based on channel if specified
         let filteredModifiers = group.modifiers
@@ -121,13 +119,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           linkedItems: group.menuItem ? [{ id: group.menuItem.id, name: group.menuItem.name }] : []
         }
       })
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch modifier groups:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch modifier groups' },
-      { status: 500 }
-    )
+    return err('Failed to fetch modifier groups', 500)
   }
 })
 
@@ -138,25 +133,19 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const { name, displayName, modifierTypes, minSelections, maxSelections, isRequired, allowStacking, hasOnlineOverride, isSpiritGroup, modifiers } = body
 
     if (!name?.trim()) {
-      return NextResponse.json(
-        { error: 'Name is required' },
-        { status: 400 }
-      )
+      return err('Name is required')
     }
 
     // Get the location ID (cached)
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'No location found' },
-        { status: 400 }
-      )
+      return err('No location found')
     }
 
     // Auth check — require menu.edit_items permission
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.MENU_EDIT_ITEMS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Get max sort order
     const maxSortOrder = await db.modifierGroup.aggregate({
@@ -218,7 +207,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       entityType: 'modifier-group',
     }).catch(err => log.warn({ err }, 'fire-and-forget failed in menu.modifiers'))
 
-    return NextResponse.json({ data: {
+    return ok({
       id: modifierGroup.id,
       name: modifierGroup.name,
       displayName: modifierGroup.displayName,
@@ -244,12 +233,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         printerRouting: mod.printerRouting,
         printerIds: mod.printerIds,
       }))
-    } })
+    })
   } catch (error) {
     console.error('Failed to create modifier group:', error)
-    return NextResponse.json(
-      { error: 'Failed to create modifier group' },
-      { status: 500 }
-    )
+    return err('Failed to create modifier group', 500)
   }
 })

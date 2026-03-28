@@ -7,3 +7,4 @@
 
 export { useFloorPlanAutoScale } from './useFloorPlanAutoScale'
 export { useFloorPlanDrag } from './useFloorPlanDrag'
+export { useFloorPlanSockets } from './useFloorPlanSockets'

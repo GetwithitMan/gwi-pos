@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { err, ok } from '@/lib/api-response'
 
 // GET - Fetch upcoming shifts for an employee (mobile "My Schedule" view)
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -12,10 +13,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const weeksAhead = weeksAheadParam ? parseInt(weeksAheadParam, 10) : 2
 
     if (!employeeId) {
-      return NextResponse.json({ error: 'employeeId is required' }, { status: 400 })
+      return err('employeeId is required')
     }
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     const startDate = new Date()
@@ -61,9 +62,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       notes: shift.notes ?? null,
     }))
 
-    return NextResponse.json({ data: { shifts: formatted } })
+    return ok({ shifts: formatted })
   } catch (error) {
     console.error('Failed to fetch mobile schedule:', error)
-    return NextResponse.json({ error: 'Failed to fetch schedule' }, { status: 500 })
+    return err('Failed to fetch schedule', 500)
   }
 })

@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { randomBytes } from 'crypto'
 import { db } from '@/lib/db'
 import { PERMISSIONS } from '@/lib/auth'
 import { requirePermission } from '@/lib/api-auth'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // Typo-resistant charset: no 0, O, 1, I
 const CHARSET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
@@ -26,7 +27,7 @@ export const GET = withVenue(async function GET() {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 404 })
+      return notFound('No location found')
     }
 
     const token = await db.serverRegistrationToken.findFirst({
@@ -35,22 +36,20 @@ export const GET = withVenue(async function GET() {
     })
 
     if (!token) {
-      return NextResponse.json({ data: { code: null, expiresAt: null, status: 'none', used: false } })
+      return ok({ code: null, expiresAt: null, status: 'none', used: false })
     }
 
     const status = deriveStatus(token)
 
-    return NextResponse.json({
-      data: {
+    return ok({
         code: token.token,
         expiresAt: token.expiresAt.toISOString(),
         status,
         used: token.status === 'USED',
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to fetch registration code:', error)
-    return NextResponse.json({ error: 'Failed to fetch registration code' }, { status: 500 })
+    return err('Failed to fetch registration code', 500)
   }
 })
 
@@ -58,14 +57,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 404 })
+      return notFound('No location found')
     }
 
     // Auth check — require settings.hardware permission
     const body = await request.json().catch(() => ({}))
     const { employeeId } = body as { employeeId?: string }
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.SETTINGS_HARDWARE)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Revoke any existing PENDING tokens for this location
     await db.serverRegistrationToken.updateMany({
@@ -86,16 +85,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({
-      data: {
+    return ok({
         code: token.token,
         expiresAt: token.expiresAt.toISOString(),
         status: 'active',
         used: false,
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to generate registration code:', error)
-    return NextResponse.json({ error: 'Failed to generate registration code' }, { status: 500 })
+    return err('Failed to generate registration code', 500)
   }
 })

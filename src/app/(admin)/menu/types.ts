@@ -14,16 +14,7 @@ export const CATEGORY_TYPES = [
   { value: 'retail', label: 'Retail', color: '#f59e0b', description: 'Retail products — scanned items, merchandise, inventory tracked' },
 ]
 
-export interface Category {
-  id: string
-  name: string
-  color: string
-  categoryType: string
-  categoryShow: string // 'bar' | 'food' | 'entertainment' | 'all'
-  itemCount: number
-  isActive: boolean
-  printerIds?: string[] | null
-}
+export type { Category } from '@/types'
 
 // Bartender view section options
 export const CATEGORY_SHOW_OPTIONS = [
@@ -56,41 +47,27 @@ export interface PrintDestination {
   isActive: boolean
 }
 
-export interface MenuItem {
-  id: string
-  name: string
-  price: number
-  categoryId: string
-  description?: string
-  isActive: boolean
-  isAvailable: boolean
-  itemType?: string
-  timedPricing?: { per15Min?: number; per30Min?: number; perHour?: number; minimum?: number } | null
+import type { MenuItem as BaseMenuItem } from '@/types'
+
+export type MenuItem = Pick<BaseMenuItem,
+  | 'id' | 'name' | 'price' | 'categoryId' | 'description' | 'isActive' | 'isAvailable'
+  | 'itemType' | 'timedPricing' | 'modifierGroupCount'
+  | 'isLiquorItem' | 'pourSizes' | 'defaultPourSize' | 'applyPourToModifiers'
+  | 'entertainmentStatus' | 'currentOrderId' | 'blockTimeMinutes'
+  | 'printerIds' | 'backupPrinterIds'
+> & {
   minimumMinutes?: number | null
-  modifierGroupCount?: number
   modifierGroups?: { id: string; showOnline: boolean }[]
   commissionType?: string | null
   commissionValue?: number | null
-  // Liquor Builder fields
-  isLiquorItem?: boolean
+  // Liquor Builder recipe fields
   hasRecipe?: boolean
   recipeIngredientCount?: number
   totalPourCost?: number | null
   profitMargin?: number | null
-  // Pour size options (new format with labels, optional custom price override)
-  pourSizes?: Record<string, number | { label: string; multiplier: number; customPrice?: number | null }> | null
-  defaultPourSize?: string | null
-  applyPourToModifiers?: boolean
   // Seasonal date-based availability
   availableFromDate?: string | null
   availableUntilDate?: string | null
-  // Entertainment fields
-  entertainmentStatus?: 'available' | 'in_use' | 'maintenance' | 'reserved' | null
-  currentOrderId?: string | null
-  blockTimeMinutes?: number | null
-  // Printer routing
-  printerIds?: string[] | null
-  backupPrinterIds?: string[] | null
   // Combo print mode
   comboPrintMode?: 'individual' | 'primary' | 'all' | null
 }

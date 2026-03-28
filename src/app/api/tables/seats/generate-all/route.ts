@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { generateSeatPositions as generateSeatPositionsFromLib, type SeatPattern as LibSeatPattern } from '@/lib/seat-generation'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, ok } from '@/lib/api-response'
 
 // Helper function to generate seat labels
 function getLabel(index: number): string {
@@ -23,10 +24,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     const { locationId, forceRegenerate = false, employeeId } = body
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'locationId is required' },
-        { status: 400 }
-      )
+      return err('locationId is required')
     }
 
     // Get all active tables for this location
@@ -148,18 +146,15 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
 
     dispatchFloorPlanUpdate(locationId, { async: true })
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       totalTables: tables.length,
       tablesUpdated: results.length,
       tablesSkipped: skipped,
       results,
-    } })
+    })
   } catch (error) {
     console.error('[GenerateAllSeats] Failed:', error)
-    return NextResponse.json(
-      { error: 'Failed to generate seats' },
-      { status: 500 }
-    )
+    return err('Failed to generate seats', 500)
   }
 }))

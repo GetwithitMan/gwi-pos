@@ -5,13 +5,14 @@
  * Permission: GET = notifications.view_log, POST = notifications.manage_providers
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { createChildLogger } from '@/lib/logger'
+import { created, err, ok } from '@/lib/api-response'
 const log = createChildLogger('notifications-providers')
 
 export const dynamic = 'force-dynamic'
@@ -308,12 +309,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.NOTIFICATIONS_VIEW_LOG)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     await ensureNotificationTables()
 
@@ -336,15 +337,15 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       config: p.config ? maskConfig(p.config as Record<string, unknown>) : null,
     }))
 
-    return NextResponse.json({ data: masked })
+    return ok(masked)
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error)
     console.error('[Notification Providers] GET error:', msg)
     // If the table doesn't exist yet (schema not synced), return empty data
     if (msg.includes('does not exist') || msg.includes('relation')) {
-      return NextResponse.json({ data: [] })
+      return ok([])
     }
-    return NextResponse.json({ error: `Failed to fetch providers: ${msg}` }, { status: 500 })
+    return err(`Failed to fetch providers: ${msg}`, 500)
   }
 })
 
@@ -364,12 +365,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.NOTIFICATIONS_MANAGE_PROVIDERS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     await ensureNotificationTables()
 
@@ -386,32 +387,23 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Validate required fields
     if (!providerType || !VALID_PROVIDER_TYPES.includes(providerType)) {
-      return NextResponse.json(
-        { error: `providerType must be one of: ${VALID_PROVIDER_TYPES.join(', ')}` },
-        { status: 400 }
-      )
+      return err(`providerType must be one of: ${VALID_PROVIDER_TYPES.join(', ')}`)
     }
     if (!name || typeof name !== 'string' || name.trim().length === 0) {
-      return NextResponse.json({ error: 'name is required' }, { status: 400 })
+      return err('name is required')
     }
     if (!config || typeof config !== 'object') {
-      return NextResponse.json({ error: 'config object is required' }, { status: 400 })
+      return err('config object is required')
     }
     if (!VALID_EXECUTION_ZONES.includes(executionZone)) {
-      return NextResponse.json(
-        { error: `executionZone must be one of: ${VALID_EXECUTION_ZONES.join(', ')}` },
-        { status: 400 }
-      )
+      return err(`executionZone must be one of: ${VALID_EXECUTION_ZONES.join(', ')}`)
     }
 
     // Validate required config fields for provider type
     const requiredFields = REQUIRED_CONFIG_FIELDS[providerType] || []
     const missingFields = requiredFields.filter(f => !config[f])
     if (missingFields.length > 0) {
-      return NextResponse.json(
-        { error: `Missing required config fields for ${providerType}: ${missingFields.join(', ')}` },
-        { status: 400 }
-      )
+      return err(`Missing required config fields for ${providerType}: ${missingFields.join(', ')}`)
     }
 
     // Merge custom capabilities with defaults
@@ -476,15 +468,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }).catch(err => log.warn({ err }, 'Background task failed'))
 
     // Return with masked config
-    return NextResponse.json({
-      data: {
+    return created({
         ...provider,
         config: maskConfig(config),
-      },
-    }, { status: 201 })
+      })
   } catch (error) {
     console.error('[Notification Providers] POST error:', error)
     const msg = error instanceof Error ? error.message : String(error)
-    return NextResponse.json({ error: `Failed to create provider: ${msg}` }, { status: 500 })
+    return err(`Failed to create provider: ${msg}`, 500)
   }
 })

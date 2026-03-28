@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { getActorFromRequest } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
 import { emitToLocation } from '@/lib/socket-server'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('catering')
 
 const VALID_STATUSES = ['inquiry', 'quoted', 'confirmed', 'in_preparation', 'delivered', 'completed', 'cancelled'] as const
@@ -34,7 +35,7 @@ export const GET = withVenue(async function GET(
     )
 
     if (orders.length === 0) {
-      return NextResponse.json({ error: 'Catering order not found' }, { status: 404 })
+      return notFound('Catering order not found')
     }
 
     const order = orders[0]
@@ -47,10 +48,10 @@ export const GET = withVenue(async function GET(
       id,
     )
 
-    return NextResponse.json({ data: { ...order, items } })
+    return ok({ ...order, items })
   } catch (error) {
     console.error('Failed to fetch catering order:', error)
-    return NextResponse.json({ error: 'Failed to fetch catering order' }, { status: 500 })
+    return err('Failed to fetch catering order', 500)
   }
 })
 
@@ -88,7 +89,7 @@ export const PUT = withVenue(async function PUT(
       id,
     )
     if (orders.length === 0) {
-      return NextResponse.json({ error: 'Catering order not found' }, { status: 404 })
+      return notFound('Catering order not found')
     }
 
     const currentOrder = orders[0]
@@ -98,10 +99,7 @@ export const PUT = withVenue(async function PUT(
     if (status && status !== currentStatus) {
       const allowed = ALLOWED_TRANSITIONS[currentStatus] || []
       if (!allowed.includes(status)) {
-        return NextResponse.json(
-          { error: `Cannot transition from "${currentStatus}" to "${status}". Allowed: ${allowed.join(', ')}` },
-          { status: 400 },
-        )
+        return err(`Cannot transition from "${currentStatus}" to "${status}". Allowed: ${allowed.join(', ')}`)
       }
 
       // Business rules for specific transitions
@@ -110,10 +108,7 @@ export const PUT = withVenue(async function PUT(
         const depositRequired = Number(currentOrder.depositRequired) || 0
         const depositPaid = Number(currentOrder.depositPaid) || 0
         if (depositRequired > 0 && depositPaid < depositRequired) {
-          return NextResponse.json(
-            { error: `Deposit of $${depositRequired.toFixed(2)} required before confirmation. Paid: $${depositPaid.toFixed(2)}` },
-            { status: 400 },
-          )
+          return err(`Deposit of $${depositRequired.toFixed(2)} required before confirmation. Paid: $${depositPaid.toFixed(2)}`)
         }
       }
     }
@@ -295,10 +290,10 @@ export const PUT = withVenue(async function PUT(
       id,
     )
 
-    return NextResponse.json({ data: { ...updatedOrders[0], items: updatedItems } })
+    return ok({ ...updatedOrders[0], items: updatedItems })
   } catch (error) {
     console.error('Failed to update catering order:', error)
-    return NextResponse.json({ error: 'Failed to update catering order' }, { status: 500 })
+    return err('Failed to update catering order', 500)
   }
 })
 
@@ -321,7 +316,7 @@ export const DELETE = withVenue(async function DELETE(
       id,
     )
     if (orders.length === 0) {
-      return NextResponse.json({ error: 'Catering order not found' }, { status: 404 })
+      return notFound('Catering order not found')
     }
 
     const currentOrder = orders[0]
@@ -329,7 +324,7 @@ export const DELETE = withVenue(async function DELETE(
 
     // Cannot cancel completed orders
     if (currentStatus === 'completed') {
-      return NextResponse.json({ error: 'Cannot cancel a completed order' }, { status: 400 })
+      return err('Cannot cancel a completed order')
     }
 
     // Determine if refund is applicable (only if deposit was paid)
@@ -374,16 +369,14 @@ export const DELETE = withVenue(async function DELETE(
 
     void emitToLocation(currentOrder.locationId as string, 'orders:list-changed', { trigger: 'mutation', locationId: currentOrder.locationId as string }).catch(err => log.warn({ err }, 'socket emit failed'))
 
-    return NextResponse.json({
-      data: {
+    return ok({
         id,
         status: 'cancelled',
         message: 'Catering order cancelled',
         refundNote,
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to cancel catering order:', error)
-    return NextResponse.json({ error: 'Failed to cancel catering order' }, { status: 500 })
+    return err('Failed to cancel catering order', 500)
   }
 })

@@ -3,6 +3,7 @@ import { venueDbName } from '@/lib/db'
 import { Pool } from '@neondatabase/serverless'
 import { readFileSync } from 'fs'
 import path from 'path'
+import { err, ok, unauthorized } from '@/lib/api-response'
 
 // Allow up to 90s — large schemas (100+ tables) can take 30-60s for diff + apply
 export const maxDuration = 90
@@ -35,7 +36,7 @@ export async function POST(request: NextRequest) {
   // ── Auth ──────────────────────────────────────────────────────────────
   const apiKey = request.headers.get('x-api-key')
   if (!apiKey || apiKey !== process.env.PROVISION_API_KEY) {
-    return Response.json({ error: 'Unauthorized' }, { status: 401 })
+    return unauthorized('Unauthorized')
   }
 
   // ── Validate slug ─────────────────────────────────────────────────────
@@ -43,16 +44,13 @@ export async function POST(request: NextRequest) {
   const slug: string = body.slug
 
   if (!slug || !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug)) {
-    return Response.json(
-      { error: 'Invalid slug. Use lowercase alphanumeric with hyphens.' },
-      { status: 400 }
-    )
+    return err('Invalid slug. Use lowercase alphanumeric with hyphens.')
   }
 
   // ── Build venue database URL ──────────────────────────────────────────
   const masterUrl = process.env.DIRECT_URL || process.env.DATABASE_URL
   if (!masterUrl) {
-    return Response.json({ error: 'DATABASE_URL not configured' }, { status: 500 })
+    return err('DATABASE_URL not configured', 500)
   }
 
   const dbName = venueDbName(slug)
@@ -86,7 +84,7 @@ export async function POST(request: NextRequest) {
         await pool.end()
       }
       changes.push('Applied full schema to empty database')
-      return Response.json({ success: true, slug, databaseName: dbName, changes })
+      return ok({ success: true, slug, databaseName: dbName, changes })
     }
 
     // ── Existing database — incremental diff sync ───────────────────────
@@ -207,7 +205,7 @@ export async function POST(request: NextRequest) {
       ? errors.map(e => ({ message: e, class: classifyError(e) }))
       : undefined
 
-    return Response.json({
+    return ok({
       success: errors.length === 0 && schemaAudit.missingTables.length === 0,
       slug,
       databaseName: dbName,
@@ -218,10 +216,7 @@ export async function POST(request: NextRequest) {
   } catch (error: unknown) {
     const err = error as { message?: string }
     console.error(`[sync-schema] Failed for ${slug}:`, err.message || error)
-    return Response.json(
-      { error: 'Schema sync failed', details: err.message || 'Unknown error' },
-      { status: 500 }
-    )
+    return err('Schema sync failed', 500, err.message || 'Unknown error')
   }
 }
 

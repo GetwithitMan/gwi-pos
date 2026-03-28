@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok } from '@/lib/api-response'
 const log = createChildLogger('feedback')
 
 /** Build parameterized WHERE clause from optional filters */
@@ -61,12 +62,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const requestingEmployeeId = params.get('requestingEmployeeId') || params.get('employeeId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+      return err('Location ID is required')
     }
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_VIEW)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     const { clause, values } = buildWhereClause(locationId, startDate, endDate, rating, source, tag)
@@ -133,8 +134,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       ...aggValues,
     )
 
-    return NextResponse.json({
-      data: {
+    return ok({
         entries,
         aggregates: {
           totalCount,
@@ -149,11 +149,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           },
           topTags: topTags.map(t => ({ tag: t.tag, count: Number(t.count) })),
         },
-      },
-    })
+      })
   } catch (error) {
     console.error('[feedback/GET] Error:', error)
-    return NextResponse.json({ error: 'Failed to load feedback' }, { status: 500 })
+    return err('Failed to load feedback', 500)
   }
 })
 
@@ -164,13 +163,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const { orderId, customerId, rating, comment, tags, source, employeeId, locationId } = body
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+      return err('Location ID is required')
     }
     if (typeof rating !== 'number' || rating < 1 || rating > 10) {
-      return NextResponse.json({ error: 'Rating must be between 1 and 10' }, { status: 400 })
+      return err('Rating must be between 1 and 10')
     }
     if (!source || !['in_store', 'sms', 'email', 'web'].includes(source)) {
-      return NextResponse.json({ error: 'Valid source is required (in_store, sms, email, web)' }, { status: 400 })
+      return err('Valid source is required (in_store, sms, email, web)')
     }
 
     // Validate and filter tags to allowed values
@@ -209,9 +208,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
-    return NextResponse.json({ data: { id: result[0]?.id, success: true } })
+    return ok({ id: result[0]?.id, success: true })
   } catch (error) {
     console.error('[feedback/POST] Error:', error)
-    return NextResponse.json({ error: 'Failed to submit feedback' }, { status: 500 })
+    return err('Failed to submit feedback', 500)
   }
 })

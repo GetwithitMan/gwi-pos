@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { useAuthStore } from '@/stores/auth-store'
 import { toast } from '@/stores/toast-store'
+import type { MenuItem as BaseMenuItem } from '@/types'
 
 interface CfdSettings {
   id: string | null
@@ -45,11 +46,7 @@ interface FeaturedItem {
   isFeaturedCfd: boolean
 }
 
-interface MenuItem {
-  id: string
-  name: string
-  price: number
-  isActive: boolean
+type MenuItem = Pick<BaseMenuItem, 'id' | 'name' | 'price' | 'isActive'> & {
   isFeaturedCfd: boolean
   category: { id: string; name: string }
 }

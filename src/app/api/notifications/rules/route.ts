@@ -5,7 +5,7 @@
  * Permission: GET = notifications.view_log, POST = notifications.manage_rules
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
@@ -13,6 +13,7 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { clearRoutingRulesCache } from '@/lib/notifications/dispatcher'
 import { createChildLogger } from '@/lib/logger'
+import { created, err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('notifications-rules')
 
 export const dynamic = 'force-dynamic'
@@ -40,12 +41,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.NOTIFICATIONS_VIEW_LOG)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const searchParams = request.nextUrl.searchParams
     const eventType = searchParams.get('eventType')
@@ -82,14 +83,14 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       ...params
     )
 
-    return NextResponse.json({ data: rules })
+    return ok(rules)
   } catch (error) {
     console.error('[Notification Rules] GET error:', error)
     const msg = error instanceof Error ? error.message : String(error)
     if (msg.includes('does not exist') || msg.includes('relation')) {
-      return NextResponse.json({ data: [] })
+      return ok([])
     }
-    return NextResponse.json({ error: `Failed to fetch rules: ${msg}` }, { status: 500 })
+    return err(`Failed to fetch rules: ${msg}`, 500)
   }
 })
 
@@ -102,12 +103,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.NOTIFICATIONS_MANAGE_RULES)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const body = await request.json()
     const {
@@ -140,25 +141,16 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Validate required fields
     if (!eventType || !VALID_EVENT_TYPES.includes(eventType)) {
-      return NextResponse.json(
-        { error: `eventType must be one of: ${VALID_EVENT_TYPES.join(', ')}` },
-        { status: 400 }
-      )
+      return err(`eventType must be one of: ${VALID_EVENT_TYPES.join(', ')}`)
     }
     if (!providerId || typeof providerId !== 'string') {
-      return NextResponse.json({ error: 'providerId is required' }, { status: 400 })
+      return err('providerId is required')
     }
     if (!targetType || !VALID_TARGET_TYPES.includes(targetType)) {
-      return NextResponse.json(
-        { error: `targetType must be one of: ${VALID_TARGET_TYPES.join(', ')}` },
-        { status: 400 }
-      )
+      return err(`targetType must be one of: ${VALID_TARGET_TYPES.join(', ')}`)
     }
     if (!VALID_CRITICALITY_CLASSES.includes(criticalityClass)) {
-      return NextResponse.json(
-        { error: `criticalityClass must be one of: ${VALID_CRITICALITY_CLASSES.join(', ')}` },
-        { status: 400 }
-      )
+      return err(`criticalityClass must be one of: ${VALID_CRITICALITY_CLASSES.join(', ')}`)
     }
 
     // Validate provider exists and check capability compatibility
@@ -169,7 +161,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       locationId
     )
     if (providers.length === 0) {
-      return NextResponse.json({ error: 'Provider not found or inactive' }, { status: 404 })
+      return notFound('Provider not found or inactive')
     }
 
     const provider = providers[0]
@@ -187,10 +179,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }
       const requiredCap = capabilityMap[targetType]
       if (requiredCap && !capabilities[requiredCap]) {
-        return NextResponse.json(
-          { error: `Provider "${provider.providerType}" does not support ${targetType} (missing ${requiredCap})` },
-          { status: 400 }
-        )
+        return err(`Provider "${provider.providerType}" does not support ${targetType} (missing ${requiredCap})`)
       }
     }
 
@@ -203,14 +192,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         locationId
       )
       if (fallback.length === 0) {
-        return NextResponse.json({ error: 'Fallback provider not found or inactive' }, { status: 404 })
+        return notFound('Fallback provider not found or inactive')
       }
     }
 
     // Validate condOrderTypes is an array of strings if provided
     if (condOrderTypes !== undefined && condOrderTypes !== null) {
       if (!Array.isArray(condOrderTypes) || condOrderTypes.some((t: unknown) => typeof t !== 'string')) {
-        return NextResponse.json({ error: 'condOrderTypes must be an array of strings' }, { status: 400 })
+        return err('condOrderTypes must be an array of strings')
       }
     }
 
@@ -291,9 +280,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Clear cached routing rules so new rule takes effect immediately
     clearRoutingRulesCache()
 
-    return NextResponse.json({ data: rule }, { status: 201 })
+    return created(rule)
   } catch (error) {
     console.error('[Notification Rules] POST error:', error)
-    return NextResponse.json({ error: 'Failed to create rule' }, { status: 500 })
+    return err('Failed to create rule', 500)
   }
 })

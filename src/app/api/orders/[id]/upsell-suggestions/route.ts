@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { mergeWithDefaults, DEFAULT_UPSELL_PROMPTS } from '@/lib/settings'
 import { evaluateUpsells, type UpsellRule, type OrderItemForUpsell, type SuggestableItem } from '@/lib/upsell-engine'
+import { err, ok } from '@/lib/api-response'
 
 interface RuleRow {
   id: string
@@ -48,7 +49,7 @@ export const GET = withVenue(async function GET(
     const locationId = await getLocationId()
 
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Load settings
@@ -60,7 +61,7 @@ export const GET = withVenue(async function GET(
     const upsellSettings = settings.upsellPrompts ?? DEFAULT_UPSELL_PROMPTS
 
     if (!upsellSettings.enabled) {
-      return NextResponse.json({ data: { suggestions: [] } })
+      return ok({ suggestions: [] })
     }
 
     // Load active rules for this location
@@ -74,7 +75,7 @@ export const GET = withVenue(async function GET(
     `, locationId)
 
     if (ruleRows.length === 0) {
-      return NextResponse.json({ data: { suggestions: [] } })
+      return ok({ suggestions: [] })
     }
 
     // Load order items with category info
@@ -88,7 +89,7 @@ export const GET = withVenue(async function GET(
     `, orderId)
 
     if (orderItemRows.length === 0) {
-      return NextResponse.json({ data: { suggestions: [] } })
+      return ok({ suggestions: [] })
     }
 
     // Calculate order total from items
@@ -207,9 +208,9 @@ export const GET = withVenue(async function GET(
       dismissedRuleIds,
     )
 
-    return NextResponse.json({ data: { suggestions } })
+    return ok({ suggestions })
   } catch (error) {
     console.error('Failed to evaluate upsell suggestions:', error)
-    return NextResponse.json({ error: 'Failed to evaluate upsell suggestions' }, { status: 500 })
+    return err('Failed to evaluate upsell suggestions', 500)
   }
 })

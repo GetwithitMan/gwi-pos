@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { withVenue } from '@/lib/with-venue'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -10,6 +10,7 @@ import {
 import { db } from '@/lib/db'
 import { emitToLocation } from '@/lib/socket-server'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok } from '@/lib/api-response'
 const log = createChildLogger('cellular-devices')
 
 /**
@@ -24,7 +25,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // Auth check
@@ -35,7 +36,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       PERMISSIONS.SETTINGS_HARDWARE
     )
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Get in-memory sessions (includes expired within 24h window)
@@ -80,10 +81,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       return new Date(b.lastActiveAt).getTime() - new Date(a.lastActiveAt).getTime()
     })
 
-    return NextResponse.json({ data: { devices } })
+    return ok({ devices })
   } catch (error) {
     console.error('[cellular-devices] GET error:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return err('Internal server error', 500)
   }
 })
 
@@ -104,10 +105,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     if (!locationId || !terminalId) {
-      return NextResponse.json(
-        { error: 'locationId and terminalId are required' },
-        { status: 400 }
-      )
+      return err('locationId and terminalId are required')
     }
 
     // Auth check
@@ -118,15 +116,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       PERMISSIONS.SETTINGS_HARDWARE
     )
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Already revoked check
     if (isRevoked(terminalId)) {
-      return NextResponse.json(
-        { error: 'Device is already revoked' },
-        { status: 409 }
-      )
+      return err('Device is already revoked', 409)
     }
 
     // Add to in-memory deny list + persist to DB (revokeTerminal handles both)
@@ -156,11 +151,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       reason: reason || 'Access revoked by venue administrator',
     }).catch(err => log.warn({ err }, 'Background task failed'))
 
-    return NextResponse.json({
-      data: { success: true, terminalId, revokedAt: new Date().toISOString() },
-    })
+    return ok({ success: true, terminalId, revokedAt: new Date().toISOString() })
   } catch (error) {
     console.error('[cellular-devices] POST error:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return err('Internal server error', 500)
   }
 })

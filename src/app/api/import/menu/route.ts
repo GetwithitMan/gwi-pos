@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { roundToCents } from '@/lib/pricing'
 import { withAuth, type AuthenticatedContext } from '@/lib/api-auth-middleware'
+import { err, ok } from '@/lib/api-response'
 
 interface ImportError {
   row: number
@@ -85,7 +86,7 @@ export const POST = withVenue(withAuth('MENU_EDIT_ITEMS', async function POST(
     const file = formData.get('file') as File | null
 
     if (!file) {
-      return NextResponse.json({ error: 'No file uploaded' }, { status: 400 })
+      return err('No file uploaded')
     }
 
     // Use verified locationId from session
@@ -95,10 +96,7 @@ export const POST = withVenue(withAuth('MENU_EDIT_ITEMS', async function POST(
     const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0)
 
     if (lines.length < 2) {
-      return NextResponse.json(
-        { error: 'CSV must have a header row and at least one data row' },
-        { status: 400 }
-      )
+      return err('CSV must have a header row and at least one data row')
     }
 
     // Parse header
@@ -113,17 +111,11 @@ export const POST = withVenue(withAuth('MENU_EDIT_ITEMS', async function POST(
     const descIdx = headers.indexOf('description')
 
     if (nameIdx === -1) {
-      return NextResponse.json(
-        { error: 'CSV must have a "name" column' },
-        { status: 400 }
-      )
+      return err('CSV must have a "name" column')
     }
 
     if (priceIdx === -1) {
-      return NextResponse.json(
-        { error: 'CSV must have a "price" column' },
-        { status: 400 }
-      )
+      return err('CSV must have a "price" column')
     }
 
     // Cache: category name (lowercase) -> category record
@@ -218,15 +210,13 @@ export const POST = withVenue(withAuth('MENU_EDIT_ITEMS', async function POST(
       imported++
     }
 
-    return NextResponse.json({
-      data: {
+    return ok({
         imported,
         skipped,
         errors,
-      },
-    })
+      })
   } catch (error) {
     console.error('CSV import failed:', error)
-    return NextResponse.json({ error: 'CSV import failed' }, { status: 500 })
+    return err('CSV import failed', 500)
   }
 }))

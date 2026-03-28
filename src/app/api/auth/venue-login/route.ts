@@ -10,6 +10,7 @@ import { verifyWithClerk } from '@/lib/clerk-verify'
 import { checkLoginRateLimit, recordLoginFailure, recordLoginSuccess } from '@/lib/auth-rate-limiter'
 import { getClientIp } from '@/lib/get-client-ip'
 import { config } from '@/lib/system-config'
+import { err, notFound, ok, unauthorized } from '@/lib/api-response'
 
 /**
  * POST /api/auth/venue-login
@@ -43,18 +44,18 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   const { email, password } = body
 
   if (!email || typeof email !== 'string' || !password || typeof password !== 'string') {
-    return NextResponse.json({ error: 'Email and password required' }, { status: 400 })
+    return err('Email and password required')
   }
 
   const secret = config.cloudJwtSecret
   if (!secret) {
     console.error('[venue-login] CLOUD_JWT_SECRET (or PROVISION_API_KEY fallback) not configured')
-    return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 })
+    return err('Server misconfigured', 500)
   }
 
   const venueSlug = request.headers.get('x-venue-slug')
   if (!venueSlug) {
-    return NextResponse.json({ error: 'Invalid request context' }, { status: 400 })
+    return err('Invalid request context')
   }
 
   const normalizedEmail = email.trim().toLowerCase()
@@ -65,7 +66,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     select: { id: true, name: true },
   })
   if (!location) {
-    return NextResponse.json({ error: 'Venue not configured' }, { status: 404 })
+    return notFound('Venue not configured')
   }
 
   // Find employee by email in this venue's database
@@ -91,7 +92,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   if (!authenticated) {
     recordLoginFailure(ip)
     console.error(`[venue-login] Auth failed for ${normalizedEmail}: clerk=${clerkValid}, hasEmployee=${!!employee}, hasLocalPw=${!!employee?.password}`)
-    return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 })
+    return unauthorized('Invalid email or password')
   }
 
   // ── MC-authorized owner (no local Employee required) ─────────────
@@ -122,13 +123,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           if (venues.length > 1) {
             // Multi-venue owner — return venue picker data instead of a session
             const ownerToken = await signOwnerToken(normalizedEmail, venues.map(v => v.slug), secret)
-            return NextResponse.json({
-              data: {
+            return ok({
                 multiVenue: true,
                 venues,
                 ownerToken,
-              },
-            })
+              })
           }
 
           // Single venue or MC-only owner — check if they have access to this venue
@@ -203,7 +202,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
             if (!ownerEmployee) {
               console.error(`[venue-login] Failed to provision MC owner ${normalizedEmail} at location ${location.id}`)
-              return NextResponse.json({ error: 'Failed to provision employee account. Contact support.' }, { status: 500 })
+              return err('Failed to provision employee account. Contact support.', 500)
             }
 
             recordLoginSuccess(ip, ownerEmployee.id)
@@ -257,7 +256,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   if (!employee) {
     recordLoginFailure(ip)
     console.error(`[venue-login] No local employee and MC access check failed for ${normalizedEmail} at ${venueSlug}`)
-    return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 })
+    return unauthorized('Invalid email or password')
   }
 
   // Clear rate limit on success

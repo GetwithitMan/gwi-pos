@@ -10,12 +10,13 @@
  *   shiftId     - optional (M5: scope results to a specific shift for accuracy at shift close)
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requireAnyPermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, ok, unauthorized } from '@/lib/api-response'
 
 export const GET = withVenue(withAuth({ allowCellular: true }, async function GET(request: NextRequest) {
   try {
@@ -26,17 +27,11 @@ export const GET = withVenue(withAuth({ allowCellular: true }, async function GE
     const requestingEmployeeId = request.headers.get('x-employee-id')
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'locationId is required' },
-        { status: 400 }
-      )
+      return err('locationId is required')
     }
 
     if (!requestingEmployeeId) {
-      return NextResponse.json(
-        { error: 'Employee ID is required' },
-        { status: 401 }
-      )
+      return unauthorized('Employee ID is required')
     }
 
     // Determine target employee — default to self
@@ -50,10 +45,7 @@ export const GET = withVenue(withAuth({ allowCellular: true }, async function GE
         [PERMISSIONS.TIPS_VIEW_LEDGER]
       )
       if (!auth.authorized) {
-        return NextResponse.json(
-          { error: auth.error },
-          { status: auth.status }
-        )
+        return err(auth.error, auth.status)
       }
     }
 
@@ -120,12 +112,9 @@ export const GET = withVenue(withAuth({ allowCellular: true }, async function GE
       shiftClosedAt: p.shift?.endedAt?.toISOString() ?? null,
     }))
 
-    return NextResponse.json({ pendingTips })
+    return ok({ pendingTips })
   } catch (error) {
     console.error('[pending-tips] Failed:', error)
-    return NextResponse.json(
-      { error: 'Failed to load pending tips' },
-      { status: 500 }
-    )
+    return err('Failed to load pending tips', 500)
   }
 }))

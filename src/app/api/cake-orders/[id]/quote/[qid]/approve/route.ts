@@ -17,6 +17,7 @@ import { dispatchCakeOrderUpdated } from '@/lib/socket-dispatch'
 import { approveQuoteSchema } from '@/lib/cake-orders/schemas'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { requireCakeFeature } from '@/lib/cake-orders/require-cake-feature'
+import { ok } from '@/lib/api-response'
 
 export const PATCH = withVenue(async function PATCH(
   request: NextRequest,
@@ -206,8 +207,7 @@ export const PATCH = withVenue(async function PATCH(
     }).catch(err => console.error('[cake-quote-approve] Socket dispatch failed:', err))
 
     // ── Return approved quote ───────────────────────────────────────────
-    return NextResponse.json({
-      data: {
+    return ok({
         id: quoteId,
         cakeOrderId,
         version: Number(quote.version),
@@ -217,8 +217,7 @@ export const PATCH = withVenue(async function PATCH(
         depositRequired,
         taxTotal,
         subtotal,
-      },
-    })
+      })
   } catch (error) {
     console.error('[cake-quote-approve] Failed to approve quote:', error)
     return NextResponse.json(

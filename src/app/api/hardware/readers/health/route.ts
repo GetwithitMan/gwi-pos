@@ -5,10 +5,10 @@
 //   locationId  (required) — venue location
 //   readerId    (optional) — when provided, returns last 100 logs + summary for that reader
 
-import { NextResponse } from 'next/server'
 import { withVenue } from '@/lib/with-venue'
 import { db } from '@/lib/db'
 import { getReaderHealthSummary } from '@/lib/reader-health'
+import { err, notFound, ok } from '@/lib/api-response'
 
 export const GET = withVenue(async (request: Request) => {
   try {
@@ -17,7 +17,7 @@ export const GET = withVenue(async (request: Request) => {
     const readerId = searchParams.get('readerId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // ── Single reader: detailed view ───────────────────────────────────────
@@ -36,7 +36,7 @@ export const GET = withVenue(async (request: Request) => {
       })
 
       if (!reader) {
-        return NextResponse.json({ error: 'Reader not found' }, { status: 404 })
+        return notFound('Reader not found')
       }
 
       const [summary, recentLogs] = await Promise.all([
@@ -55,8 +55,7 @@ export const GET = withVenue(async (request: Request) => {
         }),
       ])
 
-      return NextResponse.json({
-        data: {
+      return ok({
           readers: [
             {
               id: reader.id,
@@ -76,8 +75,7 @@ export const GET = withVenue(async (request: Request) => {
               })),
             },
           ],
-        },
-      })
+        })
     }
 
     // ── All readers at location: summary view ──────────────────────────────
@@ -95,8 +93,7 @@ export const GET = withVenue(async (request: Request) => {
       },
     })
 
-    return NextResponse.json({
-      data: {
+    return ok({
         readers: readers.map(r => ({
           id: r.id,
           name: r.name,
@@ -106,10 +103,9 @@ export const GET = withVenue(async (request: Request) => {
           lastSeenAt: r.lastSeenAt?.toISOString() ?? null,
           lastError: r.lastError,
         })),
-      },
-    })
+      })
   } catch (err) {
     console.error('[GET /api/hardware/readers/health]', err)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return err('Internal server error', 500)
   }
 })

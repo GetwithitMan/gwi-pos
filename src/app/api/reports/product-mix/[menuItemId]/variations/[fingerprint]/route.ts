@@ -7,7 +7,7 @@
  * Called when the user clicks a variation row in the Level 1 PMix drilldown.
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -18,6 +18,7 @@ import {
   computeVariationFingerprint,
   type TransformedOrderItem,
 } from '@/lib/domain/reports/variation-fingerprint'
+import { err, ok } from '@/lib/api-response'
 
 // Standard pre-modifier values — anything else is a custom pre-modifier
 const STANDARD_PRE_MODIFIERS = new Set(['no', 'lite', 'extra', 'side'])
@@ -35,22 +36,16 @@ export const GET = withVenue(async (
     const requestingEmployeeId = searchParams.get('requestingEmployeeId') || searchParams.get('employeeId')
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'Location ID is required' },
-        { status: 400 }
-      )
+      return err('Location ID is required')
     }
 
     if (!menuItemId) {
-      return NextResponse.json(
-        { error: 'Menu item ID is required' },
-        { status: 400 }
-      )
+      return err('Menu item ID is required')
     }
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_PRODUCT_MIX)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Resolve venue timezone for correct date boundaries
@@ -140,15 +135,13 @@ export const GET = withVenue(async (
     })
 
     if (orderItems.length === 0) {
-      return NextResponse.json({
-        data: {
+      return ok({
           fingerprint: requestedFingerprint,
           label: 'No data',
           quantitySold: 0,
           modifierDetails: [],
           salesByWeek: [],
-        },
-      })
+        })
     }
 
     const isLiquor = orderItems[0].menuItem.category.categoryType === 'liquor'
@@ -201,15 +194,13 @@ export const GET = withVenue(async (
     }
 
     if (matchingItems.length === 0) {
-      return NextResponse.json({
-        data: {
+      return ok({
           fingerprint: requestedFingerprint,
           label: 'Variation not found',
           quantitySold: 0,
           modifierDetails: [],
           salesByWeek: [],
-        },
-      })
+        })
     }
 
     // Build label from the first matching item's modifiers
@@ -489,13 +480,10 @@ export const GET = withVenue(async (
       response.liquorDetail = liquorDetail
     }
 
-    return NextResponse.json({ data: response })
+    return ok(response)
   } catch (error) {
     console.error('Failed to generate PMix modifier detail report:', error)
-    return NextResponse.json(
-      { error: 'Failed to generate PMix modifier detail report' },
-      { status: 500 }
-    )
+    return err('Failed to generate PMix modifier detail report', 500)
   }
 })
 

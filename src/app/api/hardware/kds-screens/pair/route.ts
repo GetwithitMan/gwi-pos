@@ -4,6 +4,7 @@ import { randomBytes } from 'crypto'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err } from '@/lib/api-response'
 // Cookie name for device token
 const DEVICE_TOKEN_COOKIE = 'kds_device_token'
 
@@ -15,7 +16,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const { pairingCode, deviceInfo } = body
 
     if (!pairingCode) {
-      return NextResponse.json({ error: 'Pairing code is required' }, { status: 400 })
+      return err('Pairing code is required')
     }
 
     // Find screen with this pairing code
@@ -29,10 +30,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     if (!screen) {
-      return NextResponse.json(
-        { error: 'Invalid or expired pairing code' },
-        { status: 400 }
-      )
+      return err('Invalid or expired pairing code')
     }
 
     // Generate a secure device token (64 chars hex = 256 bits)
@@ -94,6 +92,6 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     return response
   } catch (error) {
     console.error('Failed to complete pairing:', error)
-    return NextResponse.json({ error: 'Failed to complete pairing' }, { status: 500 })
+    return err('Failed to complete pairing', 500)
   }
 })

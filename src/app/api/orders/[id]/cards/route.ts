@@ -9,6 +9,7 @@ import { dispatchPaymentProcessed } from '@/lib/socket-dispatch'
 import { resolveDetection, ListenerError } from '@/lib/domain/payment-readers/listener-service'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 
 const log = createChildLogger('orders.id.cards')
 
@@ -25,8 +26,7 @@ export const GET = withVenue(async function GET(
       orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
     })
 
-    return NextResponse.json({
-      data: cards.map((card) => ({
+    return ok(cards.map((card) => ({
         id: card.id,
         cardType: card.cardType,
         cardLast4: card.cardLast4,
@@ -38,11 +38,10 @@ export const GET = withVenue(async function GET(
         tipAmount: card.tipAmount ? Number(card.tipAmount) : null,
         capturedAt: card.capturedAt,
         createdAt: card.createdAt,
-      })),
-    })
+      })))
   } catch (error) {
     console.error('Failed to list order cards:', error)
-    return NextResponse.json({ error: 'Failed to list order cards' }, { status: 500 })
+    return err('Failed to list order cards', 500)
   }
 })
 
@@ -58,7 +57,7 @@ export const POST = withVenue(withAuth(async function POST(
     const { readerId, employeeId, makeDefault = false, detectionId, expectedOrderVersion } = body
 
     if (!readerId || !employeeId) {
-      return NextResponse.json({ error: 'Missing required fields: readerId, employeeId' }, { status: 400 })
+      return err('Missing required fields: readerId, employeeId')
     }
 
     const order = await db.order.findFirst({
@@ -67,7 +66,7 @@ export const POST = withVenue(withAuth(async function POST(
     })
 
     if (!order) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      return notFound('Order not found')
     }
 
     const locationId = order.locationId
@@ -122,14 +121,12 @@ export const POST = withVenue(withAuth(async function POST(
       const approved = response.cmdStatus === 'Approved'
 
       if (!approved) {
-        return NextResponse.json({
-          data: {
+        return ok({
             approved: false,
             error: error
               ? { code: error.code, message: error.text, isRetryable: error.isRetryable }
               : { code: 'DECLINED', message: 'Card declined', isRetryable: true },
-          },
-        })
+          })
       }
 
       const finalRecordNo = response.recordNo || recordNo
@@ -165,8 +162,7 @@ export const POST = withVenue(withAuth(async function POST(
 
       pushUpstream()
 
-      return NextResponse.json({
-        data: {
+      return ok({
           approved: true,
           orderCardId: orderCard.id,
           cardType: cardType || response.cardType,
@@ -175,8 +171,7 @@ export const POST = withVenue(withAuth(async function POST(
           authAmount: preAuthAmount,
           recordNo: finalRecordNo,
           isDefault: makeDefault,
-        },
-      })
+        })
     }
 
     // ── Standard card-present flow (no detectionId) ───────────────────
@@ -197,19 +192,17 @@ export const POST = withVenue(withAuth(async function POST(
     const approved = response.cmdStatus === 'Approved'
 
     if (!approved) {
-      return NextResponse.json({
-        data: {
+      return ok({
           approved: false,
           error: error
             ? { code: error.code, message: error.text, isRetryable: error.isRetryable }
             : { code: 'DECLINED', message: 'Card declined', isRetryable: true },
-        },
-      })
+        })
     }
 
     const recordNo = response.recordNo
     if (!recordNo) {
-      return NextResponse.json({ error: 'Pre-auth approved but no RecordNo token received' }, { status: 500 })
+      return err('Pre-auth approved but no RecordNo token received', 500)
     }
 
     // If making this the default, unset current default first
@@ -245,8 +238,7 @@ export const POST = withVenue(withAuth(async function POST(
 
     pushUpstream()
 
-    return NextResponse.json({
-      data: {
+    return ok({
         approved: true,
         orderCardId: orderCard.id,
         cardType: response.cardType,
@@ -255,8 +247,7 @@ export const POST = withVenue(withAuth(async function POST(
         authAmount: preAuthAmount,
         recordNo,
         isDefault: makeDefault,
-      },
-    })
+      })
   } catch (error) {
     if (error instanceof ListenerError) {
       return NextResponse.json(
@@ -265,6 +256,6 @@ export const POST = withVenue(withAuth(async function POST(
       )
     }
     console.error('Failed to add card to tab:', error)
-    return NextResponse.json({ error: 'Failed to add card to tab' }, { status: 500 })
+    return err('Failed to add card to tab', 500)
   }
 }))

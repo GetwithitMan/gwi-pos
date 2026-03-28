@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, ok } from '@/lib/api-response'
 
 // GET - List all prep stations for a location
 export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextRequest) {
@@ -12,10 +13,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
     const locationId = searchParams.get('locationId')
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'Location ID is required' },
-        { status: 400 }
-      )
+      return err('Location ID is required')
     }
 
     const stations = await db.prepStation.findMany({
@@ -31,7 +29,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
       orderBy: { sortOrder: 'asc' },
     })
 
-    return NextResponse.json({ data: {
+    return ok({
       stations: stations.map(station => ({
         id: station.id,
         name: station.name,
@@ -45,13 +43,10 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
         categoryCount: station._count.categories,
         itemCount: station._count.menuItems,
       })),
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch prep stations:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch prep stations' },
-      { status: 500 }
-    )
+    return err('Failed to fetch prep stations', 500)
   }
 }))
 
@@ -70,10 +65,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     }
 
     if (!locationId || !name) {
-      return NextResponse.json(
-        { error: 'Location ID and name are required' },
-        { status: 400 }
-      )
+      return err('Location ID and name are required')
     }
 
     // Check for duplicate name
@@ -86,10 +78,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     })
 
     if (existing) {
-      return NextResponse.json(
-        { error: 'A prep station with this name already exists' },
-        { status: 409 }
-      )
+      return err('A prep station with this name already exists', 409)
     }
 
     // Get max sort order
@@ -115,7 +104,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     void notifyDataChanged({ locationId, domain: 'prep', action: 'created', entityId: station.id })
     void pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       id: station.id,
       name: station.name,
       displayName: station.displayName,
@@ -125,12 +114,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       showAllItems: station.showAllItems,
       autoComplete: station.autoComplete,
       sortOrder: station.sortOrder,
-    } })
+    })
   } catch (error) {
     console.error('Failed to create prep station:', error)
-    return NextResponse.json(
-      { error: 'Failed to create prep station' },
-      { status: 500 }
-    )
+    return err('Failed to create prep station', 500)
   }
 }))

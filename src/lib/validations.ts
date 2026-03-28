@@ -258,6 +258,158 @@ export const createModifierInventoryLinkSchema = z.object({
 })
 
 // ============================================
+// Datacap / Payment schemas
+// ============================================
+
+export const datacapSaleSchema = z.object({
+  locationId: idSchema,
+  readerId: idSchema,
+  invoiceNo: z.string().min(1, 'Invoice number is required'),
+  amount: z.number().positive('Amount must be positive').max(999999, 'Amount exceeds maximum'),
+  tipAmount: z.number().nonnegative().nullish(),
+  tipMode: z.enum(['suggestive', 'prompt', 'included', 'none']).optional(),
+  tipSuggestions: z.array(z.number().nonnegative()).optional(),
+  employeeId: idSchema,
+  orderId: z.string().optional(),
+  terminalId: z.string().optional(),
+  customerCode: z.string().max(100).optional(),
+  taxAmount: z.number().nonnegative().optional(),
+})
+
+export const datacapReturnSchema = z.object({
+  locationId: idSchema,
+  readerId: idSchema,
+  recordNo: z.string().optional(),
+  amount: z.number().positive('Refund amount must be positive').max(999999),
+  cardPresent: z.boolean(),
+  employeeId: idSchema,
+  invoiceNo: z.string().optional(),
+})
+
+export const adjustTipSchema = z.object({
+  paymentId: idSchema,
+  newTipAmount: z.number().nonnegative('Tip amount cannot be negative').max(999999),
+  reason: z.string().min(1, 'Reason is required').max(500),
+  managerId: idSchema,
+})
+
+export const paymentSyncSchema = z.object({
+  intentId: z.string().optional(),
+  orderId: z.string().optional(),
+  localOrderId: z.string().optional(),
+  amount: z.number().positive('Amount must be positive'),
+  tipAmount: z.number().nonnegative().default(0),
+  paymentMethod: z.string().min(1),
+  cardToken: z.string().nullish(),
+  cardBrand: z.string().nullish(),
+  cardLast4: z.string().nullish(),
+  gatewayTransactionId: z.string().nullish(),
+  authorizationCode: z.string().nullish(),
+  isOfflineCapture: z.boolean().optional(),
+  offlineCapturedAt: z.string().nullish(),
+  terminalId: z.string().nullish(),
+  employeeId: idSchema,
+})
+
+export const paymentReconcileSchema = z.object({
+  paymentIds: z.array(idSchema).min(1, 'At least one payment ID is required'),
+  reconciledBy: z.string().optional(),
+})
+
+// ============================================
+// Order update schemas
+// ============================================
+
+export const updateOrderSchema = z.object({
+  tabName: z.string().max(50).nullish(),
+  guestCount: z.number().int().positive().nullish(),
+  notes: z.string().max(500).nullish(),
+  tipTotal: z.number().nonnegative().nullish(),
+  tableId: z.string().nullish(),
+  orderTypeId: z.string().nullish(),
+  customerId: z.string().nullish(),
+  status: z.string().optional(),
+  employeeId: z.string().optional(),
+  version: z.number().int().nonnegative().optional(),
+  isTaxExempt: z.boolean().optional(),
+  fulfillmentMode: z.string().nullish(),
+}).passthrough() // Allow extra fields like pagerNumber (which is logged+ignored)
+
+export const applyDiscountSchema = z.object({
+  discountRuleId: z.string().optional(),
+  type: z.enum(['percent', 'fixed']).optional(),
+  value: z.number().nonnegative().optional(),
+  name: z.string().max(200).optional(),
+  reason: z.string().max(500).optional(),
+  employeeId: z.string().optional(),
+  approvedById: z.string().optional(),
+})
+
+export const compVoidSchema = z.object({
+  action: z.enum(['comp', 'void']),
+  itemId: idSchema,
+  reason: z.string().min(1, 'Reason is required').max(500),
+  employeeId: idSchema,
+  wasMade: z.boolean().optional(),
+  approvedById: z.string().optional(),
+  managerPinHash: z.string().optional(),
+  remoteApprovalCode: z.string().optional(),
+  version: z.number().int().nonnegative().optional(),
+})
+
+// ============================================
+// Auth schemas
+// ============================================
+
+export const loginSchema = z.object({
+  pin: z.string().min(4, 'PIN must be at least 4 digits').max(6),
+  locationId: z.string().optional(),
+})
+
+export const verifyManagerPinSchema = z.object({
+  pin: z.string().min(4, 'PIN must be 4-6 digits').max(6),
+  action: z.string().min(1, 'Action is required'),
+  locationId: idSchema,
+})
+
+// ============================================
+// Gift card schemas
+// ============================================
+
+export const createGiftCardSchema = z.object({
+  amount: z.number().positive('Amount must be positive').max(99999),
+  recipientName: z.string().max(100).nullish(),
+  recipientEmail: z.string().email().nullish().or(z.literal('')),
+  recipientPhone: z.string().max(20).nullish(),
+  purchaserName: z.string().max(100).nullish(),
+  message: z.string().max(500).nullish(),
+  orderId: z.string().optional(),
+  expiresAt: z.string().nullish(),
+  skipPaymentCheck: z.boolean().optional(),
+})
+
+// ============================================
+// Customer schemas
+// ============================================
+
+export const createCustomerSchema = z.object({
+  locationId: idSchema,
+  firstName: z.string().min(1, 'First name is required').max(100),
+  lastName: z.string().min(1, 'Last name is required').max(100),
+  displayName: z.string().max(100).nullish(),
+  email: z.string().email().nullish().or(z.literal('')).or(z.literal(null)),
+  phone: z.string().max(20).nullish(),
+  notes: z.string().max(1000).nullish(),
+  allergies: z.string().max(500).nullish(),
+  favoriteDrink: z.string().max(200).nullish(),
+  favoriteFood: z.string().max(200).nullish(),
+  tags: z.array(z.string()).optional(),
+  marketingOptIn: z.boolean().optional(),
+  birthday: z.string().nullish(),
+  requestingEmployeeId: z.string().optional(),
+})
+
+// ============================================
 // Helper function for API routes
 // ============================================
 

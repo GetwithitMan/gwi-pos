@@ -4,6 +4,7 @@ import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { transition } from '@/lib/reservations/state-machine'
 import { createRateLimiter } from '@/lib/rate-limiter'
+import { err, notFound, ok } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -35,7 +36,7 @@ export const POST = withVenue(async function POST(
 
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'Location not found' }, { status: 400 })
+      return err('Location not found')
     }
 
     const reservation = await db.reservation.findFirst({
@@ -43,36 +44,27 @@ export const POST = withVenue(async function POST(
     })
 
     if (!reservation) {
-      return NextResponse.json({ error: 'Reservation not found' }, { status: 404 })
+      return notFound('Reservation not found')
     }
 
     if (reservation.status !== 'pending') {
-      return NextResponse.json(
-        { error: reservation.depositStatus === 'paid'
+      return err(reservation.depositStatus === 'paid'
             ? 'Deposit has already been paid'
-            : `Cannot process deposit for ${reservation.status} reservation` },
-        { status: 400 }
-      )
+            : `Cannot process deposit for ${reservation.status} reservation`)
     }
 
     if (reservation.depositStatus !== 'required' && reservation.depositStatus !== 'pending') {
-      return NextResponse.json(
-        { error: 'No deposit is required for this reservation' },
-        { status: 400 }
-      )
+      return err('No deposit is required for this reservation')
     }
 
     // Check hold expiry
     if (reservation.holdExpiresAt && new Date() > reservation.holdExpiresAt) {
-      return NextResponse.json(
-        { error: 'Deposit hold has expired. Please create a new reservation.' },
-        { status: 410 }
-      )
+      return err('Deposit hold has expired. Please create a new reservation.', 410)
     }
 
     const depositAmountCents = reservation.depositAmountCents ?? 0
     if (depositAmountCents <= 0) {
-      return NextResponse.json({ error: 'Invalid deposit amount' }, { status: 400 })
+      return err('Invalid deposit amount')
     }
 
     // TODO: Process payment via Datacap PayAPI
@@ -91,7 +83,7 @@ export const POST = withVenue(async function POST(
     }
 
     if (!paymentResult.success) {
-      return NextResponse.json({ error: 'Payment failed. Please try again.' }, { status: 402 })
+      return err('Payment failed. Please try again.', 402)
     }
 
     // Record deposit + update reservation in transaction
@@ -143,7 +135,7 @@ export const POST = withVenue(async function POST(
       })
     })
 
-    return NextResponse.json({
+    return ok({
       id: reservation.id,
       status: 'confirmed',
       depositPaid: true,
@@ -152,9 +144,9 @@ export const POST = withVenue(async function POST(
     })
   } catch (error: any) {
     if (error?.name === 'TransitionError') {
-      return NextResponse.json({ error: error.message }, { status: 400 })
+      return err(error.message)
     }
     console.error('[Public Deposit] Error:', error)
-    return NextResponse.json({ error: 'Failed to process deposit' }, { status: 500 })
+    return err('Failed to process deposit', 500)
   }
 })

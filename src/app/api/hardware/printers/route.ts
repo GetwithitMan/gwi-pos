@@ -10,6 +10,7 @@ import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok } from '@/lib/api-response'
 const log = createChildLogger('hardware-printers')
 
 // GET all printers for a location
@@ -18,7 +19,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
     const role = searchParams.get('role') // Filter by printerRole
 
@@ -30,17 +31,17 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
     })
 
-    return NextResponse.json({ data: {
+    return ok({
       printers: printers.map((p) => ({
         ...p,
         port: p.port,
         paperWidth: p.paperWidth,
         sortOrder: p.sortOrder,
       })),
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch printers:', error)
-    return NextResponse.json({ error: 'Failed to fetch printers' }, { status: 500 })
+    return err('Failed to fetch printers', 500)
   }
 }))
 
@@ -65,20 +66,17 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
 
     // Validate required fields
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
     if (!name || !printerType || !ipAddress) {
-      return NextResponse.json(
-        { error: 'Name, printer type, and IP address are required' },
-        { status: 400 }
-      )
+      return err('Name, printer type, and IP address are required')
     }
 
     // Auth check — require settings.hardware permission
     const actor = await getActorFromRequest(request)
     const resolvedEmployeeId = actor.employeeId ?? bodyEmployeeId
     const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.SETTINGS_HARDWARE)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Printer count limit check (subscription-gated)
     const { checkDeviceLimit } = await import('@/lib/device-limits')
@@ -98,7 +96,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     // Validate IP address format
     const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}$/
     if (!ipv4Regex.test(ipAddress)) {
-      return NextResponse.json({ error: 'Invalid IP address format' }, { status: 400 })
+      return err('Invalid IP address format')
     }
 
     // If setting as default, unset other defaults for the same role
@@ -139,16 +137,13 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     void notifyDataChanged({ locationId, domain: 'hardware', action: 'created', entityId: printer.id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { printer } })
+    return ok({ printer })
   } catch (error) {
     console.error('Failed to create printer:', error)
     // Check for unique constraint violation (name must be unique per location)
     if (error instanceof Error && error.message.includes('Unique constraint')) {
-      return NextResponse.json(
-        { error: 'A printer with this name already exists at this location' },
-        { status: 400 }
-      )
+      return err('A printer with this name already exists at this location')
     }
-    return NextResponse.json({ error: 'Failed to create printer' }, { status: 500 })
+    return err('Failed to create printer', 500)
   }
 }))

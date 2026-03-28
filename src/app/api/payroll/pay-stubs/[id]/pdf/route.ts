@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { generatePayStubPDF, PayStubData } from '@/lib/payroll/pay-stub-pdf'
 import { withVenue } from '@/lib/with-venue'
+import { err, notFound } from '@/lib/api-response'
 
 export const GET = withVenue(async function GET(
   request: NextRequest,
@@ -52,7 +53,7 @@ export const GET = withVenue(async function GET(
     })
 
     if (!payStub) {
-      return NextResponse.json({ error: 'Pay stub not found' }, { status: 404 })
+      return notFound('Pay stub not found')
     }
 
     // Build employee address
@@ -155,9 +156,6 @@ export const GET = withVenue(async function GET(
     })
   } catch (error) {
     console.error('Failed to generate pay stub PDF:', error)
-    return NextResponse.json(
-      { error: 'Failed to generate pay stub PDF' },
-      { status: 500 }
-    )
+    return err('Failed to generate pay stub PDF', 500)
   }
 })

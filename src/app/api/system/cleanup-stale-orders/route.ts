@@ -1,7 +1,7 @@
-import { NextResponse } from 'next/server'
 import { withVenue } from '@/lib/with-venue'
 import { cleanupStaleOrders } from '@/lib/domain/cleanup/stale-order-cleanup'
 import { logger } from '@/lib/logger'
+import { err, ok, unauthorized } from '@/lib/api-response'
 
 /**
  * POST /api/system/cleanup-stale-orders
@@ -27,7 +27,7 @@ export const POST = withVenue(async (request) => {
     const isAuthorized = (cronSecret && (authHeader === cronSecret || apiKey === cronSecret)) ||
                          (internalSecret && (authHeader === internalSecret || apiKey === internalSecret))
     if (!isAuthorized) {
-      return NextResponse.json({ error: 'Unauthorized — CRON_SECRET or INTERNAL_API_SECRET required' }, { status: 401 })
+      return unauthorized('Unauthorized — CRON_SECRET or INTERNAL_API_SECRET required')
     }
 
     const { searchParams } = new URL(request.url)
@@ -36,31 +36,26 @@ export const POST = withVenue(async (request) => {
     const dryRun = searchParams.get('dryRun') === 'true'
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     if (isNaN(maxAgeHours) || maxAgeHours < 1) {
-      return NextResponse.json({ error: 'maxAgeHours must be a positive integer' }, { status: 400 })
+      return err('maxAgeHours must be a positive integer')
     }
 
     const result = await cleanupStaleOrders({ locationId, maxAgeHours, dryRun })
 
     if (dryRun) {
-      return NextResponse.json({
-        data: {
+      return ok({
           dryRun: true,
           staleOrderCount: result.closedCount,
           cutoffTime: result.cutoffTime,
-        },
-      })
+        })
     }
 
-    return NextResponse.json({ data: result })
+    return ok(result)
   } catch (error) {
     logger.error('[cleanup-stale-orders] Error:', error)
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Unknown error' },
-      { status: 500 }
-    )
+    return err(error instanceof Error ? error.message : 'Unknown error', 500)
   }
 })

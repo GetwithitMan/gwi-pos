@@ -3,32 +3,33 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { verifyOwnerToken, signVenueToken } from '@/lib/cloud-auth'
 import { config } from '@/lib/system-config'
+import { err, forbidden, notFound, unauthorized } from '@/lib/api-response'
 
 export const POST = withVenue(async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}))
   const { token } = body
 
   if (!token || typeof token !== 'string') {
-    return NextResponse.json({ error: 'Token required' }, { status: 400 })
+    return err('Token required')
   }
 
   const secret = config.cloudJwtSecret
-  if (!secret) return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 })
+  if (!secret) return err('Server misconfigured', 500)
 
   const venueSlug = request.headers.get('x-venue-slug')
-  if (!venueSlug) return NextResponse.json({ error: 'Invalid request context' }, { status: 400 })
+  if (!venueSlug) return err('Invalid request context')
 
   const payload = await verifyOwnerToken(token, secret)
-  if (!payload) return NextResponse.json({ error: 'Invalid or expired access token' }, { status: 401 })
+  if (!payload) return unauthorized('Invalid or expired access token')
 
   // Verify this token authorizes access to the current venue
   if (!payload.venues.includes(venueSlug)) {
-    return NextResponse.json({ error: 'Token not valid for this venue' }, { status: 403 })
+    return forbidden('Token not valid for this venue')
   }
 
   // Find the employee in this venue's DB
   const location = await db.location.findFirst({ orderBy: { createdAt: 'asc' }, select: { id: true, name: true } })
-  if (!location) return NextResponse.json({ error: 'Venue not configured' }, { status: 404 })
+  if (!location) return notFound('Venue not configured')
 
   const employee = await db.employee.findFirst({
     where: {

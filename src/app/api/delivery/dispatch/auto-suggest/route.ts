@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId, getLocationSettings } from '@/lib/location-cache'
@@ -7,6 +7,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { mergeWithDefaults, DEFAULT_DELIVERY } from '@/lib/settings'
 import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 import { suggestDrivers, getMaxOrdersPerDriver } from '@/lib/delivery/dispatch-policy'
+import { err, ok } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,13 +22,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Auth check
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.DELIVERY_DISPATCH)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Feature gate
     const featureGate = await requireDeliveryFeature(locationId)
@@ -37,7 +38,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const { orderIds, zoneId } = body
 
     if (!Array.isArray(orderIds) || orderIds.length === 0) {
-      return NextResponse.json({ error: 'orderIds must be a non-empty array' }, { status: 400 })
+      return err('orderIds must be a non-empty array')
     }
 
     // Load settings
@@ -148,9 +149,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     const suggestions = suggestDrivers(candidates, maxPerDriver)
 
-    return NextResponse.json({ suggestions })
+    return ok({ suggestions })
   } catch (error) {
     console.error('[Delivery/Dispatch/AutoSuggest] POST error:', error)
-    return NextResponse.json({ error: 'Failed to generate driver suggestions' }, { status: 500 })
+    return err('Failed to generate driver suggestions', 500)
   }
 })

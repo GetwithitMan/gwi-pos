@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { getLocationId } from '@/lib/location-cache'
@@ -17,6 +17,7 @@ import * as OrderRepository from '@/lib/repositories/order-repository'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok } from '@/lib/api-response'
 
 const log = createChildLogger('tabs-last-call')
 
@@ -33,12 +34,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const auth = await requirePermission(employeeId, locationId, 'manage_orders')
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     const settings = await getLocationSettings(locationId)
@@ -92,17 +93,15 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     const totalAutoGratuity = roundToCents(tabs.reduce((sum, t) => sum + t.autoGratuity, 0))
 
-    return NextResponse.json({
-      data: {
+    return ok({
         tabs,
         count: tabs.length,
         autoGratuityPercent,
         totalAutoGratuity,
-      },
-    })
+      })
   } catch (error) {
     console.error('[Last Call] Preview failed:', error)
-    return NextResponse.json({ error: 'Failed to load Last Call preview' }, { status: 500 })
+    return err('Failed to load Last Call preview', 500)
   }
 })
 
@@ -124,12 +123,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // ── Auth ──
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const auth = await requirePermission(employeeId, locationId, 'manage_orders')
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // ── Load settings ──
@@ -138,7 +137,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const barOps = locSettings.barOperations ?? { lastCallEnabled: true, lastCallAutoGratuityPercent: 20 }
 
     if (!barOps.lastCallEnabled) {
-      return NextResponse.json({ error: 'Last Call feature is disabled' }, { status: 400 })
+      return err('Last Call feature is disabled')
     }
 
     const autoGratuityPercent = barOps.lastCallAutoGratuityPercent || 20
@@ -183,9 +182,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     if (openTabs.length === 0) {
-      return NextResponse.json({
-        data: { closed: 0, failed: [], autoGratuityTotal: 0, message: 'No open tabs to close' },
-      })
+      return ok({ closed: 0, failed: [], autoGratuityTotal: 0, message: 'No open tabs to close' })
     }
 
     // ── Process each tab ──
@@ -337,16 +334,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     void notifyDataChanged({ locationId, domain: 'orders', action: 'updated' })
     void pushUpstream()
 
-    return NextResponse.json({
-      data: {
+    return ok({
         closed: closedCount,
         total: openTabs.length,
         failed,
         autoGratuityTotal: roundToCents(autoGratuityTotal),
-      },
-    })
+      })
   } catch (error) {
     console.error('[Last Call] Batch tab close failed:', error)
-    return NextResponse.json({ error: 'Failed to process Last Call' }, { status: 500 })
+    return err('Failed to process Last Call', 500)
   }
 })

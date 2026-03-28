@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import fs from 'fs'
 import path from 'path'
+import { err, notFound, unauthorized } from '@/lib/api-response'
 
 /**
  * GET /api/artifacts/:version/schema.sql
@@ -27,25 +28,19 @@ export async function GET(
   // ── Auth ──────────────────────────────────────────────────────────────
   const apiKey = request.headers.get('x-api-key')
   if (!apiKey || apiKey !== process.env.PROVISION_API_KEY) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return unauthorized('Unauthorized')
   }
 
   const { version } = await params
   const file = request.nextUrl.searchParams.get('file')
 
   if (!file) {
-    return NextResponse.json(
-      { error: 'Missing "file" query parameter. Use: schema.sql, version-contract.json, or manifest.json' },
-      { status: 400 }
-    )
+    return err('Missing "file" query parameter. Use: schema.sql, version-contract.json, or manifest.json')
   }
 
   const ALLOWED_FILES = ['schema.sql', 'version-contract.json', 'manifest.json'] as const
   if (!ALLOWED_FILES.includes(file as any)) {
-    return NextResponse.json(
-      { error: `Invalid file "${file}". Allowed: ${ALLOWED_FILES.join(', ')}` },
-      { status: 400 }
-    )
+    return err(`Invalid file "${file}". Allowed: ${ALLOWED_FILES.join(', ')}`)
   }
 
   const artifactsDir = path.join(process.cwd(), 'public/artifacts')
@@ -64,19 +59,13 @@ export async function GET(
       const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'))
       resolvedVersion = manifest.currentVersion
     } catch {
-      return NextResponse.json(
-        { error: 'Artifact manifest not found. Build may be incomplete.' },
-        { status: 404 }
-      )
+      return notFound('Artifact manifest not found. Build may be incomplete.')
     }
   }
 
   // ── Validate version format (prevent path traversal) ──────────────────
   if (!/^[\w.-]+$/.test(resolvedVersion)) {
-    return NextResponse.json(
-      { error: 'Invalid version format' },
-      { status: 400 }
-    )
+    return err('Invalid version format')
   }
 
   // ── Map file param to versioned filename ──────────────────────────────
@@ -111,10 +100,7 @@ export async function GET(
         )
       }
     } catch {
-      return NextResponse.json(
-        { error: `Artifact not found: ${filename}` },
-        { status: 404 }
-      )
+      return notFound(`Artifact not found: ${filename}`)
     }
   }
 
@@ -139,9 +125,6 @@ function serveFile(
     }
     return new NextResponse(content, { status: 200, headers })
   } catch {
-    return NextResponse.json(
-      { error: `Artifact not found: ${path.basename(filePath)}` },
-      { status: 404 }
-    )
+    return notFound(`Artifact not found: ${path.basename(filePath)}`)
   }
 }

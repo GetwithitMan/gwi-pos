@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 import { createRateLimiter } from '@/lib/rate-limiter'
 import { getClientIp } from '@/lib/get-client-ip'
+import { err, notFound, ok } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -50,14 +51,14 @@ export const GET = withVenue(async function GET(
     // Rate limit
     const ip = getClientIp(request)
     if (!limiter.check(ip).allowed) {
-      return NextResponse.json({ error: 'Too many requests' }, { status: 429 })
+      return err('Too many requests', 429)
     }
 
     const { token } = await context.params
 
     // Validate token is UUID format
     if (!token || !UUID_REGEX.test(token)) {
-      return NextResponse.json({ error: 'Not found' }, { status: 404 })
+      return notFound('Not found')
     }
 
     // Fetch delivery order by tracking token
@@ -70,7 +71,7 @@ export const GET = withVenue(async function GET(
     `, token)
 
     if (!rows.length) {
-      return NextResponse.json({ error: 'Not found' }, { status: 404 })
+      return notFound('Not found')
     }
 
     const delivery = rows[0]
@@ -87,11 +88,11 @@ export const GET = withVenue(async function GET(
     // Only show location for active delivery statuses
     const trackableStatuses = ['dispatched', 'en_route', 'arrived']
     if (!trackableStatuses.includes(delivery.status)) {
-      return NextResponse.json({ visible: false })
+      return ok({ visible: false })
     }
 
     if (!delivery.runId) {
-      return NextResponse.json({ visible: false })
+      return ok({ visible: false })
     }
 
     // Get the driver session for this run
@@ -106,7 +107,7 @@ export const GET = withVenue(async function GET(
     `, delivery.runId, locationId)
 
     if (!sessionRows.length || sessionRows[0].lastLocationLat == null) {
-      return NextResponse.json({ visible: false })
+      return ok({ visible: false })
     }
 
     const session = sessionRows[0]
@@ -134,12 +135,12 @@ export const GET = withVenue(async function GET(
 
         const distanceMeters = haversineMeters(driverLat, driverLng, customerLat, customerLng)
         if (distanceMeters > nearbyThreshold) {
-          return NextResponse.json({ visible: false })
+          return ok({ visible: false })
         }
       }
     }
 
-    return NextResponse.json({
+    return ok({
       visible: true,
       lat: driverLat,
       lng: driverLng,
@@ -149,6 +150,6 @@ export const GET = withVenue(async function GET(
     })
   } catch (error) {
     console.error('[public/delivery-tracking/location] Error:', error)
-    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    return notFound('Not found')
   }
 })

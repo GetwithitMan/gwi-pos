@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db as prisma } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - List breaks for employee/time clock entry
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -22,7 +23,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orderBy: { startedAt: 'desc' },
     })
 
-    return NextResponse.json({ data: {
+    return ok({
       breaks: breaks.map(b => ({
         id: b.id,
         employeeId: b.employeeId,
@@ -34,10 +35,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         status: b.status,
         notes: b.notes,
       })),
-    } })
+    })
   } catch (error) {
     console.error('Breaks error:', error)
-    return NextResponse.json({ error: 'Failed to fetch breaks' }, { status: 500 })
+    return err('Failed to fetch breaks', 500)
   }
 })
 
@@ -48,9 +49,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     const { employeeId, timeClockEntryId, breakType, notes } = body
 
     if (!employeeId || !timeClockEntryId) {
-      return NextResponse.json({
-        error: 'Employee ID and time clock entry ID required',
-      }, { status: 400 })
+      return err('Employee ID and time clock entry ID required')
     }
 
     // Get time clock entry to get locationId
@@ -59,7 +58,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     })
 
     if (!timeClockEntry) {
-      return NextResponse.json({ error: 'Time clock entry not found' }, { status: 404 })
+      return notFound('Time clock entry not found')
     }
 
     // Check for active break
@@ -71,7 +70,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     })
 
     if (activeBreak) {
-      return NextResponse.json({ error: 'Already on break' }, { status: 400 })
+      return err('Already on break')
     }
 
     const breakEntry = await prisma.break.create({
@@ -87,17 +86,17 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
 
     pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       break: {
         id: breakEntry.id,
         breakType: breakEntry.breakType,
         startedAt: breakEntry.startedAt,
         status: breakEntry.status,
       },
-    } })
+    })
   } catch (error) {
     console.error('Start break error:', error)
-    return NextResponse.json({ error: 'Failed to start break' }, { status: 500 })
+    return err('Failed to start break', 500)
   }
 }))
 
@@ -123,11 +122,11 @@ export const PUT = withVenue(withAuth(async function PUT(request: NextRequest) {
     }
 
     if (!breakEntry) {
-      return NextResponse.json({ error: 'Break not found' }, { status: 404 })
+      return notFound('Break not found')
     }
 
     if (breakEntry.status !== 'active') {
-      return NextResponse.json({ error: 'Break is not active' }, { status: 400 })
+      return err('Break is not active')
     }
 
     const now = new Date()
@@ -152,7 +151,7 @@ export const PUT = withVenue(withAuth(async function PUT(request: NextRequest) {
 
     pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       break: {
         id: updatedBreak.id,
         breakType: updatedBreak.breakType,
@@ -161,9 +160,9 @@ export const PUT = withVenue(withAuth(async function PUT(request: NextRequest) {
         duration: updatedBreak.duration,
         status: updatedBreak.status,
       },
-    } })
+    })
   } catch (error) {
     console.error('End break error:', error)
-    return NextResponse.json({ error: 'Failed to end break' }, { status: 500 })
+    return err('Failed to end break', 500)
   }
 }))

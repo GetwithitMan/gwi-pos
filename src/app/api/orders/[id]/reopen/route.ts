@@ -14,6 +14,7 @@ import { OrderRepository } from '@/lib/repositories'
 import { roundToCents } from '@/lib/pricing'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-reopen')
 
 export const POST = withVenue(async function POST(
@@ -26,10 +27,7 @@ export const POST = withVenue(async function POST(
 
     // Validate inputs
     if (!reason || !managerId) {
-      return NextResponse.json(
-        { error: 'Missing required fields' },
-        { status: 400 }
-      )
+      return err('Missing required fields')
     }
 
     // HA cellular sync — detect mutation origin for downstream sync
@@ -70,22 +68,16 @@ export const POST = withVenue(async function POST(
     })
 
     if (!order) {
-      return NextResponse.json(
-        { error: 'Order not found' },
-        { status: 404 }
-      )
+      return notFound('Order not found')
     }
 
     // Verify manager has permission to reopen (void) orders
     const authResult = await requirePermission(managerId, order.locationId, PERMISSIONS.MGR_VOID_ORDERS)
-    if (!authResult.authorized) return NextResponse.json({ error: authResult.error }, { status: authResult.status })
+    if (!authResult.authorized) return err(authResult.error, authResult.status)
 
     // Check if order can be reopened
     if (order.status !== 'closed' && order.status !== 'paid' && order.status !== 'voided') {
-      return NextResponse.json(
-        { error: `Cannot reopen order with status: ${order.status}` },
-        { status: 400 }
-      )
+      return err(`Cannot reopen order with status: ${order.status}`)
     }
 
     // Cooldown guard: prevent immediate reopen after cash payment (race condition)
@@ -291,7 +283,7 @@ export const POST = withVenue(async function POST(
     })
 
     if (!reopenedOrder) {
-      return NextResponse.json({ error: 'Failed to reopen order' }, { status: 500 })
+      return err('Failed to reopen order', 500)
     }
 
     // Reverse card charges at Datacap (fire-and-forget, outside transaction).
@@ -380,8 +372,7 @@ export const POST = withVenue(async function POST(
 
     pushUpstream()
 
-    return NextResponse.json({
-      data: {
+    return ok({
         order: {
           id: reopenedOrder.id,
           orderNumber: reopenedOrder.orderNumber,
@@ -391,13 +382,9 @@ export const POST = withVenue(async function POST(
         paymentsVoided: order.payments.length,
         cardsRestored: orderCards.filter(c => c.status === 'captured' && c.tokenFrequency === 'Recurring').length,
         hasReusableCards: orderCards.some(c => c.tokenFrequency === 'Recurring'),
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to reopen order:', error)
-    return NextResponse.json(
-      { error: 'Failed to reopen order' },
-      { status: 500 }
-    )
+    return err('Failed to reopen order', 500)
   }
 })

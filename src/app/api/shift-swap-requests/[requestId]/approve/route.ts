@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
@@ -7,6 +7,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { queueIfOutageOrFail, OutageQueueFullError, pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, forbidden, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('shift-swap-requests-approve')
 
 // POST - Manager approves a shift request (swap, cover, or drop)
@@ -28,33 +29,33 @@ export const POST = withVenue(withAuth(async function POST(
     }
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+      return err('Location ID is required')
     }
 
     if (!approvedByEmployeeId) {
-      return NextResponse.json({ error: 'approvedByEmployeeId is required' }, { status: 400 })
+      return err('approvedByEmployeeId is required')
     }
 
     // Auth check — require staff scheduling permission to approve shift requests
     const actor = await getActorFromRequest(request)
     const resolvedEmployeeId = actor.employeeId ?? approvedByEmployeeId
     const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.STAFF_SCHEDULING)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const swapRequest = await db.shiftSwapRequest.findUnique({
       where: { id: requestId },
     })
 
     if (!swapRequest) {
-      return NextResponse.json({ error: 'Request not found' }, { status: 404 })
+      return notFound('Request not found')
     }
 
     if (swapRequest.locationId !== locationId) {
-      return NextResponse.json({ error: 'Request does not belong to this location' }, { status: 403 })
+      return forbidden('Request does not belong to this location')
     }
 
     if (swapRequest.deletedAt !== null) {
-      return NextResponse.json({ error: 'Request has been cancelled' }, { status: 404 })
+      return notFound('Request has been cancelled')
     }
 
     const requestType = swapRequest.type || 'swap'
@@ -63,24 +64,15 @@ export const POST = withVenue(withAuth(async function POST(
     // For swap/cover, employee must accept first (status === 'accepted')
     if (requestType === 'drop') {
       if (!['pending', 'accepted'].includes(swapRequest.status)) {
-        return NextResponse.json(
-          { error: `Cannot approve a request with status '${swapRequest.status}'` },
-          { status: 400 }
-        )
+        return err(`Cannot approve a request with status '${swapRequest.status}'`)
       }
     } else {
       if (swapRequest.status !== 'accepted') {
-        return NextResponse.json(
-          { error: `Cannot approve a ${requestType} request with status '${swapRequest.status}'. Employee must accept first.` },
-          { status: 400 }
-        )
+        return err(`Cannot approve a ${requestType} request with status '${swapRequest.status}'. Employee must accept first.`)
       }
 
       if (!swapRequest.requestedToEmployeeId) {
-        return NextResponse.json(
-          { error: `Cannot approve: no target employee assigned to this ${requestType} request` },
-          { status: 400 }
-        )
+        return err(`Cannot approve: no target employee assigned to this ${requestType} request`)
       }
     }
 
@@ -123,7 +115,7 @@ export const POST = withVenue(withAuth(async function POST(
         await queueIfOutageOrFail('ShiftSwapRequest', locationId, requestId, 'UPDATE')
       } catch (err) {
         if (err instanceof OutageQueueFullError) {
-          return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+          return err('Service temporarily unavailable — outage queue full', 507)
         }
         throw err
       }
@@ -139,7 +131,7 @@ export const POST = withVenue(withAuth(async function POST(
         shiftId: swapRequest.shiftId,
       }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
 
-      return NextResponse.json({ data: { request: updatedRequest, shift: updatedShift } })
+      return ok({ request: updatedRequest, shift: updatedShift })
     }
 
     // Swap or Cover: reassign the shift to the new employee
@@ -181,7 +173,7 @@ export const POST = withVenue(withAuth(async function POST(
       await queueIfOutageOrFail('ShiftSwapRequest', locationId, requestId, 'UPDATE')
     } catch (err) {
       if (err instanceof OutageQueueFullError) {
-        return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+        return err('Service temporarily unavailable — outage queue full', 507)
       }
       throw err
     }
@@ -198,9 +190,9 @@ export const POST = withVenue(withAuth(async function POST(
       shiftId: swapRequest.shiftId,
     }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
 
-    return NextResponse.json({ data: { request: updatedRequest, shift: updatedShift } })
+    return ok({ request: updatedRequest, shift: updatedShift })
   } catch (error) {
     console.error('Failed to approve request:', error)
-    return NextResponse.json({ error: 'Failed to approve request' }, { status: 500 })
+    return err('Failed to approve request', 500)
   }
 }))

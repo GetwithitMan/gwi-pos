@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { getActorFromRequest } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
@@ -6,6 +6,7 @@ import { parseSettings, DEFAULT_CATERING } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 import { emitToLocation } from '@/lib/socket-server'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok } from '@/lib/api-response'
 const log = createChildLogger('catering')
 
 // Volume discount tiers: quantity threshold -> discount percent
@@ -29,7 +30,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const offset = parseInt(searchParams.get('offset') || '0', 10)
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // Build raw SQL query (CateringOrder is a raw table, not in Prisma schema)
@@ -90,15 +91,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }),
     )
 
-    return NextResponse.json({
-      data: {
+    return ok({
         orders: ordersWithItems,
         pagination: { total: totalCount, limit, offset },
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to list catering orders:', error)
-    return NextResponse.json({ error: 'Failed to list catering orders' }, { status: 500 })
+    return err('Failed to list catering orders', 500)
   }
 })
 
@@ -139,10 +138,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     if (!locationId || !customerName || !eventDate || !items?.length) {
-      return NextResponse.json(
-        { error: 'locationId, customerName, eventDate, and items are required' },
-        { status: 400 },
-      )
+      return err('locationId, customerName, eventDate, and items are required')
     }
 
     const actor = await getActorFromRequest(request)
@@ -157,18 +153,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const now = new Date()
     const daysDiff = Math.ceil((eventDateObj.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
     if (daysDiff < cateringConfig.minAdvanceDays) {
-      return NextResponse.json(
-        { error: `Catering orders require at least ${cateringConfig.minAdvanceDays} days advance notice` },
-        { status: 400 },
-      )
+      return err(`Catering orders require at least ${cateringConfig.minAdvanceDays} days advance notice`)
     }
 
     // Validate guest count
     if (guestCount > cateringConfig.maxGuestCount) {
-      return NextResponse.json(
-        { error: `Guest count cannot exceed ${cateringConfig.maxGuestCount}` },
-        { status: 400 },
-      )
+      return err(`Guest count cannot exceed ${cateringConfig.maxGuestCount}`)
     }
 
     // Resolve menu item prices if menuItemId provided
@@ -212,10 +202,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Validate minimum order amount
     if (discountedSubtotal < cateringConfig.minOrderAmount) {
-      return NextResponse.json(
-        { error: `Minimum catering order is $${cateringConfig.minOrderAmount.toFixed(2)}` },
-        { status: 400 },
-      )
+      return err(`Minimum catering order is $${cateringConfig.minOrderAmount.toFixed(2)}`)
     }
 
     // Calculate service fee, delivery fee, tax
@@ -296,8 +283,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     void emitToLocation(locationId, 'orders:list-changed', { trigger: 'mutation', locationId }).catch(err => log.warn({ err }, 'socket emit failed'))
 
-    return NextResponse.json({
-      data: {
+    return ok({
         id: orderId,
         status: 'inquiry',
         customerName,
@@ -312,10 +298,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         depositRequired,
         depositPaid: 0,
         items: resolvedItems,
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to create catering order:', error)
-    return NextResponse.json({ error: 'Failed to create catering order' }, { status: 500 })
+    return err('Failed to create catering order', 500)
   }
 })

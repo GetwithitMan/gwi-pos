@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { err, ok } from '@/lib/api-response'
 
 // POST - Create a digital receipt (called after payment)
 export const POST = withVenue(withAuth(async function POST(request: NextRequest) {
@@ -12,7 +13,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     const { locationId, orderId, paymentId, receiptData, signatureData, signatureSource } = body
 
     if (!locationId || !orderId || !paymentId || !receiptData) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+      return err('Missing required fields')
     }
 
     const receipt = await db.digitalReceipt.create({
@@ -30,14 +31,14 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     void notifyDataChanged({ locationId, domain: 'orders', action: 'updated' })
     void pushUpstream()
 
-    return NextResponse.json({ data: { id: receipt.id } })
+    return ok({ id: receipt.id })
   } catch (error) {
     // Handle unique constraint (duplicate orderId)
     if (error instanceof Error && error.message.includes('Unique constraint')) {
-      return NextResponse.json({ error: 'Receipt already exists for this order' }, { status: 409 })
+      return err('Receipt already exists for this order', 409)
     }
     console.error('Failed to create receipt:', error)
-    return NextResponse.json({ error: 'Failed to create receipt' }, { status: 500 })
+    return err('Failed to create receipt', 500)
   }
 }))
 
@@ -54,7 +55,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const offset = parseInt(searchParams.get('offset') || '0', 10)
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Missing locationId' }, { status: 400 })
+      return err('Missing locationId')
     }
 
     const where: Record<string, unknown> = { locationId, deletedAt: null }
@@ -90,8 +91,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     const total = await db.digitalReceipt.count({ where })
 
-    return NextResponse.json({
-      data: receipts.map(r => ({
+    return ok(receipts.map(r => ({
         id: r.id,
         orderId: r.orderId,
         paymentId: r.paymentId,
@@ -99,13 +99,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         signatureSource: r.signatureSource,
         archivedAt: r.archivedAt?.toISOString(),
         createdAt: r.createdAt.toISOString(),
-      })),
-      total,
-      limit,
-      offset,
-    })
+      })))
   } catch (error) {
     console.error('Failed to search receipts:', error)
-    return NextResponse.json({ error: 'Failed to search receipts' }, { status: 500 })
+    return err('Failed to search receipts', 500)
   }
 })

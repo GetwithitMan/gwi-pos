@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { testPrinterConnection } from '@/lib/printer-connection'
 import { executeHardwareCommand } from '@/lib/hardware-command'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // POST test printer connection
 export const POST = withVenue(withAuth('ADMIN', async function POST(
@@ -18,7 +19,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     })
 
     if (!printer) {
-      return NextResponse.json({ error: 'Printer not found' }, { status: 404 })
+      return notFound('Printer not found')
     }
 
     // Cloud mode: route through NUC via HardwareCommand
@@ -40,7 +41,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
         })
       }
 
-      return NextResponse.json({ data: {
+      return ok({
         success: result.success,
         responseTime: result.resultPayload?.responseTime,
         error: result.error || result.resultPayload?.error,
@@ -50,7 +51,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
           ipAddress: printer.ipAddress,
           port: printer.port,
         },
-      } })
+      })
     }
 
     // Test the connection
@@ -65,7 +66,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
       },
     })
 
-    return NextResponse.json({ data: {
+    return ok({
       success: result.success,
       responseTime: result.responseTime,
       error: result.error,
@@ -75,9 +76,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
         ipAddress: printer.ipAddress,
         port: printer.port,
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to ping printer:', error)
-    return NextResponse.json({ error: 'Failed to ping printer' }, { status: 500 })
+    return err('Failed to ping printer', 500)
   }
 }))

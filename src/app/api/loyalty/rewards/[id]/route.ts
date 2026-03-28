@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET /api/loyalty/rewards/[id] — fetch a single reward
 export const GET = withVenue(async function GET(
@@ -15,7 +16,7 @@ export const GET = withVenue(async function GET(
     const locationId = searchParams.get('locationId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // ── Permission check ──────────────────────────────────────────────
@@ -39,16 +40,16 @@ export const GET = withVenue(async function GET(
     )
 
     if (rows.length === 0) {
-      return NextResponse.json({ error: 'Reward not found' }, { status: 404 })
+      return notFound('Reward not found')
     }
 
-    return NextResponse.json({ data: rows[0] })
+    return ok(rows[0])
   } catch (error: any) {
     if (error?.message?.includes('does not exist') || error?.code === '42P01') {
-      return NextResponse.json({ error: 'Loyalty system not yet configured. Please run database migrations.' }, { status: 503 })
+      return err('Loyalty system not yet configured. Please run database migrations.', 503)
     }
     console.error('Failed to fetch loyalty reward:', error)
-    return NextResponse.json({ error: 'Failed to fetch loyalty reward' }, { status: 500 })
+    return err('Failed to fetch loyalty reward', 500)
   }
 })
 
@@ -67,7 +68,7 @@ export const PATCH = withVenue(async function PATCH(
     const locationId = actor.locationId || body.locationId
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // ── Permission check ──────────────────────────────────────────────
@@ -88,7 +89,7 @@ export const PATCH = withVenue(async function PATCH(
     )
 
     if (existing.length === 0) {
-      return NextResponse.json({ error: 'Reward not found' }, { status: 404 })
+      return notFound('Reward not found')
     }
 
     // ── Build dynamic SET clause ──────────────────────────────────────
@@ -129,20 +130,17 @@ export const PATCH = withVenue(async function PATCH(
 
     // Validate rewardType if being updated
     if ('rewardType' in body && !VALID_REWARD_TYPES.includes(body.rewardType)) {
-      return NextResponse.json(
-        { error: `rewardType must be one of: ${VALID_REWARD_TYPES.join(', ')}` },
-        { status: 400 },
-      )
+      return err(`rewardType must be one of: ${VALID_REWARD_TYPES.join(', ')}`)
     }
 
     // Validate pointCost if being updated
     if ('pointCost' in body && (typeof body.pointCost !== 'number' || body.pointCost <= 0)) {
-      return NextResponse.json({ error: 'pointCost must be greater than 0' }, { status: 400 })
+      return err('pointCost must be greater than 0')
     }
 
     if (setClauses.length === 1) {
       // Only "updatedAt" — nothing to update
-      return NextResponse.json({ error: 'No fields to update' }, { status: 400 })
+      return err('No fields to update')
     }
 
     // Add WHERE params
@@ -161,13 +159,13 @@ export const PATCH = withVenue(async function PATCH(
       id,
     )
 
-    return NextResponse.json({ data: updated[0] })
+    return ok(updated[0])
   } catch (error: any) {
     if (error?.message?.includes('does not exist') || error?.code === '42P01') {
-      return NextResponse.json({ error: 'Loyalty system not yet configured. Please run database migrations.' }, { status: 503 })
+      return err('Loyalty system not yet configured. Please run database migrations.', 503)
     }
     console.error('Failed to update loyalty reward:', error)
-    return NextResponse.json({ error: 'Failed to update loyalty reward' }, { status: 500 })
+    return err('Failed to update loyalty reward', 500)
   }
 })
 
@@ -182,7 +180,7 @@ export const DELETE = withVenue(async function DELETE(
     const locationId = searchParams.get('locationId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // ── Permission check ──────────────────────────────────────────────
@@ -207,15 +205,15 @@ export const DELETE = withVenue(async function DELETE(
     )
 
     if (result === 0) {
-      return NextResponse.json({ error: 'Reward not found' }, { status: 404 })
+      return notFound('Reward not found')
     }
 
-    return NextResponse.json({ success: true })
+    return ok({ success: true })
   } catch (error: any) {
     if (error?.message?.includes('does not exist') || error?.code === '42P01') {
-      return NextResponse.json({ error: 'Loyalty system not yet configured. Please run database migrations.' }, { status: 503 })
+      return err('Loyalty system not yet configured. Please run database migrations.', 503)
     }
     console.error('Failed to delete loyalty reward:', error)
-    return NextResponse.json({ error: 'Failed to delete loyalty reward' }, { status: 500 })
+    return err('Failed to delete loyalty reward', 500)
   }
 })

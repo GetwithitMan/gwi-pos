@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { getActorFromRequest } from '@/lib/api-auth'
@@ -9,6 +9,7 @@ import { exportToCSV } from '@/lib/accounting/csv-exporter'
 import { exportToIIF } from '@/lib/accounting/quickbooks-exporter'
 import { exportToXeroCSV } from '@/lib/accounting/xero-exporter'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok } from '@/lib/api-response'
 const log = createChildLogger('accounting-export')
 
 /**
@@ -24,28 +25,27 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const locationId = searchParams.get('locationId')
 
     if (!date) {
-      return NextResponse.json({ error: 'date query parameter is required (YYYY-MM-DD)' }, { status: 400 })
+      return err('date query parameter is required (YYYY-MM-DD)')
     }
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId query parameter is required' }, { status: 400 })
+      return err('locationId query parameter is required')
     }
 
     // Validate date format
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      return NextResponse.json({ error: 'date must be in YYYY-MM-DD format' }, { status: 400 })
+      return err('date must be in YYYY-MM-DD format')
     }
 
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.REPORTS_SALES)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     const journal = await generateDailySalesJournal(db as any, locationId, date)
 
-    return NextResponse.json({
-      data: {
+    return ok({
         date: journal.date,
         entries: journal.entries,
         totalDebits: journal.totalDebits,
@@ -53,14 +53,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         isBalanced: journal.isBalanced,
         summary: journal.summary,
         entryCount: journal.entries.length,
-      },
-    })
+      })
   } catch (error) {
     console.error('[Accounting Export] Preview failed:', error)
-    return NextResponse.json(
-      { error: 'Failed to generate journal preview' },
-      { status: 500 }
-    )
+    return err('Failed to generate journal preview', 500)
   }
 })
 
@@ -80,28 +76,22 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     if (!date || !format || !locationId) {
-      return NextResponse.json(
-        { error: 'date, format, and locationId are required' },
-        { status: 400 }
-      )
+      return err('date, format, and locationId are required')
     }
 
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      return NextResponse.json({ error: 'date must be in YYYY-MM-DD format' }, { status: 400 })
+      return err('date must be in YYYY-MM-DD format')
     }
 
     const validFormats = ['csv', 'quickbooks_iif', 'xero_csv', 'json']
     if (!validFormats.includes(format)) {
-      return NextResponse.json(
-        { error: `format must be one of: ${validFormats.join(', ')}` },
-        { status: 400 }
-      )
+      return err(`format must be one of: ${validFormats.join(', ')}`)
     }
 
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.REPORTS_SALES)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Generate journal
@@ -189,9 +179,6 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
   } catch (error) {
     console.error('[Accounting Export] Export failed:', error)
-    return NextResponse.json(
-      { error: 'Failed to export journal' },
-      { status: 500 }
-    )
+    return err('Failed to export journal', 500)
   }
 })

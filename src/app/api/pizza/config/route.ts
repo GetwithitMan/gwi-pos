@@ -1,17 +1,18 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { getLocationId } from '@/lib/location-cache'
 import { PizzaPrintSettings } from '@/types/print'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, ok } from '@/lib/api-response'
 
 // GET /api/pizza/config - Get pizza configuration for location
 export const GET = withVenue(async function GET() {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     let config = await db.pizzaConfig.findUnique({
@@ -43,7 +44,7 @@ export const GET = withVenue(async function GET() {
       pushUpstream()
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       ...config,
       sectionOptions: config.sectionOptions as number[],
       hybridPricing: config.hybridPricing as Record<string, number> | null,
@@ -55,10 +56,10 @@ export const GET = withVenue(async function GET() {
       allowModeSwitch: config.allowModeSwitch ?? true,
       allowCondimentSections: config.allowCondimentSections,
       condimentDivisionMax: config.condimentDivisionMax,
-    } })
+    })
   } catch (error) {
     console.error('Failed to get pizza config:', error)
-    return NextResponse.json({ error: 'Failed to get pizza config' }, { status: 500 })
+    return err('Failed to get pizza config', 500)
   }
 })
 
@@ -68,7 +69,7 @@ export const PATCH = withVenue(withAuth('ADMIN', async function PATCH(request: N
     const body = await request.json()
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const config = await db.pizzaConfig.upsert({
@@ -121,7 +122,7 @@ export const PATCH = withVenue(withAuth('ADMIN', async function PATCH(request: N
     })
     pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       ...config,
       sectionOptions: config.sectionOptions as number[],
       hybridPricing: config.hybridPricing as Record<string, number> | null,
@@ -133,9 +134,9 @@ export const PATCH = withVenue(withAuth('ADMIN', async function PATCH(request: N
       allowModeSwitch: config.allowModeSwitch ?? true,
       allowCondimentSections: config.allowCondimentSections,
       condimentDivisionMax: config.condimentDivisionMax,
-    } })
+    })
   } catch (error) {
     console.error('Failed to update pizza config:', error)
-    return NextResponse.json({ error: 'Failed to update pizza config' }, { status: 500 })
+    return err('Failed to update pizza config', 500)
   }
 }))

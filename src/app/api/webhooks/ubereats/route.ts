@@ -16,7 +16,7 @@
  * No auth (public endpoint) — validated by HMAC signature.
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import {
   validateHmacSignature,
   resolveLocationForWebhook,
@@ -33,6 +33,7 @@ import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 import { getPlatformClient } from '@/lib/delivery/clients/platform-registry'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok, unauthorized } from '@/lib/api-response'
 const log = createChildLogger('webhooks-ubereats')
 
 export async function POST(request: NextRequest) {
@@ -41,7 +42,7 @@ export async function POST(request: NextRequest) {
   try {
     payload = JSON.parse(rawBody)
   } catch {
-    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+    return err('Invalid JSON')
   }
 
   const eventType = String(payload.event_type || payload.resource_type || '')
@@ -53,7 +54,7 @@ export async function POST(request: NextRequest) {
   const location = await resolveLocationForWebhook('ubereats', storeId || null)
   if (!location) {
     console.error('[ubereats/webhook] No matching location for storeId:', storeId)
-    return NextResponse.json({ received: true })
+    return ok({ received: true })
   }
 
   // ── Fix 4 + 5: Fail closed on missing secret; use clientSecret as HMAC fallback ──
@@ -69,10 +70,10 @@ export async function POST(request: NextRequest) {
   if (!hmacKey) {
     // Fix 4: Fail closed — reject when no secret is configured
     console.error('[ubereats/webhook] CRITICAL: No webhookSecret or clientSecret configured — rejecting request.', location.locationId)
-    return NextResponse.json({ error: 'Webhook secret not configured' }, { status: 401 })
+    return unauthorized('Webhook secret not configured')
   } else if (!validateHmacSignature(rawBody, signature, hmacKey)) {
     console.error('[ubereats/webhook] HMAC validation failed')
-    return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+    return unauthorized('Invalid signature')
   }
 
   const { locationId } = location
@@ -87,7 +88,7 @@ export async function POST(request: NextRequest) {
         const orderId = String(meta.resource_id || meta.order_id || payload.order_id || '')
         if (!orderId) {
           console.warn('[ubereats/webhook] orders.notification with no resource_id — ignoring')
-          return NextResponse.json({ received: true })
+          return ok({ received: true })
         }
 
         // Fetch the full order from UberEats API
@@ -169,7 +170,7 @@ export async function POST(request: NextRequest) {
         })
 
         if (result.isDuplicate) {
-          return NextResponse.json({ received: true, duplicate: true })
+          return ok({ received: true, duplicate: true })
         }
 
         // Push third-party order upstream immediately so it survives NUC crash
@@ -258,9 +259,9 @@ export async function POST(request: NextRequest) {
         console.warn(`[ubereats/webhook] Unknown event type: ${eventType}`)
     }
 
-    return NextResponse.json({ received: true })
+    return ok({ received: true })
   } catch (error) {
     console.error('[ubereats/webhook] Error processing webhook:', error)
-    return NextResponse.json({ received: true })
+    return ok({ received: true })
   }
 }

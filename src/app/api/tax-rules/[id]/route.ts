@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db as prisma } from '@/lib/db'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
@@ -9,6 +9,7 @@ import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { dispatchSettingsUpdated } from '@/lib/socket-dispatch'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('tax-rules')
 
 // GET - Get a single tax rule
@@ -22,10 +23,10 @@ export const GET = withVenue(async function GET(
     const taxRule = await prisma.taxRule.findUnique({ where: { id } })
 
     if (!taxRule) {
-      return NextResponse.json({ error: 'Tax rule not found' }, { status: 404 })
+      return notFound('Tax rule not found')
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       taxRule: {
         id: taxRule.id,
         name: taxRule.name,
@@ -39,10 +40,10 @@ export const GET = withVenue(async function GET(
         isCompounded: taxRule.isCompounded,
         isActive: taxRule.isActive,
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch tax rule:', error)
-    return NextResponse.json({ error: 'Failed to fetch tax rule' }, { status: 500 })
+    return err('Failed to fetch tax rule', 500)
   }
 })
 
@@ -57,14 +58,14 @@ export const PUT = withVenue(async function PUT(
 
     const existing = await prisma.taxRule.findUnique({ where: { id } })
     if (!existing) {
-      return NextResponse.json({ error: 'Tax rule not found' }, { status: 404 })
+      return notFound('Tax rule not found')
     }
 
     // Require settings.tax permission — modifying tax rules is a sensitive operation
     const actor = await getActorFromRequest(request)
     const resolvedEmployeeId = actor.employeeId ?? body.employeeId
     const authResult = await requirePermission(resolvedEmployeeId, existing.locationId, PERMISSIONS.SETTINGS_TAX)
-    if (!authResult.authorized) return NextResponse.json({ error: authResult.error }, { status: authResult.status })
+    if (!authResult.authorized) return err(authResult.error, authResult.status)
 
     const taxRule = await prisma.taxRule.update({
       where: { id },
@@ -90,7 +91,7 @@ export const PUT = withVenue(async function PUT(
     void notifyDataChanged({ locationId: existing.locationId, domain: 'tax', action: 'updated', entityId: taxRule.id })
     void pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       taxRule: {
         id: taxRule.id,
         name: taxRule.name,
@@ -99,10 +100,10 @@ export const PUT = withVenue(async function PUT(
         appliesTo: taxRule.appliesTo,
         isActive: taxRule.isActive,
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to update tax rule:', error)
-    return NextResponse.json({ error: 'Failed to update tax rule' }, { status: 500 })
+    return err('Failed to update tax rule', 500)
   }
 })
 
@@ -116,14 +117,14 @@ export const DELETE = withVenue(async function DELETE(
 
     const taxRule = await prisma.taxRule.findUnique({ where: { id } })
     if (!taxRule) {
-      return NextResponse.json({ error: 'Tax rule not found' }, { status: 404 })
+      return notFound('Tax rule not found')
     }
 
     // Require settings.tax permission — deleting tax rules is a sensitive operation
     const actor = await getActorFromRequest(request)
     const resolvedEmployeeId = actor.employeeId ?? null
     const authResult = await requirePermission(resolvedEmployeeId, taxRule.locationId, PERMISSIONS.SETTINGS_TAX)
-    if (!authResult.authorized) return NextResponse.json({ error: authResult.error }, { status: authResult.status })
+    if (!authResult.authorized) return err(authResult.error, authResult.status)
 
     await prisma.taxRule.update({ where: { id }, data: { deletedAt: new Date() } })
     await syncTaxRateToSettings(taxRule.locationId)
@@ -135,9 +136,9 @@ export const DELETE = withVenue(async function DELETE(
     void notifyDataChanged({ locationId: taxRule.locationId, domain: 'tax', action: 'deleted', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Failed to delete tax rule:', error)
-    return NextResponse.json({ error: 'Failed to delete tax rule' }, { status: 500 })
+    return err('Failed to delete tax rule', 500)
   }
 })

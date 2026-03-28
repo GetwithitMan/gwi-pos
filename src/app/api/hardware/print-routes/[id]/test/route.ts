@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, ok } from '@/lib/api-response'
 
 // POST - Test a print route configuration
 // Validates that the route is properly configured and its printer(s) are reachable
@@ -21,10 +22,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     })
 
     if (!route) {
-      return NextResponse.json(
-        { success: false, error: 'Print route not found' },
-        { status: 404 }
-      )
+      return err('Print route not found')
     }
 
     const issues: string[] = []
@@ -108,7 +106,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
 
     const success = issues.length === 0
 
-    return NextResponse.json({ data: {
+    return ok({
       success,
       route: {
         id: route.id,
@@ -127,12 +125,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
         : null,
       issues,
       warnings,
-    } })
+    })
   } catch (error) {
     console.error('Failed to test print route:', error)
-    return NextResponse.json(
-      { success: false, error: 'Failed to test print route' },
-      { status: 500 }
-    )
+    return err('Failed to test print route')
   }
 }))

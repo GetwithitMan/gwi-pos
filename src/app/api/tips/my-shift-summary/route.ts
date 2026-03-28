@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { err, ok } from '@/lib/api-response'
 
 /**
  * GET /api/tips/my-shift-summary
@@ -42,16 +43,13 @@ export const GET = withVenue(withAuth({ allowCellular: true }, async function GE
     const date = searchParams.get('date')   // YYYY-MM-DD
 
     if (!employeeId || !locationId || !date) {
-      return NextResponse.json(
-        { error: 'employeeId, locationId, and date are required' },
-        { status: 400 }
-      )
+      return err('employeeId, locationId, and date are required')
     }
 
     // Auth check
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.POS_ACCESS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Parse the business day window: midnight to midnight local is fine for this query
     const dayStart = new Date(`${date}T00:00:00`)
@@ -113,9 +111,7 @@ export const GET = withVenue(withAuth({ allowCellular: true }, async function GE
     })
 
     if (memberships.length === 0) {
-      return NextResponse.json({
-        data: { hasGroup: false, groups: [], totalGroupEarnedCents: 0 },
-      })
+      return ok({ hasGroup: false, groups: [], totalGroupEarnedCents: 0 })
     }
 
     // 3. For each group, compute total earned from TipLedgerEntry
@@ -164,18 +160,13 @@ export const GET = withVenue(withAuth({ allowCellular: true }, async function GE
       }
     })
 
-    return NextResponse.json({
-      data: {
+    return ok({
         hasGroup: true,
         groups,
         totalGroupEarnedCents,
-      },
-    })
+      })
   } catch (error) {
     console.error('[my-shift-summary] Failed:', error)
-    return NextResponse.json(
-      { error: 'Failed to load shift tip summary' },
-      { status: 500 }
-    )
+    return err('Failed to load shift tip summary', 500)
   }
 }))

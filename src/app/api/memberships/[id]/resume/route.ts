@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
@@ -6,6 +6,7 @@ import { assertStatusTransition } from '@/lib/membership/state-machine'
 import { MembershipStatus, MembershipEventType } from '@/lib/membership/types'
 import { dispatchMembershipUpdate } from '@/lib/socket-dispatch'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('memberships-resume')
 
 export const POST = withVenue(async function POST(
@@ -17,24 +18,24 @@ export const POST = withVenue(async function POST(
     const body = await request.json()
     const { locationId, requestingEmployeeId } = body
 
-    if (!locationId) return NextResponse.json({ error: 'locationId required' }, { status: 400 })
+    if (!locationId) return err('locationId required')
 
     const auth = await requirePermission(requestingEmployeeId, locationId, 'admin.manage_memberships')
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const rows: any[] = await db.$queryRawUnsafe(`
       SELECT "id", "status", "billingCycle", "customerId" FROM "Membership"
       WHERE "id" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
       LIMIT 1
     `, id, locationId)
-    if (rows.length === 0) return NextResponse.json({ error: 'Membership not found' }, { status: 404 })
+    if (rows.length === 0) return notFound('Membership not found')
 
     const mbr = rows[0]
 
     try {
       assertStatusTransition(mbr.status as MembershipStatus, MembershipStatus.ACTIVE)
     } catch {
-      return NextResponse.json({ error: `Cannot resume from status: ${mbr.status}` }, { status: 422 })
+      return err(`Cannot resume from status: ${mbr.status}`, 422)
     }
 
     // Resume starts a fresh cycle: nextBillingDate = NOW so cron picks it up
@@ -64,10 +65,10 @@ export const POST = withVenue(async function POST(
       action: 'resumed', membershipId: id, customerId: mbr.customerId,
     }).catch(err => log.warn({ err }, 'Background task failed'))
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (err) {
     console.error('[memberships/resume] error:', err)
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
+    return err('Internal error', 500)
   }
 })
 

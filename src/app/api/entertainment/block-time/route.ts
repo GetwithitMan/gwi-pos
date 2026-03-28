@@ -5,6 +5,7 @@ import { dispatchFloorPlanUpdate, dispatchEntertainmentStatusChanged, dispatchEn
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import type { OvertimeConfig } from '@/lib/entertainment-pricing'
+import { err, forbidden, notFound, ok } from '@/lib/api-response'
 
 import { recalculateOrderTotals } from '@/lib/domain/order-items'
 import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
@@ -91,12 +92,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     const validationError = validateStartRequest({ orderItemId, locationId, minutes })
     if (validationError) {
-      return NextResponse.json({ error: validationError }, { status: 400 })
+      return err(validationError)
     }
 
     // Permission check
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.SETTINGS_ENTERTAINMENT)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Get the order item and verify it's an entertainment item
     const orderItem = await OrderItemRepository.getItemByIdWithInclude(orderItemId, locationId, {
@@ -136,10 +137,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     if (!orderItem) {
-      return NextResponse.json(
-        { error: 'Order item not found' },
-        { status: 404 }
-      )
+      return notFound('Order item not found')
     }
 
     const sessionError = validateSessionStart({
@@ -178,17 +176,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     if (result.conflict) {
-      return NextResponse.json(
-        { error: 'This entertainment item is already in use' },
-        { status: 409 }
-      )
+      return err('This entertainment item is already in use', 409)
     }
 
     if (result.waitlistConflict) {
-      return NextResponse.json(
-        { error: `A waitlisted customer${result.notifiedCustomer ? ` (${result.notifiedCustomer})` : ''} has been notified for this item. Seat them first or cancel their waitlist entry.` },
-        { status: 409 }
-      )
+      return err(`A waitlisted customer${result.notifiedCustomer ? ` (${result.notifiedCustomer})` : ''} has been notified for this item. Seat them first or cancel their waitlist entry.`, 409)
     }
 
     const updatedItem = result.updatedItem!
@@ -248,7 +240,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
     }).catch(err => console.error('[entertainment] Audit log failed:', err))
 
-    return NextResponse.json({ data: {
+    return ok({
       orderItem: {
         id: updatedItem.id,
         name: updatedItem.name,
@@ -258,13 +250,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
       overtime: overtimeConfig || null,
       message: `Started ${minutes} minute block time, expires at ${expiresAt.toLocaleTimeString()}`,
-    } })
+    })
   } catch (error) {
     console.error('Failed to start block time:', error)
-    return NextResponse.json(
-      { error: 'Failed to start block time' },
-      { status: 500 }
-    )
+    return err('Failed to start block time', 500)
   }
 })
 
@@ -276,12 +265,12 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
 
     const validationError = validateExtendRequest({ orderItemId, locationId, additionalMinutes })
     if (validationError) {
-      return NextResponse.json({ error: validationError }, { status: 400 })
+      return err(validationError)
     }
 
     // Permission check
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.SETTINGS_ENTERTAINMENT)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Get the order item with menuItem for tier-based price recalculation
     const orderItem = await OrderItemRepository.getItemByIdWithInclude(orderItemId, locationId, {
@@ -320,10 +309,7 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
     })
 
     if (!orderItem) {
-      return NextResponse.json(
-        { error: 'Order item not found' },
-        { status: 404 }
-      )
+      return notFound('Order item not found')
     }
 
     const extendError = validateExtension({
@@ -358,10 +344,7 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
           select: { id: true },
         })
         if (activeWaitlistEntry) {
-          return NextResponse.json(
-            { error: 'Cannot extend — customers are waiting. Finish your session so the next person can play.' },
-            { status: 409 }
-          )
+          return err('Cannot extend — customers are waiting. Finish your session so the next person can play.', 409)
         }
       }
     }
@@ -377,10 +360,7 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
     })
 
     if ('error' in txResult) {
-      return NextResponse.json(
-        { error: txResult.error },
-        { status: 400 }
-      )
+      return err(txResult.error)
     }
 
     const { updatedItem, newExpiresAt, newTotalMinutes, newPrice: tieredPrice } = txResult
@@ -454,7 +434,7 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
       },
     }).catch(err => console.error('[entertainment] Audit log failed:', err))
 
-    return NextResponse.json({ data: {
+    return ok({
       orderItem: {
         id: updatedItem.id,
         name: updatedItem.name,
@@ -463,13 +443,10 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
         expiresAt: updatedItem.blockTimeExpiresAt?.toISOString(),
       },
       message: `Extended by ${additionalMinutes} minutes, new expiration at ${newExpiresAt.toLocaleTimeString()}`,
-    } })
+    })
   } catch (error) {
     console.error('Failed to extend block time:', error)
-    return NextResponse.json(
-      { error: 'Failed to extend block time' },
-      { status: 500 }
-    )
+    return err('Failed to extend block time', 500)
   }
 })
 
@@ -481,12 +458,12 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
 
     const validationError = validateTimeOverrideRequest({ orderItemId, locationId, newExpiresAt })
     if (validationError) {
-      return NextResponse.json({ error: validationError }, { status: 400 })
+      return err(validationError)
     }
 
     // Permission check — manager override requires entertainment permission
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.SETTINGS_ENTERTAINMENT)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const parsedExpiresAt = new Date(newExpiresAt)
 
@@ -515,10 +492,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     })
 
     if (!orderItem) {
-      return NextResponse.json(
-        { error: 'Order item not found' },
-        { status: 404 }
-      )
+      return notFound('Order item not found')
     }
 
     const overrideError = validateTimeOverride({
@@ -613,7 +587,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       },
     }).catch(err => console.error('[entertainment] Audit log failed:', err))
 
-    return NextResponse.json({ data: {
+    return ok({
       orderItem: {
         id: txResult.id,
         name: txResult.name,
@@ -624,13 +598,10 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       oldExpiresAt: oldExpiresAt?.toISOString() || null,
       newPrice,
       message: `Time overridden. New duration: ${newDurationMinutes} minutes, expires at ${parsedExpiresAt.toLocaleTimeString()}. Charge: $${newPrice.toFixed(2)}`,
-    } })
+    })
   } catch (error) {
     console.error('Failed to override block time:', error)
-    return NextResponse.json(
-      { error: 'Failed to override block time' },
-      { status: 500 }
-    )
+    return err('Failed to override block time', 500)
   }
 })
 
@@ -645,7 +616,7 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
 
     const validationError = validateStopRequest({ orderItemId: orderItemIdParam, locationId: locationIdParam })
     if (validationError) {
-      return NextResponse.json({ error: validationError }, { status: 400 })
+      return err(validationError)
     }
 
     // After validation, these are guaranteed non-null
@@ -654,7 +625,7 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
 
     // Permission check
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.SETTINGS_ENTERTAINMENT)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Get the order item
     const orderItem = await OrderItemRepository.getItemByIdWithInclude(orderItemId, locationId, {
@@ -692,10 +663,7 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
     })
 
     if (!orderItem) {
-      return NextResponse.json(
-        { error: 'Order item not found' },
-        { status: 404 }
-      )
+      return notFound('Order item not found')
     }
 
     const stopError = validateStopSession({
@@ -703,7 +671,7 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
       requestLocationId: locationId,
     })
     if (stopError) {
-      return NextResponse.json({ error: stopError }, { status: 403 })
+      return forbidden(stopError)
     }
 
     // Use an interactive transaction with FOR UPDATE to prevent race conditions
@@ -723,11 +691,11 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
 
     // If already processed by cron or another terminal, return idempotent success
     if (txResult.alreadyProcessed) {
-      return NextResponse.json({ data: {
+      return ok({
         success: true,
         alreadyProcessed: true,
         message: 'Session was already stopped',
-      } })
+      })
     }
 
     const { actualMinutes, calculatedCharge, breakdown, overtimeBreakdown, updatedMenuItem } = txResult
@@ -823,7 +791,7 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
       message = `Stopped session. ${actualMinutes} minutes used. Charge: $${calculatedCharge.toFixed(2)}${overtimeBreakdown ? ` (includes $${overtimeBreakdown.overtimeCharge.toFixed(2)} overtime for ${overtimeBreakdown.overtimeMinutes} min)` : ''}`
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       reason,
       actualMinutesUsed: actualMinutes,
@@ -832,12 +800,9 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
       overtimeBreakdown: overtimeBreakdown || null,
       message,
       menuItem: updatedMenuItem,
-    } })
+    })
   } catch (error) {
     console.error('Failed to stop block time:', error)
-    return NextResponse.json(
-      { error: 'Failed to stop block time' },
-      { status: 500 }
-    )
+    return err('Failed to stop block time', 500)
   }
 })

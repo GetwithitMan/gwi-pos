@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - List all payments for an order
 export const GET = withVenue(async function GET(
@@ -20,10 +21,7 @@ export const GET = withVenue(async function GET(
     })
 
     if (!order) {
-      return NextResponse.json(
-        { error: 'Order not found' },
-        { status: 404 }
-      )
+      return notFound('Order not found')
     }
 
     const orderTotal = Number(order.total)
@@ -31,7 +29,7 @@ export const GET = withVenue(async function GET(
       .filter(p => p.status === 'completed')
       .reduce((sum, p) => sum + Number(p.totalAmount), 0)
 
-    return NextResponse.json({ data: {
+    return ok({
       orderId: order.id,
       orderTotal,
       paidAmount,
@@ -58,12 +56,9 @@ export const GET = withVenue(async function GET(
         pricingProgramSnapshot: p.pricingProgramSnapshot ?? null,
         processedAt: p.processedAt.toISOString(),
       })),
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch payments:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch payments' },
-      { status: 500 }
-    )
+    return err('Failed to fetch payments', 500)
   }
 })

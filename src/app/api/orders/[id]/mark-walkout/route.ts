@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission } from '@/lib/api-auth'
@@ -8,6 +8,7 @@ import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-mark-walkout')
 
 // POST - Mark an open tab as a walkout and create retry records
@@ -25,7 +26,7 @@ export const POST = withVenue(async function POST(
     const mutationOrigin = isCellularWalkout ? 'cloud' : 'local'
 
     if (!employeeId) {
-      return NextResponse.json({ error: 'Missing required field: employeeId' }, { status: 400 })
+      return err('Missing required field: employeeId')
     }
 
     const order = await db.order.findFirst({
@@ -39,15 +40,15 @@ export const POST = withVenue(async function POST(
     })
 
     if (!order) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      return notFound('Order not found')
     }
 
     // Require manager void permission — marking a walkout is a high-risk financial action
     const authResult = await requirePermission(employeeId, order.locationId, PERMISSIONS.MGR_VOID_ORDERS)
-    if (!authResult.authorized) return NextResponse.json({ error: authResult.error }, { status: authResult.status })
+    if (!authResult.authorized) return err(authResult.error, authResult.status)
 
     if (order.cards.length === 0) {
-      return NextResponse.json({ error: 'No authorized cards on this tab to retry' }, { status: 400 })
+      return err('No authorized cards on this tab to retry')
     }
 
     const locationId = order.locationId
@@ -109,17 +110,15 @@ export const POST = withVenue(async function POST(
 
     pushUpstream()
 
-    return NextResponse.json({
-      data: {
+    return ok({
         success: true,
         walkoutAt: now.toISOString(),
         amount: tabAmount,
         retries,
         retryEnabled: walkoutRetryEnabled,
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to mark walkout:', error)
-    return NextResponse.json({ error: 'Failed to mark walkout' }, { status: 500 })
+    return err('Failed to mark walkout', 500)
   }
 })

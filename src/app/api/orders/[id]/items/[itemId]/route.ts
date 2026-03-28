@@ -19,6 +19,7 @@ import {
 } from '@/lib/domain/order-items'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-items')
 
 // PUT - Update an order item (seat, course, hold status, kitchen status, etc.)
@@ -39,14 +40,14 @@ export const PUT = withVenue(async function PUT(
     // Resolve locationId for tenant-safe queries
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'Location not found' }, { status: 400 })
+      return err('Location not found')
     }
 
     // Permission check: POS_ACCESS required to edit order items
     const putActor = await getActorFromRequest(request)
     const putEmployeeId = requestingEmployeeId || putActor.employeeId
     const putAuth = await requirePermission(putEmployeeId, locationId, PERMISSIONS.POS_ACCESS)
-    if (!putAuth.authorized) return NextResponse.json({ error: putAuth.error }, { status: putAuth.status })
+    if (!putAuth.authorized) return err(putAuth.error, putAuth.status)
 
     // Verify order exists (tenant-safe via OrderRepository)
     const order = await OrderRepository.getOrderByIdWithInclude(orderId, locationId, {
@@ -57,38 +58,32 @@ export const PUT = withVenue(async function PUT(
     })
 
     if (!order) {
-      return NextResponse.json(
-        { error: 'Order not found' },
-        { status: 404 }
-      )
+      return notFound('Order not found')
     }
 
     // Status + payment guard via domain
     const modCheck = validateOrderModifiable(order.status, order.payments)
     if (!modCheck.valid) {
-      return NextResponse.json({ error: modCheck.error }, { status: modCheck.status })
+      return err(modCheck.error, modCheck.status)
     }
 
     // Validate quantity if provided (Bug 18)
     const qtyCheck = validateUpdateQuantity(body.quantity)
     if (!qtyCheck.valid) {
-      return NextResponse.json({ error: qtyCheck.error }, { status: qtyCheck.status })
+      return err(qtyCheck.error, qtyCheck.status)
     }
 
     // Verify item exists (tenant-safe via OrderItemRepository)
     const item = await OrderItemRepository.getItemById(itemId, locationId)
 
     if (!item) {
-      return NextResponse.json(
-        { error: 'Item not found' },
-        { status: 404 }
-      )
+      return notFound('Item not found')
     }
 
     // Guard: editing a sent item (quantity/notes/price) requires elevated permission
     if (!action && item.kitchenStatus !== 'pending' && requestingEmployeeId) {
       const auth = await requirePermission(requestingEmployeeId as string, order.locationId, PERMISSIONS.MGR_EDIT_SENT_ITEMS)
-      if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+      if (!auth.authorized) return err(auth.error, auth.status)
     }
 
     // Handle actions
@@ -98,7 +93,7 @@ export const PUT = withVenue(async function PUT(
         case 'assign_seat':
           const seatUpdated = await OrderItemRepository.updateItemAndReturn(itemId, locationId, { seatNumber: updateData.seatNumber })
           await OrderRepository.incrementVersion(orderId, locationId)
-          return NextResponse.json({ data: { success: true, item: seatUpdated } })
+          return ok({ success: true, item: seatUpdated })
 
         // Course Firing (Skill 12)
         case 'assign_course':
@@ -107,7 +102,7 @@ export const PUT = withVenue(async function PUT(
             courseStatus: 'pending',
           })
           await OrderRepository.incrementVersion(orderId, locationId)
-          return NextResponse.json({ data: { success: true, item: courseUpdated } })
+          return ok({ success: true, item: courseUpdated })
 
         case 'fire_course':
           // Fire this item's course (mark as fired)
@@ -131,7 +126,7 @@ export const PUT = withVenue(async function PUT(
 
           await OrderRepository.incrementVersion(orderId, locationId)
           pushUpstream()
-          return NextResponse.json({ data: { success: true, item: fired } })
+          return ok({ success: true, item: fired })
 
         case 'mark_ready':
           // Kitchen marks item as ready
@@ -141,7 +136,7 @@ export const PUT = withVenue(async function PUT(
           })
           await OrderRepository.incrementVersion(orderId, locationId)
           pushUpstream()
-          return NextResponse.json({ data: { success: true, item: ready } })
+          return ok({ success: true, item: ready })
 
         case 'mark_served':
           // Server marks item as served
@@ -151,7 +146,7 @@ export const PUT = withVenue(async function PUT(
           })
           await OrderRepository.incrementVersion(orderId, locationId)
           pushUpstream()
-          return NextResponse.json({ data: { success: true, item: served } })
+          return ok({ success: true, item: served })
 
         // Hold & Fire (Skill 13)
         case 'hold':
@@ -161,7 +156,7 @@ export const PUT = withVenue(async function PUT(
           })
           await OrderRepository.incrementVersion(orderId, locationId)
           pushUpstream()
-          return NextResponse.json({ data: { success: true, item: held } })
+          return ok({ success: true, item: held })
 
         case 'fire':
           // Fire a held item immediately
@@ -173,7 +168,7 @@ export const PUT = withVenue(async function PUT(
           })
           await OrderRepository.incrementVersion(orderId, locationId)
           pushUpstream()
-          return NextResponse.json({ data: { success: true, item: firedItem } })
+          return ok({ success: true, item: firedItem })
 
         case 'release':
           // Release hold without firing (item goes back to pending)
@@ -183,13 +178,10 @@ export const PUT = withVenue(async function PUT(
           })
           await OrderRepository.incrementVersion(orderId, locationId)
           pushUpstream()
-          return NextResponse.json({ data: { success: true, item: released } })
+          return ok({ success: true, item: released })
 
         default:
-          return NextResponse.json(
-            { error: 'Invalid action' },
-            { status: 400 }
-          )
+          return err('Invalid action')
       }
     }
 
@@ -272,7 +264,7 @@ export const PUT = withVenue(async function PUT(
 
       pushUpstream()
 
-      return NextResponse.json({ data: mapOrderForResponse(txResult) })
+      return ok(mapOrderForResponse(txResult))
     }
 
     // Non-quantity update (no total recalculation needed, no lock required)
@@ -317,7 +309,7 @@ export const PUT = withVenue(async function PUT(
 
     pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       item: {
         ...updated,
@@ -329,13 +321,10 @@ export const PUT = withVenue(async function PUT(
           price: Number(m.price),
         })),
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to update order item:', error)
-    return NextResponse.json(
-      { error: 'Failed to update order item' },
-      { status: 500 }
-    )
+    return err('Failed to update order item', 500)
   }
 })
 
@@ -354,7 +343,7 @@ export const DELETE = withVenue(async function DELETE(
     // Resolve locationId for tenant-safe queries
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'Location not found' }, { status: 400 })
+      return err('Location not found')
     }
 
     const result = await db.$transaction(async (tx) => {
@@ -373,13 +362,13 @@ export const DELETE = withVenue(async function DELETE(
       }, tx)
 
       if (!order) {
-        return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+        return notFound('Order not found')
       }
 
       // Status + payment guard via domain
       const modCheck = validateOrderModifiable(order.status, order.payments)
       if (!modCheck.valid) {
-        return NextResponse.json({ error: modCheck.error }, { status: modCheck.status })
+        return err(modCheck.error, modCheck.status)
       }
 
       // Verify item exists and belongs to this order (tenant-safe via OrderItemRepository)
@@ -388,14 +377,14 @@ export const DELETE = withVenue(async function DELETE(
       }, tx)
 
       if (!item) {
-        return NextResponse.json({ error: 'Item not found' }, { status: 404 })
+        return notFound('Item not found')
       }
 
       // Permission check — require POS access to delete items
       const deleteActor = await getActorFromRequest(request)
       const employeeId = request.nextUrl.searchParams.get('employeeId') || deleteActor.employeeId
       const deleteAuth = await requirePermission(employeeId, order.locationId, PERMISSIONS.POS_ACCESS)
-      if (!deleteAuth.authorized) return NextResponse.json({ error: deleteAuth.error }, { status: deleteAuth.status })
+      if (!deleteAuth.authorized) return err(deleteAuth.error, deleteAuth.status)
 
       // Validate item is deletable (pending kitchen status, active status) via domain
       const delCheck = validateItemDeletable(item)
@@ -475,7 +464,7 @@ export const DELETE = withVenue(async function DELETE(
         orderId: order.id,
       }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.items.itemId'))
 
-      return NextResponse.json({ data: mapOrderForResponse(updatedOrder) })
+      return ok(mapOrderForResponse(updatedOrder))
     })
 
     pushUpstream()
@@ -483,9 +472,6 @@ export const DELETE = withVenue(async function DELETE(
     return result
   } catch (error) {
     console.error('Failed to delete order item:', error)
-    return NextResponse.json(
-      { error: 'Failed to delete order item' },
-      { status: 500 }
-    )
+    return err('Failed to delete order item', 500)
   }
 })

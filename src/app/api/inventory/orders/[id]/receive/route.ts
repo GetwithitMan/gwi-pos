@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { requirePermission } from '@/lib/api-auth'
@@ -9,6 +9,7 @@ import { autoClear86ForRestockedItems } from '@/lib/inventory'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // POST - Receive items against PO
 export const POST = withVenue(withAuth('ADMIN', async function POST(
@@ -21,16 +22,16 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     const { employeeId, locationId, items, notes, createInvoice } = body
 
     if (!locationId || !employeeId) {
-      return NextResponse.json({ error: 'locationId and employeeId required' }, { status: 400 })
+      return err('locationId and employeeId required')
     }
 
     if (!items?.length) {
-      return NextResponse.json({ error: 'items array required' }, { status: 400 })
+      return err('items array required')
     }
 
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.INVENTORY_MANAGE)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Track items with cost for post-transaction cascade
@@ -268,32 +269,30 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     void notifyDataChanged({ locationId, domain: 'inventory', action: 'updated', entityId: orderId })
     pushUpstream()
 
-    return NextResponse.json({ data: result })
+    return ok(result)
   } catch (error) {
     const message = (error as Error).message
     if (message === 'NOT_FOUND') {
-      return NextResponse.json({ error: 'Purchase order not found' }, { status: 404 })
+      return notFound('Purchase order not found')
     }
     if (message === 'CANCELLED') {
-      return NextResponse.json({ error: 'Cannot receive against a cancelled purchase order' }, { status: 400 })
+      return err('Cannot receive against a cancelled purchase order')
     }
     if (message === 'ALREADY_RECEIVED') {
-      return NextResponse.json({ error: 'Purchase order already fully received' }, { status: 400 })
+      return err('Purchase order already fully received')
     }
     if (message.startsWith('OVER_RECEIVE:')) {
       const [, itemName, max] = message.split(':')
-      return NextResponse.json({ error: `Cannot receive more than ordered. Max remaining for "${itemName}": ${max}` }, { status: 400 })
+      return err(`Cannot receive more than ordered. Max remaining for "${itemName}": ${max}`)
     }
     if (message.startsWith('UNIT_MISMATCH:')) {
       const parts = message.split(':')
       const itemName = parts[1]
       const fromUnit = parts[2]
       const toUnit = parts[3]
-      return NextResponse.json({
-        error: `Cannot convert ${fromUnit} → ${toUnit} for "${itemName}". Set the purchase unit or unitsPerPurchase on the item.`
-      }, { status: 400 })
+      return err(`Cannot convert ${fromUnit} → ${toUnit} for "${itemName}". Set the purchase unit or unitsPerPurchase on the item.`)
     }
     console.error('Receive purchase order error:', error)
-    return NextResponse.json({ error: 'Failed to receive purchase order' }, { status: 500 })
+    return err('Failed to receive purchase order', 500)
   }
 }))

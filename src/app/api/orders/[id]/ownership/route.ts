@@ -7,7 +7,7 @@
  * DELETE - Remove an owner from an order
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { requireAnyPermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import {
@@ -23,6 +23,7 @@ import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { getRequestLocationId } from '@/lib/request-context'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, forbidden, notFound, ok, unauthorized } from '@/lib/api-response'
 
 const log = createChildLogger('orders.id.ownership')
 
@@ -37,37 +38,25 @@ export const GET = withVenue(withAuth({ allowCellular: true }, async function GE
     const locationId = searchParams.get('locationId')
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'locationId is required' },
-        { status: 400 }
-      )
+      return err('locationId is required')
     }
 
     if (!orderId) {
-      return NextResponse.json(
-        { error: 'orderId is required' },
-        { status: 400 }
-      )
+      return err('orderId is required')
     }
 
     // Auth: any authenticated employee can view ownership
     const requestingEmployeeId = request.headers.get('x-employee-id')
     if (!requestingEmployeeId) {
-      return NextResponse.json(
-        { error: 'Employee ID is required' },
-        { status: 401 }
-      )
+      return unauthorized('Employee ID is required')
     }
 
     const ownership = await getActiveOwnership(orderId)
 
-    return NextResponse.json({ data: { ownership } })
+    return ok({ ownership })
   } catch (error) {
     console.error('Failed to get order ownership:', error)
-    return NextResponse.json(
-      { error: 'Failed to get order ownership' },
-      { status: 500 }
-    )
+    return err('Failed to get order ownership', 500)
   }
 }))
 
@@ -82,48 +71,30 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     // ── Validate required fields ────────────────────────────────────────
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'locationId is required' },
-        { status: 400 }
-      )
+      return err('locationId is required')
     }
 
     if (!orderId) {
-      return NextResponse.json(
-        { error: 'orderId is required' },
-        { status: 400 }
-      )
+      return err('orderId is required')
     }
 
     if (!employeeId) {
-      return NextResponse.json(
-        { error: 'employeeId is required' },
-        { status: 400 }
-      )
+      return err('employeeId is required')
     }
 
     if (!splitType || (splitType !== 'even' && splitType !== 'custom')) {
-      return NextResponse.json(
-        { error: 'splitType must be "even" or "custom"' },
-        { status: 400 }
-      )
+      return err('splitType must be "even" or "custom"')
     }
 
     if (splitType === 'custom' && (customPercent === undefined || customPercent === null)) {
-      return NextResponse.json(
-        { error: 'customPercent is required when splitType is "custom"' },
-        { status: 400 }
-      )
+      return err('customPercent is required when splitType is "custom"')
     }
 
     // ── Auth check ──────────────────────────────────────────────────────
     // Allowed: self-add, order owner adding co-owners, or manager with tip permission
     const requestingEmployeeId = request.headers.get('x-employee-id')
     if (!requestingEmployeeId) {
-      return NextResponse.json(
-        { error: 'Employee ID is required' },
-        { status: 401 }
-      )
+      return unauthorized('Employee ID is required')
     }
 
     const isSelfAdd = requestingEmployeeId === employeeId
@@ -144,10 +115,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
           [PERMISSIONS.TIPS_MANAGE_GROUPS]
         )
         if (!auth.authorized) {
-          return NextResponse.json(
-            { error: 'Not authorized. Only the table owner or a manager can add co-owners.' },
-            { status: 403 }
-          )
+          return forbidden('Not authorized. Only the table owner or a manager can add co-owners.')
         }
       }
     }
@@ -171,22 +139,16 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
 
     pushUpstream()
 
-    return NextResponse.json({ data: { ownership } })
+    return ok({ ownership })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
 
     if (message === 'ALREADY_OWNER') {
-      return NextResponse.json(
-        { error: 'Employee is already an owner of this order' },
-        { status: 400 }
-      )
+      return err('Employee is already an owner of this order')
     }
 
     console.error('Failed to add order owner:', error)
-    return NextResponse.json(
-      { error: 'Failed to add order owner' },
-      { status: 500 }
-    )
+    return err('Failed to add order owner', 500)
   }
 }))
 
@@ -201,39 +163,24 @@ export const PUT = withVenue(withAuth({ allowCellular: true }, async function PU
     // ── Validate required fields ────────────────────────────────────────
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'locationId is required' },
-        { status: 400 }
-      )
+      return err('locationId is required')
     }
 
     if (!orderId) {
-      return NextResponse.json(
-        { error: 'orderId is required' },
-        { status: 400 }
-      )
+      return err('orderId is required')
     }
 
     if (!splits || !Array.isArray(splits) || splits.length === 0) {
-      return NextResponse.json(
-        { error: 'splits array is required and must not be empty' },
-        { status: 400 }
-      )
+      return err('splits array is required and must not be empty')
     }
 
     // Validate each split entry has required fields
     for (const split of splits) {
       if (!split.employeeId) {
-        return NextResponse.json(
-          { error: 'Each split must have an employeeId' },
-          { status: 400 }
-        )
+        return err('Each split must have an employeeId')
       }
       if (split.sharePercent === undefined || split.sharePercent === null || typeof split.sharePercent !== 'number') {
-        return NextResponse.json(
-          { error: 'Each split must have a numeric sharePercent' },
-          { status: 400 }
-        )
+        return err('Each split must have a numeric sharePercent')
       }
     }
 
@@ -246,10 +193,7 @@ export const PUT = withVenue(withAuth({ allowCellular: true }, async function PU
       [PERMISSIONS.TIPS_MANAGE_GROUPS]
     )
     if (!auth.authorized) {
-      return NextResponse.json(
-        { error: 'Not authorized. Updating ownership splits requires tip management permission.' },
-        { status: 403 }
-      )
+      return forbidden('Not authorized. Updating ownership splits requires tip management permission.')
     }
 
     // ── Update splits ───────────────────────────────────────────────────
@@ -272,36 +216,24 @@ export const PUT = withVenue(withAuth({ allowCellular: true }, async function PU
 
     pushUpstream()
 
-    return NextResponse.json({ data: { ownership } })
+    return ok({ ownership })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
 
     if (message.startsWith('INVALID_SPLIT_TOTAL')) {
-      return NextResponse.json(
-        { error: message.replace('INVALID_SPLIT_TOTAL: ', '') },
-        { status: 400 }
-      )
+      return err(message.replace('INVALID_SPLIT_TOTAL: ', ''))
     }
 
     if (message.startsWith('OWNER_NOT_FOUND')) {
-      return NextResponse.json(
-        { error: message.replace('OWNER_NOT_FOUND: ', '') },
-        { status: 400 }
-      )
+      return err(message.replace('OWNER_NOT_FOUND: ', ''))
     }
 
     if (message.startsWith('NO_ACTIVE_OWNERSHIP')) {
-      return NextResponse.json(
-        { error: message.replace('NO_ACTIVE_OWNERSHIP: ', '') },
-        { status: 400 }
-      )
+      return err(message.replace('NO_ACTIVE_OWNERSHIP: ', ''))
     }
 
     console.error('Failed to update ownership splits:', error)
-    return NextResponse.json(
-      { error: 'Failed to update ownership splits' },
-      { status: 500 }
-    )
+    return err('Failed to update ownership splits', 500)
   }
 }))
 
@@ -316,17 +248,11 @@ export const DELETE = withVenue(withAuth({ allowCellular: true }, async function
     // ── Validate required fields ────────────────────────────────────────
 
     if (!orderId) {
-      return NextResponse.json(
-        { error: 'orderId is required' },
-        { status: 400 }
-      )
+      return err('orderId is required')
     }
 
     if (!employeeId) {
-      return NextResponse.json(
-        { error: 'employeeId is required' },
-        { status: 400 }
-      )
+      return err('employeeId is required')
     }
 
     // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
@@ -348,10 +274,7 @@ export const DELETE = withVenue(withAuth({ allowCellular: true }, async function
 
     if (!isSelfRemoval) {
       if (!orderForDelete) {
-        return NextResponse.json(
-          { error: 'Order not found' },
-          { status: 404 }
-        )
+        return notFound('Order not found')
       }
 
       const auth = await requireAnyPermission(
@@ -360,16 +283,10 @@ export const DELETE = withVenue(withAuth({ allowCellular: true }, async function
         [PERMISSIONS.TIPS_MANAGE_GROUPS]
       )
       if (!auth.authorized) {
-        return NextResponse.json(
-          { error: 'Not authorized. Only self-removal or a manager with tip management permission can remove owners.' },
-          { status: 403 }
-        )
+        return forbidden('Not authorized. Only self-removal or a manager with tip management permission can remove owners.')
       }
     } else if (!requestingEmployeeId) {
-      return NextResponse.json(
-        { error: 'Employee ID is required' },
-        { status: 401 }
-      )
+      return unauthorized('Employee ID is required')
     }
 
     // ── Remove owner ────────────────────────────────────────────────────
@@ -391,16 +308,13 @@ export const DELETE = withVenue(withAuth({ allowCellular: true }, async function
 
     pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       deactivated,
       ownership: result,
-    } })
+    })
   } catch (error) {
     console.error('Failed to remove order owner:', error)
-    return NextResponse.json(
-      { error: 'Failed to remove order owner' },
-      { status: 500 }
-    )
+    return err('Failed to remove order owner', 500)
   }
 }))

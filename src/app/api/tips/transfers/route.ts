@@ -19,6 +19,7 @@ import {
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { queueIfOutageOrFail, OutageQueueFullError, pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, forbidden, ok } from '@/lib/api-response'
 
 // ─── POST: Create a tip transfer ────────────────────────────────────────────
 
@@ -30,45 +31,27 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     // ── Validate required fields ──────────────────────────────────────────
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'locationId is required' },
-        { status: 400 }
-      )
+      return err('locationId is required')
     }
 
     if (!fromEmployeeId) {
-      return NextResponse.json(
-        { error: 'fromEmployeeId is required' },
-        { status: 400 }
-      )
+      return err('fromEmployeeId is required')
     }
 
     if (!toEmployeeId) {
-      return NextResponse.json(
-        { error: 'toEmployeeId is required' },
-        { status: 400 }
-      )
+      return err('toEmployeeId is required')
     }
 
     if (amount === undefined || amount === null) {
-      return NextResponse.json(
-        { error: 'amount is required' },
-        { status: 400 }
-      )
+      return err('amount is required')
     }
 
     if (typeof amount !== 'number' || amount <= 0) {
-      return NextResponse.json(
-        { error: 'amount must be a positive number' },
-        { status: 400 }
-      )
+      return err('amount must be a positive number')
     }
 
     if (fromEmployeeId === toEmployeeId) {
-      return NextResponse.json(
-        { error: 'Cannot transfer tips to yourself' },
-        { status: 400 }
-      )
+      return err('Cannot transfer tips to yourself')
     }
 
     // ── Auth check ────────────────────────────────────────────────────────
@@ -84,10 +67,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
         [PERMISSIONS.TIPS_MANAGE_GROUPS]
       )
       if (!auth.authorized) {
-        return NextResponse.json(
-          { error: 'Not authorized. Only the sending employee or a manager with tip management permission can initiate transfers.' },
-          { status: 403 }
-        )
+        return forbidden('Not authorized. Only the sending employee or a manager with tip management permission can initiate transfers.')
       }
     }
 
@@ -104,17 +84,11 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     ])
 
     if (!fromEmployee) {
-      return NextResponse.json(
-        { error: 'Sending employee not found' },
-        { status: 400 }
-      )
+      return err('Sending employee not found')
     }
 
     if (!toEmployee) {
-      return NextResponse.json(
-        { error: 'Receiving employee not found' },
-        { status: 400 }
-      )
+      return err('Receiving employee not found')
     }
 
     const fromName = fromEmployee.displayName || `${fromEmployee.firstName} ${fromEmployee.lastName}`
@@ -185,7 +159,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       await queueIfOutageOrFail('TipLedgerEntry', locationId, result.credit.id, 'INSERT')
     } catch (err) {
       if (err instanceof OutageQueueFullError) {
-        return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+        return err('Service temporarily unavailable — outage queue full', 507)
       }
       throw err
     }
@@ -193,7 +167,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     pushUpstream()
 
     // ── Return success ────────────────────────────────────────────────────
-    return NextResponse.json({
+    return ok({
       success: true,
       transfer: {
         fromEmployeeId,
@@ -208,10 +182,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     })
   } catch (error) {
     console.error('Failed to create tip transfer:', error)
-    return NextResponse.json(
-      { error: 'Failed to create tip transfer' },
-      { status: 500 }
-    )
+    return err('Failed to create tip transfer', 500)
   }
 }))
 
@@ -230,17 +201,11 @@ export const GET = withVenue(withAuth(async function GET(request: NextRequest) {
     // ── Validate required fields ──────────────────────────────────────────
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'locationId is required' },
-        { status: 400 }
-      )
+      return err('locationId is required')
     }
 
     if (!employeeId) {
-      return NextResponse.json(
-        { error: 'employeeId is required' },
-        { status: 400 }
-      )
+      return err('employeeId is required')
     }
 
     // ── Auth check ────────────────────────────────────────────────────────
@@ -255,10 +220,7 @@ export const GET = withVenue(withAuth(async function GET(request: NextRequest) {
         [PERMISSIONS.TIPS_VIEW_LEDGER]
       )
       if (!auth.authorized) {
-        return NextResponse.json(
-          { error: auth.error },
-          { status: auth.status }
-        )
+        return err(auth.error, auth.status)
       }
     }
 
@@ -290,7 +252,7 @@ export const GET = withVenue(withAuth(async function GET(request: NextRequest) {
     // ── Query entries ─────────────────────────────────────────────────────
     const { entries, total } = await getLedgerEntries(employeeId, filters)
 
-    return NextResponse.json({
+    return ok({
       transfers: entries.map(entry => ({
         id: entry.id,
         type: entry.type,
@@ -309,9 +271,6 @@ export const GET = withVenue(withAuth(async function GET(request: NextRequest) {
     })
   } catch (error) {
     console.error('Failed to get tip transfers:', error)
-    return NextResponse.json(
-      { error: 'Failed to get tip transfers' },
-      { status: 500 }
-    )
+    return err('Failed to get tip transfers', 500)
   }
 }))

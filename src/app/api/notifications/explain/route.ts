@@ -12,12 +12,13 @@
  * Permission: notifications.view_log
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { err, ok } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -78,12 +79,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.NOTIFICATIONS_VIEW_LOG)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const searchParams = request.nextUrl.searchParams
     const subjectType = searchParams.get('subjectType')
@@ -92,19 +93,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     // Validate required params
     if (!subjectType || !VALID_SUBJECT_TYPES.includes(subjectType)) {
-      return NextResponse.json(
-        { error: `subjectType is required and must be one of: ${VALID_SUBJECT_TYPES.join(', ')}` },
-        { status: 400 }
-      )
+      return err(`subjectType is required and must be one of: ${VALID_SUBJECT_TYPES.join(', ')}`)
     }
     if (!subjectId) {
-      return NextResponse.json({ error: 'subjectId is required' }, { status: 400 })
+      return err('subjectId is required')
     }
     if (!eventType || !VALID_EVENT_TYPES.includes(eventType)) {
-      return NextResponse.json(
-        { error: `eventType is required and must be one of: ${VALID_EVENT_TYPES.join(', ')}` },
-        { status: 400 }
-      )
+      return err(`eventType is required and must be one of: ${VALID_EVENT_TYPES.join(', ')}`)
     }
 
     // ── Step 1: Get notification mode ──────────────────────────────────────
@@ -395,8 +390,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       explanation.push('NO TARGETS: No active notification target assignments exist for this subject (no pager, no phone).')
     }
 
-    return NextResponse.json({
-      data: {
+    return ok({
         subjectType,
         subjectId,
         eventType,
@@ -422,11 +416,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
             ? (typeof j.ruleExplainSnapshot === 'object' ? j.ruleExplainSnapshot : null)
             : null,
         })),
-      },
-    })
+      })
   } catch (error) {
     console.error('[Notification Explain] GET error:', error)
-    return NextResponse.json({ error: 'Failed to evaluate notification explain' }, { status: 500 })
+    return err('Failed to evaluate notification explain', 500)
   }
 })
 

@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
+import { err, ok } from '@/lib/api-response'
 
 const DAY_NAMES = [
   'Sunday',
@@ -37,10 +38,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       searchParams.get('requestingEmployeeId') || searchParams.get('employeeId')
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'Location ID is required' },
-        { status: 400 }
-      )
+      return err('Location ID is required')
     }
 
     const auth = await requirePermission(
@@ -49,7 +47,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       PERMISSIONS.REPORTS_SALES
     )
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     const lookbackDays = Math.max(
@@ -173,8 +171,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       dayOfWeekPatterns.reduce((sum, d) => sum + d.avgRevenue, 0)
     )
 
-    return NextResponse.json({
-      data: {
+    return ok({
         historicalPeriod: {
           startDate: startDate.toISOString().split('T')[0],
           endDate: today.toISOString().split('T')[0],
@@ -194,13 +191,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           },
           projectedWeekRevenue,
         },
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to generate forecasting report:', error)
-    return NextResponse.json(
-      { error: 'Failed to generate forecasting report' },
-      { status: 500 }
-    )
+    return err('Failed to generate forecasting report', 500)
   }
 })

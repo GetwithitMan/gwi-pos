@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationSettings } from '@/lib/location-cache'
 import { parseSettings } from '@/lib/settings'
@@ -7,13 +7,14 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { db } from '@/lib/db'
 import { getBusinessDate, updateSyncStatus } from '../_helpers'
+import { err, notFound, ok } from '@/lib/api-response'
 
 export const POST = withVenue(async function POST(request: NextRequest) {
   const location = await db.location.findFirst({
     where: { deletedAt: null },
     select: { id: true, timezone: true, settings: true },
   })
-  if (!location) return NextResponse.json({ error: 'No location' }, { status: 404 })
+  if (!location) return notFound('No location')
 
   const body = await request.json().catch(() => ({})) as {
     startDate?: string
@@ -24,13 +25,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   const resolvedEmployeeId = actor.employeeId ?? body.employeeId
   const auth = await requirePermission(resolvedEmployeeId, location.id, PERMISSIONS.SETTINGS_INTEGRATIONS)
   if (!auth.authorized) {
-    return NextResponse.json({ error: auth.error }, { status: auth.status })
+    return err(auth.error, auth.status)
   }
 
   const settings = parseSettings(await getLocationSettings(location.id))
   const s = settings.sevenShifts
   if (!s?.enabled || !s.clientId || !s.companyId) {
-    return NextResponse.json({ error: '7shifts not configured' }, { status: 400 })
+    return err('7shifts not configured')
   }
 
   const tz = location.timezone || 'America/New_York'
@@ -58,9 +59,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         lastSchedulePullStatus: 'error',
         lastSchedulePullError: 'No schedule exists for this location. Create a schedule first.',
       })
-      return NextResponse.json({
-        data: { upserted: 0, deleted: 0, skipped: shifts.length, error: 'No schedule exists' },
-      })
+      return ok({ upserted: 0, deleted: 0, skipped: shifts.length, error: 'No schedule exists' })
     }
 
     // Pre-fetch all linked employees in one query to avoid N+1
@@ -139,7 +138,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       lastSchedulePullError: null,
     })
 
-    return NextResponse.json({ data: { upserted, deleted, skipped } })
+    return ok({ upserted, deleted, skipped })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
     console.error('[7shifts/pull-schedule] Error:', message)
@@ -150,6 +149,6 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       lastSchedulePullError: message.slice(0, 500),
     })
 
-    return NextResponse.json({ error: 'Failed to pull schedule from 7shifts' }, { status: 502 })
+    return err('Failed to pull schedule from 7shifts', 502)
   }
 })

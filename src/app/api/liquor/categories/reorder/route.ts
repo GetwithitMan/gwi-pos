@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchMenuUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { getLocationId } from '@/lib/location-cache'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 
 const log = createChildLogger('liquor.categories.reorder')
 
@@ -18,18 +19,12 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
     const { categoryIds } = body
 
     if (!categoryIds || !Array.isArray(categoryIds)) {
-      return NextResponse.json(
-        { error: 'categoryIds array is required' },
-        { status: 400 }
-      )
+      return err('categoryIds array is required')
     }
 
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'No location found' },
-        { status: 400 }
-      )
+      return err('No location found')
     }
 
     // Verify all categories belong to this location
@@ -43,10 +38,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
     })
 
     if (categories.length !== categoryIds.length) {
-      return NextResponse.json(
-        { error: 'One or more categories not found' },
-        { status: 404 }
-      )
+      return notFound('One or more categories not found')
     }
 
     // Update sortOrder for each category
@@ -65,12 +57,9 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
       name: 'categories-reorder',
     }).catch(err => log.warn({ err }, 'fire-and-forget failed in liquor.categories.reorder'))
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Failed to reorder categories:', error)
-    return NextResponse.json(
-      { error: 'Failed to reorder categories' },
-      { status: 500 }
-    )
+    return err('Failed to reorder categories', 500)
   }
 }))

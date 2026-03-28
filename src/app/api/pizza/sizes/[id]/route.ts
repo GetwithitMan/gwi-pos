@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET /api/pizza/sizes/[id] - Get single pizza size
 export const GET = withVenue(async function GET(
@@ -15,20 +16,20 @@ export const GET = withVenue(async function GET(
     const size = await db.pizzaSize.findUnique({ where: { id } })
 
     if (!size) {
-      return NextResponse.json({ error: 'Size not found' }, { status: 404 })
+      return notFound('Size not found')
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       ...size,
       basePrice: Number(size.basePrice),
       priceMultiplier: Number(size.priceMultiplier),
       toppingMultiplier: Number(size.toppingMultiplier),
       inventoryMultiplier: Number(size.inventoryMultiplier),
       usageQuantity: size.usageQuantity ? Number(size.usageQuantity) : null,
-    } })
+    })
   } catch (error) {
     console.error('Failed to get pizza size:', error)
-    return NextResponse.json({ error: 'Failed to get pizza size' }, { status: 500 })
+    return err('Failed to get pizza size', 500)
   }
 })
 
@@ -43,12 +44,12 @@ export const PATCH = withVenue(withAuth('ADMIN', async function PATCH(
 
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const existing = await db.pizzaSize.findUnique({ where: { id } })
     if (!existing || existing.locationId !== locationId) {
-      return NextResponse.json({ error: 'Size not found' }, { status: 404 })
+      return notFound('Size not found')
     }
 
     // If setting as default, unset other defaults
@@ -83,17 +84,17 @@ export const PATCH = withVenue(withAuth('ADMIN', async function PATCH(
     })
     pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       ...size,
       basePrice: Number(size.basePrice),
       priceMultiplier: Number(size.priceMultiplier),
       toppingMultiplier: Number(size.toppingMultiplier),
       inventoryMultiplier: Number(size.inventoryMultiplier),
       usageQuantity: size.usageQuantity ? Number(size.usageQuantity) : null,
-    } })
+    })
   } catch (error) {
     console.error('Failed to update pizza size:', error)
-    return NextResponse.json({ error: 'Failed to update pizza size' }, { status: 500 })
+    return err('Failed to update pizza size', 500)
   }
 }))
 
@@ -107,12 +108,12 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
 
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const existing = await db.pizzaSize.findUnique({ where: { id } })
     if (!existing || existing.locationId !== locationId) {
-      return NextResponse.json({ error: 'Size not found' }, { status: 404 })
+      return notFound('Size not found')
     }
 
     await db.pizzaSize.update({
@@ -121,9 +122,9 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     })
     pushUpstream()
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Failed to delete pizza size:', error)
-    return NextResponse.json({ error: 'Failed to delete pizza size' }, { status: 500 })
+    return err('Failed to delete pizza size', 500)
   }
 }))

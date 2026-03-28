@@ -5,6 +5,7 @@ import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { getClientIp } from '@/lib/get-client-ip'
+import { err, ok } from '@/lib/api-response'
 const VALID_PLATFORMS = ['BROWSER', 'ANDROID', 'IOS'] as const
 
 // POST complete terminal pairing for native apps (Android/iOS)
@@ -16,7 +17,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const platform = VALID_PLATFORMS.includes(body.platform) ? body.platform : 'ANDROID'
 
     if (!pairingCode) {
-      return NextResponse.json({ error: 'Pairing code is required' }, { status: 400 })
+      return err('Pairing code is required')
     }
 
     // Find terminal by pairing code — locationId is derived from the terminal record
@@ -29,12 +30,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     if (!terminal) {
-      return NextResponse.json({ error: 'Invalid pairing code' }, { status: 400 })
+      return err('Invalid pairing code')
     }
 
     // Check if code is expired
     if (terminal.pairingCodeExpiresAt && terminal.pairingCodeExpiresAt < new Date()) {
-      return NextResponse.json({ error: 'Pairing code has expired' }, { status: 400 })
+      return err('Pairing code has expired')
     }
 
     // Device count limit check — use location settings instead of hardcoded limit
@@ -126,7 +127,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     )
 
     // Return token in JSON body (native apps use Bearer token auth, no httpOnly cookie)
-    return NextResponse.json({ data: {
+    return ok({
       token: deviceToken,
       terminal: {
         id: updated.id,
@@ -139,9 +140,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
       location: { id: terminal.locationId },
       previousDeviceName,
-    } })
+    })
   } catch (error) {
     console.error('Failed to pair native terminal:', error)
-    return NextResponse.json({ error: 'Failed to pair terminal' }, { status: 500 })
+    return err('Failed to pair terminal', 500)
   }
 })

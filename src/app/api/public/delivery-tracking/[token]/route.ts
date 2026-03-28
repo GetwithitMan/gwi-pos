@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationSettings } from '@/lib/location-cache'
@@ -6,6 +6,7 @@ import { isEmergencyDisabled } from '@/lib/delivery/feature-check'
 import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 import { createRateLimiter } from '@/lib/rate-limiter'
 import { getClientIp } from '@/lib/get-client-ip'
+import { err, notFound, ok } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -32,14 +33,14 @@ export const GET = withVenue(async function GET(
     // Rate limit
     const ip = getClientIp(request)
     if (!limiter.check(ip).allowed) {
-      return NextResponse.json({ error: 'Too many requests' }, { status: 429 })
+      return err('Too many requests', 429)
     }
 
     const { token } = await context.params
 
     // Validate token is UUID format (prevent index scan attacks)
     if (!token || !UUID_REGEX.test(token)) {
-      return NextResponse.json({ error: 'Not found' }, { status: 404 })
+      return notFound('Not found')
     }
 
     // Fetch delivery order by tracking token
@@ -56,7 +57,7 @@ export const GET = withVenue(async function GET(
     `, token)
 
     if (!rows.length) {
-      return NextResponse.json({ error: 'Not found' }, { status: 404 })
+      return notFound('Not found')
     }
 
     const delivery = rows[0]
@@ -73,7 +74,7 @@ export const GET = withVenue(async function GET(
     // Check emergency disabled — return generic unavailable message
     const settings = await getLocationSettings(locationId)
     if (settings && isEmergencyDisabled(settings as any)) {
-      return NextResponse.json({
+      return ok({
         status: 'unavailable',
         message: `Service temporarily unavailable — please contact ${delivery.restaurantPhone || 'the restaurant'}.`,
       })
@@ -85,7 +86,7 @@ export const GET = withVenue(async function GET(
       const updatedAt = new Date(delivery.updatedAt).getTime()
       const twentyFourHoursAgo = Date.now() - 24 * 60 * 60 * 1000
       if (updatedAt < twentyFourHoursAgo) {
-        return NextResponse.json({ error: 'Not found' }, { status: 404 })
+        return notFound('Not found')
       }
     }
 
@@ -149,7 +150,7 @@ export const GET = withVenue(async function GET(
     }
 
     // Sanitized response — NO internal IDs, NO full driver info
-    return NextResponse.json({
+    return ok({
       status: delivery.status,
       orderNumber: delivery.orderNumber || null,
       statusTimeline: timeline,
@@ -163,6 +164,6 @@ export const GET = withVenue(async function GET(
     })
   } catch (error) {
     console.error('[public/delivery-tracking] Error:', error)
-    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    return notFound('Not found')
   }
 })

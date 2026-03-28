@@ -3,6 +3,7 @@ import { requireDatacapClient, validateReader, parseBody, datacapErrorResponse }
 import { parseError } from '@/lib/datacap/xml-parser'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, ok } from '@/lib/api-response'
 
 interface SaleByRecordRequest {
   locationId: string
@@ -19,7 +20,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     const { locationId, readerId, recordNo, invoiceNo, amount, gratuityAmount } = body
 
     if (!locationId || !readerId || !recordNo || !invoiceNo || amount === undefined || amount === null) {
-      return Response.json({ error: 'Missing required fields: locationId, readerId, recordNo, invoiceNo, amount' }, { status: 400 })
+      return err('Missing required fields: locationId, readerId, recordNo, invoiceNo, amount')
     }
 
     await validateReader(readerId, locationId)
@@ -28,8 +29,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     const response = await client.saleByRecordNo(readerId, { recordNo, invoiceNo, amount, gratuityAmount })
     const error = parseError(response)
 
-    return Response.json({
-      data: {
+    return ok({
         approved: response.cmdStatus === 'Approved',
         authCode: response.authCode,
         recordNo: response.recordNo,
@@ -38,8 +38,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
         storedOffline: response.storedOffline,
         sequenceNo: response.sequenceNo,
         error: error ? { code: error.code, message: error.text, isRetryable: error.isRetryable } : null,
-      },
-    })
+      })
   } catch (err) {
     return datacapErrorResponse(err)
   }

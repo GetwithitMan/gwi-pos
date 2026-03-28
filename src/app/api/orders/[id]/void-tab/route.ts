@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission } from '@/lib/api-auth'
@@ -10,6 +10,7 @@ import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
 import { OrderRepository } from '@/lib/repositories'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-void-tab')
 
 // POST - Void an unclosed tab (releases all card holds)
@@ -28,11 +29,11 @@ export const POST = withVenue(async function POST(
     const mutationOrigin = isCellularVoidTab ? 'cloud' : 'local'
 
     if (!employeeId) {
-      return NextResponse.json({ error: 'Missing required field: employeeId' }, { status: 400 })
+      return err('Missing required field: employeeId')
     }
 
     if (!reason) {
-      return NextResponse.json({ error: 'Void reason is required' }, { status: 400 })
+      return err('Void reason is required')
     }
 
     // Phase 1: Read order under FOR UPDATE lock to prevent double-void races
@@ -64,14 +65,14 @@ export const POST = withVenue(async function POST(
     }, { timeout: 15000 })
 
     if ('error' in lockedRead) {
-      return NextResponse.json({ error: lockedRead.error }, { status: lockedRead.status })
+      return err(lockedRead.error, lockedRead.status)
     }
 
     const { order } = lockedRead
 
     // Require manager void permission — voiding a tab is a high-risk financial action
     const authResult = await requirePermission(employeeId, order.locationId, PERMISSIONS.MGR_VOID_ORDERS)
-    if (!authResult.authorized) return NextResponse.json({ error: authResult.error }, { status: authResult.status })
+    if (!authResult.authorized) return err(authResult.error, authResult.status)
 
     const locationId = order.locationId
     const results: Array<{ cardLast4: string; voided: boolean; error?: string }> = []
@@ -262,15 +263,13 @@ export const POST = withVenue(async function POST(
 
     pushUpstream()
 
-    return NextResponse.json({
-      data: {
+    return ok({
         success: allVoided,
         results,
         partialVoid: !allVoided && results.some((r) => r.voided),
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to void tab:', error)
-    return NextResponse.json({ error: 'Failed to void tab' }, { status: 500 })
+    return err('Failed to void tab', 500)
   }
 })

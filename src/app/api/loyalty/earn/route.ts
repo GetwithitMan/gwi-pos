@@ -6,6 +6,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { err, ok } from '@/lib/api-response'
 
 // POST /api/loyalty/earn — earn points from an order
 export const POST = withVenue(async function POST(request: NextRequest) {
@@ -17,7 +18,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const locationId = actor.locationId || body.locationId
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.POS_ACCESS)
@@ -31,10 +32,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const { customerId, orderId, amount } = body
 
     if (!customerId) {
-      return NextResponse.json({ error: 'customerId is required' }, { status: 400 })
+      return err('customerId is required')
     }
     if (typeof amount !== 'number' || amount <= 0) {
-      return NextResponse.json({ error: 'amount must be a positive number (in dollars)' }, { status: 400 })
+      return err('amount must be a positive number (in dollars)')
     }
 
     // Idempotency: reject duplicate earn for the same orderId (prevents point farming)
@@ -237,18 +238,18 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }, { timeout: 15000 })
 
     if ('error' in result) {
-      return NextResponse.json({ error: result.error }, { status: result.status })
+      return err(result.error, result.status)
     }
 
     pushUpstream()
     void notifyDataChanged({ locationId, domain: 'loyalty', action: 'updated' })
 
-    return NextResponse.json(result)
+    return ok(result)
   } catch (error: any) {
     if (error?.message?.includes('does not exist') || error?.code === '42P01') {
-      return NextResponse.json({ error: 'Loyalty system not yet configured. Please run database migrations.' }, { status: 503 })
+      return err('Loyalty system not yet configured. Please run database migrations.', 503)
     }
     console.error('Failed to earn loyalty points:', error)
-    return NextResponse.json({ error: 'Failed to earn loyalty points' }, { status: 500 })
+    return err('Failed to earn loyalty points', 500)
   }
 })

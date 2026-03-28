@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationSettings, invalidateLocationCache } from '@/lib/location-cache'
 import { parseSettings } from '@/lib/settings'
@@ -6,6 +6,7 @@ import { createWebhook, listWebhooks } from '@/lib/7shifts-client'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { db } from '@/lib/db'
+import { err, notFound, ok } from '@/lib/api-response'
 
 const WEBHOOK_EVENTS = [
   'schedule.published',
@@ -18,25 +19,25 @@ const WEBHOOK_EVENTS = [
 
 export const POST = withVenue(async function POST(request: NextRequest) {
   const location = await db.location.findFirst({ select: { id: true } })
-  if (!location) return NextResponse.json({ error: 'No location' }, { status: 404 })
+  if (!location) return notFound('No location')
 
   const body = await request.json().catch(() => ({})) as { employeeId?: string }
   const actor = await getActorFromRequest(request)
   const resolvedEmployeeId = actor.employeeId ?? body.employeeId
   const auth = await requirePermission(resolvedEmployeeId, location.id, PERMISSIONS.SETTINGS_INTEGRATIONS)
   if (!auth.authorized) {
-    return NextResponse.json({ error: auth.error }, { status: auth.status })
+    return err(auth.error, auth.status)
   }
 
   const settings = parseSettings(await getLocationSettings(location.id))
   const s = settings.sevenShifts
   if (!s?.clientId || !s.companyId || !s.companyGuid) {
-    return NextResponse.json({ error: '7shifts credentials not configured' }, { status: 400 })
+    return err('7shifts credentials not configured')
   }
 
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || ''
   if (!baseUrl) {
-    return NextResponse.json({ error: 'APP_URL not configured' }, { status: 500 })
+    return err('APP_URL not configured', 500)
   }
 
   // Normalize URL: strip trailing slash to avoid duplicates from staging→prod URL changes
@@ -101,5 +102,5 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
   }
 
-  return NextResponse.json({ data: { registered, skipped, errors, allCovered } })
+  return ok({ registered, skipped, errors, allCovered })
 })

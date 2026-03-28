@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withTiming, getTimingFromRequest } from '@/lib/with-timing'
 import { getCurrentBusinessDay } from '@/lib/business-day'
+import { err, ok } from '@/lib/api-response'
 // TODO: Migrate to OrderRepository once it supports getOpenOrdersSummary(), getOpenOrdersFull(),
 // business day batching, empty-shell exclusion, rich includes, multi-filter, and pagination
 
@@ -45,10 +46,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
     const minAge = searchParams.get('minAge')
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'Location ID is required' },
-        { status: 400 }
-      )
+      return err('Location ID is required')
     }
 
     // Compute business day boundary for filtering
@@ -116,7 +114,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
         count = primary + legacy
       }
       timing.end('db', 'Count query')
-      return NextResponse.json({ data: { count } })
+      return ok({ count })
     }
 
     // Summary mode: lightweight response for sidebar/list views
@@ -241,7 +239,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
         } catch (_) { /* query failed — skip */ }
       }
 
-      return NextResponse.json({ data: {
+      return ok({
         orders: summaryOrders.map(o => ({
           id: o.id,
           orderNumber: o.orderNumber,
@@ -340,7 +338,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
         count: summaryOrders.length,
         limit: summaryLimit,
         summary: true,
-      } })
+      })
     }
 
     timing.start('db')
@@ -477,7 +475,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
       } catch (_) { /* query failed — skip */ }
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       orders: orders.map(order => ({
         id: order.id,
         orderNumber: order.orderNumber,
@@ -592,12 +590,9 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
           isPaid: s.status === 'paid',
         })),
       })),
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch open orders:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch open orders' },
-      { status: 500 }
-    )
+    return err('Failed to fetch open orders', 500)
   }
 }, 'orders-open'))

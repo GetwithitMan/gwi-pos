@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, ok } from '@/lib/api-response'
 
 // GET - List all sections for a location
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -13,10 +14,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const locationId = searchParams.get('locationId')
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'Location ID is required' },
-        { status: 400 }
-      )
+      return err('Location ID is required')
     }
 
     const sections = await db.section.findMany({
@@ -38,7 +36,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orderBy: { sortOrder: 'asc' },
     })
 
-    return NextResponse.json({ data: {
+    return ok({
       sections: sections.map(section => ({
         id: section.id,
         name: section.name,
@@ -58,13 +56,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
             `${a.employee.firstName} ${a.employee.lastName}`,
         })),
       })),
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch sections:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch sections' },
-      { status: 500 }
-    )
+    return err('Failed to fetch sections', 500)
   }
 })
 
@@ -75,10 +70,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     const { locationId, name, color, widthFeet, heightFeet, gridSizeFeet } = body
 
     if (!locationId || !name) {
-      return NextResponse.json(
-        { error: 'Location ID and name are required' },
-        { status: 400 }
-      )
+      return err('Location ID and name are required')
     }
 
     // Get highest sortOrder to place new section at end
@@ -108,7 +100,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     void notifyDataChanged({ locationId, domain: 'floorplan', action: 'created', entityId: section.id })
     void pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       section: {
         id: section.id,
         name: section.name,
@@ -124,12 +116,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
         tableCount: 0,
         assignedEmployees: [],
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to create section:', error)
-    return NextResponse.json(
-      { error: 'Failed to create section' },
-      { status: 500 }
-    )
+    return err('Failed to create section', 500)
   }
 }))

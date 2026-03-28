@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db, adminDb } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
@@ -6,6 +6,7 @@ import { emitToLocation } from '@/lib/socket-server'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
 import { authenticateTerminal } from '@/lib/terminal-auth'
 import { createChildLogger } from '@/lib/logger'
+import { ok } from '@/lib/api-response'
 const log = createChildLogger('sync-outbox')
 
 export const POST = withVenue(withAuth({ allowCellular: true }, async function POST(request: NextRequest) {
@@ -133,5 +134,5 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     }
   }
 
-  return NextResponse.json({ data: { synced, errors } })
+  return ok({ synced, errors })
 }))

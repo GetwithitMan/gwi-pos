@@ -11,6 +11,7 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { createChildLogger } from '@/lib/logger'
+import { ok } from '@/lib/api-response'
 const log = createChildLogger('dashboard-verify-admin')
 
 export const dynamic = 'force-dynamic'
@@ -102,7 +103,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Req
       }).catch(err => log.warn({ err }, 'Background task failed'))
 
       // Generic failure (no employee enumeration)
-      return NextResponse.json({ authorized: false })
+      return ok({ authorized: false })
     }
 
     // Flatten all permissions from primary role + all assigned roles
@@ -139,7 +140,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Req
 
     if (!hasDeviceMgmt && !hasToolsAdmin) {
       // Employee exists but lacks permissions
-      return NextResponse.json({ authorized: false })
+      return ok({ authorized: false })
     }
 
     // Reset rate limiter on success
@@ -160,7 +161,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Req
       },
     }).catch(err => log.warn({ err }, 'Background task failed'))
 
-    return NextResponse.json({
+    return ok({
       authorized: true,
       employeeName: `${employee.firstName} ${employee.lastName}`.trim(),
       permissions: {

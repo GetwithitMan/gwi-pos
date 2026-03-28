@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
+import { err, ok } from '@/lib/api-response'
 
 /**
  * GET /api/reports/liquor
@@ -26,15 +27,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Resolve locationId from server context, not client params
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'No location found' },
-        { status: 400 }
-      )
+      return err('No location found')
     }
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_INVENTORY)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Build date filters — timezone-aware half-open interval
@@ -310,7 +308,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const totalPourCost = byBottle.reduce((sum, b) => sum + b.totalCost, 0)
     const totalSpiritRevenue = orderItemsWithSpirits.reduce((sum, m) => sum + Number(m.price), 0)
 
-    return NextResponse.json({ data: {
+    return ok({
       summary: {
         totalPours: Math.round(totalPours * 100) / 100,
         totalPourCost: Math.round(totalPourCost * 100) / 100,
@@ -354,12 +352,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         locationId,
         employeeId,
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to generate liquor report:', error)
-    return NextResponse.json(
-      { error: 'Failed to generate liquor report' },
-      { status: 500 }
-    )
+    return err('Failed to generate liquor report', 500)
   }
 })

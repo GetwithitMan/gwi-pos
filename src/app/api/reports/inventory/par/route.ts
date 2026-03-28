@@ -5,6 +5,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { checkReportRateLimit } from '@/lib/report-rate-limiter'
 import { toNumber } from '@/lib/inventory-calculations'
+import { err, ok } from '@/lib/api-response'
 
 /**
  * PAR (Periodic Automatic Replenishment) Inventory Report
@@ -32,12 +33,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const belowReorderOnly = searchParams.get('belowReorderOnly') === 'true'
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+      return err('Location ID is required')
     }
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_INVENTORY)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     const rateCheck = checkReportRateLimit(requestingEmployeeId || 'anonymous')
@@ -76,12 +77,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     })
 
     if (items.length === 0) {
-      return NextResponse.json({
-        data: {
+      return ok({
           items: [],
           summary: { totalItems: 0, belowPar: 0, belowReorder: 0, criticalItems: 0 },
-        },
-      })
+        })
     }
 
     // Calculate usage rate from last 14 days of consumption transactions
@@ -202,8 +201,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       i.belowReorder && i.daysUntilReorder !== null && i.daysUntilReorder <= 1
     ).length
 
-    return NextResponse.json({
-      data: {
+    return ok({
         items: filteredItems,
         summary: {
           totalItems: parItems.length,
@@ -214,10 +212,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
             parItems.reduce((sum, i) => sum + i.suggestedOrderCost, 0) * 100
           ) / 100,
         },
-      },
-    })
+      })
   } catch (error) {
     console.error('PAR report error:', error)
-    return NextResponse.json({ error: 'Failed to generate PAR report' }, { status: 500 })
+    return err('Failed to generate PAR report', 500)
   }
 })

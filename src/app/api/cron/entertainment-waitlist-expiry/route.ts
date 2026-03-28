@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { verifyCronSecret } from '@/lib/cron-auth'
 import { forAllVenues } from '@/lib/cron-venue-helper'
 import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
 import { dispatchEntertainmentWaitlistChanged } from '@/lib/socket-dispatch'
 import { notifyNuc } from '@/lib/cron-nuc-notify'
 import { createChildLogger } from '@/lib/logger'
+import { ok } from '@/lib/api-response'
 
 const log = createChildLogger('cron-entertainment-waitlist-expiry')
 
@@ -155,7 +156,7 @@ export async function GET(request: NextRequest) {
     }
   }, { label: 'cron:entertainment-waitlist-expiry' })
 
-  return NextResponse.json({
+  return ok({
     ...summary,
     processed: allProcessed,
     timestamp: now.toISOString(),

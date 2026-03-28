@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - Get a specific coupon
 export const GET = withVenue(async function GET(
@@ -27,13 +28,10 @@ export const GET = withVenue(async function GET(
     })
 
     if (!coupon) {
-      return NextResponse.json(
-        { error: 'Coupon not found' },
-        { status: 404 }
-      )
+      return notFound('Coupon not found')
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       ...coupon,
       discountValue: Number(coupon.discountValue),
       minimumOrder: coupon.minimumOrder ? Number(coupon.minimumOrder) : null,
@@ -42,13 +40,10 @@ export const GET = withVenue(async function GET(
         ...r,
         discountAmount: Number(r.discountAmount),
       })),
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch coupon:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch coupon' },
-      { status: 500 }
-    )
+    return err('Failed to fetch coupon', 500)
   }
 })
 
@@ -67,10 +62,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     })
 
     if (!coupon) {
-      return NextResponse.json(
-        { error: 'Coupon not found' },
-        { status: 404 }
-      )
+      return notFound('Coupon not found')
     }
 
     // Handle actions
@@ -83,10 +75,10 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
           })
           void notifyDataChanged({ locationId: coupon.locationId, domain: 'coupons', action: 'updated', entityId: id })
           void pushUpstream()
-          return NextResponse.json({ data: {
+          return ok({
             ...activated,
             discountValue: Number(activated.discountValue),
-          } })
+          })
 
         case 'deactivate':
           const deactivated = await db.coupon.update({
@@ -95,47 +87,32 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
           })
           void notifyDataChanged({ locationId: coupon.locationId, domain: 'coupons', action: 'updated', entityId: id })
           void pushUpstream()
-          return NextResponse.json({ data: {
+          return ok({
             ...deactivated,
             discountValue: Number(deactivated.discountValue),
-          } })
+          })
 
         case 'redeem':
           // Validate and redeem coupon
           const { orderId, customerId, discountAmount, employeeId } = body
 
           if (!orderId || discountAmount === undefined) {
-            return NextResponse.json(
-              { error: 'Order ID and discount amount required' },
-              { status: 400 }
-            )
+            return err('Order ID and discount amount required')
           }
 
           // Check validity
           const now = new Date()
           if (!coupon.isActive) {
-            return NextResponse.json(
-              { error: 'Coupon is not active' },
-              { status: 400 }
-            )
+            return err('Coupon is not active')
           }
           if (coupon.validFrom && now < coupon.validFrom) {
-            return NextResponse.json(
-              { error: 'Coupon not yet valid' },
-              { status: 400 }
-            )
+            return err('Coupon not yet valid')
           }
           if (coupon.validUntil && now > coupon.validUntil) {
-            return NextResponse.json(
-              { error: 'Coupon has expired' },
-              { status: 400 }
-            )
+            return err('Coupon has expired')
           }
           if (coupon.usageLimit && coupon.usageCount >= coupon.usageLimit) {
-            return NextResponse.json(
-              { error: 'Coupon usage limit reached' },
-              { status: 400 }
-            )
+            return err('Coupon usage limit reached')
           }
 
           // Check per-customer limit
@@ -147,10 +124,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
               },
             })
             if (customerRedemptions >= coupon.perCustomerLimit) {
-              return NextResponse.json(
-                { error: 'Customer has exceeded usage limit for this coupon' },
-                { status: 400 }
-              )
+              return err('Customer has exceeded usage limit for this coupon')
             }
           }
 
@@ -163,10 +137,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
               },
             })
             if (previousUse) {
-              return NextResponse.json(
-                { error: 'This coupon can only be used once per customer' },
-                { status: 400 }
-              )
+              return err('This coupon can only be used once per customer')
             }
           }
 
@@ -190,19 +161,16 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
             },
           })
 
-          return NextResponse.json({ data: {
+          return ok({
             success: true,
             coupon: {
               ...updatedCoupon,
               discountValue: Number(updatedCoupon.discountValue),
             },
-          } })
+          })
 
         default:
-          return NextResponse.json(
-            { error: 'Invalid action' },
-            { status: 400 }
-          )
+          return err('Invalid action')
       }
     }
 
@@ -232,18 +200,15 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     void notifyDataChanged({ locationId: coupon.locationId, domain: 'coupons', action: 'updated', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       ...updated,
       discountValue: Number(updated.discountValue),
       minimumOrder: updated.minimumOrder ? Number(updated.minimumOrder) : null,
       maximumDiscount: updated.maximumDiscount ? Number(updated.maximumDiscount) : null,
-    } })
+    })
   } catch (error) {
     console.error('Failed to update coupon:', error)
-    return NextResponse.json(
-      { error: 'Failed to update coupon' },
-      { status: 500 }
-    )
+    return err('Failed to update coupon', 500)
   }
 }))
 
@@ -268,10 +233,10 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
       })
       void notifyDataChanged({ locationId: deactivated.locationId, domain: 'coupons', action: 'deleted', entityId: id })
       void pushUpstream()
-      return NextResponse.json({ data: {
+      return ok({
         success: true,
         message: 'Coupon has redemptions and was deactivated instead of deleted',
-      } })
+      })
     }
 
     const deleted = await db.coupon.update({
@@ -282,12 +247,9 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     void notifyDataChanged({ locationId: deleted.locationId, domain: 'coupons', action: 'deleted', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Failed to delete coupon:', error)
-    return NextResponse.json(
-      { error: 'Failed to delete coupon' },
-      { status: 500 }
-    )
+    return err('Failed to delete coupon', 500)
   }
 }))

@@ -5,6 +5,7 @@ import { withAuth } from '@/lib/api-auth-middleware'
 import { db } from '@/lib/db'
 import { logger } from '@/lib/logger'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, ok } from '@/lib/api-response'
 
 interface SAFForwardRequest {
   locationId: string
@@ -35,7 +36,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     const { locationId, readerId } = body
 
     if (!locationId || !readerId) {
-      return Response.json({ error: 'Missing required fields: locationId, readerId' }, { status: 400 })
+      return err('Missing required fields: locationId, readerId')
     }
 
     await validateReader(readerId, locationId)
@@ -48,10 +49,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
       },
     })
     if (alreadyUploaded > 0) {
-      return Response.json(
-        { error: `${alreadyUploaded} payment(s) for this reader already have safStatus=UPLOAD_SUCCESS. Manual review required to avoid double-submission.` },
-        { status: 409 }
-      )
+      return err(`${alreadyUploaded} payment(s) for this reader already have safStatus=UPLOAD_SUCCESS. Manual review required to avoid double-submission.`, 409)
     }
 
     const client = await requireDatacapClient(locationId)
@@ -87,15 +85,13 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
 
     pushUpstream()
 
-    return Response.json({
-      data: {
+    return ok({
         success,
         safForwarded,
         paymentsUpdated: updated.count,
         newStatus,
         sequenceNo: response.sequenceNo,
-      },
-    })
+      })
   } catch (err) {
     return datacapErrorResponse(err)
   }

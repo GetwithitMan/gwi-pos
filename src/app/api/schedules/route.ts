@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
@@ -8,6 +8,7 @@ import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { emitToLocation } from '@/lib/socket-server'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok } from '@/lib/api-response'
 
 const log = createChildLogger('schedules')
 
@@ -20,7 +21,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
     const status = searchParams.get('status')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID required' }, { status: 400 })
+      return err('Location ID required')
     }
 
     const where: Record<string, unknown> = { locationId }
@@ -54,7 +55,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
       take: 20,
     })
 
-    return NextResponse.json({ data: {
+    return ok({
       schedules: schedules.map(s => ({
         id: s.id,
         weekStart: s.weekStart.toISOString(),
@@ -78,10 +79,10 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
           sevenShiftsShiftId: (shift as Record<string, unknown>).sevenShiftsShiftId as string | null ?? null,
         })),
       })),
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch schedules:', error)
-    return NextResponse.json({ error: 'Failed to fetch schedules' }, { status: 500 })
+    return err('Failed to fetch schedules', 500)
   }
 }))
 
@@ -92,17 +93,14 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     const { locationId, weekStart, notes } = body
 
     if (!locationId || !weekStart) {
-      return NextResponse.json(
-        { error: 'locationId and weekStart are required' },
-        { status: 400 }
-      )
+      return err('locationId and weekStart are required')
     }
 
     // Auth check — require scheduling.manage permission
     const actor = await getActorFromRequest(request)
     const resolvedEmployeeId = actor.employeeId ?? body.employeeId
     const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.SCHEDULING_MANAGE)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Calculate week end (Sunday)
     const start = new Date(weekStart)
@@ -117,10 +115,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     })
 
     if (existing) {
-      return NextResponse.json(
-        { error: 'A schedule already exists for this week' },
-        { status: 400 }
-      )
+      return err('A schedule already exists for this week')
     }
 
     const schedule = await db.schedule.create({
@@ -137,7 +132,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     void pushUpstream()
     void emitToLocation(locationId, 'schedules:changed', { trigger: 'schedule-created' }).catch(err => log.warn({ err }, 'socket emit failed'))
 
-    return NextResponse.json({ data: {
+    return ok({
       schedule: {
         id: schedule.id,
         weekStart: schedule.weekStart.toISOString(),
@@ -145,9 +140,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
         status: schedule.status,
         notes: schedule.notes,
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to create schedule:', error)
-    return NextResponse.json({ error: 'Failed to create schedule' }, { status: 500 })
+    return err('Failed to create schedule', 500)
   }
 }))

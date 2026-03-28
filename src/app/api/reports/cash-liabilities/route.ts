@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -6,6 +6,7 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { getCurrentBusinessDay } from '@/lib/business-day'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings, getLocationTimezone } from '@/lib/location-cache'
+import { err, ok } from '@/lib/api-response'
 
 export const GET = withVenue(async (request: NextRequest) => {
   try {
@@ -13,14 +14,14 @@ export const GET = withVenue(async (request: NextRequest) => {
     const locationId = searchParams.get('locationId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // Auth check — require reports.view permission
     const actor = await getActorFromRequest(request)
     const employeeId = actor.employeeId ?? searchParams.get('employeeId')
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.REPORTS_VIEW)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Get current business day for filtering paid in/out
     const locationSettings = parseSettings(await getLocationSettings(locationId))
@@ -154,8 +155,7 @@ export const GET = withVenue(async (request: NextRequest) => {
     const totalLiabilities = totalHouseAccountBalance + totalGiftCardBalance + totalTipBalance
     const netPosition = totalCashOnHand - totalLiabilities
 
-    return NextResponse.json({
-      data: {
+    return ok({
         cash: {
           totalOnHand: totalCashOnHand,
           paidIn: totalCashIn,
@@ -195,10 +195,9 @@ export const GET = withVenue(async (request: NextRequest) => {
           totalLiabilities,
           netPosition,
         },
-      },
-    })
+      })
   } catch (error) {
     console.error('Cash liabilities report error:', error)
-    return NextResponse.json({ error: 'Failed to generate report' }, { status: 500 })
+    return err('Failed to generate report', 500)
   }
 })

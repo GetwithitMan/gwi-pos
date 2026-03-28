@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
@@ -9,6 +9,7 @@ import { dispatchPaymentProcessed } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 
 const log = createChildLogger('orders.id.pre-auth')
 
@@ -38,10 +39,7 @@ export const POST = withVenue(withAuth(async function POST(
     }
 
     if (!readerId || !employeeId) {
-      return NextResponse.json(
-        { error: 'Missing required fields: readerId, employeeId' },
-        { status: 400 }
-      )
+      return err('Missing required fields: readerId, employeeId')
     }
 
     const order = await db.order.findFirst({
@@ -50,7 +48,7 @@ export const POST = withVenue(withAuth(async function POST(
     })
 
     if (!order) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      return notFound('Order not found')
     }
 
     const locationId = order.locationId
@@ -70,22 +68,17 @@ export const POST = withVenue(withAuth(async function POST(
     const approved = response.cmdStatus === 'Approved'
 
     if (!approved) {
-      return NextResponse.json({
-        data: {
+      return ok({
           approved: false,
           error: dcError
             ? { code: dcError.code, message: dcError.text, isRetryable: dcError.isRetryable }
             : { code: 'DECLINED', message: 'Card declined', isRetryable: true },
-        },
-      })
+        })
     }
 
     const recordNo = response.recordNo
     if (!recordNo) {
-      return NextResponse.json(
-        { error: 'Pre-auth approved but no RecordNo token received' },
-        { status: 500 }
-      )
+      return err('Pre-auth approved but no RecordNo token received', 500)
     }
 
     // Unset any existing default cards (shouldn't happen for "Start Tab" but be safe)
@@ -131,8 +124,7 @@ export const POST = withVenue(withAuth(async function POST(
 
     pushUpstream()
 
-    return NextResponse.json({
-      data: {
+    return ok({
         approved:      true,
         orderCardId:   orderCard.id,
         cardType:      response.cardType,
@@ -140,10 +132,9 @@ export const POST = withVenue(withAuth(async function POST(
         cardholderName: response.cardholderName,
         authAmount:    preAuthAmount,
         recordNo,
-      },
-    })
+      })
   } catch (error) {
     console.error('[pre-auth] Failed:', error)
-    return NextResponse.json({ error: 'Failed to start tab' }, { status: 500 })
+    return err('Failed to start tab', 500)
   }
 }))

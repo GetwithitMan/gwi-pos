@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { Prisma } from '@/generated/prisma/client'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // POST unpair a terminal (manager action)
 export const POST = withVenue(withAuth('ADMIN', async function POST(
@@ -16,11 +17,11 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
 
     const terminal = await db.terminal.findUnique({ where: { id } })
     if (!terminal || terminal.deletedAt) {
-      return NextResponse.json({ error: 'Terminal not found' }, { status: 404 })
+      return notFound('Terminal not found')
     }
 
     if (!terminal.isPaired) {
-      return NextResponse.json({ error: 'Terminal is not paired' }, { status: 400 })
+      return err('Terminal is not paired')
     }
 
     // Clear pairing data
@@ -49,12 +50,12 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     void notifyDataChanged({ locationId: terminal.locationId, domain: 'hardware', action: 'updated', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       message: 'Terminal unpaired successfully',
-    } })
+    })
   } catch (error) {
     console.error('Failed to unpair terminal:', error)
-    return NextResponse.json({ error: 'Failed to unpair terminal' }, { status: 500 })
+    return err('Failed to unpair terminal', 500)
   }
 }))

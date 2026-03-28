@@ -6,9 +6,10 @@
  * Note: 'token' here is the approval request ID (for status checks)
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { err, notFound, ok } from '@/lib/api-response'
 
 export const GET = withVenue(async function GET(
   request: NextRequest,
@@ -40,10 +41,7 @@ export const GET = withVenue(async function GET(
     })
 
     if (!approval) {
-      return NextResponse.json(
-        { error: 'Approval request not found' },
-        { status: 404 }
-      )
+      return notFound('Approval request not found')
     }
 
     // Check if request has expired
@@ -75,8 +73,7 @@ export const GET = withVenue(async function GET(
       approval.manager.displayName ||
       `${approval.manager.firstName} ${approval.manager.lastName}`
 
-    return NextResponse.json({
-      data: {
+    return ok({
         id: approval.id,
         status: approval.status,
         managerName,
@@ -92,13 +89,9 @@ export const GET = withVenue(async function GET(
             : null,
         codeExpiresAt: approval.approvalCodeExpiry?.toISOString() || null,
         requestExpiresAt: approval.approvalTokenExpiry.toISOString(),
-      },
-    })
+      })
   } catch (error) {
     console.error('[RemoteVoidApproval] Error checking status:', error)
-    return NextResponse.json(
-      { error: 'Failed to check approval status' },
-      { status: 500 }
-    )
+    return err('Failed to check approval status', 500)
   }
 })

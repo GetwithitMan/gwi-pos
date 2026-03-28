@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { getDatacapClient } from '@/lib/datacap/helpers'
 import { executeHardwareCommand } from '@/lib/hardware-command'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // POST - Ping payment reader to check connectivity
 // Uses EMVPadReset via DatacapClient — fast (2-3s) and confirms device is alive
@@ -20,7 +21,7 @@ export const POST = withVenue(withAuth(async function POST(
     })
 
     if (!reader) {
-      return NextResponse.json({ error: 'Payment reader not found' }, { status: 404 })
+      return notFound('Payment reader not found')
     }
 
     // Cloud mode: route through NUC via HardwareCommand
@@ -46,12 +47,12 @@ export const POST = withVenue(withAuth(async function POST(
         })
       }
 
-      return NextResponse.json({ data: {
+      return ok({
         success: result.success,
         isOnline: result.success,
         responseTimeMs: result.resultPayload?.responseTimeMs,
         error: result.error,
-      } })
+      })
     }
 
     const startTime = Date.now()
@@ -74,11 +75,11 @@ export const POST = withVenue(withAuth(async function POST(
         },
       })
 
-      return NextResponse.json({ data: {
+      return ok({
         success: isOnline,
         isOnline,
         responseTimeMs: responseTime,
-      } })
+      })
     } catch (fetchError) {
       const responseTime = Date.now() - startTime
       const errorMessage = fetchError instanceof Error ? fetchError.message : 'Connection failed'
@@ -93,15 +94,15 @@ export const POST = withVenue(withAuth(async function POST(
         },
       })
 
-      return NextResponse.json({ data: {
+      return ok({
         success: false,
         isOnline: false,
         error: errorMessage,
         responseTimeMs: responseTime,
-      } })
+      })
     }
   } catch (error) {
     console.error('Failed to ping payment reader:', error)
-    return NextResponse.json({ error: 'Failed to ping payment reader' }, { status: 500 })
+    return err('Failed to ping payment reader', 500)
   }
 }))

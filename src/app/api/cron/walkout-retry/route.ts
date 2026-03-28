@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { verifyCronSecret } from '@/lib/cron-auth'
 import { forAllVenues } from '@/lib/cron-venue-helper'
 import { processWalkoutRetry } from '@/lib/domain/datacap/walkout-retry-service'
 import type { PrismaClient } from '@/generated/prisma/client'
+import { ok } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -108,7 +109,7 @@ export async function GET(request: NextRequest) {
     })
   }, { label: 'cron:walkout-retry' })
 
-  return NextResponse.json({
+  return ok({
     ...summary,
     processed: allResults,
     timestamp: now.toISOString(),

@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET /api/ingredient-swap-groups - List all swap groups with member ingredients
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -11,7 +12,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const includeInactive = searchParams.get('includeInactive') === 'true'
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     const groups = await db.ingredientSwapGroup.findMany({
@@ -35,19 +36,17 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orderBy: { sortOrder: 'asc' },
     })
 
-    return NextResponse.json({
-      data: groups.map(group => ({
+    return ok(groups.map(group => ({
         ...group,
         ingredients: group.ingredients.map(ing => ({
           ...ing,
           extraPrice: Number(ing.extraPrice),
           swapUpcharge: Number(ing.swapUpcharge),
         })),
-      })),
-    })
+      })))
   } catch (error) {
     console.error('Error fetching ingredient swap groups:', error)
-    return NextResponse.json({ error: 'Failed to fetch ingredient swap groups' }, { status: 500 })
+    return err('Failed to fetch ingredient swap groups', 500)
   }
 })
 
@@ -63,10 +62,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     } = body
 
     if (!locationId || !name) {
-      return NextResponse.json(
-        { error: 'locationId and name are required' },
-        { status: 400 }
-      )
+      return err('locationId and name are required')
     }
 
     // Check for duplicate name
@@ -74,10 +70,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       where: { locationId, name, deletedAt: null },
     })
     if (existing) {
-      return NextResponse.json(
-        { error: 'A swap group with this name already exists' },
-        { status: 409 }
-      )
+      return err('A swap group with this name already exists', 409)
     }
 
     // Get max sortOrder if not provided
@@ -100,15 +93,13 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       },
     })
 
-    return NextResponse.json({
-      data: {
+    return ok({
         ...group,
         ingredients: [],
-      },
-    })
+      })
   } catch (error) {
     console.error('Error creating ingredient swap group:', error)
-    return NextResponse.json({ error: 'Failed to create ingredient swap group' }, { status: 500 })
+    return err('Failed to create ingredient swap group', 500)
   }
 }))
 
@@ -125,16 +116,13 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
     } = body
 
     if (!id) {
-      return NextResponse.json(
-        { error: 'id is required' },
-        { status: 400 }
-      )
+      return err('id is required')
     }
 
     // Check group exists
     const existing = await db.ingredientSwapGroup.findUnique({ where: { id } })
     if (!existing || existing.deletedAt) {
-      return NextResponse.json({ error: 'Swap group not found' }, { status: 404 })
+      return notFound('Swap group not found')
     }
 
     // Check for duplicate name (if name is being changed)
@@ -143,10 +131,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
         where: { locationId: existing.locationId, name, deletedAt: null, NOT: { id } },
       })
       if (duplicate) {
-        return NextResponse.json(
-          { error: 'A swap group with this name already exists' },
-          { status: 409 }
-        )
+        return err('A swap group with this name already exists', 409)
       }
     }
 
@@ -173,19 +158,17 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
       },
     })
 
-    return NextResponse.json({
-      data: {
+    return ok({
         ...group,
         ingredients: group.ingredients.map(ing => ({
           ...ing,
           extraPrice: Number(ing.extraPrice),
           swapUpcharge: Number(ing.swapUpcharge),
         })),
-      },
-    })
+      })
   } catch (error) {
     console.error('Error updating ingredient swap group:', error)
-    return NextResponse.json({ error: 'Failed to update ingredient swap group' }, { status: 500 })
+    return err('Failed to update ingredient swap group', 500)
   }
 }))
 
@@ -196,13 +179,13 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(request:
     const id = searchParams.get('id')
 
     if (!id) {
-      return NextResponse.json({ error: 'id is required' }, { status: 400 })
+      return err('id is required')
     }
 
     // Check if group exists
     const existing = await db.ingredientSwapGroup.findUnique({ where: { id } })
     if (!existing || existing.deletedAt) {
-      return NextResponse.json({ error: 'Swap group not found' }, { status: 404 })
+      return notFound('Swap group not found')
     }
 
     // First, unlink all ingredients from this swap group
@@ -217,9 +200,9 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(request:
       data: { deletedAt: new Date(), lastMutatedBy: 'cloud' },
     })
 
-    return NextResponse.json({ data: { message: 'Swap group deleted' } })
+    return ok({ message: 'Swap group deleted' })
   } catch (error) {
     console.error('Error deleting ingredient swap group:', error)
-    return NextResponse.json({ error: 'Failed to delete ingredient swap group' }, { status: 500 })
+    return err('Failed to delete ingredient swap group', 500)
   }
 }))

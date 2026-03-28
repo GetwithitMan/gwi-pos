@@ -6,14 +6,7 @@ import { Card } from '@/components/ui/card'
 import { formatCurrency } from '@/lib/utils'
 import { toast } from '@/stores/toast-store'
 import { Modal } from '@/components/ui/modal'
-
-interface OpenOrder {
-  id: string
-  orderNumber: number | null
-  tabName: string | null
-  status: string
-  total: number
-}
+import type { OpenOrderHandoff as OpenOrder } from '@/types'
 
 interface TipGroupOwned {
   id: string

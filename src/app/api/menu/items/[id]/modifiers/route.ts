@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, ok } from '@/lib/api-response'
 
 // GET modifier groups for a menu item — reads from item-owned groups (ModifierGroup.menuItemId)
 //
@@ -71,7 +72,7 @@ export const GET = withVenue(async function GET(
     const topLevelGroups = allGroups.filter(g => !childGroupIds.has(g.id))
 
     // Format response in the shape the POS ModifierModal expects
-    return NextResponse.json({ data: {
+    return ok({
       modifierGroups: topLevelGroups.map(group => {
         let filteredModifiers = group.modifiers
         if (channel === 'online') {
@@ -145,13 +146,10 @@ export const GET = withVenue(async function GET(
           })),
         }
       }),
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch item modifiers:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch item modifiers' },
-      { status: 500 }
-    )
+    return err('Failed to fetch item modifiers', 500)
   }
 })
 
@@ -160,8 +158,5 @@ export const GET = withVenue(async function GET(
 // Keeping a stub that returns a clear error if anything still calls it.
 export const POST = withVenue(withAuth('ADMIN', async function POST(request: NextRequest) {
   console.warn('Deprecated endpoint called: POST /api/menu/items/[id]/modifiers - should use /api/menu/items/[id]/modifier-groups')
-  return NextResponse.json(
-    { error: 'Shared modifier linking is deprecated. Use /api/menu/items/[id]/modifier-groups to manage item-owned modifier groups.' },
-    { status: 410 }
-  )
+  return err('Shared modifier linking is deprecated. Use /api/menu/items/[id]/modifier-groups to manage item-owned modifier groups.', 410)
 }))

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { checkLoginRateLimit } from '@/lib/auth-rate-limiter'
 import { getClientIp } from '@/lib/get-client-ip'
+import { err, notFound } from '@/lib/api-response'
 
 /**
  * POST /api/auth/forgot-password
@@ -66,12 +67,12 @@ export async function POST(request: NextRequest) {
   const { email } = await request.json().catch(() => ({} as any))
 
   if (!email || typeof email !== 'string') {
-    return NextResponse.json({ error: 'Email is required' }, { status: 400 })
+    return err('Email is required')
   }
 
   const fapiUrl = getClerkFapiUrl()
   if (!fapiUrl) {
-    return NextResponse.json({ error: 'Password reset is not configured' }, { status: 500 })
+    return err('Password reset is not configured', 500)
   }
 
   try {
@@ -86,12 +87,12 @@ export async function POST(request: NextRequest) {
 
     if (createData.errors?.length) {
       const msg = createData.errors[0]?.long_message || createData.errors[0]?.message
-      return NextResponse.json({ error: msg || 'Account not found' }, { status: 404 })
+      return notFound(msg || 'Account not found')
     }
 
     const signInId = createData.response?.id
     if (!signInId) {
-      return NextResponse.json({ error: 'Account not found' }, { status: 404 })
+      return notFound('Account not found')
     }
 
     // Extract email_address_id from supported first factors
@@ -133,7 +134,7 @@ export async function POST(request: NextRequest) {
 
     if (prepareData.errors?.length) {
       const msg = prepareData.errors[0]?.long_message || prepareData.errors[0]?.message
-      return NextResponse.json({ error: msg || 'Could not send reset code' }, { status: 400 })
+      return err(msg || 'Could not send reset code')
     }
 
     // Extract updated __client token from step 2
@@ -153,6 +154,6 @@ export async function POST(request: NextRequest) {
     return response
   } catch (err) {
     console.error('[forgot-password] Error:', err)
-    return NextResponse.json({ error: 'Connection error. Please try again.' }, { status: 500 })
+    return err('Connection error. Please try again.', 500)
   }
 }

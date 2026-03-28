@@ -59,6 +59,7 @@ import {
   type PreChargeResult,
 } from '@/lib/domain/payment'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-pay')
 
 // POST - Process payment for order
@@ -124,13 +125,13 @@ export const POST = withVenue(withTiming(async function POST(
       }
       const authPreCheck = await requireAnyPermission(payEmployeeId, preCheckOrder.locationId, [...requiredPermsPreCheck])
       if (!authPreCheck.authorized) {
-        return NextResponse.json({ error: authPreCheck.error }, { status: authPreCheck.status })
+        return err(authPreCheck.error, authPreCheck.status)
       }
       // Guard: paying another employee's order requires pos.edit_others_orders
       if (preCheckOrder.employeeId && preCheckOrder.employeeId !== payEmployeeId) {
         const ownerAuthPreCheck = await requirePermission(payEmployeeId, preCheckOrder.locationId, PERMISSIONS.POS_EDIT_OTHERS_ORDERS)
         if (!ownerAuthPreCheck.authorized) {
-          return NextResponse.json({ error: ownerAuthPreCheck.error }, { status: ownerAuthPreCheck.status })
+          return err(ownerAuthPreCheck.error, ownerAuthPreCheck.status)
         }
       }
     }
@@ -173,18 +174,18 @@ export const POST = withVenue(withTiming(async function POST(
       })
 
       if (!locationForPms) {
-        return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+        return notFound('Order not found')
       }
 
       const pmsSettings = parseSettings(locationForPms.location.settings)
 
       if (!pmsSettings.payments.acceptHotelRoomCharge) {
-        return NextResponse.json({ error: 'Bill to Room is not enabled' }, { status: 400 })
+        return err('Bill to Room is not enabled')
       }
 
       const pms = pmsSettings.hotelPms
       if (!pms?.enabled || !pms.clientId) {
-        return NextResponse.json({ error: 'Oracle PMS integration is not configured' }, { status: 400 })
+        return err('Oracle PMS integration is not configured')
       }
 
       // Find the room_charge payment in the array
@@ -192,22 +193,19 @@ export const POST = withVenue(withTiming(async function POST(
                           (rawMethod === 'room_charge' ? body : null)
       const selectionId = roomPayment?.selectionId
       if (!selectionId) {
-        return NextResponse.json({ error: 'Room charge requires a valid guest selection.' }, { status: 400 })
+        return err('Room charge requires a valid guest selection.')
       }
 
       const { consumeRoomChargeSelection } = await import('@/lib/room-charge-selections')
       const sel = consumeRoomChargeSelection(selectionId, locationForPms.locationId)
       if (!sel) {
-        return NextResponse.json(
-          { error: 'Guest selection has expired or is invalid. Please look up the guest again.' },
-          { status: 400 }
-        )
+        return err('Guest selection has expired or is invalid. Please look up the guest again.')
       }
 
       const amountVal = toNumber(roomPayment.amount || 0)
       const tipVal = toNumber(roomPayment.tipAmount || 0)
       if (!isFinite(amountVal) || amountVal < 0 || !isFinite(tipVal) || tipVal < 0) {
-        return NextResponse.json({ error: 'Invalid payment amount' }, { status: 400 })
+        return err('Invalid payment amount')
       }
       // FIX F10: Only send base amount to OPERA — tip is recorded on the Payment
       // record but must NOT be added to the PMS folio charge (prevents guest overcharge).
@@ -218,7 +216,7 @@ export const POST = withVenue(withTiming(async function POST(
       let pmsAttempt = await db.pmsChargeAttempt.findUnique({ where: { idempotencyKey: idempotencyKey_pms } })
 
       if (pmsAttempt?.status === 'COMPLETED') {
-        return NextResponse.json({
+        return ok({
           success: true,
           message: 'Room charge already processed.',
           transactionNo: pmsAttempt.operaTransactionId,
@@ -226,19 +224,13 @@ export const POST = withVenue(withTiming(async function POST(
       }
 
       if (pmsAttempt?.status === 'FAILED') {
-        return NextResponse.json(
-          { error: 'A previous charge attempt failed. Please try a new payment.' },
-          { status: 502 }
-        )
+        return err('A previous charge attempt failed. Please try a new payment.', 502)
       }
 
       if (pmsAttempt?.status === 'PENDING') {
         const ageMs = Date.now() - pmsAttempt.updatedAt.getTime()
         if (ageMs < 60_000) {
-          return NextResponse.json(
-            { error: 'Charge in progress. Please wait a moment and try again.' },
-            { status: 409 }
-          )
+          return err('Charge in progress. Please wait a moment and try again.', 409)
         }
       }
 
@@ -287,10 +279,7 @@ export const POST = withVenue(withTiming(async function POST(
           },
         }).catch(e => console.error('[pay/room_charge] Failed to mark attempt FAILED:', e))
         console.error('[pay/room_charge] OPERA charge failed:', err instanceof Error ? err.message : 'unknown')
-        return NextResponse.json(
-          { error: 'Failed to post charge to hotel room. Please verify the room and try again.' },
-          { status: 502 }
-        )
+        return err('Failed to post charge to hotel room. Please verify the room and try again.', 502)
       }
     }
 
@@ -2419,7 +2408,7 @@ export const POST = withVenue(withTiming(async function POST(
     const primaryPayment = ingestResult.bridgedPayments[0]
     const finalStatus = orderIsPaid ? 'paid' : 'partial'
     const finalBalance = orderIsPaid ? 0 : Math.max(0, effectiveTotal - newPaidTotal)
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       // Flat fields for Android compatibility
       orderId,
@@ -2472,7 +2461,7 @@ export const POST = withVenue(withTiming(async function POST(
           }
         } catch { return {} }
       })(),
-    } })
+    })
   } catch (error) {
     console.error('Failed to process payment:', error)
 

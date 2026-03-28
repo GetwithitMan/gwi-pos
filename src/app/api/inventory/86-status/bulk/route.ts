@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
@@ -8,6 +8,7 @@ import { withAuth } from '@/lib/api-auth-middleware'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok } from '@/lib/api-response'
 const log = createChildLogger('inventory-86-status-bulk')
 
 /**
@@ -20,24 +21,18 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const body = await request.json()
     const { ingredientIds, is86d, employeeId } = body
 
     if (!ingredientIds || !Array.isArray(ingredientIds) || ingredientIds.length === 0) {
-      return NextResponse.json(
-        { error: 'ingredientIds array is required' },
-        { status: 400 }
-      )
+      return err('ingredientIds array is required')
     }
 
     if (is86d === undefined) {
-      return NextResponse.json(
-        { error: 'is86d is required' },
-        { status: 400 }
-      )
+      return err('is86d is required')
     }
 
     // Update all ingredients in bulk
@@ -100,17 +95,15 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     void notifyDataChanged({ locationId, domain: 'inventory', action: 'updated', entityId: ingredientIds[0] })
     pushUpstream()
 
-    return NextResponse.json({
-      data: {
+    return ok({
         updatedCount: result.count,
         ingredients: updated,
         message: is86d
           ? `${result.count} items marked as 86.`
           : `${result.count} items are back in stock.`
-      }
-    })
+      })
   } catch (error) {
     console.error('Error bulk updating 86 status:', error)
-    return NextResponse.json({ error: 'Failed to bulk update 86 status' }, { status: 500 })
+    return err('Failed to bulk update 86 status', 500)
   }
 }))

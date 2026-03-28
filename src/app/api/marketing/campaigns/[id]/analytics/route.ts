@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - Detailed analytics for a campaign
 export const GET = withVenue(async function GET(
@@ -13,7 +14,7 @@ export const GET = withVenue(async function GET(
     const locationId = searchParams.get('locationId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+      return err('Location ID is required')
     }
 
     // Verify campaign exists
@@ -26,7 +27,7 @@ export const GET = withVenue(async function GET(
     `, id, locationId) as Record<string, unknown>[]
 
     if (campaigns.length === 0) {
-      return NextResponse.json({ error: 'Campaign not found' }, { status: 404 })
+      return notFound('Campaign not found')
     }
 
     const campaign = campaigns[0]
@@ -77,8 +78,7 @@ export const GET = withVenue(async function GET(
       LIMIT 10
     `, id) as { errorMessage: string; count: number }[]
 
-    return NextResponse.json({
-      data: {
+    return ok({
         campaign: {
           id: campaign.id,
           name: campaign.name,
@@ -97,10 +97,9 @@ export const GET = withVenue(async function GET(
         statusBreakdown,
         timeline,
         errors,
-      },
-    })
+      })
   } catch (error) {
     console.error('[Marketing] Failed to get analytics:', error)
-    return NextResponse.json({ error: 'Failed to get analytics' }, { status: 500 })
+    return err('Failed to get analytics', 500)
   }
 })

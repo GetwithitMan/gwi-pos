@@ -17,6 +17,7 @@ import {
   getPaidInOutTotals,
   getFailedDeductionCount,
 } from '@/lib/query-services'
+import { err, ok } from '@/lib/api-response'
 
 export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextRequest) {
   try {
@@ -25,12 +26,12 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
     const requestingEmployeeId = searchParams.get('requestingEmployeeId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID required' }, { status: 400 })
+      return err('Location ID required')
     }
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_VIEW)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     const rateCheck = checkReportRateLimit(requestingEmployeeId || 'anonymous')
@@ -110,8 +111,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
     const paidInTotal = paidInOutTotals.paidIn
     const paidOutTotal = paidInOutTotals.paidOut
 
-    return NextResponse.json({
-      data: {
+    return ok({
         netSalesToday: roundMoney(netSalesToday),
         netSalesLastWeekSameDay: roundMoney(netSalesLastWeekSameTime),
         salesPacingPct: Math.round(salesPacingPct * 10) / 10,
@@ -129,10 +129,9 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
         dayFraction: Math.round(dayFraction * 1000) / 1000,
         businessDate: current.date,
         generatedAt: new Date().toISOString(),
-      },
-    })
+      })
   } catch (err) {
     console.error('Dashboard live API error:', err)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return err('Internal server error', 500)
   }
 }))

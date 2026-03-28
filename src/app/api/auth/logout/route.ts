@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { clearSessionCookie, getSessionFromCookie } from '@/lib/auth-session'
 import { createChildLogger } from '@/lib/logger'
+import { ok } from '@/lib/api-response'
 const log = createChildLogger('auth-logout')
 
 /**
@@ -30,11 +31,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     await clearSessionCookie()
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Logout error:', error)
     // Still clear the cookie even if logging fails
     try { await clearSessionCookie() } catch {}
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   }
 })

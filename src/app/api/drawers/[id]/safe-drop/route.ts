@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -8,6 +8,7 @@ import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 import { queueIfOutage, pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('drawers-safe-drop')
 
 /**
@@ -47,13 +48,13 @@ export const POST = withVenue(async function POST(
 
     // ── Validation ────────────────────────────────────────────────────
     if (!employeeId) {
-      return NextResponse.json({ error: 'Employee ID is required' }, { status: 400 })
+      return err('Employee ID is required')
     }
     if (!shiftId) {
-      return NextResponse.json({ error: 'Shift ID is required' }, { status: 400 })
+      return err('Shift ID is required')
     }
     if (!amount || Number(amount) <= 0) {
-      return NextResponse.json({ error: 'Amount must be greater than 0' }, { status: 400 })
+      return err('Amount must be greater than 0')
     }
 
     // ── Drawer exists? ───────────────────────────────────────────────
@@ -62,13 +63,13 @@ export const POST = withVenue(async function POST(
       select: { id: true, name: true, locationId: true },
     })
     if (!drawer) {
-      return NextResponse.json({ error: 'Drawer not found' }, { status: 404 })
+      return notFound('Drawer not found')
     }
 
     // ── Permission check ─────────────────────────────────────────────
     const auth = await requirePermission(employeeId, drawer.locationId, PERMISSIONS.MGR_PAY_IN_OUT)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // ── Shift is open? ───────────────────────────────────────────────
@@ -77,7 +78,7 @@ export const POST = withVenue(async function POST(
       select: { id: true, drawerId: true, locationId: true },
     })
     if (!shift) {
-      return NextResponse.json({ error: 'Shift not found or already closed' }, { status: 400 })
+      return err('Shift not found or already closed')
     }
 
     // ── Load cash management settings ────────────────────────────────
@@ -86,18 +87,12 @@ export const POST = withVenue(async function POST(
 
     // Max drop amount check
     if (cashMgmt && Number(amount) > cashMgmt.maxDropAmount) {
-      return NextResponse.json(
-        { error: `Drop amount exceeds maximum of $${cashMgmt.maxDropAmount.toFixed(2)}` },
-        { status: 400 }
-      )
+      return err(`Drop amount exceeds maximum of $${cashMgmt.maxDropAmount.toFixed(2)}`)
     }
 
     // Witness requirement check
     if (cashMgmt?.requireWitnessForDrops && !witnessEmployeeId) {
-      return NextResponse.json(
-        { error: 'A witness employee is required for safe drops' },
-        { status: 400 }
-      )
+      return err('A witness employee is required for safe drops')
     }
 
     // Validate witness exists if provided
@@ -107,7 +102,7 @@ export const POST = withVenue(async function POST(
         select: { id: true },
       })
       if (!witness) {
-        return NextResponse.json({ error: 'Witness employee not found' }, { status: 400 })
+        return err('Witness employee not found')
       }
     }
 
@@ -173,8 +168,7 @@ export const POST = withVenue(async function POST(
       createdAt: record.createdAt.toISOString(),
     }).catch(err => log.warn({ err }, 'Background task failed'))
 
-    return NextResponse.json({
-      data: {
+    return ok({
         id: record.id,
         amount: Number(record.amount),
         reason: record.reason,
@@ -184,13 +178,9 @@ export const POST = withVenue(async function POST(
         drawerName: record.drawer.name,
         witnessEmployeeId: witnessEmployeeId || null,
         createdAt: record.createdAt.toISOString(),
-      },
-    })
+      })
   } catch (error) {
     console.error('[SafeDrop API] Error:', error)
-    return NextResponse.json(
-      { error: 'Failed to record safe drop' },
-      { status: 500 }
-    )
+    return err('Failed to record safe drop', 500)
   }
 })

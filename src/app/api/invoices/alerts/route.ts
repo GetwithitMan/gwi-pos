@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { err, ok } from '@/lib/api-response'
 
 // GET /api/invoices/alerts — cost change alerts from last 30 days
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -14,11 +15,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const days = parseInt(searchParams.get('days') || '30')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.INVENTORY_VIEW)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const since = new Date()
     since.setDate(since.getDate() - days)
@@ -82,9 +83,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       })
     )
 
-    return NextResponse.json({ data: { alerts: alertsWithMenuItems } })
+    return ok({ alerts: alertsWithMenuItems })
   } catch (error) {
     console.error('Cost alerts error:', error)
-    return NextResponse.json({ error: 'Failed to fetch cost alerts' }, { status: 500 })
+    return err('Failed to fetch cost alerts', 500)
   }
 })

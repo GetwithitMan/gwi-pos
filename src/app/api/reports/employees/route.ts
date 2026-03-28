@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { getHourInTimezone } from '@/lib/timezone'
 import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
+import { err, ok } from '@/lib/api-response'
 
 // GET employee performance report
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -17,15 +18,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const requestingEmployeeId = searchParams.get('requestingEmployeeId') || searchParams.get('employeeId') || employeeId
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'Location ID is required' },
-        { status: 400 }
-      )
+      return err('Location ID is required')
     }
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_SALES_BY_EMPLOYEE)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Build date filters (orderDateFilter uses businessDayDate OR-fallback for Order queries)
@@ -316,7 +314,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         totalOrders: Object.values(employees).reduce((sum, e) => sum + e.orders, 0),
       }))
 
-    return NextResponse.json({ data: {
+    return ok({
       summary: {
         totalEmployees: employeeReport.length,
         totalOrders,
@@ -335,12 +333,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         locationId,
         employeeId,
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to generate employee report:', error)
-    return NextResponse.json(
-      { error: 'Failed to generate employee report' },
-      { status: 500 }
-    )
+    return err('Failed to generate employee report', 500)
   }
 })

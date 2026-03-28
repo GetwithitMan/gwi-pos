@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { parseSettings, DEFAULT_ACCOUNTING_SETTINGS } from '@/lib/settings'
 import { getCurrentBusinessDay } from '@/lib/business-day'
 import { generateDailySalesJournal } from '@/lib/accounting/daily-journal'
 import { exportToCSV } from '@/lib/accounting/csv-exporter'
 import { verifyCronSecret } from '@/lib/cron-auth'
 import { forAllVenues } from '@/lib/cron-venue-helper'
+import { ok } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -141,7 +142,7 @@ export async function GET(request: NextRequest) {
     }
   }, { label: 'cron:accounting-export' })
 
-  return NextResponse.json({
+  return ok({
     ...summary,
     processed: allResults,
     timestamp: now.toISOString(),

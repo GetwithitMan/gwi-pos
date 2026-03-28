@@ -16,6 +16,7 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import crypto from 'crypto'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound } from '@/lib/api-response'
 const log = createChildLogger('notifications-dlq')
 
 export const dynamic = 'force-dynamic'
@@ -35,12 +36,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.NOTIFICATIONS_REPLAY_DLQ)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const { searchParams } = new URL(request.url)
     const providerId = searchParams.get('providerId')
@@ -155,7 +156,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     })
   } catch (error) {
     console.error('[DLQ] GET error:', error)
-    return NextResponse.json({ error: 'Failed to fetch dead-letter jobs' }, { status: 500 })
+    return err('Failed to fetch dead-letter jobs', 500)
   }
 })
 
@@ -176,18 +177,18 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.NOTIFICATIONS_REPLAY_DLQ)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const body = await request.json()
     const { jobId } = body
 
     if (!jobId || typeof jobId !== 'string') {
-      return NextResponse.json({ error: 'jobId is required' }, { status: 400 })
+      return err('jobId is required')
     }
 
     // Fetch the original dead-letter job
@@ -229,13 +230,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     )
 
     if (originalJobs.length === 0) {
-      return NextResponse.json({ error: 'Job not found' }, { status: 404 })
+      return notFound('Job not found')
     }
 
     const original = originalJobs[0]
 
     if (original.status !== 'dead_letter') {
-      return NextResponse.json({ error: 'Only dead_letter jobs can be retried' }, { status: 400 })
+      return err('Only dead_letter jobs can be retried')
     }
 
     // Generate unique source event ID for replay
@@ -330,7 +331,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
   } catch (error) {
     console.error('[DLQ] POST error:', error)
-    return NextResponse.json({ error: 'Failed to retry dead-letter job' }, { status: 500 })
+    return err('Failed to retry dead-letter job', 500)
   }
 })
 
@@ -345,22 +346,22 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.NOTIFICATIONS_REPLAY_DLQ)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const body = await request.json()
     const { jobId, action } = body
 
     if (!jobId || typeof jobId !== 'string') {
-      return NextResponse.json({ error: 'jobId is required' }, { status: 400 })
+      return err('jobId is required')
     }
 
     if (action !== 'suppress' && action !== 'resolve') {
-      return NextResponse.json({ error: 'action must be "suppress" or "resolve"' }, { status: 400 })
+      return err('action must be "suppress" or "resolve"')
     }
 
     // Verify job exists and is dead_letter
@@ -371,11 +372,11 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
     )
 
     if (jobs.length === 0) {
-      return NextResponse.json({ error: 'Job not found' }, { status: 404 })
+      return notFound('Job not found')
     }
 
     if (jobs[0].status !== 'dead_letter') {
-      return NextResponse.json({ error: 'Only dead_letter jobs can be suppressed/resolved' }, { status: 400 })
+      return err('Only dead_letter jobs can be suppressed/resolved')
     }
 
     // W7: "resolve" should use 'suppressed' (a valid terminal state), not 'cancelled'
@@ -424,6 +425,6 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
     })
   } catch (error) {
     console.error('[DLQ] PATCH error:', error)
-    return NextResponse.json({ error: 'Failed to update dead-letter job' }, { status: 500 })
+    return err('Failed to update dead-letter job', 500)
   }
 })

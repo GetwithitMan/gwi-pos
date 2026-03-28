@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { PERMISSIONS } from '@/lib/auth'
 import { requirePermission } from '@/lib/api-auth'
 import { getLocationId } from '@/lib/location-cache'
@@ -6,6 +6,7 @@ import { withVenue } from '@/lib/with-venue'
 import { resolveSlackWebhookUrl } from '@/lib/alert-service'
 import { isTwilioConfiguredAsync, sendSMS, maskPhone, formatPhoneE164 } from '@/lib/twilio'
 import { db } from '@/lib/db'
+import { err, ok } from '@/lib/api-response'
 
 export const POST = withVenue(async function POST(request: NextRequest) {
   const { service, employeeId, locationId: bodyLocationId } = await request.json()
@@ -13,12 +14,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   // Resolve locationId — body → fallback to cached location
   const locationId = bodyLocationId || await getLocationId()
   if (!locationId) {
-    return NextResponse.json({ error: 'Location required' }, { status: 400 })
+    return err('Location required')
   }
 
   // Auth check — require settings.integrations permission
   const auth = await requirePermission(employeeId, locationId, PERMISSIONS.SETTINGS_INTEGRATIONS)
-  if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+  if (!auth.authorized) return err(auth.error, auth.status)
 
   try {
     if (service === 'twilio') {
@@ -46,19 +47,17 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }
 
       const masked = maskPhone(formatPhoneE164(employee.phone))
-      return NextResponse.json({
-        data: {
+      return ok({
           success: true,
           message: `Test SMS sent to ${masked}. Check your phone!`,
           messageSid: result.messageSid,
-        },
-      })
+        })
     }
 
     if (service === 'resend') {
       const apiKey = process.env.RESEND_API_KEY
       if (!apiKey) throw new Error('Resend API key not configured')
-      return NextResponse.json({ data: { success: true, message: 'Resend API key verified' } })
+      return ok({ success: true, message: 'Resend API key verified' })
     }
 
     if (service === 'slack') {
@@ -71,12 +70,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         signal: AbortSignal.timeout(5000),
       })
       if (!res.ok) throw new Error('Slack webhook returned error')
-      return NextResponse.json({ data: { success: true, message: 'Test message sent to Slack' } })
+      return ok({ success: true, message: 'Test message sent to Slack' })
     }
 
-    return NextResponse.json({ error: 'Unknown service' }, { status: 400 })
+    return err('Unknown service')
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Test failed'
-    return NextResponse.json({ data: { success: false, message } })
+    return ok({ success: false, message })
   }
 })

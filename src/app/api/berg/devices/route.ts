@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { generateBridgeSecret, encryptBridgeSecret } from '@/lib/berg/hmac'
 import { createHash } from 'crypto'
+import { created, err, ok } from '@/lib/api-response'
 
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
@@ -12,10 +13,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const locationId = searchParams.get('locationId')
     const requestingEmployeeId = searchParams.get('employeeId') || ''
 
-    if (!locationId) return NextResponse.json({ error: 'locationId required' }, { status: 400 })
+    if (!locationId) return err('locationId required')
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.SETTINGS_VIEW)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const devices = await db.bergDevice.findMany({
       where: { locationId },
@@ -23,12 +24,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     })
 
     // Never return bridgeSecretHash
-    return NextResponse.json({
+    return ok({
       devices: devices.map(({ bridgeSecretHash: _, ...d }) => d),
     })
   } catch (err) {
     console.error('[berg/devices GET]', err)
-    return NextResponse.json({ error: 'Failed to load devices' }, { status: 500 })
+    return err('Failed to load devices', 500)
   }
 })
 
@@ -39,11 +40,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const requestingEmployeeId = body.employeeId || ''
 
     if (!locationId || !name || !portName) {
-      return NextResponse.json({ error: 'locationId, name, and portName are required' }, { status: 400 })
+      return err('locationId, name, and portName are required')
     }
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.SETTINGS_EDIT)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Generate secret — shown once, then only hash stored
     const plainSecret = generateBridgeSecret()
@@ -75,13 +76,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const device = await db.bergDevice.create({ data: createInput })
 
     const { bridgeSecretHash: _, ...deviceOut } = device
-    return NextResponse.json({
+    return created({
       device: deviceOut,
       bridgeSecret: plainSecret, // returned ONCE — never again
       warning: 'Save this secret now — it cannot be retrieved again.',
-    }, { status: 201 })
+    })
   } catch (err) {
     console.error('[berg/devices POST]', err)
-    return NextResponse.json({ error: 'Failed to create device' }, { status: 500 })
+    return err('Failed to create device', 500)
   }
 })

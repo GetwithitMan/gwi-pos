@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { dateRangeToUTC, getTodayInTimezone, tzToUTC } from '@/lib/timezone'
 import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
+import { err, ok } from '@/lib/api-response'
 
 // GET - Comprehensive payroll report for a date range
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -17,15 +18,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const requestingEmployeeId = searchParams.get('requestingEmployeeId') || searchParams.get('employeeId') || employeeId
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'Location ID is required' },
-        { status: 400 }
-      )
+      return err('Location ID is required')
     }
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_LABOR)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Resolve venue timezone for correct date boundaries
@@ -406,7 +404,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       grandTotal: Math.round(payrollReport.reduce((sum, e) => sum + e.grossPay, 0) * 100) / 100,
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       summary,
       employees: payrollReport,
       filters: {
@@ -415,12 +413,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         locationId,
         employeeId,
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to generate payroll report:', error)
-    return NextResponse.json(
-      { error: 'Failed to generate payroll report' },
-      { status: 500 }
-    )
+    return err('Failed to generate payroll report', 500)
   }
 })

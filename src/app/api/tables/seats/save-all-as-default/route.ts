@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 
 const log = createChildLogger('tables.seats.save-all-as-default')
 
@@ -20,10 +21,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     const { locationId, employeeId, tableIds } = body
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'locationId is required' },
-        { status: 400 }
-      )
+      return err('locationId is required')
     }
 
     // Build query - either specific tables or all tables
@@ -42,10 +40,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     })
 
     if (tables.length === 0) {
-      return NextResponse.json(
-        { error: 'No tables found' },
-        { status: 404 }
-      )
+      return notFound('No tables found')
     }
 
     const tableIdList = tables.map(t => t.id)
@@ -60,13 +55,11 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     })
 
     if (seats.length === 0) {
-      return NextResponse.json({
-        data: {
+      return ok({
           savedCount: 0,
           tableCount: tables.length,
           message: 'No seats to save',
-        },
-      })
+        })
     }
 
     // Save current seat positions as default
@@ -97,18 +90,13 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     // Fire-and-forget socket dispatch for real-time floor plan updates
     void dispatchFloorPlanUpdate(locationId).catch(err => log.warn({ err }, 'floor plan dispatch failed'))
 
-    return NextResponse.json({
-      data: {
+    return ok({
         savedCount: result,
         tableCount: tables.length,
         message: `Saved ${result} seat positions across ${tables.length} tables as default`,
-      },
-    })
+      })
   } catch (error) {
     console.error('[SaveAllSeatsAsDefault] Failed:', error)
-    return NextResponse.json(
-      { error: 'Failed to save seat positions as default' },
-      { status: 500 }
-    )
+    return err('Failed to save seat positions as default', 500)
   }
 }))

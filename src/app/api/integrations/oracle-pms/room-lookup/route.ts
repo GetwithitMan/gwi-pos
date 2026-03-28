@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationSettings } from '@/lib/location-cache'
 import { parseSettings } from '@/lib/settings'
@@ -7,6 +7,7 @@ import { createRoomChargeSelection } from '@/lib/room-charge-selections'
 import { db } from '@/lib/db'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
+import { err, forbidden, notFound, ok } from '@/lib/api-response'
 
 // ─── Rate limiter: 10 lookups per employee per minute ────────────────────────
 import { createRateLimiter } from '@/lib/rate-limiter'
@@ -46,23 +47,23 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   const employeeId = searchParams.get('employeeId') ?? null
 
   if (!q) {
-    return NextResponse.json({ error: 'q parameter is required' }, { status: 400 })
+    return err('q parameter is required')
   }
 
   // Type-aware format validation
   const validationError = validateLookupInput(q, type)
   if (validationError) {
-    return NextResponse.json({ error: validationError }, { status: 400 })
+    return err(validationError)
   }
 
   const location = await db.location.findFirst({ select: { id: true } })
-  if (!location) return NextResponse.json({ error: 'No location' }, { status: 404 })
+  if (!location) return notFound('No location')
 
   // Auth check — require POS access to perform guest lookups (exposes hotel guest data)
   const actor = await getActorFromRequest(request)
   const resolvedEmployeeId = actor.employeeId ?? employeeId
   const auth = await requirePermission(resolvedEmployeeId, location.id, PERMISSIONS.POS_ACCESS)
-  if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+  if (!auth.authorized) return err(auth.error, auth.status)
 
   // Validate employeeId is a real employee at this location before using as rate-limit key.
   // Prevents a malicious client from cycling through fake IDs to bypass per-employee limits.
@@ -81,21 +82,18 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     : `ip:${getClientIp(request)}`
 
   if (!limiter.check(rateLimitKey).allowed) {
-    return NextResponse.json(
-      { error: 'Too many guest lookups. Please wait before trying again.' },
-      { status: 429 }
-    )
+    return err('Too many guest lookups. Please wait before trying again.', 429)
   }
 
   const settings = parseSettings(await getLocationSettings(location.id))
   const pms = settings.hotelPms
 
   if (!pms?.enabled || !pms.clientId) {
-    return NextResponse.json({ error: 'Oracle PMS integration is not configured' }, { status: 400 })
+    return err('Oracle PMS integration is not configured')
   }
 
   if (type === 'name' && !pms.allowGuestLookup) {
-    return NextResponse.json({ error: 'Guest name lookup is disabled' }, { status: 403 })
+    return forbidden('Guest name lookup is disabled')
   }
 
   try {
@@ -117,12 +115,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       return { ...guest, selectionId }
     })
 
-    return NextResponse.json({ data: { guests } })
+    return ok({ guests })
   } catch {
     // Never send raw OPERA error bodies to the client
-    return NextResponse.json(
-      { error: 'Guest lookup failed. Please verify the PMS connection or try again.' },
-      { status: 502 }
-    )
+    return err('Guest lookup failed. Please verify the PMS connection or try again.', 502)
   }
 })

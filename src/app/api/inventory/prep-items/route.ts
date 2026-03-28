@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { err, ok } from '@/lib/api-response'
 
 // GET /api/inventory/prep-items - List prep items for a location
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -9,7 +10,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const locationId = searchParams.get('locationId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     const prepItems = await db.prepItem.findMany({
@@ -30,8 +31,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orderBy: { name: 'asc' },
     })
 
-    return NextResponse.json({
-      data: prepItems.map(item => ({
+    return ok(prepItems.map(item => ({
         id: item.id,
         name: item.name,
         description: item.description,
@@ -39,10 +39,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         outputQuantity: item.batchYield ? Number(item.batchYield) : null,
         shelfLifeHours: item.shelfLifeHours,
         isActive: item.isActive,
-      })),
-    })
+      })))
   } catch (error) {
     console.error('Error fetching prep items:', error)
-    return NextResponse.json({ error: 'Failed to fetch prep items' }, { status: 500 })
+    return err('Failed to fetch prep items', 500)
   }
 })

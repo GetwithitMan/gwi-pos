@@ -21,6 +21,7 @@ import { assembleQuote, generateQuoteLineItems } from '@/lib/cake-orders/cake-qu
 import type { PricingInputsV1 } from '@/lib/cake-orders/schemas'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { requireCakeFeature } from '@/lib/cake-orders/require-cake-feature'
+import { ok } from '@/lib/api-response'
 
 export const POST = withVenue(async function POST(
   request: NextRequest,
@@ -277,8 +278,7 @@ export const POST = withVenue(async function POST(
     }).catch(err => console.error('[cake-quote] Socket dispatch failed:', err))
 
     // ── Return created quote ────────────────────────────────────────────
-    return NextResponse.json({
-      data: {
+    return ok({
         id: quoteId,
         cakeOrderId,
         version: nextVersion,
@@ -294,8 +294,7 @@ export const POST = withVenue(async function POST(
         discountReason: pricingInputs.discountReason,
         validUntilDate: input.validUntilDate,
         createdBy: auth.employee.id,
-      },
-    })
+      })
   } catch (error) {
     console.error('[cake-quote] Failed to create quote:', error)
     return NextResponse.json(

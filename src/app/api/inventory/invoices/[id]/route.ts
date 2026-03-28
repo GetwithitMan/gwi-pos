@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - Get single invoice with line items
 export const GET = withVenue(async function GET(
@@ -30,10 +31,10 @@ export const GET = withVenue(async function GET(
     })
 
     if (!invoice || invoice.deletedAt) {
-      return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
+      return notFound('Invoice not found')
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       invoice: {
         ...invoice,
         totalAmount: Number(invoice.totalAmount),
@@ -44,10 +45,10 @@ export const GET = withVenue(async function GET(
           totalCost: Number(li.totalCost),
         })),
       },
-    } })
+    })
   } catch (error) {
     console.error('Get invoice error:', error)
-    return NextResponse.json({ error: 'Failed to fetch invoice' }, { status: 500 })
+    return err('Failed to fetch invoice', 500)
   }
 })
 
@@ -66,7 +67,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     })
 
     if (!existing || existing.deletedAt) {
-      return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
+      return notFound('Invoice not found')
     }
 
     // Handle status changes
@@ -187,15 +188,15 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     void notifyDataChanged({ locationId: existing.locationId, domain: 'inventory', action: 'updated', entityId: id })
     pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       invoice: {
         ...invoice,
         totalAmount: invoice ? Number(invoice.totalAmount) : 0,
       },
-    } })
+    })
   } catch (error) {
     console.error('Update invoice error:', error)
-    return NextResponse.json({ error: 'Failed to update invoice' }, { status: 500 })
+    return err('Failed to update invoice', 500)
   }
 }))
 
@@ -212,13 +213,11 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     })
 
     if (!existing || existing.deletedAt) {
-      return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
+      return notFound('Invoice not found')
     }
 
     if (existing.status !== 'pending') {
-      return NextResponse.json({
-        error: 'Can only delete pending invoices',
-      }, { status: 400 })
+      return err('Can only delete pending invoices')
     }
 
     await db.invoice.update({
@@ -229,9 +228,9 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     void notifyDataChanged({ locationId: existing.locationId, domain: 'inventory', action: 'deleted', entityId: id })
     pushUpstream()
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Delete invoice error:', error)
-    return NextResponse.json({ error: 'Failed to delete invoice' }, { status: 500 })
+    return err('Failed to delete invoice', 500)
   }
 }))

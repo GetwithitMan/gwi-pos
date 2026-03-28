@@ -19,8 +19,9 @@
  *   explicitly disable it.
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { getDbForVenue } from '@/lib/db'
+import { err, forbidden, notFound, ok } from '@/lib/api-response'
 
 export async function GET(request: NextRequest) {
   try {
@@ -28,10 +29,7 @@ export async function GET(request: NextRequest) {
     const slug = searchParams.get('slug')
 
     if (!slug) {
-      return NextResponse.json(
-        { error: 'slug query parameter is required' },
-        { status: 400 }
-      )
+      return err('slug query parameter is required')
     }
 
     // Route directly to the venue's database — the slug IS the database identifier.
@@ -41,7 +39,7 @@ export async function GET(request: NextRequest) {
     try {
       venueDb = await getDbForVenue(slug)
     } catch {
-      return NextResponse.json({ error: 'Location not found' }, { status: 404 })
+      return notFound('Location not found')
     }
 
     const location = await venueDb.location.findFirst({
@@ -55,10 +53,7 @@ export async function GET(request: NextRequest) {
     })
 
     if (!location) {
-      return NextResponse.json(
-        { error: 'Location not found' },
-        { status: 404 }
-      )
+      return notFound('Location not found')
     }
 
     // ── Online ordering gate ────────────────────────────────────────────────
@@ -76,10 +71,7 @@ export async function GET(request: NextRequest) {
       enabledViaNestedKey === false || enabledViaFlatKey === false
 
     if (explicitlyDisabled) {
-      return NextResponse.json(
-        { error: 'Online ordering is not available at this location' },
-        { status: 403 }
-      )
+      return forbidden('Online ordering is not available at this location')
     }
 
     // ── Extract online ordering settings with defaults ──────────────────────
@@ -95,7 +87,7 @@ export async function GET(request: NextRequest) {
     const orderTypes = (onlineOrderingSettings?.orderTypes as string[]) ?? ['takeout']
 
     // ── Success ─────────────────────────────────────────────────────────────
-    return NextResponse.json({
+    return ok({
       locationId: location.id,
       name: location.name,
       slug: location.slug,
@@ -107,9 +99,6 @@ export async function GET(request: NextRequest) {
     })
   } catch (error) {
     console.error('[GET /api/public/resolve-order-code] Error:', error)
-    return NextResponse.json(
-      { error: 'Failed to resolve location' },
-      { status: 500 }
-    )
+    return err('Failed to resolve location', 500)
   }
 }

@@ -22,6 +22,7 @@ import { getRequestLocationId } from '@/lib/request-context'
 import { validateManagerReauthFromHeaders, validateCellularOrderAccess, CellularAuthError } from '@/lib/cellular-validation'
 import { isClosed } from '@/lib/domain/order-status'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-void-payment')
 
 class VoidValidationError extends Error {
@@ -54,10 +55,7 @@ export const POST = withVenue(async function POST(
 
     // Validate inputs
     if (!paymentId || !reason || !managerId) {
-      return NextResponse.json(
-        { error: 'Missing required fields' },
-        { status: 400 }
-      )
+      return err('Missing required fields')
     }
 
     // HA cellular sync — detect mutation origin for downstream sync
@@ -69,7 +67,7 @@ export const POST = withVenue(async function POST(
       validateManagerReauthFromHeaders(request, managerId, managerPinHash)
     } catch (err) {
       if (err instanceof CellularAuthError) {
-        return NextResponse.json({ error: err.message }, { status: err.status })
+        return err(err.message, err.status)
       }
       throw err
     }
@@ -81,7 +79,7 @@ export const POST = withVenue(async function POST(
         await validateCellularOrderAccess(true, orderId, 'mutate', db)
       } catch (err) {
         if (err instanceof CellularAuthError) {
-          return NextResponse.json({ error: err.message }, { status: err.status })
+          return err(err.message, err.status)
         }
         throw err
       }
@@ -95,10 +93,7 @@ export const POST = withVenue(async function POST(
         select: { id: true, locationId: true },
       })
       if (!orderCheck) {
-        return NextResponse.json(
-          { error: 'Order not found' },
-          { status: 404 }
-        )
+        return notFound('Order not found')
       }
       voidLocationId = orderCheck.locationId
     }
@@ -106,7 +101,7 @@ export const POST = withVenue(async function POST(
     // Verify manager has permission scoped to order's location
     const authResult = await requirePermission(managerId, voidLocationId, PERMISSIONS.MGR_VOID_PAYMENTS)
     if (!authResult.authorized) {
-      return NextResponse.json({ error: authResult.error }, { status: authResult.status ?? 403 })
+      return err(authResult.error, authResult.status ?? 403)
     }
 
     // Phase 1: Read order + validate under FOR UPDATE lock on Order row.
@@ -141,7 +136,7 @@ export const POST = withVenue(async function POST(
     }, { timeout: 15000 })
 
     if ('error' in lockedRead) {
-      return NextResponse.json({ error: lockedRead.error }, { status: lockedRead.status })
+      return err(lockedRead.error, lockedRead.status)
     }
 
     const { order, payment } = lockedRead
@@ -154,19 +149,13 @@ export const POST = withVenue(async function POST(
       const recordNo = payment.datacapRecordNo
 
       if (!recordNo) {
-        return NextResponse.json(
-          { error: 'Cannot void card payment: missing transaction record number. Void manually via Datacap portal.' },
-          { status: 400 }
-        )
+        return err('Cannot void card payment: missing transaction record number. Void manually via Datacap portal.')
       }
 
       const effectiveReaderId = readerId || payment.paymentReaderId
 
       if (!effectiveReaderId) {
-        return NextResponse.json(
-          { error: 'Cannot void card payment: no payment reader available. Void manually via Datacap portal.' },
-          { status: 400 }
-        )
+        return err('Cannot void card payment: no payment reader available. Void manually via Datacap portal.')
       }
 
       // SAF1: If the payment is still in the SAF queue (not yet forwarded to processor),
@@ -231,20 +220,14 @@ export const POST = withVenue(async function POST(
               `[PROCESSOR-ACTION] DECLINED: action=${voidActionId}, ` +
               `response=${datacapError?.text || datacapResponse.textResponse || 'Unknown'}`
             )
-            return NextResponse.json(
-              { error: `Datacap void failed: ${datacapError?.text || datacapResponse.textResponse || 'Unknown error'}. DB not modified.` },
-              { status: 502 }
-            )
+            return err(`Datacap void failed: ${datacapError?.text || datacapResponse.textResponse || 'Unknown error'}. DB not modified.`, 502)
           }
 
           console.log(`[PROCESSOR-ACTION] APPROVED: action=${voidActionId}, type=void`)
         } catch (datacapErr) {
           const msg = datacapErr instanceof Error ? datacapErr.message : 'Datacap void request failed'
           console.error(`[PROCESSOR-ACTION] ERROR: action=${voidActionId}, error=${msg}`)
-          return NextResponse.json(
-            { error: `Datacap void failed: ${msg}. DB not modified.` },
-            { status: 502 }
-          )
+          return err(`Datacap void failed: ${msg}. DB not modified.`, 502)
         }
       }
     }
@@ -339,7 +322,7 @@ export const POST = withVenue(async function POST(
       })
     } catch (dbError) {
       if (dbError instanceof VoidValidationError) {
-        return NextResponse.json({ error: dbError.message }, { status: dbError.statusCode })
+        return err(dbError.message, dbError.statusCode)
       }
       // CRITICAL: Datacap voided but DB update failed
       if (isCardPayment) {
@@ -668,8 +651,7 @@ export const POST = withVenue(async function POST(
     // Trigger upstream sync (fire-and-forget, debounced)
     pushUpstream()
 
-    return NextResponse.json({
-      data: {
+    return ok({
         voidedPayment: {
           id: voidedPayment.id,
           status: voidedPayment.status,
@@ -680,13 +662,9 @@ export const POST = withVenue(async function POST(
           status: newOrderStatus,
         },
         refundAmount: Number(payment.totalAmount),
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to void payment:', error)
-    return NextResponse.json(
-      { error: 'Failed to void payment' },
-      { status: 500 }
-    )
+    return err('Failed to void payment', 500)
   }
 })

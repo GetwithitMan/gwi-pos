@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { queueIfOutage, pushUpstream } from '@/lib/sync/outage-safe-write'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - List inventory transactions with pagination
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -22,7 +23,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Resolve locationId — query param → fallback to cached location
     const locationId = queryLocationId || await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'Location required' }, { status: 400 })
+      return err('Location required')
     }
 
     const where: Record<string, unknown> = {}
@@ -68,7 +69,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const take = limit ? parseInt(limit) : 100
     const currentSkip = skip ? parseInt(skip) : 0
 
-    return NextResponse.json({ data: {
+    return ok({
       transactions: transactions.map(t => ({
         ...t,
         quantityBefore: Number(t.quantityBefore),
@@ -83,10 +84,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         skip: currentSkip,
         hasMore: currentSkip + transactions.length < total,
       },
-    } })
+    })
   } catch (error) {
     console.error('Inventory transactions list error:', error)
-    return NextResponse.json({ error: 'Failed to fetch transactions' }, { status: 500 })
+    return err('Failed to fetch transactions', 500)
   }
 })
 
@@ -103,17 +104,13 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     } = body
 
     if (!locationId || !inventoryItemId || !type || quantityChange === undefined) {
-      return NextResponse.json({
-        error: 'Location ID, inventory item ID, type, and quantity change required',
-      }, { status: 400 })
+      return err('Location ID, inventory item ID, type, and quantity change required')
     }
 
     // Validate transaction type
     const allowedTypes = ['purchase', 'sale', 'adjustment', 'waste', 'transfer', 'count']
     if (!allowedTypes.includes(type)) {
-      return NextResponse.json({
-        error: `Invalid transaction type. Must be one of: ${allowedTypes.join(', ')}`,
-      }, { status: 400 })
+      return err(`Invalid transaction type. Must be one of: ${allowedTypes.join(', ')}`)
     }
 
     // Get item for cost calculation
@@ -123,7 +120,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     })
 
     if (!item) {
-      return NextResponse.json({ error: 'Inventory item not found' }, { status: 404 })
+      return notFound('Inventory item not found')
     }
 
     const qtyChange = Number(quantityChange)
@@ -159,7 +156,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       },
     })
 
-    return NextResponse.json({ data: {
+    return ok({
       transaction: {
         ...transaction,
         quantityBefore: Number(transaction.quantityBefore),
@@ -168,9 +165,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
         unitCost: transaction.unitCost ? Number(transaction.unitCost) : null,
         totalCost: transaction.totalCost ? Number(transaction.totalCost) : null,
       },
-    } })
+    })
   } catch (error) {
     console.error('Create inventory transaction error:', error)
-    return NextResponse.json({ error: 'Failed to create transaction' }, { status: 500 })
+    return err('Failed to create transaction', 500)
   }
 }))

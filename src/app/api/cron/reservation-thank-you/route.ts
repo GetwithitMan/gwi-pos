@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { verifyCronSecret } from '@/lib/cron-auth'
 import { sendReservationNotification } from '@/lib/reservations/notifications'
 import { parseSettings } from '@/lib/settings'
 import { forAllVenues } from '@/lib/cron-venue-helper'
 import { createChildLogger } from '@/lib/logger'
+import { ok } from '@/lib/api-response'
 const log = createChildLogger('cron-reservation-thank-you')
 
 export const dynamic = 'force-dynamic'
@@ -93,7 +94,7 @@ export async function GET(request: NextRequest) {
     allProcessed[slug] = { thankYouSent: sentCount }
   }, { label: 'cron:reservation-thank-you' })
 
-  return NextResponse.json({
+  return ok({
     ...summary,
     processed: allProcessed,
     timestamp: now.toISOString(),

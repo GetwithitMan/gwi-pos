@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
@@ -6,6 +6,7 @@ import { getBusinessDayRange, getCurrentBusinessDay } from '@/lib/business-day'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings, getLocationTimezone } from '@/lib/location-cache'
 import { getVoidLogsDetailed, getOrderItemNames } from '@/lib/query-services'
+import { err, ok } from '@/lib/api-response'
 
 // GET - Get void/comp report
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -19,15 +20,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const requestingEmployeeId = searchParams.get('requestingEmployeeId') || searchParams.get('employeeId') || employeeId
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'Location ID is required' },
-        { status: 400 }
-      )
+      return err('Location ID is required')
     }
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_VOIDS)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Build date range using business day boundaries
@@ -138,7 +136,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }
     })
 
-    return NextResponse.json({ data: {
+    return ok({
       logs,
       summary: {
         ...summary,
@@ -152,12 +150,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         start: start.toISOString(),
         end: end.toISOString(),
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch void report:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch void report' },
-      { status: 500 }
-    )
+    return err('Failed to fetch void report', 500)
   }
 })

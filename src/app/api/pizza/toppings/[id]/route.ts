@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET /api/pizza/toppings/[id] - Get single pizza topping
 export const GET = withVenue(async function GET(
@@ -18,19 +19,19 @@ export const GET = withVenue(async function GET(
     })
 
     if (!topping) {
-      return NextResponse.json({ error: 'Topping not found' }, { status: 404 })
+      return notFound('Topping not found')
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       ...topping,
       price: Number(topping.price),
       extraPrice: topping.extraPrice ? Number(topping.extraPrice) : null,
       usageQuantity: topping.usageQuantity ? Number(topping.usageQuantity) : null,
       inventoryItemName: topping.inventoryItem?.name || null,
-    } })
+    })
   } catch (error) {
     console.error('Failed to get pizza topping:', error)
-    return NextResponse.json({ error: 'Failed to get pizza topping' }, { status: 500 })
+    return err('Failed to get pizza topping', 500)
   }
 })
 
@@ -45,12 +46,12 @@ export const PATCH = withVenue(withAuth('ADMIN', async function PATCH(
 
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const existing = await db.pizzaTopping.findUnique({ where: { id } })
     if (!existing || existing.locationId !== locationId) {
-      return NextResponse.json({ error: 'Topping not found' }, { status: 404 })
+      return notFound('Topping not found')
     }
 
     const topping = await db.pizzaTopping.update({
@@ -75,14 +76,14 @@ export const PATCH = withVenue(withAuth('ADMIN', async function PATCH(
     })
     pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       ...topping,
       price: Number(topping.price),
       extraPrice: topping.extraPrice ? Number(topping.extraPrice) : null,
-    } })
+    })
   } catch (error) {
     console.error('Failed to update pizza topping:', error)
-    return NextResponse.json({ error: 'Failed to update pizza topping' }, { status: 500 })
+    return err('Failed to update pizza topping', 500)
   }
 }))
 
@@ -96,12 +97,12 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
 
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const existing = await db.pizzaTopping.findUnique({ where: { id } })
     if (!existing || existing.locationId !== locationId) {
-      return NextResponse.json({ error: 'Topping not found' }, { status: 404 })
+      return notFound('Topping not found')
     }
 
     await db.pizzaTopping.update({
@@ -110,9 +111,9 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     })
     pushUpstream()
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Failed to delete pizza topping:', error)
-    return NextResponse.json({ error: 'Failed to delete pizza topping' }, { status: 500 })
+    return err('Failed to delete pizza topping', 500)
   }
 }))

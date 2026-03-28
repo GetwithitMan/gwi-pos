@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { parseSettings, DEFAULT_MEMBERSHIP_SETTINGS } from '@/lib/settings'
 import { processMembershipBilling } from '@/lib/membership/billing-processor'
 import { processDunning } from '@/lib/membership/dunning'
 import { verifyCronSecret } from '@/lib/cron-auth'
 import { forAllVenues } from '@/lib/cron-venue-helper'
+import { ok } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -31,5 +32,5 @@ export async function GET(request: NextRequest) {
     }
   }, { label: 'cron:process-memberships' })
 
-  return NextResponse.json({ ...summary, results: allResults })
+  return ok({ ...summary, results: allResults })
 }

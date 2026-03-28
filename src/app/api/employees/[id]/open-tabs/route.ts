@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { withVenue } from '@/lib/with-venue'
 import { EmployeeRepository } from '@/lib/repositories'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - Check if employee has open tabs/orders
 export const GET = withVenue(async function GET(
@@ -17,10 +18,7 @@ export const GET = withVenue(async function GET(
     const locationId = searchParams.get('locationId')
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'Location ID is required' },
-        { status: 400 }
-      )
+      return err('Location ID is required')
     }
 
     // Find all open orders for this employee (read from snapshot)
@@ -50,7 +48,7 @@ export const GET = withVenue(async function GET(
       orderBy: { createdAt: 'desc' },
     })
 
-    return NextResponse.json({ data: {
+    return ok({
       hasOpenTabs: openOrders.length > 0,
       count: openOrders.length,
       tabs: openOrders.map(order => ({
@@ -64,13 +62,10 @@ export const GET = withVenue(async function GET(
         itemCount: order.items.reduce((sum, item) => sum + item.quantity, 0),
         createdAt: order.createdAt.toISOString(),
       })),
-    } })
+    })
   } catch (error) {
     console.error('Failed to check open tabs:', error)
-    return NextResponse.json(
-      { error: 'Failed to check open tabs' },
-      { status: 500 }
-    )
+    return err('Failed to check open tabs', 500)
   }
 })
 
@@ -85,20 +80,14 @@ export const POST = withVenue(withAuth(async function POST(
     const { targetEmployeeId, locationId } = body
 
     if (!targetEmployeeId || !locationId) {
-      return NextResponse.json(
-        { error: 'Target employee ID and location ID are required' },
-        { status: 400 }
-      )
+      return err('Target employee ID and location ID are required')
     }
 
     // Verify target employee exists and is active
     const targetEmployee = await EmployeeRepository.getEmployeeById(targetEmployeeId, locationId)
 
     if (!targetEmployee || !targetEmployee.isActive) {
-      return NextResponse.json(
-        { error: 'Target employee not found or inactive' },
-        { status: 404 }
-      )
+      return notFound('Target employee not found or inactive')
     }
 
     // Query affected orders first (updateMany doesn't return IDs)
@@ -137,16 +126,13 @@ export const POST = withVenue(withAuth(async function POST(
       })
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       transferredCount: result.count,
       message: `${result.count} tab(s) transferred successfully`,
-    } })
+    })
   } catch (error) {
     console.error('Failed to transfer tabs:', error)
-    return NextResponse.json(
-      { error: 'Failed to transfer tabs' },
-      { status: 500 }
-    )
+    return err('Failed to transfer tabs', 500)
   }
 }))

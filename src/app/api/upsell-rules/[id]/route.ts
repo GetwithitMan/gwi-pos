@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, notFound, ok } from '@/lib/api-response'
 
 interface UpsellRuleRow {
   id: string
@@ -56,13 +57,13 @@ export const GET = withVenue(async function GET(
     `, id)
 
     if (rows.length === 0) {
-      return NextResponse.json({ error: 'Upsell rule not found' }, { status: 404 })
+      return notFound('Upsell rule not found')
     }
 
-    return NextResponse.json({ data: serializeRule(rows[0]) })
+    return ok(serializeRule(rows[0]))
   } catch (error) {
     console.error('Failed to fetch upsell rule:', error)
-    return NextResponse.json({ error: 'Failed to fetch upsell rule' }, { status: 500 })
+    return err('Failed to fetch upsell rule', 500)
   }
 })
 
@@ -96,16 +97,13 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     `, id)
 
     if (existing.length === 0) {
-      return NextResponse.json({ error: 'Upsell rule not found' }, { status: 404 })
+      return notFound('Upsell rule not found')
     }
 
     if (triggerType) {
       const validTriggerTypes = ['item_added', 'category_match', 'order_total', 'time_of_day', 'no_drink']
       if (!validTriggerTypes.includes(triggerType)) {
-        return NextResponse.json(
-          { error: `Invalid triggerType. Must be one of: ${validTriggerTypes.join(', ')}` },
-          { status: 400 }
-        )
+        return err(`Invalid triggerType. Must be one of: ${validTriggerTypes.join(', ')}`)
       }
     }
 
@@ -145,13 +143,13 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     )
 
     if (rows.length === 0) {
-      return NextResponse.json({ error: 'Upsell rule not found' }, { status: 404 })
+      return notFound('Upsell rule not found')
     }
 
-    return NextResponse.json({ data: serializeRule(rows[0]) })
+    return ok(serializeRule(rows[0]))
   } catch (error) {
     console.error('Failed to update upsell rule:', error)
-    return NextResponse.json({ error: 'Failed to update upsell rule' }, { status: 500 })
+    return err('Failed to update upsell rule', 500)
   }
 }))
 
@@ -171,12 +169,12 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     `, id)
 
     if (rows.length === 0) {
-      return NextResponse.json({ error: 'Upsell rule not found' }, { status: 404 })
+      return notFound('Upsell rule not found')
     }
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Failed to delete upsell rule:', error)
-    return NextResponse.json({ error: 'Failed to delete upsell rule' }, { status: 500 })
+    return err('Failed to delete upsell rule', 500)
   }
 }))

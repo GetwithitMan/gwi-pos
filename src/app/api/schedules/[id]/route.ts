@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
@@ -6,6 +6,7 @@ import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { emitToLocation } from '@/lib/socket-server'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 
 const log = createChildLogger('schedules.id')
 
@@ -41,7 +42,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
     })
 
     if (!schedule) {
-      return NextResponse.json({ error: 'Schedule not found' }, { status: 404 })
+      return notFound('Schedule not found')
     }
 
     // Group shifts by date
@@ -65,7 +66,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
       totalLaborCost += hours * Number(shift.employee.hourlyRate || 0)
     })
 
-    return NextResponse.json({ data: {
+    return ok({
       schedule: {
         id: schedule.id,
         weekStart: schedule.weekStart.toISOString(),
@@ -107,10 +108,10 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
         totalHours: Math.round(totalHours * 100) / 100,
         totalLaborCost: Math.round(totalLaborCost * 100) / 100,
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch schedule:', error)
-    return NextResponse.json({ error: 'Failed to fetch schedule' }, { status: 500 })
+    return err('Failed to fetch schedule', 500)
   }
 }))
 
@@ -130,7 +131,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
 
     const schedule = await db.schedule.findUnique({ where: { id } })
     if (!schedule) {
-      return NextResponse.json({ error: 'Schedule not found' }, { status: 404 })
+      return notFound('Schedule not found')
     }
 
     const updateData: Record<string, unknown> = {}
@@ -160,7 +161,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     void pushUpstream()
     void emitToLocation(schedule.locationId, 'schedules:changed', { trigger: 'schedule-updated' }).catch(err => log.warn({ err }, 'socket emit failed'))
 
-    return NextResponse.json({ data: {
+    return ok({
       schedule: {
         id: updated.id,
         weekStart: updated.weekStart.toISOString(),
@@ -169,10 +170,10 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
         publishedAt: updated.publishedAt?.toISOString() || null,
         notes: updated.notes,
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to update schedule:', error)
-    return NextResponse.json({ error: 'Failed to update schedule' }, { status: 500 })
+    return err('Failed to update schedule', 500)
   }
 }))
 
@@ -186,14 +187,11 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
 
     const schedule = await db.schedule.findUnique({ where: { id } })
     if (!schedule) {
-      return NextResponse.json({ error: 'Schedule not found' }, { status: 404 })
+      return notFound('Schedule not found')
     }
 
     if (schedule.status !== 'draft') {
-      return NextResponse.json(
-        { error: 'Can only delete draft schedules' },
-        { status: 400 }
-      )
+      return err('Can only delete draft schedules')
     }
 
     // Soft delete the schedule
@@ -203,9 +201,9 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     void pushUpstream()
     void emitToLocation(schedule.locationId, 'schedules:changed', { trigger: 'schedule-deleted' }).catch(err => log.warn({ err }, 'socket emit failed'))
 
-    return NextResponse.json({ data: { message: 'Schedule deleted' } })
+    return ok({ message: 'Schedule deleted' })
   } catch (error) {
     console.error('Failed to delete schedule:', error)
-    return NextResponse.json({ error: 'Failed to delete schedule' }, { status: 500 })
+    return err('Failed to delete schedule', 500)
   }
 }))

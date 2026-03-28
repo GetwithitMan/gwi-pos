@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
+import { err, ok } from '@/lib/api-response'
 
 // I-2: Labor cost report — hours, wages, labor% by date/role/employee vs sales
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -16,12 +17,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const requestingEmployeeId = searchParams.get('requestingEmployeeId') || searchParams.get('employeeId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+      return err('Location ID is required')
     }
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_LABOR)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Default to last 7 days
@@ -155,7 +156,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const totalWages = rows.reduce((s, r) => s + r.wages, 0)
     const totalHours = rows.reduce((s, r) => s + r.hours, 0)
 
-    return NextResponse.json({ data: {
+    return ok({
       rows,
       summary: {
         totalHours: Math.round(totalHours * 100) / 100,
@@ -164,9 +165,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         laborPercent: totalSales > 0 ? Math.round((totalWages / totalSales) * 10000) / 100 : null,
       },
       filters: { startDate: start.toISOString(), endDate: end.toISOString(), groupBy },
-    } })
+    })
   } catch (error) {
     console.error('Failed to generate labor cost report:', error)
-    return NextResponse.json({ error: 'Failed to generate labor cost report' }, { status: 500 })
+    return err('Failed to generate labor cost report', 500)
   }
 })

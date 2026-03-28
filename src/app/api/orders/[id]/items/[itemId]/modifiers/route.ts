@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
@@ -8,6 +8,7 @@ import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
 import { getRequestLocationId } from '@/lib/request-context'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-modifiers')
 
 // PUT - Update modifiers on an existing order item
@@ -36,10 +37,7 @@ export const PUT = withVenue(withAuth({ allowCellular: true }, async function PU
         select: { id: true, locationId: true },
       })
       if (!order) {
-        return NextResponse.json(
-          { error: 'Order not found' },
-          { status: 404 }
-        )
+        return notFound('Order not found')
       }
       locationId = order.locationId
     }
@@ -51,10 +49,7 @@ export const PUT = withVenue(withAuth({ allowCellular: true }, async function PU
     })
 
     if (!orderItem || orderItem.orderId !== orderId) {
-      return NextResponse.json(
-        { error: 'Order item not found' },
-        { status: 404 }
-      )
+      return notFound('Order item not found')
     }
 
     // Delete existing modifiers and create new ones in a transaction
@@ -118,12 +113,9 @@ export const PUT = withVenue(withAuth({ allowCellular: true }, async function PU
 
     pushUpstream()
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Failed to update modifiers:', error)
-    return NextResponse.json(
-      { error: 'Failed to update modifiers' },
-      { status: 500 }
-    )
+    return err('Failed to update modifiers', 500)
   }
 }))

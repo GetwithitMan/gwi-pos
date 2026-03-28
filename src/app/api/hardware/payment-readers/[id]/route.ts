@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET single payment reader
 export const GET = withVenue(withAuth('ADMIN', async function GET(
@@ -34,18 +35,18 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
     })
 
     if (!reader) {
-      return NextResponse.json({ error: 'Payment reader not found' }, { status: 404 })
+      return notFound('Payment reader not found')
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       reader: {
         ...reader,
         successRate: reader.successRate ? Number(reader.successRate) : null,
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch payment reader:', error)
-    return NextResponse.json({ error: 'Failed to fetch payment reader' }, { status: 500 })
+    return err('Failed to fetch payment reader', 500)
   }
 }))
 
@@ -63,7 +64,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     })
 
     if (!existing) {
-      return NextResponse.json({ error: 'Payment reader not found' }, { status: 404 })
+      return notFound('Payment reader not found')
     }
 
     const {
@@ -101,13 +102,13 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
       const resolvedMode = communicationMode || existing.communicationMode
       const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}$/
       if (!ipv4Regex.test(ipAddress)) {
-        return NextResponse.json({ error: 'Invalid IP address format' }, { status: 400 })
+        return err('Invalid IP address format')
       }
     }
 
     // Validate port range if provided
     if (port !== undefined && (port < 1 || port > 65535)) {
-      return NextResponse.json({ error: 'Port must be between 1 and 65535' }, { status: 400 })
+      return err('Port must be between 1 and 65535')
     }
 
     // Check for duplicate serial number (if changing)
@@ -116,10 +117,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
         where: { serialNumber, deletedAt: null, id: { not: id } },
       })
       if (duplicateSerial) {
-        return NextResponse.json(
-          { error: 'A reader with this serial number already exists' },
-          { status: 400 }
-        )
+        return err('A reader with this serial number already exists')
       }
     }
 
@@ -129,10 +127,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
         where: { locationId: existing.locationId, ipAddress, deletedAt: null, id: { not: id } },
       })
       if (duplicateIp) {
-        return NextResponse.json(
-          { error: 'A reader with this IP address already exists at this location' },
-          { status: 400 }
-        )
+        return err('A reader with this IP address already exists at this location')
       }
     }
 
@@ -178,15 +173,15 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     void notifyDataChanged({ locationId: existing.locationId, domain: 'hardware', action: 'updated', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       reader: {
         ...reader,
         successRate: reader.successRate ? Number(reader.successRate) : null,
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to update payment reader:', error)
-    return NextResponse.json({ error: 'Failed to update payment reader' }, { status: 500 })
+    return err('Failed to update payment reader', 500)
   }
 }))
 
@@ -207,23 +202,17 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     })
 
     if (!reader) {
-      return NextResponse.json({ error: 'Payment reader not found' }, { status: 404 })
+      return notFound('Payment reader not found')
     }
 
     // Check if reader is bound to any terminals
     if (reader.terminals.length > 0) {
-      return NextResponse.json(
-        { error: 'Cannot delete reader that is bound to terminals. Unbind first.' },
-        { status: 400 }
-      )
+      return err('Cannot delete reader that is bound to terminals. Unbind first.')
     }
 
     // Check if reader is backup for any terminals
     if (reader.backupFor.length > 0) {
-      return NextResponse.json(
-        { error: 'Cannot delete reader that is set as backup for terminals. Remove backup assignment first.' },
-        { status: 400 }
-      )
+      return err('Cannot delete reader that is set as backup for terminals. Remove backup assignment first.')
     }
 
     // Soft delete — mangle name + serial so they can be reused immediately
@@ -239,9 +228,9 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     void notifyDataChanged({ locationId: reader.locationId, domain: 'hardware', action: 'deleted', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Failed to delete payment reader:', error)
-    return NextResponse.json({ error: 'Failed to delete payment reader' }, { status: 500 })
+    return err('Failed to delete payment reader', 500)
   }
 }))

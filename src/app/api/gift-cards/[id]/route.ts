@@ -9,6 +9,7 @@ import { freezeGiftCard, unfreezeGiftCard } from '@/lib/domain/gift-cards/freeze
 import { adjustGiftCardBalance } from '@/lib/domain/gift-cards/adjust-gift-card-balance'
 import { freezeCardSchema, adjustBalanceSchema } from '@/lib/domain/gift-cards/schemas'
 import { dispatchGiftCardBalanceChanged } from '@/lib/socket-dispatch'
+import { err, notFound, ok } from '@/lib/api-response'
 
 /** Serialize Decimal fields to numbers for JSON response */
 function serializeCard(card: Record<string, unknown>) {
@@ -54,18 +55,12 @@ export const GET = withVenue(async function GET(
     }
 
     if (!giftCard) {
-      return NextResponse.json(
-        { error: 'Gift card not found' },
-        { status: 404 }
-      )
+      return notFound('Gift card not found')
     }
 
     // Verify location if provided
     if (locationId && giftCard.locationId !== locationId) {
-      return NextResponse.json(
-        { error: 'Gift card not found at this location' },
-        { status: 404 }
-      )
+      return notFound('Gift card not found at this location')
     }
 
     // Check if expired
@@ -77,7 +72,7 @@ export const GET = withVenue(async function GET(
       giftCard.status = 'expired'
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       ...giftCard,
       initialBalance: Number(giftCard.initialBalance),
       currentBalance: Number(giftCard.currentBalance),
@@ -87,13 +82,10 @@ export const GET = withVenue(async function GET(
         balanceBefore: Number(t.balanceBefore),
         balanceAfter: Number(t.balanceAfter),
       }))
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch gift card:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch gift card' },
-      { status: 500 }
-    )
+    return err('Failed to fetch gift card', 500)
   }
 })
 
@@ -113,70 +105,61 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
       case 'freeze': {
         const parsed = freezeCardSchema.safeParse({ reason })
         if (!parsed.success) {
-          return NextResponse.json(
-            { error: parsed.error.issues[0]?.message || 'Reason is required' },
-            { status: 400 }
-          )
+          return err(parsed.error.issues[0]?.message || 'Reason is required')
         }
 
         const result = await freezeGiftCard(db, id, parsed.data.reason, employeeId)
         if (!result.success) {
-          return NextResponse.json({ error: result.error }, { status: 400 })
+          return err(result.error)
         }
 
         void notifyDataChanged({ locationId: (result.data as Record<string, string>).locationId, domain: 'gift-cards', action: 'updated', entityId: id })
         void pushUpstream()
-        return NextResponse.json({ data: serializeCard(result.data!) })
+        return ok(serializeCard(result.data!))
       }
 
       // ─── Unfreeze ────────────────────────────────────────────────────
       case 'unfreeze': {
         const result = await unfreezeGiftCard(db, id, employeeId)
         if (!result.success) {
-          return NextResponse.json({ error: result.error }, { status: 400 })
+          return err(result.error)
         }
 
         void notifyDataChanged({ locationId: (result.data as Record<string, string>).locationId, domain: 'gift-cards', action: 'updated', entityId: id })
-        return NextResponse.json({ data: serializeCard(result.data!) })
+        return ok(serializeCard(result.data!))
       }
 
       // ─── Adjust (new explicit balance adjustment) ────────────────────
       case 'adjust': {
         const parsed = adjustBalanceSchema.safeParse({ amount, notes })
         if (!parsed.success) {
-          return NextResponse.json(
-            { error: parsed.error.issues[0]?.message || 'Invalid adjustment input' },
-            { status: 400 }
-          )
+          return err(parsed.error.issues[0]?.message || 'Invalid adjustment input')
         }
 
         const result = await adjustGiftCardBalance(db, id, parsed.data.amount, parsed.data.notes, employeeId)
         if (!result.success) {
-          return NextResponse.json({ error: result.error }, { status: 400 })
+          return err(result.error)
         }
 
         void notifyDataChanged({ locationId: (result.data as Record<string, string>).locationId, domain: 'gift-cards', action: 'updated', entityId: id })
         void pushUpstream()
         void dispatchGiftCardBalanceChanged((result.data as Record<string, string>).locationId, { giftCardId: id, newBalance: Number((result.data as Record<string, unknown>).currentBalance) })
-        return NextResponse.json({ data: serializeCard(result.data!) })
+        return ok(serializeCard(result.data!))
       }
 
       // ─── Reload (positive balance add via Decimal math) ────────────
       case 'reload': {
         if (!amount || amount <= 0) {
-          return NextResponse.json(
-            { error: 'Positive amount is required for reload' },
-            { status: 400 }
-          )
+          return err('Positive amount is required for reload')
         }
 
         // Verify card is active before reload
         const cardForReload = await db.giftCard.findUnique({ where: { id } })
         if (!cardForReload) {
-          return NextResponse.json({ error: 'Gift card not found' }, { status: 404 })
+          return notFound('Gift card not found')
         }
         if (cardForReload.status !== 'active') {
-          return NextResponse.json({ error: 'Can only reload active gift cards' }, { status: 400 })
+          return err('Can only reload active gift cards')
         }
 
         // Use Decimal math for reload
@@ -209,24 +192,21 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
         void notifyDataChanged({ locationId: cardForReload.locationId, domain: 'gift-cards', action: 'updated', entityId: id })
         void pushUpstream()
         void dispatchGiftCardBalanceChanged(cardForReload.locationId, { giftCardId: id, newBalance: Number(reloadBalanceAfter) })
-        return NextResponse.json({ data: serializeCard(reloaded as unknown as Record<string, unknown>) })
+        return ok(serializeCard(reloaded as unknown as Record<string, unknown>))
       }
 
       // ─── Redeem (negative balance via Decimal math) ──────────────────
       case 'redeem': {
         if (!amount || amount <= 0) {
-          return NextResponse.json(
-            { error: 'Positive amount is required for redemption' },
-            { status: 400 }
-          )
+          return err('Positive amount is required for redemption')
         }
 
         const cardForRedeem = await db.giftCard.findUnique({ where: { id } })
         if (!cardForRedeem) {
-          return NextResponse.json({ error: 'Gift card not found' }, { status: 404 })
+          return notFound('Gift card not found')
         }
         if (cardForRedeem.status !== 'active') {
-          return NextResponse.json({ error: 'Gift card is not active' }, { status: 400 })
+          return err('Gift card is not active')
         }
 
         const redeemBalanceBefore = cardForRedeem.currentBalance as Prisma.Decimal
@@ -268,24 +248,21 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
         void notifyDataChanged({ locationId: cardForRedeem.locationId, domain: 'gift-cards', action: 'updated', entityId: id })
         void pushUpstream()
         void dispatchGiftCardBalanceChanged(cardForRedeem.locationId, { giftCardId: id, newBalance: Number(redeemBalanceAfter) })
-        return NextResponse.json({ data: {
+        return ok({
           ...serializeCard(redeemed as unknown as Record<string, unknown>),
           amountRedeemed: amount,
-        } })
+        })
       }
 
       // ─── Refund (positive balance add via Decimal math) ──────────────
       case 'refund': {
         if (!amount || amount <= 0) {
-          return NextResponse.json(
-            { error: 'Positive amount is required for refund' },
-            { status: 400 }
-          )
+          return err('Positive amount is required for refund')
         }
 
         const cardForRefund = await db.giftCard.findUnique({ where: { id } })
         if (!cardForRefund) {
-          return NextResponse.json({ error: 'Gift card not found' }, { status: 404 })
+          return notFound('Gift card not found')
         }
 
         const refundBalanceBefore = cardForRefund.currentBalance as Prisma.Decimal
@@ -318,20 +295,14 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
         void notifyDataChanged({ locationId: cardForRefund.locationId, domain: 'gift-cards', action: 'updated', entityId: id })
         void pushUpstream()
         void dispatchGiftCardBalanceChanged(cardForRefund.locationId, { giftCardId: id, newBalance: Number(refundBalanceAfter) })
-        return NextResponse.json({ data: serializeCard(refunded as unknown as Record<string, unknown>) })
+        return ok(serializeCard(refunded as unknown as Record<string, unknown>))
       }
 
       default:
-        return NextResponse.json(
-          { error: 'Invalid action. Use: freeze, unfreeze, adjust, reload, redeem, or refund' },
-          { status: 400 }
-        )
+        return err('Invalid action. Use: freeze, unfreeze, adjust, reload, redeem, or refund')
     }
   } catch (error) {
     console.error('Failed to update gift card:', error)
-    return NextResponse.json(
-      { error: 'Failed to update gift card' },
-      { status: 500 }
-    )
+    return err('Failed to update gift card', 500)
   }
 }))

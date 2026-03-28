@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { execSync } from 'child_process'
+import { err, ok } from '@/lib/api-response'
 
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
@@ -11,10 +12,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const locationId = searchParams.get('locationId') || ''
     const requestingEmployeeId = searchParams.get('employeeId') || ''
 
-    if (!locationId) return NextResponse.json({ error: 'locationId required' }, { status: 400 })
+    if (!locationId) return err('locationId required')
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.SETTINGS_VIEW)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const devices = await db.bergDevice.findMany({
       where: { locationId, isActive: true },
@@ -71,9 +72,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       // Not on Linux / timedatectl not available — skip
     }
 
-    return NextResponse.json({ devices: deviceStats, timeSyncWarning })
+    return ok({ devices: deviceStats, timeSyncWarning })
   } catch (err) {
     console.error('[berg/status GET]', err)
-    return NextResponse.json({ error: 'Failed to get Berg status' }, { status: 500 })
+    return err('Failed to get Berg status', 500)
   }
 })

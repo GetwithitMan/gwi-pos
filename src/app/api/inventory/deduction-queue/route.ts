@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -6,6 +6,7 @@ import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET /api/inventory/deduction-queue — list pending deductions with summary
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -17,12 +18,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const limit = Math.min(Number(searchParams.get('limit')) || 100, 500)
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+      return err('Location ID is required')
     }
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_VIEW)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Build filter
@@ -70,8 +71,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       statusCounts[g.status] = g._count.id
     }
 
-    return NextResponse.json({
-      data: {
+    return ok({
         deductions: deductions.map(d => ({
           id: d.id,
           orderId: d.orderId,
@@ -95,11 +95,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           failed: statusCounts.failed,
           dead: statusCounts.dead,
         },
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to fetch deduction queue:', error)
-    return NextResponse.json({ error: 'Failed to fetch deduction queue' }, { status: 500 })
+    return err('Failed to fetch deduction queue', 500)
   }
 })
 
@@ -110,17 +109,17 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     const { locationId, action, id, employeeId } = body
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+      return err('Location ID is required')
     }
     if (!id) {
-      return NextResponse.json({ error: 'Deduction ID is required' }, { status: 400 })
+      return err('Deduction ID is required')
     }
 
     const actor = await getActorFromRequest(request)
     const resolvedEmployeeId = actor.employeeId ?? employeeId
     const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.REPORTS_VIEW)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     if (action === 'retry') {
@@ -129,14 +128,11 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       })
 
       if (!deduction) {
-        return NextResponse.json({ error: 'Deduction not found' }, { status: 404 })
+        return notFound('Deduction not found')
       }
 
       if (deduction.status !== 'failed' && deduction.status !== 'dead') {
-        return NextResponse.json(
-          { error: 'Only failed or dead deductions can be retried' },
-          { status: 400 }
-        )
+        return err('Only failed or dead deductions can be retried')
       }
 
       const updated = await db.pendingDeduction.update({
@@ -151,14 +147,12 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       void notifyDataChanged({ locationId, domain: 'inventory', action: 'updated', entityId: updated.id })
       pushUpstream()
 
-      return NextResponse.json({
-        data: { id: updated.id, status: updated.status },
-      })
+      return ok({ id: updated.id, status: updated.status })
     }
 
-    return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
+    return err('Unknown action')
   } catch (error) {
     console.error('Failed to update deduction:', error)
-    return NextResponse.json({ error: 'Failed to update deduction' }, { status: 500 })
+    return err('Failed to update deduction', 500)
   }
 }))

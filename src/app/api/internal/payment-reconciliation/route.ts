@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db, adminDb } from '@/lib/db'
 import { OrderRepository } from '@/lib/repositories'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { getClientIp } from '@/lib/get-client-ip'
+import { err, notFound, ok, unauthorized } from '@/lib/api-response'
 
 /**
  * GET /api/internal/payment-reconciliation?locationId=xxx
@@ -30,12 +31,12 @@ function authorize(request: NextRequest): boolean {
 
 export async function GET(request: NextRequest) {
   if (!authorize(request)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return unauthorized('Unauthorized')
   }
 
   const locationId = request.nextUrl.searchParams.get('locationId')
   if (!locationId) {
-    return NextResponse.json({ error: 'locationId required' }, { status: 400 })
+    return err('locationId required')
   }
 
   try {
@@ -72,23 +73,20 @@ export async function GET(request: NextRequest) {
       take: 50,
     })
 
-    return NextResponse.json({
+    return ok({
       suspectOrders,
       count: suspectOrders.length,
       message: 'Orders that may have missing offline payments. Cross-reference with Datacap batch settlement report.',
     })
   } catch (error) {
     console.error('[Payment Reconciliation] GET failed:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch suspect orders' },
-      { status: 500 }
-    )
+    return err('Failed to fetch suspect orders', 500)
   }
 }
 
 export async function POST(request: NextRequest) {
   if (!authorize(request)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return unauthorized('Unauthorized')
   }
 
   try {
@@ -96,10 +94,7 @@ export async function POST(request: NextRequest) {
     const { orderId, amount, datacapRecordNo, datacapRefNumber, method, locationId, employeeId } = body
 
     if (!orderId || !amount || !locationId) {
-      return NextResponse.json(
-        { error: 'orderId, amount, and locationId required' },
-        { status: 400 }
-      )
+      return err('orderId, amount, and locationId required')
     }
 
     // Verify order exists and belongs to the location
@@ -110,10 +105,7 @@ export async function POST(request: NextRequest) {
     )
 
     if (!order) {
-      return NextResponse.json(
-        { error: 'Order not found or does not belong to this location' },
-        { status: 404 }
-      )
+      return notFound('Order not found or does not belong to this location')
     }
 
     // Create a reconciliation payment record
@@ -166,12 +158,9 @@ export async function POST(request: NextRequest) {
     void notifyDataChanged({ locationId, domain: 'orders', action: 'updated' })
     void pushUpstream()
 
-    return NextResponse.json({ success: true, paymentId: payment.id })
+    return ok({ success: true, paymentId: payment.id })
   } catch (error) {
     console.error('[Payment Reconciliation] POST failed:', error)
-    return NextResponse.json(
-      { error: 'Failed to record reconciliation payment' },
-      { status: 500 }
-    )
+    return err('Failed to record reconciliation payment', 500)
   }
 }

@@ -4,6 +4,7 @@ import { withVenue } from '@/lib/with-venue'
 import { withAuth, type AuthenticatedContext } from '@/lib/api-auth-middleware'
 import { mergeWithDefaults, DEFAULT_INVOICING } from '@/lib/settings'
 import { emitToLocation } from '@/lib/socket-server'
+import { created, err, ok } from '@/lib/api-response'
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -202,8 +203,7 @@ export const GET = withVenue(withAuth('INVENTORY_VIEW', async function GET(
       }),
     ])
 
-    return NextResponse.json({
-      data: {
+    return ok({
         invoices: invoices.map(serializeInvoice),
         total,
         page,
@@ -222,11 +222,10 @@ export const GET = withVenue(withAuth('INVENTORY_VIEW', async function GET(
             total: Number(paidThisMonthAgg._sum.totalAmount ?? 0),
           },
         },
-      },
-    })
+      })
   } catch (error) {
     console.error('Billing invoice list error:', error)
-    return NextResponse.json({ error: 'Failed to fetch invoices' }, { status: 500 })
+    return err('Failed to fetch invoices', 500)
   }
 }))
 
@@ -251,10 +250,10 @@ export const POST = withVenue(withAuth('INVENTORY_MANAGE', async function POST(
     } = body
 
     if (!customerName && !customerId) {
-      return NextResponse.json({ error: 'Customer name or ID is required' }, { status: 400 })
+      return err('Customer name or ID is required')
     }
     if (!lineItems.length) {
-      return NextResponse.json({ error: 'At least one line item is required' }, { status: 400 })
+      return err('At least one line item is required')
     }
 
     const invSettings = await getInvoicingSettings(locationId)
@@ -370,7 +369,7 @@ export const POST = withVenue(withAuth('INVENTORY_MANAGE', async function POST(
 
     void emitToLocation(locationId, 'invoices:changed', { locationId }).catch(console.error)
 
-    return NextResponse.json({ data: serializeInvoice(invoice) }, { status: 201 })
+    return created(serializeInvoice(invoice))
   } catch (error) {
     console.error('Create billing invoice error:', error)
     const message = error instanceof Error ? error.message : 'Unknown error'

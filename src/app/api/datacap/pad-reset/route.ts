@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { requireDatacapClient, validateReader, parseBody, datacapErrorResponse } from '@/lib/datacap/helpers'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, ok } from '@/lib/api-response'
 
 interface PadResetRequest {
   locationId: string
@@ -14,7 +15,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     const { locationId, readerId } = body
 
     if (!locationId || !readerId) {
-      return Response.json({ error: 'Missing required fields: locationId, readerId' }, { status: 400 })
+      return err('Missing required fields: locationId, readerId')
     }
 
     await validateReader(readerId, locationId)
@@ -22,11 +23,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
 
     const response = await client.padReset(readerId)
 
-    return Response.json({
-      data: {
+    return ok({
         success: response.cmdStatus === 'Success',
-      },
-    })
+      })
   } catch (err) {
     return datacapErrorResponse(err)
   }

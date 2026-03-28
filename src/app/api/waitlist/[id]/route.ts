@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
@@ -10,6 +10,7 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('waitlist')
 
 export const dynamic = 'force-dynamic'
@@ -25,13 +26,13 @@ export const PUT = withVenue(async function PUT(
     const { id } = await params
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Auth check
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.POS_ACCESS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const rawSettings = await getLocationSettings(locationId)
     const settings = mergeWithDefaults(rawSettings as any)
@@ -42,10 +43,7 @@ export const PUT = withVenue(async function PUT(
 
     const validStatuses = ['waiting', 'notified', 'seated', 'no_show', 'cancelled']
     if (!status || !validStatuses.includes(status)) {
-      return NextResponse.json(
-        { error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` },
-        { status: 400 }
-      )
+      return err(`Invalid status. Must be one of: ${validStatuses.join(', ')}`)
     }
 
     // Fetch existing entry
@@ -56,7 +54,7 @@ export const PUT = withVenue(async function PUT(
     `, id, locationId)
 
     if (!existing.length) {
-      return NextResponse.json({ error: 'Waitlist entry not found' }, { status: 404 })
+      return notFound('Waitlist entry not found')
     }
 
     const entry = existing[0]
@@ -179,10 +177,10 @@ export const PUT = withVenue(async function PUT(
       partySize: updatedEntry.partySize,
     }).catch(err => log.warn({ err }, 'Background task failed'))
 
-    return NextResponse.json({ data: updatedEntry })
+    return ok(updatedEntry)
   } catch (error) {
     console.error('[Waitlist] PUT error:', error)
-    return NextResponse.json({ error: 'Failed to update waitlist entry' }, { status: 500 })
+    return err('Failed to update waitlist entry', 500)
   }
 })
 
@@ -197,13 +195,13 @@ export const DELETE = withVenue(async function DELETE(
     const { id } = await params
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Auth check
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.POS_ACCESS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Fetch before delete for socket dispatch
     const existing: any[] = await db.$queryRawUnsafe(`
@@ -213,7 +211,7 @@ export const DELETE = withVenue(async function DELETE(
     `, id, locationId)
 
     if (!existing.length) {
-      return NextResponse.json({ error: 'Waitlist entry not found' }, { status: 404 })
+      return notFound('Waitlist entry not found')
     }
 
     const entry = existing[0]
@@ -248,9 +246,9 @@ export const DELETE = withVenue(async function DELETE(
       partySize: entry.partySize,
     }).catch(err => log.warn({ err }, 'Background task failed'))
 
-    return NextResponse.json({ success: true })
+    return ok({ success: true })
   } catch (error) {
     console.error('[Waitlist] DELETE error:', error)
-    return NextResponse.json({ error: 'Failed to remove from waitlist' }, { status: 500 })
+    return err('Failed to remove from waitlist', 500)
   }
 })

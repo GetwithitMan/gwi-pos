@@ -6,6 +6,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { err, ok } from '@/lib/api-response'
 
 // GET /api/loyalty/programs — list loyalty programs for a location
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -14,7 +15,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const locationId = searchParams.get('locationId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     const actor = await getActorFromRequest(request)
@@ -38,13 +39,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       locationId,
     )
 
-    return NextResponse.json({ data: programs })
+    return ok(programs)
   } catch (error: any) {
     if (error?.message?.includes('does not exist') || error?.code === '42P01') {
-      return NextResponse.json({ error: 'Loyalty system not yet configured. Please run database migrations.' }, { status: 503 })
+      return err('Loyalty system not yet configured. Please run database migrations.', 503)
     }
     console.error('Failed to list loyalty programs:', error)
-    return NextResponse.json({ error: 'Failed to list loyalty programs' }, { status: 500 })
+    return err('Failed to list loyalty programs', 500)
   }
 })
 
@@ -58,7 +59,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const locationId = actor.locationId || body.locationId
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.SETTINGS_EDIT)
@@ -78,10 +79,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     )
 
     if (existing.length > 0) {
-      return NextResponse.json(
-        { error: 'Location already has a loyalty program. Edit the existing one.' },
-        { status: 409 },
-      )
+      return err('Location already has a loyalty program. Edit the existing one.', 409)
     }
 
     const {
@@ -96,11 +94,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     } = body
 
     if (!['floor', 'round', 'ceil'].includes(roundingMode)) {
-      return NextResponse.json({ error: 'roundingMode must be floor, round, or ceil' }, { status: 400 })
+      return err('roundingMode must be floor, round, or ceil')
     }
 
     if (pointsPerDollar < 1) {
-      return NextResponse.json({ error: 'pointsPerDollar must be at least 1' }, { status: 400 })
+      return err('pointsPerDollar must be at least 1')
     }
 
     const id = crypto.randomUUID()
@@ -137,12 +135,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     pushUpstream()
     void notifyDataChanged({ locationId, domain: 'loyalty', action: 'created', entityId: id })
 
-    return NextResponse.json({ data: created[0] })
+    return ok(created[0])
   } catch (error: any) {
     if (error?.message?.includes('does not exist') || error?.code === '42P01') {
-      return NextResponse.json({ error: 'Loyalty system not yet configured. Please run database migrations.' }, { status: 503 })
+      return err('Loyalty system not yet configured. Please run database migrations.', 503)
     }
     console.error('Failed to create loyalty program:', error)
-    return NextResponse.json({ error: 'Failed to create loyalty program' }, { status: 500 })
+    return err('Failed to create loyalty program', 500)
   }
 })

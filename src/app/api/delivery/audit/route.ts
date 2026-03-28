@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
+import { err, ok } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,7 +19,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Feature gate
@@ -28,7 +29,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Auth check
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.DELIVERY_AUDIT)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const searchParams = request.nextUrl.searchParams
     const deliveryOrderId = searchParams.get('deliveryOrderId')
@@ -118,13 +119,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       newValue: row.newValue ?? null,
     }))
 
-    return NextResponse.json({
+    return ok({
       entries,
       total,
       hasMore: offset + limit < total,
     })
   } catch (error) {
     console.error('[Delivery/Audit] GET error:', error)
-    return NextResponse.json({ error: 'Failed to fetch delivery audit log' }, { status: 500 })
+    return err('Failed to fetch delivery audit log', 500)
   }
 })

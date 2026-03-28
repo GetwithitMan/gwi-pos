@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { queueIfOutageOrFail, OutageQueueFullError, pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - List all seats for a table
 export const GET = withVenue(async function GET(
@@ -22,10 +23,7 @@ export const GET = withVenue(async function GET(
     })
 
     if (!table) {
-      return NextResponse.json(
-        { error: 'Table not found' },
-        { status: 404 }
-      )
+      return notFound('Table not found')
     }
 
     const seats = await db.seat.findMany({
@@ -37,7 +35,7 @@ export const GET = withVenue(async function GET(
       orderBy: { seatNumber: 'asc' },
     })
 
-    return NextResponse.json({ data: {
+    return ok({
       seats: seats.map(seat => ({
         id: seat.id,
         tableId: seat.tableId,
@@ -55,13 +53,10 @@ export const GET = withVenue(async function GET(
         shape: table.shape,
         capacity: table.capacity,
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch seats:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch seats' },
-      { status: 500 }
-    )
+    return err('Failed to fetch seats', 500)
   }
 })
 
@@ -90,10 +85,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     })
 
     if (!table) {
-      return NextResponse.json(
-        { error: 'Table not found' },
-        { status: 404 }
-      )
+      return notFound('Table not found')
     }
 
     // If insertAt is provided, renumber existing seats >= insertAt
@@ -145,7 +137,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
       await queueIfOutageOrFail('Seat', table.locationId, seat.id, 'INSERT')
     } catch (err) {
       if (err instanceof OutageQueueFullError) {
-        return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+        return err('Service temporarily unavailable — outage queue full', 507)
       }
       throw err
     }
@@ -161,7 +153,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     // Notify POS terminals of floor plan update
     dispatchFloorPlanUpdate(table.locationId, { async: true })
 
-    return NextResponse.json({ data: {
+    return ok({
       seat: {
         id: seat.id,
         tableId: seat.tableId,
@@ -183,12 +175,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
         seatType: s.seatType,
         isActive: s.isActive,
       })),
-    } })
+    })
   } catch (error) {
     console.error('Failed to create seat:', error)
-    return NextResponse.json(
-      { error: 'Failed to create seat' },
-      { status: 500 }
-    )
+    return err('Failed to create seat', 500)
   }
 }))

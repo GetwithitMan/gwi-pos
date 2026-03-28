@@ -6,6 +6,7 @@ import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { getClientIp } from '@/lib/get-client-ip'
+import { err, ok } from '@/lib/api-response'
 
 /**
  * Smart Terminal Auto-Reconnect
@@ -28,10 +29,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     const { deviceFingerprint, terminalId } = body
 
     if (!deviceFingerprint || typeof deviceFingerprint !== 'string') {
-      return NextResponse.json(
-        { error: 'deviceFingerprint is required' },
-        { status: 400 }
-      )
+      return err('deviceFingerprint is required')
     }
 
     // Build query — match fingerprint on a previously paired terminal
@@ -147,8 +145,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       // Audit log failure is non-fatal
     }
 
-    return NextResponse.json({
-      data: {
+    return ok({
         token: newDeviceToken,
         terminal: {
           id: updated.id,
@@ -160,13 +157,9 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
           receiptPrinter: updated.receiptPrinter,
         },
         location: { id: terminal.locationId },
-      },
-    })
+      })
   } catch (error) {
     console.error('Terminal reconnect failed:', error)
-    return NextResponse.json(
-      { error: 'Reconnect failed' },
-      { status: 500 }
-    )
+    return err('Reconnect failed', 500)
   }
 }))

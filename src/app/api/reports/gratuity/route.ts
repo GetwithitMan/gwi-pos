@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -6,6 +6,7 @@ import { getBusinessDayRange } from '@/lib/business-day'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings, getLocationTimezone } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
+import { err, ok } from '@/lib/api-response'
 
 // GET - Generate gratuity / auto-gratuity report
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -17,16 +18,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const employeeId = searchParams.get('employeeId')
 
     if (!locationId || !startDateStr || !endDateStr) {
-      return NextResponse.json(
-        { error: 'locationId, startDate, and endDate are required' },
-        { status: 400 }
-      )
+      return err('locationId, startDate, and endDate are required')
     }
 
     // Permission check
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.REPORTS_COMMISSION)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Resolve business day boundaries
@@ -172,8 +170,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Auto-gratuity settings for display
     const autoGratuitySettings = locationSettings.autoGratuity ?? { enabled: false, percent: 0, minimumPartySize: 0 }
 
-    return NextResponse.json({
-      data: {
+    return ok({
         rows,
         summary,
         settings: {
@@ -181,14 +178,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           percent: autoGratuitySettings.percent ?? 0,
           minimumPartySize: autoGratuitySettings.minimumPartySize ?? 0,
         },
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to generate gratuity report:', error)
-    return NextResponse.json(
-      { error: 'Failed to generate gratuity report' },
-      { status: 500 }
-    )
+    return err('Failed to generate gratuity report', 500)
   }
 })
 

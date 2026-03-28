@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { OrderRepository } from '@/lib/repositories'
 import {
   dispatchFloorPlanUpdate,
@@ -12,6 +12,7 @@ import { verifyCronSecret } from '@/lib/cron-auth'
 import { forAllVenues } from '@/lib/cron-venue-helper'
 import { notifyNuc } from '@/lib/cron-nuc-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { ok } from '@/lib/api-response'
 
 import { expireSession } from '@/lib/domain/entertainment'
 import { recalculateOrderTotals } from '@/lib/domain/order-items'
@@ -377,7 +378,7 @@ export async function GET(request: NextRequest) {
     }
   }, { label: 'cron:entertainment-expiry' })
 
-  return NextResponse.json({
+  return ok({
     ...summary,
     processed: allProcessed,
     timestamp: now.toISOString(),

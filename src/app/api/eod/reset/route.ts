@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { PERMISSIONS } from '@/lib/auth'
 import { requirePermission } from '@/lib/api-auth'
@@ -6,6 +6,7 @@ import { withVenue } from '@/lib/with-venue'
 import { parseSettings } from '@/lib/settings'
 import { getCurrentBusinessDay } from '@/lib/business-day'
 import { executeEodReset } from '@/lib/eod'
+import { err, ok } from '@/lib/api-response'
 
 // TODO: Migrate db.location, db.table, db.orderSnapshot, db.entertainmentWaitlist,
 // and db.order.count calls to repositories once Location/Table/OrderSnapshot repositories exist.
@@ -23,15 +24,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const { locationId, employeeId, dryRun = false } = body
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'locationId is required' },
-        { status: 400 }
-      )
+      return err('locationId is required')
     }
 
     // Auth check — require manager.close_day permission
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.MGR_CLOSE_DAY)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // ── warnBeforeClose: warn if open orders exist during EOD reset ────────
     const location = await db.location.findFirst({
@@ -49,11 +47,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         where: { locationId, status: 'open', deletedAt: null },
       })
       if (currentOpenOrderCount > 0) {
-        return NextResponse.json({ data: {
+        return ok({
           requiresConfirmation: true,
           warning: `There are ${currentOpenOrderCount} open orders. Are you sure you want to close the business day?`,
           openOrderCount: currentOpenOrderCount,
-        } })
+        })
       }
     }
 
@@ -97,7 +95,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         })
       }
 
-      return NextResponse.json({ data: {
+      return ok({
         dryRun: true,
         wouldReset: {
           orphanedTables: {
@@ -118,7 +116,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           autoGratuityPercent: eodSettings?.autoGratuityPercent ?? 20,
         },
         message: 'Dry run complete. No changes made.',
-      } })
+      })
     }
 
     // Execute the full EOD reset
@@ -129,18 +127,16 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     if (result.alreadyRanToday) {
-      return NextResponse.json({
-        data: {
+      return ok({
           success: true,
           alreadyRanToday: true,
           stats: result,
           warning: 'EOD already ran for this business day',
           message: 'EOD reset already completed today',
-        },
-      })
+        })
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       stats: {
         tablesReset: result.tablesReset,
@@ -159,13 +155,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
       warnings: result.warnings,
       message: 'EOD reset completed successfully',
-    } })
+    })
   } catch (error) {
     console.error('[EOD Reset] Failed:', error)
-    return NextResponse.json(
-      { error: 'Failed to perform EOD reset', details: error instanceof Error ? error.message : 'Unknown error' },
-      { status: 500 }
-    )
+    return err('Failed to perform EOD reset', 500, error instanceof Error ? error.message : 'Unknown error')
   }
 })
 
@@ -181,15 +174,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const requestingEmployeeId = searchParams.get('employeeId') || searchParams.get('requestingEmployeeId')
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'locationId is required' },
-        { status: 400 }
-      )
+      return err('locationId is required')
     }
 
     // Auth check — require manager.close_day permission
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.MGR_CLOSE_DAY)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Check for items that would be reset
     const occupiedTablesWithoutOrders = await db.table.count({
@@ -270,7 +260,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     const needsReset = occupiedTablesWithoutOrders > 0 || staleOrderCount > 0 || openTabCount > 0 || activeEntertainment > 0 || waitingWaitlist > 0
 
-    return NextResponse.json({ data: {
+    return ok({
       needsReset,
       summary: {
         occupiedTablesWithoutOrders,
@@ -284,12 +274,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       recommendation: needsReset
         ? 'Run EOD reset to clean up orphaned data'
         : 'No reset needed - location is clean',
-    } })
+    })
   } catch (error) {
     console.error('[EOD Reset] Check failed:', error)
-    return NextResponse.json(
-      { error: 'Failed to check EOD status' },
-      { status: 500 }
-    )
+    return err('Failed to check EOD status', 500)
   }
 })

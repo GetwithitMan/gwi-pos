@@ -6,6 +6,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 import { advanceDeliveryStatus, type DeliveryOrderStatus } from '@/lib/delivery/state-machine'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -26,7 +27,7 @@ export const PATCH = withVenue(async function PATCH(
     const { id } = await params
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Feature gate
@@ -36,13 +37,13 @@ export const PATCH = withVenue(async function PATCH(
     // Auth check — POS_ACCESS allows KDS devices (device-token auth) and employees
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.POS_ACCESS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const body = await request.json()
     const { status, cancelReason } = body
 
     if (!status || typeof status !== 'string') {
-      return NextResponse.json({ error: 'status is required' }, { status: 400 })
+      return err('status is required')
     }
 
     // Advance through state machine (validates transition, sets timestamps, audit logs, socket events)
@@ -55,7 +56,7 @@ export const PATCH = withVenue(async function PATCH(
     })
 
     if (!result.success) {
-      return NextResponse.json({ error: result.error }, { status: 400 })
+      return err(result.error)
     }
 
     pushUpstream()
@@ -69,6 +70,6 @@ export const PATCH = withVenue(async function PATCH(
     })
   } catch (error) {
     console.error('[Delivery/Orders/Status] PATCH error:', error)
-    return NextResponse.json({ error: 'Failed to update delivery order status' }, { status: 500 })
+    return err('Failed to update delivery order status', 500)
   }
 })

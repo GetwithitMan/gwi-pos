@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getClientIp } from '@/lib/get-client-ip'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // Cookie name for device token
 const DEVICE_TOKEN_COOKIE = 'kds_device_token'
@@ -70,10 +71,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const screenId = request.nextUrl.searchParams.get('screenId')
 
     if (!deviceToken && !slug && !screenId) {
-      return NextResponse.json(
-        { error: 'Device token, slug, or screenId is required' },
-        { status: 400 }
-      )
+      return err('Device token, slug, or screenId is required')
     }
 
     let screen
@@ -122,10 +120,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     if (!screen) {
       recordKdsAuthFailure(ip)
-      return NextResponse.json(
-        { error: 'KDS screen not found or invalid token' },
-        { status: 404 }
-      )
+      return notFound('KDS screen not found or invalid token')
     }
 
     // If screen requires pairing and request has no valid token
@@ -173,7 +168,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orderBy: { sortOrder: 'asc' },
     })
 
-    return NextResponse.json({ data: {
+    return ok({
       authenticated: true,
       screen: {
         id: screen.id,
@@ -210,9 +205,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           color: ss.station.color,
         })),
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to authenticate KDS:', error)
-    return NextResponse.json({ error: 'Failed to authenticate' }, { status: 500 })
+    return err('Failed to authenticate', 500)
   }
 })

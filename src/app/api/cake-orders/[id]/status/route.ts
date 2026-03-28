@@ -24,6 +24,7 @@ import { parseSettings, DEFAULT_CAKE_ORDERING } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { requireCakeFeature } from '@/lib/cake-orders/require-cake-feature'
+import { ok } from '@/lib/api-response'
 
 export const PATCH = withVenue(async function PATCH(
   request: NextRequest,
@@ -266,10 +267,7 @@ export const PATCH = withVenue(async function PATCH(
       cakeOrderId,
     )
 
-    return NextResponse.json({
-      data: updatedRows[0],
-      ...(ingredientWarnings.length > 0 ? { ingredientWarnings } : {}),
-    })
+    return ok(updatedRows[0])
   } catch (error) {
     console.error('[cake-status] Failed to transition status:', error)
     return NextResponse.json(

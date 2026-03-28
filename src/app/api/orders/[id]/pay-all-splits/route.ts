@@ -1,5 +1,5 @@
 import crypto from 'crypto'
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
@@ -17,6 +17,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-pay-all-splits')
 
 const PayAllSplitsSchema = z.object({
@@ -47,10 +48,7 @@ export const POST = withVenue(withAuth(async function POST(
 
     const validation = PayAllSplitsSchema.safeParse(body)
     if (!validation.success) {
-      return NextResponse.json(
-        { error: 'Invalid request', details: validation.error.format() },
-        { status: 400 }
-      )
+      return err('Invalid request', 400, validation.error.format())
     }
 
     const { method, employeeId, terminalId, idempotencyKey, cardBrand, cardLast4, authCode, datacapRecordNo, datacapRefNumber, datacapSequenceNo, entryMethod, amountAuthorized } = validation.data
@@ -67,10 +65,10 @@ export const POST = withVenue(withAuth(async function POST(
       select: { locationId: true },
     })
     if (!payAllOrderCheck) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      return notFound('Order not found')
     }
     const payAllAuth = await requireAnyPermission(payAllEmployeeId, payAllOrderCheck.locationId, paymentPermissions)
-    if (!payAllAuth.authorized) return NextResponse.json({ error: payAllAuth.error }, { status: payAllAuth.status })
+    if (!payAllAuth.authorized) return err(payAllAuth.error, payAllAuth.status)
 
     // W2-P1: Generate server-side idempotency key if client didn't provide one
     const effectiveIdempotencyKey = idempotencyKey || crypto.randomUUID()
@@ -91,24 +89,18 @@ export const POST = withVenue(withAuth(async function POST(
     })
 
     if (!parentOrder) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      return notFound('Order not found')
     }
 
     if (parentOrder.status !== 'split') {
-      return NextResponse.json(
-        { error: 'Order is not a split parent. Only orders with status "split" can use this endpoint.' },
-        { status: 400 }
-      )
+      return err('Order is not a split parent. Only orders with status "split" can use this endpoint.')
     }
 
     // Find unpaid split children
     const unpaidSplits = parentOrder.splitOrders.filter(s => s.status !== 'paid')
 
     if (unpaidSplits.length === 0) {
-      return NextResponse.json(
-        { error: 'All split tickets are already paid' },
-        { status: 400 }
-      )
+      return err('All split tickets are already paid')
     }
 
     // Idempotency check — per-split keys use format `${key}:split:${splitId}`
@@ -117,12 +109,12 @@ export const POST = withVenue(withAuth(async function POST(
       .flatMap(s => s.payments)
       .find(p => p.idempotencyKey && perSplitKeys.has(p.idempotencyKey))
     if (existingPayment) {
-      return NextResponse.json({ data: {
+      return ok({
         success: true,
         duplicate: true,
         parentOrderId,
         message: 'Duplicate payment detected — already processed',
-      } })
+      })
     }
 
     // Parse settings before tx — needed for loyalty inside tx and tips outside
@@ -501,26 +493,23 @@ export const POST = withVenue(withAuth(async function POST(
 
     pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       splitsPaid: unpaidSplits.length,
       totalAmount: Math.round(combinedTotal * 100) / 100,
       parentOrderId,
-    } })
+    })
   } catch (error) {
     // Handle race condition: another request already paid all splits
     if (error instanceof Error && error.message === 'ALL_SPLITS_ALREADY_PAID') {
-      return NextResponse.json({ data: {
+      return ok({
         success: true,
         duplicate: true,
         parentOrderId,
         message: 'All splits were already paid by another request',
-      } })
+      })
     }
     console.error('Failed to pay all splits:', error)
-    return NextResponse.json(
-      { error: 'Failed to pay all splits' },
-      { status: 500 }
-    )
+    return err('Failed to pay all splits', 500)
   }
 }))

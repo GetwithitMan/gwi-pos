@@ -13,6 +13,7 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { getClientIp } from '@/lib/get-client-ip'
+import { err, notFound, ok, unauthorized } from '@/lib/api-response'
 
 const STALE_THRESHOLD_MS = 5 * 60 * 1000 // 5 minutes
 
@@ -30,7 +31,7 @@ function checkInternalAuth(request: NextRequest): NextResponse | null {
   if (!isAuthorized) {
     const ip = getClientIp(request)
     if (!['127.0.0.1', '::1', 'localhost'].includes(ip)) {
-      return NextResponse.json({ error: 'Unauthorized — API key required' }, { status: 401 })
+      return unauthorized('Unauthorized — API key required')
     }
   }
   return null
@@ -81,7 +82,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   const { orderId, employeeId } = body
 
   if (!orderId) {
-    return NextResponse.json({ error: 'orderId is required' }, { status: 400 })
+    return err('orderId is required')
   }
 
   const order = await db.order.findFirst({
@@ -90,7 +91,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   })
 
   if (!order) {
-    return NextResponse.json({ error: 'Order not found or not in pending_auth state' }, { status: 404 })
+    return notFound('Order not found or not in pending_auth state')
   }
 
   // Reset to open
@@ -125,12 +126,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     employeeId: employeeId || null,
   })
 
-  return NextResponse.json({
-    data: {
+  return ok({
       success: true,
       orderId,
       previousStatus: 'pending_auth',
       newStatus: 'open',
-    },
-  })
+    })
 })

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { emitToLocation } from '@/lib/socket-server'
 import { notifyDataChanged } from '@/lib/cloud-notify'
@@ -6,6 +6,7 @@ import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 
 const log = createChildLogger('ingredients.id')
 
@@ -108,11 +109,10 @@ export const GET = withVenue(async function GET(request: NextRequest, { params }
     })
 
     if (!ingredient || ingredient.deletedAt) {
-      return NextResponse.json({ error: 'Ingredient not found' }, { status: 404 })
+      return notFound('Ingredient not found')
     }
 
-    return NextResponse.json({
-      data: {
+    return ok({
         ...ingredient,
         standardQuantity: ingredient.standardQuantity ? Number(ingredient.standardQuantity) : null,
         purchaseCost: ingredient.purchaseCost ? Number(ingredient.purchaseCost) : null,
@@ -191,11 +191,10 @@ export const GET = withVenue(async function GET(request: NextRequest, { params }
           ...child,
           yieldPercent: child.yieldPercent ? Number(child.yieldPercent) : null,
         })),
-      },
-    })
+      })
   } catch (error) {
     console.error('Error fetching ingredient:', error)
-    return NextResponse.json({ error: 'Failed to fetch ingredient' }, { status: 500 })
+    return err('Failed to fetch ingredient', 500)
   }
 })
 
@@ -268,13 +267,13 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
     // Check ingredient exists
     const existing = await db.ingredient.findUnique({ where: { id } })
     if (!existing) {
-      return NextResponse.json({ error: 'Ingredient not found' }, { status: 404 })
+      return notFound('Ingredient not found')
     }
 
     // Allow restoring deleted items (when deletedAt is being set to null)
     const isRestoring = body.deletedAt === null && existing.deletedAt !== null
     if (existing.deletedAt && !isRestoring) {
-      return NextResponse.json({ error: 'Ingredient not found (deleted)' }, { status: 404 })
+      return notFound('Ingredient not found (deleted)')
     }
 
     // Check for duplicate name (if name is being changed)
@@ -283,10 +282,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
         where: { locationId: existing.locationId, name, deletedAt: null, NOT: { id } },
       })
       if (duplicate) {
-        return NextResponse.json(
-          { error: 'An ingredient with this name already exists' },
-          { status: 409 }
-        )
+        return err('An ingredient with this name already exists', 409)
       }
     }
 
@@ -294,10 +290,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
     if (categoryId !== undefined && categoryId !== null) {
       const category = await db.ingredientCategory.findUnique({ where: { id: categoryId } })
       if (!category || category.deletedAt) {
-        return NextResponse.json(
-          { error: 'Invalid category' },
-          { status: 400 }
-        )
+        return err('Invalid category')
       }
     }
 
@@ -397,8 +390,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
     // Real-time cross-terminal update
     void emitToLocation(existing.locationId, 'inventory:changed', { ingredientId: id }).catch(err => log.warn({ err }, 'socket emit failed'))
 
-    return NextResponse.json({
-      data: {
+    return ok({
         ...ingredient,
         standardQuantity: ingredient.standardQuantity ? Number(ingredient.standardQuantity) : null,
         purchaseCost: ingredient.purchaseCost ? Number(ingredient.purchaseCost) : null,
@@ -431,11 +423,10 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
         needsVerification: ingredient.needsVerification,
         verifiedAt: ingredient.verifiedAt,
         verifiedBy: ingredient.verifiedBy,
-      },
-    })
+      })
   } catch (error) {
     console.error('Error updating ingredient:', error)
-    return NextResponse.json({ error: 'Failed to update ingredient' }, { status: 500 })
+    return err('Failed to update ingredient', 500)
   }
 }))
 
@@ -466,17 +457,14 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(request:
     })
 
     if (!existing) {
-      return NextResponse.json({ error: 'Ingredient not found' }, { status: 404 })
+      return notFound('Ingredient not found')
     }
 
     // Handle permanent deletion (from Deleted section)
     if (permanent) {
       // Only allow permanent delete if already soft-deleted
       if (!existing.deletedAt) {
-        return NextResponse.json(
-          { error: 'Item must be soft-deleted first before permanent deletion' },
-          { status: 400 }
-        )
+        return err('Item must be soft-deleted first before permanent deletion')
       }
 
       // Soft delete menu item links
@@ -497,7 +485,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(request:
         data: { deletedAt: new Date() },
       })
 
-      return NextResponse.json({ data: { message: 'Ingredient permanently deleted' } })
+      return ok({ message: 'Ingredient permanently deleted' })
     }
 
     // Soft delete for production (cloud sync needs them)
@@ -522,10 +510,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(request:
           })
         }
       } else {
-        return NextResponse.json(
-          { error: `Cannot delete: ingredient has ${existing._count.childIngredients} child preparation(s). Use ?cascadeChildren=true to delete all.` },
-          { status: 400 }
-        )
+        return err(`Cannot delete: ingredient has ${existing._count.childIngredients} child preparation(s). Use ?cascadeChildren=true to delete all.`)
       }
     }
 
@@ -544,9 +529,9 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(request:
     void notifyDataChanged({ locationId: existing.locationId, domain: 'inventory', action: 'deleted', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { message: 'Ingredient deleted' } })
+    return ok({ message: 'Ingredient deleted' })
   } catch (error) {
     console.error('Error deleting ingredient:', error)
-    return NextResponse.json({ error: 'Failed to delete ingredient' }, { status: 500 })
+    return err('Failed to delete ingredient', 500)
   }
 }))

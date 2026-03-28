@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - Get single waste log entry
 export const GET = withVenue(async function GET(
@@ -23,19 +24,19 @@ export const GET = withVenue(async function GET(
     })
 
     if (!entry || entry.deletedAt) {
-      return NextResponse.json({ error: 'Waste log entry not found' }, { status: 404 })
+      return notFound('Waste log entry not found')
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       entry: {
         ...entry,
         quantity: Number(entry.quantity),
         costImpact: entry.costImpact ? Number(entry.costImpact) : null,
       },
-    } })
+    })
   } catch (error) {
     console.error('Get waste log entry error:', error)
-    return NextResponse.json({ error: 'Failed to fetch waste log entry' }, { status: 500 })
+    return err('Failed to fetch waste log entry', 500)
   }
 })
 
@@ -53,7 +54,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     })
 
     if (!existing || existing.deletedAt) {
-      return NextResponse.json({ error: 'Waste log entry not found' }, { status: 404 })
+      return notFound('Waste log entry not found')
     }
 
     // Only allow updating notes - reason and quantity changes require reversal
@@ -73,16 +74,16 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     void notifyDataChanged({ locationId: existing.locationId, domain: 'inventory', action: 'updated', entityId: id })
     pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       entry: {
         ...entry,
         quantity: Number(entry.quantity),
         costImpact: entry.costImpact ? Number(entry.costImpact) : null,
       },
-    } })
+    })
   } catch (error) {
     console.error('Update waste log entry error:', error)
-    return NextResponse.json({ error: 'Failed to update waste log entry' }, { status: 500 })
+    return err('Failed to update waste log entry', 500)
   }
 }))
 
@@ -104,7 +105,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     })
 
     if (!existing || existing.deletedAt) {
-      return NextResponse.json({ error: 'Waste log entry not found' }, { status: 404 })
+      return notFound('Waste log entry not found')
     }
 
     const qtyToRestore = Number(existing.quantity)
@@ -146,9 +147,9 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     void notifyDataChanged({ locationId: existing.locationId, domain: 'inventory', action: 'deleted', entityId: id })
     pushUpstream()
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Delete waste log entry error:', error)
-    return NextResponse.json({ error: 'Failed to delete waste log entry' }, { status: 500 })
+    return err('Failed to delete waste log entry', 500)
   }
 }))

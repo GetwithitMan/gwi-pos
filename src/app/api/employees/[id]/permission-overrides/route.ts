@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest, clearPermissionCache } from '@/lib/api-auth'
@@ -7,6 +7,7 @@ import { withVenue } from '@/lib/with-venue'
 import { emitToLocation } from '@/lib/socket-server'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('employees-permission-overrides')
 
 // GET - List all permission overrides for an employee
@@ -18,23 +19,23 @@ export const GET = withVenue(async function GET(
     const { id: employeeId } = await params
     const locationId = request.nextUrl.searchParams.get('locationId') || await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'Location required' }, { status: 400 })
+      return err('Location required')
     }
 
     // Auth check — require staff.manage_roles to view overrides
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.STAFF_MANAGE_ROLES)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const overrides = await db.employeePermissionOverride.findMany({
       where: { employeeId, locationId },
       orderBy: { permissionKey: 'asc' },
     })
 
-    return NextResponse.json({ data: overrides })
+    return ok(overrides)
   } catch (error) {
     console.error('Failed to fetch permission overrides:', error)
-    return NextResponse.json({ error: 'Failed to fetch permission overrides' }, { status: 500 })
+    return err('Failed to fetch permission overrides', 500)
   }
 })
 
@@ -54,27 +55,27 @@ export const POST = withVenue(async function POST(
 
     const locationId = body.locationId || await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'Location required' }, { status: 400 })
+      return err('Location required')
     }
 
     // Validate required fields
     if (!permissionKey || typeof permissionKey !== 'string') {
-      return NextResponse.json({ error: 'permissionKey is required and must be a string' }, { status: 400 })
+      return err('permissionKey is required and must be a string')
     }
     if (typeof allowed !== 'boolean') {
-      return NextResponse.json({ error: 'allowed is required and must be a boolean' }, { status: 400 })
+      return err('allowed is required and must be a boolean')
     }
 
     // Sanitize permissionKey — must be a dotted key, no HTML
     if (!/^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$/.test(permissionKey)) {
-      return NextResponse.json({ error: 'Invalid permission key format' }, { status: 400 })
+      return err('Invalid permission key format')
     }
 
     // Auth check — require staff.manage_roles
     const actor = await getActorFromRequest(request)
     const resolvedActorId = actor.employeeId ?? body.requestingEmployeeId
     const auth = await requirePermission(resolvedActorId, locationId, PERMISSIONS.STAFF_MANAGE_ROLES)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Verify employee exists and belongs to this location
     const employee = await db.employee.findFirst({
@@ -82,7 +83,7 @@ export const POST = withVenue(async function POST(
       select: { id: true },
     })
     if (!employee) {
-      return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
+      return notFound('Employee not found')
     }
 
     // Upsert override (unique on employeeId + permissionKey)
@@ -124,10 +125,10 @@ export const POST = withVenue(async function POST(
     void emitToLocation(locationId, 'employees:changed', { action: 'updated', employeeId, permissionsChanged: true }).catch(err => log.warn({ err }, 'socket emit failed'))
     void emitToLocation(locationId, 'employee:updated', { action: 'updated', employeeId, permissionsChanged: true }).catch(err => log.warn({ err }, 'socket emit failed'))
 
-    return NextResponse.json({ data: override })
+    return ok(override)
   } catch (error) {
     console.error('Failed to set permission override:', error)
-    return NextResponse.json({ error: 'Failed to set permission override' }, { status: 500 })
+    return err('Failed to set permission override', 500)
   }
 })
 
@@ -143,16 +144,16 @@ export const DELETE = withVenue(async function DELETE(
     const locationId = searchParams.get('locationId') || await getLocationId()
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location required' }, { status: 400 })
+      return err('Location required')
     }
     if (!permissionKey) {
-      return NextResponse.json({ error: 'permissionKey query parameter is required' }, { status: 400 })
+      return err('permissionKey query parameter is required')
     }
 
     // Auth check — require staff.manage_roles
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.STAFF_MANAGE_ROLES)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Hard delete: EmployeePermissionOverride has no deletedAt column
     try {
@@ -184,9 +185,9 @@ export const DELETE = withVenue(async function DELETE(
     void emitToLocation(locationId, 'employees:changed', { action: 'updated', employeeId, permissionsChanged: true }).catch(err => log.warn({ err }, 'socket emit failed'))
     void emitToLocation(locationId, 'employee:updated', { action: 'updated', employeeId, permissionsChanged: true }).catch(err => log.warn({ err }, 'socket emit failed'))
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Failed to delete permission override:', error)
-    return NextResponse.json({ error: 'Failed to delete permission override' }, { status: 500 })
+    return err('Failed to delete permission override', 500)
   }
 })

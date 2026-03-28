@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { config } from '@/lib/system-config'
 import { ensureSchemaStateTable, writeSchemaState, readSchemaState } from '@/lib/venue-schema-state'
 import { EXPECTED_SCHEMA_VERSION, EXPECTED_SEED_VERSION, APP_VERSION } from '@/lib/version-contract'
 import { withVenue } from '@/lib/with-venue'
+import { err, ok, unauthorized } from '@/lib/api-response'
 
 /**
  * POST /api/internal/schema-state
@@ -21,7 +22,7 @@ import { withVenue } from '@/lib/with-venue'
 export const POST = withVenue(async function POST(request: NextRequest) {
   const apiKey = request.headers.get('x-api-key')
   if (!apiKey || apiKey !== config.provisionApiKey) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return unauthorized('Unauthorized')
   }
 
   const body = await request.json() as {
@@ -37,10 +38,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   if (mode === 'pipeline') {
     // Strict: all fields required — hides caller bugs if omitted
     if (!body.schemaVersion || !body.seedVersion || !body.provisionerVersion || !body.provisionedBy) {
-      return NextResponse.json(
-        { error: 'Pipeline mode requires schemaVersion, seedVersion, provisionerVersion, and provisionedBy' },
-        { status: 400 }
-      )
+      return err('Pipeline mode requires schemaVersion, seedVersion, provisionerVersion, and provisionedBy')
     }
   }
 
@@ -66,15 +64,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Read back to confirm
     const state = await readSchemaState(db)
 
-    return NextResponse.json({
-      success: true,
-      state,
-    })
+    return ok({ success: true })
   } catch (error) {
     console.error('[schema-state] Write failed:', error)
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to write schema state' },
-      { status: 500 }
-    )
+    return err(error instanceof Error ? error.message : 'Failed to write schema state', 500)
   }
 })

@@ -4,6 +4,7 @@ import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { getClientIp } from '@/lib/get-client-ip'
+import { err, ok, unauthorized } from '@/lib/api-response'
 // POST terminal heartbeat - updates online status
 // NO withAuth — this route does its own token validation via terminal_token cookie.
 export const POST = withVenue(async function POST(request: NextRequest) {
@@ -12,7 +13,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const terminalToken = request.cookies.get('terminal_token')?.value
 
     if (!terminalToken) {
-      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+      return unauthorized('Not authenticated')
     }
 
     // Get client IP
@@ -87,7 +88,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     void notifyDataChanged({ locationId: terminal.locationId, domain: 'hardware', action: 'updated', entityId: terminal.id })
     void pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       terminal: {
         id: terminal.id,
@@ -97,9 +98,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         forceAllPrints: terminal.forceAllPrints,
         receiptPrinter: terminal.receiptPrinter,
       },
-    } })
+    })
   } catch (error) {
     console.error('Terminal heartbeat failed:', error)
-    return NextResponse.json({ error: 'Heartbeat failed' }, { status: 500 })
+    return err('Heartbeat failed', 500)
   }
 })

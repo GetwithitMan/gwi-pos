@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET single terminal
 export const GET = withVenue(withAuth('ADMIN', async function GET(
@@ -105,13 +106,13 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
     }
 
     if (!terminal || terminal.deletedAt) {
-      return NextResponse.json({ error: 'Terminal not found' }, { status: 404 })
+      return notFound('Terminal not found')
     }
 
-    return NextResponse.json({ data: { terminal } })
+    return ok({ terminal })
   } catch (error) {
     console.error('Failed to fetch terminal:', error)
-    return NextResponse.json({ error: 'Failed to fetch terminal' }, { status: 500 })
+    return err('Failed to fetch terminal', 500)
   }
 }))
 
@@ -155,22 +156,19 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     // Check terminal exists
     const existing = await db.terminal.findUnique({ where: { id } })
     if (!existing || existing.deletedAt) {
-      return NextResponse.json({ error: 'Terminal not found' }, { status: 404 })
+      return notFound('Terminal not found')
     }
 
     // Validate category if provided
     if (category && !['FIXED_STATION', 'HANDHELD'].includes(category)) {
-      return NextResponse.json(
-        { error: 'Category must be FIXED_STATION or HANDHELD' },
-        { status: 400 }
-      )
+      return err('Category must be FIXED_STATION or HANDHELD')
     }
 
     // Validate IP address format if provided
     if (staticIp) {
       const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}$/
       if (!ipv4Regex.test(staticIp)) {
-        return NextResponse.json({ error: 'Invalid IP address format' }, { status: 400 })
+        return err('Invalid IP address format')
       }
     }
 
@@ -180,29 +178,23 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
         where: { id: receiptPrinterId },
       })
       if (!printer) {
-        return NextResponse.json({ error: 'Receipt printer not found' }, { status: 400 })
+        return err('Receipt printer not found')
       }
       if (printer.printerRole !== 'receipt') {
-        return NextResponse.json(
-          { error: 'Selected printer must have receipt role' },
-          { status: 400 }
-        )
+        return err('Selected printer must have receipt role')
       }
     }
 
     // If backupTerminalId is provided, verify it exists and is not the same terminal
     if (backupTerminalId) {
       if (backupTerminalId === id) {
-        return NextResponse.json(
-          { error: 'A terminal cannot be its own backup' },
-          { status: 400 }
-        )
+        return err('A terminal cannot be its own backup')
       }
       const backupTerminal = await db.terminal.findUnique({
         where: { id: backupTerminalId },
       })
       if (!backupTerminal || backupTerminal.deletedAt) {
-        return NextResponse.json({ error: 'Backup terminal not found' }, { status: 400 })
+        return err('Backup terminal not found')
       }
     }
 
@@ -212,23 +204,20 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
         where: { id: paymentReaderId, deletedAt: null },
       })
       if (!reader) {
-        return NextResponse.json({ error: 'Payment reader not found' }, { status: 400 })
+        return err('Payment reader not found')
       }
     }
 
     // Validate backup payment reader if provided
     if (backupPaymentReaderId) {
       if (backupPaymentReaderId === paymentReaderId) {
-        return NextResponse.json(
-          { error: 'Backup reader cannot be the same as primary reader' },
-          { status: 400 }
-        )
+        return err('Backup reader cannot be the same as primary reader')
       }
       const backupReader = await db.paymentReader.findFirst({
         where: { id: backupPaymentReaderId, deletedAt: null },
       })
       if (!backupReader) {
-        return NextResponse.json({ error: 'Backup payment reader not found' }, { status: 400 })
+        return err('Backup payment reader not found')
       }
     }
 
@@ -240,7 +229,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
           where: { id: scaleId, deletedAt: null },
         })
         if (!scale) {
-          return NextResponse.json({ error: 'Scale not found' }, { status: 400 })
+          return err('Scale not found')
         }
       } catch {
         // Scale table doesn't exist on un-migrated DB — ignore scaleId
@@ -250,10 +239,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
 
     // Validate payment provider if provided
     if (paymentProvider && paymentProvider !== 'DATACAP_DIRECT') {
-      return NextResponse.json(
-        { error: 'Payment provider must be DATACAP_DIRECT' },
-        { status: 400 }
-      )
+      return err('Payment provider must be DATACAP_DIRECT')
     }
 
     const baseData = {
@@ -365,16 +351,13 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     void notifyDataChanged({ locationId: existing.locationId, domain: 'hardware', action: 'updated', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { terminal } })
+    return ok({ terminal })
   } catch (error) {
     console.error('Failed to update terminal:', error)
     if (error instanceof Error && error.message.includes('Unique constraint')) {
-      return NextResponse.json(
-        { error: 'A terminal with this name already exists at this location' },
-        { status: 400 }
-      )
+      return err('A terminal with this name already exists at this location')
     }
-    return NextResponse.json({ error: 'Failed to update terminal' }, { status: 500 })
+    return err('Failed to update terminal', 500)
   }
 }))
 
@@ -388,7 +371,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
 
     const existing = await db.terminal.findUnique({ where: { id } })
     if (!existing || existing.deletedAt) {
-      return NextResponse.json({ error: 'Terminal not found' }, { status: 404 })
+      return notFound('Terminal not found')
     }
 
     // Soft delete
@@ -405,9 +388,9 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     void notifyDataChanged({ locationId: existing.locationId, domain: 'hardware', action: 'deleted', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Failed to delete terminal:', error)
-    return NextResponse.json({ error: 'Failed to delete terminal' }, { status: 500 })
+    return err('Failed to delete terminal', 500)
   }
 }))

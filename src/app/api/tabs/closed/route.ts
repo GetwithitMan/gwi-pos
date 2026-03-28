@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
+import { err, ok } from '@/lib/api-response'
 
 // TODO: Migrate db.order.count and db.order.findMany to OrderRepository
 // once a paginated query with complex includes (items, payments, cards) is supported.
@@ -12,7 +13,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId') || await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     const dateFrom = searchParams.get('dateFrom')
@@ -157,8 +158,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       })(),
     }
 
-    return NextResponse.json({
-      data: {
+    return ok({
         tabs: data,
         summary,
         pagination: {
@@ -168,10 +168,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           totalPages,
           hasMore: page < totalPages,
         },
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to fetch closed tabs:', error)
-    return NextResponse.json({ error: 'Failed to fetch closed tabs' }, { status: 500 })
+    return err('Failed to fetch closed tabs', 500)
   }
 })

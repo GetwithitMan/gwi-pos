@@ -8,6 +8,7 @@ import { dispatchCakeOrderUpdated } from '@/lib/socket-dispatch'
 import { updateCakeOrderSchema } from '@/lib/cake-orders/schemas'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { requireCakeFeature } from '@/lib/cake-orders/require-cake-feature'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET /api/cake-orders/[id] — get full cake order detail
 export const GET = withVenue(async function GET(
@@ -20,7 +21,7 @@ export const GET = withVenue(async function GET(
     const locationId = searchParams.get('locationId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // ── Permission check ──────────────────────────────────────────────
@@ -55,7 +56,7 @@ export const GET = withVenue(async function GET(
     )
 
     if (orders.length === 0) {
-      return NextResponse.json({ error: 'Cake order not found' }, { status: 404 })
+      return notFound('Cake order not found')
     }
 
     const order = orders[0]
@@ -87,17 +88,15 @@ export const GET = withVenue(async function GET(
       id,
     )
 
-    return NextResponse.json({
-      data: {
+    return ok({
         ...order,
         latestQuote,
         payments,
         changes,
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to fetch cake order:', error)
-    return NextResponse.json({ error: 'Failed to fetch cake order' }, { status: 500 })
+    return err('Failed to fetch cake order', 500)
   }
 })
 
@@ -116,7 +115,7 @@ export const PATCH = withVenue(async function PATCH(
     const locationId = actor.locationId || body.locationId
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // ── Permission check ──────────────────────────────────────────────
@@ -152,7 +151,7 @@ export const PATCH = withVenue(async function PATCH(
     )
 
     if (orders.length === 0) {
-      return NextResponse.json({ error: 'Cake order not found' }, { status: 404 })
+      return notFound('Cake order not found')
     }
 
     const currentOrder = orders[0]
@@ -342,9 +341,9 @@ export const PATCH = withVenue(async function PATCH(
       id,
     )
 
-    return NextResponse.json({ data: updated[0] })
+    return ok(updated[0])
   } catch (error) {
     console.error('Failed to update cake order:', error)
-    return NextResponse.json({ error: 'Failed to update cake order' }, { status: 500 })
+    return err('Failed to update cake order', 500)
   }
 })

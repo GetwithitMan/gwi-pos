@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { logger } from '@/lib/logger'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // PUT - Write off a walkout retry (mark as unrecoverable)
 export const PUT = withVenue(async function PUT(
@@ -18,28 +19,28 @@ export const PUT = withVenue(async function PUT(
     try {
       body = await request.json()
     } catch {
-      return NextResponse.json({ error: 'Invalid JSON request body' }, { status: 400 })
+      return err('Invalid JSON request body')
     }
 
     if (body.action !== 'write-off') {
-      return NextResponse.json({ error: 'Invalid action. Expected "write-off"' }, { status: 400 })
+      return err('Invalid action. Expected "write-off"')
     }
 
     const { reason, locationId } = body
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Missing locationId' }, { status: 400 })
+      return err('Missing locationId')
     }
 
     if (!reason || !reason.trim()) {
-      return NextResponse.json({ error: 'Missing reason for write-off' }, { status: 400 })
+      return err('Missing reason for write-off')
     }
 
     const actor = await getActorFromRequest(request)
     const resolvedEmployeeId = actor.employeeId ?? body.employeeId
     const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.MGR_VOID_PAYMENTS)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status ?? 403 })
+      return err(auth.error, auth.status ?? 403)
     }
 
     // Find the retry record
@@ -48,15 +49,15 @@ export const PUT = withVenue(async function PUT(
     })
 
     if (!retry) {
-      return NextResponse.json({ error: 'Walkout retry not found' }, { status: 404 })
+      return notFound('Walkout retry not found')
     }
 
     if (retry.writtenOffAt) {
-      return NextResponse.json({ error: 'Already written off' }, { status: 409 })
+      return err('Already written off', 409)
     }
 
     if (retry.status === 'collected') {
-      return NextResponse.json({ error: 'Cannot write off a collected retry' }, { status: 409 })
+      return err('Cannot write off a collected retry', 409)
     }
 
     const now = new Date()
@@ -91,8 +92,7 @@ export const PUT = withVenue(async function PUT(
     ])
     pushUpstream()
 
-    return NextResponse.json({
-      data: {
+    return ok({
         id: updated.id,
         orderId: updated.orderId,
         amount: Number(updated.amount),
@@ -100,10 +100,9 @@ export const PUT = withVenue(async function PUT(
         writtenOffAt: updated.writtenOffAt?.toISOString(),
         writtenOffBy: updated.writtenOffBy,
         reason: reason.trim(),
-      },
-    })
+      })
   } catch (error) {
     logger.error('datacap', 'Failed to write off walkout retry', error)
-    return NextResponse.json({ error: 'Failed to write off walkout retry' }, { status: 500 })
+    return err('Failed to write off walkout retry', 500)
   }
 })

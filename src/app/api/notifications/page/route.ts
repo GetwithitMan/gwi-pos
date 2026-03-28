@@ -16,6 +16,7 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import crypto from 'crypto'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound } from '@/lib/api-response'
 const log = createChildLogger('notifications-page')
 
 export const dynamic = 'force-dynamic'
@@ -33,18 +34,18 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.NOTIFICATIONS_MANUAL_PAGE)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const body = await request.json()
     const { orderId, waitlistEntryId, message, targetOverride } = body
 
     if (!orderId && !waitlistEntryId) {
-      return NextResponse.json({ error: 'orderId or waitlistEntryId is required' }, { status: 400 })
+      return err('orderId or waitlistEntryId is required')
     }
 
     // Determine subject type and validate subject exists
@@ -66,7 +67,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         locationId
       )
       if (orders.length === 0) {
-        return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+        return notFound('Order not found')
       }
       const order = orders[0]
 
@@ -106,7 +107,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         locationId
       )
       if (entries.length === 0) {
-        return NextResponse.json({ error: 'Waitlist entry not found' }, { status: 404 })
+        return notFound('Waitlist entry not found')
       }
       const entry = entries[0]
 
@@ -228,6 +229,6 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
   } catch (error) {
     console.error('[Manual Page] POST error:', error)
-    return NextResponse.json({ error: 'Failed to send page' }, { status: 500 })
+    return err('Failed to send page', 500)
   }
 })

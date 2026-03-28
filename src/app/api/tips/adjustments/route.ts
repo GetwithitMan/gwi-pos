@@ -5,7 +5,7 @@
  * POST - Create a tip adjustment (manual or with recalculation)
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { OrderRepository, PaymentRepository } from '@/lib/repositories'
 import { requireAnyPermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -20,6 +20,7 @@ import type { AdjustmentType } from '@/lib/domain/tips/tip-recalculation'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { queueIfOutageOrFail, OutageQueueFullError, pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, forbidden, notFound, ok } from '@/lib/api-response'
 
 // ─── Valid adjustment types ──────────────────────────────────────────────────
 
@@ -46,18 +47,12 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
     // ── Validate required fields ──────────────────────────────────────────
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'locationId is required' },
-        { status: 400 }
-      )
+      return err('locationId is required')
     }
 
     // Validate adjustmentType if provided
     if (adjustmentType && !VALID_ADJUSTMENT_TYPES.includes(adjustmentType as AdjustmentType)) {
-      return NextResponse.json(
-        { error: `Invalid adjustmentType. Must be one of: ${VALID_ADJUSTMENT_TYPES.join(', ')}` },
-        { status: 400 }
-      )
+      return err(`Invalid adjustmentType. Must be one of: ${VALID_ADJUSTMENT_TYPES.join(', ')}`)
     }
 
     // ── Auth check ────────────────────────────────────────────────────────
@@ -70,10 +65,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
       [PERMISSIONS.TIPS_PERFORM_ADJUSTMENTS, PERMISSIONS.TIPS_VIEW_LEDGER]
     )
     if (!auth.authorized) {
-      return NextResponse.json(
-        { error: auth.error },
-        { status: auth.status }
-      )
+      return err(auth.error, auth.status)
     }
 
     // ── Build filters ─────────────────────────────────────────────────────
@@ -110,7 +102,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
     // ── Query adjustments ─────────────────────────────────────────────────
     const { adjustments, total } = await getAdjustmentHistory(historyParams)
 
-    return NextResponse.json({
+    return ok({
       adjustments: adjustments.map(adj => ({
         id: adj.id,
         createdById: adj.createdById,
@@ -126,10 +118,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
     })
   } catch (error) {
     console.error('Failed to get tip adjustments:', error)
-    return NextResponse.json(
-      { error: 'Failed to get tip adjustments' },
-      { status: 500 }
-    )
+    return err('Failed to get tip adjustments', 500)
   }
 }))
 
@@ -146,24 +135,15 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     // ── Validate required fields ──────────────────────────────────────────
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'locationId is required' },
-        { status: 400 }
-      )
+      return err('locationId is required')
     }
 
     if (!adjustmentType) {
-      return NextResponse.json(
-        { error: 'adjustmentType is required' },
-        { status: 400 }
-      )
+      return err('adjustmentType is required')
     }
 
     if (!VALID_ADJUSTMENT_TYPES.includes(adjustmentType as AdjustmentType)) {
-      return NextResponse.json(
-        { error: `Invalid adjustmentType. Must be one of: ${VALID_ADJUSTMENT_TYPES.join(', ')}` },
-        { status: 400 }
-      )
+      return err(`Invalid adjustmentType. Must be one of: ${VALID_ADJUSTMENT_TYPES.join(', ')}`)
     }
 
     const requestingEmployeeId = request.headers.get('x-employee-id')
@@ -171,10 +151,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     // ── Self-service tip_amount: employee adjusting their own order's tip ──
     if (adjustmentType === 'tip_amount') {
       if (!orderId || !paymentId || tipAmountDollars === undefined) {
-        return NextResponse.json(
-          { error: 'orderId, paymentId, and tipAmountDollars are required for tip_amount adjustments' },
-          { status: 400 }
-        )
+        return err('orderId, paymentId, and tipAmountDollars are required for tip_amount adjustments')
       }
 
       // Look up the order to check ownership
@@ -185,7 +162,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       )
 
       if (!order) {
-        return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+        return notFound('Order not found')
       }
 
       const isSelfService = order.employeeId === requestingEmployeeId
@@ -198,10 +175,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
           [PERMISSIONS.TIPS_PERFORM_ADJUSTMENTS]
         )
         if (!auth.authorized) {
-          return NextResponse.json(
-            { error: auth.error },
-            { status: auth.status }
-          )
+          return err(auth.error, auth.status)
         }
       }
 
@@ -220,10 +194,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       if (payment?.shift?.status === 'closed' && payment.shift.endedAt) {
         const hoursSinceClose = (Date.now() - payment.shift.endedAt.getTime()) / (1000 * 60 * 60)
         if (hoursSinceClose > 24) {
-          return NextResponse.json(
-            { error: 'Tips can only be edited within 24 hours of shift close.' },
-            { status: 403 }
-          )
+          return forbidden('Tips can only be edited within 24 hours of shift close.')
         }
       }
 
@@ -233,10 +204,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       // M2: Hard-reject tips that exceed 200% of the payment base (extreme fat-finger guard)
       const baseAmountCents = Math.round(Number(payment?.amount) * 100)
       if (baseAmountCents > 0 && tipAmountCents > baseAmountCents * 2) {
-        return NextResponse.json(
-          { error: 'Tip amount exceeds 200% of the payment total. If intentional, contact a manager.' },
-          { status: 400 }
-        )
+        return err('Tip amount exceeds 200% of the payment total. If intentional, contact a manager.')
       }
 
       const result = await performTipAdjustment({
@@ -256,29 +224,23 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
         await queueIfOutageOrFail('TipAdjustment', locationId, result.adjustmentId, 'INSERT')
       } catch (err) {
         if (err instanceof OutageQueueFullError) {
-          return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+          return err('Service temporarily unavailable — outage queue full', 507)
         }
         throw err
       }
       pushUpstream()
 
-      return NextResponse.json({ adjustment: result })
+      return ok({ adjustment: result })
     }
 
     // ── Standard adjustments: validate remaining required fields ──────────
 
     if (!reason) {
-      return NextResponse.json(
-        { error: 'reason is required' },
-        { status: 400 }
-      )
+      return err('reason is required')
     }
 
     if (!context || !context.before || !context.after) {
-      return NextResponse.json(
-        { error: 'context with before and after is required' },
-        { status: 400 }
-      )
+      return err('context with before and after is required')
     }
 
     // ── Auth check ────────────────────────────────────────────────────────
@@ -290,10 +252,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       [PERMISSIONS.TIPS_PERFORM_ADJUSTMENTS]
     )
     if (!auth.authorized) {
-      return NextResponse.json(
-        { error: auth.error },
-        { status: auth.status }
-      )
+      return err(auth.error, auth.status)
     }
 
     const managerId = auth.employee.id
@@ -320,7 +279,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
             },
           })
           if (!group) {
-            return NextResponse.json({ error: 'Tip group not found' }, { status: 404 })
+            return notFound('Tip group not found')
           }
 
           const transactions = await db.tipTransaction.findMany({
@@ -418,7 +377,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
         }
       }
 
-      return NextResponse.json({
+      return ok({
         preview: true,
         adjustmentType,
         impactPerEmployee: previewImpact,
@@ -432,10 +391,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       // Recalculation mode
       if (recalculate.type === 'group') {
         if (!recalculate.groupId) {
-          return NextResponse.json(
-            { error: 'recalculate.groupId is required for group recalculation' },
-            { status: 400 }
-          )
+          return err('recalculate.groupId is required for group recalculation')
         }
 
         const result = await recalculateGroupAllocations({
@@ -450,20 +406,17 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
           await queueIfOutageOrFail('TipAdjustment', locationId, result.adjustmentId, 'INSERT')
         } catch (err) {
           if (err instanceof OutageQueueFullError) {
-            return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+            return err('Service temporarily unavailable — outage queue full', 507)
           }
           throw err
         }
         pushUpstream()
 
-        return NextResponse.json({ adjustment: result })
+        return ok({ adjustment: result })
 
       } else if (recalculate.type === 'order') {
         if (!recalculate.orderId) {
-          return NextResponse.json(
-            { error: 'recalculate.orderId is required for order recalculation' },
-            { status: 400 }
-          )
+          return err('recalculate.orderId is required for order recalculation')
         }
 
         const result = await recalculateOrderAllocations({
@@ -477,19 +430,16 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
           await queueIfOutageOrFail('TipAdjustment', locationId, result.adjustmentId, 'INSERT')
         } catch (err) {
           if (err instanceof OutageQueueFullError) {
-            return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+            return err('Service temporarily unavailable — outage queue full', 507)
           }
           throw err
         }
         pushUpstream()
 
-        return NextResponse.json({ adjustment: result })
+        return ok({ adjustment: result })
 
       } else {
-        return NextResponse.json(
-          { error: 'recalculate.type must be "group" or "order"' },
-          { status: 400 }
-        )
+        return err('recalculate.type must be "group" or "order"')
       }
     }
 
@@ -507,36 +457,27 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       await queueIfOutageOrFail('TipAdjustment', locationId, result.adjustmentId, 'INSERT')
     } catch (err) {
       if (err instanceof OutageQueueFullError) {
-        return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+        return err('Service temporarily unavailable — outage queue full', 507)
       }
       throw err
     }
     pushUpstream()
 
-    return NextResponse.json({ adjustment: result })
+    return ok({ adjustment: result })
 
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error'
 
     // Handle known domain errors
     if (message === 'TIP_GROUP_NOT_FOUND') {
-      return NextResponse.json(
-        { error: 'Tip group not found' },
-        { status: 404 }
-      )
+      return notFound('Tip group not found')
     }
 
     if (message === 'NO_ACTIVE_OWNERSHIP') {
-      return NextResponse.json(
-        { error: 'No active ownership found for this order' },
-        { status: 404 }
-      )
+      return notFound('No active ownership found for this order')
     }
 
     console.error('Failed to create tip adjustment:', error)
-    return NextResponse.json(
-      { error: 'Failed to create tip adjustment' },
-      { status: 500 }
-    )
+    return err('Failed to create tip adjustment', 500)
   }
 }))

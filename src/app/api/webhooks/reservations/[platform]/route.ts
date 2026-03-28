@@ -16,7 +16,7 @@
  *  6. Return 200 OK with our reservation ID
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { createHmac, timingSafeEqual } from 'crypto'
 import { db } from '@/lib/db'
 import { parseSettings } from '@/lib/settings'
@@ -28,6 +28,7 @@ import { dispatchReservationChanged } from '@/lib/socket-dispatch'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok, unauthorized } from '@/lib/api-response'
 const log = createChildLogger('webhooks-reservations')
 
 // ─── Rate Limiting (100/min per platform) ───────────────────────────────────
@@ -274,12 +275,12 @@ export async function POST(
 
   // Validate platform
   if (!NORMALIZERS[platform]) {
-    return NextResponse.json({ error: `Unknown platform: ${platform}` }, { status: 400 })
+    return err(`Unknown platform: ${platform}`)
   }
 
   // Rate limit
   if (!limiter.check(`webhook:${platform}`).allowed) {
-    return NextResponse.json({ error: 'Rate limit exceeded (100/min)' }, { status: 429 })
+    return err('Rate limit exceeded (100/min)', 429)
   }
 
   // Read raw body for signature verification
@@ -288,7 +289,7 @@ export async function POST(
   try {
     body = JSON.parse(rawBody)
   } catch {
-    return NextResponse.json({ error: 'Invalid JSON payload' }, { status: 400 })
+    return err('Invalid JSON payload')
   }
 
   // ─── Resolve Location ──────────────────────────────────────────────
@@ -332,17 +333,14 @@ export async function POST(
   }
 
   if (!matchedLocation || !matchedIntegration) {
-    return NextResponse.json(
-      { error: `No location found with enabled ${platform} integration` },
-      { status: 404 }
-    )
+    return notFound(`No location found with enabled ${platform} integration`)
   }
 
   // ─── Verify Signature ──────────────────────────────────────────────
   const signature = getSignatureHeader(request, platform)
   if (matchedIntegration.webhookSecret) {
     if (!verifyHmacSignature(rawBody, signature, matchedIntegration.webhookSecret)) {
-      return NextResponse.json({ error: 'Invalid webhook signature' }, { status: 401 })
+      return unauthorized('Invalid webhook signature')
     }
   }
 
@@ -352,11 +350,11 @@ export async function POST(
     normalized = NORMALIZERS[platform](body)
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Payload normalization failed'
-    return NextResponse.json({ error: message }, { status: 400 })
+    return err(message)
   }
 
   if (!normalized.externalId) {
-    return NextResponse.json({ error: 'Missing externalId in payload' }, { status: 400 })
+    return err('Missing externalId in payload')
   }
 
   // ─── Process Reservation ───────────────────────────────────────────
@@ -387,7 +385,7 @@ export async function POST(
       // Already processed — return 200 OK without re-processing
       log.info({ platform, externalId: normalized.externalId, action: normalized.action },
         'Duplicate webhook received — already processed, skipping')
-      return NextResponse.json({
+      return ok({
         success: true,
         message: 'Webhook already processed (idempotent)',
         reservationId: null,
@@ -409,7 +407,7 @@ export async function POST(
     if (normalized.action === 'cancel') {
       // ─── Cancel ──────────────────────────────────────────────
       if (!existing) {
-        return NextResponse.json({
+        return ok({
           success: true,
           message: 'Reservation not found — may have been already cancelled',
           reservationId: null,
@@ -609,7 +607,7 @@ export async function POST(
     void notifyDataChanged({ locationId, domain: 'reservations', action: normalized.action === 'cancel' ? 'deleted' : normalized.action === 'create' ? 'created' : 'updated', entityId: reservationId })
     void pushUpstream()
 
-    return NextResponse.json({
+    return ok({
       success: true,
       reservationId,
       action: normalized.action,
@@ -618,7 +616,7 @@ export async function POST(
   } catch (err) {
     console.error(`[Webhook:${platform}] Error processing reservation:`, err)
     const message = err instanceof Error ? err.message : 'Internal error processing webhook'
-    return NextResponse.json({ error: message }, { status: 500 })
+    return err(message, 500)
   }
 }
 
@@ -629,7 +627,7 @@ export async function GET(
   { params }: { params: Promise<{ platform: string }> }
 ) {
   const { platform } = await params
-  return NextResponse.json({
+  return ok({
     platform,
     status: 'active',
     message: `Webhook endpoint for ${platform} reservations is active. Send POST requests to this URL.`,

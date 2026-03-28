@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchFloorPlanUpdate, dispatchEntertainmentWaitlistNotify } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
@@ -7,6 +7,7 @@ import { parseError } from '@/lib/datacap/xml-parser'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, forbidden, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('entertainment-waitlist-deposit')
 
 // POST - Collect a deposit for a waitlist entry
@@ -21,23 +22,23 @@ export const POST = withVenue(withAuth(async function POST(
 
     // Validate required fields
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     if (!method || !['cash', 'card'].includes(method)) {
-      return NextResponse.json({ error: 'method must be "cash" or "card"' }, { status: 400 })
+      return err('method must be "cash" or "card"')
     }
 
     if (!amount || amount <= 0) {
-      return NextResponse.json({ error: 'amount must be a positive number' }, { status: 400 })
+      return err('amount must be a positive number')
     }
 
     if (!employeeId) {
-      return NextResponse.json({ error: 'employeeId is required' }, { status: 400 })
+      return err('employeeId is required')
     }
 
     if (method === 'card' && !readerId) {
-      return NextResponse.json({ error: 'readerId is required for card deposits' }, { status: 400 })
+      return err('readerId is required for card deposits')
     }
 
     // Fetch the waitlist entry
@@ -58,19 +59,19 @@ export const POST = withVenue(withAuth(async function POST(
     })
 
     if (!entry) {
-      return NextResponse.json({ error: 'Waitlist entry not found' }, { status: 404 })
+      return notFound('Waitlist entry not found')
     }
 
     if (entry.locationId !== locationId) {
-      return NextResponse.json({ error: 'Waitlist entry does not belong to this location' }, { status: 403 })
+      return forbidden('Waitlist entry does not belong to this location')
     }
 
     if (entry.depositStatus === 'collected') {
-      return NextResponse.json({ error: 'Deposit already collected for this entry' }, { status: 400 })
+      return err('Deposit already collected for this entry')
     }
 
     if (entry.status !== 'waiting' && entry.status !== 'notified') {
-      return NextResponse.json({ error: 'Can only collect deposit for waiting or notified entries' }, { status: 400 })
+      return err('Can only collect deposit for waiting or notified entries')
     }
 
     // Process deposit based on method
@@ -103,14 +104,12 @@ export const POST = withVenue(withAuth(async function POST(
 
       void dispatchFloorPlanUpdate(locationId, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
 
-      return NextResponse.json({
-        data: {
+      return ok({
           entryId: id,
           depositAmount: amount,
           depositMethod: 'cash',
           depositStatus: 'collected',
-        },
-      })
+        })
     }
 
     // Card deposit: pre-auth via Datacap
@@ -126,10 +125,7 @@ export const POST = withVenue(withAuth(async function POST(
 
     const error = parseError(response)
     if (error) {
-      return NextResponse.json({
-        error: 'Card pre-auth failed',
-        details: { code: error.code, message: error.text, isRetryable: error.isRetryable },
-      }, { status: 402 })
+      return err('Card pre-auth failed', 402, { code: error.code, message: error.text, isRetryable: error.isRetryable })
     }
 
     // Record the card deposit on the waitlist entry
@@ -163,8 +159,7 @@ export const POST = withVenue(withAuth(async function POST(
 
     void dispatchFloorPlanUpdate(locationId, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
 
-    return NextResponse.json({
-      data: {
+    return ok({
         entryId: id,
         depositAmount: amount,
         depositMethod: 'card',
@@ -173,12 +168,11 @@ export const POST = withVenue(withAuth(async function POST(
         depositCardLast4: response.cardLast4 || null,
         depositCardBrand: response.cardType || null,
         authCode: response.authCode || null,
-      },
-    })
+      })
   } catch (err) {
     console.error('Failed to collect waitlist deposit:', err)
     const message = err instanceof Error ? err.message : 'Failed to collect deposit'
-    return NextResponse.json({ error: message }, { status: 500 })
+    return err(message, 500)
   }
 }))
 
@@ -193,7 +187,7 @@ export const DELETE = withVenue(withAuth(async function DELETE(
     const locationId = searchParams.get('locationId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // Fetch the waitlist entry
@@ -216,18 +210,15 @@ export const DELETE = withVenue(withAuth(async function DELETE(
     })
 
     if (!entry) {
-      return NextResponse.json({ error: 'Waitlist entry not found' }, { status: 404 })
+      return notFound('Waitlist entry not found')
     }
 
     if (entry.locationId !== locationId) {
-      return NextResponse.json({ error: 'Waitlist entry does not belong to this location' }, { status: 403 })
+      return forbidden('Waitlist entry does not belong to this location')
     }
 
     if (entry.depositStatus !== 'collected') {
-      return NextResponse.json(
-        { error: `Cannot refund deposit with status "${entry.depositStatus || 'none'}"` },
-        { status: 400 }
-      )
+      return err(`Cannot refund deposit with status "${entry.depositStatus || 'none'}"`)
     }
 
     // For card deposits, void the pre-auth using the stored recordNo
@@ -239,10 +230,7 @@ export const DELETE = withVenue(withAuth(async function DELETE(
       })
 
       if (!reader) {
-        return NextResponse.json(
-          { error: 'No active payment reader found to process card refund' },
-          { status: 503 }
-        )
+        return err('No active payment reader found to process card refund', 503)
       }
 
       const client = await requireDatacapClient(locationId)
@@ -252,10 +240,7 @@ export const DELETE = withVenue(withAuth(async function DELETE(
 
       const voidError = parseError(voidResponse)
       if (voidError) {
-        return NextResponse.json({
-          error: 'Failed to void card deposit',
-          details: { code: voidError.code, message: voidError.text, isRetryable: voidError.isRetryable },
-        }, { status: 502 })
+        return err('Failed to void card deposit', 502, { code: voidError.code, message: voidError.text, isRetryable: voidError.isRetryable })
       }
     }
 
@@ -286,18 +271,16 @@ export const DELETE = withVenue(withAuth(async function DELETE(
 
     void dispatchFloorPlanUpdate(locationId, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
 
-    return NextResponse.json({
-      data: {
+    return ok({
         entryId: id,
         depositAmount: refundAmount,
         depositMethod: entry.depositMethod,
         depositStatus: 'refunded',
         depositRefundedAt: new Date().toISOString(),
-      },
-    })
+      })
   } catch (err) {
     console.error('Failed to refund waitlist deposit:', err)
     const message = err instanceof Error ? err.message : 'Failed to refund deposit'
-    return NextResponse.json({ error: message }, { status: 500 })
+    return err(message, 500)
   }
 }))

@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, ok } from '@/lib/api-response'
 
 // GET - List storage locations
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -13,7 +14,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const activeOnly = searchParams.get('activeOnly') !== 'false'
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID required' }, { status: 400 })
+      return err('Location ID required')
     }
 
     const where: Record<string, unknown> = {
@@ -33,10 +34,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({ data: { storageLocations } })
+    return ok({ storageLocations })
   } catch (error) {
     console.error('Storage locations list error:', error)
-    return NextResponse.json({ error: 'Failed to fetch storage locations' }, { status: 500 })
+    return err('Failed to fetch storage locations', 500)
   }
 })
 
@@ -47,9 +48,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     const { locationId, name, description, sortOrder } = body
 
     if (!locationId || !name) {
-      return NextResponse.json({
-        error: 'Location ID and name required',
-      }, { status: 400 })
+      return err('Location ID and name required')
     }
 
     // Get max sort order if not provided
@@ -75,12 +74,12 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     void notifyDataChanged({ locationId, domain: 'inventory', action: 'created', entityId: storageLocation.id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { storageLocation } })
+    return ok({ storageLocation })
   } catch (error) {
     console.error('Create storage location error:', error)
     if ((error as { code?: string }).code === 'P2002') {
-      return NextResponse.json({ error: 'Storage location with this name already exists' }, { status: 400 })
+      return err('Storage location with this name already exists')
     }
-    return NextResponse.json({ error: 'Failed to create storage location' }, { status: 500 })
+    return err('Failed to create storage location', 500)
   }
 }))

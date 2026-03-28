@@ -11,6 +11,7 @@ import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok } from '@/lib/api-response'
 const log = createChildLogger('delivery')
 
 export const dynamic = 'force-dynamic'
@@ -24,13 +25,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Auth check
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.POS_ACCESS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Feature gate
     const featureGate = await requireDeliveryFeature(locationId)
@@ -99,10 +100,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       deliveryFee: Number(row.deliveryFee),
     }))
 
-    return NextResponse.json({ data: enriched })
+    return ok(enriched)
   } catch (error) {
     console.error('[Delivery] GET error:', error)
-    return NextResponse.json({ error: 'Failed to fetch delivery orders' }, { status: 500 })
+    return err('Failed to fetch delivery orders', 500)
   }
 })
 
@@ -115,13 +116,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Auth check
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.DELIVERY_CREATE)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Feature gate
     const featureGate = await requireDeliveryFeature(locationId)
@@ -132,7 +133,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const deliveryConfig = settings.delivery ?? DEFAULT_DELIVERY
 
     if (!deliveryConfig.enabled) {
-      return NextResponse.json({ error: 'Delivery is not enabled' }, { status: 400 })
+      return err('Delivery is not enabled')
     }
 
     const body = await request.json()
@@ -154,15 +155,15 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Validate required fields
     if (!customerName || typeof customerName !== 'string' || customerName.trim().length === 0) {
-      return NextResponse.json({ error: 'Customer name is required' }, { status: 400 })
+      return err('Customer name is required')
     }
 
     if (deliveryConfig.requirePhone && (!phone || typeof phone !== 'string' || phone.trim().length === 0)) {
-      return NextResponse.json({ error: 'Phone number is required for delivery orders' }, { status: 400 })
+      return err('Phone number is required for delivery orders')
     }
 
     if (deliveryConfig.requireAddress && (!address || typeof address !== 'string' || address.trim().length === 0)) {
-      return NextResponse.json({ error: 'Address is required for delivery orders' }, { status: 400 })
+      return err('Address is required for delivery orders')
     }
 
     // Check max active deliveries
@@ -174,10 +175,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     `, locationId)
 
     if ((activeCount[0]?.count ?? 0) >= deliveryConfig.maxActiveDeliveries) {
-      return NextResponse.json(
-        { error: `Maximum active deliveries reached (${deliveryConfig.maxActiveDeliveries})` },
-        { status: 409 }
-      )
+      return err(`Maximum active deliveries reached (${deliveryConfig.maxActiveDeliveries})`, 409)
     }
 
     // Calculate delivery fee — zone fee takes priority over flat config fee
@@ -277,6 +275,6 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }, { status: 201 })
   } catch (error) {
     console.error('[Delivery] POST error:', error)
-    return NextResponse.json({ error: 'Failed to create delivery order' }, { status: 500 })
+    return err('Failed to create delivery order', 500)
   }
 })

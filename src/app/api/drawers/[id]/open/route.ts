@@ -11,6 +11,7 @@ import { emitToLocation } from '@/lib/socket-server'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('drawers-open')
 
 /**
@@ -48,7 +49,7 @@ export const POST = withVenue(async function POST(
 
     // ── Validation ────────────────────────────────────────────────────
     if (!body.employeeId) {
-      return NextResponse.json({ error: 'Employee ID is required' }, { status: 400 })
+      return err('Employee ID is required')
     }
 
     // ── Drawer exists? ───────────────────────────────────────────────
@@ -57,7 +58,7 @@ export const POST = withVenue(async function POST(
       select: { id: true, name: true, locationId: true, deviceId: true },
     })
     if (!drawer) {
-      return NextResponse.json({ error: 'Drawer not found' }, { status: 404 })
+      return notFound('Drawer not found')
     }
 
     // ── Load cash management settings ────────────────────────────────
@@ -67,10 +68,7 @@ export const POST = withVenue(async function POST(
     // Reason validation
     if (cashMgmt?.requireReasonForNoSale) {
       if (!body.reason || !VALID_REASONS.includes(body.reason as OpenReason)) {
-        return NextResponse.json(
-          { error: `Reason is required. Must be one of: ${VALID_REASONS.join(', ')}` },
-          { status: 400 }
-        )
+        return err(`Reason is required. Must be one of: ${VALID_REASONS.join(', ')}`)
       }
     }
 
@@ -80,7 +78,7 @@ export const POST = withVenue(async function POST(
     // ── Permission check ─────────────────────────────────────────────
     const auth = await requirePermission(body.employeeId, drawer.locationId, PERMISSIONS.POS_CASH_DRAWER)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // ── Find receipt printer: terminal-specific first, then location default
@@ -224,7 +222,7 @@ export const POST = withVenue(async function POST(
       }
     })()
 
-    return NextResponse.json({ data: { success: true, reason: reasonLabel } })
+    return ok({ success: true, reason: reasonLabel })
   } catch (error) {
     console.error('[DrawerOpen API] Error:', error)
     return NextResponse.json(

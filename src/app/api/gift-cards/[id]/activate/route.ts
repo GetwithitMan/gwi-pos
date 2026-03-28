@@ -8,7 +8,7 @@
  * and optionally sends email delivery.
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth, type AuthenticatedContext } from '@/lib/api-auth-middleware'
@@ -18,6 +18,7 @@ import { sendGiftCardEmail } from '@/lib/gift-card-email'
 import { activateCardSchema } from '@/lib/domain/gift-cards/schemas'
 import { activateGiftCard } from '@/lib/domain/gift-cards/activate-gift-card'
 import { dispatchGiftCardBalanceChanged } from '@/lib/socket-dispatch'
+import { err, notFound, ok } from '@/lib/api-response'
 
 export const POST = withVenue(withAuth('CUSTOMERS_GIFT_CARDS', async function POST(
   request: NextRequest,
@@ -31,10 +32,7 @@ export const POST = withVenue(withAuth('CUSTOMERS_GIFT_CARDS', async function PO
     const body = await request.json()
     const parsed = activateCardSchema.safeParse(body)
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: 'Validation failed', details: parsed.error.flatten().fieldErrors },
-        { status: 400 }
-      )
+      return err('Validation failed', 400, parsed.error.flatten().fieldErrors)
     }
 
     const { amount, recipientName, recipientEmail, recipientPhone, purchaserName, message } = parsed.data
@@ -49,24 +47,15 @@ export const POST = withVenue(withAuth('CUSTOMERS_GIFT_CARDS', async function PO
     })
 
     if (!card) {
-      return NextResponse.json(
-        { error: 'Gift card not found' },
-        { status: 404 }
-      )
+      return notFound('Gift card not found')
     }
 
     if (card.locationId !== locationId) {
-      return NextResponse.json(
-        { error: 'Gift card not found at this location' },
-        { status: 404 }
-      )
+      return notFound('Gift card not found at this location')
     }
 
     if (card.status !== 'unactivated') {
-      return NextResponse.json(
-        { error: `Card is already ${card.status}. Only unactivated cards can be activated.` },
-        { status: 400 }
-      )
+      return err(`Card is already ${card.status}. Only unactivated cards can be activated.`)
     }
 
     // ── Activate inside transaction ─────────────────────────────────────
@@ -81,10 +70,7 @@ export const POST = withVenue(withAuth('CUSTOMERS_GIFT_CARDS', async function PO
     })
 
     if (!result.success) {
-      return NextResponse.json(
-        { error: result.error },
-        { status: 400 }
-      )
+      return err(result.error)
     }
 
     const activatedCard = result.data as Record<string, unknown>
@@ -119,12 +105,9 @@ export const POST = withVenue(withAuth('CUSTOMERS_GIFT_CARDS', async function PO
       currentBalance: Number(activatedCard.currentBalance),
     }
 
-    return NextResponse.json({ data: responseCard })
+    return ok(responseCard)
   } catch (error) {
     console.error('Failed to activate gift card:', error)
-    return NextResponse.json(
-      { error: 'Failed to activate gift card' },
-      { status: 500 }
-    )
+    return err('Failed to activate gift card', 500)
   }
 }))

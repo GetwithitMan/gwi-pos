@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { PaymentRepository } from '@/lib/repositories'
+import { err, ok } from '@/lib/api-response'
 
 // POST - Create a chargeback case (manual entry for now)
 export const POST = withVenue(async function POST(request: NextRequest) {
@@ -24,14 +25,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     } = body
 
     if (!locationId || !cardLast4 || !amount || !chargebackDate) {
-      return NextResponse.json({ error: 'Missing required fields: locationId, cardLast4, amount, chargebackDate' }, { status: 400 })
+      return err('Missing required fields: locationId, cardLast4, amount, chargebackDate')
     }
 
     // Require manager-level permission — creating chargebacks is a sensitive financial operation
     const actor = await getActorFromRequest(request)
     const resolvedEmployeeId = actor.employeeId ?? employeeId
     const authResult = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.MGR_VOID_PAYMENTS)
-    if (!authResult.authorized) return NextResponse.json({ error: authResult.error }, { status: authResult.status })
+    if (!authResult.authorized) return err(authResult.error, authResult.status)
 
     // Try to auto-match against orders
     let matchedOrderId: string | null = null
@@ -103,17 +104,15 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     pushUpstream()
 
-    return NextResponse.json({
-      data: {
+    return ok({
         id: chargebackCase.id,
         autoMatched: !!matchedOrderId,
         matchedOrderId,
         matchedPaymentId,
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to create chargeback case:', error)
-    return NextResponse.json({ error: 'Failed to create chargeback case' }, { status: 500 })
+    return err('Failed to create chargeback case', 500)
   }
 })
 
@@ -125,7 +124,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const status = searchParams.get('status') // open | responded | won | lost
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Missing locationId' }, { status: 400 })
+      return err('Missing locationId')
     }
 
     const where: Record<string, unknown> = { locationId, deletedAt: null }
@@ -137,8 +136,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       take: 100,
     })
 
-    return NextResponse.json({
-      data: cases.map(c => ({
+    return ok(cases.map(c => ({
         id: c.id,
         orderId: c.orderId,
         paymentId: c.paymentId,
@@ -154,10 +152,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         respondedAt: c.respondedAt?.toISOString(),
         resolvedAt: c.resolvedAt?.toISOString(),
         createdAt: c.createdAt.toISOString(),
-      })),
-    })
+      })))
   } catch (error) {
     console.error('Failed to list chargeback cases:', error)
-    return NextResponse.json({ error: 'Failed to list chargeback cases' }, { status: 500 })
+    return err('Failed to list chargeback cases', 500)
   }
 })

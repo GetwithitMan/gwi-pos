@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { emitToLocation } from '@/lib/socket-server'
 import { withVenue } from '@/lib/with-venue'
@@ -6,6 +6,7 @@ import { getRequestLocationId } from '@/lib/request-context'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok } from '@/lib/api-response'
 
 const log = createChildLogger('ingredients.bulk-move')
 
@@ -20,10 +21,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
 
     // Validation
     if (!ingredientIds || !Array.isArray(ingredientIds) || ingredientIds.length === 0) {
-      return NextResponse.json(
-        { error: 'ingredientIds must be a non-empty array' },
-        { status: 400 }
-      )
+      return err('ingredientIds must be a non-empty array')
     }
 
     // categoryId can be null or empty string to move to "Uncategorized"
@@ -37,10 +35,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
       })
 
       if (!category) {
-        return NextResponse.json(
-          { error: 'Target category not found' },
-          { status: 400 }
-        )
+        return err('Target category not found')
       }
     }
 
@@ -79,15 +74,12 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
       }
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       movedCount: result,
-    } })
+    })
   } catch (error) {
     console.error('Failed to bulk move ingredients:', error)
-    return NextResponse.json(
-      { error: 'Failed to move ingredients' },
-      { status: 500 }
-    )
+    return err('Failed to move ingredients', 500)
   }
 }))

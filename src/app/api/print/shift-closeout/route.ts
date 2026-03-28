@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { buildShiftCloseoutReceipt } from '@/lib/escpos/shift-closeout-receipt'
 import { sendToPrinter } from '@/lib/printer-connection'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { queueIfOutage, pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 export const POST = withVenue(withAuth(async function POST(request: NextRequest) {
   try {
@@ -12,7 +13,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     const { shiftId, locationId } = body
 
     if (!shiftId || !locationId) {
-      return NextResponse.json({ error: 'shiftId and locationId required' }, { status: 400 })
+      return err('shiftId and locationId required')
     }
 
     // Fetch shift with employee, location, and tip-out data
@@ -42,7 +43,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     })
 
     if (!shift) {
-      return NextResponse.json({ error: 'Shift not found' }, { status: 404 })
+      return notFound('Shift not found')
     }
 
     // Get receipt printer
@@ -51,7 +52,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     })
 
     if (!printer) {
-      return NextResponse.json({ error: 'No receipt printer configured' }, { status: 400 })
+      return err('No receipt printer configured')
     }
 
     // Get order count and cash transaction details from payments during this shift
@@ -164,10 +165,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     const result = await sendToPrinter(printer.ipAddress, printer.port, buffer)
 
     if (!result.success) {
-      return NextResponse.json(
-        { error: result.error || 'Failed to send to printer' },
-        { status: 500 }
-      )
+      return err(result.error || 'Failed to send to printer', 500)
     }
 
     // Log the print job
@@ -185,12 +183,9 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     queueIfOutage('PrintJob', locationId, printJob.id, 'INSERT')
     pushUpstream()
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Failed to print shift closeout receipt:', error)
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Print failed' },
-      { status: 500 }
-    )
+    return err(error instanceof Error ? error.message : 'Print failed', 500)
   }
 }))

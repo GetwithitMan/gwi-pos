@@ -3,6 +3,7 @@ import { discoverDevice, discoverAllDevices } from '@/lib/datacap/discovery'
 import { datacapErrorResponse } from '@/lib/datacap/helpers'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, ok } from '@/lib/api-response'
 
 /**
  * GET /api/datacap/discover
@@ -20,13 +21,11 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
 
     const devices = await discoverAllDevices(timeoutMs)
 
-    return Response.json({
-      data: {
+    return ok({
         devices,
         count: devices.length,
         discoveryTimeoutMs: timeoutMs,
-      },
-    })
+      })
   } catch (err) {
     return datacapErrorResponse(err)
   }
@@ -50,27 +49,23 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     const { serialNumber } = body
 
     if (!serialNumber) {
-      return Response.json({ error: 'Missing required field: serialNumber' }, { status: 400 })
+      return err('Missing required field: serialNumber')
     }
 
     const device = await discoverDevice(serialNumber)
 
     if (!device) {
-      return Response.json({
-        data: {
+      return ok({
           found: false,
           device: null,
           message: `Device with serial number "${serialNumber}" not found on the network`,
-        },
-      })
+        })
     }
 
-    return Response.json({
-      data: {
+    return ok({
         found: true,
         device,
-      },
-    })
+      })
   } catch (err) {
     return datacapErrorResponse(err)
   }

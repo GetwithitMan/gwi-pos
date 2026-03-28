@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { err, ok, unauthorized } from '@/lib/api-response'
 
 // GET: validate mobile session token → return employee data
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -12,7 +13,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       null
 
     if (!token) {
-      return NextResponse.json({ error: 'No session token' }, { status: 401 })
+      return unauthorized('No session token')
     }
 
     const session = await db.mobileSession.findFirst({
@@ -31,18 +32,16 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     })
 
     if (!session || session.expiresAt < new Date()) {
-      return NextResponse.json({ error: 'Session expired or invalid' }, { status: 401 })
+      return unauthorized('Session expired or invalid')
     }
 
-    return NextResponse.json({
-      data: {
+    return ok({
         employeeId: session.employeeId,
         employee: session.employee,
         expiresAt: session.expiresAt.toISOString(),
-      },
-    })
+      })
   } catch (error) {
     console.error('[mobile/device/auth] Error:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return err('Internal server error', 500)
   }
 })

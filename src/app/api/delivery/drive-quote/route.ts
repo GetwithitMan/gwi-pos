@@ -8,7 +8,7 @@
  * Returns a DeliveryQuote with fee, ETA, and quote ID that can be used to create the delivery.
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -17,6 +17,7 @@ import { getLocationSettings } from '@/lib/location-cache'
 import { parseSettings } from '@/lib/settings'
 import { getPlatformClient } from '@/lib/delivery/clients/platform-registry'
 import type { DeliveryPlatformId, CreateDeliveryRequest } from '@/lib/delivery/clients/types'
+import { err, notFound, ok } from '@/lib/api-response'
 
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
@@ -42,27 +43,24 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+      return err('Location ID is required')
     }
 
     if (!platform) {
-      return NextResponse.json({ error: 'Platform is required' }, { status: 400 })
+      return err('Platform is required')
     }
 
     if (!dropoffAddress || !dropoffPhone || !dropoffName) {
-      return NextResponse.json(
-        { error: 'dropoffAddress, dropoffPhone, and dropoffName are required' },
-        { status: 400 },
-      )
+      return err('dropoffAddress, dropoffPhone, and dropoffName are required')
     }
 
     if (!orderValueCents || orderValueCents <= 0) {
-      return NextResponse.json({ error: 'orderValueCents must be a positive number' }, { status: 400 })
+      return err('orderValueCents must be a positive number')
     }
 
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.REPORTS_VIEW)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Load settings and get platform client
@@ -70,17 +68,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const client = getPlatformClient(platform, settings)
 
     if (!client) {
-      return NextResponse.json(
-        { error: `Platform "${platform}" is not enabled or credentials are missing` },
-        { status: 400 },
-      )
+      return err(`Platform "${platform}" is not enabled or credentials are missing`)
     }
 
     if (!client.getDeliveryQuote) {
-      return NextResponse.json(
-        { error: `Platform "${platform}" does not support delivery quotes (DaaS not enabled)` },
-        { status: 400 },
-      )
+      return err(`Platform "${platform}" does not support delivery quotes (DaaS not enabled)`)
     }
 
     // Load pickup info from the location
@@ -90,7 +82,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     )
 
     if (!locationRows.length) {
-      return NextResponse.json({ error: 'Location not found' }, { status: 404 })
+      return notFound('Location not found')
     }
 
     const location = locationRows[0]
@@ -122,9 +114,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     const quote = await client.getDeliveryQuote(deliveryRequest)
 
-    return NextResponse.json({ data: quote })
+    return ok(quote)
   } catch (error) {
     console.error('[POST /api/delivery/drive-quote] Error:', error)
-    return NextResponse.json({ error: 'Failed to get delivery quote' }, { status: 500 })
+    return err('Failed to get delivery quote', 500)
   }
 })

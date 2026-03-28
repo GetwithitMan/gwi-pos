@@ -5,8 +5,9 @@
  * Protected: requires Authorization: Bearer <INTERNAL_API_SECRET>
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { getAllowlist, addToAllowlist } from '@/lib/access-allowlist'
+import { created, err, ok, unauthorized } from '@/lib/api-response'
 
 /** Normalize phone to E.164 digits only */
 function normalizePhone(phone: string): string {
@@ -24,23 +25,23 @@ function authorize(req: NextRequest): boolean {
 
 export async function GET(req: NextRequest) {
   if (!authorize(req)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return unauthorized('Unauthorized')
   }
 
   const entries = await getAllowlist()
-  return NextResponse.json({ entries })
+  return ok({ entries })
 }
 
 export async function POST(req: NextRequest) {
   if (!authorize(req)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return unauthorized('Unauthorized')
   }
 
   let body: Record<string, unknown>
   try {
     body = await req.json()
   } catch {
-    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
+    return err('Invalid request body')
   }
 
   const { name, email, phone, notes, addedBy } = body as {
@@ -52,20 +53,14 @@ export async function POST(req: NextRequest) {
   }
 
   if (!name || !email || !phone || !addedBy) {
-    return NextResponse.json(
-      { error: 'Missing required fields: name, email, phone, addedBy' },
-      { status: 400 }
-    )
+    return err('Missing required fields: name, email, phone, addedBy')
   }
 
   const normalized = normalizePhone(phone)
   if (!/^\+1\d{10}$/.test(normalized)) {
-    return NextResponse.json(
-      { error: 'Phone must be a valid US number' },
-      { status: 400 }
-    )
+    return err('Phone must be a valid US number')
   }
 
   const entry = await addToAllowlist(name, email, normalized, notes ?? null, addedBy)
-  return NextResponse.json({ entry }, { status: 201 })
+  return created({ entry })
 }

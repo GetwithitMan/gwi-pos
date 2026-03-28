@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - Get single vendor
 export const GET = withVenue(async function GET(
@@ -29,13 +30,13 @@ export const GET = withVenue(async function GET(
     })
 
     if (!vendor || vendor.deletedAt) {
-      return NextResponse.json({ error: 'Vendor not found' }, { status: 404 })
+      return notFound('Vendor not found')
     }
 
-    return NextResponse.json({ data: { vendor } })
+    return ok({ vendor })
   } catch (error) {
     console.error('Get vendor error:', error)
-    return NextResponse.json({ error: 'Failed to fetch vendor' }, { status: 500 })
+    return err('Failed to fetch vendor', 500)
   }
 })
 
@@ -53,7 +54,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     })
 
     if (!existing || existing.deletedAt) {
-      return NextResponse.json({ error: 'Vendor not found' }, { status: 404 })
+      return notFound('Vendor not found')
     }
 
     const updateData: Record<string, unknown> = {}
@@ -73,13 +74,13 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     void notifyDataChanged({ locationId: existing.locationId, domain: 'inventory', action: 'updated', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { vendor } })
+    return ok({ vendor })
   } catch (error) {
     console.error('Update vendor error:', error)
     if ((error as { code?: string }).code === 'P2002') {
-      return NextResponse.json({ error: 'Vendor with this name already exists' }, { status: 400 })
+      return err('Vendor with this name already exists')
     }
-    return NextResponse.json({ error: 'Failed to update vendor' }, { status: 500 })
+    return err('Failed to update vendor', 500)
   }
 }))
 
@@ -96,7 +97,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     })
 
     if (!existing || existing.deletedAt) {
-      return NextResponse.json({ error: 'Vendor not found' }, { status: 404 })
+      return notFound('Vendor not found')
     }
 
     await db.vendor.update({
@@ -107,9 +108,9 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     void notifyDataChanged({ locationId: existing.locationId, domain: 'inventory', action: 'deleted', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Delete vendor error:', error)
-    return NextResponse.json({ error: 'Failed to delete vendor' }, { status: 500 })
+    return err('Failed to delete vendor', 500)
   }
 }))

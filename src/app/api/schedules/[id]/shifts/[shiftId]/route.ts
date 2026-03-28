@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
@@ -6,6 +6,7 @@ import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { emitToLocation } from '@/lib/socket-server'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 
 const log = createChildLogger('schedules.id.shifts.shiftId')
 
@@ -82,18 +83,15 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
 
     const shift = await db.scheduledShift.findUnique({ where: { id: shiftId } })
     if (!shift) {
-      return NextResponse.json({ error: 'Shift not found' }, { status: 404 })
+      return notFound('Shift not found')
     }
 
     if (shift.scheduleId !== scheduleId) {
-      return NextResponse.json(
-        { error: 'Shift does not belong to this schedule' },
-        { status: 400 }
-      )
+      return err('Shift does not belong to this schedule')
     }
 
     if (shift.deletedAt !== null) {
-      return NextResponse.json({ error: 'Shift has been deleted' }, { status: 404 })
+      return notFound('Shift has been deleted')
     }
 
     const updateData: Record<string, unknown> = {}
@@ -164,10 +162,10 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     void pushUpstream()
     void emitToLocation(shift.locationId, 'schedules:changed', { trigger: 'shift-updated' }).catch(err => log.warn({ err }, 'socket emit failed'))
 
-    return NextResponse.json({ data: response })
+    return ok(response)
   } catch (error) {
     console.error('Failed to update shift:', error)
-    return NextResponse.json({ error: 'Failed to update shift' }, { status: 500 })
+    return err('Failed to update shift', 500)
   }
 }))
 
@@ -181,18 +179,15 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
 
     const shift = await db.scheduledShift.findUnique({ where: { id: shiftId } })
     if (!shift) {
-      return NextResponse.json({ error: 'Shift not found' }, { status: 404 })
+      return notFound('Shift not found')
     }
 
     if (shift.scheduleId !== scheduleId) {
-      return NextResponse.json(
-        { error: 'Shift does not belong to this schedule' },
-        { status: 400 }
-      )
+      return err('Shift does not belong to this schedule')
     }
 
     if (shift.deletedAt !== null) {
-      return NextResponse.json({ error: 'Shift already deleted' }, { status: 404 })
+      return notFound('Shift already deleted')
     }
 
     await db.scheduledShift.update({
@@ -204,9 +199,9 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     void pushUpstream()
     void emitToLocation(shift.locationId, 'schedules:changed', { trigger: 'shift-deleted' }).catch(err => log.warn({ err }, 'socket emit failed'))
 
-    return NextResponse.json({ data: { message: 'Shift deleted' } })
+    return ok({ message: 'Shift deleted' })
   } catch (error) {
     console.error('Failed to delete shift:', error)
-    return NextResponse.json({ error: 'Failed to delete shift' }, { status: 500 })
+    return err('Failed to delete shift', 500)
   }
 }))

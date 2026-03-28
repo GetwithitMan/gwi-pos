@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
+import { err } from '@/lib/api-response'
 
 export const GET = withVenue(async function GET(
   request: NextRequest,
@@ -15,10 +16,10 @@ export const GET = withVenue(async function GET(
     const limit = parseInt(sp.get('limit') || '50')
     const offset = parseInt(sp.get('offset') || '0')
 
-    if (!locationId) return NextResponse.json({ error: 'locationId required' }, { status: 400 })
+    if (!locationId) return err('locationId required')
 
     const auth = await requirePermission(employeeId, locationId, 'admin.manage_memberships')
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const rows: any[] = await db.$queryRawUnsafe(`
       SELECT * FROM "MembershipEvent"
@@ -35,6 +36,6 @@ export const GET = withVenue(async function GET(
     return NextResponse.json({ data: rows, total: countResult[0]?.total ?? 0 })
   } catch (err) {
     console.error('[memberships/events] error:', err)
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
+    return err('Internal error', 500)
   }
 })

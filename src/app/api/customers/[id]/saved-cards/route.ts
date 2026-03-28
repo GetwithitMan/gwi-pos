@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { parseSettings } from '@/lib/settings'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { emitToLocation } from '@/lib/socket-server'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - List saved cards for a customer
 export const GET = withVenue(async function GET(
@@ -17,13 +18,13 @@ export const GET = withVenue(async function GET(
     const locationId = searchParams.get('locationId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID required' }, { status: 400 })
+      return err('Location ID required')
     }
 
     // Auth check
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.POS_ACCESS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Verify customer exists
     const customer = await db.customer.findFirst({
@@ -32,7 +33,7 @@ export const GET = withVenue(async function GET(
     })
 
     if (!customer) {
-      return NextResponse.json({ error: 'Customer not found' }, { status: 404 })
+      return notFound('Customer not found')
     }
 
     // Fetch saved cards — NEVER return tokens
@@ -55,8 +56,7 @@ export const GET = withVenue(async function GET(
       customerId, locationId
     )
 
-    return NextResponse.json({
-      data: {
+    return ok({
         customerId,
         cards: cards.map(c => ({
           id: c.id,
@@ -68,11 +68,10 @@ export const GET = withVenue(async function GET(
           expiryYear: c.expiryYear,
           savedAt: c.createdAt,
         })),
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to list saved cards:', error)
-    return NextResponse.json({ error: 'Failed to list saved cards' }, { status: 500 })
+    return err('Failed to list saved cards', 500)
   }
 })
 
@@ -87,18 +86,18 @@ export const POST = withVenue(async function POST(
     const { locationId, token, last4, cardBrand, expiryMonth, expiryYear, nickname, isDefault } = body
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID required' }, { status: 400 })
+      return err('Location ID required')
     }
 
     // Auth check
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.POS_ACCESS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
     if (!token || !last4 || !cardBrand) {
-      return NextResponse.json({ error: 'Token, last4, and cardBrand are required' }, { status: 400 })
+      return err('Token, last4, and cardBrand are required')
     }
     if (!/^\d{4}$/.test(last4)) {
-      return NextResponse.json({ error: 'last4 must be exactly 4 digits' }, { status: 400 })
+      return err('last4 must be exactly 4 digits')
     }
 
     // Verify customer exists
@@ -108,7 +107,7 @@ export const POST = withVenue(async function POST(
     })
 
     if (!customer) {
-      return NextResponse.json({ error: 'Customer not found' }, { status: 404 })
+      return notFound('Customer not found')
     }
 
     // Check settings
@@ -120,11 +119,11 @@ export const POST = withVenue(async function POST(
     const cardSettings = settings.cardOnFile
 
     if (!cardSettings?.enabled) {
-      return NextResponse.json({ error: 'Card on file is not enabled' }, { status: 400 })
+      return err('Card on file is not enabled')
     }
 
     if (!cardSettings.allowSaveCard) {
-      return NextResponse.json({ error: 'Saving cards is not currently allowed' }, { status: 400 })
+      return err('Saving cards is not currently allowed')
     }
 
     // Check max cards limit
@@ -137,9 +136,7 @@ export const POST = withVenue(async function POST(
     const maxCards = cardSettings.maxCardsPerCustomer ?? 5
 
     if (currentCount >= maxCards) {
-      return NextResponse.json({
-        error: `Maximum of ${maxCards} saved cards reached. Remove a card first.`,
-      }, { status: 400 })
+      return err(`Maximum of ${maxCards} saved cards reached. Remove a card first.`)
     }
 
     // Check for duplicate (same last4 + brand already saved)
@@ -151,7 +148,7 @@ export const POST = withVenue(async function POST(
     )
 
     if (duplicate.length > 0) {
-      return NextResponse.json({ error: 'This card is already saved' }, { status: 409 })
+      return err('This card is already saved', 409)
     }
 
     // If setting as default, unset other defaults
@@ -178,19 +175,17 @@ export const POST = withVenue(async function POST(
 
     void emitToLocation(locationId, 'customers:changed', { locationId }).catch(console.error)
 
-    return NextResponse.json({
-      data: {
+    return ok({
         id: cardId,
         last4,
         cardBrand,
         nickname: nickname || null,
         isDefault: shouldBeDefault,
         savedAt: new Date(),
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to save card:', error)
-    return NextResponse.json({ error: 'Failed to save card' }, { status: 500 })
+    return err('Failed to save card', 500)
   }
 })
 
@@ -206,16 +201,16 @@ export const DELETE = withVenue(async function DELETE(
     const locationId = searchParams.get('locationId')
 
     if (!cardId) {
-      return NextResponse.json({ error: 'Card ID required' }, { status: 400 })
+      return err('Card ID required')
     }
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID required' }, { status: 400 })
+      return err('Location ID required')
     }
 
     // Auth check
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.POS_ACCESS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Verify the card belongs to this customer
     const card = await db.$queryRawUnsafe<Array<{ id: string; isDefault: boolean }>>(
@@ -225,7 +220,7 @@ export const DELETE = withVenue(async function DELETE(
     )
 
     if (!card.length) {
-      return NextResponse.json({ error: 'Card not found' }, { status: 404 })
+      return notFound('Card not found')
     }
 
     // Soft delete
@@ -250,9 +245,9 @@ export const DELETE = withVenue(async function DELETE(
 
     void emitToLocation(locationId, 'customers:changed', { locationId }).catch(console.error)
 
-    return NextResponse.json({ data: { success: true, cardId } })
+    return ok({ success: true, cardId })
   } catch (error) {
     console.error('Failed to remove saved card:', error)
-    return NextResponse.json({ error: 'Failed to remove saved card' }, { status: 500 })
+    return err('Failed to remove saved card', 500)
   }
 })

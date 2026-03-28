@@ -1,169 +1,160 @@
+'use client'
+
+import React, { useState } from 'react'
+import { formatCurrency } from '@/lib/utils'
+import { usePaymentContext } from '../PaymentContext'
+import type { PendingPayment, GiftCardInfo } from '../PaymentContext'
+import {
+  sectionLabelClasses,
+  inputClasses,
+  backButtonClasses,
+  primaryButtonClasses,
+  infoPanelBase,
+  infoPanelPurple,
+} from '../payment-styles'
+
 /**
- * Gift Card Entry Step
- *
- * Handles gift card number entry, balance lookup, and payment processing.
+ * GiftCardStep — gift card number entry, balance lookup, and payment.
  */
+export function GiftCardStep() {
+  const {
+    totalWithTip,
+    isProcessing,
+    pendingPayments,
+    processPayments,
+    setStep,
+  } = usePaymentContext()
 
-import React from 'react'
+  // Local gift card state
+  const [giftCardNumber, setGiftCardNumber] = useState('')
+  const [giftCardInfo, setGiftCardInfo] = useState<GiftCardInfo | null>(null)
+  const [giftCardLoading, setGiftCardLoading] = useState(false)
+  const [giftCardError, setGiftCardError] = useState<string | null>(null)
 
-interface GiftCardInfo {
-  cardNumber: string
-  balance: number
-  isActive: boolean
-}
+  const lookupGiftCard = async () => {
+    if (!giftCardNumber.trim()) {
+      setGiftCardError('Please enter a gift card number')
+      return
+    }
 
-interface GiftCardStepProps {
-  amountDue: number
-  giftCardNumber: string
-  giftCardInfo: GiftCardInfo | null
-  isLoading: boolean
-  error: string | null
-  onSetGiftCardNumber: (number: string) => void
-  onCheckBalance: () => void
-  onComplete: () => void
-  onBack: () => void
-}
+    setGiftCardLoading(true)
+    setGiftCardError(null)
 
-export function GiftCardStep({
-  amountDue,
-  giftCardNumber,
-  giftCardInfo,
-  isLoading,
-  error,
-  onSetGiftCardNumber,
-  onCheckBalance,
-  onComplete,
-  onBack,
-}: GiftCardStepProps) {
-  const canCheckBalance = giftCardNumber.length >= 10 && !isLoading
-  const appliedAmount = giftCardInfo ? Math.min(giftCardInfo.balance, amountDue) : 0
-  const canComplete =
-    giftCardInfo &&
-    giftCardInfo.isActive &&
-    giftCardInfo.balance > 0
+    try {
+      const response = await fetch(`/api/gift-cards/${giftCardNumber.trim().toUpperCase()}`)
+      if (!response.ok) {
+        const data = await response.json()
+        setGiftCardError(data.error || 'Gift card not found')
+        setGiftCardInfo(null)
+        return
+      }
+
+      const raw = await response.json()
+      const data = raw.data ?? raw
+      if (data.status !== 'active') {
+        setGiftCardError(`Gift card is ${data.status}`)
+        setGiftCardInfo(null)
+        return
+      }
+
+      setGiftCardInfo(data)
+    } catch {
+      setGiftCardError('Failed to lookup gift card')
+      setGiftCardInfo(null)
+    } finally {
+      setGiftCardLoading(false)
+    }
+  }
+
+  const handleGiftCardPayment = () => {
+    if (!giftCardInfo) return
+
+    const maxAmount = Math.min(giftCardInfo.currentBalance, totalWithTip)
+
+    const payment: PendingPayment = {
+      method: 'gift_card',
+      amount: maxAmount,
+      tipAmount: 0,
+      giftCardId: giftCardInfo.id,
+      giftCardNumber: giftCardInfo.cardNumber,
+    }
+    processPayments([...pendingPayments, payment], pendingPayments)
+  }
 
   return (
-    <div className="space-y-3">
-      {/* Amount due */}
-      <div className="p-3 bg-purple-50 rounded-lg mb-3">
-        <div className="flex justify-between font-bold text-lg">
-          <span>Amount Due:</span>
-          <span className="text-purple-600">${amountDue.toFixed(2)}</span>
+    <div className="flex flex-col gap-2.5">
+      <h3 className={sectionLabelClasses}>Gift Card Payment</h3>
+
+      <div className={`${infoPanelBase} ${infoPanelPurple}`}>
+        <div className="flex justify-between font-bold text-lg font-mono">
+          <span className="text-slate-400">Amount Due</span>
+          <span className="text-purple-400">{formatCurrency(totalWithTip)}</span>
         </div>
       </div>
 
-      {/* Gift card number input */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          Gift Card Number
-        </label>
-        <input
-          type="text"
-          value={giftCardNumber}
-          onChange={(e) => onSetGiftCardNumber(e.target.value)}
-          placeholder="Enter or scan card number"
-          className="w-full px-3 py-2 border rounded-lg text-lg"
-          autoFocus
-        />
+        <label className="text-slate-400 text-[13px] block mb-1.5">Gift Card Number</label>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={giftCardNumber}
+            onChange={(e) => setGiftCardNumber(e.target.value.toUpperCase())}
+            className={`${inputClasses} flex-1 uppercase`}
+            placeholder="GC-XXXX-XXXX-XXXX"
+          />
+          <button
+            onClick={lookupGiftCard}
+            disabled={giftCardLoading || !giftCardNumber.trim()}
+            className={`${backButtonClasses} !flex-none !px-4 !py-2.5 ${(giftCardLoading || !giftCardNumber.trim()) ? 'opacity-50 cursor-not-allowed' : ''}`}
+          >
+            {giftCardLoading ? 'Looking...' : 'Lookup'}
+          </button>
+        </div>
       </div>
 
-      {/* Check balance button */}
-      {!giftCardInfo && (
-        <button
-          onClick={onCheckBalance}
-          disabled={!canCheckBalance}
-          className={`w-full px-4 py-3 rounded-lg font-bold ${
-            canCheckBalance
-              ? 'bg-purple-500 hover:bg-purple-600 text-white'
-              : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-          }`}
-        >
-          {isLoading ? (
-            <span className="flex items-center justify-center gap-2">
-              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-              Checking Balance...
-            </span>
-          ) : (
-            'Check Balance'
-          )}
-        </button>
-      )}
-
-      {/* Error message */}
-      {error && (
-        <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-          {error}
+      {giftCardError && (
+        <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-[10px] text-red-400 text-sm">
+          {giftCardError}
         </div>
       )}
 
-      {/* Gift card info */}
       {giftCardInfo && (
-        <div className="space-y-2">
-          <div className="p-3 bg-white border rounded-lg">
-            <div className="flex justify-between text-sm mb-2">
-              <span className="text-gray-600">Card Number:</span>
-              <span className="font-mono">{giftCardInfo.cardNumber}</span>
-            </div>
-            <div className="flex justify-between text-sm mb-2">
-              <span className="text-gray-600">Status:</span>
-              <span
-                className={
-                  giftCardInfo.isActive
-                    ? 'text-green-600 font-bold'
-                    : 'text-red-600 font-bold'
-                }
-              >
-                {giftCardInfo.isActive ? 'Active' : 'Inactive'}
-              </span>
-            </div>
-            <div className="flex justify-between text-lg font-bold pt-2 border-t">
-              <span>Balance:</span>
-              <span className="text-purple-600">
-                ${giftCardInfo.balance.toFixed(2)}
-              </span>
-            </div>
+        <div className="p-4 bg-green-500/10 border border-green-500/20 rounded-[10px]">
+          <div className="text-slate-400 text-[13px] mb-1">Card: {giftCardInfo.cardNumber}</div>
+          <div className="flex justify-between items-center">
+            <span className="text-slate-300 font-medium">Available Balance:</span>
+            <span className="text-[22px] font-bold text-green-500 font-mono">
+              {formatCurrency(giftCardInfo.currentBalance)}
+            </span>
           </div>
-
-          {/* Partial payment notice */}
-          {giftCardInfo.balance < amountDue && giftCardInfo.balance > 0 && (
-            <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-yellow-700 text-sm">
-              Partial payment of ${giftCardInfo.balance.toFixed(2)} will be applied.
-              Remaining ${(amountDue - giftCardInfo.balance).toFixed(2)} due via another method.
-            </div>
-          )}
-
-          {/* Inactive card warning */}
-          {!giftCardInfo.isActive && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-              This gift card is inactive and cannot be used.
+          {giftCardInfo.currentBalance < totalWithTip && (
+            <div className="mt-2 text-[13px] text-amber-300">
+              Partial payment of {formatCurrency(giftCardInfo.currentBalance)} will be applied.
+              Remaining: {formatCurrency(totalWithTip - giftCardInfo.currentBalance)}
             </div>
           )}
         </div>
       )}
 
-      {/* Action buttons */}
-      <div className="flex gap-2 mt-4">
+      <div className="flex gap-2 mt-2">
         <button
-          onClick={onBack}
-          className="flex-1 px-4 py-3 bg-gray-200 hover:bg-gray-300 rounded-lg font-bold"
+          onClick={() => setStep('method')}
+          disabled={isProcessing}
+          className={`${backButtonClasses} ${isProcessing ? 'opacity-50' : ''}`}
         >
           Back
         </button>
-        {giftCardInfo && (
-          <button
-            onClick={onComplete}
-            disabled={!canComplete}
-            className={`flex-1 px-4 py-3 rounded-lg font-bold ${
-              canComplete
-                ? 'bg-purple-500 hover:bg-purple-600 text-white'
-                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-            }`}
-          >
-            {appliedAmount < amountDue
-              ? `Apply $${appliedAmount.toFixed(2)} from Gift Card`
-              : 'Pay with Gift Card'}
-          </button>
-        )}
+        <button
+          onClick={handleGiftCardPayment}
+          disabled={isProcessing || !giftCardInfo || giftCardInfo.currentBalance === 0}
+          className={`${primaryButtonClasses} !bg-purple-600 ${(isProcessing || !giftCardInfo || giftCardInfo?.currentBalance === 0) ? 'opacity-50 cursor-not-allowed' : ''}`}
+        >
+          {isProcessing ? 'Processing...' : giftCardInfo && giftCardInfo.currentBalance >= totalWithTip
+            ? 'Pay Full Amount'
+            : giftCardInfo
+              ? `Pay ${formatCurrency(Math.min(giftCardInfo.currentBalance, totalWithTip))}`
+              : 'Apply Gift Card'}
+        </button>
       </div>
     </div>
   )

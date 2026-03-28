@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET /api/paid-in-out/[id] — get a single paid in/out record
 export const GET = withVenue(async function GET(
@@ -17,12 +18,12 @@ export const GET = withVenue(async function GET(
     const requestingEmployeeId = searchParams.get('requestingEmployeeId') || searchParams.get('employeeId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+      return err('Location ID is required')
     }
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.MGR_PAY_IN_OUT)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     const record = await db.paidInOut.findFirst({
@@ -41,11 +42,10 @@ export const GET = withVenue(async function GET(
     })
 
     if (!record) {
-      return NextResponse.json({ error: 'Record not found' }, { status: 404 })
+      return notFound('Record not found')
     }
 
-    return NextResponse.json({
-      data: {
+    return ok({
         id: record.id,
         type: record.type === 'in' ? 'paid_in' : 'paid_out',
         amount: Number(record.amount),
@@ -60,11 +60,10 @@ export const GET = withVenue(async function GET(
         drawerId: record.drawerId,
         drawerName: record.drawer.name,
         createdAt: record.createdAt.toISOString(),
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to fetch paid in/out record:', error)
-    return NextResponse.json({ error: 'Failed to fetch paid in/out record' }, { status: 500 })
+    return err('Failed to fetch paid in/out record', 500)
   }
 })
 
@@ -80,12 +79,12 @@ export const DELETE = withVenue(async function DELETE(
     const requestingEmployeeId = searchParams.get('requestingEmployeeId') || searchParams.get('employeeId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+      return err('Location ID is required')
     }
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.MGR_PAY_IN_OUT)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     const record = await db.paidInOut.findFirst({
@@ -93,7 +92,7 @@ export const DELETE = withVenue(async function DELETE(
     })
 
     if (!record) {
-      return NextResponse.json({ error: 'Record not found' }, { status: 404 })
+      return notFound('Record not found')
     }
 
     await db.paidInOut.update({
@@ -103,9 +102,9 @@ export const DELETE = withVenue(async function DELETE(
 
     pushUpstream()
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Failed to delete paid in/out record:', error)
-    return NextResponse.json({ error: 'Failed to delete paid in/out record' }, { status: 500 })
+    return err('Failed to delete paid in/out record', 500)
   }
 })

@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { createRateLimiter } from '@/lib/rate-limiter'
 import { getClientIp } from '@/lib/get-client-ip'
+import { err, notFound, ok } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,13 +20,13 @@ export const GET = withVenue(async function GET(
   try {
     const ip = getClientIp(request)
     if (!limiter.check(ip).allowed) {
-      return NextResponse.json({ error: 'Too many requests' }, { status: 429 })
+      return err('Too many requests', 429)
     }
 
     const { token } = await context.params
 
     if (!token || token.length < 32) {
-      return NextResponse.json({ error: 'Invalid token' }, { status: 400 })
+      return err('Invalid token')
     }
 
     // Look up the shared report
@@ -45,27 +46,25 @@ export const GET = withVenue(async function GET(
     )
 
     if (results.length === 0) {
-      return NextResponse.json({ error: 'Report not found' }, { status: 404 })
+      return notFound('Report not found')
     }
 
     const report = results[0]
 
     // Check expiration
     if (new Date(report.expiresAt) < new Date()) {
-      return NextResponse.json({ error: 'This report link has expired' }, { status: 410 })
+      return err('This report link has expired', 410)
     }
 
-    return NextResponse.json({
-      data: {
+    return ok({
         reportType: report.reportType,
         parameters: report.parameters,
         generatedData: report.generatedData,
         expiresAt: report.expiresAt,
         createdAt: report.createdAt,
-      },
-    })
+      })
   } catch (error) {
     console.error('[public/reports] Error fetching shared report:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return err('Internal server error', 500)
   }
 })

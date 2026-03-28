@@ -1,16 +1,17 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET /api/pizza/specialties - Get all specialty pizzas (supports ?menuItemId= filter)
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const { searchParams } = new URL(request.url)
@@ -31,7 +32,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orderBy: { menuItem: { sortOrder: 'asc' } }
     })
 
-    return NextResponse.json(specialties.map(specialty => ({
+    return ok(specialties.map(specialty => ({
       ...specialty,
       toppings: specialty.toppings as Array<{
         toppingId: string
@@ -60,7 +61,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     })))
   } catch (error) {
     console.error('Failed to get pizza specialties:', error)
-    return NextResponse.json({ error: 'Failed to get pizza specialties' }, { status: 500 })
+    return err('Failed to get pizza specialties', 500)
   }
 })
 
@@ -84,12 +85,12 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     } = body
 
     if (!menuItemId) {
-      return NextResponse.json({ error: 'Menu item ID is required' }, { status: 400 })
+      return err('Menu item ID is required')
     }
 
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Verify menu item exists and is a pizza
@@ -99,11 +100,11 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     })
 
     if (!menuItem) {
-      return NextResponse.json({ error: 'Menu item not found' }, { status: 404 })
+      return notFound('Menu item not found')
     }
 
     if (menuItem.itemType !== 'pizza' && menuItem.category?.categoryType !== 'pizza') {
-      return NextResponse.json({ error: 'Menu item must be a pizza type' }, { status: 400 })
+      return err('Menu item must be a pizza type')
     }
 
     // Check if specialty already exists for this menu item
@@ -112,7 +113,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     })
 
     if (existing) {
-      return NextResponse.json({ error: 'Specialty already exists for this menu item' }, { status: 400 })
+      return err('Specialty already exists for this menu item')
     }
 
     const specialty = await db.pizzaSpecialty.create({
@@ -141,7 +142,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     })
     pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       ...specialty,
       toppings: specialty.toppings as Array<{
         toppingId: string
@@ -153,9 +154,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
         ...specialty.menuItem,
         price: Number(specialty.menuItem.price),
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to create pizza specialty:', error)
-    return NextResponse.json({ error: 'Failed to create pizza specialty' }, { status: 500 })
+    return err('Failed to create pizza specialty', 500)
   }
 }))

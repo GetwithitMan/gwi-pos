@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { renewLease, ListenerError } from '@/lib/domain/payment-readers/listener-service'
+import { err, forbidden, notFound, ok } from '@/lib/api-response'
 
 // ─── Rate limit: max 1 heartbeat per 5s per terminal ─────────────────
 interface HeartbeatRateLimitEntry {
@@ -44,10 +45,7 @@ export const POST = withVenue(async function POST(
     const { terminalId, sessionId, leaseVersion } = body
 
     if (!terminalId || !sessionId || leaseVersion === undefined) {
-      return NextResponse.json(
-        { error: 'Missing required fields: terminalId, sessionId, leaseVersion' },
-        { status: 400 }
-      )
+      return err('Missing required fields: terminalId, sessionId, leaseVersion')
     }
 
     // Rate limit
@@ -65,7 +63,7 @@ export const POST = withVenue(async function POST(
       select: { id: true, locationId: true },
     })
     if (!reader) {
-      return NextResponse.json({ error: 'Payment reader not found' }, { status: 404 })
+      return notFound('Payment reader not found')
     }
 
     // Validate terminal belongs to same location
@@ -74,13 +72,13 @@ export const POST = withVenue(async function POST(
       select: { id: true },
     })
     if (!terminal) {
-      return NextResponse.json({ error: 'Terminal not found or does not belong to this location' }, { status: 403 })
+      return forbidden('Terminal not found or does not belong to this location')
     }
 
     // Renew lease — returns a Date (throws ListenerError on stale/lost lease)
     const leasedUntil = await renewLease(readerId, sessionId, leaseVersion)
 
-    return NextResponse.json({ data: { leasedUntil: leasedUntil.toISOString() } })
+    return ok({ leasedUntil: leasedUntil.toISOString() })
   } catch (error) {
     if (error instanceof ListenerError) {
       return NextResponse.json(
@@ -89,6 +87,6 @@ export const POST = withVenue(async function POST(
       )
     }
     console.error('Failed to renew heartbeat:', error)
-    return NextResponse.json({ error: 'Failed to renew heartbeat' }, { status: 500 })
+    return err('Failed to renew heartbeat', 500)
   }
 })

@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { err, ok } from '@/lib/api-response'
 
 // GET - List all locations (optionally scoped to same organization as locationId)
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -34,12 +35,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orderBy: { name: 'asc' },
     })
 
-    return NextResponse.json({ data: { locations } })
+    return ok({ locations })
   } catch (error) {
     console.error('[locations] GET error:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch locations' },
-      { status: 500 }
-    )
+    return err('Failed to fetch locations', 500)
   }
 })

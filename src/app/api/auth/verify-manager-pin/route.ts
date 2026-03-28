@@ -5,6 +5,7 @@ import { withVenue } from '@/lib/with-venue'
 import { hasPermission } from '@/lib/auth-utils'
 import { createRateLimiter } from '@/lib/rate-limiter'
 import { getClientIp } from '@/lib/get-client-ip'
+import { ok } from '@/lib/api-response'
 
 // ── Action → Permission mapping ─────────────────────────────────────────────
 // Maps action strings to the permission key(s) required to authorize them.
@@ -165,7 +166,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const employeeName = matchedEmployee.displayName
       || `${matchedEmployee.firstName} ${matchedEmployee.lastName}`
 
-    return NextResponse.json({
+    return ok({
       authorized: true,
       employeeId: matchedEmployee.id,
       employeeName,

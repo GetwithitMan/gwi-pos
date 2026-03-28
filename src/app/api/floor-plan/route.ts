@@ -1,9 +1,10 @@
 // src/app/api/floor-plan/route.ts
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { err, ok } from '@/lib/api-response'
 
 /**
  * GET /api/floor-plan?locationId=xxx&sectionId=yyy&include=tables,seats,sections,entertainment,elements
@@ -27,10 +28,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     : ['tables', 'seats', 'sections', 'entertainment', 'elements']
 
   if (!locationId) {
-    return NextResponse.json(
-      { error: 'locationId is required' },
-      { status: 400 }
-    )
+    return err('locationId is required')
   }
 
   // Allow device-authenticated requests (KDS/CFD via cellular proxy or device token)
@@ -40,7 +38,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const employeeId = searchParams.get('employeeId') ?? actor.employeeId
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.POS_ACCESS)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
   }
 
@@ -281,14 +279,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     if (include.includes('entertainment')) response.data.entertainment = transformedEntertainment
     if (include.includes('elements')) response.data.elements = elements
 
-    return NextResponse.json(response)
+    return ok(response)
   } catch (error) {
     const msg = error instanceof Error ? error.message : 'Unknown error'
     console.error('[FloorPlan API] Error:', msg)
 
-    return NextResponse.json(
-      { error: 'Failed to load floor plan', details: msg },
-      { status: 500 }
-    )
+    return err('Failed to load floor plan', 500, msg)
   }
 })

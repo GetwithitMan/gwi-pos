@@ -8,6 +8,7 @@ import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-seat-notes')
 
 interface SeatAllergies {
@@ -62,22 +63,13 @@ export const PUT = withVenue(async function PUT(
     const mutationOrigin = isCellularSeatNotes ? 'cloud' : 'local'
 
     if (typeof seatNumber !== 'number' || seatNumber < 1) {
-      return NextResponse.json(
-        { error: 'seatNumber must be a positive integer' },
-        { status: 400 }
-      )
+      return err('seatNumber must be a positive integer')
     }
     if (typeof allergyNotes !== 'string') {
-      return NextResponse.json(
-        { error: 'allergyNotes must be a string' },
-        { status: 400 }
-      )
+      return err('allergyNotes must be a string')
     }
     if (allergyNotes.length > 2000) {
-      return NextResponse.json(
-        { error: 'Allergy notes exceeds maximum length of 2000 characters' },
-        { status: 400 }
-      )
+      return err('Allergy notes exceeds maximum length of 2000 characters')
     }
 
     const order = await db.order.findUnique({
@@ -86,7 +78,7 @@ export const PUT = withVenue(async function PUT(
     })
 
     if (!order) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      return notFound('Order not found')
     }
 
     // Auth check
@@ -141,19 +133,14 @@ export const PUT = withVenue(async function PUT(
     pushUpstream()
     void notifyDataChanged({ locationId: order.locationId, domain: 'orders', action: 'updated', entityId: orderId })
 
-    return NextResponse.json({
-      data: {
+    return ok({
         orderId: updated.id,
         notes: updated.notes,
         seatAllergies: parsed.seatAllergies,
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to update seat allergy notes:', error)
-    return NextResponse.json(
-      { error: 'Failed to update seat allergy notes' },
-      { status: 500 }
-    )
+    return err('Failed to update seat allergy notes', 500)
   }
 })
 
@@ -171,22 +158,17 @@ export const GET = withVenue(async function GET(
     })
 
     if (!order) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      return notFound('Order not found')
     }
 
     const parsed = parseOrderNotes(order.notes)
 
-    return NextResponse.json({
-      data: {
+    return ok({
         orderId: order.id,
         seatAllergies: parsed.seatAllergies || {},
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to get seat allergy notes:', error)
-    return NextResponse.json(
-      { error: 'Failed to get seat allergy notes' },
-      { status: 500 }
-    )
+    return err('Failed to get seat allergy notes', 500)
   }
 })

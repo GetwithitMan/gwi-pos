@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { err, ok } from '@/lib/api-response'
 
 // GET all roles for a location
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -8,7 +9,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     const roles = await db.role.findMany({
@@ -19,9 +20,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orderBy: { name: 'asc' },
     })
 
-    return NextResponse.json({ data: { roles } })
+    return ok({ roles })
   } catch (error) {
     console.error('Failed to fetch roles:', error)
-    return NextResponse.json({ error: 'Failed to fetch roles' }, { status: 500 })
+    return err('Failed to fetch roles', 500)
   }
 })

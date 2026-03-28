@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - Campaign detail with recipient list and stats
 export const GET = withVenue(async function GET(
@@ -15,7 +16,7 @@ export const GET = withVenue(async function GET(
     const locationId = searchParams.get('locationId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+      return err('Location ID is required')
     }
 
     const campaigns = await db.$queryRawUnsafe(`
@@ -25,7 +26,7 @@ export const GET = withVenue(async function GET(
     `, id, locationId) as Record<string, unknown>[]
 
     if (campaigns.length === 0) {
-      return NextResponse.json({ error: 'Campaign not found' }, { status: 404 })
+      return notFound('Campaign not found')
     }
 
     const campaign = campaigns[0]
@@ -52,16 +53,14 @@ export const GET = withVenue(async function GET(
       LIMIT 100
     `, id) as Record<string, unknown>[]
 
-    return NextResponse.json({
-      data: {
+    return ok({
         ...campaign,
         recipientStats,
         recipients,
-      },
-    })
+      })
   } catch (error) {
     console.error('[Marketing] Failed to get campaign:', error)
-    return NextResponse.json({ error: 'Failed to get campaign' }, { status: 500 })
+    return err('Failed to get campaign', 500)
   }
 })
 
@@ -76,14 +75,14 @@ export const PUT = withVenue(async function PUT(
     const { locationId, employeeId, name, subject, bodyContent, segment, scheduledFor } = body
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+      return err('Location ID is required')
     }
 
     // Auth check
     const actor = await getActorFromRequest(request)
     const resolvedEmployeeId = actor.employeeId ?? employeeId
     const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.MGR_DISCOUNTS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Verify campaign exists and is editable
     const existing = await db.$queryRawUnsafe(`
@@ -93,14 +92,11 @@ export const PUT = withVenue(async function PUT(
     `, id, locationId) as { id: string; status: string }[]
 
     if (existing.length === 0) {
-      return NextResponse.json({ error: 'Campaign not found' }, { status: 404 })
+      return notFound('Campaign not found')
     }
 
     if (!['draft', 'scheduled'].includes(existing[0].status)) {
-      return NextResponse.json(
-        { error: `Cannot edit campaign in '${existing[0].status}' status` },
-        { status: 400 }
-      )
+      return err(`Cannot edit campaign in '${existing[0].status}' status`)
     }
 
     // Build SET clauses dynamically
@@ -146,10 +142,10 @@ export const PUT = withVenue(async function PUT(
       RETURNING *
     `, ...values) as Record<string, unknown>[]
 
-    return NextResponse.json({ data: result[0] })
+    return ok(result[0])
   } catch (error) {
     console.error('[Marketing] Failed to update campaign:', error)
-    return NextResponse.json({ error: 'Failed to update campaign' }, { status: 500 })
+    return err('Failed to update campaign', 500)
   }
 })
 
@@ -165,14 +161,14 @@ export const DELETE = withVenue(async function DELETE(
     const employeeId = searchParams.get('employeeId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+      return err('Location ID is required')
     }
 
     // Auth check
     const actor = await getActorFromRequest(request)
     const resolvedEmployeeId = actor.employeeId ?? employeeId
     const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.MGR_DISCOUNTS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Cancel: set status to cancelled and soft-delete
     await db.$executeRawUnsafe(`
@@ -181,9 +177,9 @@ export const DELETE = withVenue(async function DELETE(
       WHERE id = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
     `, id, locationId)
 
-    return NextResponse.json({ success: true })
+    return ok({ success: true })
   } catch (error) {
     console.error('[Marketing] Failed to delete campaign:', error)
-    return NextResponse.json({ error: 'Failed to delete campaign' }, { status: 500 })
+    return err('Failed to delete campaign', 500)
   }
 })

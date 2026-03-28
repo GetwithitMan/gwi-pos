@@ -22,6 +22,7 @@ import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { createRateLimiter } from '@/lib/rate-limiter'
 import { getClientIp } from '@/lib/get-client-ip'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 
 const log = createChildLogger('public.pay.token')
 
@@ -103,20 +104,17 @@ export async function GET(
   try {
     const ip = getClientIp(request)
     if (!getLimiter.check(ip).allowed) {
-      return NextResponse.json(
-        { error: 'Too many requests. Please try again later.' },
-        { status: 429 }
-      )
+      return err('Too many requests. Please try again later.', 429)
     }
 
     const { token } = await context.params
     if (!token || token.length < 30) {
-      return NextResponse.json({ error: 'Invalid payment link' }, { status: 400 })
+      return err('Invalid payment link')
     }
 
     const result = await findPaymentLink(token)
     if (!result) {
-      return NextResponse.json({ error: 'Payment link not found' }, { status: 404 })
+      return notFound('Payment link not found')
     }
 
     const { link, db: venueDb } = result
@@ -165,7 +163,7 @@ export async function GET(
     })
 
     if (!order) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      return notFound('Order not found')
     }
 
     // Fetch location name + settings
@@ -186,8 +184,7 @@ export async function GET(
       .filter((i: any) => i.tipExempt)
       .reduce((sum: number, i: any) => sum + (Number(i.itemTotal) || Number(i.price) * (i.quantity || 1)), 0)
 
-    return NextResponse.json({
-      data: {
+    return ok({
         venueName: location?.name || 'Restaurant',
         orderNumber: order.orderNumber,
         items: order.items.map((item: { name: string; quantity: number; price: unknown }) => ({
@@ -203,11 +200,10 @@ export async function GET(
         tipSuggestions: settings?.tips?.suggestedPercentages || [15, 18, 20],
         expiresAt: link.expiresAt,
         ...(tipExemptAmount > 0 ? { tipExemptAmount } : {}),
-      },
-    })
+      })
   } catch (error) {
     console.error('[GET /api/public/pay/[token]] Error:', error)
-    return NextResponse.json({ error: 'Failed to load payment details' }, { status: 500 })
+    return err('Failed to load payment details', 500)
   }
 }
 
@@ -229,25 +225,19 @@ export async function POST(
   try {
     const ip = getClientIp(request)
     if (!postLimiter.check(ip).allowed) {
-      return NextResponse.json(
-        { error: 'Too many attempts. Please wait and try again.' },
-        { status: 429 }
-      )
+      return err('Too many attempts. Please wait and try again.', 429)
     }
 
     const { token } = await context.params
     if (!token || token.length < 30) {
-      return NextResponse.json({ error: 'Invalid payment link' }, { status: 400 })
+      return err('Invalid payment link')
     }
 
     const body = await request.json()
     const parsed = ProcessPaymentSchema.safeParse(body)
 
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: 'Invalid payment details', details: parsed.error.flatten().fieldErrors },
-        { status: 400 }
-      )
+      return err('Invalid payment details', 400, parsed.error.flatten().fieldErrors)
     }
 
     const { cardNumber, expMonth, expYear, cvv, zipCode, tipAmount } = parsed.data
@@ -255,20 +245,20 @@ export async function POST(
     // Look up payment link
     const result = await findPaymentLink(token)
     if (!result) {
-      return NextResponse.json({ error: 'Payment link not found' }, { status: 404 })
+      return notFound('Payment link not found')
     }
 
     const { link, db: venueDb } = result
 
     // Validate link status
     if (link.status === 'completed') {
-      return NextResponse.json({ error: 'This payment has already been completed' }, { status: 410 })
+      return err('This payment has already been completed', 410)
     }
     if (link.status === 'cancelled') {
-      return NextResponse.json({ error: 'This payment link has been cancelled' }, { status: 410 })
+      return err('This payment link has been cancelled', 410)
     }
     if (link.status === 'expired' || new Date(link.expiresAt) < new Date()) {
-      return NextResponse.json({ error: 'This payment link has expired' }, { status: 410 })
+      return err('This payment link has expired', 410)
     }
 
     // Fetch order to confirm it's still unpaid
@@ -289,10 +279,10 @@ export async function POST(
     })
 
     if (!order) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      return notFound('Order not found')
     }
     if (order.status === 'paid' || order.status === 'voided') {
-      return NextResponse.json({ error: 'This order has already been settled' }, { status: 410 })
+      return err('This order has already been settled', 410)
     }
 
     const amount = Number(link.amount)
@@ -308,10 +298,7 @@ export async function POST(
     })
 
     if (readers.length === 0) {
-      return NextResponse.json(
-        { error: 'Payment processing is not available. Please contact the venue.' },
-        { status: 503 }
-      )
+      return err('Payment processing is not available. Please contact the venue.', 503)
     }
 
     const readerId = readers[0].id
@@ -443,8 +430,7 @@ export async function POST(
       }).catch(err => log.warn({ err }, 'fire-and-forget failed in public.pay.token'))
     }
 
-    return NextResponse.json({
-      data: {
+    return ok({
         success: true,
         paymentId,
         amount,
@@ -452,15 +438,11 @@ export async function POST(
         totalCharged: totalCharge,
         cardLast4,
         orderPaid: orderIsPaid,
-      },
-    })
+      })
   } catch (error) {
     console.error('[POST /api/public/pay/[token]] Error:', error)
 
     // Don't expose internal errors to public endpoint
-    return NextResponse.json(
-      { error: 'Payment processing failed. Please try again or contact the venue.' },
-      { status: 500 }
-    )
+    return err('Payment processing failed. Please try again or contact the venue.', 500)
   }
 }

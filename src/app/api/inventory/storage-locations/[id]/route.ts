@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - Get single storage location
 export const GET = withVenue(async function GET(
@@ -27,10 +28,10 @@ export const GET = withVenue(async function GET(
     })
 
     if (!storageLocation || storageLocation.deletedAt) {
-      return NextResponse.json({ error: 'Storage location not found' }, { status: 404 })
+      return notFound('Storage location not found')
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       storageLocation: {
         ...storageLocation,
         inventoryItems: storageLocation.inventoryItems.map(item => ({
@@ -39,10 +40,10 @@ export const GET = withVenue(async function GET(
           parLevel: item.parLevel ? Number(item.parLevel) : null,
         })),
       },
-    } })
+    })
   } catch (error) {
     console.error('Get storage location error:', error)
-    return NextResponse.json({ error: 'Failed to fetch storage location' }, { status: 500 })
+    return err('Failed to fetch storage location', 500)
   }
 })
 
@@ -60,7 +61,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     })
 
     if (!existing || existing.deletedAt) {
-      return NextResponse.json({ error: 'Storage location not found' }, { status: 404 })
+      return notFound('Storage location not found')
     }
 
     const updateData: Record<string, unknown> = {}
@@ -80,13 +81,13 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     void notifyDataChanged({ locationId: existing.locationId, domain: 'inventory', action: 'updated', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { storageLocation } })
+    return ok({ storageLocation })
   } catch (error) {
     console.error('Update storage location error:', error)
     if ((error as { code?: string }).code === 'P2002') {
-      return NextResponse.json({ error: 'Storage location with this name already exists' }, { status: 400 })
+      return err('Storage location with this name already exists')
     }
-    return NextResponse.json({ error: 'Failed to update storage location' }, { status: 500 })
+    return err('Failed to update storage location', 500)
   }
 }))
 
@@ -108,13 +109,11 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     })
 
     if (!existing || existing.deletedAt) {
-      return NextResponse.json({ error: 'Storage location not found' }, { status: 404 })
+      return notFound('Storage location not found')
     }
 
     if (existing._count.inventoryItems > 0) {
-      return NextResponse.json({
-        error: 'Cannot delete storage location with assigned items',
-      }, { status: 400 })
+      return err('Cannot delete storage location with assigned items')
     }
 
     await db.storageLocation.update({
@@ -125,9 +124,9 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     void notifyDataChanged({ locationId: existing.locationId, domain: 'inventory', action: 'deleted', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Delete storage location error:', error)
-    return NextResponse.json({ error: 'Failed to delete storage location' }, { status: 500 })
+    return err('Failed to delete storage location', 500)
   }
 }))

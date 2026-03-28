@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -6,6 +6,7 @@ import { withVenue } from '@/lib/with-venue'
 import { dateRangeToUTC } from '@/lib/timezone'
 import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
 import { computeVariationFingerprint, type TransformedOrderItem } from '@/lib/domain/reports/variation-fingerprint'
+import { err, ok } from '@/lib/api-response'
 
 /**
  * Level 2 drilldown: modifier detail for a specific variation fingerprint of a menu item.
@@ -25,12 +26,12 @@ export const GET = withVenue(async function GET(
     const requestingEmployeeId = searchParams.get('requestingEmployeeId') || searchParams.get('employeeId')
 
     if (!locationId || !fingerprint) {
-      return NextResponse.json({ error: 'locationId and fingerprint are required' }, { status: 400 })
+      return err('locationId and fingerprint are required')
     }
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_PRODUCT_MIX)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     const loc = await db.location.findFirst({
@@ -124,7 +125,7 @@ export const GET = withVenue(async function GET(
     }
 
     if (matchingItems.length === 0) {
-      return NextResponse.json({ data: { modifiers: [], weeklySparkline: [], liquor: null } })
+      return ok({ modifiers: [], weeklySparkline: [], liquor: null })
     }
 
     // Batch-load modifier cost data
@@ -261,17 +262,15 @@ export const GET = withVenue(async function GET(
       count: weeklyTotalBuckets[w] || 0,
     }))
 
-    return NextResponse.json({
-      data: {
+    return ok({
         modifiers,
         weeklySparkline,
         liquor,
         weekLabels: allWeeks,
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to fetch variation detail:', error)
-    return NextResponse.json({ error: 'Failed to fetch variation detail' }, { status: 500 })
+    return err('Failed to fetch variation detail', 500)
   }
 })
 

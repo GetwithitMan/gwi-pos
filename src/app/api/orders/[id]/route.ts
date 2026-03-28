@@ -17,6 +17,7 @@ import { validateTransition, isModifiable } from '@/lib/domain/order-status'
 import { getRequestLocationId } from '@/lib/request-context'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok } from '@/lib/api-response'
 const log = createChildLogger('orders')
 
 // GET - Get order details
@@ -66,7 +67,7 @@ export const GET = withVenue(async function GET(
       }
 
       const response = mapOrderForResponse(order)
-      return NextResponse.json({ data: { ...response, paidAmount: 0 } })
+      return ok({ ...response, paidAmount: 0 })
     }
 
     // Lightweight panel view — items + modifiers only (no payments, pizzaData, ingredientModifications)
@@ -180,7 +181,7 @@ export const GET = withVenue(async function GET(
       }
 
       // Convert Decimal fields to numbers (Prisma returns Decimal objects)
-      return NextResponse.json({ data: {
+      return ok({
         ...order,
         subtotal: Number(order.subtotal),
         taxTotal: Number(order.taxTotal),
@@ -205,7 +206,7 @@ export const GET = withVenue(async function GET(
             price: Number(mod.price),
           })),
         })),
-      } })
+      })
     }
 
     // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
@@ -279,7 +280,7 @@ export const GET = withVenue(async function GET(
     // Auth check — deferred to after fetch to eliminate double-fetch
     if (requestingEmployeeId) {
       const auth = await requirePermission(requestingEmployeeId, order.locationId, PERMISSIONS.POS_ACCESS)
-      if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+      if (!auth.authorized) return err(auth.error, auth.status)
     }
 
     // Use mapper for complete response with all modifier fields
@@ -322,14 +323,14 @@ export const GET = withVenue(async function GET(
       // Settings unavailable — fall back to order.total for both
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       ...response,
       paidAmount,
       version: order.version,
       cashTotal,
       cardTotal,
       cashDiscountPercent,
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch order:', error)
     return apiError.internalError('Failed to fetch order', ERROR_CODES.INTERNAL_ERROR)
@@ -396,13 +397,13 @@ export const PUT = withVenue(async function PUT(
 
     // Input validation for fields that bypass Zod
     if (tipTotal !== undefined && tipTotal !== null && Number(tipTotal) < 0) {
-      return NextResponse.json({ error: 'Tip total cannot be negative' }, { status: 400 })
+      return err('Tip total cannot be negative')
     }
     if (tabName !== undefined && tabName !== null && tabName.length > 50) {
-      return NextResponse.json({ error: 'Tab name cannot exceed 50 characters' }, { status: 400 })
+      return err('Tab name cannot exceed 50 characters')
     }
     if (notes !== undefined && notes !== null && notes.length > 500) {
-      return NextResponse.json({ error: 'Notes cannot exceed 500 characters' }, { status: 400 })
+      return err('Notes cannot exceed 500 characters')
     }
 
     // HA cellular sync — detect mutation origin for downstream sync
@@ -416,7 +417,7 @@ export const PUT = withVenue(async function PUT(
         await validateCellularOrderAccess(true, id, 'mutate', db)
       } catch (err) {
         if (err instanceof CellularAuthError) {
-          return NextResponse.json({ error: err.message }, { status: err.status })
+          return err(err.message, err.status)
         }
         throw err
       }
@@ -476,20 +477,20 @@ export const PUT = withVenue(async function PUT(
     const requestingEmployeeId = request.headers.get('x-employee-id') || body.requestingEmployeeId || body.employeeId
     if (requestingEmployeeId) {
       const auth = await requirePermission(requestingEmployeeId, existingOrder.locationId, PERMISSIONS.POS_ACCESS)
-      if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+      if (!auth.authorized) return err(auth.error, auth.status)
       // Elevated checks for sensitive field changes
       // Only require pos.change_table when the table is actually changing (not just present in body)
       if (tableId !== undefined && tableId !== existingOrder.tableId) {
         const tAuth = await requirePermission(requestingEmployeeId, existingOrder.locationId, PERMISSIONS.POS_CHANGE_TABLE)
-        if (!tAuth.authorized) return NextResponse.json({ error: tAuth.error }, { status: tAuth.status })
+        if (!tAuth.authorized) return err(tAuth.error, tAuth.status)
       }
       if (employeeId !== undefined && employeeId !== requestingEmployeeId) {
         const sAuth = await requirePermission(requestingEmployeeId, existingOrder.locationId, PERMISSIONS.POS_CHANGE_SERVER)
-        if (!sAuth.authorized) return NextResponse.json({ error: sAuth.error }, { status: sAuth.status })
+        if (!sAuth.authorized) return err(sAuth.error, sAuth.status)
       }
       if (isTaxExempt !== undefined) {
         const txAuth = await requirePermission(requestingEmployeeId, existingOrder.locationId, PERMISSIONS.MGR_TAX_EXEMPT)
-        if (!txAuth.authorized) return NextResponse.json({ error: txAuth.error }, { status: txAuth.status })
+        if (!txAuth.authorized) return err(txAuth.error, txAuth.status)
       }
     }
 
@@ -771,7 +772,7 @@ export const PUT = withVenue(async function PUT(
 
     pushUpstream()
 
-    return NextResponse.json({ data: response })
+    return ok(response)
   } catch (error) {
     console.error('Failed to update order:', error)
     return apiError.internalError('Failed to update order', ERROR_CODES.INTERNAL_ERROR)
@@ -823,13 +824,13 @@ export const PATCH = withVenue(async function PATCH(
 
     // Input validation for fields that bypass Zod
     if (tipTotal !== undefined && tipTotal !== null && Number(tipTotal) < 0) {
-      return NextResponse.json({ error: 'Tip total cannot be negative' }, { status: 400 })
+      return err('Tip total cannot be negative')
     }
     if (tabName !== undefined && tabName !== null && tabName.length > 50) {
-      return NextResponse.json({ error: 'Tab name cannot exceed 50 characters' }, { status: 400 })
+      return err('Tab name cannot exceed 50 characters')
     }
     if (notes !== undefined && notes !== null && notes.length > 500) {
-      return NextResponse.json({ error: 'Notes cannot exceed 500 characters' }, { status: 400 })
+      return err('Notes cannot exceed 500 characters')
     }
 
     // HA cellular sync — detect mutation origin for downstream sync
@@ -843,7 +844,7 @@ export const PATCH = withVenue(async function PATCH(
         await validateCellularOrderAccess(true, id, 'mutate', db)
       } catch (err) {
         if (err instanceof CellularAuthError) {
-          return NextResponse.json({ error: err.message }, { status: err.status })
+          return err(err.message, err.status)
         }
         throw err
       }
@@ -900,20 +901,20 @@ export const PATCH = withVenue(async function PATCH(
     const requestingEmployeeId = request.headers.get('x-employee-id') || body.requestingEmployeeId || body.employeeId
     if (requestingEmployeeId) {
       const auth = await requirePermission(requestingEmployeeId, existing.locationId, PERMISSIONS.POS_ACCESS)
-      if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+      if (!auth.authorized) return err(auth.error, auth.status)
       // Elevated checks for sensitive field changes
       // Only require pos.change_table when the table is actually changing (not just present in body)
       if (tableId !== undefined && tableId !== existing.tableId) {
         const tAuth = await requirePermission(requestingEmployeeId, existing.locationId, PERMISSIONS.POS_CHANGE_TABLE)
-        if (!tAuth.authorized) return NextResponse.json({ error: tAuth.error }, { status: tAuth.status })
+        if (!tAuth.authorized) return err(tAuth.error, tAuth.status)
       }
       if (employeeId !== undefined && employeeId !== requestingEmployeeId) {
         const sAuth = await requirePermission(requestingEmployeeId, existing.locationId, PERMISSIONS.POS_CHANGE_SERVER)
-        if (!sAuth.authorized) return NextResponse.json({ error: sAuth.error }, { status: sAuth.status })
+        if (!sAuth.authorized) return err(sAuth.error, sAuth.status)
       }
       if (isTaxExempt !== undefined) {
         const txAuth = await requirePermission(requestingEmployeeId, existing.locationId, PERMISSIONS.MGR_TAX_EXEMPT)
-        if (!txAuth.authorized) return NextResponse.json({ error: txAuth.error }, { status: txAuth.status })
+        if (!txAuth.authorized) return err(txAuth.error, txAuth.status)
       }
     }
 
@@ -1129,7 +1130,7 @@ export const PATCH = withVenue(async function PATCH(
 
     pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       id: updatedOrder.id,
       locationId: updatedOrder.locationId,
       tableId: updatedOrder.tableId,
@@ -1145,7 +1146,7 @@ export const PATCH = withVenue(async function PATCH(
       total: Number(updatedOrder.total),
       notes: updatedOrder.notes,
       isTaxExempt: updatedOrder.isTaxExempt,
-    } })
+    })
   } catch (error) {
     console.error('Failed to patch order:', error)
     return apiError.internalError('Failed to update order', ERROR_CODES.INTERNAL_ERROR)

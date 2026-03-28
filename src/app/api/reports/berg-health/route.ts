@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { execSync } from 'child_process'
+import { err, ok } from '@/lib/api-response'
 
 /**
  * GET /api/reports/berg-health
@@ -18,10 +19,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const endDate = searchParams.get('endDate')
     const requestingEmployeeId = searchParams.get('employeeId') || ''
 
-    if (!locationId) return NextResponse.json({ error: 'locationId required' }, { status: 400 })
+    if (!locationId) return err('locationId required')
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_INVENTORY)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const dateRange: { gte?: Date; lte?: Date } = {}
     if (startDate) dateRange.gte = new Date(startDate)
@@ -122,7 +123,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       // Not on Linux / timedatectl not available — skip
     }
 
-    return NextResponse.json({
+    return ok({
       period: { start: dateRange.gte, end: dateRange.lte },
       devices: deviceStats,
       overallAlerts,
@@ -130,6 +131,6 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     })
   } catch (err) {
     console.error('[reports/berg-health]', err)
-    return NextResponse.json({ error: 'Failed to load health report' }, { status: 500 })
+    return err('Failed to load health report', 500)
   }
 })

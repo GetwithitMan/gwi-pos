@@ -25,6 +25,7 @@ import {
   generateMagicLinkToken,
   verifyMagicLinkToken,
 } from '@/lib/portal-auth'
+import { err, notFound, ok, unauthorized } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -42,7 +43,7 @@ export async function POST(
     const { slug } = (await context.params) as { slug: string }
 
     if (!slug) {
-      return NextResponse.json({ error: 'Venue slug is required' }, { status: 400 })
+      return err('Venue slug is required')
     }
 
     // ── Resolve venue DB ───────────────────────────────────────────────
@@ -50,7 +51,7 @@ export async function POST(
     try {
       venueDb = await getDbForVenue(slug)
     } catch {
-      return NextResponse.json({ error: 'Location not found' }, { status: 404 })
+      return notFound('Location not found')
     }
 
     // ── Get location ─────────────────────────────────────────────────
@@ -60,7 +61,7 @@ export async function POST(
     })
 
     if (!location) {
-      return NextResponse.json({ error: 'Location not found' }, { status: 404 })
+      return notFound('Location not found')
     }
 
     const locationId = location.id
@@ -75,12 +76,12 @@ export async function POST(
     if (action === 'request-otp') {
       const { phone } = body
       if (!phone || typeof phone !== 'string') {
-        return NextResponse.json({ error: 'Phone number is required' }, { status: 400 })
+        return err('Phone number is required')
       }
 
       const normalizedPhone = normalizePhone(phone)
       if (!normalizedPhone) {
-        return NextResponse.json({ error: 'Invalid phone number' }, { status: 400 })
+        return err('Invalid phone number')
       }
 
       // ── Rate limit by phone ──────────────────────────────────────
@@ -103,7 +104,7 @@ export async function POST(
 
       if (customers.length === 0) {
         // Generic response — do not reveal whether account exists
-        return NextResponse.json({ success: true, message: 'If an account exists, a verification code has been sent.' })
+        return ok({ success: true, message: 'If an account exists, a verification code has been sent.' })
       }
 
       const customerId = customers[0].id
@@ -139,7 +140,7 @@ export async function POST(
         }
       })()
 
-      return NextResponse.json({ success: true })
+      return ok({ success: true })
     }
 
     // ═════════════════════════════════════════════════════════════════
@@ -148,15 +149,15 @@ export async function POST(
     if (action === 'verify-otp') {
       const { phone, code } = body
       if (!phone || typeof phone !== 'string') {
-        return NextResponse.json({ error: 'Phone number is required' }, { status: 400 })
+        return err('Phone number is required')
       }
       if (!code || typeof code !== 'string') {
-        return NextResponse.json({ error: 'Verification code is required' }, { status: 400 })
+        return err('Verification code is required')
       }
 
       const normalizedPhone = normalizePhone(phone)
       if (!normalizedPhone) {
-        return NextResponse.json({ error: 'Invalid phone number' }, { status: 400 })
+        return err('Invalid phone number')
       }
 
       // ── Brute-force throttle ───────────────────────────────────
@@ -185,10 +186,7 @@ export async function POST(
       )
 
       if (sessions.length === 0) {
-        return NextResponse.json(
-          { error: 'Invalid or expired verification code' },
-          { status: 401 },
-        )
+        return unauthorized('Invalid or expired verification code')
       }
 
       const session = sessions[0]
@@ -196,10 +194,7 @@ export async function POST(
       // ── Verify OTP ───────────────────────────────────────────────
       const valid = verifyOTP(code, session.otpHash, new Date(session.otpExpiresAt))
       if (!valid) {
-        return NextResponse.json(
-          { error: 'Invalid or expired verification code' },
-          { status: 401 },
-        )
+        return unauthorized('Invalid or expired verification code')
       }
 
       // ── Reset throttle on success ──────────────────────────────
@@ -254,12 +249,12 @@ export async function POST(
     if (action === 'request-magic-link') {
       const { email } = body
       if (!email || typeof email !== 'string') {
-        return NextResponse.json({ error: 'Email is required' }, { status: 400 })
+        return err('Email is required')
       }
 
       const normalizedEmail = email.toLowerCase().trim()
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
-        return NextResponse.json({ error: 'Invalid email format' }, { status: 400 })
+        return err('Invalid email format')
       }
 
       // ── Find customer by email + locationId ────────────────────
@@ -275,7 +270,7 @@ export async function POST(
 
       // Always return success — don't reveal whether account exists
       if (customers.length === 0) {
-        return NextResponse.json({
+        return ok({
           success: true,
           message: 'If an account exists with that email, a login link has been sent.',
         })
@@ -331,7 +326,7 @@ export async function POST(
         }
       })()
 
-      return NextResponse.json({
+      return ok({
         success: true,
         message: 'If an account exists with that email, a login link has been sent.',
       })
@@ -343,24 +338,18 @@ export async function POST(
     if (action === 'verify-magic-link') {
       const { token } = body
       if (!token || typeof token !== 'string') {
-        return NextResponse.json({ error: 'Token is required' }, { status: 400 })
+        return err('Token is required')
       }
 
       // ── Verify HMAC signature ──────────────────────────────────
       const result = verifyMagicLinkToken(token)
       if (!result.valid) {
-        return NextResponse.json(
-          { error: result.expired ? 'This login link has expired.' : 'Invalid login link.' },
-          { status: 401 },
-        )
+        return unauthorized(result.expired ? 'This login link has expired.' : 'Invalid login link.')
       }
 
       // ── Verify slug matches token to prevent cross-venue token reuse ──
       if (result.slug !== slug) {
-        return NextResponse.json(
-          { error: 'Invalid link' },
-          { status: 401 },
-        )
+        return unauthorized('Invalid link')
       }
 
       // ── Find session by nonce ──────────────────────────────────
@@ -379,10 +368,7 @@ export async function POST(
       )
 
       if (sessions.length === 0) {
-        return NextResponse.json(
-          { error: 'This login link has already been used or expired.' },
-          { status: 401 },
-        )
+        return unauthorized('This login link has already been used or expired.')
       }
 
       const magicSession = sessions[0]
@@ -437,7 +423,7 @@ export async function POST(
     if (action === 'check-session') {
       const sessionToken = request.cookies.get('portal_session')?.value
       if (!sessionToken) {
-        return NextResponse.json({ authenticated: false })
+        return ok({ authenticated: false })
       }
 
       const sessions = await venueDb.$queryRawUnsafe<
@@ -454,7 +440,7 @@ export async function POST(
       )
 
       if (sessions.length === 0) {
-        return NextResponse.json({ authenticated: false })
+        return ok({ authenticated: false })
       }
 
       const { customerId } = sessions[0]
@@ -475,11 +461,11 @@ export async function POST(
       )
 
       if (customerRows.length === 0) {
-        return NextResponse.json({ authenticated: false })
+        return ok({ authenticated: false })
       }
 
       const c = customerRows[0]
-      return NextResponse.json({
+      return ok({
         authenticated: true,
         customer: {
           id: c.id,
@@ -519,12 +505,9 @@ export async function POST(
     }
 
     // ── Unknown action ───────────────────────────────────────────────
-    return NextResponse.json(
-      { error: 'Invalid action.' },
-      { status: 400 },
-    )
+    return err('Invalid action.')
   } catch (error) {
     console.error('[POST /api/public/portal/[slug]/auth] Error:', error)
-    return NextResponse.json({ error: 'Authentication failed' }, { status: 500 })
+    return err('Authentication failed', 500)
   }
 }

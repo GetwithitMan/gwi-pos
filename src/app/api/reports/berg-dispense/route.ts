@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { err, ok } from '@/lib/api-response'
 
 /**
  * GET /api/reports/berg-dispense
@@ -27,10 +28,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get('page') || '1', 10)
     const limit = Math.min(parseInt(searchParams.get('limit') || '100', 10), 500)
 
-    if (!locationId) return NextResponse.json({ error: 'locationId required' }, { status: 400 })
+    if (!locationId) return err('locationId required')
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_INVENTORY)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const where: Record<string, unknown> = { locationId }
     if (deviceId) where.deviceId = deviceId
@@ -91,9 +92,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       })
     }
 
-    return NextResponse.json({ events, total, page, limit, pages: Math.ceil(total / limit) })
+    return ok({ events, total, page, limit, pages: Math.ceil(total / limit) })
   } catch (err) {
     console.error('[reports/berg-dispense]', err)
-    return NextResponse.json({ error: 'Failed to load dispense log' }, { status: 500 })
+    return err('Failed to load dispense log', 500)
   }
 })

@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
+import { err, ok } from '@/lib/api-response'
 
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
@@ -12,28 +13,28 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const type = sp.get('type') || 'summary'
     const period = sp.get('period') || 'monthly'
 
-    if (!locationId) return NextResponse.json({ error: 'locationId required' }, { status: 400 })
+    if (!locationId) return err('locationId required')
 
     const auth = await requirePermission(employeeId, locationId, 'admin.view_membership_reports')
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     switch (type) {
       case 'summary':
-        return NextResponse.json({ data: await getSummary(db, locationId) })
+        return ok(await getSummary(db, locationId))
       case 'revenue':
-        return NextResponse.json({ data: await getRevenue(db, locationId, period) })
+        return ok(await getRevenue(db, locationId, period))
       case 'declines':
-        return NextResponse.json({ data: await getDeclines(db, locationId) })
+        return ok(await getDeclines(db, locationId))
       case 'aging':
-        return NextResponse.json({ data: await getAging(db, locationId) })
+        return ok(await getAging(db, locationId))
       case 'by_plan':
-        return NextResponse.json({ data: await getByPlan(db, locationId) })
+        return ok(await getByPlan(db, locationId))
       default:
-        return NextResponse.json({ error: 'Invalid report type' }, { status: 400 })
+        return err('Invalid report type')
     }
   } catch (err) {
     console.error('[reports/memberships] error:', err)
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
+    return err('Internal error', 500)
   }
 })
 

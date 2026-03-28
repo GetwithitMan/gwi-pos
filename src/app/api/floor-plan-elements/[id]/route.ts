@@ -1,11 +1,12 @@
 import { db } from '@/lib/db'
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - Get a single floor plan element
 export const GET = withVenue(async function GET(
@@ -19,7 +20,7 @@ export const GET = withVenue(async function GET(
     const locationId = searchParams.get('locationId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // Allow device-authenticated requests (KDS/CFD via cellular proxy or device token)
@@ -29,7 +30,7 @@ export const GET = withVenue(async function GET(
       const employeeId = searchParams.get('employeeId') ?? actor.employeeId
       const authCheck = await requirePermission(employeeId, locationId, PERMISSIONS.POS_ACCESS)
       if (!authCheck.authorized) {
-        return NextResponse.json({ error: authCheck.error }, { status: authCheck.status })
+        return err(authCheck.error, authCheck.status)
       }
     }
 
@@ -70,13 +71,13 @@ export const GET = withVenue(async function GET(
     })
 
     if (!element) {
-      return NextResponse.json({ error: 'Element not found' }, { status: 404 })
+      return notFound('Element not found')
     }
 
-    return NextResponse.json({ data: { element } })
+    return ok({ element })
   } catch (error) {
     console.error('[floor-plan-elements/[id]] GET error:', error)
-    return NextResponse.json({ error: 'Failed to fetch element' }, { status: 500 })
+    return err('Failed to fetch element', 500)
   }
 })
 
@@ -115,7 +116,7 @@ export const PUT = withVenue(async function PUT(
     } = body
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // Verify the element belongs to this location
@@ -124,7 +125,7 @@ export const PUT = withVenue(async function PUT(
     })
 
     if (!existing) {
-      return NextResponse.json({ error: 'Element not found or access denied' }, { status: 404 })
+      return notFound('Element not found or access denied')
     }
 
     const element = await db.floorPlanElement.update({
@@ -179,11 +180,11 @@ export const PUT = withVenue(async function PUT(
     void notifyDataChanged({ locationId: element.locationId, domain: 'floorplan', action: 'updated', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { element } })
+    return ok({ element })
   } catch (error) {
     console.error('[floor-plan-elements/[id]] PUT error:', error)
     const message = error instanceof Error ? error.message : 'Unknown error'
-    return NextResponse.json({ error: `Failed to update element: ${message}` }, { status: 500 })
+    return err(`Failed to update element: ${message}`, 500)
   }
 })
 
@@ -199,7 +200,7 @@ export const DELETE = withVenue(async function DELETE(
     const locationId = searchParams.get('locationId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // Verify the element belongs to this location
@@ -208,7 +209,7 @@ export const DELETE = withVenue(async function DELETE(
     })
 
     if (!existing) {
-      return NextResponse.json({ error: 'Element not found or access denied' }, { status: 404 })
+      return notFound('Element not found or access denied')
     }
 
     const element = await db.floorPlanElement.update({
@@ -223,9 +224,9 @@ export const DELETE = withVenue(async function DELETE(
     void notifyDataChanged({ locationId: element.locationId, domain: 'floorplan', action: 'deleted', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('[floor-plan-elements/[id]] DELETE error:', error)
-    return NextResponse.json({ error: 'Failed to delete element' }, { status: 500 })
+    return err('Failed to delete element', 500)
   }
 })

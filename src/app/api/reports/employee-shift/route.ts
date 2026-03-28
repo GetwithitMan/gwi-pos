@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -7,6 +7,7 @@ import { getBusinessDayRange, getCurrentBusinessDay } from '@/lib/business-day'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings, getLocationTimezone } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - Generate employee shift report
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -20,10 +21,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     // Can query by shiftId OR by employeeId + date
     if (!shiftId && (!employeeId || !locationId)) {
-      return NextResponse.json(
-        { error: 'Either shiftId or (employeeId + locationId) required' },
-        { status: 400 }
-      )
+      return err('Either shiftId or (employeeId + locationId) required')
     }
 
     // Auth check (locationId may be null when querying by shiftId — resolved after shift lookup)
@@ -33,7 +31,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       if (!isSelfAccess) {
         const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_SALES_BY_EMPLOYEE)
         if (!auth.authorized) {
-          return NextResponse.json({ error: auth.error }, { status: auth.status })
+          return err(auth.error, auth.status)
         }
       }
     }
@@ -57,7 +55,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       })
 
       if (!shift) {
-        return NextResponse.json({ error: 'Shift not found' }, { status: 404 })
+        return notFound('Shift not found')
       }
 
       employee = shift.employee
@@ -118,7 +116,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         })
 
         if (!timeEntry) {
-          return NextResponse.json({ error: 'No shift found for this employee on this date' }, { status: 404 })
+          return notFound('No shift found for this employee on this date')
         }
 
         employee = timeEntry.employee
@@ -632,7 +630,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // BUILD RESPONSE
     // ============================================
 
-    return NextResponse.json({ data: {
+    return ok({
       employee: {
         id: employee.id,
         name: employee.displayName || `${employee.firstName} ${employee.lastName}`,
@@ -821,13 +819,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         bevAvg: round(bevAvg),
         retailAvg: round(retailAvg),
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to generate employee shift report:', error)
-    return NextResponse.json(
-      { error: 'Failed to generate employee shift report' },
-      { status: 500 }
-    )
+    return err('Failed to generate employee shift report', 500)
   }
 })
 

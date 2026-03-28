@@ -10,7 +10,7 @@
  * Returns: { succeeded: number, failed: [{cardId, error}] }
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth, type AuthenticatedContext } from '@/lib/api-auth-middleware'
@@ -20,6 +20,7 @@ import { batchActionSchema } from '@/lib/domain/gift-cards/schemas'
 import { activateGiftCard } from '@/lib/domain/gift-cards/activate-gift-card'
 import { freezeGiftCard, unfreezeGiftCard } from '@/lib/domain/gift-cards/freeze-gift-card'
 import { dispatchGiftCardBalanceChanged } from '@/lib/socket-dispatch'
+import { err, ok } from '@/lib/api-response'
 
 const CHUNK_SIZE = 100
 
@@ -39,27 +40,18 @@ export const POST = withVenue(withAuth('CUSTOMERS_GIFT_CARDS', async function PO
 
     const parsed = batchActionSchema.safeParse(body)
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: 'Validation failed', details: parsed.error.flatten().fieldErrors },
-        { status: 400 }
-      )
+      return err('Validation failed', 400, parsed.error.flatten().fieldErrors)
     }
 
     const { action, cardIds, amount, reason } = parsed.data
 
     // Validate action-specific requirements
     if (action === 'activate' && (!amount || amount <= 0)) {
-      return NextResponse.json(
-        { error: 'Positive amount is required for batch activation' },
-        { status: 400 }
-      )
+      return err('Positive amount is required for batch activation')
     }
 
     if (action === 'freeze' && !reason) {
-      return NextResponse.json(
-        { error: 'Reason is required for batch freeze' },
-        { status: 400 }
-      )
+      return err('Reason is required for batch freeze')
     }
 
     let succeeded = 0
@@ -143,12 +135,9 @@ export const POST = withVenue(withAuth('CUSTOMERS_GIFT_CARDS', async function PO
       }
     }
 
-    return NextResponse.json({ succeeded, failed })
+    return ok({ succeeded, failed })
   } catch (error) {
     console.error('Failed to process batch gift card action:', error)
-    return NextResponse.json(
-      { error: 'Failed to process batch action' },
-      { status: 500 }
-    )
+    return err('Failed to process batch action', 500)
   }
 }))

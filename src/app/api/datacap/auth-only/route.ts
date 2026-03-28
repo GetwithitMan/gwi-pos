@@ -4,6 +4,7 @@ import { parseError } from '@/lib/datacap/xml-parser'
 import { withVenue } from '@/lib/with-venue'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { err, ok } from '@/lib/api-response'
 
 interface AuthOnlyRequest {
   locationId: string
@@ -18,13 +19,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const { locationId, readerId, invoiceNo, employeeId } = body
 
     if (!locationId || !readerId || !invoiceNo) {
-      return Response.json({ error: 'Missing required fields: locationId, readerId, invoiceNo' }, { status: 400 })
+      return err('Missing required fields: locationId, readerId, invoiceNo')
     }
 
     // BUG #472 FIX: Enforce permission check on monetary endpoint
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.POS_CARD_PAYMENTS)
     if (!auth.authorized) {
-      return Response.json({ error: auth.error }, { status: auth.status ?? 403 })
+      return err(auth.error, auth.status ?? 403)
     }
 
     await validateReader(readerId, locationId)
@@ -33,8 +34,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const response = await client.authOnly(readerId, { invoiceNo })
     const error = parseError(response)
 
-    return Response.json({
-      data: {
+    return ok({
         approved: response.cmdStatus === 'Approved',
         authCode: response.authCode,
         recordNo: response.recordNo,        // Token for future use
@@ -44,8 +44,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         entryMethod: response.entryMethod,
         sequenceNo: response.sequenceNo,
         error: error ? { code: error.code, message: error.text, isRetryable: error.isRetryable } : null,
-      },
-    })
+      })
   } catch (err) {
     return datacapErrorResponse(err)
   }

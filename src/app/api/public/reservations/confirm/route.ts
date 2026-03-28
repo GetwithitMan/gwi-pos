@@ -6,6 +6,7 @@ import { transition } from '@/lib/reservations/state-machine'
 import { createRateLimiter } from '@/lib/rate-limiter'
 import { dispatchReservationChanged } from '@/lib/socket-dispatch'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('public-reservations-confirm')
 
 export const dynamic = 'force-dynamic'
@@ -29,12 +30,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     const { token } = await request.json()
     if (!token) {
-      return NextResponse.json({ error: 'Token is required' }, { status: 400 })
+      return err('Token is required')
     }
 
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'Location not found' }, { status: 400 })
+      return err('Location not found')
     }
 
     // Look up reservation by manageToken
@@ -43,24 +44,19 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     if (!reservation) {
-      return NextResponse.json({ error: 'Reservation not found' }, { status: 404 })
+      return notFound('Reservation not found')
     }
 
     // Can only confirm if currently pending and deposit is paid (or not required)
     if (reservation.status !== 'pending') {
-      return NextResponse.json({
-        error: reservation.status === 'confirmed'
+      return err(reservation.status === 'confirmed'
           ? 'Reservation is already confirmed'
-          : `Cannot confirm reservation in ${reservation.status} status`,
-      }, { status: 400 })
+          : `Cannot confirm reservation in ${reservation.status} status`)
     }
 
     const depositPaid = reservation.depositStatus === 'paid' || reservation.depositStatus === 'not_required'
     if (!depositPaid) {
-      return NextResponse.json(
-        { error: 'Deposit payment is required before confirmation' },
-        { status: 400 }
-      )
+      return err('Deposit payment is required before confirmation')
     }
 
     // Transition to confirmed
@@ -79,16 +75,16 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       reservationId: reservation.id, action: 'confirmed',
     }).catch(err => log.warn({ err }, 'Background task failed'))
 
-    return NextResponse.json({
+    return ok({
       id: updated.id,
       status: updated.status,
       message: 'Reservation confirmed!',
     })
   } catch (error: any) {
     if (error?.name === 'TransitionError') {
-      return NextResponse.json({ error: error.message }, { status: 400 })
+      return err(error.message)
     }
     console.error('[Public Confirm] Error:', error)
-    return NextResponse.json({ error: 'Failed to confirm reservation' }, { status: 500 })
+    return err('Failed to confirm reservation', 500)
   }
 })

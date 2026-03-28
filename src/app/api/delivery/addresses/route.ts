@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
@@ -6,6 +6,7 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { created, err, ok } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,13 +23,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Auth check
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.DELIVERY_VIEW)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Feature gate
     const featureGate = await requireDeliveryFeature(locationId)
@@ -38,7 +39,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const customerId = searchParams.get('customerId')
 
     if (!customerId || typeof customerId !== 'string') {
-      return NextResponse.json({ error: 'customerId query parameter is required' }, { status: 400 })
+      return err('customerId query parameter is required')
     }
 
     const addresses: any[] = await db.$queryRawUnsafe(`
@@ -61,10 +62,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       zoneEstimatedMinutes: a.zoneEstimatedMinutes != null ? Number(a.zoneEstimatedMinutes) : null,
     }))
 
-    return NextResponse.json({ addresses: enriched })
+    return ok({ addresses: enriched })
   } catch (error) {
     console.error('[Delivery/Addresses] GET error:', error)
-    return NextResponse.json({ error: 'Failed to fetch addresses' }, { status: 500 })
+    return err('Failed to fetch addresses', 500)
   }
 })
 
@@ -81,13 +82,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Auth check
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.DELIVERY_CREATE)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Feature gate
     const featureGate = await requireDeliveryFeature(locationId)
@@ -111,16 +112,16 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Validation
     if (!address || typeof address !== 'string' || address.trim().length === 0) {
-      return NextResponse.json({ error: 'address is required' }, { status: 400 })
+      return err('address is required')
     }
     if (!city || typeof city !== 'string' || city.trim().length === 0) {
-      return NextResponse.json({ error: 'city is required' }, { status: 400 })
+      return err('city is required')
     }
     if (!state || typeof state !== 'string' || state.trim().length === 0) {
-      return NextResponse.json({ error: 'state is required' }, { status: 400 })
+      return err('state is required')
     }
     if (!zipCode || typeof zipCode !== 'string' || zipCode.trim().length === 0) {
-      return NextResponse.json({ error: 'zipCode is required' }, { status: 400 })
+      return err('zipCode is required')
     }
 
     // Auto zone lookup by zipcode
@@ -153,10 +154,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       latNum = Number(latitude)
       lngNum = Number(longitude)
       if (isNaN(latNum) || latNum < -90 || latNum > 90) {
-        return NextResponse.json({ error: 'latitude must be between -90 and 90' }, { status: 400 })
+        return err('latitude must be between -90 and 90')
       }
       if (isNaN(lngNum) || lngNum < -180 || lngNum > 180) {
-        return NextResponse.json({ error: 'longitude must be between -180 and 180' }, { status: 400 })
+        return err('longitude must be between -180 and 180')
       }
     }
 
@@ -206,16 +207,16 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     pushUpstream()
 
-    return NextResponse.json({
+    return created({
       address: {
         ...saved,
         latitude: saved.latitude != null ? Number(saved.latitude) : null,
         longitude: saved.longitude != null ? Number(saved.longitude) : null,
       },
       zone,
-    }, { status: 201 })
+    })
   } catch (error) {
     console.error('[Delivery/Addresses] POST error:', error)
-    return NextResponse.json({ error: 'Failed to save address' }, { status: 500 })
+    return err('Failed to save address', 500)
   }
 })

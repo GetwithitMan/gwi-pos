@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { err, notFound, ok } from '@/lib/api-response'
 
 /**
  * Cloud reader device info proxy
@@ -19,14 +20,14 @@ export const GET = withVenue(async function GET(
   })
 
   if (!reader) {
-    return NextResponse.json({ error: 'Reader not found' }, { status: 404 })
+    return notFound('Reader not found')
   }
 
   if (reader.communicationMode !== 'cloud') {
-    return NextResponse.json({ error: 'Reader is not in cloud mode' }, { status: 400 })
+    return err('Reader is not in cloud mode')
   }
 
-  return NextResponse.json({
+  return ok({
     serialNumber: reader.serialNumber,
     firmwareVersion: reader.firmwareVersion || null,
     model: reader.deviceType || 'VP3350',

@@ -1,5 +1,5 @@
 import { db } from '@/lib/db'
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { logger } from '@/lib/logger'
 import { withVenue } from '@/lib/with-venue'
@@ -7,6 +7,7 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, ok } from '@/lib/api-response'
 
 // GET - List all floor plan elements for a location (optionally filtered by section)
 export const GET = withVenue(async function GET(req: NextRequest) {
@@ -15,7 +16,7 @@ export const GET = withVenue(async function GET(req: NextRequest) {
   const sectionId = searchParams.get('sectionId')
 
   if (!locationId) {
-    return NextResponse.json({ error: 'locationId required' }, { status: 400 })
+    return err('locationId required')
   }
 
   // Allow device-authenticated requests (KDS/CFD via cellular proxy or device token)
@@ -25,7 +26,7 @@ export const GET = withVenue(async function GET(req: NextRequest) {
     const employeeId = searchParams.get('employeeId') ?? actor.employeeId
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.POS_ACCESS)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
   }
 
@@ -69,7 +70,7 @@ export const GET = withVenue(async function GET(req: NextRequest) {
       orderBy: { sortOrder: 'asc' },
     })
 
-    return NextResponse.json({ data: {
+    return ok({
       elements: elements.map((el) => ({
         id: el.id,
         name: el.name,
@@ -99,10 +100,10 @@ export const GET = withVenue(async function GET(req: NextRequest) {
         waitlistCount: el.waitlistEntries.length,
         waitlistEntries: el.waitlistEntries,
       })),
-    } })
+    })
   } catch (error) {
     console.error('[floor-plan-elements] GET error:', error)
-    return NextResponse.json({ error: 'Failed to fetch elements' }, { status: 500 })
+    return err('Failed to fetch elements', 500)
   }
 })
 
@@ -133,10 +134,7 @@ export const POST = withVenue(async function POST(req: Request) {
     } = body
 
     if (!locationId || !name || !visualType) {
-      return NextResponse.json(
-        { error: `Missing required fields: ${!locationId ? 'locationId ' : ''}${!name ? 'name ' : ''}${!visualType ? 'visualType' : ''}` },
-        { status: 400 }
-      )
+      return err(`Missing required fields: ${!locationId ? 'locationId ' : ''}${!name ? 'name ' : ''}${!visualType ? 'visualType' : ''}`)
     }
 
     // Verify linkedMenuItemId exists if provided (must not be soft-deleted, must belong to same location)
@@ -146,10 +144,7 @@ export const POST = withVenue(async function POST(req: Request) {
         select: { id: true },
       })
       if (!menuItem) {
-        return NextResponse.json(
-          { error: `Menu item not found: ${linkedMenuItemId}` },
-          { status: 400 }
-        )
+        return err(`Menu item not found: ${linkedMenuItemId}`)
       }
     }
 
@@ -160,10 +155,7 @@ export const POST = withVenue(async function POST(req: Request) {
         select: { id: true },
       })
       if (!section) {
-        return NextResponse.json(
-          { error: `Section not found: ${sectionId}` },
-          { status: 400 }
-        )
+        return err(`Section not found: ${sectionId}`)
       }
     }
 
@@ -253,10 +245,10 @@ export const POST = withVenue(async function POST(req: Request) {
     void notifyDataChanged({ locationId, domain: 'floorplan', action: 'created', entityId: element.id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { element } })
+    return ok({ element })
   } catch (error) {
     console.error('[floor-plan-elements] POST error:', error)
     const message = error instanceof Error ? error.message : 'Unknown error'
-    return NextResponse.json({ error: `Failed to create element: ${message}` }, { status: 500 })
+    return err(`Failed to create element: ${message}`, 500)
   }
 })

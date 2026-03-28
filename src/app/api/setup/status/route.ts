@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { err, ok } from '@/lib/api-response'
 
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
@@ -8,7 +9,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const locationId = searchParams.get('locationId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     // Run all checks in parallel
@@ -48,8 +49,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const steps = [businessInfo, menuBasics, employees, floorPlan, printers, payments]
     const completedCount = steps.filter(Boolean).length
 
-    return NextResponse.json({
-      data: {
+    return ok({
         businessInfo,
         menuBasics,
         employees,
@@ -58,10 +58,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         payments,
         completedCount,
         totalSteps: 6,
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to check setup status:', error)
-    return NextResponse.json({ error: 'Failed to check setup status' }, { status: 500 })
+    return err('Failed to check setup status', 500)
   }
 })

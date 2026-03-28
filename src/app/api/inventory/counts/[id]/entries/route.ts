@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // PATCH - Batch update count entries (save counts as user enters them)
 export const PATCH = withVenue(withAuth('ADMIN', async function PATCH(
@@ -16,7 +17,7 @@ export const PATCH = withVenue(withAuth('ADMIN', async function PATCH(
     const { entries } = body
 
     if (!entries || !Array.isArray(entries) || entries.length === 0) {
-      return NextResponse.json({ error: 'Entries array required' }, { status: 400 })
+      return err('Entries array required')
     }
 
     // Verify count exists and is in_progress
@@ -26,11 +27,11 @@ export const PATCH = withVenue(withAuth('ADMIN', async function PATCH(
     })
 
     if (!count || count.deletedAt) {
-      return NextResponse.json({ error: 'Inventory count not found' }, { status: 404 })
+      return notFound('Inventory count not found')
     }
 
     if (count.status !== 'in_progress') {
-      return NextResponse.json({ error: 'Count is not in progress' }, { status: 400 })
+      return err('Count is not in progress')
     }
 
     // Fetch inventory items for cost calculation
@@ -96,9 +97,9 @@ export const PATCH = withVenue(withAuth('ADMIN', async function PATCH(
     void notifyDataChanged({ locationId: count.locationId, domain: 'inventory', action: 'updated', entityId: id })
     pushUpstream()
 
-    return NextResponse.json({ data: { entries: updatedEntries } })
+    return ok({ entries: updatedEntries })
   } catch (error) {
     console.error('Update count entries error:', error)
-    return NextResponse.json({ error: 'Failed to update count entries' }, { status: 500 })
+    return err('Failed to update count entries', 500)
   }
 }))

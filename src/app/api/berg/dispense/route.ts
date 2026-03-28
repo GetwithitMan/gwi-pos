@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { MenuItemRepository } from '@/lib/repositories'
 import { withVenue } from '@/lib/with-venue'
@@ -10,6 +10,7 @@ import { createHash } from 'crypto'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { emitToLocation } from '@/lib/socket-server'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok, unauthorized } from '@/lib/api-response'
 const log = createChildLogger('berg-dispense')
 
 // Default 500ms — tight enough that real double-pours (>500ms apart) aren't deduplicated,
@@ -82,13 +83,13 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     rawBodyText = await request.text()
     body = JSON.parse(rawBodyText) as DispenseBody
   } catch {
-    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+    return err('Invalid JSON body')
   }
 
   const { deviceId, pluNumber, rawPacket, modifierBytes, trailerBytes, lrcReceived, lrcCalculated, lrcValid, parseStatus, receivedAt } = body
 
   if (!deviceId || pluNumber === undefined || !rawPacket) {
-    return NextResponse.json({ error: 'deviceId, pluNumber, rawPacket required' }, { status: 400 })
+    return err('deviceId, pluNumber, rawPacket required')
   }
 
   // Load device for HMAC validation
@@ -97,7 +98,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
   })
 
   if (!device) {
-    return NextResponse.json({ error: 'Unknown device' }, { status: 404 })
+    return notFound('Unknown device')
   }
 
   // Venue isolation: verify device belongs to the venue this request was routed to
@@ -109,7 +110,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     })
     if (!venueLocation || venueLocation.slug !== requestSlug) {
       console.error(`[berg/dispense] Device ${deviceId} locationId mismatch — device slug: ${venueLocation?.slug}, request slug: ${requestSlug}`)
-      return NextResponse.json({ error: 'Device not found' }, { status: 404 })
+      return notFound('Device not found')
     }
   }
 
@@ -123,7 +124,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
         plainSecret = decryptBridgeSecret(device.bridgeSecretEncrypted)
       } catch (err) {
         console.error(`[berg/dispense] Failed to decrypt secret for device ${deviceId}:`, err)
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+        return unauthorized('Unauthorized')
       }
     } else {
       // Legacy fallback: GWI_BRIDGE_SECRETS JSON env var.
@@ -138,20 +139,20 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
           `If the secret was recently rotated without BRIDGE_MASTER_KEY, add the new plaintext secret to ` +
           `GWI_BRIDGE_SECRETS={"${deviceId}":"<new-secret>"} or set BRIDGE_MASTER_KEY and re-rotate.`
         )
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+        return unauthorized('Unauthorized')
       }
       try {
         const secrets: Record<string, string> = JSON.parse(bridgeSecretsEnv)
         plainSecret = secrets[deviceId] ?? null
       } catch {
         console.error('[berg/dispense] GWI_BRIDGE_SECRETS is not valid JSON — rejecting')
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+        return unauthorized('Unauthorized')
       }
     }
 
     if (!plainSecret) {
       console.error(`[berg/dispense] No secret resolved for device ${deviceId} — rejecting`)
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return unauthorized('Unauthorized')
     }
 
     const hmacHeaders = {
@@ -165,13 +166,13 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     const claimedBodyHash = hmacHeaders.bodySha256
     if (claimedBodyHash && claimedBodyHash !== actualBodyHash) {
       console.error(`[berg/dispense] Body hash mismatch for device ${deviceId}: claimed=${claimedBodyHash} actual=${actualBodyHash}`)
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return unauthorized('Unauthorized')
     }
 
     const result = validateBridgeHMAC(hmacHeaders, deviceId, plainSecret)
     if (!result.valid) {
       console.error(`[berg/dispense] HMAC failed for device ${deviceId}: ${result.reason}`)
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return unauthorized('Unauthorized')
     }
   }
 
@@ -189,7 +190,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     // Log deduplications so the health report can surface high rates as a warning.
     // A high rate may indicate the window is too wide, or the ECU is retrying aggressively.
     console.warn(`[berg/dispense] Deduplicated event for device ${deviceId} PLU ${pluNumber} (window ${BERG_IDEMPOTENCY_WINDOW_MS}ms)`)
-    return NextResponse.json({ action: existing.status === 'NAK' || existing.status === 'NAK_TIMEOUT' ? 'NAK' : 'ACK', deduplicated: true })
+    return ok({ action: existing.status === 'NAK' || existing.status === 'NAK_TIMEOUT' ? 'NAK' : 'ACK', deduplicated: true })
   }
 
   // Bad LRC → NAK immediately
@@ -214,7 +215,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
         ackLatencyMs: Date.now() - startMs,
       },
     })
-    return NextResponse.json({ action: 'NAK', reason: 'BAD_LRC' })
+    return ok({ action: 'NAK', reason: 'BAD_LRC' })
   }
 
   // Load location settings for businessDate calculation
@@ -362,7 +363,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
       }
     })()
 
-    return NextResponse.json({ action: 'ACK' })
+    return ok({ action: 'ACK' })
   }
 
   // ===== REQUIRES_OPEN_ORDER mode =====
@@ -479,5 +480,5 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     void emitToLocation(device.locationId, 'orders:list-changed', { trigger: 'mutation', locationId: device.locationId }).catch(err => log.warn({ err }, 'socket emit failed'))
   }
 
-  return NextResponse.json({ action, reason: errorReason || undefined, orderItemId: orderItemId || undefined })
+  return ok({ action, reason: errorReason || undefined, orderItemId: orderItemId || undefined })
 }))

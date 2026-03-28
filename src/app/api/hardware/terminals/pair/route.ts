@@ -6,6 +6,7 @@ import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { getClientIp } from '@/lib/get-client-ip'
+import { err } from '@/lib/api-response'
 
 // POST complete terminal pairing with code
 export const POST = withVenue(withAuth('ADMIN', async function POST(request: NextRequest) {
@@ -14,11 +15,11 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     const { pairingCode, deviceFingerprint, deviceInfo } = body
     const locationId = body.locationId
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return err('locationId is required')
     }
 
     if (!pairingCode) {
-      return NextResponse.json({ error: 'Pairing code is required' }, { status: 400 })
+      return err('Pairing code is required')
     }
 
     // Find terminal with this pairing code
@@ -31,12 +32,12 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     })
 
     if (!terminal) {
-      return NextResponse.json({ error: 'Invalid pairing code' }, { status: 400 })
+      return err('Invalid pairing code')
     }
 
     // Check if code is expired
     if (terminal.pairingCodeExpiresAt && terminal.pairingCodeExpiresAt < new Date()) {
-      return NextResponse.json({ error: 'Pairing code has expired' }, { status: 400 })
+      return err('Pairing code has expired')
     }
 
     // Get client IP
@@ -117,6 +118,6 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     return response
   } catch (error) {
     console.error('Failed to pair terminal:', error)
-    return NextResponse.json({ error: 'Failed to pair terminal' }, { status: 500 })
+    return err('Failed to pair terminal', 500)
   }
 }))

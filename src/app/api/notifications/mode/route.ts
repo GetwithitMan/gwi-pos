@@ -8,7 +8,7 @@
  * Permission: notifications.manage_providers
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
@@ -16,6 +16,7 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { clearRoutingRulesCache } from '@/lib/notifications/dispatcher'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok } from '@/lib/api-response'
 const log = createChildLogger('notifications-mode')
 
 export const dynamic = 'force-dynamic'
@@ -29,12 +30,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.NOTIFICATIONS_MANAGE_PROVIDERS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const rows: any[] = await db.$queryRawUnsafe(
       `SELECT settings FROM "Location" WHERE id = $1`,
@@ -44,10 +45,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const settings = (rows[0]?.settings as Record<string, unknown>) || {}
     const mode = (settings.notificationMode as NotificationMode) || 'off'
 
-    return NextResponse.json({ data: { mode } })
+    return ok({ mode })
   } catch (error) {
     console.error('[Notification Mode] GET error:', error)
-    return NextResponse.json({ error: 'Failed to fetch notification mode' }, { status: 500 })
+    return err('Failed to fetch notification mode', 500)
   }
 })
 
@@ -57,21 +58,18 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.NOTIFICATIONS_MANAGE_PROVIDERS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const body = await request.json()
     const { mode } = body
 
     if (!mode || !VALID_MODES.includes(mode)) {
-      return NextResponse.json(
-        { error: `mode must be one of: ${VALID_MODES.join(', ')}` },
-        { status: 400 }
-      )
+      return err(`mode must be one of: ${VALID_MODES.join(', ')}`)
     }
 
     // Merge into existing Location.settings JSONB (preserve other keys)
@@ -99,9 +97,9 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       },
     }).catch(err => log.warn({ err }, 'Background task failed'))
 
-    return NextResponse.json({ data: { mode } })
+    return ok({ mode })
   } catch (error) {
     console.error('[Notification Mode] PUT error:', error)
-    return NextResponse.json({ error: 'Failed to update notification mode' }, { status: 500 })
+    return err('Failed to update notification mode', 500)
   }
 })

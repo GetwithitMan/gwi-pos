@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
@@ -6,6 +6,7 @@ import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { emitToLocation } from '@/lib/socket-server'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 
 const log = createChildLogger('location')
 
@@ -22,13 +23,13 @@ export const GET = withVenue(async function GET() {
     })
 
     if (!location) {
-      return NextResponse.json({ error: 'No location found' }, { status: 404 })
+      return notFound('No location found')
     }
 
-    return NextResponse.json({ data: location })
+    return ok(location)
   } catch (error) {
     console.error('Failed to fetch location:', error)
-    return NextResponse.json({ error: 'Failed to fetch location' }, { status: 500 })
+    return err('Failed to fetch location', 500)
   }
 })
 
@@ -39,7 +40,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
 
     const location = await db.location.findFirst()
     if (!location) {
-      return NextResponse.json({ error: 'No location found' }, { status: 404 })
+      return notFound('No location found')
     }
 
     const updateData: Record<string, string | null> = {}
@@ -64,9 +65,9 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
     void pushUpstream()
     void emitToLocation(location.id, 'settings:updated', { trigger: 'location-metadata-changed' }).catch(err => log.warn({ err }, 'socket emit failed'))
 
-    return NextResponse.json({ data: updated })
+    return ok(updated)
   } catch (error) {
     console.error('Failed to update location:', error)
-    return NextResponse.json({ error: 'Failed to update location' }, { status: 500 })
+    return err('Failed to update location', 500)
   }
 }))

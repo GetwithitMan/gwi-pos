@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // POST - Activate a pending house account
 // Requires: customer has a linked CardProfile (card on file) AND phone verified
@@ -29,18 +30,15 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     })
 
     if (!account) {
-      return NextResponse.json({ error: 'House account not found' }, { status: 404 })
+      return notFound('House account not found')
     }
 
     if (account.status === 'active') {
-      return NextResponse.json({ error: 'House account is already active' }, { status: 400 })
+      return err('House account is already active')
     }
 
     if (account.status !== 'pending') {
-      return NextResponse.json(
-        { error: `Cannot activate account with status '${account.status}'` },
-        { status: 400 }
-      )
+      return err(`Cannot activate account with status '${account.status}'`)
     }
 
     const missing: string[] = []
@@ -72,10 +70,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     }
 
     if (missing.length > 0) {
-      return NextResponse.json(
-        { error: 'Cannot activate house account', missing },
-        { status: 400 }
-      )
+      return err('Cannot activate house account')
     }
 
     // All checks passed — activate
@@ -87,18 +82,13 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     void notifyDataChanged({ locationId: account.locationId, domain: 'house-accounts', action: 'updated', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({
-      data: {
+    return ok({
         id: updated.id,
         status: updated.status,
         activatedAt: new Date().toISOString(),
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to activate house account:', error)
-    return NextResponse.json(
-      { error: 'Failed to activate house account' },
-      { status: 500 }
-    )
+    return err('Failed to activate house account', 500)
   }
 }))

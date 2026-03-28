@@ -1,5 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { refreshCellularToken, verifyCellularTokenWithGrace, verifyPlayIntegrity } from '@/lib/cellular-auth'
+import { err, forbidden, ok, unauthorized } from '@/lib/api-response'
 
 /**
  * POST /api/auth/refresh-cellular
@@ -23,7 +24,7 @@ export async function POST(request: NextRequest) {
     const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
 
     if (!token) {
-      return NextResponse.json({ error: 'Missing authorization token' }, { status: 401 })
+      return unauthorized('Missing authorization token')
     }
 
     // Use grace-aware verification for logging context — the token may be expired
@@ -44,10 +45,7 @@ export async function POST(request: NextRequest) {
           error: attestation.error,
           timestamp: new Date().toISOString(),
         }))
-        return NextResponse.json(
-          { error: 'Device attestation failed' },
-          { status: 403 }
-        )
+        return forbidden('Device attestation failed')
       }
     } else {
       // No attestation token provided — allow for gradual rollout but log warning
@@ -70,12 +68,12 @@ export async function POST(request: NextRequest) {
         graceExpired: graceResult === null && oldPayload === null,
         timestamp: new Date().toISOString(),
       }))
-      return NextResponse.json({ error: 'Token refresh denied' }, { status: 401 })
+      return unauthorized('Token refresh denied')
     }
 
-    return NextResponse.json({ token: newToken })
+    return ok({ token: newToken })
   } catch (error) {
     console.error('[refresh-cellular] Unexpected error:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return err('Internal server error', 500)
   }
 }

@@ -14,6 +14,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { getRequestLocationId } from '@/lib/request-context'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-seating')
 
 /**
@@ -73,7 +74,7 @@ export const GET = withVenue(async function GET(
         select: { id: true, locationId: true },
       })
       if (!orderCheck) {
-        return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+        return notFound('Order not found')
       }
       seatingLocationId = orderCheck.locationId
     }
@@ -90,13 +91,13 @@ export const GET = withVenue(async function GET(
     )
 
     if (!order) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      return notFound('Order not found')
     }
 
     // Auth check
     const auth = await requirePermission(employeeId, order.locationId, PERMISSIONS.POS_ACCESS)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // Calculate total seat count
@@ -183,7 +184,7 @@ export const GET = withVenue(async function GET(
       return sum + itemBase + modTotal
     }, 0)
 
-    return NextResponse.json({ data: {
+    return ok({
       orderId: order.id,
       baseSeatCount: order.baseSeatCount,
       extraSeatCount: order.extraSeatCount,
@@ -196,13 +197,10 @@ export const GET = withVenue(async function GET(
         subtotal: Math.round(sharedSubtotal * 100) / 100,
       },
       orderTotal: Number(order.total),
-    } })
+    })
   } catch (error) {
     console.error('Failed to get seating info:', error)
-    return NextResponse.json(
-      { error: 'Failed to get seating information' },
-      { status: 500 }
-    )
+    return err('Failed to get seating information', 500)
   }
 })
 
@@ -235,10 +233,7 @@ export const POST = withVenue(async function POST(
     const mutationOrigin = isCellularSeating ? 'cloud' : 'local'
 
     if (!action) {
-      return NextResponse.json(
-        { error: 'Action is required' },
-        { status: 400 }
-      )
+      return err('Action is required')
     }
 
     // Resolve employeeId from body or session
@@ -249,26 +244,26 @@ export const POST = withVenue(async function POST(
     if (!orderLocationId) {
       const orderForAuth = await db.order.findUnique({ where: { id: orderId }, select: { id: true, locationId: true } })
       if (!orderForAuth) {
-        return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+        return notFound('Order not found')
       }
       orderLocationId = orderForAuth.locationId
     }
     const auth = await requirePermission(employeeId, orderLocationId, PERMISSIONS.POS_ACCESS)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return err(auth.error, auth.status)
     }
 
     // RESET_TABLE: Remove ALL temp seats on a table regardless of which order created them
     if (action === 'RESET_TABLE') {
       if (!resetTableId) {
-        return NextResponse.json({ error: 'tableId is required for RESET_TABLE' }, { status: 400 })
+        return err('tableId is required for RESET_TABLE')
       }
       const table = await db.table.findUnique({
         where: { id: resetTableId },
         select: { locationId: true },
       })
       if (!table) {
-        return NextResponse.json({ error: 'Table not found' }, { status: 404 })
+        return notFound('Table not found')
       }
       // Soft-delete ALL temp seats on this table (any order)
       const deleted = await db.seat.updateMany({
@@ -289,7 +284,7 @@ export const POST = withVenue(async function POST(
         tableId: resetTableId,
         extraSeatCount: 0,
       }).catch(err => console.error('[order-events] seating RESET_TABLE emit failed:', err))
-      return NextResponse.json({ data: { action: 'RESET_TABLE', success: true, softDeletedSeats: deleted.count } })
+      return ok({ action: 'RESET_TABLE', success: true, softDeletedSeats: deleted.count })
     }
 
     // CLEANUP: Remove all temp seats for this order (used when closing panel with no items)
@@ -313,14 +308,11 @@ export const POST = withVenue(async function POST(
           action: 'CLEANUP',
         }).catch(err => console.error('[order-events] seating CLEANUP emit failed:', err))
       }
-      return NextResponse.json({ data: { action: 'CLEANUP', success: true } })
+      return ok({ action: 'CLEANUP', success: true })
     }
 
     if (!position || position < 1) {
-      return NextResponse.json(
-        { error: 'Position must be >= 1' },
-        { status: 400 }
-      )
+      return err('Position must be >= 1')
     }
 
     let locationIdForDispatch: string | null = null
@@ -597,7 +589,7 @@ export const POST = withVenue(async function POST(
 
     pushUpstream()
 
-    return NextResponse.json({ data: result })
+    return ok(result)
 
   } catch (error) {
     console.error('Failed to modify seating:', error)

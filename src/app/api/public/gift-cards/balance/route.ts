@@ -9,12 +9,13 @@
  */
 
 import crypto from 'crypto'
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { getDbForVenue } from '@/lib/db'
 import { GiftCardBalanceSchema } from '@/lib/site-api-schemas'
 import { checkOnlineRateLimit } from '@/lib/online-rate-limiter'
 import { getClientIp } from '@/lib/get-client-ip'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok } from '@/lib/api-response'
 
 const log = createChildLogger('public.gift-cards.balance')
 
@@ -24,10 +25,7 @@ export async function POST(request: NextRequest) {
   // Rate limit: reuse 'menu' bucket (30/min)
   const rateCheck = checkOnlineRateLimit(ip, 'gift-card-balance', 'menu')
   if (!rateCheck.allowed) {
-    return NextResponse.json(
-      { error: 'Too many requests. Please try again shortly.' },
-      { status: 429 }
-    )
+    return err('Too many requests. Please try again shortly.', 429)
   }
 
   let parsed
@@ -35,7 +33,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     parsed = GiftCardBalanceSchema.parse(body)
   } catch {
-    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
+    return err('Invalid request body')
   }
 
   const { number: cardNumber, pin, slug } = parsed
@@ -45,13 +43,13 @@ export async function POST(request: NextRequest) {
     try {
       venueDb = await getDbForVenue(slug)
     } catch {
-      return NextResponse.json({ valid: false, reason: 'Location not found' })
+      return ok({ valid: false, reason: 'Location not found' })
     }
 
     // Sanitize card number
     const sanitized = cardNumber.trim().toUpperCase()
     if (sanitized.length < 4 || sanitized.length > 30) {
-      return NextResponse.json({ valid: false, reason: 'Invalid card number format' })
+      return ok({ valid: false, reason: 'Invalid card number format' })
     }
 
     // Find the location for this venue
@@ -60,7 +58,7 @@ export async function POST(request: NextRequest) {
       select: { id: true },
     })
     if (!location) {
-      return NextResponse.json({ valid: false, reason: 'Location not found' })
+      return ok({ valid: false, reason: 'Location not found' })
     }
 
     // Look up gift card — case-insensitive via uppercase normalization
@@ -82,7 +80,7 @@ export async function POST(request: NextRequest) {
     })
 
     if (!giftCard) {
-      return NextResponse.json({ valid: false, reason: 'Gift card not found' })
+      return ok({ valid: false, reason: 'Gift card not found' })
     }
 
     // Check status
@@ -92,7 +90,7 @@ export async function POST(request: NextRequest) {
         expired: 'This gift card has expired',
         frozen: 'This gift card has been suspended',
       }
-      return NextResponse.json({
+      return ok({
         valid: false,
         reason: statusMessages[giftCard.status] || 'This gift card is not active',
       })
@@ -105,12 +103,12 @@ export async function POST(request: NextRequest) {
         where: { cardNumber: sanitized, status: 'active', deletedAt: null },
         data: { status: 'expired' },
       }).catch(err => log.warn({ err }, 'fire-and-forget failed in public.gift-cards.balance'))
-      return NextResponse.json({ valid: false, reason: 'This gift card has expired' })
+      return ok({ valid: false, reason: 'This gift card has expired' })
     }
 
     // Check frozen
     if (giftCard.frozenAt) {
-      return NextResponse.json({ valid: false, reason: 'This gift card has been suspended' })
+      return ok({ valid: false, reason: 'This gift card has been suspended' })
     }
 
     // PIN validation — timing-safe comparison to prevent side-channel attacks
@@ -119,20 +117,17 @@ export async function POST(request: NextRequest) {
       const pinMatch = giftCard.pin.length === pinStr.length &&
         crypto.timingSafeEqual(Buffer.from(giftCard.pin), Buffer.from(pinStr))
       if (!pinMatch) {
-        return NextResponse.json({ valid: false, reason: 'Invalid PIN' })
+        return ok({ valid: false, reason: 'Invalid PIN' })
       }
     }
 
-    return NextResponse.json({
+    return ok({
       valid: true,
       balance: Number(giftCard.currentBalance),
       last4: giftCard.cardNumber.slice(-4),
     })
   } catch (error) {
     console.error('[POST /api/public/gift-cards/balance] Error:', error)
-    return NextResponse.json(
-      { error: 'Failed to check gift card balance' },
-      { status: 500 }
-    )
+    return err('Failed to check gift card balance', 500)
   }
 }

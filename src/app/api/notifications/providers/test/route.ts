@@ -5,13 +5,14 @@
  * Permission: notifications.manage_providers
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('notifications-providers-test')
 
 export const dynamic = 'force-dynamic'
@@ -26,18 +27,18 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.NOTIFICATIONS_MANAGE_PROVIDERS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const body = await request.json()
     const { providerId } = body
 
     if (!providerId || typeof providerId !== 'string') {
-      return NextResponse.json({ error: 'providerId is required' }, { status: 400 })
+      return err('providerId is required')
     }
 
     // Fetch provider with full config (not masked)
@@ -51,7 +52,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     )
 
     if (providers.length === 0) {
-      return NextResponse.json({ error: 'Provider not found' }, { status: 404 })
+      return notFound('Provider not found')
     }
 
     const provider = providers[0]
@@ -119,8 +120,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       healthStatus
     ).catch(err => log.warn({ err }, 'Background task failed'))
 
-    return NextResponse.json({
-      data: {
+    return ok({
         providerId,
         providerType: provider.providerType,
         name: provider.name,
@@ -129,10 +129,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         previousHealthStatus: provider.healthStatus,
         consecutiveFailures: provider.consecutiveFailures,
         circuitBreakerOpenUntil: provider.circuitBreakerOpenUntil,
-      },
-    })
+      })
   } catch (error) {
     console.error('[Provider Test] POST error:', error)
-    return NextResponse.json({ error: 'Failed to test provider' }, { status: 500 })
+    return err('Failed to test provider', 500)
   }
 })

@@ -9,7 +9,7 @@
  * No auth (public endpoint) — validated by HMAC signature from webhookSecret.
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import {
   validateHmacSignature,
   resolveLocationForWebhook,
@@ -23,6 +23,7 @@ import {
 import { normalizeGrubhubItems } from '@/lib/delivery/order-mapper'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, ok, unauthorized } from '@/lib/api-response'
 const log = createChildLogger('webhooks-grubhub')
 
 // ── Fix 10: Comprehensive delivery status mapping ──
@@ -43,7 +44,7 @@ export async function POST(request: NextRequest) {
   try {
     payload = JSON.parse(rawBody)
   } catch {
-    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+    return err('Invalid JSON')
   }
 
   const eventType = String(payload.event_type || payload.type || '')
@@ -54,7 +55,7 @@ export async function POST(request: NextRequest) {
   const location = await resolveLocationForWebhook('grubhub', restaurantId || null)
   if (!location) {
     console.error('[grubhub/webhook] No matching location for restaurantId:', restaurantId)
-    return NextResponse.json({ received: true })
+    return ok({ received: true })
   }
 
   // ── Fix 8: Fail closed on missing secret ──
@@ -62,10 +63,10 @@ export async function POST(request: NextRequest) {
     || request.headers.get('x-signature')
   if (!location.webhookSecret) {
     console.error('[grubhub/webhook] CRITICAL: No webhookSecret configured — rejecting request.', location.locationId)
-    return NextResponse.json({ error: 'Webhook secret not configured' }, { status: 401 })
+    return unauthorized('Webhook secret not configured')
   } else if (!validateHmacSignature(rawBody, signature, location.webhookSecret)) {
     console.error('[grubhub/webhook] HMAC validation failed')
-    return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+    return unauthorized('Invalid signature')
   }
 
   const { locationId } = location
@@ -128,7 +129,7 @@ export async function POST(request: NextRequest) {
         })
 
         if (result.isDuplicate) {
-          return NextResponse.json({ received: true, duplicate: true })
+          return ok({ received: true, duplicate: true })
         }
 
         // Push third-party order upstream immediately so it survives NUC crash
@@ -212,9 +213,9 @@ export async function POST(request: NextRequest) {
         console.warn(`[grubhub/webhook] Unknown event type: ${eventType}`)
     }
 
-    return NextResponse.json({ received: true })
+    return ok({ received: true })
   } catch (error) {
     console.error('[grubhub/webhook] Error processing webhook:', error)
-    return NextResponse.json({ received: true })
+    return ok({ received: true })
   }
 }

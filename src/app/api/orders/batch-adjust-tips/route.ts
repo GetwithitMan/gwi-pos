@@ -17,6 +17,7 @@ import { pushUpstream, queueIfOutageOrFail, OutageQueueFullError } from '@/lib/s
 import { roundToCents } from '@/lib/pricing'
 import { getRequestLocationId } from '@/lib/request-context'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-batch-adjust-tips')
 
 interface TipAdjustment {
@@ -34,17 +35,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     if (!adjustments?.length || !employeeId) {
-      return NextResponse.json(
-        { error: 'Missing required fields: adjustments array and employeeId' },
-        { status: 400 }
-      )
+      return err('Missing required fields: adjustments array and employeeId')
     }
 
     if (adjustments.some(a => a.tipAmount < 0)) {
-      return NextResponse.json(
-        { error: 'Tip amounts cannot be negative' },
-        { status: 400 }
-      )
+      return err('Tip amounts cannot be negative')
     }
 
     // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
@@ -55,7 +50,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         select: { locationId: true },
       })
       if (!firstOrderLookup) {
-        return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+        return notFound('Order not found')
       }
       batchLocationId = firstOrderLookup.locationId
     }
@@ -63,7 +58,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const firstOrder = { locationId: batchLocationId }
     const authResult = await requirePermission(employeeId, firstOrder.locationId, PERMISSIONS.TIPS_PERFORM_ADJUSTMENTS)
     if (!authResult.authorized) {
-      return NextResponse.json({ error: authResult.error }, { status: authResult.status ?? 403 })
+      return err(authResult.error, authResult.status ?? 403)
     }
 
     const results: { orderId: string; success: boolean; error?: string }[] = []
@@ -370,19 +365,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const adjusted = results.filter(r => r.success).length
     const errors = results.filter(r => !r.success)
 
-    return NextResponse.json({
-      data: {
+    return ok({
         adjusted,
         totalTips,
         total: adjustments.length,
         errors,
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to batch adjust tips:', error)
-    return NextResponse.json(
-      { error: 'Failed to batch adjust tips' },
-      { status: 500 }
-    )
+    return err('Failed to batch adjust tips', 500)
   }
 })

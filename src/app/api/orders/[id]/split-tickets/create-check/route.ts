@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { handleApiError, NotFoundError, ValidationError } from '@/lib/api-errors'
 import { withVenue } from '@/lib/with-venue'
@@ -7,6 +7,7 @@ import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { dispatchOpenOrdersChanged, dispatchSplitCreated } from '@/lib/socket-dispatch'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { created, err } from '@/lib/api-response'
 const log = createChildLogger('orders-split-tickets-create-check')
 
 // ============================================
@@ -60,10 +61,7 @@ export const POST = withVenue(withAuth(async function POST(
 
     // Safety limit
     if (parentOrder._count.splitOrders >= 20) {
-      return NextResponse.json(
-        { error: 'Maximum 20 splits per order' },
-        { status: 400 }
-      )
+      return err('Maximum 20 splits per order')
     }
 
     // Next split index = max existing + 1
@@ -142,14 +140,11 @@ export const POST = withVenue(withAuth(async function POST(
 
     pushUpstream()
 
-    return NextResponse.json(
-      { data: {
+    return created({
         id: newOrder.id,
         splitIndex: newOrder.splitIndex,
         displayNumber: newOrder.displayNumber,
-      } },
-      { status: 201 }
-    )
+      })
   } catch (error) {
     return handleApiError(error, 'Failed to create check')
   }

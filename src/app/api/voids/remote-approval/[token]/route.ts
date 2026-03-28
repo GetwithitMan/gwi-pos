@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { ok } from '@/lib/api-response'
 
 export const GET = withVenue(async function GET(
   request: NextRequest,
@@ -68,20 +69,17 @@ export const GET = withVenue(async function GET(
     // Check if token has expired
     const now = new Date()
     if (approval.approvalTokenExpiry < now) {
-      return NextResponse.json({
-        data: {
+      return ok({
           valid: false,
           expired: true,
           status: 'expired',
           message: 'This approval request has expired',
-        },
-      })
+        })
     }
 
     // Check if already processed
     if (approval.status !== 'pending') {
-      return NextResponse.json({
-        data: {
+      return ok({
           valid: false,
           expired: false,
           status: approval.status,
@@ -100,8 +98,7 @@ export const GET = withVenue(async function GET(
             approval.approvalCodeExpiry > now
               ? approval.approvalCode
               : null,
-        },
-      })
+        })
     }
 
     const serverName =
@@ -112,8 +109,7 @@ export const GET = withVenue(async function GET(
       approval.manager.displayName ||
       `${approval.manager.firstName} ${approval.manager.lastName}`
 
-    return NextResponse.json({
-      data: {
+    return ok({
         valid: true,
         expired: false,
         status: approval.status,
@@ -130,8 +126,7 @@ export const GET = withVenue(async function GET(
           requestedAt: approval.createdAt.toISOString(),
           expiresAt: approval.approvalTokenExpiry.toISOString(),
         },
-      },
-    })
+      })
   } catch (error) {
     console.error('[RemoteVoidApproval] Error fetching by token:', error)
     return NextResponse.json(

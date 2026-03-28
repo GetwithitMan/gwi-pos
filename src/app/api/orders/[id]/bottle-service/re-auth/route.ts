@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
@@ -8,6 +8,7 @@ import { dispatchOrderUpdated } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-bottle-service-re-auth')
 
 // POST - Re-authorize (IncrementalAuth) when bottle service tab exceeds deposit
@@ -22,7 +23,7 @@ export const POST = withVenue(withAuth(async function POST(
     const { employeeId, additionalAmount } = body
 
     if (!employeeId) {
-      return NextResponse.json({ error: 'Missing required field: employeeId' }, { status: 400 })
+      return err('Missing required field: employeeId')
     }
 
     const order = await db.order.findFirst({
@@ -36,11 +37,11 @@ export const POST = withVenue(withAuth(async function POST(
     })
 
     if (!order) {
-      return NextResponse.json({ error: 'Bottle service order not found' }, { status: 404 })
+      return notFound('Bottle service order not found')
     }
 
     if (order.cards.length === 0) {
-      return NextResponse.json({ error: 'No authorized card on this bottle service tab' }, { status: 400 })
+      return err('No authorized card on this bottle service tab')
     }
 
     const defaultCard = order.cards[0]
@@ -94,16 +95,14 @@ export const POST = withVenue(withAuth(async function POST(
       pushUpstream()
     }
 
-    return NextResponse.json({
-      data: {
+    return ok({
         approved,
         incrementAmount,
         newAuthorizedAmount: approved ? Number(defaultCard.authAmount) + incrementAmount : Number(defaultCard.authAmount),
         error: error ? { code: error.code, message: error.text, isRetryable: error.isRetryable } : null,
-      },
-    })
+      })
   } catch (error) {
     console.error('Failed to re-authorize bottle service tab:', error)
-    return NextResponse.json({ error: 'Failed to re-authorize bottle service tab' }, { status: 500 })
+    return err('Failed to re-authorize bottle service tab', 500)
   }
 }))

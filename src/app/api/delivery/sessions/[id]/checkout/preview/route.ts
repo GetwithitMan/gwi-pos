@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId, getLocationSettings } from '@/lib/location-cache'
@@ -6,6 +6,7 @@ import { mergeWithDefaults, DEFAULT_DELIVERY } from '@/lib/settings'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
+import { err, notFound, ok } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -20,13 +21,13 @@ export const GET = withVenue(async function GET(
     const { id } = await params
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     // Auth check
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.DELIVERY_DISPATCH)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Feature gate
     const featureGate = await requireDeliveryFeature(locationId)
@@ -40,13 +41,13 @@ export const GET = withVenue(async function GET(
     `, id, locationId)
 
     if (!sessions.length) {
-      return NextResponse.json({ error: 'Session not found' }, { status: 404 })
+      return notFound('Session not found')
     }
 
     const session = sessions[0]
 
     if (session.endedAt) {
-      return NextResponse.json({ error: 'Session has already ended' }, { status: 400 })
+      return err('Session has already ended')
     }
 
     // Count deliveries in this session
@@ -95,7 +96,7 @@ export const GET = withVenue(async function GET(
     const startedAt = new Date(session.startedAt)
     const durationMinutes = Math.round((Date.now() - startedAt.getTime()) / (1000 * 60))
 
-    return NextResponse.json({
+    return ok({
       preview: {
         sessionId: id,
         driverId: session.driverId,
@@ -115,6 +116,6 @@ export const GET = withVenue(async function GET(
     })
   } catch (error) {
     console.error('[Delivery/Sessions/Checkout/Preview] GET error:', error)
-    return NextResponse.json({ error: 'Failed to generate checkout preview' }, { status: 500 })
+    return err('Failed to generate checkout preview', 500)
   }
 })

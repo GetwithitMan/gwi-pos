@@ -3,10 +3,11 @@ import { withVenue } from '@/lib/with-venue'
 import { getLocationSettings } from '@/lib/location-cache'
 import { parseSettings } from '@/lib/settings'
 import { db } from '@/lib/db'
+import { notFound, ok } from '@/lib/api-response'
 
 export const GET = withVenue(async function GET() {
   const location = await db.location.findFirst({ select: { id: true } })
-  if (!location) return NextResponse.json({ error: 'No location' }, { status: 404 })
+  if (!location) return notFound('No location')
 
   const settings = parseSettings(await getLocationSettings(location.id))
   const me = settings.marginEdge
@@ -22,8 +23,7 @@ export const GET = withVenue(async function GET() {
     })
   } catch { /* table may not exist yet */ }
 
-  return NextResponse.json({
-    data: {
+  return ok({
       enabled: me?.enabled ?? false,
       hasApiKey,
       configured,
@@ -35,6 +35,5 @@ export const GET = withVenue(async function GET() {
       lastInvoiceSyncAt: me?.lastInvoiceSyncAt ?? null,
       syncOptions: me?.syncOptions ?? null,
       productMappings,
-    }
-  })
+    })
 })

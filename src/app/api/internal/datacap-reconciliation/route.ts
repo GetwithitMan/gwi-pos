@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { getClientIp } from '@/lib/get-client-ip'
+import { err, notFound, ok, unauthorized } from '@/lib/api-response'
 
 // TODO (PAY-P2-4): Add a scheduled cron route (/api/cron/datacap-reconciliation) that:
 // 1. Finds orphaned _pending_datacap_sales rows older than 5 minutes with status='pending'
@@ -42,7 +43,7 @@ function authorize(request: NextRequest): boolean {
 
 export async function GET(request: NextRequest) {
   if (!authorize(request)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return unauthorized('Unauthorized')
   }
 
   const status = request.nextUrl.searchParams.get('status') || 'all'
@@ -84,7 +85,7 @@ export async function GET(request: NextRequest) {
       locationId: string
     }>>(query, ...params)
 
-    return NextResponse.json({
+    return ok({
       count: rows.length,
       sales: rows.map(r => ({
         ...r,
@@ -94,9 +95,9 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     // Table may not exist yet (migration not run)
     if (error instanceof Error && error.message.includes('_pending_datacap_sales')) {
-      return NextResponse.json({ count: 0, sales: [], note: 'Table not yet created — run migrations' })
+      return ok({ count: 0, sales: [], note: 'Table not yet created — run migrations' })
     }
-    return NextResponse.json({ error: 'Failed to query reconciliation data' }, { status: 500 })
+    return err('Failed to query reconciliation data', 500)
   }
 }
 
@@ -110,7 +111,7 @@ export async function GET(request: NextRequest) {
  */
 export async function PUT(request: NextRequest) {
   if (!authorize(request)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return unauthorized('Unauthorized')
   }
 
   try {
@@ -141,7 +142,7 @@ export async function PUT(request: NextRequest) {
       )
     }
 
-    return NextResponse.json({
+    return ok({
       orphanedCount: orphaned.length,
       orphaned: orphaned.map(o => ({
         id: o.id,
@@ -154,16 +155,16 @@ export async function PUT(request: NextRequest) {
     })
   } catch (error) {
     if (error instanceof Error && error.message.includes('_pending_datacap_sales')) {
-      return NextResponse.json({ orphanedCount: 0, orphaned: [], note: 'Table not yet created' })
+      return ok({ orphanedCount: 0, orphaned: [], note: 'Table not yet created' })
     }
     console.error('[Datacap Reconciliation] PUT error:', error)
-    return NextResponse.json({ error: 'Failed to run orphan detection' }, { status: 500 })
+    return err('Failed to run orphan detection', 500)
   }
 }
 
 export async function POST(request: Request) {
   if (!authorize(request as NextRequest)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return unauthorized('Unauthorized')
   }
 
   try {
@@ -171,15 +172,12 @@ export async function POST(request: Request) {
     const { id, resolution, note } = body as { id?: string; resolution?: string; note?: string }
 
     if (!id || !resolution) {
-      return NextResponse.json({ error: 'Missing required fields: id, resolution' }, { status: 400 })
+      return err('Missing required fields: id, resolution')
     }
 
     const validResolutions = ['voided', 'resolved', 'false_positive']
     if (!validResolutions.includes(resolution)) {
-      return NextResponse.json(
-        { error: `Invalid resolution. Must be one of: ${validResolutions.join(', ')}` },
-        { status: 400 }
-      )
+      return err(`Invalid resolution. Must be one of: ${validResolutions.join(', ')}`)
     }
 
     const result = await db.$executeRawUnsafe(
@@ -188,12 +186,12 @@ export async function POST(request: Request) {
     )
 
     if (result === 0) {
-      return NextResponse.json({ error: 'Record not found or already resolved' }, { status: 404 })
+      return notFound('Record not found or already resolved')
     }
 
-    return NextResponse.json({ success: true, id, resolution })
+    return ok({ success: true })
   } catch (error) {
     console.error('[Datacap Reconciliation] POST error:', error)
-    return NextResponse.json({ error: 'Failed to update reconciliation record' }, { status: 500 })
+    return err('Failed to update reconciliation record', 500)
   }
 }

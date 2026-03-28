@@ -14,7 +14,7 @@
  *  5. Return summary
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
@@ -22,6 +22,7 @@ import { getLocationId } from '@/lib/location-cache'
 import { parseSettings } from '@/lib/settings'
 import type { ReservationIntegration, ReservationPlatform } from '@/lib/settings'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // ─── Platform-Specific Formatters (stubs) ────────────────────────────────────
 
@@ -208,7 +209,7 @@ export const POST = withVenue(withAuth(async function POST(
   const locationId = await getLocationId()
 
   if (!locationId) {
-    return NextResponse.json({ error: 'No location found' }, { status: 400 })
+    return err('No location found')
   }
 
   // Load reservation
@@ -217,11 +218,11 @@ export const POST = withVenue(withAuth(async function POST(
   })
 
   if (!reservation) {
-    return NextResponse.json({ error: 'Reservation not found' }, { status: 404 })
+    return notFound('Reservation not found')
   }
 
   if (reservation.locationId !== locationId) {
-    return NextResponse.json({ error: 'Reservation not found' }, { status: 404 })
+    return notFound('Reservation not found')
   }
 
   // Load integration settings
@@ -231,7 +232,7 @@ export const POST = withVenue(withAuth(async function POST(
   })
 
   if (!location) {
-    return NextResponse.json({ error: 'Location not found' }, { status: 404 })
+    return notFound('Location not found')
   }
 
   const settings = parseSettings(location.settings)
@@ -240,7 +241,7 @@ export const POST = withVenue(withAuth(async function POST(
   )
 
   if (integrations.length === 0) {
-    return NextResponse.json({
+    return ok({
       success: true,
       message: 'No outbound integrations configured',
       synced: [],
@@ -325,7 +326,7 @@ export const POST = withVenue(withAuth(async function POST(
 
   pushUpstream()
 
-  return NextResponse.json({
+  return ok({
     success: true,
     reservationId: reservation.id,
     synced: results,

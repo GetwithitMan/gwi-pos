@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - Get a single order type
 export const GET = withVenue(async function GET(
@@ -18,19 +19,13 @@ export const GET = withVenue(async function GET(
     })
 
     if (!orderType) {
-      return NextResponse.json(
-        { error: 'Order type not found' },
-        { status: 404 }
-      )
+      return notFound('Order type not found')
     }
 
-    return NextResponse.json({ data: { orderType } })
+    return ok({ orderType })
   } catch (error) {
     console.error('Failed to fetch order type:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch order type' },
-      { status: 500 }
-    )
+    return err('Failed to fetch order type', 500)
   }
 })
 
@@ -49,10 +44,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     })
 
     if (!existing) {
-      return NextResponse.json(
-        { error: 'Order type not found' },
-        { status: 404 }
-      )
+      return notFound('Order type not found')
     }
 
     // System types have limited editability
@@ -86,7 +78,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
       void notifyDataChanged({ locationId: existing.locationId, domain: 'order-types', action: 'updated', entityId: id })
       void pushUpstream()
 
-      return NextResponse.json({ data: { orderType } })
+      return ok({ orderType })
     }
 
     // For custom types, allow full editing except isSystem and slug
@@ -126,13 +118,10 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     void notifyDataChanged({ locationId: existing.locationId, domain: 'order-types', action: 'updated', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: { orderType: updatedOrderType } })
+    return ok({ orderType: updatedOrderType })
   } catch (error) {
     console.error('Failed to update order type:', error)
-    return NextResponse.json(
-      { error: 'Failed to update order type' },
-      { status: 500 }
-    )
+    return err('Failed to update order type', 500)
   }
 }))
 
@@ -149,10 +138,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     })
 
     if (!existing) {
-      return NextResponse.json(
-        { error: 'Order type not found' },
-        { status: 404 }
-      )
+      return notFound('Order type not found')
     }
 
     // System types can only be deactivated, not deleted
@@ -163,10 +149,10 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
       })
       void notifyDataChanged({ locationId: existing.locationId, domain: 'order-types', action: 'updated', entityId: id })
       void pushUpstream()
-      return NextResponse.json({ data: {
+      return ok({
         message: 'System order type deactivated',
         orderType,
-      } })
+      })
     }
 
     // Check if any orders use this type (read from snapshot)
@@ -182,10 +168,10 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
       })
       void notifyDataChanged({ locationId: existing.locationId, domain: 'order-types', action: 'updated', entityId: id })
       void pushUpstream()
-      return NextResponse.json({ data: {
+      return ok({
         message: 'Order type deactivated (orders exist using this type)',
         orderType,
-      } })
+      })
     }
 
     // Soft delete if no orders use this type
@@ -197,15 +183,12 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     void notifyDataChanged({ locationId: existing.locationId, domain: 'order-types', action: 'deleted', entityId: id })
     void pushUpstream()
 
-    return NextResponse.json({ data: {
+    return ok({
       message: 'Order type deleted',
       deleted: true,
-    } })
+    })
   } catch (error) {
     console.error('Failed to delete order type:', error)
-    return NextResponse.json(
-      { error: 'Failed to delete order type' },
-      { status: 500 }
-    )
+    return err('Failed to delete order type', 500)
   }
 }))

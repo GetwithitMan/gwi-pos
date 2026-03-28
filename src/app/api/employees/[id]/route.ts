@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import * as EmployeeRepository from '@/lib/repositories/employee-repository'
 import { hashPin, PERMISSIONS } from '@/lib/auth'
@@ -10,6 +10,7 @@ import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { removeMemberFromGroup } from '@/lib/domain/tips/tip-groups'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok, unauthorized } from '@/lib/api-response'
 const log = createChildLogger('employees')
 
 // GET - Get employee details
@@ -21,7 +22,7 @@ export const GET = withVenue(async function GET(
     const { id } = await params
     const locationId = request.nextUrl.searchParams.get('locationId') || await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'Location required' }, { status: 400 })
+      return err('Location required')
     }
 
     const employee = await EmployeeRepository.getEmployeeByIdWithInclude(id, locationId, {
@@ -48,20 +49,17 @@ export const GET = withVenue(async function GET(
     })
 
     if (!employee) {
-      return NextResponse.json(
-        { error: 'Employee not found' },
-        { status: 404 }
-      )
+      return notFound('Employee not found')
     }
 
     // Auth check — always require staff.view permission (no bypass for missing identity)
     const actor = await getActorFromRequest(request)
     const requestingEmployeeId = actor.employeeId ?? request.nextUrl.searchParams.get('requestingEmployeeId')
     if (!requestingEmployeeId) {
-      return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
+      return unauthorized('Authentication required')
     }
     const auth = await requirePermission(requestingEmployeeId, employee.locationId, PERMISSIONS.STAFF_VIEW)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Get summary stats
     // TODO: Add EmployeeRepository.getEmployeeStats() for tenant-safe aggregate queries
@@ -88,7 +86,7 @@ export const GET = withVenue(async function GET(
       }),
     ])
 
-    return NextResponse.json({ data: {
+    return ok({
       id: employee.id,
       firstName: employee.firstName,
       lastName: employee.lastName,
@@ -121,13 +119,10 @@ export const GET = withVenue(async function GET(
           ? Number(totalCommission._sum.commissionTotal)
           : 0,
       },
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch employee:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch employee' },
-      { status: 500 }
-    )
+    return err('Failed to fetch employee', 500)
   }
 })
 
@@ -143,23 +138,23 @@ export const PUT = withVenue(async function PUT(
     // Resolve locationId — body → fallback to cached location
     const locationId = body.locationId || await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'Location required' }, { status: 400 })
+      return err('Location required')
     }
 
     // Auth check — require staff.edit_profile permission
     const actor = await getActorFromRequest(request)
     const resolvedEmployeeId = actor.employeeId ?? body.requestingEmployeeId
     const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.STAFF_EDIT_PROFILE)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Sensitive field checks — require elevated permissions for wage and role assignment
     if (body.hourlyRate !== undefined || body.hireDate !== undefined) {
       const wageAuth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.STAFF_EDIT_WAGES)
-      if (!wageAuth.authorized) return NextResponse.json({ error: wageAuth.error }, { status: wageAuth.status })
+      if (!wageAuth.authorized) return err(wageAuth.error, wageAuth.status)
     }
     if (body.roleId !== undefined || body.additionalRoleIds !== undefined) {
       const roleAuth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.STAFF_ASSIGN_ROLES)
-      if (!roleAuth.authorized) return NextResponse.json({ error: roleAuth.error }, { status: roleAuth.status })
+      if (!roleAuth.authorized) return err(roleAuth.error, roleAuth.status)
     }
 
     const {
@@ -198,10 +193,7 @@ export const PUT = withVenue(async function PUT(
     const existing = await EmployeeRepository.getEmployeeById(id, locationId)
 
     if (!existing) {
-      return NextResponse.json(
-        { error: 'Employee not found' },
-        { status: 404 }
-      )
+      return notFound('Employee not found')
     }
 
     // Build update data
@@ -222,10 +214,7 @@ export const PUT = withVenue(async function PUT(
     // Handle PIN change
     if (pin) {
       if (!/^\d{4,6}$/.test(pin)) {
-        return NextResponse.json(
-          { error: 'PIN must be 4-6 digits' },
-          { status: 400 }
-        )
+        return err('PIN must be 4-6 digits')
       }
       updateData.pin = await hashPin(pin)
       updateData.requiresPinChange = false // Clear forced change after explicit update
@@ -241,10 +230,7 @@ export const PUT = withVenue(async function PUT(
       })
 
       if (!role) {
-        return NextResponse.json(
-          { error: 'Role not found' },
-          { status: 404 }
-        )
+        return notFound('Role not found')
       }
       updateData.roleId = roleId
     }
@@ -267,7 +253,7 @@ export const PUT = withVenue(async function PUT(
     })
 
     if (!employee) {
-      return NextResponse.json({ error: 'Employee not found after update' }, { status: 404 })
+      return notFound('Employee not found after update')
     }
 
     // Sync EmployeeRole junction table (multi-role support)
@@ -331,7 +317,7 @@ export const PUT = withVenue(async function PUT(
       }
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       id: employee.id,
       firstName: employee.firstName,
       lastName: employee.lastName,
@@ -350,13 +336,10 @@ export const PUT = withVenue(async function PUT(
       defaultScreen: employee.defaultScreen,
       defaultOrderType: employee.defaultOrderType,
       updatedAt: employee.updatedAt.toISOString(),
-    } })
+    })
   } catch (error) {
     console.error('Failed to update employee:', error)
-    return NextResponse.json(
-      { error: 'Failed to update employee' },
-      { status: 500 }
-    )
+    return err('Failed to update employee', 500)
   }
 })
 
@@ -373,18 +356,15 @@ export const DELETE = withVenue(async function DELETE(
     const requestingEmployeeId = searchParams.get('requestingEmployeeId')
     const locationId = searchParams.get('locationId') || await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'Location required' }, { status: 400 })
+      return err('Location required')
     }
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.STAFF_EDIT_PROFILE)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const employee = await EmployeeRepository.getEmployeeById(id, locationId)
 
     if (!employee) {
-      return NextResponse.json(
-        { error: 'Employee not found' },
-        { status: 404 }
-      )
+      return notFound('Employee not found')
     }
 
     // Check for open orders (all active statuses, not just open/pending)
@@ -397,10 +377,7 @@ export const DELETE = withVenue(async function DELETE(
     })
 
     if (openOrders > 0) {
-      return NextResponse.json(
-        { error: `Cannot deactivate employee with ${openOrders} open order(s). Close or transfer orders first.` },
-        { status: 400 }
-      )
+      return err(`Cannot deactivate employee with ${openOrders} open order(s). Close or transfer orders first.`)
     }
 
     // Soft delete - just deactivate (tenant-scoped)
@@ -430,12 +407,9 @@ export const DELETE = withVenue(async function DELETE(
       console.error('[employee] Failed to query tip group memberships:', e)
     }
 
-    return NextResponse.json({ data: { success: true } })
+    return ok({ success: true })
   } catch (error) {
     console.error('Failed to deactivate employee:', error)
-    return NextResponse.json(
-      { error: 'Failed to deactivate employee' },
-      { status: 500 }
-    )
+    return err('Failed to deactivate employee', 500)
   }
 })

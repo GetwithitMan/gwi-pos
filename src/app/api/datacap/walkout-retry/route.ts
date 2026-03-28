@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
@@ -10,6 +10,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { logger } from '@/lib/logger'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // POST - Retry capture for a walkout tab (manual trigger)
 export const POST = withVenue(async function POST(request: NextRequest) {
@@ -18,12 +19,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     try {
       body = await request.json()
     } catch {
-      return NextResponse.json({ error: 'Invalid JSON request body' }, { status: 400 })
+      return err('Invalid JSON request body')
     }
     const { walkoutRetryId, employeeId } = body
 
     if (!walkoutRetryId) {
-      return NextResponse.json({ error: 'Missing walkoutRetryId' }, { status: 400 })
+      return err('Missing walkoutRetryId')
     }
 
     const retry = await db.walkoutRetry.findFirst({
@@ -31,7 +32,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     if (!retry) {
-      return NextResponse.json({ error: 'Walkout retry not found or already resolved' }, { status: 404 })
+      return notFound('Walkout retry not found or already resolved')
     }
 
     // Get the order card to retry against (include card info for Payment record)
@@ -41,14 +42,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     if (!orderCard) {
-      return NextResponse.json({ error: 'Order card not found' }, { status: 404 })
+      return notFound('Order card not found')
     }
 
     const locationId = retry.locationId
 
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.POS_CARD_PAYMENTS)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status ?? 403 })
+      return err(auth.error, auth.status ?? 403)
     }
 
     const settings = parseSettings(await getLocationSettings(locationId))
@@ -64,15 +65,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         data: { status: 'exhausted' },
       })
       pushUpstream()
-      return NextResponse.json({
-        data: {
+      return ok({
           success: false,
           status: 'exhausted',
           retryCount: retry.retryCount,
           maxCaptureRetries,
           error: `Maximum retry attempts (${maxCaptureRetries}) reached`,
-        },
-      })
+        })
     }
 
     try {
@@ -102,9 +101,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
         if (updatedRows === 0) {
           // Another request already collected — this is a duplicate
-          return NextResponse.json({
-            data: { success: true, duplicate: true, status: 'collected', amount: Number(retry.amount) },
-          })
+          return ok({ success: true, duplicate: true, status: 'collected', amount: Number(retry.amount) })
         }
 
         // BUG #459 FIX: Update OrderCard, Order status, and create Payment record
@@ -164,14 +161,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           },
         ])
 
-        return NextResponse.json({
-          data: {
+        return ok({
             success: true,
             status: 'collected',
             amount: captureAmount,
             authCode: response.authCode,
-          },
-        })
+          })
       } else {
         // Calculate next retry using DB time
         const now = new Date()
@@ -199,15 +194,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         )
         pushUpstream()
 
-        return NextResponse.json({
-          data: {
+        return ok({
             success: false,
             status: exhausted ? 'exhausted' : 'pending',
             retryCount: retry.retryCount + 1,
             nextRetryAt: exhausted ? null : nextRetry.toISOString(),
             error: error ? { code: error.code, message: error.text } : null,
-          },
-        })
+          })
       }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Retry failed'
@@ -223,13 +216,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       )
       pushUpstream()
 
-      return NextResponse.json({
-        data: { success: false, error: errorMsg },
-      })
+      return ok({ success: false, error: errorMsg })
     }
   } catch (error) {
     logger.error('datacap', 'Failed to process walkout retry', error)
-    return NextResponse.json({ error: 'Failed to process walkout retry' }, { status: 500 })
+    return err('Failed to process walkout retry', 500)
   }
 })
 
@@ -242,7 +233,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const orderId = searchParams.get('orderId')
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Missing locationId' }, { status: 400 })
+      return err('Missing locationId')
     }
 
     // If filtering by orderId, find order cards first to get walkout retry IDs
@@ -254,7 +245,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       })
       orderCardFilter = orderCards.map(c => c.id)
       if (orderCardFilter.length === 0) {
-        return NextResponse.json({ data: [] })
+        return ok([])
       }
     }
 
@@ -276,8 +267,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     })
     const cardMap = new Map(orderCards.map(c => [c.id, c]))
 
-    return NextResponse.json({
-      data: retries.map(r => {
+    return ok(retries.map(r => {
         const card = cardMap.get(r.orderCardId)
         return {
           id: r.id,
@@ -296,10 +286,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           cardholderName: card?.cardholderName,
           createdAt: r.createdAt.toISOString(),
         }
-      }),
-    })
+      }))
   } catch (error) {
     logger.error('datacap', 'Failed to list walkout retries', error)
-    return NextResponse.json({ error: 'Failed to list walkout retries' }, { status: 500 })
+    return err('Failed to list walkout retries', 500)
   }
 })

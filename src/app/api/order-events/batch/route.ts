@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
@@ -13,6 +13,7 @@ import {
 import { ingestAndProject, type IngestEvent } from '@/lib/order-events/ingester'
 import { emitToTerminal } from '@/lib/socket-server'
 import { authenticateTerminal } from '@/lib/terminal-auth'
+import { err, ok } from '@/lib/api-response'
 
 /**
  * POST /api/order-events/batch
@@ -39,18 +40,12 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
   const events: BatchEventInput[] = body.events
 
   if (!Array.isArray(events) || events.length === 0) {
-    return NextResponse.json(
-      { error: 'events array is required and must not be empty' },
-      { status: 400 }
-    )
+    return err('events array is required and must not be empty')
   }
 
   // Cap batch size to prevent abuse
   if (events.length > 500) {
-    return NextResponse.json(
-      { error: 'Batch size exceeds maximum of 500 events' },
-      { status: 400 }
-    )
+    return err('Batch size exceeds maximum of 500 events')
   }
 
   const accepted: BatchEventResponse['accepted'] = []
@@ -158,7 +153,5 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     })()
   }
 
-  return NextResponse.json({
-    data: { accepted, rejected } satisfies BatchEventResponse,
-  })
+  return ok({ accepted, rejected })
 }))

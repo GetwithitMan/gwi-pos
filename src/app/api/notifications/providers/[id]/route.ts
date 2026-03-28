@@ -6,7 +6,7 @@
  * Permission: GET = notifications.view_log, PUT/DELETE = notifications.manage_providers
  */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
@@ -15,6 +15,7 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { clearRoutingRulesCache } from '@/lib/notifications/dispatcher'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('notifications-providers')
 
 export const dynamic = 'force-dynamic'
@@ -94,12 +95,12 @@ export const GET = withVenue(async function GET(
     const { id } = await params
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.NOTIFICATIONS_VIEW_LOG)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const providers: any[] = await db.$queryRawUnsafe(
       `SELECT id, "locationId", "providerType", name, "isActive", "isDefault",
@@ -115,20 +116,18 @@ export const GET = withVenue(async function GET(
     )
 
     if (providers.length === 0) {
-      return NextResponse.json({ error: 'Provider not found' }, { status: 404 })
+      return notFound('Provider not found')
     }
 
     const provider = providers[0]
 
-    return NextResponse.json({
-      data: {
+    return ok({
         ...provider,
         config: provider.config ? maskConfig(provider.config as Record<string, unknown>) : null,
-      },
-    })
+      })
   } catch (error) {
     console.error('[Notification Provider] GET [id] error:', error)
-    return NextResponse.json({ error: 'Failed to fetch provider' }, { status: 500 })
+    return err('Failed to fetch provider', 500)
   }
 })
 
@@ -142,12 +141,12 @@ export const PUT = withVenue(async function PUT(
     const { id } = await params
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.NOTIFICATIONS_MANAGE_PROVIDERS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Fetch existing provider
     const existing: any[] = await db.$queryRawUnsafe(
@@ -160,7 +159,7 @@ export const PUT = withVenue(async function PUT(
     )
 
     if (existing.length === 0) {
-      return NextResponse.json({ error: 'Provider not found' }, { status: 404 })
+      return notFound('Provider not found')
     }
 
     const provider = existing[0]
@@ -178,15 +177,12 @@ export const PUT = withVenue(async function PUT(
 
     // Validate name if provided
     if (name !== undefined && (typeof name !== 'string' || name.trim().length === 0)) {
-      return NextResponse.json({ error: 'name must be a non-empty string' }, { status: 400 })
+      return err('name must be a non-empty string')
     }
 
     // Validate executionZone if provided
     if (executionZone !== undefined && !VALID_EXECUTION_ZONES.includes(executionZone)) {
-      return NextResponse.json(
-        { error: `executionZone must be one of: ${VALID_EXECUTION_ZONES.join(', ')}` },
-        { status: 400 }
-      )
+      return err(`executionZone must be one of: ${VALID_EXECUTION_ZONES.join(', ')}`)
     }
 
     // Validate config with Zod schema for the provider type
@@ -195,17 +191,14 @@ export const PUT = withVenue(async function PUT(
 
     if (config !== undefined) {
       if (typeof config !== 'object' || config === null) {
-        return NextResponse.json({ error: 'config must be an object' }, { status: 400 })
+        return err('config must be an object')
       }
 
       const schema = CONFIG_SCHEMAS[provider.providerType]
       if (schema) {
         const parseResult = schema.safeParse(config)
         if (!parseResult.success) {
-          return NextResponse.json(
-            { error: `Invalid config for ${provider.providerType}: ${parseResult.error.message}` },
-            { status: 400 }
-          )
+          return err(`Invalid config for ${provider.providerType}: ${parseResult.error.message}`)
         }
         validatedConfig = parseResult.data
       } else {
@@ -294,7 +287,7 @@ export const PUT = withVenue(async function PUT(
     )
 
     if (updated.length === 0) {
-      return NextResponse.json({ error: 'Provider not found or already deleted' }, { status: 404 })
+      return notFound('Provider not found or already deleted')
     }
 
     const result = updated[0]
@@ -320,15 +313,13 @@ export const PUT = withVenue(async function PUT(
       },
     }).catch(err => log.warn({ err }, 'Background task failed'))
 
-    return NextResponse.json({
-      data: {
+    return ok({
         ...result,
         config: result.config ? maskConfig(result.config as Record<string, unknown>) : null,
-      },
-    })
+      })
   } catch (error) {
     console.error('[Notification Provider] PUT [id] error:', error)
-    return NextResponse.json({ error: 'Failed to update provider' }, { status: 500 })
+    return err('Failed to update provider', 500)
   }
 })
 
@@ -342,12 +333,12 @@ export const DELETE = withVenue(async function DELETE(
     const { id } = await params
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.NOTIFICATIONS_MANAGE_PROVIDERS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Check provider exists
     const existing: any[] = await db.$queryRawUnsafe(
@@ -359,7 +350,7 @@ export const DELETE = withVenue(async function DELETE(
     )
 
     if (existing.length === 0) {
-      return NextResponse.json({ error: 'Provider not found' }, { status: 404 })
+      return notFound('Provider not found')
     }
 
     const provider = existing[0]
@@ -379,12 +370,7 @@ export const DELETE = withVenue(async function DELETE(
 
     if (activeRules.length > 0) {
       const ruleNames = activeRules.map((r: any) => r.eventType || r.id).join(', ')
-      return NextResponse.json(
-        {
-          error: `Cannot delete provider: ${activeRules.length} active routing rule(s) reference it: ${ruleNames}. Deactivate or reassign those rules first.`,
-        },
-        { status: 409 }
-      )
+      return err(`Cannot delete provider: ${activeRules.length} active routing rule(s) reference it: ${ruleNames}. Deactivate or reassign those rules first.`, 409)
     }
 
     // Soft-delete
@@ -414,9 +400,9 @@ export const DELETE = withVenue(async function DELETE(
       },
     }).catch(err => log.warn({ err }, 'Background task failed'))
 
-    return NextResponse.json({ success: true, message: 'Provider deleted' })
+    return ok({ success: true, message: 'Provider deleted' })
   } catch (error) {
     console.error('[Notification Provider] DELETE [id] error:', error)
-    return NextResponse.json({ error: 'Failed to delete provider' }, { status: 500 })
+    return err('Failed to delete provider', 500)
   }
 })

@@ -13,7 +13,7 @@
  * These two systems are independent. Changes here do NOT affect InventoryItem stock and vice versa.
  * The COGS system is the authoritative source for ingredient-level inventory and cost tracking.
  */
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db as prisma } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { SOCKET_EVENTS } from '@/lib/socket-events'
@@ -22,6 +22,7 @@ import { queueSocketEvent, flushOutboxSafe } from '@/lib/socket-outbox'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - List inventory levels and transactions
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -32,7 +33,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const lowStockOnly = searchParams.get('lowStockOnly') === 'true'
 
     if (!locationId) {
-      return NextResponse.json({ error: 'Location ID required' }, { status: 400 })
+      return err('Location ID required')
     }
 
     // Get items with inventory tracking
@@ -77,7 +78,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       : []
     const itemNameMap = new Map(transactionItems.map(i => [i.id, i.name]))
 
-    return NextResponse.json({ data: {
+    return ok({
       items: items.map(i => ({
         id: i.id,
         name: i.name,
@@ -104,10 +105,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         totalCost: t.totalCost ? Number(t.totalCost) : null,
         createdAt: t.createdAt,
       })),
-    } })
+    })
   } catch (error) {
     console.error('Inventory error:', error)
-    return NextResponse.json({ error: 'Failed to fetch inventory' }, { status: 500 })
+    return err('Failed to fetch inventory', 500)
   }
 })
 
@@ -128,9 +129,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     } = body
 
     if (!locationId || !menuItemId || !type || quantityChange === undefined) {
-      return NextResponse.json({
-        error: 'Location ID, menu item ID, type, and quantity change required',
-      }, { status: 400 })
+      return err('Location ID, menu item ID, type, and quantity change required')
     }
 
     // Get current stock
@@ -140,7 +139,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     })
 
     if (!item) {
-      return NextResponse.json({ error: 'Menu item not found' }, { status: 404 })
+      return notFound('Menu item not found')
     }
 
     const quantityBefore = item.currentStock ?? 0
@@ -238,7 +237,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       })
     }
 
-    return NextResponse.json({ data: {
+    return ok({
       transaction: {
         id: transaction.id,
         type: transaction.type,
@@ -248,9 +247,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       },
       newStock: quantityAfter,
       isAvailable: quantityAfter > 0,
-    } })
+    })
   } catch (error) {
     console.error('Inventory transaction error:', error)
-    return NextResponse.json({ error: 'Failed to record transaction' }, { status: 500 })
+    return err('Failed to record transaction', 500)
   }
 }))

@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { getLocationId } from '@/lib/location-cache'
+import { err, ok } from '@/lib/api-response'
 
 /**
  * GET /api/liquor/menu-items
@@ -13,10 +14,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
     // Get the location
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'No location found' },
-        { status: 400 }
-      )
+      return err('No location found')
     }
 
     // Get all liquor categories
@@ -67,8 +65,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
       ],
     })
 
-    return NextResponse.json(
-      menuItems.map((item) => ({
+    return ok(menuItems.map((item) => ({
         id: item.id,
         name: item.name,
         price: Number(item.price),
@@ -86,13 +83,9 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
               spiritCategory: item.linkedBottleProduct.spiritCategory,
             }
           : null,
-      }))
-    )
+      })))
   } catch (error) {
     console.error('Failed to fetch liquor menu items:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch liquor menu items' },
-      { status: 500 }
-    )
+    return err('Failed to fetch liquor menu items', 500)
   }
 }))

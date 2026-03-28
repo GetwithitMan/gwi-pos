@@ -19,6 +19,7 @@ import { masterClient } from '@/lib/db'
 import { EXPECTED_SCHEMA_VERSION } from '@/lib/version-contract'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { err, unauthorized } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
 
@@ -115,11 +116,11 @@ export async function GET(req: NextRequest) {
   if (!hasApiKey) {
     const actor = await getActorFromRequest(req)
     if (!actor.employeeId || !actor.locationId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return unauthorized('Unauthorized')
     }
     const auth = await requirePermission(actor.employeeId, actor.locationId, PERMISSIONS.SETTINGS_VIEW)
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status ?? 403 })
+      return err(auth.error, auth.status ?? 403)
     }
   }
 

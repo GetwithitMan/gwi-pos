@@ -15,6 +15,7 @@ import {
 } from '@/lib/domain/shift-close'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('shifts')
 
 // GET - Get shift details with sales summary
@@ -47,10 +48,7 @@ export const GET = withVenue(async function GET(
     })
 
     if (!shift) {
-      return NextResponse.json(
-        { error: 'Shift not found' },
-        { status: 404 }
-      )
+      return notFound('Shift not found')
     }
 
     // Get all orders/payments for this shift period
@@ -67,7 +65,7 @@ export const GET = withVenue(async function GET(
       ? await getShiftTipDistributionSummary(shift.id, shift.locationId)
       : null
 
-    return NextResponse.json({ data: {
+    return ok({
       shift: {
         id: shift.id,
         employee: {
@@ -93,13 +91,10 @@ export const GET = withVenue(async function GET(
       },
       summary: shiftSummary,
       tipDistribution: tipDistributionData,
-    } })
+    })
   } catch (error) {
     console.error('Failed to fetch shift:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch shift' },
-      { status: 500 }
-    )
+    return err('Failed to fetch shift', 500)
   }
 })
 
@@ -133,19 +128,13 @@ export const PUT = withVenue(async function PUT(
     })
 
     if (!shift) {
-      return NextResponse.json(
-        { error: 'Shift not found' },
-        { status: 404 }
-      )
+      return notFound('Shift not found')
     }
 
     if (action === 'close') {
       // Require requesting employee ID for shift close
       if (!requestingEmployeeId) {
-        return NextResponse.json(
-          { error: 'requestingEmployeeId is required to close a shift' },
-          { status: 400 }
-        )
+        return err('requestingEmployeeId is required to close a shift')
       }
 
       // Auth: must be the shift owner or have manager.bulk_operations
@@ -154,15 +143,12 @@ export const PUT = withVenue(async function PUT(
           PERMISSIONS.MGR_BULK_OPERATIONS,
         ])
         if (!auth.authorized) {
-          return NextResponse.json({ error: auth.error }, { status: auth.status })
+          return err(auth.error, auth.status)
         }
       }
 
       if (shift.status === 'closed') {
-        return NextResponse.json(
-          { error: 'Shift is already closed' },
-          { status: 400 }
-        )
+        return err('Shift is already closed')
       }
 
       // Check for pending outage queue entries before closing the shift.
@@ -186,10 +172,7 @@ export const PUT = withVenue(async function PUT(
       const effectiveActualCash = cashMode === 'none' ? 0 : actualCash
 
       if (effectiveActualCash === undefined) {
-        return NextResponse.json(
-          { error: 'Actual cash count is required to close shift' },
-          { status: 400 }
-        )
+        return err('Actual cash count is required to close shift')
       }
 
       // Calculate shift summary (drawer-aware for bartender mode)
@@ -276,7 +259,7 @@ export const PUT = withVenue(async function PUT(
         closedAt: updatedShift.endedAt?.toISOString() || new Date().toISOString(),
       }).catch(err => log.warn({ err }, 'Background task failed'))
 
-      return NextResponse.json({ data: {
+      return ok({
         shift: {
           id: updatedShift.id,
           employee: {
@@ -306,7 +289,7 @@ export const PUT = withVenue(async function PUT(
           : variance > 0
             ? `Shift closed. Drawer is OVER by $${variance.toFixed(2)}`
             : `Shift closed. Drawer is SHORT by $${Math.abs(variance).toFixed(2)}`,
-      } })
+      })
     }
 
     // Simple update (notes, etc.)
@@ -321,10 +304,10 @@ export const PUT = withVenue(async function PUT(
     // Real-time cross-terminal update
     void emitToLocation(shift.locationId, 'shifts:changed', { action: 'updated', shiftId: id }).catch(err => log.warn({ err }, 'socket emit failed'))
 
-    return NextResponse.json({ data: {
+    return ok({
       shift: updatedShift,
       message: 'Shift updated',
-    } })
+    })
   } catch (error) {
     // Handle structured errors from the transaction
     if (error instanceof Error && error.message.startsWith('OPEN_ORDERS:')) {
@@ -425,10 +408,7 @@ export const PUT = withVenue(async function PUT(
     }
 
     console.error('Failed to update shift:', error)
-    return NextResponse.json(
-      { error: 'Failed to update shift' },
-      { status: 500 }
-    )
+    return err('Failed to update shift', 500)
   }
 })
 

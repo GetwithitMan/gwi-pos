@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { requireAnyPermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -9,6 +9,7 @@ import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { getRequestLocationId } from '@/lib/request-context'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, forbidden, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-bulk-action')
 
 export const POST = withVenue(withAuth(async function POST(request: NextRequest) {
@@ -23,7 +24,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     }
 
     if (!orderIds?.length || !action || !employeeId) {
-      return NextResponse.json({ error: 'Missing required fields: orderIds, action, employeeId' }, { status: 400 })
+      return err('Missing required fields: orderIds, action, employeeId')
     }
 
     // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
@@ -34,7 +35,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
         select: { locationId: true },
       })
       if (!firstOrder) {
-        return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+        return notFound('Order not found')
       }
       locationId = firstOrder.locationId
     }
@@ -42,7 +43,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     // Require manager permission
     const auth = await requireAnyPermission(employeeId, locationId, [PERMISSIONS.MGR_BULK_OPERATIONS])
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error || 'Manager permission required' }, { status: 403 })
+      return forbidden(auth.error || 'Manager permission required')
     }
 
     const now = new Date()
@@ -112,10 +113,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
       })
       if (ordersWithPreAuth.length > 0) {
         const nums = ordersWithPreAuth.map(o => `#${o.orderNumber}`).join(', ')
-        return NextResponse.json(
-          { error: `Orders ${nums} have a pre-authorization and must be voided, not cancelled` },
-          { status: 422 }
-        )
+        return err(`Orders ${nums} have a pre-authorization and must be voided, not cancelled`, 422)
       }
 
       const cancelledTableIds = await db.$transaction(async (tx) => {
@@ -183,7 +181,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
 
     } else if (action === 'transfer') {
       if (!toEmployeeId) {
-        return NextResponse.json({ error: 'toEmployeeId required for transfer' }, { status: 400 })
+        return err('toEmployeeId required for transfer')
       }
 
       // TX-KEEP: BULK — batch transfer multiple orders to new employee by ID array; no batch repo method
@@ -243,16 +241,14 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     dispatchOpenOrdersChanged(locationId, { trigger: 'updated' as any }, { async: true }).catch(err => log.warn({ err }, 'open orders dispatch failed'))
     dispatchFloorPlanUpdate(locationId, { async: true }).catch(err => log.warn({ err }, 'floor plan dispatch failed'))
 
-    return NextResponse.json({
-      data: {
+    return ok({
         success: true,
         action,
         processedCount,
         orderIds,
-      },
-    })
+      })
   } catch (error) {
     console.error('[Bulk Action] Error:', error)
-    return NextResponse.json({ error: 'Failed to process bulk action' }, { status: 500 })
+    return err('Failed to process bulk action', 500)
   }
 }))

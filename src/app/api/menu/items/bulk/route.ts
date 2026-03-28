@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { err, ok } from '@/lib/api-response'
 
 /**
  * POST /api/menu/items/bulk
@@ -15,17 +16,17 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
   try {
     const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+      return err('No location found')
     }
 
     const { itemIds } = (await request.json()) as { itemIds: string[] }
 
     if (!itemIds || !Array.isArray(itemIds) || itemIds.length === 0) {
-      return NextResponse.json({ error: 'itemIds array required' }, { status: 400 })
+      return err('itemIds array required')
     }
 
     if (itemIds.length > 50) {
-      return NextResponse.json({ error: 'Maximum 50 items per request' }, { status: 400 })
+      return err('Maximum 50 items per request')
     }
 
     const items = await db.menuItem.findMany({
@@ -54,9 +55,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
         categoryType: item!.category?.categoryType ?? null,
       }))
 
-    return NextResponse.json({ data: { items: ordered } })
+    return ok({ items: ordered })
   } catch (error) {
     console.error('[menu/items/bulk] POST error:', error)
-    return NextResponse.json({ error: 'Failed to fetch items' }, { status: 500 })
+    return err('Failed to fetch items', 500)
   }
 }))

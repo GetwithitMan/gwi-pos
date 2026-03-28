@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate } from '@/lib/socket-dispatch'
@@ -9,6 +9,7 @@ import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
 import { getRequestLocationId } from '@/lib/request-context'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-add-ha-payment')
 
 // POST - Add a house account balance payment as an order line item
@@ -40,15 +41,15 @@ export const POST = withVenue(async function POST(
     }
     if (haLocationId) {
       const auth = await requirePermission(resolvedEmployeeId, haLocationId, PERMISSIONS.POS_ACCESS)
-      if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+      if (!auth.authorized) return err(auth.error, auth.status)
     }
 
     if (!houseAccountId) {
-      return NextResponse.json({ error: 'houseAccountId is required' }, { status: 400 })
+      return err('houseAccountId is required')
     }
 
     if (!amount || amount <= 0) {
-      return NextResponse.json({ error: 'amount must be a positive number' }, { status: 400 })
+      return err('amount must be a positive number')
     }
 
     // Validate the order exists and fetch current totals
@@ -58,14 +59,11 @@ export const POST = withVenue(async function POST(
       : null
 
     if (!order) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      return notFound('Order not found')
     }
 
     if (['paid', 'closed', 'cancelled', 'voided'].includes(order.status)) {
-      return NextResponse.json(
-        { error: `Cannot add items to an order with status: ${order.status}` },
-        { status: 400 }
-      )
+      return err(`Cannot add items to an order with status: ${order.status}`)
     }
 
     // Validate the house account exists, is active, and has sufficient balance
@@ -75,25 +73,16 @@ export const POST = withVenue(async function POST(
     })
 
     if (!houseAccount) {
-      return NextResponse.json({ error: 'House account not found' }, { status: 404 })
+      return notFound('House account not found')
     }
 
     if (houseAccount.status !== 'active') {
-      return NextResponse.json(
-        { error: `House account is ${houseAccount.status}` },
-        { status: 400 }
-      )
+      return err(`House account is ${houseAccount.status}`)
     }
 
     const currentBalance = Number(houseAccount.currentBalance)
     if (currentBalance < amount) {
-      return NextResponse.json(
-        {
-          error: `Insufficient house account balance. Current balance: $${currentBalance.toFixed(2)}`,
-          currentBalance,
-        },
-        { status: 400 }
-      )
+      return err(`Insufficient house account balance. Current balance: $${currentBalance.toFixed(2)}`)
     }
 
     // Find or create a "System" category for the location
@@ -220,7 +209,7 @@ export const POST = withVenue(async function POST(
 
     pushUpstream()
 
-    return NextResponse.json({
+    return ok({
       success: true,
       orderItem: {
         id: orderItem.id,
@@ -233,9 +222,6 @@ export const POST = withVenue(async function POST(
     })
   } catch (error) {
     console.error('[add-ha-payment] Error:', error)
-    return NextResponse.json(
-      { error: 'Failed to add house account payment item' },
-      { status: 500 }
-    )
+    return err('Failed to add house account payment item', 500)
   }
 })

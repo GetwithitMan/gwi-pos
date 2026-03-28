@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { OrderRepository } from '@/lib/repositories'
 import { dispatchFloorPlanUpdate, dispatchEntertainmentStatusChanged, dispatchEntertainmentUpdate, dispatchOrderTotalsUpdate } from '@/lib/socket-dispatch'
@@ -6,6 +6,7 @@ import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { err, ok } from '@/lib/api-response'
 
 import { stopAllSessions } from '@/lib/domain/entertainment'
 import { recalculateOrderTotals } from '@/lib/domain/order-items'
@@ -22,15 +23,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const stopReason = reason || 'closing_time'
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: 'Location ID is required' },
-        { status: 400 }
-      )
+      return err('Location ID is required')
     }
 
     // Permission check — force-stop-all requires entertainment permission
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.SETTINGS_ENTERTAINMENT)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (!auth.authorized) return err(auth.error, auth.status)
 
     const now = new Date()
 
@@ -70,13 +68,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     if (activeMenuItems.length === 0) {
-      return NextResponse.json({ data: {
+      return ok({
         success: true,
         sessionsStopped: 0,
         totalCharges: 0,
         waitlistCancelled: 0,
         message: 'No active entertainment sessions to stop.',
-      } })
+      })
     }
 
     // Collect order item IDs to fetch them all at once
@@ -208,7 +206,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
     }).catch(err => console.error('[entertainment] Audit log failed:', err))
 
-    return NextResponse.json({ data: {
+    return ok({
       success: true,
       sessionsStopped: txResult.results.length,
       totalCharges,
@@ -219,12 +217,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         charge: r.charge,
       })),
       message: `Stopped ${txResult.results.length} session${txResult.results.length !== 1 ? 's' : ''}. Total charges: $${totalCharges.toFixed(2)}. ${txResult.waitlistCancelled} waitlist ${txResult.waitlistCancelled !== 1 ? 'entries' : 'entry'} cancelled.`,
-    } })
+    })
   } catch (error) {
     console.error('Failed to force-stop all sessions:', error)
-    return NextResponse.json(
-      { error: 'Failed to force-stop all sessions' },
-      { status: 500 }
-    )
+    return err('Failed to force-stop all sessions', 500)
   }
 })
