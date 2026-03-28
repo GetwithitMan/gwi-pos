@@ -22,13 +22,16 @@
 
 ### Venue Neon Databases
 
-- **Authority:** Mission Control (MC) via internal API
+- **Authority:** Mission Control (MC) via internal API + controlled deploy paths
 - **Mutation paths:**
   - `/api/internal/provision` — creates new venue DB, applies full `schema.sql`
-  - `/api/internal/sync-schema` — incremental diff-sync after release deploy
-- **When:** MC API calls during provisioning or post-deploy
-- **Gate:** `PROVISION_API_KEY` authentication
-- **Rule:** NUCs NEVER mutate venue Neon schema. NUCs validate only.
+  - `/api/internal/sync-schema` — incremental DDL diff-sync after release deploy
+  - `deploy-release.sh` — runs numbered migrations on venue Neon after local PG succeeds (MC fleet command)
+  - `installer/06-schema.sh` — runs numbered migrations on venue Neon after local PG succeeds (initial install)
+- **When:** MC API calls during provisioning or post-deploy; NUC controlled deploys (fleet command / installer)
+- **Gate:** `PROVISION_API_KEY` (MC API); MC fleet command (deploy-release.sh); installer (06-schema.sh)
+- **Rule:** Only controlled deploy paths (MC API, fleet-commanded deploy, installer) may mutate venue Neon.
+  NUC runtime code NEVER mutates venue Neon schema. Neon migration failure is non-fatal — local PG is the runtime DB.
 
 ### NUC Local PostgreSQL
 
@@ -46,7 +49,8 @@
 | Path | Status | Reason |
 |------|--------|--------|
 | NUC → Neon `prisma db push` | **REMOVED** (C2/C3) | NUC must not declaratively push schema to any Neon DB |
-| NUC → Neon migrations | **REMOVED** | MC owns venue Neon schema; NUC validates only |
+| NUC → Neon migrations (runtime) | **REMOVED** | NUC runtime code must not mutate Neon schema |
+| NUC → Neon migrations (controlled deploy) | **ALLOWED** | deploy-release.sh + installer 06-schema.sh run numbered migrations (non-fatal on failure) |
 | NUC → local `prisma db push` | **REMOVED** (C2/C3) | deploy-tools is sole local schema engine |
 | sync-agent.js → `prisma migrate deploy` | **REMOVED** | Legacy path; deploy-tools handles migrations |
 | sync-agent.js → `prisma db push` | **REMOVED** | Legacy path; deploy-tools handles schema |
@@ -61,7 +65,8 @@ Developer writes migration
   → Vercel build applies to master Neon
   → MC fleet command triggers NUC deploy
   → deploy-release.sh applies to NUC local PG
-  → MC sync-schema applies to venue Neon (post-deploy)
+  → deploy-release.sh applies to venue Neon (numbered migrations, non-fatal)
+  → MC sync-schema applies to venue Neon (DDL diff-sync, post-deploy)
 ```
 
 ## Validation (Read-Only)

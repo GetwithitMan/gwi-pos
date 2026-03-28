@@ -81,6 +81,16 @@ run_schema() {
         warn "Migrations failed -- continuing but venue may have issues"
         track_warn "deploy-tools migrate.js failed"
       fi
+
+      # ── Run migrations on venue Neon (if NEON_DATABASE_URL set) ──
+      if [[ -n "${NEON_DATABASE_URL:-}" ]] && [[ -f "$deploy_tools_dir/src/migrate.js" ]]; then
+        log "Running migrations on venue Neon..."
+        if DATABASE_URL="$NEON_DATABASE_URL" timeout --kill-after=10 120 node "$deploy_tools_dir/src/migrate.js" 2>&1; then
+          log "Venue Neon migrations complete"
+        else
+          warn "Venue Neon migration had issues — local install continues"
+        fi
+      fi
     else
       err_code "ERR-INST-184" "deploy-tools not found at $deploy_tools_dir/src/apply-schema.js"
       warn "Schema migration requires the deploy-tools artifact"

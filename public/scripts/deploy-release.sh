@@ -1390,6 +1390,30 @@ run_schema_step() {
     SCHEMA_RESULT="pass"
     set_state "migrated"
     log "Schema step completed successfully"
+
+    # ── Run migrations on venue Neon (if configured) ──
+    # deploy-release.sh is a controlled deploy path (MC fleet command).
+    # Venue Neon needs the same numbered migrations as local PG.
+    # sync-schema only does DDL diffs — it doesn't run numbered migrations.
+    local neon_url
+    neon_url="$(get_env_var "NEON_DATABASE_URL")"
+    if [[ -n "$neon_url" ]] && [[ -f "${DEPLOY_TOOLS_DIR}/src/migrate.js" ]]; then
+        log "Running migrations on venue Neon..."
+        local neon_migrate_exit=0
+        timeout "$SCHEMA_TIMEOUT_SECONDS" \
+            env DATABASE_URL="$neon_url" NEON_MIGRATE=true \
+            node "${DEPLOY_TOOLS_DIR}/src/migrate.js" \
+            > >(tee -a "${DEPLOY_LOG_DIR}/schema-neon-${RELEASE_ID}.log") 2>&1 \
+            || neon_migrate_exit=$?
+
+        if [[ $neon_migrate_exit -ne 0 ]]; then
+            warn "Neon migration had issues (exit $neon_migrate_exit) — local deploy continues"
+            warn "Check: ${DEPLOY_LOG_DIR}/schema-neon-${RELEASE_ID}.log"
+        else
+            log "Venue Neon migrations complete"
+        fi
+    fi
+
     return 0
 }
 
