@@ -114,14 +114,32 @@ if [[ "$RESTORE_EXIT" -ne 0 ]]; then
   fi
 fi
 
-# ── Step 3: Schema alignment (pre-migrations + prisma db push) ─────────────
-# These must succeed — a partial schema means the venue cannot operate safely.
-log "Running pre-migrations..."
-if ! node scripts/nuc-pre-migrate.js; then
-  err "Pre-migrations failed — schema may be incomplete"
-  mark_incomplete "nuc-pre-migrate.js failed"
-  rm -f /tmp/neon-seed.pgdump
-  exit 1
+# ── Step 3: Schema alignment (deploy-tools migrations) ─────────────────────
+# deploy-tools is the sole migration path on NUCs (no Prisma CLI dependency).
+# Falls back to nuc-pre-migrate.js only if deploy-tools isn't available.
+log "Running post-seed migrations..."
+_DT_DIR="/opt/gwi-pos/deploy-tools"
+if [[ -f "$_DT_DIR/src/migrate.js" ]]; then
+  if ! DATABASE_URL="$DATABASE_URL" node "$_DT_DIR/src/migrate.js"; then
+    err "Deploy-tools migrations failed — schema may be incomplete"
+    mark_incomplete "deploy-tools migrate.js failed"
+    rm -f /tmp/neon-seed.pgdump
+    exit 1
+  fi
+elif ! node scripts/nuc-pre-migrate.js 2>/dev/null; then
+  # Fallback: nuc-pre-migrate.js (requires Prisma client — may not work in artifact)
+  warn "Both deploy-tools and nuc-pre-migrate.js unavailable or failed"
+  warn "Migrations may already be applied — checking..."
+  # Don't hard-fail if migrations are already applied (common on re-install)
+  _mig_count=$(psql "$DATABASE_URL" -tAc 'SELECT COUNT(*) FROM "_gwi_migrations"' 2>/dev/null | tr -d ' ' || echo "0")
+  if [[ "$_mig_count" -gt 100 ]]; then
+    log "Found $_mig_count applied migrations — schema appears complete, continuing"
+  else
+    err "Pre-migrations failed and only $_mig_count migrations found — schema may be incomplete"
+    mark_incomplete "migration-runner-unavailable"
+    rm -f /tmp/neon-seed.pgdump
+    exit 1
+  fi
 fi
 
 # Schema push is handled by Stage 06 BEFORE seed runs.
@@ -131,8 +149,13 @@ fi
 TABLE_COUNT=$($PSQL "$DATABASE_URL" -tAc "SELECT COUNT(*) FROM pg_tables WHERE schemaname='public'" 2>/dev/null || echo "0")
 TABLE_COUNT=$(echo "$TABLE_COUNT" | tr -d '[:space:]')
 if [[ "$TABLE_COUNT" -lt 50 ]]; then
-  warn "Only $TABLE_COUNT tables found — schema may be incomplete. Attempting prisma db push..."
-  timeout --foreground --kill-after=10 120 npx prisma db push 2>/dev/null || warn "prisma db push had issues (non-fatal — Stage 06 should have handled schema)"
+  warn "Only $TABLE_COUNT tables found -- schema may be incomplete."
+  if [[ -f "$_DT_DIR/src/apply-schema.js" ]]; then
+    warn "Attempting deploy-tools schema bootstrap..."
+    DATABASE_URL="$DATABASE_URL" node "$_DT_DIR/src/apply-schema.js" 2>/dev/null || warn "apply-schema had issues (non-fatal -- Stage 06 should have handled schema)"
+  else
+    warn "deploy-tools not available -- Stage 06 should have handled schema"
+  fi
 else
   log "Schema verified: $TABLE_COUNT tables present (skipping redundant prisma db push)"
 fi
