@@ -142,22 +142,7 @@ echo "    launcher.sh..."
 cp "$REPO_DIR/scripts/launcher.sh" "$STAGING/launcher.sh"
 chmod +x "$STAGING/launcher.sh"
 
-# Make the deploy schema self-contained by injecting url = env("DATABASE_URL").
-# The repo schema omits the URL (relies on prisma.config.ts), but for artifact
-# deploys we need the schema to be standalone — no config file, no imports,
-# no module resolution. Just schema + DATABASE_URL env var.
-echo "    Patching schema.prisma for self-contained deploy..."
-if ! grep -q 'url.*=.*env("DATABASE_URL")' "$STAGING/prisma/schema.prisma"; then
-    sed -i '/^datasource db {/,/^}/ {
-        /^}/ i\  url = env("DATABASE_URL")
-    }' "$STAGING/prisma/schema.prisma"
-    echo "    Injected url = env(\"DATABASE_URL\") into datasource block"
-fi
-
-# Remove prisma.config.ts from artifact — not needed when schema has inline URL
-rm -f "$STAGING/prisma.config.ts" 2>/dev/null
-
-# Prisma schema + optional schema.sql
+# Prisma schema + deploy schema + optional schema.sql
 echo "    prisma schema..."
 mkdir -p "$STAGING/prisma"
 cp "$REPO_DIR/prisma/schema.prisma" "$STAGING/prisma/schema.prisma"
@@ -165,6 +150,21 @@ if [ -f "$REPO_DIR/prisma/schema.sql" ]; then
     cp "$REPO_DIR/prisma/schema.sql" "$STAGING/prisma/schema.sql"
     echo "    prisma/schema.sql (generated)"
 fi
+
+# Generate a dedicated DEPLOY schema with inline DATABASE_URL.
+# The repo schema omits the URL (relies on prisma.config.ts for dev/build).
+# For artifact deploys, we generate schema.deploy.prisma which is self-contained:
+# no config file, no imports, no module resolution — just schema + env var.
+echo "    Generating prisma/schema.deploy.prisma (self-contained for deploy)..."
+cp "$STAGING/prisma/schema.prisma" "$STAGING/prisma/schema.deploy.prisma"
+if ! grep -q 'url.*=.*env("DATABASE_URL")' "$STAGING/prisma/schema.deploy.prisma"; then
+    # Insert url = env("DATABASE_URL") into the datasource block
+    sed -i '/^datasource db {/a\  url = env("DATABASE_URL")' "$STAGING/prisma/schema.deploy.prisma"
+fi
+echo "    schema.deploy.prisma generated with inline url = env(\"DATABASE_URL\")"
+
+# Remove prisma.config.ts from artifact — not needed
+rm -f "$STAGING/prisma.config.ts" 2>/dev/null
 
 # Migration scripts
 echo "    migration scripts..."
@@ -273,13 +273,13 @@ rm -rf "$PRISMA_BUNDLE_DIR"
 echo "    Validating NUC execution shape (cd staging + schema with inline URL)..."
 STAGED_PRISMA="$STAGING/prisma/cli/node_modules/.bin/prisma"
 if [ -f "$STAGED_PRISMA" ]; then
-    # Verify the patched schema has url = env("DATABASE_URL")
-    if ! grep -q 'url.*=.*env("DATABASE_URL")' "$STAGING/prisma/schema.prisma"; then
-        echo "FATAL: Deploy schema missing url = env(\"DATABASE_URL\") in datasource block" >&2
+    # Verify the deploy schema has url = env("DATABASE_URL")
+    if ! grep -q 'url.*=.*env("DATABASE_URL")' "$STAGING/prisma/schema.deploy.prisma"; then
+        echo "FATAL: schema.deploy.prisma missing url = env(\"DATABASE_URL\")" >&2
         exit 1
     fi
-    # Simulate NUC: cd to release dir, set DATABASE_URL, run prisma --help
-    NUC_TEST_OUTPUT=$(cd "$STAGING" && DATABASE_URL="postgresql://test:test@localhost:5432/test" "$STAGED_PRISMA" db push --help 2>&1) || true
+    # Simulate NUC: cd to release dir, set DATABASE_URL, run prisma with deploy schema
+    NUC_TEST_OUTPUT=$(cd "$STAGING" && DATABASE_URL="postgresql://test:test@localhost:5432/test" "$STAGED_PRISMA" db push --help --schema=./prisma/schema.deploy.prisma 2>&1) || true
     if echo "$NUC_TEST_OUTPUT" | grep -qi "prisma db push\|push the state"; then
         echo "    NUC execution shape: OK (self-contained schema, no config file needed)"
     else

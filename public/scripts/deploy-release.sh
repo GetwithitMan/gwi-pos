@@ -1323,14 +1323,18 @@ run_schema_step() {
     fi
 
     if [[ -n "$prisma_cmd" ]]; then
-        log "Running: prisma db push (self-contained schema with inline DATABASE_URL)"
+        log "Running: prisma db push (schema.deploy.prisma — self-contained, inline DATABASE_URL)"
         local schema_exit=0
-        # Schema has url = env("DATABASE_URL") — no config file needed.
-        # Just set DATABASE_URL and point to the schema.
+        # Uses schema.deploy.prisma which has url = env("DATABASE_URL") inline.
+        # No config file. No imports. No module resolution.
+        local deploy_schema="${release_dir}/prisma/schema.deploy.prisma"
+        if [[ ! -f "$deploy_schema" ]]; then
+            deploy_schema="${release_dir}/prisma/schema.prisma"  # fallback for older artifacts
+        fi
         (
             cd "$release_dir" || exit 1
             export DATABASE_URL="$db_url"
-            timeout "$SCHEMA_TIMEOUT_SECONDS" "$prisma_cmd" db push --schema=./prisma/schema.prisma
+            timeout "$SCHEMA_TIMEOUT_SECONDS" "$prisma_cmd" db push --schema="$deploy_schema"
         ) > >(tee -a "${DEPLOY_LOG_DIR}/schema-${RELEASE_ID}.log") 2>&1 \
             || schema_exit=$?
 
