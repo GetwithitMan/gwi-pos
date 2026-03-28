@@ -299,11 +299,18 @@ fi
 
 # Final validation: simulate NUC execution shape.
 # Run from STAGING dir (like deploy-release.sh does from release dir)
-# with prisma.config.ts + DATABASE_URL + bundled CLI.
+# with prisma.config.mjs + DATABASE_URL + bundled CLI.
 echo "    Validating NUC execution shape (cd staging + prisma.config.mjs + node_modules)..."
 STAGED_PRISMA="$STAGING/prisma/cli/node_modules/.bin/prisma"
 if [ -f "$STAGED_PRISMA" ]; then
-    # Verify prisma.config.mjs exists
+    # Fail-closed: prisma.config.ts MUST be absent, prisma.config.mjs MUST be present.
+    # Prisma resolves .ts before .mjs — if the dev config sneaks back via standalone
+    # copy or cleanup drift, it will be chosen first and fail (requires dotenv).
+    if [ -f "$STAGING/prisma.config.ts" ]; then
+        echo "FATAL: prisma.config.ts found in staged release — must be removed" >&2
+        echo "  Prisma resolves .ts before .mjs; dev config requires dotenv (not in artifact)" >&2
+        exit 1
+    fi
     if [ ! -f "$STAGING/prisma.config.mjs" ]; then
         echo "FATAL: prisma.config.mjs missing from staged release" >&2
         exit 1
