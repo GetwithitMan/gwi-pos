@@ -1,0 +1,3 @@
+---
+gwi_audit_log_max_size: 50
+gwi_audit_num_logs: 5

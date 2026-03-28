@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# GWI POS AIDE integrity check -- runs daily via cron
+set -euo pipefail
+AIDE_LOG="/opt/gwi-pos/state/aide-check.log"
+AIDE_STATE="/opt/gwi-pos/state/aide-status.json"
+
+aide --check > "$AIDE_LOG" 2>&1 || true
+AIDE_EXIT=$?
+
+if [[ $AIDE_EXIT -eq 0 ]]; then
+  echo '{"status":"clean","checkedAt":"'"$(date -u +%FT%TZ)"'"}' > "$AIDE_STATE"
+elif [[ $AIDE_EXIT -le 7 ]]; then
+  echo '{"status":"drift_detected","exitCode":'"$AIDE_EXIT"',"checkedAt":"'"$(date -u +%FT%TZ)"'","logFile":"'"$AIDE_LOG"'"}' > "$AIDE_STATE"
+else
+  echo '{"status":"error","exitCode":'"$AIDE_EXIT"',"checkedAt":"'"$(date -u +%FT%TZ)"'"}' > "$AIDE_STATE"
+fi

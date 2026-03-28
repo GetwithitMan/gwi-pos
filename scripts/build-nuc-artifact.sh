@@ -20,9 +20,9 @@ echo "==> [1/12] Reading build metadata..."
 VERSION=$(node -e "console.log(require('$REPO_DIR/package.json').version)")
 GIT_SHA=$(git -C "$REPO_DIR" rev-parse --short HEAD 2>/dev/null || echo "unknown")
 # Target Node version for NUCs (NOT the build machine's version).
-# Vercel may run Node 24+, but NUCs run Node 20.x (LTS).
-# This value goes into the manifest for compatibility gating.
-NODE_VERSION="${NUC_NODE_VERSION:-v20.12.2}"
+# Vercel may run Node 24+, but NUCs run Node 22.x (LTS until April 2027).
+# This value goes into the manifest for compatibility gating (minimum, not exact).
+NODE_VERSION="${NUC_NODE_VERSION:-v22.14.0}"
 BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
 # Schema version = highest NNN prefix in scripts/migrations/

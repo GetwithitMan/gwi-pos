@@ -16,6 +16,23 @@
     name: xbindkeys
     state: present
 
+# ── Disable USB mass storage (CIS 1.1.10) ──────────────────────────────────
+
+- name: Blacklist USB mass storage kernel modules (kiosk)
+  ansible.builtin.copy:
+    dest: /etc/modprobe.d/gwi-no-usb-storage.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # GWI POS -- disable USB mass storage (CIS 1.1.10)
+      # Prevents data exfiltration via USB drives on kiosk terminals
+      # Managed by Ansible kiosk_hardening role — do not edit manually
+      blacklist usb-storage
+      blacklist uas
+      install usb-storage /bin/false
+      install uas /bin/false
+
 # ── Write xbindkeysrc to disable ALT+F4, CTRL+W, CTRL+Q ──────────────────
 
 - name: Deploy xbindkeysrc for POS user

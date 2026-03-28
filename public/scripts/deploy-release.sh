@@ -656,8 +656,8 @@ check_manifest_compatibility() {
         local current_node_major
         current_node_major="$(node -v 2>/dev/null | sed 's/^v//' | cut -d. -f1)"
         if [[ -n "$current_node_major" ]]; then
-            if [[ "$current_node_major" -ne "$required_node_major" ]]; then
-                fatal "Node.js major version mismatch: have v${current_node_major}, need v${required_node_major}"
+            if [[ "$current_node_major" -lt "$required_node_major" ]]; then
+                fatal "Node.js major version too old: have v${current_node_major}, need v${required_node_major}+"
             fi
         fi
     fi
