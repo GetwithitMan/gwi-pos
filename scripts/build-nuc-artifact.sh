@@ -277,20 +277,54 @@ rm -rf "$PRISMA_BUNDLE_DIR"
 # Wire prisma package into release-root node_modules so that
 # prisma.config.mjs can resolve 'prisma/config' via normal Node resolution.
 # This MUST happen after step 5 copies prisma/cli/node_modules into staging.
-echo "    Wiring prisma into release-root node_modules..."
+echo "    Merging Prisma CLI deps into release-root node_modules..."
 if [ -d "$STAGING/node_modules" ]; then
     # Standalone ships its own node_modules/ — we CANNOT replace it.
-    # Copy prisma packages INTO the existing node_modules.
-    # prisma/config.js re-exports from @prisma/config, so we need BOTH.
-    for pkg in prisma @prisma/config @prisma/generator @prisma/internals; do
-        src="$STAGING/prisma/cli/node_modules/$pkg"
-        dest="$STAGING/node_modules/$pkg"
-        if [ -d "$src" ] && [ ! -d "$dest" ]; then
-            mkdir -p "$(dirname "$dest")"
-            cp -r "$src" "$dest"
-            echo "    Copied $pkg into standalone node_modules"
+    # Merge ALL packages from the isolated Prisma install into standalone's
+    # node_modules. This ships the COMPLETE transitive dependency tree
+    # (prisma, @prisma/config, effect, etc.) without whack-a-mole.
+    # Skip packages that already exist (don't break Next.js runtime deps).
+    PRISMA_NM="$STAGING/prisma/cli/node_modules"
+    MERGED=0
+
+    # Non-scoped packages (prisma, effect, etc.)
+    for pkg_dir in "$PRISMA_NM"/[^@]*; do
+        [ -d "$pkg_dir" ] || continue
+        pkg_name=$(basename "$pkg_dir")
+        if [ ! -e "$STAGING/node_modules/$pkg_name" ]; then
+            cp -r "$pkg_dir" "$STAGING/node_modules/$pkg_name"
+            MERGED=$((MERGED + 1))
         fi
     done
+
+    # Scoped packages (@prisma/*, @effect/*, etc.)
+    for scope_dir in "$PRISMA_NM"/@*; do
+        [ -d "$scope_dir" ] || continue
+        scope_name=$(basename "$scope_dir")
+        mkdir -p "$STAGING/node_modules/$scope_name"
+        for pkg_dir in "$scope_dir"/*; do
+            [ -d "$pkg_dir" ] || continue
+            pkg_name=$(basename "$pkg_dir")
+            if [ ! -e "$STAGING/node_modules/$scope_name/$pkg_name" ]; then
+                cp -r "$pkg_dir" "$STAGING/node_modules/$scope_name/$pkg_name"
+                MERGED=$((MERGED + 1))
+            fi
+        done
+    done
+
+    # Also merge .bin entries so prisma CLI is callable from release root
+    if [ -d "$PRISMA_NM/.bin" ]; then
+        mkdir -p "$STAGING/node_modules/.bin"
+        for bin_entry in "$PRISMA_NM/.bin"/*; do
+            [ -e "$bin_entry" ] || continue
+            bin_name=$(basename "$bin_entry")
+            if [ ! -e "$STAGING/node_modules/.bin/$bin_name" ]; then
+                cp -P "$bin_entry" "$STAGING/node_modules/.bin/$bin_name"
+            fi
+        done
+    fi
+
+    echo "    Merged $MERGED packages from Prisma CLI bundle into standalone node_modules"
 else
     # No standalone node_modules — create symlink (shouldn't happen normally)
     ln -sfn prisma/cli/node_modules "$STAGING/node_modules"
