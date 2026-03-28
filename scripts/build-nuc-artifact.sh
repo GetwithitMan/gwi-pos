@@ -128,6 +128,16 @@ find "$STAGING/node_modules" -type d \( -name "test" -o -name "tests" -o -name "
 find "$STAGING/node_modules" -type f \( -name "*.test.js" -o -name "*.spec.js" -o -name "*.test.ts" -o -name "CHANGELOG*" \) -delete 2>/dev/null || true
 find "$STAGING" -type d -name ".git" -exec rm -rf {} + 2>/dev/null || true
 
+# Ensure full next package is available for custom server (server.js).
+# Standalone tracing only includes next/* subpaths used by pages, but the custom
+# server imports next/headers, next/server, etc. at runtime. Copy the full next
+# package from repo node_modules to ensure all subpath imports resolve.
+if [ -d "$REPO_DIR/node_modules/next" ]; then
+    echo "    ensuring full next package for custom server..."
+    rm -rf "$STAGING/node_modules/next" 2>/dev/null || true
+    cp -r "$REPO_DIR/node_modules/next" "$STAGING/node_modules/next"
+fi
+
 # .next/static/ -> staging/.next/static/ (browser assets)
 echo "    static assets..."
 mkdir -p "$STAGING/.next/static"
