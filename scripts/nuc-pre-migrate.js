@@ -13,23 +13,23 @@
  *
  * Requires: DATABASE_URL in environment (loaded from /opt/gwi-pos/.env by systemd)
  */
-// Guard: dotenv must be installed
-let dotenvConfig
+// dotenv: load .env files for local dev / Vercel builds.
+// On NUC artifacts, dotenv is not shipped — DATABASE_URL comes from
+// the deploy script environment or systemd. Silently skip if missing.
 try {
-  dotenvConfig = require('dotenv').config
+  const dotenvConfig = require('dotenv').config
+  dotenvConfig({ path: '.env.local', override: true })
+  dotenvConfig({ path: '.env' })
 } catch {
-  console.error('[nuc-pre-migrate] FATAL: dotenv not installed. Run: npm ci')
-  process.exit(1)
+  // dotenv not available (artifact deploy) — env already set by caller
 }
-dotenvConfig({ path: '.env.local', override: true })
-dotenvConfig({ path: '.env' })
 
-// Guard: tsx/cjs/api must be installed (registers TS loader for Prisma 7 generated client)
+// tsx: registers TS loader for Prisma 7 generated client in dev.
+// On NUC artifacts, the generated client is pre-compiled JS — no TS loader needed.
 try {
   require('tsx/cjs/api').register()
 } catch {
-  console.error('[nuc-pre-migrate] FATAL: tsx not installed. Run: npm ci')
-  process.exit(1)
+  // tsx not available (artifact deploy) — generated client is already JS
 }
 
 // Guard: Prisma client must be generated
