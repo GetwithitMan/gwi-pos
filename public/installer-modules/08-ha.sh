@@ -18,10 +18,14 @@ run_ha() {
     log "Network failover scaffolding is DISABLED by default (GWI_HA_ENABLED != true)"
     warn "VIP/keepalived failover is network-layer only. It does NOT replicate data."
     warn "To enable: set GWI_HA_ENABLED=true in .env (requires manual PG replication setup)"
+    # Even with HA disabled, verify PG replication if this is a backup role
+    # (replication is configured in stage 04, independent of keepalived)
+    _verify_pg_replication
+    log "Stage: ha -- completed in $(( $(date +%s) - _start ))s"
     return 0
   fi
 
-  # Only run if VIRTUAL_IP is set and role is server or backup
+  # Only run keepalived if VIRTUAL_IP is set and role is server or backup
   if [[ -z "${VIRTUAL_IP:-}" ]] || [[ "$STATION_ROLE" != "server" && "$STATION_ROLE" != "backup" ]]; then
     log "Stage: ha -- skipped (no HA configuration needed)"
     return 0
@@ -226,6 +230,54 @@ KAEOF
     track_warn "keepalived failed to start -- check: journalctl -u keepalived"
   fi
 
+  # ── Verify PG replication status ──────────────────────────────────────────
+  _verify_pg_replication
+
   log "Stage: ha -- completed in $(( $(date +%s) - _start ))s"
   return 0
+}
+
+# ── PG replication verification (runs for both HA-enabled and HA-disabled) ──
+# Called at the end of run_ha, after keepalived setup (or early return).
+# Also verifiable standalone: source this file and call _verify_pg_replication.
+_verify_pg_replication() {
+  if [[ "$STATION_ROLE" == "backup" ]]; then
+    log "Verifying PostgreSQL streaming replication..."
+    if sudo -u postgres psql -tAc "SELECT pg_is_in_recovery()" 2>/dev/null | grep -q "t"; then
+      log "PostgreSQL is in recovery mode (standby) — replication is active"
+      # Check replication lag
+      local lag_bytes
+      lag_bytes=$(sudo -u postgres psql -tAc "SELECT COALESCE(pg_wal_lsn_diff(pg_last_wal_receive_lsn(), pg_last_wal_replay_lsn()), 0)" 2>/dev/null || echo "-1")
+      if [[ "$lag_bytes" != "-1" ]]; then
+        log "Replication lag: ${lag_bytes} bytes"
+        if [[ "$lag_bytes" -gt 67108864 ]]; then  # 64MB
+          warn "Replication lag is high (${lag_bytes} bytes > 64MB). May need time to catch up."
+        fi
+      fi
+    else
+      warn "PostgreSQL is NOT in recovery mode on backup role."
+      warn "Streaming replication may not be configured correctly."
+      warn "Run: sudo -u postgres psql -c 'SELECT pg_is_in_recovery()' to check."
+      track_warn "PG replication not active on backup"
+    fi
+  fi
+
+  if [[ "$STATION_ROLE" == "server" ]] && [[ -n "${VIRTUAL_IP:-}" ]]; then
+    log "Verifying PostgreSQL replication slots..."
+    local slot_count
+    slot_count=$(sudo -u postgres psql -tAc "SELECT count(*) FROM pg_replication_slots" 2>/dev/null || echo "0")
+    log "Replication slots: $slot_count"
+    if [[ "$slot_count" -eq 0 ]]; then
+      warn "No replication slots configured on primary. Standby may not be able to connect."
+      track_warn "No PG replication slots on primary"
+    fi
+  fi
+
+  # Deploy check-replication.sh for heartbeat consumption
+  if [[ -f "$APP_DIR/public/scripts/check-replication.sh" ]]; then
+    cp "$APP_DIR/public/scripts/check-replication.sh" /opt/gwi-pos/scripts/check-replication.sh
+    chmod +x /opt/gwi-pos/scripts/check-replication.sh
+    chown root:root /opt/gwi-pos/scripts/check-replication.sh
+    log "check-replication.sh deployed for heartbeat replication monitoring."
+  fi
 }

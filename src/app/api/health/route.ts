@@ -23,6 +23,7 @@ import { getUpdateAgentStatus } from '@/lib/update-agent'
 import { getSchemaVerificationResult, isSchemaVerified } from '@/lib/schema-verify'
 import { getReadinessState, type ReadinessLevel } from '@/lib/readiness'
 import { APP_VERSION } from '@/lib/version-contract'
+import { isFenced, getFenceState, type FenceState } from '@/lib/ha-fence'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('health')
 
@@ -122,6 +123,10 @@ interface HealthResponse {
       total: number
     }
   } | null
+  /** Whether this node is persistently fenced (disk-backed, survives restart) */
+  fenced: boolean
+  /** Full fence state details if fenced, otherwise null */
+  fenceState: FenceState | null
   error?: string
 }
 
@@ -208,6 +213,11 @@ export const GET = withVenue(async function GET(): Promise<NextResponse<{ data: 
   // Schema verification failure degrades health — sync workers won't be running
   const schemaState = getSchemaVerificationResult()
   if (schemaState && !schemaState.passed && status === 'healthy') {
+    status = 'degraded'
+  }
+
+  // Fenced node: cannot accept writes — always degraded at minimum
+  if (isFenced() && status === 'healthy') {
     status = 'degraded'
   }
 
@@ -443,6 +453,8 @@ export const GET = withVenue(async function GET(): Promise<NextResponse<{ data: 
     })(),
     connectionPool,
     notifications,
+    fenced: isFenced(),
+    fenceState: getFenceState(),
   }
 
   // Return appropriate HTTP status

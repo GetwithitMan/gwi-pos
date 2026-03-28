@@ -1,0 +1,4 @@
+---
+# AppArmor mode: "complain" (log violations) or "enforce" (block violations)
+# Start with complain on initial rollout, switch to enforce after validation
+gwi_apparmor_mode: "complain"

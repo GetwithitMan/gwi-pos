@@ -182,6 +182,10 @@ fi
 if [[ -x /opt/gwi-pos/scripts/disk-pressure-monitor.sh ]]; then
   /opt/gwi-pos/scripts/disk-pressure-monitor.sh 2>/dev/null || true
 fi
+# Run replication check every heartbeat (lightweight -- single PG query)
+if [[ -x /opt/gwi-pos/scripts/check-replication.sh ]]; then
+  /opt/gwi-pos/scripts/check-replication.sh 2>/dev/null || true
+fi
 
 # ── Read state files for enriched heartbeat payload ──
 HW_FILE="$STATE_DIR/hardware-inventory.json"
@@ -215,6 +219,14 @@ if [[ -f "$WD_ESC_FILE" ]] && jq empty "$WD_ESC_FILE" 2>/dev/null; then
   WATCHDOG_ESC_JSON=$(cat "$WD_ESC_FILE")
 else
   WATCHDOG_ESC_JSON='null'
+fi
+
+# Replication status (written by check-replication.sh)
+REPL_FILE="$STATE_DIR/replication-status.json"
+if [[ -f "$REPL_FILE" ]] && jq empty "$REPL_FILE" 2>/dev/null; then
+  REPLICATION_JSON=$(cat "$REPL_FILE")
+else
+  REPLICATION_JSON='null'
 fi
 
 # Dashboard status (check if gwi-dashboard systemd service is running)
@@ -301,7 +313,8 @@ BODY=$(jq -nc \
   --argjson dashboard "$DASHBOARD_JSON" \
   --argjson componentVersions "$COMPONENT_VERSIONS_JSON" \
   --argjson nucReadiness "${NUC_READINESS_JSON:-null}" \
-  '{version:$version,uptime:$uptime,activeOrders:0,cpuPercent:$cpuPercent,memoryUsedMb:$memoryUsedMb,memoryTotalMb:$memoryTotalMb,diskUsedGb:$diskUsedGb,diskTotalGb:$diskTotalGb,localIp:$localIp,posLocationId:$posLocationId,batchClosedAt:$batchClosedAt,batchStatus:$batchStatus,batchItemCount:$batchItemCount,batchNo:$batchNo,openOrderCount:$openOrderCount,unadjustedTipCount:$unadjustedTipCount,currentBatchTotal:$currentBatchTotal,hardware:$hardware,diskPressure:$diskPressure,watchdog:$watchdog,watchdogEscalation:$watchdogEscalation,dashboard:$dashboard,componentVersions:$componentVersions,nucReadiness:$nucReadiness}')
+  --argjson replication "${REPLICATION_JSON:-null}" \
+  '{version:$version,uptime:$uptime,activeOrders:0,cpuPercent:$cpuPercent,memoryUsedMb:$memoryUsedMb,memoryTotalMb:$memoryTotalMb,diskUsedGb:$diskUsedGb,diskTotalGb:$diskTotalGb,localIp:$localIp,posLocationId:$posLocationId,batchClosedAt:$batchClosedAt,batchStatus:$batchStatus,batchItemCount:$batchItemCount,batchNo:$batchNo,openOrderCount:$openOrderCount,unadjustedTipCount:$unadjustedTipCount,currentBatchTotal:$currentBatchTotal,hardware:$hardware,diskPressure:$diskPressure,watchdog:$watchdog,watchdogEscalation:$watchdogEscalation,dashboard:$dashboard,componentVersions:$componentVersions,nucReadiness:$nucReadiness,replication:$replication}')
 
 SIG=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$SERVER_API_KEY" 2>/dev/null | awk '{print $NF}')
 

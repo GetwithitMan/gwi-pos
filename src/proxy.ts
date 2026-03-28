@@ -6,6 +6,7 @@ import { signAndAttachTenantJwt } from '@/lib/proxy/tenant-signing'
 import { handleCellularAuth } from '@/lib/proxy/cellular-handler'
 import { handleAccessGate, handleCloudMode } from '@/lib/proxy/cloud-handler'
 import { handleLocalMode } from '@/lib/proxy/local-handler'
+import { isFenced, getFenceState } from '@/lib/ha-fence'
 
 /** Module-level constant — captured once at build time on Vercel, not re-read per request */
 const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS?.split(',').map(o => o.trim()).filter(Boolean) ?? []
@@ -57,13 +58,23 @@ export async function proxy(request: NextRequest) {
   }
 
   // ═══════════════════════════════════════════════════════════
-  // FENCED NODE CHECK (STONITH-lite)
+  // FENCED NODE CHECK (STONITH-lite, persistent)
   // ═══════════════════════════════════════════════════════════
-  if (proxyConfig.stationRole === 'fenced') {
+  // Check persistent disk-backed fence state (survives process restart).
+  // Falls back to in-memory proxyConfig.stationRole for backward compatibility.
+  const nodeFenced = isFenced() || proxyConfig.stationRole === 'fenced'
+  if (nodeFenced) {
     const isFenceEndpoint = pathname === '/api/internal/ha-fence'
-    if (!isFenceEndpoint && request.method !== 'GET' && request.method !== 'HEAD') {
+    const isHealthEndpoint = pathname === '/api/health'
+    const isSafeMethod = request.method === 'GET' || request.method === 'HEAD' || request.method === 'OPTIONS'
+    if (!isFenceEndpoint && !isHealthEndpoint && !isSafeMethod) {
+      const fenceState = getFenceState()
       return NextResponse.json(
-        { error: 'This server has been fenced. Please reconnect to the primary.' },
+        {
+          error: 'Node is fenced',
+          fencedAt: fenceState?.fencedAt ?? null,
+          reason: fenceState?.reason ?? 'Node has been fenced by HA controller',
+        },
         { status: 503 }
       )
     }

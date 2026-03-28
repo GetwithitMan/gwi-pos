@@ -17,6 +17,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getLocalLeaseExpiry } from '@/lib/ha-lease-state'
+import { isFenced, getFenceState } from '@/lib/ha-fence'
 import { err, forbidden, unauthorized } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
@@ -30,6 +31,15 @@ interface FenceCheckResponse {
   primaryLeaseExpiry: string | null
   /** Whether this node currently holds a valid MC primary lease */
   holdsMcLease: boolean
+  /** Whether this node is persistently fenced (disk-backed, survives restart) */
+  fenced: boolean
+  /** Fence details if fenced, otherwise undefined */
+  fenceState?: {
+    fencedAt: string
+    fencedBy: string
+    reason: string
+    previousRole: string
+  }
 }
 
 /** RFC-1918 + loopback ranges */
@@ -98,6 +108,10 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const holdsMcLease = mcLeaseExpiry !== null && mcLeaseExpiry > now
   const primaryLeaseExpiry = mcLeaseExpiry ? mcLeaseExpiry.toISOString() : null
 
+  // Persistent fence state (disk-backed)
+  const nodeFenced = isFenced()
+  const nodeFenceState = getFenceState()
+
   const response: FenceCheckResponse = {
     role: isPrimary ? 'primary' : 'standby',
     term: Date.now(),
@@ -105,6 +119,17 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     healthy,
     primaryLeaseExpiry,
     holdsMcLease,
+    fenced: nodeFenced,
+    ...(nodeFenced && nodeFenceState
+      ? {
+          fenceState: {
+            fencedAt: nodeFenceState.fencedAt,
+            fencedBy: nodeFenceState.fencedBy,
+            reason: nodeFenceState.reason,
+            previousRole: nodeFenceState.previousRole,
+          },
+        }
+      : {}),
   }
 
   return NextResponse.json(response, { status: 200 })
