@@ -635,8 +635,20 @@ elif [[ -z "$RESUME_FROM" ]]; then
   log "  All services, dashboard, and autostart entries will activate on boot."
   log "  Press Ctrl+C to cancel reboot."
   log ""
+
+  # Flush install log fully before reboot. The exec > >(tee ...) pipe buffers
+  # output — closing stdout forces tee to flush, then sync ensures disk write.
+  if [[ -n "${INSTALL_LOG:-}" ]]; then
+    exec 1>&- 2>&-            # close stdout/stderr (flushes tee pipe)
+    sleep 1                    # give tee a moment to write remaining buffer
+    exec 1>/dev/tty 2>&1       # reopen for final messages
+    sync                       # flush filesystem
+    echo "[GWI POS] Install log finalized: $INSTALL_LOG"
+  fi
+
   sleep 15
-  log "Rebooting now..."
+  echo "[GWI POS] Rebooting now..."
+  sync
   reboot
 else
   log ""
