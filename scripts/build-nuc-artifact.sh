@@ -167,8 +167,20 @@ echo "    prisma.config.mjs (Prisma 7 datasource config)"
 # prisma.config.mjs can resolve 'prisma/config' via normal Node resolution.
 # The isolated Prisma install has the complete dependency tree there.
 if [ -d "$STAGING/prisma/cli/node_modules" ]; then
-    ln -sfn prisma/cli/node_modules "$STAGING/node_modules"
-    echo "    node_modules -> prisma/cli/node_modules (symlink for config resolution)"
+    # Standalone ships its own node_modules/ — we CANNOT delete it (Next.js needs it).
+    # Instead, copy the prisma package into the existing node_modules so that
+    # prisma.config.mjs can resolve 'prisma/config' via normal Node resolution.
+    if [ -d "$STAGING/node_modules" ]; then
+        # Copy prisma package (with config.js) into standalone's node_modules
+        if [ ! -d "$STAGING/node_modules/prisma" ]; then
+            cp -r "$STAGING/prisma/cli/node_modules/prisma" "$STAGING/node_modules/prisma"
+            echo "    Copied prisma package into standalone node_modules (for config resolution)"
+        fi
+    else
+        # No standalone node_modules — create symlink (shouldn't happen normally)
+        ln -sfn prisma/cli/node_modules "$STAGING/node_modules"
+        echo "    node_modules -> prisma/cli/node_modules (symlink)"
+    fi
 fi
 
 # Migration scripts
