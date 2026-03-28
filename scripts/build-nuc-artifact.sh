@@ -146,6 +146,8 @@ done
 #
 # Derived from: grep -oP 'require\("[^"]+"\)' server.js | sort -u
 # Plus transitive deps of socket.io-client (8 packages).
+# These packages MUST be the full repo versions, not standalone traces.
+# Standalone may have partial traces that are incomplete for runtime use.
 _SERVER_PKGS=(
     socket.io-client engine.io-client engine.io-parser socket.io-parser
     xmlhttprequest-ssl ws debug ms
@@ -154,8 +156,9 @@ _SERVER_PKGS=(
     zod
 )
 for pkg in "${_SERVER_PKGS[@]}"; do
-    if [ -d "$REPO_DIR/node_modules/$pkg" ] && [ ! -d "$STAGING/node_modules/$pkg" ]; then
+    if [ -d "$REPO_DIR/node_modules/$pkg" ]; then
         echo "    ensuring $pkg for custom server..."
+        rm -rf "$STAGING/node_modules/$pkg" 2>/dev/null || true
         mkdir -p "$(dirname "$STAGING/node_modules/$pkg")"
         cp -r "$REPO_DIR/node_modules/$pkg" "$STAGING/node_modules/$pkg"
     fi
