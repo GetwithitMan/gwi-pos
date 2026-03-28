@@ -237,6 +237,74 @@ _SMOKE_RESULT=$(cd "$STAGING" && node -e "
 }
 echo "    Smoke test passed: $_SMOKE_RESULT"
 
+# ── Artifact smoke-BOOT test: start the server and verify it binds a port ──
+# This catches ALL missing dependencies (transitive, lazy, generated internals)
+# by actually running the staged artifact. Fails the build if the server can't
+# start and bind a health port within 30 seconds.
+echo "    Smoke-BOOT testing: starting staged server..."
+_SMOKE_PORT=19123  # ephemeral port to avoid conflicts
+_SMOKE_PID=""
+_SMOKE_OK=false
+
+# Minimal env for boot test — just enough to start without a real DB
+(
+  cd "$STAGING"
+  PORT=$_SMOKE_PORT \
+  NODE_ENV=production \
+  DATABASE_URL="postgresql://test:test@localhost:5432/test" \
+  LOCATION_ID="smoke-test" \
+  NEXTAUTH_SECRET="smoke-test-secret-not-real" \
+  INTERNAL_API_SECRET="smoke-test" \
+  CELLULAR_TOKEN_SECRET="smoke-test" \
+  SESSION_SECRET="smoke-test" \
+  TENANT_SIGNING_KEY="smoke-test" \
+  node -r ./preload.js server.js &
+  echo $!
+) > /tmp/smoke-boot-pid.txt 2>/tmp/smoke-boot-err.txt &
+_SMOKE_WRAPPER_PID=$!
+
+sleep 2  # let the process start
+_SMOKE_PID=$(cat /tmp/smoke-boot-pid.txt 2>/dev/null || echo "")
+
+# Wait up to 30s for the port to bind
+# Any non-000 HTTP code means the server is running and responding.
+# 200 = healthy, 503 = server started but DB not available (expected in CI).
+for _i in $(seq 1 15); do
+  if curl -sf --connect-timeout 1 --max-time 2 -o /dev/null "http://localhost:${_SMOKE_PORT}/api/health/ready" 2>/dev/null \
+     || [[ "$(curl -so /dev/null -w '%{http_code}' --connect-timeout 1 --max-time 2 "http://localhost:${_SMOKE_PORT}/api/health/ready" 2>/dev/null)" != "000" ]]; then
+    _SMOKE_OK=true
+    echo "    Smoke-BOOT passed: server bound port $_SMOKE_PORT in $((_i * 2))s"
+    break
+  fi
+  # Check if process died
+  if [[ -n "$_SMOKE_PID" ]] && ! kill -0 "$_SMOKE_PID" 2>/dev/null; then
+    echo "    Smoke-BOOT: server process died before binding port" >&2
+    break
+  fi
+  sleep 2
+done
+
+# Cleanup: kill the server
+if [[ -n "$_SMOKE_PID" ]]; then
+  kill "$_SMOKE_PID" 2>/dev/null || true
+  wait "$_SMOKE_PID" 2>/dev/null || true
+fi
+kill "$_SMOKE_WRAPPER_PID" 2>/dev/null || true
+wait "$_SMOKE_WRAPPER_PID" 2>/dev/null || true
+
+if [[ "$_SMOKE_OK" != "true" ]]; then
+  echo "FATAL: Artifact smoke-BOOT test FAILED — server could not start and bind port $_SMOKE_PORT" >&2
+  echo "  This means the artifact has missing runtime dependencies or a startup crash." >&2
+  if [[ -f /tmp/smoke-boot-err.txt ]]; then
+    echo "  Last 20 lines of stderr:" >&2
+    tail -20 /tmp/smoke-boot-err.txt >&2
+  fi
+  rm -f /tmp/smoke-boot-pid.txt /tmp/smoke-boot-err.txt
+  echo "  Fix: check _PRISMA_RUNTIME_PKGS and _SERVER_PKGS in build-nuc-artifact.sh" >&2
+  exit 1
+fi
+rm -f /tmp/smoke-boot-pid.txt /tmp/smoke-boot-err.txt
+
 # .next/static/ -> staging/.next/static/ (browser assets)
 echo "    static assets..."
 mkdir -p "$STAGING/.next/static"
