@@ -140,8 +140,12 @@ find "$STAGING" -type d -name ".git" -exec rm -rf {} + 2>/dev/null || true
 # Plus transitive deps of socket.io-client (8 packages).
 # These packages MUST be the full repo versions, not standalone traces.
 # Standalone may have partial traces that are incomplete for runtime use.
+# next + its transitive deps that browserslist/SWC/config-utils load at runtime
+# socket.io-client + full transitive tree for cloud-relay-client
+# twilio for SMS workers, zod for validation
 _SERVER_PKGS=(
-    next baseline-browser-mapping
+    next @next/env @swc/helpers baseline-browser-mapping caniuse-lite
+    picocolors postcss styled-jsx source-map-js nanoid
     socket.io-client engine.io-client engine.io-parser socket.io-parser
     xmlhttprequest-ssl ws debug ms
     @socket.io/component-emitter
