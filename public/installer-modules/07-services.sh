@@ -476,7 +476,7 @@ if [[ -f "$BACKUP_KEY" ]]; then
   backup_file="$BACKUP_DIR/pos-$timestamp.sql.gz.enc"
   echo "[Backup] Starting encrypted PostgreSQL backup of '$DB_NAME'..."
   set -o pipefail
-  if pg_dump -h localhost -U "$DB_USER" "$DB_NAME" 2>/tmp/pgdump_err | gzip | openssl enc -aes-256-cbc -pbkdf2 -pass file:"$BACKUP_KEY" -out "$backup_file"; then
+  if sudo -u postgres pg_dump "$DB_NAME" 2>/tmp/pgdump_err | gzip | openssl enc -aes-256-cbc -pbkdf2 -pass file:"$BACKUP_KEY" -out "$backup_file"; then
     size=$(du -h "$backup_file" | cut -f1)
     echo "[Backup] Success (encrypted): $backup_file ($size)"
   else
@@ -489,7 +489,7 @@ else
   backup_file="$BACKUP_DIR/pos-$timestamp.sql.gz"
   echo "[Backup] Starting PostgreSQL backup of '$DB_NAME' (no encryption key found)..."
   set -o pipefail
-  if pg_dump -h localhost -U "$DB_USER" "$DB_NAME" 2>/tmp/pgdump_err | gzip > "$backup_file"; then
+  if sudo -u postgres pg_dump "$DB_NAME" 2>/tmp/pgdump_err | gzip > "$backup_file"; then
     size=$(du -h "$backup_file" | cut -f1)
     echo "[Backup] Success: $backup_file ($size)"
   else

@@ -445,7 +445,7 @@ SAFETY_FILE="$BACKUP_DIR/pos-pre-restore-$(date +%Y%m%d-%H%M%S).sql.gz"
 mkdir -p "$BACKUP_DIR"
 
 log "Creating safety backup of current database..."
-if pg_dump -h localhost -U "$DB_USER" "$DB_NAME" 2>/dev/null | gzip > "$SAFETY_FILE" 2>/dev/null; then
+if sudo -u postgres pg_dump "$DB_NAME" 2>/dev/null | gzip > "$SAFETY_FILE" 2>/dev/null; then
   if [[ -s "$SAFETY_FILE" ]]; then
     SAFETY_SIZE=$(stat -c %s "$SAFETY_FILE" 2>/dev/null || echo 0)
     log "Safety backup created: $SAFETY_FILE ($(( SAFETY_SIZE / 1024 / 1024 )) MB)"
