@@ -257,7 +257,7 @@ FREE_MB=""
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 MODULES_DIR="$SCRIPT_DIR/installer-modules"
-POS_BASE_URL="${POS_BASE_URL:-https://app.thepasspos.com}"
+POS_BASE_URL="${POS_BASE_URL:-https://ordercontrolcenter.com}"
 
 # ALWAYS extract fresh modules from embedded payload — never use stale modules on disk
 rm -rf "$MODULES_DIR"

@@ -198,7 +198,7 @@ RVNCEOF
   # Download icon to shared location (works for both server and terminal roles)
   POS_ICON="$APP_BASE/icon.svg"
   if [[ ! -f "$POS_ICON" ]]; then
-    curl -fsSL "https://app.thepasspos.com/icon.svg" -o "$POS_ICON" 2>/dev/null || true
+    curl -fsSL "https://ordercontrolcenter.com/icon.svg" -o "$POS_ICON" 2>/dev/null || true
   fi
   if [[ ! -f "$POS_ICON" ]]; then
     # Fall back to system icon if download fails

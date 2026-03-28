@@ -156,7 +156,7 @@ run_finalize() {
   fi
   echo ""
   echo -e "  ${CYAN}Re-run this installer to update:${NC}"
-  echo "    curl -fsSL https://app.thepasspos.com/installer.run -o installer.run && chmod +x installer.run && sudo ./installer.run"
+  echo "    curl -fsSL https://ordercontrolcenter.com/installer.run -o installer.run && chmod +x installer.run && sudo ./installer.run"
   echo ""
 
   # Honest health summary (hardening + dashboard stages still follow)

@@ -226,8 +226,6 @@ cat > "$STAGING/required-env.json" << 'ENVJSON'
 {
   "required": [
     { "key": "DATABASE_URL", "format": "^postgres(ql)?://", "description": "Local PostgreSQL connection" },
-    { "key": "NEXTAUTH_URL", "format": "^https?://", "description": "POS web URL for auth callbacks" },
-    { "key": "NEXTAUTH_SECRET", "format": ".{32,}", "description": "Auth secret (min 32 chars)" },
     { "key": "LOCATION_ID", "format": "^[a-zA-Z0-9_-]+$", "description": "Venue location ID (cuid or numeric)" }
   ],
   "optional": [
@@ -317,7 +315,7 @@ cat > "$STAGING/artifact-metadata.json" << METAJSON
     fi
   )],
   "schemaExpansionOnly": true,
-  "requiredEnvKeys": ["DATABASE_URL", "NEXTAUTH_URL", "NEXTAUTH_SECRET", "LOCATION_ID"]
+  "requiredEnvKeys": ["DATABASE_URL", "LOCATION_ID"]
 }
 METAJSON
 

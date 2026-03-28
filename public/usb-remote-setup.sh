@@ -32,7 +32,7 @@ if ! command -v curl >/dev/null 2>&1; then
 fi
 
 # Try the online version first (has RealVNC + full setup)
-if curl -fsSL --connect-timeout 5 https://app.thepasspos.com/setup-remote.sh -o /tmp/gwi-setup-remote.sh 2>/dev/null; then
+if curl -fsSL --connect-timeout 5 https://ordercontrolcenter.com/setup-remote.sh -o /tmp/gwi-setup-remote.sh 2>/dev/null; then
   echo "Downloaded setup script. Running..."
   bash /tmp/gwi-setup-remote.sh
   rm -f /tmp/gwi-setup-remote.sh

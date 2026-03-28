@@ -5,7 +5,7 @@
 # Run this BEFORE the main installer so you can remote in via RealVNC.
 #
 # Usage:
-#   curl -fsSL https://app.thepasspos.com/setup-remote.sh | sudo bash
+#   curl -fsSL https://ordercontrolcenter.com/setup-remote.sh | sudo bash
 #
 # What it does:
 #   1. Installs RealVNC Server
@@ -182,7 +182,7 @@ if [[ "$NEEDS_REBOOT" == "true" ]]; then
   echo -e "${YELLOW}  Wayland was disabled. Reboot to switch to X11.${NC}"
   echo -e "${YELLOW}  After reboot, remote in and run the POS installer:${NC}"
   echo ""
-  echo -e "  curl -fsSL https://app.thepasspos.com/installer.run -o installer.run && chmod +x installer.run && sudo ./installer.run"
+  echo -e "  curl -fsSL https://ordercontrolcenter.com/installer.run -o installer.run && chmod +x installer.run && sudo ./installer.run"
   echo -e "${YELLOW}═══════════════════════════════════════════════════════${NC}"
   echo ""
   read -rp "  Reboot now? (y/N): " DO_REBOOT < /dev/tty
@@ -192,5 +192,5 @@ if [[ "$NEEDS_REBOOT" == "true" ]]; then
   fi
 else
   echo "  Now run the POS installer:"
-  echo "  curl -fsSL https://app.thepasspos.com/installer.run -o installer.run && chmod +x installer.run && sudo ./installer.run"
+  echo "  curl -fsSL https://ordercontrolcenter.com/installer.run -o installer.run && chmod +x installer.run && sudo ./installer.run"
 fi
