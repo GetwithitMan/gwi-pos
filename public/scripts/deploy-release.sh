@@ -2154,8 +2154,8 @@ do_deploy() {
         fi
     fi
 
-    # Step 22: Cleanup old releases
-    do_cleanup
+    # Step 22: Cleanup old releases (best-effort — never fail a successful deploy)
+    do_cleanup || warn "Cleanup had issues — non-fatal, deploy was successful"
 
     # Step 23: Lock released + maintenance removed above
     log "Deploy complete in $(( ($(date +%s) - DEPLOY_START_EPOCH) ))s"
