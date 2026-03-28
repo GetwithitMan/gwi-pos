@@ -1267,7 +1267,12 @@ wire_symlinks() {
 # ---------------------------------------------------------------------------
 run_schema_step() {
     local release_dir="${RELEASES_DIR}/${RELEASE_ID}"
-    local prisma_cli="${release_dir}/prisma/cli/prisma"
+    # Prisma CLI entry point: build/index.js (where the WASM files live)
+    # NOT prisma/cli/prisma (which is a copy of build/index.js but loses path context for WASM)
+    local prisma_cli="${release_dir}/prisma/cli/build/index.js"
+    if [[ ! -f "$prisma_cli" ]]; then
+        prisma_cli="${release_dir}/prisma/cli/prisma"  # fallback
+    fi
 
     log "Running schema migration step (timeout: ${SCHEMA_TIMEOUT_SECONDS}s)..."
 

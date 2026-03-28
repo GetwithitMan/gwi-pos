@@ -247,8 +247,11 @@ SCHEMA_ENGINE=$(find "$STAGING/prisma/cli" -name "schema-engine-*" -type f 2>/de
 
 # 4. Validate the bundled Prisma CLI actually runs (fail-hard if broken)
 echo "    Validating bundled Prisma CLI..."
+# Use build/index.js as entry point (WASM files are resolved relative to it)
+PRISMA_ENTRY="$STAGING/prisma/cli/build/index.js"
+[ ! -f "$PRISMA_ENTRY" ] && PRISMA_ENTRY="$STAGING/prisma/cli/prisma"
 PRISMA_TEST_OUTPUT=$(NODE_PATH="$STAGING/prisma/cli/node_modules:$STAGING/prisma/cli" \
-   node "$STAGING/prisma/cli/prisma" --version 2>&1) || true
+   node "$PRISMA_ENTRY" --version 2>&1) || true
 if echo "$PRISMA_TEST_OUTPUT" | grep -qE '[0-9]+\.[0-9]+\.[0-9]+'; then
     PRISMA_CLI_VERSION=$(echo "$PRISMA_TEST_OUTPUT" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
     echo "    Prisma CLI validated: v${PRISMA_CLI_VERSION}"
