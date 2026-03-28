@@ -132,11 +132,13 @@ find "$STAGING" -type d -name ".git" -exec rm -rf {} + 2>/dev/null || true
 # Standalone tracing only includes next/* subpaths used by pages, but the custom
 # server imports next/headers, next/server, etc. at runtime. Copy the full next
 # package from repo node_modules to ensure all subpath imports resolve.
-if [ -d "$REPO_DIR/node_modules/next" ]; then
-    echo "    ensuring full next package for custom server..."
-    rm -rf "$STAGING/node_modules/next" 2>/dev/null || true
-    cp -r "$REPO_DIR/node_modules/next" "$STAGING/node_modules/next"
-fi
+for pkg in next socket.io-client engine.io-client; do
+    if [ -d "$REPO_DIR/node_modules/$pkg" ]; then
+        echo "    ensuring $pkg for custom server..."
+        rm -rf "$STAGING/node_modules/$pkg" 2>/dev/null || true
+        cp -r "$REPO_DIR/node_modules/$pkg" "$STAGING/node_modules/$pkg"
+    fi
+done
 
 # .next/static/ -> staging/.next/static/ (browser assets)
 echo "    static assets..."
