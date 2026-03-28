@@ -90,7 +90,7 @@ fi
 INSTALL_LOCKFILE="/tmp/gwi-installer.lock"
 exec 9>"$INSTALL_LOCKFILE"
 if ! flock -n 9; then
-  err "Another installer instance is already running (lock: $INSTALL_LOCKFILE)"
+  echo -e "\033[0;31m[ERROR]\033[0m Another installer instance is already running (lock: $INSTALL_LOCKFILE)" >&2
   exit 1
 fi
 
@@ -683,30 +683,18 @@ if [[ -f "$PHASE2_TOKEN" ]] && [[ -z "$RESUME_FROM" ]]; then
   exit 0
 fi
 
-# ── Execute stages ───────────────────────────────────────────────────────────
-if [[ -n "$RESUME_FROM" ]]; then
-  # --resume-from: run all stages from the requested point (no phase split)
-  for stage in "${STAGES[@]}"; do
-    _num="${STAGE_NUM[$stage]}"
-    _label="${STAGE_LABEL[$stage]}"
-    if [[ "$stage" == "preflight" ]]; then
-      run_stage "$_num" "$_label" run_preflight "${INSTALLER_ARGS[@]}" || exit 1
-    else
-      run_stage "$_num" "$_label" "run_${stage}" || exit 1
-    fi
-  done
-else
-  # Fresh install: run Phase 1, reboot, Phase 2 auto-runs on boot
-  for stage in "${PHASE1_STAGES[@]}"; do
-    _num="${STAGE_NUM[$stage]}"
-    _label="${STAGE_LABEL[$stage]}"
-    if [[ "$stage" == "preflight" ]]; then
-      run_stage "$_num" "$_label" run_preflight "${INSTALLER_ARGS[@]}" || exit 1
-    else
-      run_stage "$_num" "$_label" "run_${stage}" || exit 1
-    fi
-  done
-fi
+# ── Execute Phase 1 stages ───────────────────────────────────────────────────
+# Both fresh installs and re-installs use the two-phase flow.
+# --resume-from still respects stage markers (completed stages are skipped).
+for stage in "${PHASE1_STAGES[@]}"; do
+  _num="${STAGE_NUM[$stage]}"
+  _label="${STAGE_LABEL[$stage]}"
+  if [[ "$stage" == "preflight" ]]; then
+    run_stage "$_num" "$_label" run_preflight "${INSTALLER_ARGS[@]}" || exit 1
+  else
+    run_stage "$_num" "$_label" "run_${stage}" || exit 1
+  fi
+done
 
 # ── Post-Phase-1: health check + reboot ─────────────────────────────────────
 if [[ "$DRY_RUN" == "true" ]]; then
@@ -715,7 +703,7 @@ if [[ "$DRY_RUN" == "true" ]]; then
   echo -e "${YELLOW}  DRY RUN COMPLETE -- no changes were made${NC}"
   echo -e "${YELLOW}═══════════════════════════════════════════════════════${NC}"
   echo ""
-elif [[ -z "$RESUME_FROM" ]]; then
+else
   # Quick health check -- confirm POS is responding before reboot
   if [[ "$STATION_ROLE" == "server" ]] || [[ "$STATION_ROLE" == "backup" ]]; then
     log "Running post-install health check..."
@@ -792,11 +780,6 @@ P2SVCEOF
   echo "[GWI POS] Rebooting now -- Phase 2 will run automatically..."
   sync
   reboot
-else
-  log ""
-  log "Resume install complete. Reboot to activate all services and the dashboard."
-  log "  Run: sudo reboot"
-  log ""
 fi
 
 
