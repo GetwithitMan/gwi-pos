@@ -88,8 +88,35 @@ mkdir -p "$STAGING"
 echo "==> [4/12] Copying files to staging..."
 
 # .next/standalone/ -> staging root (this IS the runtime with bundled node_modules)
+# Next.js standalone copies the entire repo — remove non-runtime files after copy.
 echo "    standalone runtime..."
 cp -r "$REPO_DIR/.next/standalone/." "$STAGING/"
+
+# Remove non-runtime files that standalone copies from repo root.
+# NUCs don't need docs, tests, configs, IDE files, etc.
+echo "    removing non-runtime files from standalone..."
+rm -rf \
+    "$STAGING/docs" \
+    "$STAGING/docker" \
+    "$STAGING/playwright-report" \
+    "$STAGING/playwright.config.ts" \
+    "$STAGING/eslint.config.mjs" \
+    "$STAGING/postcss.config.mjs" \
+    "$STAGING/tailwind.config.ts" \
+    "$STAGING/tsconfig.json" \
+    "$STAGING/tsconfig.tsbuildinfo" \
+    "$STAGING/CHANGELOG.md" \
+    "$STAGING/CLAUDE.md" \
+    "$STAGING/API_CALLS_AUDIT.csv" \
+    "$STAGING/.env.example" \
+    "$STAGING/.eslintrc*" \
+    "$STAGING/.prettierrc*" \
+    "$STAGING/bin" \
+    "$STAGING/installer" \
+    "$STAGING/keys" \
+    "$STAGING/ecosystem.config.js" \
+    "$STAGING/package-lock.json" \
+    2>/dev/null || true
 
 # .next/static/ -> staging/.next/static/ (browser assets)
 echo "    static assets..."

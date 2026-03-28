@@ -1107,8 +1107,9 @@ validate_checksums_txt() {
         [[ "$line" =~ ^# ]] && continue
 
         local expected_hash file_path
-        expected_hash="$(echo "$line" | awk '{print $1}')"
-        file_path="$(echo "$line" | awk '{print $2}')"
+        # shasum format: "hash  filename" (two spaces). Filename may contain spaces.
+        expected_hash="${line%% *}"
+        file_path="${line#*  }"
 
         # Strip leading ./ or /
         file_path="${file_path#./}"
