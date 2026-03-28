@@ -459,13 +459,14 @@ command -v python3 >/dev/null 2>&1 || track_warn "python3 not found -- version c
 STAGE_STATE_DIR="$APP_BASE/shared/state"
 
 _stage_marker() {
-    echo "$STAGE_STATE_DIR/.stage-${1}-done-v${INSTALLER_VERSION}"
+    echo "$STAGE_STATE_DIR/.stage-${1}-done"
 }
 
 _stage_done() {
     local marker
     marker="$(_stage_marker "$1")"
-    [[ -f "$marker" ]]
+    # Accept markers from ANY version (the old versioned format or the new plain format)
+    [[ -f "$marker" ]] || ls "$STAGE_STATE_DIR"/.stage-${1}-done-v* &>/dev/null 2>&1
 }
 
 _mark_stage_done() {
@@ -475,7 +476,7 @@ _mark_stage_done() {
 
 _reset_all_markers() {
     mkdir -p "$STAGE_STATE_DIR"
-    rm -f "$STAGE_STATE_DIR"/.stage-*-done-* 2>/dev/null || true
+    rm -f "$STAGE_STATE_DIR"/.stage-*-done* 2>/dev/null || true
     log "Stage markers reset for fresh install"
 }
 
