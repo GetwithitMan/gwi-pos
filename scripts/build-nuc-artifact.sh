@@ -132,23 +132,16 @@ find "$STAGING" -type d -name ".git" -exec rm -rf {} + 2>/dev/null || true
 # Standalone tracing only includes subpaths used by pages, but the custom server
 # imports from these packages at runtime via esbuild-bundled code.
 #
-# IMPORTANT: Do NOT replace the standalone-traced `next` package with the full
-# repo copy. The full `next` includes build-time code paths (SWC, browserslist,
-# transpile-config) that require additional deps not in standalone. Instead,
-# copy only the specific subpath files the server needs that standalone missed.
-echo "    patching next/ with server-required subpaths..."
-for subpath in headers.js server.js navigation.js; do
-    if [ -f "$REPO_DIR/node_modules/next/$subpath" ] && [ ! -f "$STAGING/node_modules/next/$subpath" ]; then
-        cp "$REPO_DIR/node_modules/next/$subpath" "$STAGING/node_modules/next/$subpath"
-        echo "      added next/$subpath"
-    fi
-done
+# The custom server calls next() directly, which loads config-utils, SWC options,
+# browserslist, etc. — code paths that standalone's traced subset doesn't include.
+# Copy the FULL next package from repo, plus its transitive dep baseline-browser-mapping.
 #
 # Derived from: grep -oP 'require\("[^"]+"\)' server.js | sort -u
 # Plus transitive deps of socket.io-client (8 packages).
 # These packages MUST be the full repo versions, not standalone traces.
 # Standalone may have partial traces that are incomplete for runtime use.
 _SERVER_PKGS=(
+    next baseline-browser-mapping
     socket.io-client engine.io-client engine.io-parser socket.io-parser
     xmlhttprequest-ssl ws debug ms
     @socket.io/component-emitter
