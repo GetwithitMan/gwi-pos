@@ -9,5 +9,5 @@ Ideas
 SESSION-EXPORT*
 Manual PDF.pdf
 ePOS_SDK_JavaScript_v2.27.0h.zip
-server.ts
+# server.ts — needed by build-server.mjs for NUC artifact packaging (do NOT ignore)
 docs/audits
