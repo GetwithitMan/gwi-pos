@@ -398,6 +398,26 @@ if [ -f "$STAGED_PRISMA" ]; then
         echo "$NUC_TEST_OUTPUT" | head -10 >&2
         exit 1
     fi
+
+    # Validate nuc-pre-migrate.js can load all its dependencies from the artifact.
+    # This catches missing runtime deps (adapter-pg, generated client, pg) at build
+    # time instead of on the NUC. We verify imports resolve without running migrations.
+    echo "    Validating nuc-pre-migrate.js dependencies from staged artifact..."
+    MIGRATE_DEPS_TEST=$(cd "$STAGING" && node -e "
+      // These are optional in artifact context (dotenv, tsx) — skip them
+      // These are REQUIRED — must resolve from the artifact:
+      try { require('./src/generated/prisma/client'); } catch(e) { console.error('FAIL: generated prisma client:', e.message); process.exit(1); }
+      try { require('@prisma/adapter-pg'); } catch(e) { console.error('FAIL: @prisma/adapter-pg:', e.message); process.exit(1); }
+      try { require('fs'); require('path'); } catch(e) { console.error('FAIL: node builtins:', e.message); process.exit(1); }
+      console.log('nuc-pre-migrate deps OK');
+    " 2>&1) || true
+    if echo "$MIGRATE_DEPS_TEST" | grep -q "nuc-pre-migrate deps OK"; then
+        echo "    nuc-pre-migrate.js: all runtime deps resolve from artifact"
+    else
+        echo "FATAL: nuc-pre-migrate.js has missing dependencies in staged artifact:" >&2
+        echo "$MIGRATE_DEPS_TEST" >&2
+        exit 1
+    fi
 fi
 
 # ─── 6. Generate required-env.json ───────────────────────────────────────────
