@@ -247,7 +247,7 @@ cat > "$STAGING/artifact-metadata.json" << METAJSON
   "compatibleFromReleases": [],
   "compatibleSchemaVersions": ["${SCHEMA_VERSION}"],
   "schemaExpansionOnly": true,
-  "requiredEnvKeys": ["DATABASE_URL", "NEXTAUTH_SECRET", "LOCATION_ID"]
+  "requiredEnvKeys": ["DATABASE_URL", "NEXTAUTH_URL", "NEXTAUTH_SECRET", "LOCATION_ID"]
 }
 METAJSON
 
@@ -303,35 +303,44 @@ fi
 echo "    sha256: $ARTIFACT_SHA256"
 echo "    size:   $ARTIFACT_SIZE bytes"
 
-# ─── 11. Sign with minisign (optional) ───────────────────────────────────────
+# ─── 11. Sign with minisign (REQUIRED on CI, skipped only for local dev) ─────
 echo "==> [11/12] Signing artifact..."
 
 SIGNED=false
 if [ -n "${MINISIGN_SECRET_KEY:-}" ]; then
-    if command -v minisign &>/dev/null; then
-        # Write secret key to temp file (minisign requires file input)
-        TMPKEY=$(mktemp)
-        trap 'rm -f "$TMPKEY"' EXIT
-        echo "$MINISIGN_SECRET_KEY" > "$TMPKEY"
-
-        # Sign the artifact
-        minisign -S -s "$TMPKEY" -m "$ARTIFACT_PATH" \
-            -t "GWI POS release ${RELEASE_ID}" 2>/dev/null
-        echo "    Artifact signed: ${ARTIFACT_FILENAME}.minisig"
-
-        # Sign the manifest
-        minisign -S -s "$TMPKEY" -m "$STAGING/artifact-metadata.json" \
-            -t "GWI POS manifest ${RELEASE_ID}" 2>/dev/null
-        echo "    Manifest signed: artifact-metadata.json.minisig"
-
-        rm -f "$TMPKEY"
-        trap - EXIT
-        SIGNED=true
-    else
-        echo "    WARNING: MINISIGN_SECRET_KEY set but minisign binary not found. Skipping signing."
+    if ! command -v minisign &>/dev/null; then
+        echo "FATAL: MINISIGN_SECRET_KEY is set but minisign binary not found." >&2
+        echo "Install with: apt-get install -y minisign (or brew install minisign)" >&2
+        exit 1
     fi
+
+    # Write secret key to temp file (minisign requires file input)
+    TMPKEY=$(mktemp)
+    trap 'rm -f "$TMPKEY"' EXIT
+    echo "$MINISIGN_SECRET_KEY" > "$TMPKEY"
+
+    # Sign the artifact
+    minisign -S -s "$TMPKEY" -m "$ARTIFACT_PATH" \
+        -t "GWI POS release ${RELEASE_ID}" 2>/dev/null
+    echo "    Artifact signed: ${ARTIFACT_FILENAME}.minisig"
+
+    # Sign the manifest
+    minisign -S -s "$TMPKEY" -m "$STAGING/artifact-metadata.json" \
+        -t "GWI POS manifest ${RELEASE_ID}" 2>/dev/null
+    echo "    Manifest signed: artifact-metadata.json.minisig"
+
+    rm -f "$TMPKEY"
+    trap - EXIT
+    SIGNED=true
+elif [ -n "${VERCEL:-}" ] || [ -n "${CI:-}" ]; then
+    # On CI/Vercel, signing is MANDATORY — fail the build
+    echo "FATAL: MINISIGN_SECRET_KEY not set. Artifact signing is required on CI." >&2
+    echo "Add MINISIGN_SECRET_KEY to Vercel environment variables." >&2
+    exit 1
 else
-    echo "    WARNING: MINISIGN_SECRET_KEY not set. Artifact will be unsigned."
+    # Local dev build — warn but allow unsigned artifacts for testing
+    echo "    NOTE: MINISIGN_SECRET_KEY not set (local dev build). Artifact will be unsigned."
+    echo "    Set MINISIGN_SECRET_KEY for production builds."
 fi
 
 # ─── 12. Copy outputs to public/artifacts/ ────────────────────────────────────

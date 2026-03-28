@@ -534,7 +534,19 @@ fetch_manifest() {
             fi
             log "Manifest signature verified"
         else
-            warn "minisign not installed — skipping manifest signature check (transition period)"
+            # Public key exists but minisign missing — try auto-install
+            if command -v apt-get &>/dev/null; then
+                log "minisign not installed — attempting auto-install for manifest verification..."
+                apt-get install -y minisign &>/dev/null || true
+            fi
+            if command -v minisign &>/dev/null; then
+                if ! minisign -Vm "$manifest_file" -p "$PUB_KEY" -x "$sig_file" 2>/dev/null; then
+                    fatal "Manifest signature verification FAILED"
+                fi
+                log "Manifest signature verified (after auto-install)"
+            else
+                fatal "minisign required for manifest verification but could not be installed"
+            fi
         fi
     fi
 
@@ -799,10 +811,22 @@ verify_signature() {
     fi
 
     if ! command -v minisign &>/dev/null; then
-        warn "minisign not installed — install with: apt-get install -y minisign"
-        warn "Skipping signature verification (transition period)"
-        SIGNATURE_RESULT="skipped"
-        return 0
+        # Public key exists but minisign is not installed — attempt auto-install
+        if command -v apt-get &>/dev/null; then
+            log "minisign not installed — attempting auto-install..."
+            if apt-get install -y minisign &>/dev/null; then
+                log "minisign installed successfully"
+            else
+                err "Failed to install minisign. Signature verification cannot proceed."
+                err "Install manually: apt-get install -y minisign"
+                SIGNATURE_RESULT="fail"
+                return 1
+            fi
+        else
+            err "minisign not installed and cannot auto-install. Signature verification required."
+            SIGNATURE_RESULT="fail"
+            return 1
+        fi
     fi
 
     if [[ ! -f "$sig_file" ]]; then
@@ -957,9 +981,10 @@ extract_artifact() {
         local inner_dir
         inner_dir="$(ls -1 "$temp_extract")"
         if [[ -d "${temp_extract}/${inner_dir}" ]]; then
-            # Single directory inside — validate name matches releaseId if available
+            # Single directory inside — validate name matches releaseId
             if [[ -n "$RELEASE_ID" ]] && [[ "$inner_dir" != "$RELEASE_ID" ]]; then
-                warn "Top-level directory name '$inner_dir' does not match releaseId '$RELEASE_ID'"
+                rm -rf "$temp_extract"
+                fatal "Top-level directory name '$inner_dir' does not match releaseId '$RELEASE_ID' — artifact may be corrupt or tampered"
             fi
             # Unwrap
             mv "${temp_extract}/${inner_dir}" "$release_dir"
