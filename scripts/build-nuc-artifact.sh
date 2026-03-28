@@ -151,20 +151,25 @@ if [ -f "$REPO_DIR/prisma/schema.sql" ]; then
     echo "    prisma/schema.sql (generated)"
 fi
 
-# Generate a dedicated DEPLOY schema with inline DATABASE_URL.
-# The repo schema omits the URL (relies on prisma.config.ts for dev/build).
-# For artifact deploys, we generate schema.deploy.prisma which is self-contained:
-# no config file, no imports, no module resolution — just schema + env var.
-echo "    Generating prisma/schema.deploy.prisma (self-contained for deploy)..."
-cp "$STAGING/prisma/schema.prisma" "$STAGING/prisma/schema.deploy.prisma"
-if ! grep -q 'url.*=.*env("DATABASE_URL")' "$STAGING/prisma/schema.deploy.prisma"; then
-    # Insert url = env("DATABASE_URL") into the datasource block
-    sed -i '/^datasource db {/a\  url = env("DATABASE_URL")' "$STAGING/prisma/schema.deploy.prisma"
-fi
-echo "    schema.deploy.prisma generated with inline url = env(\"DATABASE_URL\")"
+# Prisma 7 config: datasource URL lives in prisma.config.mjs, NOT in schema.
+# Generate a minimal config that reads DATABASE_URL from env.
+# Use .mjs so Node loads it as ESM without any TypeScript compilation.
+cat > "$STAGING/prisma.config.mjs" << 'PRISMACONFIG'
+import { defineConfig } from "prisma/config";
+export default defineConfig({
+  schema: "./prisma/schema.prisma",
+  datasource: { url: process.env.DATABASE_URL },
+});
+PRISMACONFIG
+echo "    prisma.config.mjs (Prisma 7 datasource config)"
 
-# Remove prisma.config.ts from artifact — not needed
-rm -f "$STAGING/prisma.config.ts" 2>/dev/null
+# Symlink release-root node_modules → prisma/cli/node_modules so that
+# prisma.config.mjs can resolve 'prisma/config' via normal Node resolution.
+# The isolated Prisma install has the complete dependency tree there.
+if [ -d "$STAGING/prisma/cli/node_modules" ]; then
+    ln -sfn prisma/cli/node_modules "$STAGING/node_modules"
+    echo "    node_modules -> prisma/cli/node_modules (symlink for config resolution)"
+fi
 
 # Migration scripts
 echo "    migration scripts..."
@@ -188,6 +193,12 @@ cp -r "$REPO_DIR/src/generated/prisma/." "$STAGING/src/generated/prisma/"
 # package.json (for version detection only)
 echo "    package.json..."
 cp "$REPO_DIR/package.json" "$STAGING/package.json"
+
+# Version contract (used by deploy schema compat gates + heartbeat)
+if [ -f "$REPO_DIR/src/generated/version-contract.json" ]; then
+    cp "$REPO_DIR/src/generated/version-contract.json" "$STAGING/version-contract.json"
+    echo "    version-contract.json"
+fi
 
 # ─── 5. Bundle Prisma CLI (isolated npm install — complete dependency tree) ──
 echo "==> [5/12] Bundling Prisma CLI..."
@@ -270,18 +281,23 @@ rm -rf "$PRISMA_BUNDLE_DIR"
 # Final validation: simulate NUC execution shape.
 # Run from STAGING dir (like deploy-release.sh does from release dir)
 # with prisma.config.ts + DATABASE_URL + bundled CLI.
-echo "    Validating NUC execution shape (cd staging + schema with inline URL)..."
+echo "    Validating NUC execution shape (cd staging + prisma.config.mjs + symlink)..."
 STAGED_PRISMA="$STAGING/prisma/cli/node_modules/.bin/prisma"
 if [ -f "$STAGED_PRISMA" ]; then
-    # Verify the deploy schema has url = env("DATABASE_URL")
-    if ! grep -q 'url.*=.*env("DATABASE_URL")' "$STAGING/prisma/schema.deploy.prisma"; then
-        echo "FATAL: schema.deploy.prisma missing url = env(\"DATABASE_URL\")" >&2
+    # Verify prisma.config.mjs exists
+    if [ ! -f "$STAGING/prisma.config.mjs" ]; then
+        echo "FATAL: prisma.config.mjs missing from staged release" >&2
         exit 1
     fi
-    # Simulate NUC: cd to release dir, set DATABASE_URL, run prisma with deploy schema
-    NUC_TEST_OUTPUT=$(cd "$STAGING" && DATABASE_URL="postgresql://test:test@localhost:5432/test" "$STAGED_PRISMA" db push --help --schema=./prisma/schema.deploy.prisma 2>&1) || true
+    # Verify node_modules symlink exists
+    if [ ! -L "$STAGING/node_modules" ]; then
+        echo "FATAL: node_modules symlink missing from staged release root" >&2
+        exit 1
+    fi
+    # Simulate NUC: cd to release dir, set DATABASE_URL, run prisma db push --help
+    NUC_TEST_OUTPUT=$(cd "$STAGING" && DATABASE_URL="postgresql://test:test@localhost:5432/test" "$STAGED_PRISMA" db push --help 2>&1) || true
     if echo "$NUC_TEST_OUTPUT" | grep -qi "prisma db push\|push the state"; then
-        echo "    NUC execution shape: OK (self-contained schema, no config file needed)"
+        echo "    NUC execution shape: OK (prisma.config.mjs resolves, CLI loads from release root)"
     else
         echo "FATAL: Prisma CLI failed from staged release directory:" >&2
         echo "$NUC_TEST_OUTPUT" | head -10 >&2

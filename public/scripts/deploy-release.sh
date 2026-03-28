@@ -72,6 +72,7 @@ readonly MIN_RAM_MB=1536                                  # 1.5GB
 readonly REQUIRED_FILES=(
     "server.js"
     "prisma/schema.prisma"
+    "prisma.config.mjs"
     "prisma/cli/prisma"
     "launcher.sh"
     "required-env.json"
@@ -1323,18 +1324,14 @@ run_schema_step() {
     fi
 
     if [[ -n "$prisma_cmd" ]]; then
-        log "Running: prisma db push (schema.deploy.prisma — self-contained, inline DATABASE_URL)"
+        log "Running: prisma db push (prisma.config.mjs reads DATABASE_URL from env)"
         local schema_exit=0
-        # Uses schema.deploy.prisma which has url = env("DATABASE_URL") inline.
-        # No config file. No imports. No module resolution.
-        local deploy_schema="${release_dir}/prisma/schema.deploy.prisma"
-        if [[ ! -f "$deploy_schema" ]]; then
-            deploy_schema="${release_dir}/prisma/schema.prisma"  # fallback for older artifacts
-        fi
+        # Prisma 7: datasource URL comes from prisma.config.mjs at release root.
+        # Config reads process.env.DATABASE_URL. node_modules symlink resolves 'prisma/config'.
         (
             cd "$release_dir" || exit 1
             export DATABASE_URL="$db_url"
-            timeout "$SCHEMA_TIMEOUT_SECONDS" "$prisma_cmd" db push --schema="$deploy_schema"
+            timeout "$SCHEMA_TIMEOUT_SECONDS" "$prisma_cmd" db push
         ) > >(tee -a "${DEPLOY_LOG_DIR}/schema-${RELEASE_ID}.log") 2>&1 \
             || schema_exit=$?
 
