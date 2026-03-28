@@ -173,7 +173,7 @@ const READINESS_KEY = '__gwi_readiness_state' as const
 
 // Declare on globalThis for cross-module sharing
 declare global {
-  // eslint-disable-next-line no-var
+   
   var __gwi_readiness_state: ReadinessState | null | undefined
 }
 

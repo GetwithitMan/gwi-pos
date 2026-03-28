@@ -249,7 +249,7 @@ function AllergenBadge({ allergen }: { allergen: string }) {
 interface ItemContentProps {
   item: ItemDetail
   inline: boolean
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   PizzaBuilderComponent: ComponentType<any> | null
   selections: Map<string, SelectedModifier[]>
   onSelectionChange: (groupId: string, sels: SelectedModifier[]) => void
@@ -412,7 +412,7 @@ export function MenuItemSheet({ itemId, slug, onClose, onAdd, inline = false }: 
   const [error, setError] = useState(false)
   const [quantity, setQuantity] = useState(1)
   const [selections, setSelections] = useState<Map<string, SelectedModifier[]>>(new Map())
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const [PizzaBuilderComponent, setPizzaBuilderComponent] = useState<ComponentType<any> | null>(null)
   const [pizzaBuildResult, setPizzaBuildResult] = useState<PizzaBuilderResult | null>(null)
   const [pizzaTotal, setPizzaTotal] = useState<number | null>(null)

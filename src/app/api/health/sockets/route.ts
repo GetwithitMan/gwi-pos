@@ -1,4 +1,3 @@
-import { NextResponse } from 'next/server'
 import { getSocketHealthMetrics } from '@/lib/socket-server'
 import { getQueueSize } from '@/lib/socket-ack-queue'
 import { getLatestEventId } from '@/lib/socket-event-buffer'

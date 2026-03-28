@@ -9,7 +9,6 @@ import { UpdateRefreshListener } from "@/components/UpdateRefreshListener";
 import { LocationAlertListener } from "@/components/LocationAlertListener";
 import { IdleTimerProvider } from "@/components/IdleTimerProvider";
 import { ServiceWorkerRegistration } from "@/components/ServiceWorkerRegistration";
-import { OfflineDisconnectBanner } from "@/components/OfflineDisconnectBanner";
 import { FailoverBanner } from "@/components/FailoverBanner";
 import { CellularModeBanner } from "@/components/CellularModeBanner";
 import { OutageBanner } from "@/components/OutageBanner";

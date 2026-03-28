@@ -105,6 +105,7 @@ export async function getSiteBootstrapData(
 
   // ── Parallel data queries ───────────────────────────────────────────────
   const [onlineItemCount, giftCardCount, activeCouponCount, deliveryZoneCount] = await Promise.all([
+    // eslint-disable-next-line no-restricted-syntax -- aggregate count on injected PrismaClient, not global db
     db.menuItem.count({
       where: { locationId, showOnline: true, deletedAt: null, isActive: true },
     }),
@@ -217,6 +218,7 @@ export async function getSiteCapabilities(
   timezone: string,
 ): Promise<SiteBootstrapResponse['capabilities']> {
   const [onlineItemCount, giftCardCount, activeCouponCount, deliveryZoneCount] = await Promise.all([
+    // eslint-disable-next-line no-restricted-syntax -- aggregate count on injected PrismaClient, not global db
     db.menuItem.count({ where: { locationId, showOnline: true, deletedAt: null, isActive: true } }),
     db.giftCard.count({ where: { locationId, status: 'active' } }).catch(() => 0),
     db.coupon.count({

@@ -60,7 +60,7 @@ export function OrderTypeSelector({
       clearDeliveryAddress()
       setQuote({ status: 'idle' })
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [value])
 
   const fetchQuote = useCallback(

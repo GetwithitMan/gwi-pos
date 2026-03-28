@@ -13,7 +13,7 @@ import { err, ok } from '@/lib/api-response'
  * 4. Subtract employee-level "deny" rules
  * 5. If NO role rules exist at all for this reasonType, return ALL active reasons (backward compat)
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars -- exported for use by comp-void/validation.ts
+ 
 export async function resolveAllowedReasonIds(
   locationId: string,
   employeeId: string,

@@ -29,10 +29,8 @@ import { NOTIFICATION_EVENTS } from '@/types/multi-surface'
 import type {
   NotificationProvider,
   NotificationCapabilities,
-  TargetType,
   TestResult,
   ProviderType,
-  NotificationEventType,
 } from '../types'
 
 const log = createChildLogger('display-provider')

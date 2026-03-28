@@ -180,7 +180,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Calculate delivery fee — zone fee takes priority over flat config fee
     let deliveryFee = deliveryConfig.deliveryFee
-    let resolvedZoneId = zoneId || null
+    const resolvedZoneId = zoneId || null
 
     if (resolvedZoneId) {
       // Look up zone-specific delivery fee

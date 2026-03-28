@@ -29,7 +29,7 @@ interface SchemaCheckResult {
 // Using globalThis ensures both module systems share the same schema verification state.
 
 declare global {
-  // eslint-disable-next-line no-var
+   
   var __gwi_schema_result: SchemaCheckResult | null | undefined
 }
 

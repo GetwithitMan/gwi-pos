@@ -15,7 +15,7 @@ const mockDb = vi.hoisted(() => ({
   location: {
     findUnique: vi.fn(),
   },
-  $transaction: vi.fn((fn: Function) => fn(mockDb)),
+  $transaction: vi.fn((fn: (db: typeof mockDb) => unknown) => fn(mockDb)),
   $queryRawUnsafe: vi.fn(),
 }))
 
@@ -29,7 +29,7 @@ vi.mock('@/lib/with-venue', () => ({
   withVenue: (handler: (...args: unknown[]) => unknown) => handler,
 }))
 vi.mock('@/lib/api-auth-middleware', () => ({
-  withAuth: (_perm: string, handler: Function) => handler,
+  withAuth: (_perm: string, handler: (...args: unknown[]) => unknown) => handler,
 }))
 vi.mock('@/lib/cloud-notify', () => ({ notifyDataChanged: mockNotifyDataChanged }))
 vi.mock('@/lib/gift-card-email', () => ({ sendGiftCardEmail: mockSendGiftCardEmail }))
@@ -174,7 +174,7 @@ describe('POST /api/gift-cards', () => {
       transactions: [{ id: 'txn-1', type: 'purchase', amount: 25 }],
     })
 
-    const res = await (POST as Function)(
+    const res = await (POST as (...args: unknown[]) => Promise<Response>)(
       makePostRequest({ amount: 25, orderId: 'order-1' }),
       AUTH_CTX
     )
@@ -186,7 +186,7 @@ describe('POST /api/gift-cards', () => {
   })
 
   it('returns 400 when amount is missing', async () => {
-    const res = await (POST as Function)(
+    const res = await (POST as (...args: unknown[]) => Promise<Response>)(
       makePostRequest({ orderId: 'order-1' }),
       AUTH_CTX
     )
@@ -197,7 +197,7 @@ describe('POST /api/gift-cards', () => {
   })
 
   it('returns 400 when amount is zero or negative', async () => {
-    const res = await (POST as Function)(
+    const res = await (POST as (...args: unknown[]) => Promise<Response>)(
       makePostRequest({ amount: 0, orderId: 'order-1' }),
       AUTH_CTX
     )
@@ -226,7 +226,7 @@ describe('POST /api/gift-cards', () => {
     })
     mockDb.giftCard.update = vi.fn()
 
-    const res = await (POST as Function)(
+    const res = await (POST as (...args: unknown[]) => Promise<Response>)(
       makePostRequest({ amount: 50, orderId: 'order-2' }),
       AUTH_CTX
     )
@@ -254,7 +254,7 @@ describe('POST /api/gift-cards', () => {
       error: 'No card numbers available in the pool. Import more card numbers.',
     })
 
-    const res = await (POST as Function)(
+    const res = await (POST as (...args: unknown[]) => Promise<Response>)(
       makePostRequest({ amount: 50, orderId: 'order-3' }),
       AUTH_CTX
     )
@@ -276,7 +276,7 @@ describe('POST /api/gift-cards', () => {
       transactions: [{ id: 'txn-e', type: 'purchase', amount: 30 }],
     })
 
-    await (POST as Function)(
+    await (POST as (...args: unknown[]) => Promise<Response>)(
       makePostRequest({
         amount: 30,
         recipientEmail: 'test@example.com',
@@ -308,7 +308,7 @@ describe('POST /api/gift-cards', () => {
       transactions: [],
     })
 
-    await (POST as Function)(
+    await (POST as (...args: unknown[]) => Promise<Response>)(
       makePostRequest({ amount: 20, orderId: 'order-5' }),
       AUTH_CTX
     )

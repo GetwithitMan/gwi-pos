@@ -104,7 +104,7 @@ export async function POST(request: NextRequest) {
   }
 
   // CRITICAL: Strip giftCardCvv from payload before any persistence or logging
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   const { giftCardCvv: _cvvStripped, ...safePayload } = payload
 
   const eventType = payload.eventType || 'payment.completed'

@@ -17,7 +17,7 @@ import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worke
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { getCachedInclusiveTaxRules, getCachedCategories } from '@/lib/tax-cache'
 import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
-import { getLocationId, getLocationTimezone } from '@/lib/location-cache'
+import { getLocationId } from '@/lib/location-cache'
 import {
   type AddItemInput,
   validateAddItemsInput,

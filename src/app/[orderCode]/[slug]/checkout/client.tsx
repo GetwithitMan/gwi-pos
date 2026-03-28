@@ -18,8 +18,6 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { useSiteCartStore, useCartItems, useCartItemCount, useCartSubtotal } from '@/stores/site-cart-store'
 import { CartItemRow } from '@/components/site/CartItemRow'
-import { TipSelector } from '@/components/site/TipSelector'
-import { CartSummary } from '@/components/site/CartSummary'
 import { formatCurrency } from '@/lib/utils'
 
 interface CheckoutConfig {

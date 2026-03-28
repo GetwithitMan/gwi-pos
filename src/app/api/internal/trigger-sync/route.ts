@@ -1,4 +1,3 @@
-import { NextResponse } from 'next/server'
 import { triggerImmediateDownstreamSync } from '@/lib/sync/downstream-sync-worker'
 import { err, ok, unauthorized } from '@/lib/api-response'
 

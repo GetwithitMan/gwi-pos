@@ -21,7 +21,6 @@ import { createChildLogger } from '@/lib/logger'
 import type {
   NotificationProvider,
   NotificationCapabilities,
-  TargetType,
   TestResult,
   ProviderType,
 } from '../types'

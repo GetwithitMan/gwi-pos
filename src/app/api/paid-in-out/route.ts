@@ -188,6 +188,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         return forbidden('Paid-out transactions over $100 require manager approval. Please enter a manager PIN.')
       }
       // Verify manager PIN server-side — find an employee whose PIN matches
+      // eslint-disable-next-line no-restricted-syntax -- manager PIN verification needs all employees with PIN+role for bcrypt compare
       const employees = await db.employee.findMany({
         where: { locationId, isActive: true, deletedAt: null },
         select: { id: true, pin: true, displayName: true, firstName: true, lastName: true, role: { select: { permissions: true } } },

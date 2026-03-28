@@ -25,7 +25,7 @@ import { useFloorPlanModals } from '@/hooks/useFloorPlanModals'
 const CompVoidModal = lazy(() => import('@/components/orders/CompVoidModal').then(m => ({ default: m.CompVoidModal })))
 import { NoteEditModal } from '@/components/orders/NoteEditModal'
 import { logger } from '@/lib/logger'
-import type { PizzaOrderConfig, MenuItem, CategoryFloorPlan as Category, OpenOrderFloorPlan as OpenOrder, PricingOption } from '@/types'
+import type { PizzaOrderConfig, MenuItem, CategoryFloorPlan as Category, PricingOption } from '@/types'
 import type { OrderTypeConfig } from '@/types/order-types'
 import { toast } from '@/stores/toast-store'
 const SharedOwnershipModal = lazy(() => import('@/components/tips/SharedOwnershipModal'))

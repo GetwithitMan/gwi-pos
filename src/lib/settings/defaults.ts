@@ -2,7 +2,7 @@
 // Split from src/lib/settings.ts for maintainability
 
 import { DEFAULT_GLOBAL_RECEIPT_SETTINGS, mergeGlobalReceiptSettings } from '@/types/print'
-import type { GwiLogger } from '@/lib/logger'
+import { createChildLogger } from '@/lib/logger'
 
 import type {
   PricingProgram,
@@ -62,13 +62,12 @@ import type {
   LocationSettings,
   POSLayoutSettings,
   PricingRule,
-  MessageTemplate,
 } from './types'
 
 // Lazy logger — avoids module-scope side effects that inflate middleware bundles
-let _log: GwiLogger | null = null
-function log(): GwiLogger {
-  if (!_log) { _log = require('@/lib/logger').createChildLogger('settings') }
+let _log: ReturnType<typeof createChildLogger> | null = null
+function log(): ReturnType<typeof createChildLogger> {
+  if (!_log) { _log = createChildLogger('settings') }
   return _log!
 }
 

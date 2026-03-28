@@ -17,7 +17,7 @@ vi.mock('@/lib/with-venue', () => ({
   withVenue: (handler: (...args: unknown[]) => unknown) => handler,
 }))
 vi.mock('@/lib/api-auth-middleware', () => ({
-  withAuth: (_perm: string, handler: Function) => handler,
+  withAuth: (_perm: string, handler: (...args: unknown[]) => unknown) => handler,
 }))
 vi.mock('@/lib/cloud-notify', () => ({ notifyDataChanged: vi.fn() }))
 vi.mock('@/lib/domain/gift-cards/schemas', () => ({
@@ -88,7 +88,7 @@ describe('POST /api/gift-cards/import', () => {
     mockDb.giftCard.findMany.mockResolvedValue([]) // no collisions
     mockDb.giftCard.createMany.mockResolvedValue({ count: 3 })
 
-    const res = await (POST as Function)(
+    const res = await (POST as (...args: unknown[]) => Promise<Response>)(
       makeRequest({
         cardNumbers: ['GC-0001', 'GC-0002', 'GC-0003'],
       }),
@@ -116,7 +116,7 @@ describe('POST /api/gift-cards/import', () => {
     mockDb.giftCard.findMany.mockResolvedValue([])
     mockDb.giftCard.createMany.mockResolvedValue({ count: 2 })
 
-    const res = await (POST as Function)(
+    const res = await (POST as (...args: unknown[]) => Promise<Response>)(
       makeRequest({ cardNumbers: ['GC-1111', 'GC-2222'] }),
       AUTH_CTX
     )
@@ -137,7 +137,7 @@ describe('POST /api/gift-cards/import', () => {
     mockDb.giftCard.findMany.mockResolvedValue([])
     mockDb.giftCard.createMany.mockResolvedValue({ count: 1 })
 
-    const res = await (POST as Function)(
+    const res = await (POST as (...args: unknown[]) => Promise<Response>)(
       makeRequest({ cardNumbers: ['GC-DUPE', 'GC-DUPE', 'GC-UNIQ'] }),
       AUTH_CTX
     )
@@ -157,7 +157,7 @@ describe('POST /api/gift-cards/import', () => {
     ])
     mockDb.giftCard.createMany.mockResolvedValue({ count: 1 })
 
-    const res = await (POST as Function)(
+    const res = await (POST as (...args: unknown[]) => Promise<Response>)(
       makeRequest({ cardNumbers: ['GC-EXISTS', 'GC-NEW-1'] }),
       AUTH_CTX
     )
@@ -178,7 +178,7 @@ describe('POST /api/gift-cards/import', () => {
     ])
     mockDb.giftCard.createMany.mockResolvedValue({ count: 2 })
 
-    const res = await (POST as Function)(
+    const res = await (POST as (...args: unknown[]) => Promise<Response>)(
       makeRequest({
         cardNumbers: ['GC-DB-1', 'GC-DB-2', 'GC-NEW-A', 'GC-NEW-A', 'GC-NEW-B'],
       }),
@@ -192,7 +192,7 @@ describe('POST /api/gift-cards/import', () => {
   })
 
   it('validates card number format (rejects invalid)', async () => {
-    const res = await (POST as Function)(
+    const res = await (POST as (...args: unknown[]) => Promise<Response>)(
       makeRequest({ cardNumbers: ['!!invalid!!'] }),
       AUTH_CTX
     )
@@ -203,7 +203,7 @@ describe('POST /api/gift-cards/import', () => {
   })
 
   it('returns error when no card numbers provided', async () => {
-    const res = await (POST as Function)(
+    const res = await (POST as (...args: unknown[]) => Promise<Response>)(
       makeRequest({ cardNumbers: [] }),
       AUTH_CTX
     )

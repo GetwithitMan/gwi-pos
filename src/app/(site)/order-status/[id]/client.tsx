@@ -10,6 +10,7 @@
  */
 
 import { useEffect, useState, useCallback, useRef } from 'react'
+import Link from 'next/link'
 import { useParams, useSearchParams } from 'next/navigation'
 import { OrderStatusTracker } from '@/components/site/OrderStatusTracker'
 
@@ -279,13 +280,13 @@ export function OrderStatusClient() {
             </p>
           )}
           {data.deliveryTrackingToken && (
-            <a
+            <Link
               href={`/delivery/track/${data.deliveryTrackingToken}`}
               className="inline-block mt-3 text-xs font-medium"
               style={{ color: 'var(--site-brand)' }}
             >
               Track Delivery →
-            </a>
+            </Link>
           )}
         </div>
       ) : data.pickupAddress && data.orderType !== 'delivery' ? (
@@ -297,7 +298,7 @@ export function OrderStatusClient() {
 
       {/* Back to Menu */}
       <div className="text-center pt-2 pb-4">
-        <a
+        <Link
           href="/our-menu"
           className="inline-block px-6 py-2.5 rounded-lg text-sm font-medium transition-colors"
           style={{
@@ -306,7 +307,7 @@ export function OrderStatusClient() {
           }}
         >
           Back to Menu
-        </a>
+        </Link>
       </div>
     </div>
   )

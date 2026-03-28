@@ -119,7 +119,7 @@ export default function RewardsPage() {
     }
 
     fetchData()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [slug, isAuthenticated, router, customer?.loyaltyPoints])
 
   // Loading

@@ -176,6 +176,8 @@ const eslintConfig = defineConfig([
       "preload.js",
       "server.js",
       "public/sync-agent.js",
+      // Deploy-tools — CommonJS Node.js scripts (apply-schema, migrate, pg-compat)
+      "deploy-tools/**/*.js",
       // Server-only lib files with conditional require() (Node.js fs/crypto)
       "src/lib/cellular-auth.ts",
     ],

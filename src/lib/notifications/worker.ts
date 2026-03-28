@@ -39,7 +39,6 @@ import type {
   ProviderType,
   TargetType,
   AttemptResult,
-  TerminalResult,
   NormalizedErrorCode,
   NotificationPolicySnapshot,
   ExecutionStage,
@@ -104,6 +103,7 @@ async function revalidateSubject(
 
   if (subjectType === 'order') {
     try {
+      // eslint-disable-next-line no-restricted-syntax -- cross-tenant pre-send revalidation, no locationId available in worker context
       const order = await db.order.findUnique({
         where: { id: subjectId },
         select: { status: true },
