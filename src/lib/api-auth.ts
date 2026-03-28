@@ -231,6 +231,28 @@ export async function requirePermission(
     } catch { /* no cookie or invalid — fall through */ }
   }
 
+  // Bearer token fallback — native clients (Android/PAX) send the session token
+  // from login in the Authorization header instead of cookies
+  if (!employeeId) {
+    try {
+      const { headers } = await import('next/headers')
+      const headerStore = await headers()
+      const authHeader = headerStore.get('authorization')
+      if (authHeader?.startsWith('Bearer ')) {
+        const { verifySessionToken } = await import('@/lib/auth-session')
+        const payload = await verifySessionToken(authHeader.slice(7))
+        if (payload?.employeeId) {
+          employeeId = payload.employeeId
+          // Use token's locationId only if caller didn't provide one,
+          // or if it matches. Never silently override to a different location.
+          if (!locationId && payload.locationId) {
+            locationId = payload.locationId
+          }
+        }
+      }
+    } catch { /* invalid token — fall through */ }
+  }
+
   // Cloud session — pos-cloud-session cookie (email/password or MC redirect)
   // Always check cloud session to override locationId, even when employeeId
   // was already resolved by getActorFromRequest(). Routes pass body.locationId

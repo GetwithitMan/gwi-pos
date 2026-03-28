@@ -138,18 +138,25 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const isDevAccess = permissions.includes('all') || permissions.includes('dev.access')
 
     // ── Set signed httpOnly session cookie (W1-S3) ─────────────
-    await setSessionCookie({
+    const sessionPayload = {
       employeeId: matchedEmployee.id,
       locationId: matchedEmployee.locationId,
       roleId: matchedEmployee.role.id,
       roleName: matchedEmployee.role.name,
       permissions,
-    })
+    }
+    await setSessionCookie(sessionPayload)
+
+    // Generate a portable session token for native clients (Android/PAX)
+    // that can't use httpOnly cookies. Same HMAC-SHA256 signing as the cookie.
+    const { createSessionToken } = await import('@/lib/auth-session')
+    const sessionToken = await createSessionToken(sessionPayload)
 
     // Clear rate limit state on success
     recordLoginSuccess(ip, matchedEmployee.id)
 
     return NextResponse.json({ data: {
+      sessionToken,
       employee: {
         id: matchedEmployee.id,
         firstName: matchedEmployee.firstName,
