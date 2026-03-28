@@ -1879,10 +1879,11 @@ do_deploy() {
         log "Skipping service restart + readiness check (installer Stage 07 will handle this)"
         RESTART_RESULT="skipped"
         READINESS_RESULT="skipped"
-        FINAL_STATUS="healthy"
-        set_state "healthy"
+        FINAL_STATUS="installed_pending_service"
+        set_state "activated"
         log "=========================================="
-        log "Deploy SUCCESSFUL (first install): $RELEASE_ID"
+        log "Deploy STAGED (first install): $RELEASE_ID"
+        log "Service creation + first boot handled by installer Stage 07"
         log "=========================================="
         write_deploy_log
         release_lock

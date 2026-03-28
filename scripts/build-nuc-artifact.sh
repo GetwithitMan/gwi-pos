@@ -200,6 +200,18 @@ PKGJSON
 # Do NOT use --ignore-scripts — Prisma needs postinstall to download engines
 (cd "$PRISMA_BUNDLE_DIR" && npm install --no-audit --no-fund 2>&1 | tail -5)
 
+# Verify engine files were actually downloaded by postinstall
+echo "    Verifying Prisma engine files..."
+SCHEMA_ENGINE_COUNT=$(find "$PRISMA_BUNDLE_DIR" -type f -name "schema-engine*" 2>/dev/null | wc -l)
+WASM_COUNT=$(find "$PRISMA_BUNDLE_DIR" -type f -name "*.wasm" 2>/dev/null | wc -l)
+echo "    Engine binaries: $SCHEMA_ENGINE_COUNT schema-engine files, $WASM_COUNT WASM files"
+if [ "$WASM_COUNT" -eq 0 ]; then
+    echo "FATAL: No WASM files found — Prisma postinstall may have failed" >&2
+    echo "  Check if npm postinstall scripts ran correctly" >&2
+    rm -rf "$PRISMA_BUNDLE_DIR"
+    exit 1
+fi
+
 # Validate the installed CLI works — two checks:
 # 1. --version: proves the CLI loads and its core deps resolve
 # 2. db push --help: exercises schema engine + WASM loading (no DB needed)
