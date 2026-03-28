@@ -131,12 +131,15 @@ find "$STAGING" -type d -name ".git" -exec rm -rf {} + 2>/dev/null || true
 # Ensure packages needed by the custom server (server.js) are in the artifact.
 # Standalone tracing only includes subpaths used by pages, but the custom server
 # imports from these packages at runtime via esbuild-bundled code.
-# socket.io-client + full transitive tree needed by cloud-relay-client.
+#
+# IMPORTANT: Do NOT replace the standalone-traced `next` package with the full
+# repo copy. The full `next` includes build-time code paths (SWC, browserslist,
+# transpile-config) that require additional deps not in standalone. Instead,
+# standalone's traced `next` is kept as-is — it works for the production server.
+#
 # Derived from: grep -oP 'require\("[^"]+"\)' server.js | sort -u
 # Plus transitive deps of socket.io-client (8 packages).
-# twilio has 51 transitive deps — most already in standalone node_modules.
 _SERVER_PKGS=(
-    next
     socket.io-client engine.io-client engine.io-parser socket.io-parser
     xmlhttprequest-ssl ws debug ms
     @socket.io/component-emitter
@@ -144,9 +147,8 @@ _SERVER_PKGS=(
     zod
 )
 for pkg in "${_SERVER_PKGS[@]}"; do
-    if [ -d "$REPO_DIR/node_modules/$pkg" ]; then
+    if [ -d "$REPO_DIR/node_modules/$pkg" ] && [ ! -d "$STAGING/node_modules/$pkg" ]; then
         echo "    ensuring $pkg for custom server..."
-        rm -rf "$STAGING/node_modules/$pkg" 2>/dev/null || true
         mkdir -p "$(dirname "$STAGING/node_modules/$pkg")"
         cp -r "$REPO_DIR/node_modules/$pkg" "$STAGING/node_modules/$pkg"
     fi
