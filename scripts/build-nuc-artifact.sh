@@ -478,9 +478,23 @@ fi
 
 ARTIFACT_FILENAME="pos-release-${RELEASE_ID}.${COMPRESS_EXT}"
 
+# Discover deploy-tools artifact (built by deploy-tools/build.sh in vercel-build step 4c)
+DT_ARTIFACT=$(ls -t "$ARTIFACTS_DIR"/deploy-tools-*.tar.* 2>/dev/null | head -1)
+if [ -n "$DT_ARTIFACT" ]; then
+    DT_ARTIFACT_FILENAME=$(basename "$DT_ARTIFACT")
+    DT_ARTIFACT_SHA256=$(shasum -a 256 "$DT_ARTIFACT" | cut -d' ' -f1)
+    DT_ARTIFACT_SIZE=$(wc -c < "$DT_ARTIFACT" | tr -d ' ')
+    echo "    deploy-tools artifact: $DT_ARTIFACT_FILENAME ($DT_ARTIFACT_SIZE bytes)"
+else
+    DT_ARTIFACT_FILENAME=""
+    DT_ARTIFACT_SHA256=""
+    DT_ARTIFACT_SIZE=0
+    echo "    WARNING: No deploy-tools artifact found — NUC deploys will use legacy migration path"
+fi
+
 cat > "$STAGING/artifact-metadata.json" << METAJSON
 {
-  "artifactFormatVersion": 2,
+  "artifactFormatVersion": 3,
   "version": "${VERSION}",
   "releaseId": "${RELEASE_ID}",
   "schemaVersion": "${SCHEMA_VERSION}",
@@ -488,6 +502,9 @@ cat > "$STAGING/artifact-metadata.json" << METAJSON
   "artifactUrl": "/artifacts/${ARTIFACT_FILENAME}",
   "artifactSigUrl": "/artifacts/${ARTIFACT_FILENAME}.minisig",
   "artifactSha256": "__PENDING__",
+  "deployToolsUrl": "${DT_ARTIFACT_FILENAME:+/artifacts/$DT_ARTIFACT_FILENAME}",
+  "deployToolsSha256": "${DT_ARTIFACT_SHA256}",
+  "deployToolsSize": ${DT_ARTIFACT_SIZE:-0},
   "signingKeyId": "gwi-pos-2026",
   "artifactSize": "__PENDING__",
   "buildDate": "${BUILD_DATE}",

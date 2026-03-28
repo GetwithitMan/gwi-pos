@@ -68,6 +68,13 @@ async function main() {
   console.log('[vercel-build] Generating versioned artifacts...')
   execSync('node scripts/generate-artifacts.mjs', { stdio: 'inherit' })
 
+  // 4c. Build deploy-tools artifact (standalone migration runner, pg-only)
+  // Ships as a separate artifact alongside the app. Contains migrate.js,
+  // apply-schema.js, all migration files, schema.sql, and pg as sole dep.
+  // No Prisma CLI, no tsx, no generated client.
+  console.log('[vercel-build] Building deploy-tools artifact...')
+  execSync('bash deploy-tools/build.sh', { stdio: 'inherit' })
+
   // 5. Build self-contained installer bundle (modules embedded in installer.run)
   // Without this, installer.run on Vercel is just the orchestrator — no modules.
   // NUCs self-update from this file, so it MUST be the full bundle.
