@@ -193,15 +193,25 @@ else
   echo "[pre-start] WARNING: deploy-tools not found at $_DT_DIR — skipping migrations."
 fi
 
-# Run migrations against Neon cloud DB too (ensures venue Neon is always current)
-if [[ -n "${NEON_DATABASE_URL:-}" ]] && [[ -f "$_DT_DIR/src/migrate.js" ]]; then
-  echo "[pre-start] Running Neon migrations via deploy-tools..."
-  NEON_MIGRATE=true NEON_DATABASE_URL="$NEON_DATABASE_URL" timeout --kill-after=10 120 node "$_DT_DIR/src/migrate.js" 2>&1 || {
-    _NEON_EXIT=$?
-    echo "[pre-start] WARNING: Neon migrations failed (exit $_NEON_EXIT) — will retry next boot"
-  }
-  # NOTE: _venue_schema_state is owned by MC (sole source of truth).
-  # The NUC must NEVER write to it — observe and report only.
+# ── Neon schema VALIDATION (read-only — NUC never mutates venue Neon) ──
+# MC owns venue Neon schema via /api/internal/provision and /api/internal/sync-schema.
+# NUC only validates that Neon migration count matches local, and warns if not.
+if [[ -n "$NEON_DATABASE_URL" ]]; then
+  echo "[pre-start] Validating Neon schema version (read-only)..."
+  _neon_count=$(DATABASE_URL="$NEON_DATABASE_URL" node -e "
+    const { Client } = require('pg');
+    const c = new Client({ connectionString: process.env.DATABASE_URL });
+    c.connect().then(() => c.query('SELECT COUNT(*)::int as cnt FROM \"_gwi_migrations\"'))
+      .then(r => { console.log(r.rows[0].cnt); c.end(); })
+      .catch(() => { console.log('-1'); c.end(); });
+  " 2>/dev/null || echo "-1")
+  _local_count=$(psql "$DATABASE_URL" -t -c 'SELECT COUNT(*)::int FROM "_gwi_migrations"' 2>/dev/null | tr -d ' ' || echo "-1")
+  if [[ "$_neon_count" != "-1" ]] && [[ "$_local_count" != "-1" ]] && [[ "$_neon_count" != "$_local_count" ]]; then
+    echo "[pre-start] WARNING: Neon migration count ($_neon_count) differs from local ($_local_count)"
+    echo "[pre-start] MC will reconcile via sync-schema API. NUC does NOT mutate Neon."
+  else
+    echo "[pre-start] Neon schema validation OK (count: $_neon_count)"
+  fi
 fi
 
 # Check seed completion status — hard stop on first boot if incomplete

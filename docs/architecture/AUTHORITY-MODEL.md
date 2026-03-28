@@ -419,3 +419,9 @@ function getReadiness() {
 | Deploy pipeline is pointer-only | Sync agent reads from git + .env symlink — no hardcoded schema or secrets in the pipeline |
 | Sync agent awaits before ACK | Prevents false success reports to MC when deploy is still in progress |
 | Infrastructure tables in Prisma schema | Prevents `prisma db push` from blocking or dropping operational tables |
+
+---
+
+## Related Documents
+
+- **[Schema Authority Model](./SCHEMA-AUTHORITY.md)** — Canonical schema governance: who may mutate schema in each environment, prohibited paths, migration lifecycle, transaction safety, and version tracking tables.

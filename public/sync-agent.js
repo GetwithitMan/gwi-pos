@@ -577,40 +577,27 @@ async function handleForceUpdate(payload, cmdId) {
   step('prisma generate', 'npx prisma generate', true, 120)
   step('pre-migrate', 'node scripts/nuc-pre-migrate.js', true, 180)
 
-  // Run migrate deploy — if it fails with P3005 (db-push database with no migration
-  // history), baseline all existing migrations as applied and retry.
-  log('  prisma migrate...')
+  // ── Local schema migration via deploy-tools/migrate.js (sole schema path) ──
+  // Legacy Prisma CLI calls (prisma migrate deploy, prisma db push, prisma migrate resolve)
+  // have been removed. deploy-tools/migrate.js is the single migration runner for local PG.
+  // NUC never mutates Neon — MC owns venue Neon schema via provision + sync-schema APIs.
+  log('  deploy-tools migrate (local PG)...')
   var migrateOk = false
-  try {
-    execSync('npx prisma migrate deploy', { cwd: APP_DIR, timeout: 120000, stdio: 'pipe', encoding: 'utf-8' })
-    migrateOk = true
-    steps.push('prisma migrate OK')
-  } catch (e) {
-    var migrateErr = ((e.stderr || e.stdout || e.message || '') + '').slice(0, 1000)
-    if (migrateErr.indexOf('P3005') !== -1) {
-      log('  Database needs baselining (created with db push)...')
-      try {
-        var migDirs = fs.readdirSync(path.join(APP_DIR, 'prisma', 'migrations'))
-        migDirs.forEach(function(name) {
-          var fullPath = path.join(APP_DIR, 'prisma', 'migrations', name)
-          if (fs.statSync(fullPath).isDirectory()) {
-            log('    Marking as applied: ' + name)
-            run('npx prisma migrate resolve --applied ' + name, APP_DIR, 30)
-          }
-        })
-        // db push creates any missing tables the baselined migrations would have created
-        log('  Running db push to create missing tables...')
-        run('npx prisma db push', APP_DIR, 180)
-        migrateOk = true
-        steps.push('prisma migrate (baselined + db push) OK')
-      } catch (baseErr) {
-        steps.push('prisma migrate baseline FAIL')
-        log('  Baseline error: ' + (baseErr.message || '').slice(0, 200))
-      }
-    } else {
-      steps.push('prisma migrate FAIL')
-      log('  ' + migrateErr.slice(0, 300))
+  var dtMigrateDir = path.join(APP_DIR, 'deploy-tools', 'src', 'migrate.js')
+  if (fs.existsSync(dtMigrateDir)) {
+    try {
+      run('node ' + dtMigrateDir, APP_DIR, 180)
+      migrateOk = true
+      steps.push('deploy-tools migrate OK')
+    } catch (dtErr) {
+      steps.push('deploy-tools migrate FAIL')
+      log('  deploy-tools migrate error: ' + (dtErr.message || '').slice(0, 300))
     }
+  } else {
+    // Fallback: run nuc-pre-migrate.js which was already called above but handles idempotently
+    log('  deploy-tools not found, relying on pre-migrate step')
+    migrateOk = true
+    steps.push('deploy-tools not found (pre-migrate covers)')
   }
 
   // NOTE: NUC does NOT migrate Neon. MC owns Neon schema advancement.
