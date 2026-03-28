@@ -213,20 +213,49 @@ for pkg_dir in "$REPO_DIR/node_modules/@prisma/"*/; do
 done
 echo "    @prisma/* packages: $(ls "$STAGING/prisma/cli/node_modules/@prisma/" | tr '\n' ' ')"
 
-# 3. Verify schema engine binary exists somewhere in the bundle
+# 3. Copy non-@prisma dependencies that prisma requires (mysql2, postgres, etc.)
+# Read prisma's package.json deps and copy any that aren't @prisma-scoped
+PRISMA_DEPS=$(node -e "const p=require('$REPO_DIR/node_modules/prisma/package.json'); Object.keys(p.dependencies||{}).filter(d=>!d.startsWith('@prisma/')).forEach(d=>console.log(d))" 2>/dev/null)
+for dep in $PRISMA_DEPS; do
+    if [ -d "$REPO_DIR/node_modules/$dep" ]; then
+        cp -r "$REPO_DIR/node_modules/$dep" "$STAGING/prisma/cli/node_modules/$dep"
+    fi
+done
+[ -n "$PRISMA_DEPS" ] && echo "    Non-prisma deps: $PRISMA_DEPS"
+
+# Also copy any transitive deps that @prisma/* packages need from top-level node_modules
+# Walk all @prisma/*/package.json deps and copy missing ones
+for prisma_pkg in "$STAGING/prisma/cli/node_modules/@prisma/"*/; do
+    [ -f "$prisma_pkg/package.json" ] || continue
+    TRANSITIVE=$(node -e "
+        const p=require('$prisma_pkg/package.json');
+        Object.keys({...p.dependencies,...p.peerDependencies}).filter(d=>!d.startsWith('@prisma/')).forEach(d=>console.log(d))
+    " 2>/dev/null)
+    for dep in $TRANSITIVE; do
+        if [ ! -d "$STAGING/prisma/cli/node_modules/$dep" ] && [ -d "$REPO_DIR/node_modules/$dep" ]; then
+            cp -r "$REPO_DIR/node_modules/$dep" "$STAGING/prisma/cli/node_modules/$dep"
+            echo "    Transitive dep: $dep (from $(basename "$prisma_pkg"))"
+        fi
+    done
+done
+
+# 4. Verify schema engine binary exists somewhere in the bundle
 SCHEMA_ENGINE=$(find "$STAGING/prisma/cli" -name "schema-engine-*" -type f 2>/dev/null | head -1)
 [ -n "$SCHEMA_ENGINE" ] && echo "    Schema engine: $(basename "$SCHEMA_ENGINE")" || echo "    WARNING: No schema engine found"
 
 # 4. Validate the bundled Prisma CLI actually runs (fail-hard if broken)
 echo "    Validating bundled Prisma CLI..."
-if NODE_PATH="$STAGING/prisma/cli/node_modules:$STAGING/prisma/cli" \
-   node "$STAGING/prisma/cli/prisma" --version > /dev/null 2>&1; then
-    PRISMA_CLI_VERSION=$(NODE_PATH="$STAGING/prisma/cli/node_modules:$STAGING/prisma/cli" \
-        node "$STAGING/prisma/cli/prisma" --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "unknown")
+PRISMA_TEST_OUTPUT=$(NODE_PATH="$STAGING/prisma/cli/node_modules:$STAGING/prisma/cli" \
+   node "$STAGING/prisma/cli/prisma" --version 2>&1) || true
+if echo "$PRISMA_TEST_OUTPUT" | grep -qE '[0-9]+\.[0-9]+\.[0-9]+'; then
+    PRISMA_CLI_VERSION=$(echo "$PRISMA_TEST_OUTPUT" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
     echo "    Prisma CLI validated: v${PRISMA_CLI_VERSION}"
 else
-    echo "FATAL: Bundled Prisma CLI failed to run. Missing dependencies." >&2
-    echo "  Test: NODE_PATH=prisma/cli/node_modules node prisma/cli/prisma --version" >&2
+    echo "FATAL: Bundled Prisma CLI failed to run:" >&2
+    echo "$PRISMA_TEST_OUTPUT" | head -10 >&2
+    echo "" >&2
+    echo "  Missing modules in: $STAGING/prisma/cli/node_modules/" >&2
+    echo "  Contents: $(ls "$STAGING/prisma/cli/node_modules/" 2>/dev/null | tr '\n' ' ')" >&2
     exit 1
 fi
 
