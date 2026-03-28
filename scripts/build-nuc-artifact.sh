@@ -141,6 +141,7 @@ _SERVER_PKGS=(
     xmlhttprequest-ssl ws debug ms
     @socket.io/component-emitter
     twilio
+    zod
 )
 for pkg in "${_SERVER_PKGS[@]}"; do
     if [ -d "$REPO_DIR/node_modules/$pkg" ]; then
