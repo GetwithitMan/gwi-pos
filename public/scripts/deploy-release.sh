@@ -1867,7 +1867,29 @@ do_deploy() {
     # Step 17: Atomic symlink swap
     swap_symlinks
 
-    # Step 18: Restart service
+    # Detect first install — systemd service may not exist yet.
+    # On fresh installs (via installer), Stage 07 creates the service file AFTER Stage 05.
+    # deploy-release.sh should swap the symlink + schema, then exit successfully
+    # and let the installer continue with service creation (Stage 06-07).
+    local is_first_install=false
+    if ! systemctl list-unit-files "$SERVICE_NAME.service" 2>/dev/null | grep -q "$SERVICE_NAME"; then
+        is_first_install=true
+        log "First install detected — systemd service not yet created"
+        log "Skipping service restart + readiness check (installer Stage 07 will handle this)"
+        RESTART_RESULT="skipped"
+        READINESS_RESULT="skipped"
+        FINAL_STATUS="healthy"
+        set_state "healthy"
+        log "=========================================="
+        log "Deploy SUCCESSFUL (first install): $RELEASE_ID"
+        log "=========================================="
+        write_deploy_log
+        release_lock
+        remove_maintenance_mode
+        exit 0
+    fi
+
+    # Step 18: Restart service (only on updates, not first install)
     if ! restart_service; then
         err "Service restart failed — attempting rollback"
         if do_rollback "$PREVIOUS_RELEASE_ID"; then
