@@ -142,17 +142,20 @@ echo "    launcher.sh..."
 cp "$REPO_DIR/scripts/launcher.sh" "$STAGING/launcher.sh"
 chmod +x "$STAGING/launcher.sh"
 
-# Prisma config (Prisma 7 requires prisma.config.ts for datasource resolution)
-# Write a minimal config that reads DATABASE_URL from env — no dotenv dependency.
-# The full repo config imports dotenv which isn't in the standalone node_modules.
-cat > "$STAGING/prisma.config.ts" << 'PRISMACONFIG'
-import { defineConfig } from 'prisma/config'
-export default defineConfig({
-  schema: './prisma/schema.prisma',
-  datasource: { url: process.env.DATABASE_URL },
-})
-PRISMACONFIG
-echo "    prisma.config.ts (minimal, no dotenv dep)"
+# Make the deploy schema self-contained by injecting url = env("DATABASE_URL").
+# The repo schema omits the URL (relies on prisma.config.ts), but for artifact
+# deploys we need the schema to be standalone — no config file, no imports,
+# no module resolution. Just schema + DATABASE_URL env var.
+echo "    Patching schema.prisma for self-contained deploy..."
+if ! grep -q 'url.*=.*env("DATABASE_URL")' "$STAGING/prisma/schema.prisma"; then
+    sed -i '/^datasource db {/,/^}/ {
+        /^}/ i\  url = env("DATABASE_URL")
+    }' "$STAGING/prisma/schema.prisma"
+    echo "    Injected url = env(\"DATABASE_URL\") into datasource block"
+fi
+
+# Remove prisma.config.ts from artifact — not needed when schema has inline URL
+rm -f "$STAGING/prisma.config.ts" 2>/dev/null
 
 # Prisma schema + optional schema.sql
 echo "    prisma schema..."
@@ -267,19 +270,23 @@ rm -rf "$PRISMA_BUNDLE_DIR"
 # Final validation: simulate NUC execution shape.
 # Run from STAGING dir (like deploy-release.sh does from release dir)
 # with prisma.config.ts + DATABASE_URL + bundled CLI.
-echo "    Validating NUC execution shape (cd staging + prisma.config.ts + DATABASE_URL)..."
+echo "    Validating NUC execution shape (cd staging + schema with inline URL)..."
 STAGED_PRISMA="$STAGING/prisma/cli/node_modules/.bin/prisma"
-if [ -f "$STAGED_PRISMA" ] && [ -f "$STAGING/prisma.config.ts" ]; then
+if [ -f "$STAGED_PRISMA" ]; then
+    # Verify the patched schema has url = env("DATABASE_URL")
+    if ! grep -q 'url.*=.*env("DATABASE_URL")' "$STAGING/prisma/schema.prisma"; then
+        echo "FATAL: Deploy schema missing url = env(\"DATABASE_URL\") in datasource block" >&2
+        exit 1
+    fi
+    # Simulate NUC: cd to release dir, set DATABASE_URL, run prisma --help
     NUC_TEST_OUTPUT=$(cd "$STAGING" && DATABASE_URL="postgresql://test:test@localhost:5432/test" "$STAGED_PRISMA" db push --help 2>&1) || true
     if echo "$NUC_TEST_OUTPUT" | grep -qi "prisma db push\|push the state"; then
-        echo "    NUC execution shape: OK (config resolved, CLI loads from release dir)"
+        echo "    NUC execution shape: OK (self-contained schema, no config file needed)"
     else
-        echo "FATAL: Prisma CLI failed when run from staged release directory:" >&2
+        echo "FATAL: Prisma CLI failed from staged release directory:" >&2
         echo "$NUC_TEST_OUTPUT" | head -10 >&2
         exit 1
     fi
-elif [ ! -f "$STAGING/prisma.config.ts" ]; then
-    echo "    WARNING: prisma.config.ts not in staging — Prisma 7 may fail on NUC"
 fi
 
 # ─── 6. Generate required-env.json ───────────────────────────────────────────
@@ -345,7 +352,13 @@ cat > "$STAGING/artifact-metadata.json" << METAJSON
   "supportedUbuntuVersions": ["jammy", "noble"],
   "healthCheckPath": "/api/health/ready",
   "rollbackSupported": true,
-  "compatibleFromReleases": [],
+  "compatibleFromReleases": [$(
+    # Include previous release tag if available (enables upgrade gate enforcement)
+    prev_tag=$(git -C "$REPO_DIR" describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+    if [ -n "$prev_tag" ]; then
+        echo "\"${prev_tag}\""
+    fi
+  )],
   "compatibleSchemaVersions": [$(
     # Include current schema version AND N-1 for expand-safe upgrades
     prev=$((10#$SCHEMA_VERSION - 1))

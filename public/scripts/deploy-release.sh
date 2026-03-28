@@ -384,6 +384,22 @@ load_env() {
     fi
 }
 
+# Safe env var extraction — handles quoted values, no shell interpolation risks.
+# Usage: get_env_var "DATABASE_URL" → prints value with quotes stripped
+get_env_var() {
+    local key="$1"
+    local env_file="${SHARED_DIR}/.env"
+    [[ ! -f "$env_file" ]] && return 1
+    local val
+    val="$(sed -n "s/^${key}=//p" "$env_file" | head -1)"
+    # Strip surrounding quotes (single or double)
+    val="${val#\"}"
+    val="${val%\"}"
+    val="${val#\'}"
+    val="${val%\'}"
+    echo "$val"
+}
+
 get_venue_id() {
     load_env
     echo "${LOCATION_ID:-unknown}"
@@ -1110,10 +1126,11 @@ validate_checksums_txt() {
         "preload.js"
         "launcher.sh"
         "prisma/schema.prisma"
-        "prisma.config.ts"
         "required-env.json"
         "package.json"
-        ".next/standalone/server.js"
+        "artifact-metadata.json"
+        ".next/server/app/api/health/ready/route.js"
+        "scripts/nuc-pre-migrate.js"
     )
 
     for crit_file in "${critical_files[@]}"; do
@@ -1295,7 +1312,7 @@ run_schema_step() {
     # The artifact ships a complete, isolated Prisma CLI install at prisma/cli/
     # Built via `npm install prisma@X` in a clean temp dir during CI.
     local db_url
-    db_url="$(grep '^DATABASE_URL=' "${SHARED_DIR}/.env" 2>/dev/null | cut -d= -f2-)"
+    db_url="$(get_env_var "DATABASE_URL")"
 
     # Find the Prisma CLI from the artifact's bundled install
     local prisma_cmd=""
@@ -1306,14 +1323,14 @@ run_schema_step() {
     fi
 
     if [[ -n "$prisma_cmd" ]]; then
-        log "Running: prisma db push (from release dir with prisma.config.ts)"
+        log "Running: prisma db push (self-contained schema with inline DATABASE_URL)"
         local schema_exit=0
-        # Run from release directory so Prisma 7 finds prisma.config.ts
-        # No bash -c — use subshell + env to avoid shell interpolation of DATABASE_URL
+        # Schema has url = env("DATABASE_URL") — no config file needed.
+        # Just set DATABASE_URL and point to the schema.
         (
             cd "$release_dir" || exit 1
             export DATABASE_URL="$db_url"
-            timeout "$SCHEMA_TIMEOUT_SECONDS" "$prisma_cmd" db push
+            timeout "$SCHEMA_TIMEOUT_SECONDS" "$prisma_cmd" db push --schema=./prisma/schema.prisma
         ) > >(tee -a "${DEPLOY_LOG_DIR}/schema-${RELEASE_ID}.log") 2>&1 \
             || schema_exit=$?
 
@@ -1338,7 +1355,7 @@ run_schema_step() {
             log "Running: nuc-pre-migrate.js"
             local migrate_exit=0
             timeout "$SCHEMA_TIMEOUT_SECONDS" \
-                env DATABASE_URL="$(grep '^DATABASE_URL=' "${SHARED_DIR}/.env" 2>/dev/null | cut -d= -f2-)" \
+                env DATABASE_URL="$(get_env_var "DATABASE_URL")" \
                 node "$migrate_script" \
                 > >(tee -a "${DEPLOY_LOG_DIR}/schema-${RELEASE_ID}.log") 2>&1 \
                 || migrate_exit=$?
