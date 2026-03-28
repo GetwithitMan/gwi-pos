@@ -515,13 +515,23 @@ fetch_manifest() {
 
     mkdir -p "$CACHE_DIR"
 
-    log "Fetching manifest from $url"
-    if ! download_file "$url" "$manifest_file"; then
-        fatal "Failed to download manifest from $url"
+    # ALWAYS delete stale manifest before fetching — never serve cached versions.
+    # Every deploy must get the latest manifest from the server.
+    rm -f "$manifest_file" "$sig_file" 2>/dev/null
+
+    # Add cache-busting param to bypass CDN/edge caches (Vercel, CloudFlare, etc.)
+    local bust_url="${url}?_=$(date +%s)"
+
+    log "Fetching manifest from $url (cache-bust)"
+    if ! download_file_no_cache "$bust_url" "$manifest_file"; then
+        # Retry without cache-bust in case the server doesn't accept query params
+        if ! download_file_no_cache "$url" "$manifest_file"; then
+            fatal "Failed to download manifest from $url"
+        fi
     fi
 
     # Fetch detached signature and verify (fail-closed when infrastructure exists)
-    if ! download_file "${url}.minisig" "$sig_file"; then
+    if ! download_file_no_cache "${url}.minisig?_=$(date +%s)" "$sig_file" && ! download_file_no_cache "${url}.minisig" "$sig_file"; then
         if [[ -f "$PUB_KEY" ]] && command -v minisign &>/dev/null; then
             fatal "Manifest signature not available — cannot verify manifest integrity"
         else
@@ -695,6 +705,20 @@ version_gte() {
 # ---------------------------------------------------------------------------
 # Download
 # ---------------------------------------------------------------------------
+# Download with explicit no-cache headers — used for manifest fetches.
+# Prevents Vercel edge cache, CDN cache, and any intermediate proxy from serving stale data.
+download_file_no_cache() {
+    local url="$1" dest="$2"
+    log "Downloading (no-cache): $url"
+    if curl -fSL --connect-timeout 30 --max-time 60 --retry 2 \
+        -H "Cache-Control: no-cache, no-store, must-revalidate" \
+        -H "Pragma: no-cache" \
+        -o "$dest" "$url" 2>/dev/null; then
+        return 0
+    fi
+    return 1
+}
+
 download_file() {
     local url="$1" dest="$2"
     local attempt=0 max_retries="${3:-$DOWNLOAD_RETRIES}"
