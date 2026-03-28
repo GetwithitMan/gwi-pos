@@ -233,6 +233,8 @@ for prisma_pkg in "$STAGING/prisma/cli/node_modules/@prisma/"*/; do
     " 2>/dev/null)
     for dep in $TRANSITIVE; do
         if [ ! -d "$STAGING/prisma/cli/node_modules/$dep" ] && [ -d "$REPO_DIR/node_modules/$dep" ]; then
+            # Create parent dir for scoped packages (e.g., @neondatabase/serverless)
+            mkdir -p "$(dirname "$STAGING/prisma/cli/node_modules/$dep")"
             cp -r "$REPO_DIR/node_modules/$dep" "$STAGING/prisma/cli/node_modules/$dep"
             echo "    Transitive dep: $dep (from $(basename "$prisma_pkg"))"
         fi
