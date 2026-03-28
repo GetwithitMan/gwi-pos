@@ -237,19 +237,20 @@ acquire_lock() {
         elapsed=$(( now_epoch - ${lock_epoch:-0} ))
 
         if [[ -n "$lock_pid" ]] && kill -0 "$lock_pid" 2>/dev/null; then
-            # PID is alive — check timeout
+            # PID is alive — NEVER break, even if old. A real long-running deploy must not be killed.
+            err "Deploy already in progress (PID: $lock_pid, age: ${elapsed}s)"
+            err "If this is stale, remove $LOCKFILE manually or use --force"
+            exit 1
+        else
+            # PID is dead — safe to break if old enough
             if [[ $elapsed -ge $LOCK_TIMEOUT_SECONDS ]]; then
-                warn "Lock held by PID $lock_pid for ${elapsed}s (>${LOCK_TIMEOUT_SECONDS}s) — breaking stale lock"
+                warn "Removing stale lock from dead PID $lock_pid (age: ${elapsed}s)"
                 rm -f "$LOCKFILE"
             else
-                err "Deploy already in progress (PID: $lock_pid, age: ${elapsed}s)"
-                err "If this is stale, remove $LOCKFILE manually or wait for ${LOCK_TIMEOUT_SECONDS}s auto-break"
-                exit 1
+                # PID dead but lock is recent — may be a crash. Break it.
+                warn "Lock PID $lock_pid is dead (age: ${elapsed}s) — removing stale lock"
+                rm -f "$LOCKFILE"
             fi
-        else
-            # PID is dead — stale lock
-            warn "Removing stale lock from dead PID $lock_pid"
-            rm -f "$LOCKFILE"
         fi
     fi
 
@@ -519,9 +520,13 @@ fetch_manifest() {
         fatal "Failed to download manifest from $url"
     fi
 
-    # Fetch detached signature
+    # Fetch detached signature and verify (fail-closed when infrastructure exists)
     if ! download_file "${url}.minisig" "$sig_file"; then
-        warn "No detached manifest signature found — continuing without manifest verification"
+        if [[ -f "$PUB_KEY" ]] && command -v minisign &>/dev/null; then
+            fatal "Manifest signature not available — cannot verify manifest integrity"
+        else
+            warn "Manifest signature not available and minisign not installed — skipping (transition period)"
+        fi
     else
         if [[ -f "$PUB_KEY" ]] && command -v minisign &>/dev/null; then
             if ! minisign -Vm "$manifest_file" -p "$PUB_KEY" -x "$sig_file" 2>/dev/null; then
@@ -529,7 +534,7 @@ fetch_manifest() {
             fi
             log "Manifest signature verified"
         else
-            warn "minisign or public key not available — skipping manifest signature check"
+            warn "minisign not installed — skipping manifest signature check (transition period)"
         fi
     fi
 
@@ -622,6 +627,25 @@ check_manifest_compatibility() {
         fi
     fi
     rm -f "$compat_schema_file" 2>/dev/null || true
+
+    # Gate 6: compatibleFromReleases — reject if current release is not in the list
+    local compat_releases_file="${CACHE_DIR}/.compat-releases"
+    if has_jq; then
+        jq -r '.compatibleFromReleases[]? // empty' "$manifest" > "$compat_releases_file" 2>/dev/null || true
+    fi
+    if [[ -s "$compat_releases_file" ]]; then
+        local current_release_id
+        current_release_id="$(get_current_release_id)"
+        if [[ -n "$current_release_id" ]] && ! grep -qx "$current_release_id" "$compat_releases_file"; then
+            # Also check version-only match (releaseId may include SHA)
+            local current_version
+            current_version="$(json_get "${CURRENT_LINK}/package.json" "version" 2>/dev/null)" || true
+            if [[ -n "$current_version" ]] && ! grep -q "$current_version" "$compat_releases_file"; then
+                fatal "Current release '$current_release_id' (v$current_version) not in compatibleFromReleases: $(cat "$compat_releases_file" | tr '\n' ', ')"
+            fi
+        fi
+    fi
+    rm -f "$compat_releases_file" 2>/dev/null || true
 
     log "Manifest compatibility gates passed"
 }
@@ -760,14 +784,23 @@ verify_signature() {
     local artifact="$1"
     local sig_file="${artifact}.minisig"
 
+    # Fail-closed: if signing infrastructure exists, verification is MANDATORY.
+    # Only skip if minisign was never installed (transition period for old NUCs).
     if [[ ! -f "$PUB_KEY" ]]; then
-        warn "Public key not found at $PUB_KEY — skipping signature verification"
-        SIGNATURE_RESULT="skipped"
-        return 0
+        if [[ "$FORCE" == "true" ]]; then
+            warn "Public key not found at $PUB_KEY — skipping (--force)"
+            SIGNATURE_RESULT="skipped"
+            return 0
+        fi
+        err "Public key not found at $PUB_KEY"
+        err "Run installer to bootstrap keys, or use --force to skip verification"
+        SIGNATURE_RESULT="fail"
+        return 1
     fi
 
     if ! command -v minisign &>/dev/null; then
-        warn "minisign not installed — skipping signature verification"
+        warn "minisign not installed — install with: apt-get install -y minisign"
+        warn "Skipping signature verification (transition period)"
         SIGNATURE_RESULT="skipped"
         return 0
     fi
@@ -780,9 +813,10 @@ verify_signature() {
     fi
 
     if [[ ! -f "$sig_file" ]]; then
-        warn "No signature file found for artifact — skipping signature verification"
-        SIGNATURE_RESULT="skipped"
-        return 0
+        err "No signature file found for artifact — cannot verify integrity"
+        err "Artifact may be unsigned or signature download failed"
+        SIGNATURE_RESULT="fail"
+        return 1
     fi
 
     if ! minisign -Vm "$artifact" -p "$PUB_KEY" -x "$sig_file" 2>/dev/null; then
@@ -923,7 +957,11 @@ extract_artifact() {
         local inner_dir
         inner_dir="$(ls -1 "$temp_extract")"
         if [[ -d "${temp_extract}/${inner_dir}" ]]; then
-            # Single directory inside — unwrap it
+            # Single directory inside — validate name matches releaseId if available
+            if [[ -n "$RELEASE_ID" ]] && [[ "$inner_dir" != "$RELEASE_ID" ]]; then
+                warn "Top-level directory name '$inner_dir' does not match releaseId '$RELEASE_ID'"
+            fi
+            # Unwrap
             mv "${temp_extract}/${inner_dir}" "$release_dir"
             rm -rf "$temp_extract"
             log "Extracted single directory '${inner_dir}' as release root"
@@ -1063,59 +1101,68 @@ validate_env() {
     fi
 
     log "Validating .env against required-env.json..."
-    local missing_vars=()
-    local missing_descriptions=()
+    local errors=()
 
     if has_jq; then
-        # Parse required-env.json — expected format: {"vars": [{"name":"X","required":true,"description":"..."}]}
-        # or simpler: {"required": ["VAR1","VAR2"]} or ["VAR1","VAR2"]
-        local var_list
-        var_list="$(jq -r '
-            if type == "array" then .[]
-            elif .vars then .vars[] | .name
-            elif .required then .required[]
-            else keys[]
-            end
-        ' "$required_env_file" 2>/dev/null)" || var_list=""
+        # Parse required-env.json format: {"required": [{"key":"X","format":"regex","description":"..."}]}
+        local entries
+        entries="$(jq -r '.required[]? | "\(.key)\t\(.format // "")\t\(.description // "")"' "$required_env_file" 2>/dev/null)" || entries=""
 
-        while IFS= read -r var_name; do
-            [[ -z "$var_name" ]] && continue
-            if ! grep -q "^${var_name}=" "$env_file" 2>/dev/null; then
-                missing_vars+=("$var_name")
-                local desc
-                desc="$(jq -r ".vars[]? | select(.name == \"$var_name\") | .description // empty" "$required_env_file" 2>/dev/null || echo "")"
-                if [[ -n "$desc" ]]; then
-                    missing_descriptions+=("  - $var_name: $desc")
-                else
-                    missing_descriptions+=("  - $var_name")
-                fi
+        while IFS=$'\t' read -r var_key var_format var_desc; do
+            [[ -z "$var_key" ]] && continue
+            local var_value
+            var_value="$(grep "^${var_key}=" "$env_file" 2>/dev/null | head -1 | cut -d= -f2- | sed 's/^["'"'"']//;s/["'"'"']$//')"
+
+            if [[ -z "$var_value" ]]; then
+                errors+=("FATAL: missing $var_key — $var_desc")
+            elif [[ -n "$var_format" ]] && ! echo "$var_value" | grep -qE "$var_format" 2>/dev/null; then
+                errors+=("WARN: invalid $var_key — expected pattern: $var_format (got: ${var_value:0:30}...)")
             fi
-        done <<< "$var_list"
+        done <<< "$entries"
+
+        # Check deprecated keys
+        local deprecated
+        deprecated="$(jq -r '.deprecated[]? | "\(.key)\t\(.replacement // "")\t\(.removeAfter // "")"' "$required_env_file" 2>/dev/null)" || deprecated=""
+        while IFS=$'\t' read -r dep_key dep_replacement dep_remove; do
+            [[ -z "$dep_key" ]] && continue
+            if grep -q "^${dep_key}=" "$env_file" 2>/dev/null; then
+                local msg="WARN: deprecated $dep_key"
+                [[ -n "$dep_replacement" ]] && msg="$msg — use $dep_replacement instead"
+                [[ -n "$dep_remove" ]] && msg="$msg (removing in $dep_remove)"
+                errors+=("$msg")
+            fi
+        done <<< "$deprecated"
     else
-        # Fallback: grep for quoted strings
+        # Fallback without jq: check key presence only
         local var_list
-        var_list="$(grep -oP '"[A-Z_][A-Z0-9_]*"' "$required_env_file" 2>/dev/null | tr -d '"' | sort -u)"
+        var_list="$(grep -oE '"key"\s*:\s*"[A-Z_][A-Z0-9_]*"' "$required_env_file" 2>/dev/null | grep -oE '[A-Z_][A-Z0-9_]*')"
         while IFS= read -r var_name; do
             [[ -z "$var_name" ]] && continue
             if ! grep -q "^${var_name}=" "$env_file" 2>/dev/null; then
-                missing_vars+=("$var_name")
-                missing_descriptions+=("  - $var_name")
+                errors+=("FATAL: missing $var_name")
             fi
         done <<< "$var_list"
     fi
 
-    if [[ ${#missing_vars[@]} -gt 0 ]]; then
-        err "Missing required environment variables (${#missing_vars[@]}):"
-        for desc in "${missing_descriptions[@]}"; do
-            err "$desc"
-        done
+    # Separate fatals from warnings
+    local fatals=0
+    for e in "${errors[@]}"; do
+        if [[ "$e" == FATAL:* ]]; then
+            err "$e"
+            fatals=$(( fatals + 1 ))
+        else
+            warn "$e"
+        fi
+    done
+
+    if [[ $fatals -gt 0 ]]; then
         err ""
-        err "Add these to $env_file before deploying."
+        err "$fatals required env var(s) missing. Add them to $env_file before deploying."
         ENV_VALIDATION_RESULT="fail"
         return 1
     fi
 
-    log "Environment validation passed"
+    log "Environment validation passed (${#errors[@]} warnings)"
     ENV_VALIDATION_RESULT="pass"
     return 0
 }
@@ -1203,10 +1250,10 @@ run_schema_step() {
 
                 local exit_code=$?
                 if [[ $exit_code -eq 124 ]]; then
-                    failure_class="migration_timeout"
+                    failure_class="post_migrate_timeout"
                     err "Migration script timed out after ${SCHEMA_TIMEOUT_SECONDS}s"
                 else
-                    failure_class="migration_script_failed"
+                    failure_class="post_migrate_failed"
                     err "Migration script failed with exit code $exit_code"
                 fi
                 schema_failed=true
@@ -1220,9 +1267,12 @@ run_schema_step() {
         SCHEMA_RESULT="fail"
         SCHEMA_FAILURE_CLASS="\"$failure_class\""
 
-        # Check if this is a connection failure
-        if grep -qi "connection refused\|ECONNREFUSED\|could not connect" "${DEPLOY_LOG_DIR}/schema-${RELEASE_ID}.log" 2>/dev/null; then
+        # Reclassify based on log content (more specific than exit code alone)
+        local schema_log="${DEPLOY_LOG_DIR}/schema-${RELEASE_ID}.log"
+        if grep -qi "connection refused\|ECONNREFUSED\|could not connect\|no pg_hba.conf" "$schema_log" 2>/dev/null; then
             SCHEMA_FAILURE_CLASS="\"schema_connection_failed\""
+        elif grep -qi "destructive changes\|data loss\|cannot be executed\|incompatible" "$schema_log" 2>/dev/null; then
+            SCHEMA_FAILURE_CLASS="\"schema_incompatible\""
         fi
         return 1
     fi

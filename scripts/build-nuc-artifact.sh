@@ -187,7 +187,8 @@ echo "==> [6/12] Generating required-env.json..."
 cat > "$STAGING/required-env.json" << 'ENVJSON'
 {
   "required": [
-    { "key": "DATABASE_URL", "format": "postgres://", "description": "Local PostgreSQL connection" },
+    { "key": "DATABASE_URL", "format": "^postgres(ql)?://", "description": "Local PostgreSQL connection" },
+    { "key": "NEXTAUTH_URL", "format": "^https?://", "description": "POS web URL for auth callbacks" },
     { "key": "NEXTAUTH_SECRET", "format": ".{32,}", "description": "Auth secret (min 32 chars)" },
     { "key": "LOCATION_ID", "format": "^[0-9]+$", "description": "Venue location ID" }
   ],
