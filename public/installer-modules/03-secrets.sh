@@ -24,6 +24,7 @@ run_secrets() {
     CELLULAR_SECRET=$(openssl rand -hex 32)
     SESSION_SECRET=$(openssl rand -hex 32)
     TENANT_SIGNING_KEY=$(openssl rand -hex 32)
+    NEXTAUTH_SECRET=$(openssl rand -hex 32)
 
     # Build HA section for .env (server or backup)
     HA_ENV_SECTION=""
@@ -70,6 +71,8 @@ SYNC_ENABLED=${SYNC_ENABLED:-false}
 NODE_ENV=production
 NEXT_PUBLIC_EVENT_PROVIDER=socket
 PORT=3005
+NEXTAUTH_URL=${SERVER_URL}
+NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
 INTERNAL_API_SECRET=${INTERNAL_SECRET}
 CELLULAR_TOKEN_SECRET=${CELLULAR_SECRET}
 CELLULAR_CLAIM_KEY=${CELLULAR_CLAIM_KEY:-}
@@ -177,6 +180,16 @@ ENVEOF
     if ! grep -q "^TENANT_SIGNING_KEY=" "$ENV_FILE" 2>/dev/null; then
       echo "TENANT_SIGNING_KEY=$(openssl rand -hex 32)" >> "$ENV_FILE"
       log "Added TENANT_SIGNING_KEY to existing .env"
+    fi
+
+    # Ensure NEXTAUTH_URL and NEXTAUTH_SECRET are present (required by app auth)
+    if ! grep -q "^NEXTAUTH_URL=" "$ENV_FILE" 2>/dev/null; then
+      echo "NEXTAUTH_URL=${SERVER_URL:-http://localhost:3005}" >> "$ENV_FILE"
+      log "Added NEXTAUTH_URL to existing .env"
+    fi
+    if ! grep -q "^NEXTAUTH_SECRET=" "$ENV_FILE" 2>/dev/null; then
+      echo "NEXTAUTH_SECRET=$(openssl rand -hex 32)" >> "$ENV_FILE"
+      log "Added NEXTAUTH_SECRET to existing .env"
     fi
 
     # Ensure SERVER_URL is persisted (added in later installer versions)
