@@ -209,12 +209,24 @@ echo "    Prisma version: $PRISMA_VERSION"
 PRISMA_BUNDLE_DIR=$(mktemp -d)
 echo "    Installing prisma@${PRISMA_VERSION} in isolated context..."
 
+# Get versions from the project for packages nuc-pre-migrate.js needs at runtime.
+# tsx: Prisma 7 generates ESM TypeScript — tsx bridges require() for .ts imports.
+# @prisma/adapter-pg + pg: TCP connection adapter used by nuc-pre-migrate.js.
+# Standalone may tree-shake these since they're dynamically loaded, so bundle them.
+TSX_VERSION=$(node -e "console.log(require('$REPO_DIR/node_modules/tsx/package.json').version)" 2>/dev/null || echo "4.19.4")
+ADAPTER_PG_VERSION=$(node -e "console.log(require('$REPO_DIR/node_modules/@prisma/adapter-pg/package.json').version)" 2>/dev/null || echo "7.5.0")
+PG_VERSION=$(node -e "console.log(require('$REPO_DIR/node_modules/pg/package.json').version)" 2>/dev/null || echo "8.20.0")
+echo "    tsx: $TSX_VERSION, @prisma/adapter-pg: $ADAPTER_PG_VERSION, pg: $PG_VERSION"
+
 cat > "$PRISMA_BUNDLE_DIR/package.json" << PKGJSON
 {
   "name": "prisma-cli-bundle",
   "private": true,
   "dependencies": {
-    "prisma": "${PRISMA_VERSION}"
+    "prisma": "${PRISMA_VERSION}",
+    "tsx": "${TSX_VERSION}",
+    "@prisma/adapter-pg": "${ADAPTER_PG_VERSION}",
+    "pg": "${PG_VERSION}"
   }
 }
 PKGJSON
@@ -399,23 +411,20 @@ if [ -f "$STAGED_PRISMA" ]; then
         exit 1
     fi
 
-    # Validate nuc-pre-migrate.js can load all its dependencies from the artifact.
-    # This catches missing runtime deps (adapter-pg, generated client, pg) at build
-    # time instead of on the NUC. We verify imports resolve without running migrations.
-    echo "    Validating nuc-pre-migrate.js dependencies from staged artifact..."
-    MIGRATE_DEPS_TEST=$(cd "$STAGING" && node -e "
-      // These are optional in artifact context (dotenv, tsx) — skip them
-      // These are REQUIRED — must resolve from the artifact:
-      try { require('./src/generated/prisma/client'); } catch(e) { console.error('FAIL: generated prisma client:', e.message); process.exit(1); }
-      try { require('@prisma/adapter-pg'); } catch(e) { console.error('FAIL: @prisma/adapter-pg:', e.message); process.exit(1); }
-      try { require('fs'); require('path'); } catch(e) { console.error('FAIL: node builtins:', e.message); process.exit(1); }
-      console.log('nuc-pre-migrate deps OK');
-    " 2>&1) || true
-    if echo "$MIGRATE_DEPS_TEST" | grep -q "nuc-pre-migrate deps OK"; then
+    # Validate nuc-pre-migrate.js by running it in validate-only mode from the
+    # staged artifact. This executes the REAL import chain (dotenv→tsx→PrismaClient
+    # →PrismaPg→fs→path) instead of a separate guessed require() — so if the script
+    # can load here, it can load on the NUC.
+    echo "    Validating nuc-pre-migrate.js from staged artifact (validate-only)..."
+    MIGRATE_VALIDATE_TEST=$(cd "$STAGING" && NUC_PRE_MIGRATE_VALIDATE_ONLY=1 node scripts/nuc-pre-migrate.js 2>&1) || true
+    if echo "$MIGRATE_VALIDATE_TEST" | grep -q "all imports resolved OK"; then
         echo "    nuc-pre-migrate.js: all runtime deps resolve from artifact"
+        echo "$MIGRATE_VALIDATE_TEST" | grep "\[nuc-pre-migrate\]" | sed 's/^/      /'
     else
-        echo "FATAL: nuc-pre-migrate.js has missing dependencies in staged artifact:" >&2
-        echo "$MIGRATE_DEPS_TEST" >&2
+        echo "FATAL: nuc-pre-migrate.js cannot load from staged artifact:" >&2
+        echo "$MIGRATE_VALIDATE_TEST" >&2
+        echo "  Staged generated client contents:" >&2
+        ls -la "$STAGING/src/generated/prisma/" 2>&1 | head -10 >&2
         exit 1
     fi
 fi

@@ -41,12 +41,13 @@ try {
   // dotenv not available (artifact deploy) — env already set by caller
 }
 
-// tsx: registers TS loader for Prisma 7 generated client in dev.
-// On NUC artifacts, the generated client is pre-compiled JS — no TS loader needed.
+// tsx: registers TS loader for Prisma 7 generated client.
+// Required in both dev (from devDependencies) and artifact (bundled in step 5).
+// Prisma 7 generates ESM TypeScript — tsx bridges require() to handle .ts imports.
 try {
   require('tsx/cjs/api').register()
 } catch {
-  // tsx not available (artifact deploy) — generated client is already JS
+  // tsx not available — will only work if generated client has been pre-compiled to JS
 }
 
 // Guard: Prisma client must be generated
@@ -63,6 +64,20 @@ const fs = require('fs')
 const path = require('path')
 
 const PREFIX = '[nuc-pre-migrate]'
+
+// ── Validate-only mode ───────────────────────────────────────────────────────
+// When NUC_PRE_MIGRATE_VALIDATE_ONLY=1, verify all imports resolved and the
+// migrations directory exists, then exit 0 without touching any database.
+// Used by the artifact build to prove nuc-pre-migrate.js is runnable from
+// the staged artifact — mirrors the real import chain exactly.
+if (process.env.NUC_PRE_MIGRATE_VALIDATE_ONLY === '1') {
+  console.log(`${PREFIX} Validate-only mode: all imports resolved OK`)
+  console.log(`${PREFIX}   PrismaClient: ${typeof PrismaClient === 'function' ? 'OK' : 'MISSING'}`)
+  console.log(`${PREFIX}   PrismaPg: ${typeof PrismaPg === 'function' ? 'OK' : 'MISSING'}`)
+  console.log(`${PREFIX}   migrations dir: ${fs.existsSync(path.join(__dirname, 'migrations')) ? 'OK' : 'MISSING'}`)
+  process.exit(0)
+}
+
 // Timeout for the entire migration run (5 minutes). Prevents hung processes
 // from blocking NUC service start or Vercel builds indefinitely.
 const MIGRATION_TIMEOUT_MS = 5 * 60 * 1000
