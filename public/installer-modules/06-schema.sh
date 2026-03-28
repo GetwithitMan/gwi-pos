@@ -77,7 +77,12 @@ run_schema() {
     if [[ -f "$deploy_tools_dir/src/apply-schema.js" ]]; then
       log "Applying schema via deploy-tools (pg-only)..."
       if ! timeout --kill-after=10 120 sudo -u "$POSUSER" bash -c "cd '$deploy_tools_dir' && DATABASE_URL='$DATABASE_URL' node src/apply-schema.js" 2>&1 | tail -5; then
-        warn "apply-schema.js timed out or had warnings -- continuing..."
+        if [[ "${IS_REINSTALL:-false}" == "false" ]]; then
+          err_code "ERR-INST-183" "apply-schema.js failed on fresh install -- cannot continue with empty database"
+          return 1
+        else
+          warn "apply-schema.js had issues on re-install -- continuing (existing schema should be intact)"
+        fi
       else
         log "Schema applied successfully (deploy-tools)"
         touch /opt/gwi-pos/.schema-stage-done

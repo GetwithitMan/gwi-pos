@@ -40,9 +40,9 @@ export DEBCONF_NONINTERACTIVE_SEEN=true
 # ─────────────────────────────────────────────────────────────────────────────
 # Installer Version (stamped at build time by build-installer-bundle.sh)
 # ─────────────────────────────────────────────────────────────────────────────
-INSTALLER_VERSION="1.1.1607"
-INSTALLER_BUILD_DATE="2026-03-26T22:42:20Z"
-INSTALLER_GIT_SHA="dbb91edc"
+INSTALLER_VERSION="__INSTALLER_VERSION__"
+INSTALLER_BUILD_DATE="__INSTALLER_BUILD_DATE__"
+INSTALLER_GIT_SHA="__INSTALLER_GIT_SHA__"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # SELF-UPDATE -- ALWAYS download latest installer before doing ANYTHING
