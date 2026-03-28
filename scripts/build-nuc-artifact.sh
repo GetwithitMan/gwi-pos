@@ -143,6 +143,20 @@ find "$STAGING" -type d -name ".git" -exec rm -rf {} + 2>/dev/null || true
 # twilio for SMS workers, zod for validation
 # Also include @prisma/adapter-pg and pg — previously merged from the Prisma CLI
 # bundle (removed in Phase 2). The app runtime (db.ts) needs adapter-pg directly.
+#
+# PRISMA RUNTIME — all @prisma/* packages needed at runtime on the NUC.
+# Grouped together so we stop discovering missing transitive deps in production.
+# If Prisma upgrades add new runtime packages, add them HERE.
+_PRISMA_RUNTIME_PKGS=(
+    @prisma/adapter-pg
+    @prisma/driver-adapter-utils
+    @prisma/debug
+    @prisma/engines
+    @prisma/engines-version
+    @prisma/fetch-engine
+    @prisma/get-platform
+)
+
 _SERVER_PKGS=(
     next @next/env @swc/helpers baseline-browser-mapping caniuse-lite
     picocolors postcss styled-jsx source-map-js nanoid
@@ -151,8 +165,8 @@ _SERVER_PKGS=(
     @socket.io/component-emitter
     twilio
     zod
-    @prisma/adapter-pg @prisma/driver-adapter-utils @prisma/debug pg
-    postgres-array postgres-bytea postgres-date postgres-interval pg-types
+    "${_PRISMA_RUNTIME_PKGS[@]}"
+    pg postgres-array postgres-bytea postgres-date postgres-interval pg-types
 )
 for pkg in "${_SERVER_PKGS[@]}"; do
     if [ -d "$REPO_DIR/node_modules/$pkg" ]; then
@@ -195,6 +209,33 @@ if [[ ${#_MISSING_DEPS[@]} -gt 0 ]]; then
     exit 1
 fi
 echo "    All server.js dependencies present in artifact"
+
+# ── Artifact smoke test: load the actual runtime entrypoint ──────────────
+# Don't just check that packages exist on disk — actually require() the
+# server's critical import chain to catch missing transitive dependencies
+# BEFORE the artifact ships. This prevents the @prisma/debug-class of bugs
+# where a package is on disk but its own deps are missing.
+echo "    Smoke-testing runtime entrypoint against staged node_modules..."
+_SMOKE_RESULT=$(cd "$STAGING" && node -e "
+  // Simulate the real require chain: server.js → adapter-pg → driver-adapter-utils → debug
+  try {
+    require('@prisma/adapter-pg');
+    require('@prisma/driver-adapter-utils');
+    require('pg');
+    require('socket.io-client');
+    require('next/dist/server/next-server');
+    console.log('SMOKE_OK');
+  } catch (e) {
+    console.error('SMOKE_FAIL: ' + e.message);
+    process.exit(1);
+  }
+" 2>&1) || {
+    echo "FATAL: Artifact smoke test FAILED — runtime dependencies broken:" >&2
+    echo "  $_SMOKE_RESULT" >&2
+    echo "  Fix: add missing packages to _PRISMA_RUNTIME_PKGS or _SERVER_PKGS" >&2
+    exit 1
+}
+echo "    Smoke test passed: $_SMOKE_RESULT"
 
 # .next/static/ -> staging/.next/static/ (browser assets)
 echo "    static assets..."
