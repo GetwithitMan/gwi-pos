@@ -141,6 +141,8 @@ find "$STAGING" -type d -name ".git" -exec rm -rf {} + 2>/dev/null || true
 # next + its transitive deps that browserslist/SWC/config-utils load at runtime
 # socket.io-client + full transitive tree for cloud-relay-client
 # twilio for SMS workers, zod for validation
+# Also include @prisma/adapter-pg and pg — previously merged from the Prisma CLI
+# bundle (removed in Phase 2). The app runtime (db.ts) needs adapter-pg directly.
 _SERVER_PKGS=(
     next @next/env @swc/helpers baseline-browser-mapping caniuse-lite
     picocolors postcss styled-jsx source-map-js nanoid
@@ -149,6 +151,7 @@ _SERVER_PKGS=(
     @socket.io/component-emitter
     twilio
     zod
+    @prisma/adapter-pg pg
 )
 for pkg in "${_SERVER_PKGS[@]}"; do
     if [ -d "$REPO_DIR/node_modules/$pkg" ]; then
