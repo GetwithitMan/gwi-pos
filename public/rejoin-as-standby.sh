@@ -147,7 +147,25 @@ sudo -u "$POSUSER" pm2 stop all 2>/dev/null || true
 log "POS application stopped"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Step C: Stop PostgreSQL
+# Step C: Safety check BEFORE stopping PostgreSQL
+# ─────────────────────────────────────────────────────────────────────────────
+# Verify PG is not still acting as primary before we proceed with teardown.
+# This prevents WAL loss if this script is called on a node that hasn't actually
+# been demoted yet (e.g., operator error or split-brain scenario).
+# MUST run BEFORE PG stop — once PG is stopped we can't query it.
+
+log "Running safety check: verifying this node is not still acting as primary..."
+PG_IN_RECOVERY=$(sudo -u postgres psql -t -c "SELECT pg_is_in_recovery();" 2>/dev/null | tr -d ' ')
+if [[ "$PG_IN_RECOVERY" != "t" ]] && [[ "$PG_IN_RECOVERY" != "" ]] && [[ "$PG_IN_RECOVERY" != "unknown" ]]; then
+  log "ERROR: PostgreSQL is NOT in recovery mode — it may still be acting as primary!"
+  log "This means data could be lost. Refusing to proceed."
+  log "If you are SURE this node should be standby, first promote the other node, then retry."
+  die "Safety check failed: PG not in recovery. Manual intervention required."
+fi
+log "Safety check passed: PG is in recovery mode (standby)"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Step D: Stop PostgreSQL
 # ─────────────────────────────────────────────────────────────────────────────
 
 log "Stopping PostgreSQL..."
@@ -163,21 +181,10 @@ fi
 log "PostgreSQL stopped"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Step D: Remove old PG data
+# Step E: Remove old PG data
 # ─────────────────────────────────────────────────────────────────────────────
 
 log "Removing old PostgreSQL data directory ($PG_DATA)..."
-
-# Safety check: verify PG is not still acting as primary before destroying data
-# This prevents WAL loss if this script is called on a node that hasn't actually
-# been demoted yet (e.g., operator error or split-brain scenario).
-PG_IN_RECOVERY=$(sudo -u postgres psql -t -c "SELECT pg_is_in_recovery();" 2>/dev/null | tr -d ' ')
-if [[ "$PG_IN_RECOVERY" != "t" ]] && [[ "$PG_IN_RECOVERY" != "" ]] && [[ "$PG_IN_RECOVERY" != "unknown" ]]; then
-  log "ERROR: PostgreSQL is NOT in recovery mode — it may still be acting as primary!"
-  log "This means data could be lost. Refusing to delete PG data."
-  log "If you are SURE this node should be standby, stop PostgreSQL first: sudo systemctl stop postgresql"
-  die "Safety check failed: PG not in recovery. Manual intervention required."
-fi
 
 if [[ ! -d "$PG_DATA" ]]; then
   log "WARN: PG data directory doesn't exist — creating it"

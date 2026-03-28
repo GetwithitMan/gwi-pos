@@ -13,6 +13,8 @@ DIAG_DIR="/opt/gwi-pos/logs/watchdog-diagnostics"
 POS_PORT="${POS_PORT:-3005}"
 HEALTH_URL="http://localhost:${POS_PORT}/api/health"
 MAX_CONSECUTIVE_FAILURES=3
+MAX_RESTARTS=5                  # max restarts within ESCALATION_WINDOW before giving up
+RESTART_COUNT_FILE="$STATE_DIR/.watchdog-restart-count"
 ESCALATION_WINDOW_SECONDS=600  # 10 minutes
 
 mkdir -p "$STATE_DIR" "$DIAG_DIR" 2>/dev/null || true
@@ -135,6 +137,7 @@ main() {
       log "POS recovered after $prev_count consecutive failures"
     fi
     echo "0" > "$FAIL_COUNT_FILE"
+    echo "0" > "$RESTART_COUNT_FILE" 2>/dev/null || true
     rm -f "$FIRST_FAIL_FILE" 2>/dev/null || true
     clear_escalation
 
@@ -161,17 +164,29 @@ main() {
 
   # Check if we should restart
   if [[ "$fail_count" -ge "$MAX_CONSECUTIVE_FAILURES" ]]; then
-    log "Threshold reached — capturing diagnostics and restarting POS service"
-    capture_diagnostics
+    # Check restart cap — prevent infinite restart loops
+    local restart_count
+    restart_count=$(cat "$RESTART_COUNT_FILE" 2>/dev/null || echo "0")
 
-    # Restart POS service
-    if systemctl restart thepasspos 2>/dev/null; then
-      log "POS service restart initiated"
-      # Reset fail counter after restart (give it time to come up)
-      echo "0" > "$FAIL_COUNT_FILE"
-      # Don't clear first-fail — escalation window still counting
+    if [[ "$restart_count" -ge "$MAX_RESTARTS" ]]; then
+      log "RESTART CAP REACHED ($restart_count/$MAX_RESTARTS) — refusing to restart again"
+      log "Manual intervention required. Reset with: echo 0 > $RESTART_COUNT_FILE"
+      escalate_to_mc "Restart cap reached ($restart_count restarts in escalation window)"
     else
-      log "POS service restart FAILED"
+      log "Threshold reached — capturing diagnostics and restarting POS service ($((restart_count+1))/$MAX_RESTARTS)"
+      capture_diagnostics
+
+      # Restart POS service
+      if systemctl restart thepasspos 2>/dev/null; then
+        log "POS service restart initiated"
+        # Increment restart counter
+        echo "$((restart_count + 1))" > "$RESTART_COUNT_FILE"
+        # Reset fail counter after restart (give it time to come up)
+        echo "0" > "$FAIL_COUNT_FILE"
+        # Don't clear first-fail — escalation window still counting
+      else
+        log "POS service restart FAILED"
+      fi
     fi
   fi
 

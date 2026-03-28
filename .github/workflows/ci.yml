@@ -13,6 +13,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -48,11 +50,21 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Unit tests
+        run: npx vitest run
+        continue-on-error: true  # Pre-existing failures in socket-emission-invariants and pair-native tests
+
       - name: Check version stamps
         run: bash scripts/ci/check-version-stamps.sh
 
       - name: Check forbidden domains
         run: bash scripts/ci/check-forbidden-domains.sh
+
+      - name: Deploy engine state machine tests
+        run: bash scripts/tests/test-deploy-release.sh
+
+      - name: Installer module validation
+        run: bash scripts/tests/test-installer-modules.sh
 
       - name: Enforce version bump
         if: github.event_name == 'pull_request'

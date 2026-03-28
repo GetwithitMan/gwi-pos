@@ -175,6 +175,16 @@ run_preflight() {
   log "Disk space: $(( AVAIL_KB / 1024 )) MB free -- OK (8 GB minimum)"
 
   # ── System clock sanity -- TLS and token validation fail with bad clocks (hard fail) ──
+  # Gross check: epoch must be past 2001-09-09 (1000000000). Catches totally wrong clocks.
+  local now_epoch
+  now_epoch=$(date +%s)
+  if [[ "$now_epoch" -lt 1000000000 ]]; then
+    err_code "ERR-INST-005" "System clock epoch ${now_epoch} is before 2001 — clock is wildly wrong"
+    err "System clock is set to $(date) — this will break TLS, tokens, and all time-dependent operations."
+    err "Fix with: sudo timedatectl set-ntp true  (or set time manually)"
+    return 1
+  fi
+
   if command -v timedatectl >/dev/null 2>&1; then
     local clock_synced
     clock_synced=$(timedatectl show --property=NTPSynchronized --value 2>/dev/null || echo "no")
