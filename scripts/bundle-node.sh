@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Download and cache Node.js binary for offline installer bundling
+# Download and cache Node.js binary for pre-staged installer bundling
 set -euo pipefail
 
-NODE_VERSION="${1:-20.18.1}"
+NODE_VERSION="${1:-22.14.0}"
 NODE_ARCH="${2:-linux-x64}"
 CACHE_DIR="${HOME}/.cache/gwi-pos-build"
 NODE_URL="https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-${NODE_ARCH}.tar.gz"

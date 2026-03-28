@@ -1,10 +1,21 @@
 #!/usr/bin/env bash
-# GWI POS Offline Installer Bundle Builder
-# Produces a self-contained installer that needs NO internet access on the NUC
-# Output: dist/gwi-pos-offline-installer-VERSION.run
+# GWI POS Pre-Staged Installer Bundle Builder
+# Produces a pre-staged installer bundle with the app + Node.js runtime pre-built.
+# Output: dist/gwi-pos-prestaged-installer-VERSION.run
+#
+# WARNING: This bundle is NOT fully offline-capable.
+# It bundles the Node.js runtime and pre-built application, but system packages
+# (PostgreSQL, chrony, ufw, Ansible, etc.) are still installed via apt-get
+# and require internet connectivity during installation.
+#
+# For true air-gapped installation, use build-custom-iso.sh which includes
+# the full OS + packages, or manually cache apt packages before running.
+#
+# This is a "pre-staged" installer that reduces download time and ensures
+# the correct app version is deployed, but it is NOT a true offline installer.
 #
 # Prerequisites (on build machine):
-# - Node.js 20+
+# - Node.js 22+
 # - git
 # - PostgreSQL client (for pg_dump format in the seed)
 # - tar, gzip
@@ -12,7 +23,7 @@
 # What's bundled:
 # - Pre-built .next/ directory (server + static)
 # - node_modules/ (production only)
-# - Node.js 20 Linux x64 binary
+# - Node.js 22 LTS Linux x64 binary
 # - All installer modules + libs
 # - Prisma client (pre-generated)
 # - Dashboard .deb package
@@ -28,7 +39,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 DIST_DIR="$PROJECT_DIR/dist"
 BUNDLE_DIR="$DIST_DIR/bundle-staging"
-NODE_VERSION="20.18.1"
+NODE_VERSION="22.14.0"
 NODE_ARCH="linux-x64"
 NODE_URL="https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-${NODE_ARCH}.tar.gz"
 NODE_CACHE_DIR="$HOME/.cache/gwi-pos-build"
@@ -39,9 +50,9 @@ err() { echo "[$(date -u +%FT%TZ)] BUILD ERROR: $*" >&2; }
 # Read version from package.json
 VERSION=$(node -e "console.log(require('./package.json').version)" 2>/dev/null || echo "0.0.0")
 GIT_SHA=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
-INSTALLER_NAME="gwi-pos-offline-installer-${VERSION}"
+INSTALLER_NAME="gwi-pos-prestaged-installer-${VERSION}"
 
-log "Building offline installer v${VERSION} (${GIT_SHA})"
+log "Building pre-staged installer v${VERSION} (${GIT_SHA})"
 
 # Clean previous builds
 rm -rf "$BUNDLE_DIR"
@@ -164,12 +175,20 @@ log "Step 11: Copying version metadata..."
 [[ -f public/version-contract.json ]] && cp public/version-contract.json "$BUNDLE_DIR/"
 [[ -f public/schema.sql ]] && cp public/schema.sql "$BUNDLE_DIR/"
 
-# ── Step 12: Create offline installer wrapper ─────────────────────────
-log "Step 12: Creating self-extracting installer..."
+# ── Step 12: Create pre-staged installer wrapper ──────────────────────
+log "Step 12: Creating pre-staged installer wrapper..."
 
-cat > "$BUNDLE_DIR/install-offline.sh" <<'OFFLINE_INSTALLER'
+cat > "$BUNDLE_DIR/install-prestaged.sh" <<'OFFLINE_INSTALLER'
 #!/usr/bin/env bash
-# GWI POS Offline Installer — Self-contained, no internet required
+# GWI POS Pre-Staged Installer
+#
+# WARNING: This bundle is NOT fully offline-capable.
+# It bundles the Node.js runtime and pre-built application, but system packages
+# (PostgreSQL, chrony, ufw, Ansible, etc.) are still installed via apt-get
+# and require internet connectivity during installation.
+#
+# For true air-gapped installation, use build-custom-iso.sh which includes
+# the full OS + packages, or manually cache apt packages before running.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -178,16 +197,20 @@ APP_DIR="/opt/gwi-pos/app"
 NODE_DIR="/opt/gwi-pos/node"
 export PATH="$NODE_DIR/bin:$PATH"
 
-log() { echo -e "\033[0;32m[$(date -u +%FT%TZ)] OFFLINE-INSTALL: $*\033[0m"; }
-err() { echo -e "\033[0;31m[$(date -u +%FT%TZ)] OFFLINE-INSTALL ERROR: $*\033[0m" >&2; }
+log() { echo -e "\033[0;32m[$(date -u +%FT%TZ)] PRESTAGED-INSTALL: $*\033[0m"; }
+err() { echo -e "\033[0;31m[$(date -u +%FT%TZ)] PRESTAGED-INSTALL ERROR: $*\033[0m" >&2; }
 
 if [[ $EUID -ne 0 ]]; then
   err "Must run as root"
   exit 1
 fi
 
-log "GWI POS Offline Installer"
-log "========================="
+log "GWI POS Pre-Staged Installer"
+log "============================="
+log ""
+log "NOTE: This installer pre-stages the application and Node.js runtime."
+log "System packages (PostgreSQL, chrony, ufw, etc.) still require internet."
+log ""
 
 # Install Node.js
 log "Installing Node.js..."
@@ -244,8 +267,9 @@ log "Application files deployed. Running main installer for system setup..."
 log "(The installer will handle registration, database, services, etc.)"
 log ""
 
-# Set offline mode flag
+# Set pre-staged mode flag (kept for backward compat: GWI_OFFLINE_INSTALL)
 export GWI_OFFLINE_INSTALL=1
+export GWI_PRESTAGED_INSTALL=1
 export SKIP_GIT_CLONE=1
 export SKIP_NPM_INSTALL=1
 export SKIP_BUILD=1
@@ -259,27 +283,62 @@ else
   log "Run the registration and service setup manually"
 fi
 OFFLINE_INSTALLER
-chmod +x "$BUNDLE_DIR/install-offline.sh"
+chmod +x "$BUNDLE_DIR/install-prestaged.sh"
 
 # ── Step 13: Create tarball ───────────────────────────────────────────
 log "Step 13: Creating compressed archive..."
 cd "$DIST_DIR"
-tar czf "${INSTALLER_NAME}.tar.gz" -C bundle-staging .
+BUNDLE_TAR="${DIST_DIR}/${INSTALLER_NAME}.tar.gz"
+tar czf "$BUNDLE_TAR" -C bundle-staging .
+
+# ── Step 13a: Integrity checks ───────────────────────────────────────
+log "Step 13a: Computing checksums..."
+warn() { echo "[$(date -u +%FT%TZ)] BUILD WARN: $*" >&2; }
+
+BUNDLE_SHA256=$(sha256sum "$BUNDLE_TAR" | awk '{print $1}')
+echo "$BUNDLE_SHA256" > "${BUNDLE_TAR}.sha256"
+log "Bundle SHA256: $BUNDLE_SHA256"
+
+BUNDLE_SIGNED=false
+if command -v minisign &>/dev/null && [[ -n "${MINISIGN_SECRET_KEY:-}" ]]; then
+    echo "$MINISIGN_SECRET_KEY" | minisign -S -s - -m "$BUNDLE_TAR"
+    BUNDLE_SIGNED=true
+    log "Bundle signed with minisign"
+else
+    warn "minisign not available or MINISIGN_SECRET_KEY not set -- bundle is UNSIGNED"
+fi
+
+# Write manifest JSON
+BUILD_DATE=$(date -u +%FT%TZ)
+cat > "${DIST_DIR}/${INSTALLER_NAME}.manifest.json" <<MANIFEST_EOF
+{
+  "name": "${INSTALLER_NAME}",
+  "version": "${VERSION}",
+  "gitSha": "${GIT_SHA}",
+  "buildDate": "${BUILD_DATE}",
+  "sha256": "${BUNDLE_SHA256}",
+  "signed": ${BUNDLE_SIGNED},
+  "nodeVersion": "${NODE_VERSION}",
+  "type": "prestaged-installer",
+  "note": "Pre-staged only. System packages (PostgreSQL, chrony, ufw, Ansible) require internet."
+}
+MANIFEST_EOF
+log "Manifest written: dist/${INSTALLER_NAME}.manifest.json"
 
 # ── Step 14: Create self-extracting .run file ─────────────────────────
 log "Step 14: Creating self-extracting .run file..."
 cat > "$DIST_DIR/${INSTALLER_NAME}.run" <<'RUN_HEADER'
 #!/usr/bin/env bash
-# GWI POS Offline Installer — Self-extracting archive
+# GWI POS Pre-Staged Installer — Self-extracting archive
 set -euo pipefail
-echo "GWI POS Offline Installer"
+echo "GWI POS Pre-Staged Installer"
 echo "Extracting..."
 TMPDIR=$(mktemp -d /tmp/gwi-pos-install.XXXXXX)
 ARCHIVE_START=$(awk '/^__ARCHIVE_BELOW__/ {print NR + 1; exit 0; }' "$0")
 tail -n+${ARCHIVE_START} "$0" | tar xz -C "$TMPDIR"
 echo "Running installer..."
 cd "$TMPDIR"
-exec bash install-offline.sh "$@"
+exec bash install-prestaged.sh "$@"
 __ARCHIVE_BELOW__
 RUN_HEADER
 cat "$DIST_DIR/${INSTALLER_NAME}.tar.gz" >> "$DIST_DIR/${INSTALLER_NAME}.run"
@@ -294,11 +353,16 @@ rm -rf "$BUNDLE_DIR"
 
 log ""
 log "═══════════════════════════════════════════════════════"
-log "  Offline Installer Built Successfully!"
+log "  Pre-Staged Installer Built Successfully!"
 log "═══════════════════════════════════════════════════════"
 log "  Version:    ${VERSION} (${GIT_SHA})"
 log "  Tarball:    dist/${INSTALLER_NAME}.tar.gz (${TARBALL_SIZE})"
 log "  Installer:  dist/${INSTALLER_NAME}.run (${RUN_SIZE})"
+log "  Manifest:   dist/${INSTALLER_NAME}.manifest.json"
+log "  SHA256:     dist/${INSTALLER_NAME}.tar.gz.sha256"
+log ""
+log "  NOTE: System packages (PostgreSQL, chrony, ufw, etc.) still"
+log "        require internet. For air-gapped installs, use build-custom-iso.sh."
 log ""
 log "  Deploy to NUC:"
 log "    scp dist/${INSTALLER_NAME}.run gwipos@NUC_IP:/tmp/"

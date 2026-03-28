@@ -448,26 +448,27 @@ WRAPPER
     log "Skipping Chromium install (server role -- no kiosk needed)."
   fi
 
-  # Install Node.js 20 via pinned apt repo (no shell script execution)
-  install_node20() {
-    log "Setting up NodeSource repository for Node.js 20..."
+  # Install Node.js 22 LTS via pinned apt repo (no shell script execution)
+  # Node 22 LTS supported until April 2027. Node 20 EOL April 2026.
+  install_node22() {
+    log "Setting up NodeSource repository for Node.js 22 LTS..."
     local KEYRING="/usr/share/keyrings/nodesource.gpg"
     # Download and install the GPG key
     curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
       | gpg --dearmor -o "$KEYRING" 2>/dev/null
     # Add the repo with pinned key
-    echo "deb [signed-by=$KEYRING] https://deb.nodesource.com/node_20.x nodistro main" \
+    echo "deb [signed-by=$KEYRING] https://deb.nodesource.com/node_22.x nodistro main" \
       > /etc/apt/sources.list.d/nodesource.list
     apt-get update -qq
     apt-get install -y nodejs
   }
 
   if ! command -v node >/dev/null 2>&1; then
-    log "Installing Node.js 20..."
-    install_node20
-  elif [[ "$(node -v | cut -d. -f1 | tr -d v)" -lt 20 ]]; then
-    log "Upgrading Node.js to 20..."
-    install_node20
+    log "Installing Node.js 22 LTS..."
+    install_node22
+  elif [[ "$(node -v | cut -d. -f1 | tr -d v)" -lt 22 ]]; then
+    log "Upgrading Node.js to 22 LTS..."
+    install_node22
   fi
   log "Node.js: $(node -v)"
   log "npm: $(npm -v)"

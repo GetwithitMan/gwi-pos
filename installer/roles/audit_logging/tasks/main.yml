@@ -1,0 +1,45 @@
+---
+# =============================================================================
+# GWI POS — Audit Logging (CIS 4.1)
+# =============================================================================
+# Installs auditd, deploys GWI POS audit rules, enables the service.
+# =============================================================================
+
+- name: Install auditd and audispd-plugins
+  ansible.builtin.apt:
+    name:
+      - auditd
+      - audispd-plugins
+    state: present
+    update_cache: true
+  tags: [audit]
+
+- name: Deploy GWI POS audit rules
+  ansible.builtin.copy:
+    src: gwi-pos-audit.rules
+    dest: /etc/audit/rules.d/99-gwi-pos.rules
+    owner: root
+    group: root
+    mode: "0640"
+  notify: restart auditd
+  tags: [audit]
+
+- name: Configure auditd log rotation
+  ansible.builtin.lineinfile:
+    path: /etc/audit/auditd.conf
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+    backrefs: false
+  loop:
+    - { regexp: '^max_log_file\s*=', line: "max_log_file = {{ gwi_audit_log_max_size }}" }
+    - { regexp: '^num_logs\s*=', line: "num_logs = {{ gwi_audit_num_logs }}" }
+    - { regexp: '^max_log_file_action\s*=', line: 'max_log_file_action = ROTATE' }
+  notify: restart auditd
+  tags: [audit]
+
+- name: Enable and start auditd service
+  ansible.builtin.systemd:
+    name: auditd
+    enabled: true
+    state: started
+  tags: [audit]

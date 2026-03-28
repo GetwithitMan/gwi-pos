@@ -78,3 +78,47 @@
     name: fail2ban
     enabled: true
     state: started
+
+# ── PAM account lockout policy (CIS 5.3.x) ────────────────────────────────
+
+- name: Ensure libpam-modules is installed
+  ansible.builtin.apt:
+    name: libpam-modules
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Deploy faillock.conf (CIS 5.3.2)
+  ansible.builtin.copy:
+    dest: /etc/security/faillock.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # GWI POS -- account lockout policy (CIS 5.3.2)
+      # Managed by Ansible sshd_hardening role — do not edit manually
+      deny = 5
+      unlock_time = 900
+      fail_interval = 900
+      even_deny_root
+      root_unlock_time = 900
+
+- name: Ensure pam_faillock preauth in common-auth (before pam_unix)
+  ansible.builtin.lineinfile:
+    path: /etc/pam.d/common-auth
+    line: "auth    required                        pam_faillock.so preauth"
+    insertbefore: '.*pam_unix\.so'
+    state: present
+
+- name: Ensure pam_faillock authfail in common-auth (after pam_unix)
+  ansible.builtin.lineinfile:
+    path: /etc/pam.d/common-auth
+    line: "auth    [default=die]                   pam_faillock.so authfail"
+    insertafter: '.*pam_unix\.so'
+    state: present
+
+- name: Ensure pam_faillock in common-account
+  ansible.builtin.lineinfile:
+    path: /etc/pam.d/common-account
+    line: "account required                        pam_faillock.so"
+    state: present

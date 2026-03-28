@@ -1,0 +1,72 @@
+---
+# =============================================================================
+# GWI POS — File Integrity Monitoring (CIS 1.3.1)
+# =============================================================================
+# Installs AIDE, deploys custom config, initializes database, sets up daily
+# cron check with heartbeat state reporting.
+# =============================================================================
+
+- name: Install AIDE
+  ansible.builtin.apt:
+    name: aide
+    state: present
+    update_cache: true
+  tags: [integrity]
+
+- name: Deploy AIDE configuration
+  ansible.builtin.copy:
+    src: aide.conf
+    dest: /etc/aide/aide.conf
+    owner: root
+    group: root
+    mode: "0644"
+  tags: [integrity]
+
+- name: Check if AIDE database exists
+  ansible.builtin.stat:
+    path: /var/lib/aide/aide.db
+  register: _aide_db
+  tags: [integrity]
+
+- name: Initialize AIDE database
+  ansible.builtin.command: aide --init --config /etc/aide/aide.conf
+  when: not _aide_db.stat.exists
+  tags: [integrity]
+
+- name: Copy new AIDE database into place
+  ansible.builtin.copy:
+    src: /var/lib/aide/aide.db.new
+    dest: /var/lib/aide/aide.db
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0600"
+  when: not _aide_db.stat.exists
+  tags: [integrity]
+
+- name: Ensure state directory exists
+  ansible.builtin.file:
+    path: /opt/gwi-pos/state
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  tags: [integrity]
+
+- name: Deploy AIDE check script
+  ansible.builtin.template:
+    src: aide-check.sh.j2
+    dest: /usr/local/bin/gwi-aide-check.sh
+    owner: root
+    group: root
+    mode: "0750"
+  tags: [integrity]
+
+- name: Create daily cron job for AIDE check
+  ansible.builtin.cron:
+    name: "GWI POS AIDE integrity check"
+    minute: "30"
+    hour: "3"
+    job: "/usr/local/bin/gwi-aide-check.sh"
+    user: root
+  tags: [integrity]

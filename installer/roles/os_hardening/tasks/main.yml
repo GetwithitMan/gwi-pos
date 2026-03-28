@@ -284,3 +284,21 @@
     - { regexp: '^AutomaticLoginEnable=', line: 'AutomaticLoginEnable=true' }
     - { regexp: '^AutomaticLogin=', line: 'AutomaticLogin={{ gwi_posuser }}' }
   when: gwi_desktop_env == 'gnome'
+
+# ── Disable USB mass storage (CIS 1.1.10) ──────────────────────────────────
+# Applied to all NUC roles (server, backup, terminal) — no USB drives needed.
+
+- name: Blacklist USB mass storage kernel modules
+  ansible.builtin.copy:
+    dest: /etc/modprobe.d/gwi-no-usb-storage.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # GWI POS -- disable USB mass storage (CIS 1.1.10)
+      # Prevents data exfiltration via USB drives on all NUC roles
+      # Managed by Ansible os_hardening role — do not edit manually
+      blacklist usb-storage
+      blacklist uas
+      install usb-storage /bin/false
+      install uas /bin/false

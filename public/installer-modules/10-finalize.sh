@@ -355,15 +355,15 @@ _run_verification() {
   local node_ver
   node_ver=$(node --version 2>/dev/null || echo "MISSING")
   if [[ "$node_ver" == "MISSING" ]]; then
-    _record "Node.js" "20+" "$node_ver" "MISSING"
+    _record "Node.js" "22+" "$node_ver" "MISSING"
   else
-    # Check minimum version (20+)
+    # Check minimum version (22+ LTS, supported until April 2027)
     local node_major
     node_major=$(echo "$node_ver" | sed 's/^v//' | cut -d. -f1)
-    if [[ "$node_major" -ge 20 ]]; then
-      _record "Node.js" "20+" "$node_ver" "PASS"
+    if [[ "$node_major" -ge 22 ]]; then
+      _record "Node.js" "22+" "$node_ver" "PASS"
     else
-      _record "Node.js" "20+" "$node_ver" "OUTDATED"
+      _record "Node.js" "22+" "$node_ver" "OUTDATED"
     fi
   fi
 

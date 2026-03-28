@@ -214,9 +214,13 @@ for i in $(seq 1 30); do
   sleep 2
 done
 
-# Check if offline installer is bundled
-if [[ -f /opt/gwi-pos/gwi-pos-offline-installer.run ]]; then
-  echo "Offline installer found — running..."
+# Check if pre-staged installer is bundled (check new name, then legacy name)
+if [[ -f /opt/gwi-pos/gwi-pos-prestaged-installer.run ]]; then
+  echo "Pre-staged installer found — running..."
+  chmod +x /opt/gwi-pos/gwi-pos-prestaged-installer.run
+  bash /opt/gwi-pos/gwi-pos-prestaged-installer.run
+elif [[ -f /opt/gwi-pos/gwi-pos-offline-installer.run ]]; then
+  echo "Legacy pre-staged installer found — running..."
   chmod +x /opt/gwi-pos/gwi-pos-offline-installer.run
   bash /opt/gwi-pos/gwi-pos-offline-installer.run
 elif [[ -f /opt/gwi-pos/installer.run ]]; then
@@ -249,14 +253,16 @@ reboot
 FIRSTBOOT
 chmod +x "$ISO_WORK/source/gwi-installer/first-boot.sh"
 
-# ── Step 5: Bundle the offline installer (if available) ───────────────
-log "Step 5: Bundling offline installer (if available)..."
-OFFLINE_INSTALLER=$(ls -t "$DIST_DIR"/gwi-pos-offline-installer-*.run 2>/dev/null | head -1)
-if [[ -n "$OFFLINE_INSTALLER" ]]; then
-  cp "$OFFLINE_INSTALLER" "$ISO_WORK/source/gwi-installer/gwi-pos-offline-installer.run"
-  log "Bundled offline installer: $(basename "$OFFLINE_INSTALLER")"
+# ── Step 5: Bundle the pre-staged installer (if available) ────────────
+log "Step 5: Bundling pre-staged installer (if available)..."
+PRESTAGED_INSTALLER=$(ls -t "$DIST_DIR"/gwi-pos-prestaged-installer-*.run 2>/dev/null | head -1)
+# Fallback: check for legacy offline-installer name
+[[ -z "$PRESTAGED_INSTALLER" ]] && PRESTAGED_INSTALLER=$(ls -t "$DIST_DIR"/gwi-pos-offline-installer-*.run 2>/dev/null | head -1)
+if [[ -n "$PRESTAGED_INSTALLER" ]]; then
+  cp "$PRESTAGED_INSTALLER" "$ISO_WORK/source/gwi-installer/gwi-pos-prestaged-installer.run"
+  log "Bundled pre-staged installer: $(basename "$PRESTAGED_INSTALLER")"
 else
-  log "No offline installer found — ISO will download on first boot"
+  log "No pre-staged installer found — ISO will download on first boot"
   # Copy the online installer as fallback
   if [[ -f "$PROJECT_DIR/public/installer.run" ]]; then
     cp "$PROJECT_DIR/public/installer.run" "$ISO_WORK/source/gwi-installer/installer.run"

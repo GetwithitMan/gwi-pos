@@ -347,6 +347,12 @@
     - role: security_updates
       tags: ['optional', 'security_updates']
 
+    - role: audit_logging
+      tags: ['optional', 'audit']
+
+    - role: file_integrity
+      tags: ['optional', 'integrity']
+
     # ── Hardware (required_if_applicable per manifest) ───────────────────
     - role: thermal_printer
       tags: ['hardware', 'thermal_printer']
@@ -406,6 +412,8 @@
           - kiosk_hardening
           - log_rotation
           - security_updates
+          - audit_logging
+          - file_integrity
           - thermal_printer
           - touchscreen
           - usb_devices
