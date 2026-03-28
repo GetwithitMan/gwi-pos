@@ -311,9 +311,27 @@ echo "==> [11/12] Signing artifact..."
 SIGNED=false
 if [ -n "${MINISIGN_SECRET_KEY:-}" ]; then
     if ! command -v minisign &>/dev/null; then
-        echo "FATAL: MINISIGN_SECRET_KEY is set but minisign binary not found." >&2
-        echo "Install with: apt-get install -y minisign (or brew install minisign)" >&2
-        exit 1
+        echo "    minisign not found — installing..."
+        if command -v apt-get &>/dev/null; then
+            apt-get update -qq && apt-get install -y -qq minisign 2>/dev/null
+        elif command -v brew &>/dev/null; then
+            brew install minisign 2>/dev/null
+        fi
+        if ! command -v minisign &>/dev/null; then
+            # Fallback: download pre-built binary
+            echo "    apt/brew install failed — downloading minisign binary..."
+            curl -fsSL "https://github.com/jedisct1/minisign/releases/download/0.12/minisign-0.12-linux.tar.gz" \
+                | tar xz -C /tmp/ 2>/dev/null
+            if [ -f /tmp/minisign-linux/x86_64/minisign ]; then
+                cp /tmp/minisign-linux/x86_64/minisign /usr/local/bin/minisign
+                chmod +x /usr/local/bin/minisign
+            fi
+        fi
+        if ! command -v minisign &>/dev/null; then
+            echo "FATAL: Could not install minisign. Signing required." >&2
+            exit 1
+        fi
+        echo "    minisign installed: $(minisign --version 2>&1 | head -1)"
     fi
 
     # Write secret key to temp file (minisign requires file input)
