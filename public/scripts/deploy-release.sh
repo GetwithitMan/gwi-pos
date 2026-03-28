@@ -1297,11 +1297,11 @@ run_schema_step() {
     fi
 
     if [[ -n "$prisma_cmd" ]]; then
-        log "Running: prisma db push --skip-generate (expand-safe only, NO --accept-data-loss)"
+        log "Running: prisma db push --schema (expand-safe only, NO --accept-data-loss)"
         local schema_exit=0
         timeout "$SCHEMA_TIMEOUT_SECONDS" \
             env DATABASE_URL="$db_url" \
-            "$prisma_cmd" db push --skip-generate --schema="${release_dir}/prisma/schema.prisma" \
+            "$prisma_cmd" db push --schema="${release_dir}/prisma/schema.prisma" \
             > >(tee -a "${DEPLOY_LOG_DIR}/schema-${RELEASE_ID}.log") 2>&1 \
             || schema_exit=$?
 
