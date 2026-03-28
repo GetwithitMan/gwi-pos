@@ -142,6 +142,12 @@ echo "    launcher.sh..."
 cp "$REPO_DIR/scripts/launcher.sh" "$STAGING/launcher.sh"
 chmod +x "$STAGING/launcher.sh"
 
+# Prisma config (Prisma 7 requires prisma.config.ts for datasource resolution)
+if [ -f "$REPO_DIR/prisma.config.ts" ]; then
+    cp "$REPO_DIR/prisma.config.ts" "$STAGING/prisma.config.ts"
+    echo "    prisma.config.ts"
+fi
+
 # Prisma schema + optional schema.sql
 echo "    prisma schema..."
 mkdir -p "$STAGING/prisma"

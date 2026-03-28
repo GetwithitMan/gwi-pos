@@ -1297,11 +1297,12 @@ run_schema_step() {
     fi
 
     if [[ -n "$prisma_cmd" ]]; then
-        log "Running: prisma db push --schema (expand-safe only, NO --accept-data-loss)"
+        log "Running: prisma db push (from release dir with prisma.config.ts)"
         local schema_exit=0
+        # Run from release directory so Prisma 7 finds prisma.config.ts
+        # prisma.config.ts reads DATABASE_URL from env for datasource
         timeout "$SCHEMA_TIMEOUT_SECONDS" \
-            env DATABASE_URL="$db_url" \
-            "$prisma_cmd" db push --schema="${release_dir}/prisma/schema.prisma" \
+            bash -c "cd '${release_dir}' && DATABASE_URL='${db_url}' '${prisma_cmd}' db push" \
             > >(tee -a "${DEPLOY_LOG_DIR}/schema-${RELEASE_ID}.log") 2>&1 \
             || schema_exit=$?
 
