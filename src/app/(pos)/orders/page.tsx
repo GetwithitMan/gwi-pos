@@ -195,6 +195,7 @@ export default function OrdersPage() {
   const splitParentId = store(s => s.splitParentId)
   const splitParentToReturnTo = store(s => s.splitParentToReturnTo)
   const payAllSplitsQueue = store(s => s.payAllSplitsQueue)
+  const payAllSplitsParentId = store(s => s.payAllSplitsParentId)
   const tabCardInfo = store(s => s.tabCardInfo)
   const tabsRefreshTrigger = store(s => s.tabsRefreshTrigger)
   const showWeightModal = store(s => s.showWeightModal)
