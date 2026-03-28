@@ -583,7 +583,9 @@ export async function runBootstrap(): Promise<BootstrapResult> {
         // PrismaPg everywhere — transient bootstrap connections (not persistent pools).
         // These are short-lived and fall under CONNECTION_BUDGET.LOCAL_RESERVED headroom.
         const { PrismaClient } = await import('@/generated/prisma/client')
-        const directUrl = process.env.NEON_DIRECT_URL || neonUrl
+        // Use pooler URL for bootstrap — it handles cold starts better on high-latency connections.
+        // NEON_DIRECT_URL is only needed for operations that require direct access (e.g., schema push).
+        const directUrl = neonUrl || process.env.NEON_DIRECT_URL
         let neonAdapter: any
         if (process.env.VERCEL) {
           const { PrismaPg } = await import('@prisma/adapter-pg')

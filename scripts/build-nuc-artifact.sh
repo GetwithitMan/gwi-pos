@@ -160,6 +160,7 @@ _PRISMA_RUNTIME_PKGS=(
 _SERVER_PKGS=(
     next @next/env @swc/helpers baseline-browser-mapping caniuse-lite
     picocolors postcss styled-jsx source-map-js nanoid
+    socket.io engine.io cors
     socket.io-client engine.io-client engine.io-parser socket.io-parser
     xmlhttprequest-ssl ws debug ms
     @socket.io/component-emitter
@@ -222,6 +223,7 @@ _SMOKE_RESULT=$(cd "$STAGING" && node -e "
     require('@prisma/adapter-pg');
     require('@prisma/driver-adapter-utils');
     require('pg');
+    require('socket.io');
     require('socket.io-client');
     require('next/dist/server/next-server');
     console.log('SMOKE_OK');
