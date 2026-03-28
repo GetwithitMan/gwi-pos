@@ -1278,11 +1278,22 @@ run_schema_step() {
     local failure_class=""
 
     # Step 1: prisma db push (schema sync)
-    if [[ -x "$prisma_cli" ]]; then
+    # The bundled Prisma CLI needs NODE_PATH to find @prisma/engines in its own directory.
+    # Also set PRISMA_SCHEMA_ENGINE_BINARY to the bundled schema engine.
+    local prisma_cli_dir="${release_dir}/prisma/cli"
+    local schema_engine="${prisma_cli_dir}/schema-engine-rhel-openssl-3.0.x"
+    if [[ ! -f "$schema_engine" ]]; then
+        schema_engine="$(find "$prisma_cli_dir" -name 'schema-engine-*' -type f 2>/dev/null | head -1)"
+    fi
+
+    if [[ -f "$prisma_cli" ]]; then
         log "Running: prisma db push --skip-generate (expand-safe only, NO --accept-data-loss)"
         if ! timeout "$SCHEMA_TIMEOUT_SECONDS" \
             env DATABASE_URL="$(grep '^DATABASE_URL=' "${SHARED_DIR}/.env" 2>/dev/null | cut -d= -f2-)" \
-            "$prisma_cli" db push --skip-generate 2>&1 | tee -a "${DEPLOY_LOG_DIR}/schema-${RELEASE_ID}.log"; then
+                NODE_PATH="${prisma_cli_dir}/node_modules:${prisma_cli_dir}" \
+                PRISMA_SCHEMA_ENGINE_BINARY="${schema_engine:-}" \
+                PRISMA_QUERY_ENGINE_LIBRARY="${prisma_cli_dir}/libquery_engine-rhel-openssl-3.0.x.so.node" \
+            node "$prisma_cli" db push --skip-generate --schema="${release_dir}/prisma/schema.prisma" 2>&1 | tee -a "${DEPLOY_LOG_DIR}/schema-${RELEASE_ID}.log"; then
 
             local exit_code=$?
             if [[ $exit_code -eq 124 ]]; then
