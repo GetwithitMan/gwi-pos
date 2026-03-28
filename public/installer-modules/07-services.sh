@@ -182,20 +182,33 @@ if [[ $(date +%s) -gt $PRE_START_DEADLINE ]]; then
   exit 0
 fi
 
-# Run custom migrations if the script exists
-# TIMEOUT: 300s (5min) matches the internal timeout in nuc-pre-migrate.js
-if [[ -f scripts/nuc-pre-migrate.js ]]; then
-  echo "[pre-start] Running custom migrations..."
+# Run custom migrations — prefer deploy-tools (pg-only), fallback to nuc-pre-migrate.js
+# TIMEOUT: 300s (5min) matches the internal timeout in both runners
+_DT_DIR="/opt/gwi-pos/deploy-tools"
+if [[ -f "$_DT_DIR/src/migrate.js" ]]; then
+  echo "[pre-start] Running migrations via deploy-tools (pg-only)..."
+  DATABASE_URL="$DATABASE_URL" timeout --kill-after=10 300 node "$_DT_DIR/src/migrate.js" 2>&1 || {
+    EXIT_CODE=$?
+    if [[ $EXIT_CODE -eq 124 ]]; then
+      echo "[pre-start] WARNING: deploy-tools migrations timed out after 300s — continuing."
+    else
+      if [[ ! -f /opt/gwi-pos/.first-boot-done ]]; then
+        echo "[pre-start] CRITICAL: deploy-tools migrate.js failed on first boot (exit $EXIT_CODE) — aborting."
+        exit 1
+      else
+        echo "[pre-start] WARNING: deploy-tools migrations had issues (exit $EXIT_CODE) — continuing (not first boot)."
+      fi
+    fi
+  }
+elif [[ -f scripts/nuc-pre-migrate.js ]]; then
+  echo "[pre-start] Running custom migrations (legacy path)..."
   timeout --kill-after=10 300 node scripts/nuc-pre-migrate.js 2>&1 || {
     EXIT_CODE=$?
     if [[ $EXIT_CODE -eq 124 ]]; then
       echo "[pre-start] WARNING: custom migrations timed out after 300s — continuing."
     else
-      # First boot (no .first-boot-done marker): hard stop on migration failure
-      # Subsequent boots: warn and continue (venue is already operational)
       if [[ ! -f /opt/gwi-pos/.first-boot-done ]]; then
         echo "[pre-start] CRITICAL: nuc-pre-migrate.js failed on first boot (exit $EXIT_CODE) — aborting."
-        echo "[pre-start] The database may be in an inconsistent state. Fix the issue and restart."
         exit 1
       else
         echo "[pre-start] WARNING: custom migrations had issues (exit $EXIT_CODE) — continuing (not first boot)."
@@ -203,23 +216,24 @@ if [[ -f scripts/nuc-pre-migrate.js ]]; then
     fi
   }
 else
-  echo "[pre-start] WARNING: scripts/nuc-pre-migrate.js not found — skipping custom migrations."
+  echo "[pre-start] WARNING: No migration runner found — skipping custom migrations."
 fi
 
 # Run migrations against Neon cloud DB too (ensures venue Neon is always current)
-# This is the REAL fix for neon-schema-version-incompatible — not just a version bump.
-# The NUC has the migration scripts + Neon URL, so it can directly migrate Neon.
-if [[ -f scripts/nuc-pre-migrate.js ]] && [[ -n "${NEON_DATABASE_URL:-}" ]]; then
-  echo "[pre-start] Running migrations against Neon cloud DB..."
-  NEON_MIGRATE=true timeout --kill-after=10 120 node scripts/nuc-pre-migrate.js 2>&1 || {
-    _NEON_EXIT=$?
-    if [[ $_NEON_EXIT -eq 124 ]]; then
-      echo "[pre-start] WARNING: Neon migrations timed out (120s) — will retry next boot"
-    else
+if [[ -n "${NEON_DATABASE_URL:-}" ]]; then
+  if [[ -f "$_DT_DIR/src/migrate.js" ]]; then
+    echo "[pre-start] Running Neon migrations via deploy-tools..."
+    NEON_MIGRATE=true NEON_DATABASE_URL="$NEON_DATABASE_URL" timeout --kill-after=10 120 node "$_DT_DIR/src/migrate.js" 2>&1 || {
+      _NEON_EXIT=$?
+      echo "[pre-start] WARNING: Neon migrations via deploy-tools failed (exit $_NEON_EXIT) — will retry next boot"
+    }
+  elif [[ -f scripts/nuc-pre-migrate.js ]]; then
+    echo "[pre-start] Running Neon migrations (legacy)..."
+    NEON_MIGRATE=true timeout --kill-after=10 120 node scripts/nuc-pre-migrate.js 2>&1 || {
+      _NEON_EXIT=$?
       echo "[pre-start] WARNING: Neon migrations failed (exit $_NEON_EXIT) — will retry next boot"
-    fi
-  }
-
+    }
+  fi
   # NOTE: _venue_schema_state is owned by MC (sole source of truth).
   # The NUC must NEVER write to it — observe and report only.
 fi

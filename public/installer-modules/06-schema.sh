@@ -58,16 +58,44 @@ run_schema() {
     local PRE_PUSH_TABLES
     PRE_PUSH_TABLES=$(sudo -u "$POSUSER" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename" 2>/dev/null || echo "")
 
-    log "Applying schema to local PostgreSQL..."
-    if ! timeout --kill-after=10 120 sudo -u "$POSUSER" bash -c "trap 'kill 0' EXIT; cd '$APP_DIR' && npx prisma db push" 2>&1 | tail -5; then
-      warn "prisma db push timed out or had warnings — schema may already be in sync. Continuing..."
+    local deploy_tools_dir="/opt/gwi-pos/deploy-tools"
+
+    # ── Preferred path: deploy-tools (pg-only, no Prisma) ──
+    if [[ -f "$deploy_tools_dir/src/apply-schema.js" ]]; then
+      log "Applying schema via deploy-tools (pg-only)..."
+      if ! timeout --kill-after=10 120 sudo -u "$POSUSER" bash -c "cd '$deploy_tools_dir' && DATABASE_URL='$DATABASE_URL' node src/apply-schema.js" 2>&1 | tail -5; then
+        warn "apply-schema.js timed out or had warnings — continuing..."
+      else
+        log "Schema applied successfully (deploy-tools)"
+        touch /opt/gwi-pos/.schema-stage-done
+      fi
+
+      log "Running local migrations via deploy-tools..."
+      if ! sudo -u "$POSUSER" bash -c "cd '$deploy_tools_dir' && DATABASE_URL='$DATABASE_URL' node src/migrate.js" 2>&1; then
+        err_code "ERR-INST-184" "Migration runner (deploy-tools/migrate.js) failed"
+        warn "Migrations failed — continuing but venue may have issues"
+        track_warn "deploy-tools migrate.js failed"
+      fi
     else
-      log "Schema applied successfully"
-      # Write marker so pre-start.sh skips duplicate prisma db push during this install
-      touch /opt/gwi-pos/.schema-stage-done
+      # ── Legacy fallback: Prisma CLI + nuc-pre-migrate.js ──
+      log "Deploy-tools not available — using legacy Prisma path"
+      log "Applying schema to local PostgreSQL..."
+      if ! timeout --kill-after=10 120 sudo -u "$POSUSER" bash -c "trap 'kill 0' EXIT; cd '$APP_DIR' && npx prisma db push" 2>&1 | tail -5; then
+        warn "prisma db push timed out or had warnings — schema may already be in sync. Continuing..."
+      else
+        log "Schema applied successfully"
+        touch /opt/gwi-pos/.schema-stage-done
+      fi
+
+      log "Running local migrations..."
+      if ! sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && node scripts/nuc-pre-migrate.js" 2>&1; then
+        err_code "ERR-INST-184" "Migration runner (nuc-pre-migrate.js) failed"
+        warn "Migrations failed — continuing but venue may have issues"
+        track_warn "nuc-pre-migrate.js failed"
+      fi
     fi
 
-    # Capture post-push tables and detect dropped tables
+    # Capture post-schema tables and detect dropped tables
     local POST_PUSH_TABLES
     POST_PUSH_TABLES=$(sudo -u "$POSUSER" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename" 2>/dev/null || echo "")
     if [[ -n "$PRE_PUSH_TABLES" ]] && [[ -n "$POST_PUSH_TABLES" ]]; then
@@ -75,16 +103,9 @@ run_schema() {
       dropped=$(comm -23 <(echo "$PRE_PUSH_TABLES") <(echo "$POST_PUSH_TABLES"))
       if [[ -n "$dropped" ]]; then
         err_code "ERR-INST-181" "Dropped tables: $dropped"
-        warn "Tables dropped by schema push: $dropped"
-        track_warn "Schema push dropped tables: $dropped"
+        warn "Tables dropped by schema operation: $dropped"
+        track_warn "Schema operation dropped tables: $dropped"
       fi
-    fi
-
-    log "Running local migrations..."
-    if ! sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && node scripts/nuc-pre-migrate.js" 2>&1; then
-      err_code "ERR-INST-184" "Migration runner (nuc-pre-migrate.js) failed"
-      warn "Migrations failed — continuing but venue may have issues"
-      track_warn "nuc-pre-migrate.js failed"
     fi
 
     # ── Step 2.5: Warn if _venue_schema_state missing in Neon ──
