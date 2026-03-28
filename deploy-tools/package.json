@@ -1,0 +1,9 @@
+{
+  "name": "gwi-pos-deploy-tools",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Standalone migration runner and schema bootstrap for GWI POS NUC deploys. No Prisma CLI, no tsx, no generated client.",
+  "dependencies": {
+    "pg": "^8.20.0"
+  }
+}
