@@ -72,8 +72,6 @@ readonly MIN_RAM_MB=1536                                  # 1.5GB
 readonly REQUIRED_FILES=(
     "server.js"
     "prisma/schema.prisma"
-    "prisma.config.mjs"
-    "prisma/cli/prisma"
     "launcher.sh"
     "required-env.json"
 )
@@ -1362,67 +1360,12 @@ run_schema_step() {
         fi
     fi
 
-    # ── Legacy fallback: Prisma CLI + nuc-pre-migrate.js ───────────────────
+    # Deploy-tools is required — no legacy fallback
     if [[ "$used_deploy_tools" == "false" ]]; then
-        log "Deploy-tools not available — using legacy Prisma path"
-
-        # Ensure .env is available for prisma
-        export DOTENV_CONFIG_PATH="${SHARED_DIR}/.env"
-
-        # Step 1: prisma db push
-        local prisma_cmd=""
-        if [[ -x "${release_dir}/prisma/cli/node_modules/.bin/prisma" ]]; then
-            prisma_cmd="${release_dir}/prisma/cli/node_modules/.bin/prisma"
-        elif [[ -f "${release_dir}/prisma/cli/prisma" ]]; then
-            prisma_cmd="${release_dir}/prisma/cli/prisma"
-        fi
-
-        if [[ -n "$prisma_cmd" ]]; then
-            log "Running: prisma db push (legacy)"
-            local schema_exit=0
-            (
-                cd "$release_dir" || exit 1
-                export DATABASE_URL="$db_url"
-                timeout "$SCHEMA_TIMEOUT_SECONDS" "$prisma_cmd" db push
-            ) > >(tee -a "${DEPLOY_LOG_DIR}/schema-${RELEASE_ID}.log") 2>&1 \
-                || schema_exit=$?
-
-            if [[ $schema_exit -ne 0 ]]; then
-                if [[ $schema_exit -eq 124 ]]; then
-                    failure_class="schema_timeout"
-                else
-                    failure_class="schema_push_failed"
-                fi
-                schema_failed=true
-            fi
-        else
-            warn "Prisma CLI not found in artifact — skipping schema push"
-        fi
-
-        # Step 2: nuc-pre-migrate.js
-        if [[ "$schema_failed" == "false" ]]; then
-            local migrate_script="${release_dir}/scripts/nuc-pre-migrate.js"
-            if [[ -f "$migrate_script" ]]; then
-                log "Running: nuc-pre-migrate.js (legacy)"
-                local migrate_exit=0
-                timeout "$SCHEMA_TIMEOUT_SECONDS" \
-                    env DATABASE_URL="$db_url" \
-                    node "$migrate_script" \
-                    > >(tee -a "${DEPLOY_LOG_DIR}/schema-${RELEASE_ID}.log") 2>&1 \
-                    || migrate_exit=$?
-
-                if [[ $migrate_exit -ne 0 ]]; then
-                    if [[ $migrate_exit -eq 124 ]]; then
-                        failure_class="post_migrate_timeout"
-                    else
-                        failure_class="post_migrate_failed"
-                    fi
-                    schema_failed=true
-                fi
-            else
-                log "No nuc-pre-migrate.js found — skipping custom migrations"
-            fi
-        fi
+        err "Deploy-tools not found at ${DEPLOY_TOOLS_DIR}/src/migrate.js"
+        err "Schema migration requires the deploy-tools artifact."
+        failure_class="deploy_tools_missing"
+        schema_failed=true
     fi
 
     if [[ "$schema_failed" == "true" ]]; then

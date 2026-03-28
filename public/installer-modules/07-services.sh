@@ -182,11 +182,11 @@ if [[ $(date +%s) -gt $PRE_START_DEADLINE ]]; then
   exit 0
 fi
 
-# Run custom migrations — prefer deploy-tools (pg-only), fallback to nuc-pre-migrate.js
-# TIMEOUT: 300s (5min) matches the internal timeout in both runners
+# Run migrations via deploy-tools (pg-only, no Prisma CLI)
+# TIMEOUT: 300s (5min) matches the internal timeout in the runner
 _DT_DIR="/opt/gwi-pos/deploy-tools"
 if [[ -f "$_DT_DIR/src/migrate.js" ]]; then
-  echo "[pre-start] Running migrations via deploy-tools (pg-only)..."
+  echo "[pre-start] Running migrations via deploy-tools..."
   DATABASE_URL="$DATABASE_URL" timeout --kill-after=10 300 node "$_DT_DIR/src/migrate.js" 2>&1 || {
     EXIT_CODE=$?
     if [[ $EXIT_CODE -eq 124 ]]; then
@@ -200,40 +200,17 @@ if [[ -f "$_DT_DIR/src/migrate.js" ]]; then
       fi
     fi
   }
-elif [[ -f scripts/nuc-pre-migrate.js ]]; then
-  echo "[pre-start] Running custom migrations (legacy path)..."
-  timeout --kill-after=10 300 node scripts/nuc-pre-migrate.js 2>&1 || {
-    EXIT_CODE=$?
-    if [[ $EXIT_CODE -eq 124 ]]; then
-      echo "[pre-start] WARNING: custom migrations timed out after 300s — continuing."
-    else
-      if [[ ! -f /opt/gwi-pos/.first-boot-done ]]; then
-        echo "[pre-start] CRITICAL: nuc-pre-migrate.js failed on first boot (exit $EXIT_CODE) — aborting."
-        exit 1
-      else
-        echo "[pre-start] WARNING: custom migrations had issues (exit $EXIT_CODE) — continuing (not first boot)."
-      fi
-    fi
-  }
 else
-  echo "[pre-start] WARNING: No migration runner found — skipping custom migrations."
+  echo "[pre-start] WARNING: deploy-tools not found at $_DT_DIR — skipping migrations."
 fi
 
 # Run migrations against Neon cloud DB too (ensures venue Neon is always current)
-if [[ -n "${NEON_DATABASE_URL:-}" ]]; then
-  if [[ -f "$_DT_DIR/src/migrate.js" ]]; then
-    echo "[pre-start] Running Neon migrations via deploy-tools..."
-    NEON_MIGRATE=true NEON_DATABASE_URL="$NEON_DATABASE_URL" timeout --kill-after=10 120 node "$_DT_DIR/src/migrate.js" 2>&1 || {
-      _NEON_EXIT=$?
-      echo "[pre-start] WARNING: Neon migrations via deploy-tools failed (exit $_NEON_EXIT) — will retry next boot"
-    }
-  elif [[ -f scripts/nuc-pre-migrate.js ]]; then
-    echo "[pre-start] Running Neon migrations (legacy)..."
-    NEON_MIGRATE=true timeout --kill-after=10 120 node scripts/nuc-pre-migrate.js 2>&1 || {
-      _NEON_EXIT=$?
-      echo "[pre-start] WARNING: Neon migrations failed (exit $_NEON_EXIT) — will retry next boot"
-    }
-  fi
+if [[ -n "${NEON_DATABASE_URL:-}" ]] && [[ -f "$_DT_DIR/src/migrate.js" ]]; then
+  echo "[pre-start] Running Neon migrations via deploy-tools..."
+  NEON_MIGRATE=true NEON_DATABASE_URL="$NEON_DATABASE_URL" timeout --kill-after=10 120 node "$_DT_DIR/src/migrate.js" 2>&1 || {
+    _NEON_EXIT=$?
+    echo "[pre-start] WARNING: Neon migrations failed (exit $_NEON_EXIT) — will retry next boot"
+  }
   # NOTE: _venue_schema_state is owned by MC (sole source of truth).
   # The NUC must NEVER write to it — observe and report only.
 fi

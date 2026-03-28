@@ -82,22 +82,9 @@ run_schema() {
         track_warn "deploy-tools migrate.js failed"
       fi
     else
-      # ── Legacy fallback: Prisma CLI + nuc-pre-migrate.js ──
-      log "Deploy-tools not available — using legacy Prisma path"
-      log "Applying schema to local PostgreSQL..."
-      if ! timeout --kill-after=10 120 sudo -u "$POSUSER" bash -c "trap 'kill 0' EXIT; cd '$APP_DIR' && npx prisma db push" 2>&1 | tail -5; then
-        warn "prisma db push timed out or had warnings — schema may already be in sync. Continuing..."
-      else
-        log "Schema applied successfully"
-        touch /opt/gwi-pos/.schema-stage-done
-      fi
-
-      log "Running local migrations..."
-      if ! sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && node scripts/nuc-pre-migrate.js" 2>&1; then
-        err_code "ERR-INST-184" "Migration runner (nuc-pre-migrate.js) failed"
-        warn "Migrations failed — continuing but venue may have issues"
-        track_warn "nuc-pre-migrate.js failed"
-      fi
+      err_code "ERR-INST-184" "deploy-tools not found at $deploy_tools_dir/src/apply-schema.js"
+      warn "Schema migration requires the deploy-tools artifact"
+      track_warn "deploy-tools missing from artifact"
     fi
 
     # Capture post-schema tables and detect dropped tables

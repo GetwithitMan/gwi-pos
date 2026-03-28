@@ -53,8 +53,6 @@ REQUIRED_FILES=(
     "preload.js"
     "scripts/launcher.sh"
     "prisma/schema.prisma"
-    "scripts/nuc-pre-migrate.js"
-    "scripts/migrations"
     "public"
     "src/generated/prisma"
     "package.json"
@@ -185,29 +183,10 @@ if [ -f "$REPO_DIR/prisma/schema.sql" ]; then
     echo "    prisma/schema.sql (generated)"
 fi
 
-# Prisma 7 config: datasource URL lives in prisma.config.mjs, NOT in schema.
-# Generate a minimal config that reads DATABASE_URL from env.
-# Use .mjs so Node loads it as ESM without any TypeScript compilation.
-cat > "$STAGING/prisma.config.mjs" << 'PRISMACONFIG'
-import { defineConfig } from "prisma/config";
-export default defineConfig({
-  schema: "./prisma/schema.prisma",
-  datasource: { url: process.env.DATABASE_URL },
-});
-PRISMACONFIG
-echo "    prisma.config.mjs (Prisma 7 datasource config)"
-
-# NOTE: node_modules wiring happens AFTER step 5 (Prisma CLI bundle).
-# prisma/cli/node_modules doesn't exist yet at this point.
-
-# Migration scripts
-echo "    migration scripts..."
-mkdir -p "$STAGING/scripts/migrations"
-cp "$REPO_DIR/scripts/nuc-pre-migrate.js" "$STAGING/scripts/nuc-pre-migrate.js"
-cp -r "$REPO_DIR/scripts/migrations/." "$STAGING/scripts/migrations/"
-if [ -f "$REPO_DIR/scripts/migration-helpers.js" ]; then
-    cp "$REPO_DIR/scripts/migration-helpers.js" "$STAGING/scripts/migration-helpers.js"
-fi
+# NOTE: Prisma CLI, prisma.config.mjs, and migration scripts are NO LONGER
+# shipped in the app artifact. Schema management is handled by the separate
+# deploy-tools artifact (built by deploy-tools/build.sh). See Phase 2 of
+# the deploy-tools separation plan.
 
 # Public directory (static assets, installer, sync-agent, watchdog)
 echo "    public/..."
@@ -229,238 +208,12 @@ if [ -f "$REPO_DIR/src/generated/version-contract.json" ]; then
     echo "    version-contract.json"
 fi
 
-# ─── 5. Bundle Prisma CLI (isolated npm install — complete dependency tree) ──
-echo "==> [5/12] Bundling Prisma CLI..."
-
-# Get the exact prisma version from the project
-PRISMA_VERSION=$(node -e "console.log(require('$REPO_DIR/node_modules/prisma/package.json').version)" 2>/dev/null || echo "7.5.0")
-echo "    Prisma version: $PRISMA_VERSION"
-
-# Create an isolated temp directory and do a clean npm install.
-# This guarantees the COMPLETE dependency tree — no missing transitive deps.
-# No more whack-a-mole with graphmatch, zeptomatch, @neondatabase, etc.
-PRISMA_BUNDLE_DIR=$(mktemp -d)
-echo "    Installing prisma@${PRISMA_VERSION} in isolated context..."
-
-# Get versions from the project for packages nuc-pre-migrate.js needs at runtime.
-# tsx: Prisma 7 generates ESM TypeScript — tsx bridges require() for .ts imports.
-# @prisma/adapter-pg + pg: TCP connection adapter used by nuc-pre-migrate.js.
-# Standalone may tree-shake these since they're dynamically loaded, so bundle them.
-TSX_VERSION=$(node -e "console.log(require('$REPO_DIR/node_modules/tsx/package.json').version)" 2>/dev/null || echo "4.19.4")
-ADAPTER_PG_VERSION=$(node -e "console.log(require('$REPO_DIR/node_modules/@prisma/adapter-pg/package.json').version)" 2>/dev/null || echo "7.5.0")
-PG_VERSION=$(node -e "console.log(require('$REPO_DIR/node_modules/pg/package.json').version)" 2>/dev/null || echo "8.20.0")
-echo "    tsx: $TSX_VERSION, @prisma/adapter-pg: $ADAPTER_PG_VERSION, pg: $PG_VERSION"
-
-cat > "$PRISMA_BUNDLE_DIR/package.json" << PKGJSON
-{
-  "name": "prisma-cli-bundle",
-  "private": true,
-  "dependencies": {
-    "prisma": "${PRISMA_VERSION}",
-    "tsx": "${TSX_VERSION}",
-    "@prisma/adapter-pg": "${ADAPTER_PG_VERSION}",
-    "pg": "${PG_VERSION}"
-  }
-}
-PKGJSON
-
-# Do NOT use --ignore-scripts — Prisma needs postinstall to download engines
-(cd "$PRISMA_BUNDLE_DIR" && npm install --no-audit --no-fund 2>&1 | tail -5)
-
-# Verify engine files were actually downloaded by postinstall
-echo "    Verifying Prisma engine files..."
-SCHEMA_ENGINE_COUNT=$(find "$PRISMA_BUNDLE_DIR" -type f -name "schema-engine*" 2>/dev/null | wc -l)
-WASM_COUNT=$(find "$PRISMA_BUNDLE_DIR" -type f -name "*.wasm" 2>/dev/null | wc -l)
-echo "    Engine binaries: $SCHEMA_ENGINE_COUNT schema-engine files, $WASM_COUNT WASM files"
-if [ "$WASM_COUNT" -eq 0 ]; then
-    echo "FATAL: No WASM files found — Prisma postinstall may have failed" >&2
-    echo "  Check if npm postinstall scripts ran correctly" >&2
-    rm -rf "$PRISMA_BUNDLE_DIR"
-    exit 1
-fi
-
-# Validate the installed CLI works — two checks:
-# 1. --version: proves the CLI loads and its core deps resolve
-# 2. db push --help: exercises schema engine + WASM loading (no DB needed)
-echo "    Validating isolated Prisma CLI..."
-PRISMA_BIN="$PRISMA_BUNDLE_DIR/node_modules/.bin/prisma"
-
-PRISMA_TEST_OUTPUT=$("$PRISMA_BIN" --version 2>&1) || true
-if echo "$PRISMA_TEST_OUTPUT" | grep -qE '[0-9]+\.[0-9]+\.[0-9]+'; then
-    PRISMA_CLI_VERSION=$(echo "$PRISMA_TEST_OUTPUT" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
-    echo "    prisma --version: v${PRISMA_CLI_VERSION} OK"
-else
-    echo "FATAL: Prisma CLI --version failed:" >&2
-    echo "$PRISMA_TEST_OUTPUT" | head -10 >&2
-    rm -rf "$PRISMA_BUNDLE_DIR"
-    exit 1
-fi
-
-# Validate schema engine loads (db push --help triggers WASM + engine resolution)
-if "$PRISMA_BIN" db push --help > /dev/null 2>&1; then
-    echo "    prisma db push --help: OK (schema engine loads)"
-else
-    echo "FATAL: Prisma CLI 'db push --help' failed — schema engine may be missing" >&2
-    "$PRISMA_BIN" db push --help 2>&1 | tail -5 >&2
-    rm -rf "$PRISMA_BUNDLE_DIR"
-    exit 1
-fi
-
-# Copy the complete, working prisma installation into the artifact
-mkdir -p "$STAGING/prisma/cli"
-cp -r "$PRISMA_BUNDLE_DIR/node_modules" "$STAGING/prisma/cli/node_modules"
-
-# Create a convenience symlink/script so deploy can find the CLI
-cp "$PRISMA_BUNDLE_DIR/node_modules/.bin/prisma" "$STAGING/prisma/cli/prisma" 2>/dev/null || true
-chmod +x "$STAGING/prisma/cli/prisma" 2>/dev/null || true
-
-echo "    Prisma CLI bundle: $(du -sh "$STAGING/prisma/cli/node_modules" | cut -f1)"
-
-# Clean up temp dir
-rm -rf "$PRISMA_BUNDLE_DIR"
-
-# Wire prisma package into release-root node_modules so that
-# prisma.config.mjs can resolve 'prisma/config' via normal Node resolution.
-# This MUST happen after step 5 copies prisma/cli/node_modules into staging.
-echo "    Merging Prisma CLI deps into release-root node_modules..."
-if [ -d "$STAGING/node_modules" ]; then
-    # Standalone ships its own node_modules/ — we CANNOT replace it.
-    # Merge ALL packages from the isolated Prisma install into standalone's
-    # node_modules. This ships the COMPLETE transitive dependency tree
-    # (prisma, @prisma/config, effect, etc.) without whack-a-mole.
-    # Skip packages that already exist (don't break Next.js runtime deps).
-    PRISMA_NM="$STAGING/prisma/cli/node_modules"
-    MERGED=0
-
-    # Non-scoped packages (prisma, effect, etc.)
-    for pkg_dir in "$PRISMA_NM"/[^@]*; do
-        [ -d "$pkg_dir" ] || continue
-        pkg_name=$(basename "$pkg_dir")
-        if [ ! -e "$STAGING/node_modules/$pkg_name" ]; then
-            cp -r "$pkg_dir" "$STAGING/node_modules/$pkg_name"
-            MERGED=$((MERGED + 1))
-        fi
-    done
-
-    # Scoped packages (@prisma/*, @effect/*, etc.)
-    for scope_dir in "$PRISMA_NM"/@*; do
-        [ -d "$scope_dir" ] || continue
-        scope_name=$(basename "$scope_dir")
-        mkdir -p "$STAGING/node_modules/$scope_name"
-        for pkg_dir in "$scope_dir"/*; do
-            [ -d "$pkg_dir" ] || continue
-            pkg_name=$(basename "$pkg_dir")
-            if [ ! -e "$STAGING/node_modules/$scope_name/$pkg_name" ]; then
-                cp -r "$pkg_dir" "$STAGING/node_modules/$scope_name/$pkg_name"
-                MERGED=$((MERGED + 1))
-            fi
-        done
-    done
-
-    # Also merge .bin entries so prisma CLI is callable from release root
-    if [ -d "$PRISMA_NM/.bin" ]; then
-        mkdir -p "$STAGING/node_modules/.bin"
-        for bin_entry in "$PRISMA_NM/.bin"/*; do
-            [ -e "$bin_entry" ] || continue
-            bin_name=$(basename "$bin_entry")
-            if [ ! -e "$STAGING/node_modules/.bin/$bin_name" ]; then
-                cp -P "$bin_entry" "$STAGING/node_modules/.bin/$bin_name"
-            fi
-        done
-    fi
-
-    echo "    Merged $MERGED packages from Prisma CLI bundle into standalone node_modules"
-else
-    # No standalone node_modules — create symlink (shouldn't happen normally)
-    ln -sfn prisma/cli/node_modules "$STAGING/node_modules"
-    echo "    node_modules -> prisma/cli/node_modules (symlink)"
-fi
-
-# Final validation: simulate NUC execution shape.
-# Run from STAGING dir (like deploy-release.sh does from release dir)
-# with prisma.config.mjs + DATABASE_URL + bundled CLI.
-echo "    Validating NUC execution shape (cd staging + prisma.config.mjs + node_modules)..."
-STAGED_PRISMA="$STAGING/prisma/cli/node_modules/.bin/prisma"
-if [ -f "$STAGED_PRISMA" ]; then
-    # Fail-closed: prisma.config.ts MUST be absent, prisma.config.mjs MUST be present.
-    # Prisma resolves .ts before .mjs — if the dev config sneaks back via standalone
-    # copy or cleanup drift, it will be chosen first and fail (requires dotenv).
-    if [ -f "$STAGING/prisma.config.ts" ]; then
-        echo "FATAL: prisma.config.ts found in staged release — must be removed" >&2
-        echo "  Prisma resolves .ts before .mjs; dev config requires dotenv (not in artifact)" >&2
-        exit 1
-    fi
-    if [ ! -f "$STAGING/prisma.config.mjs" ]; then
-        echo "FATAL: prisma.config.mjs missing from staged release" >&2
-        exit 1
-    fi
-    # Verify prisma package is resolvable from release root.
-    # Standalone has a real node_modules dir (not a symlink) — we copy prisma into it.
-    # Either way, the prisma package must exist at node_modules/prisma for config resolution.
-    if [ ! -d "$STAGING/node_modules/prisma" ]; then
-        echo "FATAL: prisma package missing from release-root node_modules" >&2
-        echo "  Expected: $STAGING/node_modules/prisma/" >&2
-        echo "  node_modules exists: $([ -e "$STAGING/node_modules" ] && echo 'yes' || echo 'no')" >&2
-        echo "  node_modules is dir: $([ -d "$STAGING/node_modules" ] && echo 'yes' || echo 'no')" >&2
-        echo "  node_modules is link: $([ -L "$STAGING/node_modules" ] && echo 'yes' || echo 'no')" >&2
-        exit 1
-    fi
-    # Verify the prisma/config module chain is resolvable:
-    # prisma.config.mjs -> prisma/config -> @prisma/config
-    if [ ! -e "$STAGING/node_modules/prisma/config.js" ] && [ ! -e "$STAGING/node_modules/prisma/config/index.js" ]; then
-        echo "FATAL: prisma/config module not found in release-root node_modules" >&2
-        echo "  Checked: node_modules/prisma/config.js and node_modules/prisma/config/index.js" >&2
-        ls -la "$STAGING/node_modules/prisma/" 2>&1 | head -10 >&2
-        exit 1
-    fi
-    if [ ! -d "$STAGING/node_modules/@prisma/config" ]; then
-        echo "FATAL: @prisma/config missing from release-root node_modules" >&2
-        echo "  prisma/config.js requires @prisma/config — it must be copied from the CLI bundle" >&2
-        exit 1
-    fi
-    # Validate the config import chain BEFORE running CLI.
-    # This catches the exact failure mode: prisma.config.mjs -> prisma/config -> @prisma/config
-    echo "    Validating config import chain (node -e require)..."
-    CONFIG_CHAIN_TEST=$(cd "$STAGING" && node -e "require('prisma/config'); console.log('prisma/config OK')" 2>&1) || true
-    if echo "$CONFIG_CHAIN_TEST" | grep -q "prisma/config OK"; then
-        echo "    Config chain: prisma/config resolves OK"
-    else
-        echo "FATAL: prisma/config import chain broken from release root:" >&2
-        echo "$CONFIG_CHAIN_TEST" | head -10 >&2
-        echo "  Staged @prisma contents:" >&2
-        ls -la "$STAGING/node_modules/@prisma/" 2>&1 | head -10 >&2
-        echo "  Staged prisma contents:" >&2
-        ls -la "$STAGING/node_modules/prisma/" 2>&1 | head -10 >&2
-        exit 1
-    fi
-
-    # Simulate NUC: cd to release dir, set DATABASE_URL, run prisma db push --help
-    NUC_TEST_OUTPUT=$(cd "$STAGING" && DATABASE_URL="postgresql://test:test@localhost:5432/test" "$STAGED_PRISMA" db push --help 2>&1) || true
-    if echo "$NUC_TEST_OUTPUT" | grep -qi "prisma db push\|push the state"; then
-        echo "    NUC execution shape: OK (prisma.config.mjs resolves, CLI loads from release root)"
-    else
-        echo "FATAL: Prisma CLI failed from staged release directory:" >&2
-        echo "$NUC_TEST_OUTPUT" | head -10 >&2
-        exit 1
-    fi
-
-    # Validate nuc-pre-migrate.js by running it in validate-only mode from the
-    # staged artifact. This executes the REAL import chain (dotenv→tsx→PrismaClient
-    # →PrismaPg→fs→path) instead of a separate guessed require() — so if the script
-    # can load here, it can load on the NUC.
-    echo "    Validating nuc-pre-migrate.js from staged artifact (validate-only)..."
-    MIGRATE_VALIDATE_TEST=$(cd "$STAGING" && NUC_PRE_MIGRATE_VALIDATE_ONLY=1 node scripts/nuc-pre-migrate.js 2>&1) || true
-    if echo "$MIGRATE_VALIDATE_TEST" | grep -q "all imports resolved OK"; then
-        echo "    nuc-pre-migrate.js: all runtime deps resolve from artifact"
-        echo "$MIGRATE_VALIDATE_TEST" | grep "\[nuc-pre-migrate\]" | sed 's/^/      /'
-    else
-        echo "FATAL: nuc-pre-migrate.js cannot load from staged artifact:" >&2
-        echo "$MIGRATE_VALIDATE_TEST" >&2
-        echo "  Staged generated client contents:" >&2
-        ls -la "$STAGING/src/generated/prisma/" 2>&1 | head -10 >&2
-        exit 1
-    fi
-fi
+# ─── 5. (REMOVED) Prisma CLI bundle ──────────────────────────────────────────
+# Prisma CLI, tsx, adapter-pg, and the migration runner are no longer bundled
+# in the app artifact. Schema management is handled by the separate deploy-tools
+# artifact (192KB vs 50-150MB). See deploy-tools/VALIDATION.md for test evidence.
+echo "==> [5/12] Prisma CLI bundle removed — deploy-tools handles migrations"
+PRISMA_CLI_VERSION="none"
 
 # ─── 6. Generate required-env.json ───────────────────────────────────────────
 echo "==> [6/12] Generating required-env.json..."
