@@ -176,7 +176,80 @@ async function handleForceUpdate(payload, cmdId) {
     }
   }
 
-  // Try version-targeted update via local update agent (Phase 8.2)
+  // ── Artifact-first deploy path (v3.1) ──────────────────────────────────
+  // If deploy-release.sh is available, use it directly. This bypasses the POS
+  // update agent entirely — deploy-release.sh handles download, verify, extract,
+  // schema, swap, restart, health check, and rollback.
+  var DEPLOY_SCRIPT = '/opt/gwi-pos/deploy-release.sh'
+  var MANIFEST_URL = 'https://' + (env.POS_DOMAIN || 'ordercontrolcenter.com') + '/artifacts/manifest.json'
+
+  if (fs.existsSync(DEPLOY_SCRIPT)) {
+    log('[Update] Artifact deploy available — using deploy-release.sh')
+    if (cmdId) ackProgress(cmdId, 'IN_PROGRESS', { step: 'artifact-deploy', targetVersion: targetVersion })
+
+    // Check maintenance mode — another deploy may be in progress
+    if (fs.existsSync('/opt/gwi-pos/shared/state/deploy-in-progress')) {
+      log('[Update] Deploy already in progress (maintenance mode flag set) — skipping')
+      if (cmdId) ackProgress(cmdId, 'COMPLETED', { step: 'skipped-deploy-in-progress', version: previousVersion })
+      return { ok: true, version: previousVersion, steps: ['deploy-in-progress — skipped'], _acked: true }
+    }
+
+    try {
+      execSync('bash "' + DEPLOY_SCRIPT + '" --manifest-url "' + MANIFEST_URL + '"', {
+        encoding: 'utf-8',
+        timeout: 600000, // 10 min
+        stdio: 'pipe'
+      })
+      log('[Update] Artifact deploy completed successfully')
+
+      // Read new version from the deployed release
+      var newVersion = previousVersion
+      try {
+        var currentLink = fs.readlinkSync('/opt/gwi-pos/current')
+        var pkgPath = path.join(currentLink, 'package.json')
+        if (!fs.existsSync(pkgPath)) pkgPath = '/opt/gwi-pos/current/package.json'
+        newVersion = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')).version || previousVersion
+      } catch (e) {}
+
+      // Self-update sync-agent + components from new release
+      try { selfUpdateSyncAgent() } catch (e) { log('[Update] Self-update warning: ' + e.message) }
+      var compResult = null
+      try { compResult = updateComponentsFromCheckout() } catch (e) {}
+
+      if (cmdId) ackProgress(cmdId, 'COMPLETED', {
+        step: 'artifact-deploy-done',
+        version: newVersion,
+        steps: ['artifact-download', 'artifact-verify', 'artifact-extract', 'schema-push', 'restart', 'health-ok'],
+        componentUpdates: compResult
+      })
+      return { ok: true, version: newVersion, steps: ['artifact-deploy OK'], _acked: true }
+    } catch (deployErr) {
+      log('[Update] Artifact deploy FAILED: ' + (deployErr.message || '').slice(0, 300))
+      log('[Update] deploy-release.sh handles its own rollback — checking state...')
+
+      // deploy-release.sh handles rollback internally. Check what state we're in.
+      var deployState = 'unknown'
+      try {
+        var stateData = JSON.parse(fs.readFileSync('/opt/gwi-pos/shared/state/deploy-state.json', 'utf-8'))
+        deployState = stateData.state || 'unknown'
+      } catch (e) {}
+
+      if (deployState === 'rolled_back') {
+        log('[Update] deploy-release.sh rolled back to previous release — POS should be running')
+        if (cmdId) ackProgress(cmdId, 'FAILED', { step: 'artifact-deploy-rolled-back', error: (deployErr.message || '').slice(0, 200) })
+        return { ok: false, error: 'Artifact deploy failed (rolled back)', steps: ['artifact-deploy-failed', 'rollback-ok'], _acked: true }
+      } else if (deployState === 'rollback_failed') {
+        log('[Update] CRITICAL: deploy-release.sh rollback also failed — manual intervention needed')
+        if (cmdId) ackProgress(cmdId, 'FAILED', { step: 'artifact-deploy-rollback-failed', error: 'Both deploy and rollback failed' })
+        return { ok: false, error: 'Artifact deploy AND rollback failed', steps: ['artifact-deploy-failed', 'rollback-failed'], _acked: true }
+      }
+
+      // Artifact deploy failed for other reason — fall through to legacy path
+      log('[Update] Falling through to legacy update path...')
+    }
+  }
+
+  // Try version-targeted update via local update agent (Phase 8.2 — legacy path)
   if (targetVersion) {
     log('[Update] Attempting version-targeted update to ' + targetVersion + ' via update agent...')
     try {

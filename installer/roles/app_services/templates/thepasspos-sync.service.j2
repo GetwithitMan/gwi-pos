@@ -1,0 +1,18 @@
+[Unit]
+Description=GWI POS Sync Agent
+After=network.target thepasspos.service
+Wants=thepasspos.service
+
+[Service]
+Type=simple
+User=gwipos
+Group=gwipos
+WorkingDirectory=/opt/gwi-pos
+ExecStart=/usr/bin/node /opt/gwi-pos/current/public/sync-agent.js
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=15
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target

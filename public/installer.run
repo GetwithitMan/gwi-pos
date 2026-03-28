@@ -33,6 +33,10 @@
 
 set -euo pipefail
 
+# Non-interactive mode for all apt operations (prevents dpkg dialog hangs)
+export DEBIAN_FRONTEND=noninteractive
+export DEBCONF_NONINTERACTIVE_SEEN=true
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Installer Version (stamped at build time by build-installer-bundle.sh)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -486,68 +490,154 @@ fi
 command -v jq >/dev/null 2>&1 || track_warn "jq not found — install progress reporting will be degraded"
 command -v python3 >/dev/null 2>&1 || track_warn "python3 not found — version checking will be degraded"
 
+# ── Stage completion markers (crash recovery) ──────────────────────────────
+# After each stage succeeds, a versioned marker is written.
+# On re-run (resume), completed stages are skipped.
+# Markers include installer version to prevent skipping stages that
+# changed meaning between installer versions.
+STAGE_STATE_DIR="$APP_BASE/shared/state"
+
+_stage_marker() {
+    echo "$STAGE_STATE_DIR/.stage-${1}-done-v${INSTALLER_VERSION}"
+}
+
+_stage_done() {
+    local marker
+    marker="$(_stage_marker "$1")"
+    [[ -f "$marker" ]]
+}
+
+_mark_stage_done() {
+    mkdir -p "$STAGE_STATE_DIR"
+    date -u +%FT%TZ > "$(_stage_marker "$1")"
+}
+
+_reset_all_markers() {
+    mkdir -p "$STAGE_STATE_DIR"
+    rm -f "$STAGE_STATE_DIR"/.stage-*-done-* 2>/dev/null || true
+    log "Stage markers reset for fresh install"
+}
+
+run_stage() {
+    local num="$1"
+    local name="$2"
+    local func="$3"
+    shift 3
+    # Any remaining args are passed to the stage function
+
+    if _stage_done "$num"; then
+        log "Stage $num ($name) already complete — skipping"
+        _report_install_progress "$name" "SKIPPED"
+        return 0
+    fi
+
+    header "Stage $num: $name"
+    _report_install_progress "$name" "STARTING"
+    start_timer
+
+    # Tee stderr to a temp file for error capture while preserving console output
+    local _stage_err_file
+    _stage_err_file=$(mktemp /tmp/gwi-stage-err-XXXXXX 2>/dev/null || echo "")
+    if "$func" "$@" 2> >(tee "$_stage_err_file" >&2); then
+        rm -f "$_stage_err_file"
+        _mark_stage_done "$num"
+        _report_install_progress "$name" "COMPLETED"
+        end_timer "Stage $num ($name)"
+    else
+        local _stage_err
+        _stage_err=$(tail -c 500 "$_stage_err_file" 2>/dev/null || echo "")
+        rm -f "$_stage_err_file"
+        _report_install_progress "$name" "FAILED" "ERR-INST-${num}" "$_stage_err"
+        err "Stage $num ($name) FAILED"
+        err "Fix the issue and re-run: sudo ./installer.run"
+        err "  (completed stages will be skipped automatically)"
+        return 1
+    fi
+
+    # Record legacy checkpoint
+    mkdir -p "$APP_BASE"
+    echo "$name" > "$APP_BASE/.install-checkpoint"
+}
+
 # Define stages in order
 STAGES=(preflight register secrets database deploy_app schema services ha remote_access finalize system_hardening dashboard)
 
 CHECKPOINT_FILE="$APP_BASE/.install-checkpoint"
-SKIPPING=false
+
+# ── Stage number map ─────────────────────────────────────────────────────────
+declare -A STAGE_NUM
+STAGE_NUM=(
+  [preflight]="01"
+  [register]="02"
+  [secrets]="03"
+  [database]="04"
+  [deploy_app]="05"
+  [schema]="06"
+  [services]="07"
+  [ha]="08"
+  [remote_access]="09"
+  [finalize]="10"
+  [system_hardening]="11"
+  [dashboard]="12"
+)
+
+declare -A STAGE_LABEL
+STAGE_LABEL=(
+  [preflight]="Preflight Checks"
+  [register]="Registration"
+  [secrets]="Secrets & Keys"
+  [database]="Database"
+  [deploy_app]="Deploy App"
+  [schema]="Schema"
+  [services]="Services"
+  [ha]="HA Failover"
+  [remote_access]="Remote Access"
+  [finalize]="Finalize"
+  [system_hardening]="System Hardening"
+  [dashboard]="Dashboard"
+)
+
+# ── Marker reset logic ───────────────────────────────────────────────────────
+# Fresh install (no --resume-from): reset all markers so every stage runs.
+# --resume-from: keep markers, but clear markers for the target stage and all
+# stages after it so they re-run from the requested point.
 if [[ -n "$RESUME_FROM" ]]; then
-  SKIPPING=true
+  # Validate --resume-from value
+  _valid_resume=false
+  _clearing=false
+  for _s in "${STAGES[@]}"; do
+    if [[ "$_s" == "$RESUME_FROM" ]]; then
+      _valid_resume=true
+      _clearing=true
+    fi
+    if [[ "$_clearing" == "true" ]]; then
+      # Remove marker for this stage (keyed by number) so run_stage will re-run it
+      rm -f "$(_stage_marker "${STAGE_NUM[$_s]}")" 2>/dev/null || true
+    fi
+  done
+  if [[ "$_valid_resume" != "true" ]]; then
+    err "Invalid --resume-from value: '$RESUME_FROM'"
+    err "Valid stages: ${STAGES[*]}"
+    exit 1
+  fi
+  log "Resume mode: markers cleared from '$RESUME_FROM' onward"
+else
+  # Fresh install — reset all markers
+  _reset_all_markers
 fi
 
+# ── Execute stages ───────────────────────────────────────────────────────────
 for stage in "${STAGES[@]}"; do
-  # Skip stages until we hit the resume target
-  if [[ "$SKIPPING" == "true" ]]; then
-    if [[ "$stage" == "$RESUME_FROM" ]]; then
-      SKIPPING=false
-      log "Resuming from stage: $stage"
-    else
-      log "Skipping $stage (resuming from $RESUME_FROM)"
-      _report_install_progress "$stage" "SKIPPED"
-      continue
-    fi
-  fi
+  _num="${STAGE_NUM[$stage]}"
+  _label="${STAGE_LABEL[$stage]}"
 
-  header "Stage: $stage"
-  _report_install_progress "$stage" "STARTING"
-
-  # Call the stage function, passing original args for preflight user detection
-  # Tee stderr to a temp file for error capture while preserving console output
-  _stage_err_file=$(mktemp /tmp/gwi-stage-err-XXXXXX 2>/dev/null || echo "")
   if [[ "$stage" == "preflight" ]]; then
-    if ! run_preflight "${INSTALLER_ARGS[@]}" 2> >(tee "$_stage_err_file" >&2); then
-      _stage_err=$(tail -c 500 "$_stage_err_file" 2>/dev/null || echo "")
-      rm -f "$_stage_err_file"
-      _report_install_progress "$stage" "FAILED" "ERR-INST-${stage^^}" "$_stage_err"
-      err "Stage $stage FAILED."
-      err "Fix the issue and re-run with: sudo ./installer.run --resume-from=$stage"
-      exit 1
-    fi
+    # Preflight needs the extra installer args for user detection
+    run_stage "$_num" "$_label" run_preflight "${INSTALLER_ARGS[@]}" || exit 1
   else
-    if ! "run_${stage}" 2> >(tee "$_stage_err_file" >&2); then
-      _stage_err=$(tail -c 500 "$_stage_err_file" 2>/dev/null || echo "")
-      rm -f "$_stage_err_file"
-      _report_install_progress "$stage" "FAILED" "ERR-INST-${stage^^}" "$_stage_err"
-      err "Stage $stage FAILED."
-      err "Fix the issue and re-run with: sudo ./installer.run --resume-from=$stage"
-      exit 1
-    fi
+    run_stage "$_num" "$_label" "run_${stage}" || exit 1
   fi
-  rm -f "$_stage_err_file"
-
-  _report_install_progress "$stage" "COMPLETED"
-
-  # Record checkpoint
-  mkdir -p "$APP_BASE"
-  echo "$stage" > "$CHECKPOINT_FILE"
 done
-
-# Validate all stages completed (catch bad --resume-from values)
-if [[ "$SKIPPING" == "true" ]]; then
-  err "Invalid --resume-from value: '$RESUME_FROM'"
-  err "Valid stages: ${STAGES[*]}"
-  exit 1
-fi
 
 # ── Clean reboot after successful full install ─────────────────────────────
 # Only reboot on full install (not --resume-from), ensures all services,

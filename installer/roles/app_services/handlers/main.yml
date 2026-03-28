@@ -1,0 +1,14 @@
+---
+- name: reload systemd
+  systemd:
+    daemon_reload: yes
+
+- name: restart thepasspos
+  systemd:
+    name: thepasspos
+    state: restarted
+
+- name: restart sync agent
+  systemd:
+    name: thepasspos-sync
+    state: restarted

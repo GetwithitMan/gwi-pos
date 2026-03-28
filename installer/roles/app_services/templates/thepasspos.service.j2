@@ -1,0 +1,28 @@
+[Unit]
+Description=GWI POS Server
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=gwipos
+Group=gwipos
+WorkingDirectory=/opt/gwi-pos/current
+ExecStartPre=/usr/bin/test -x /opt/gwi-pos/current/launcher.sh
+ExecStartPre=/usr/bin/test -L /opt/gwi-pos/current/.env
+ExecStart=/opt/gwi-pos/current/launcher.sh
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+KillSignal=SIGTERM
+Environment=NODE_ENV=production
+Environment=PORT={{ gwi_pos_port | default(3005) }}
+
+# Systemd hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/opt/gwi-pos/shared
+
+[Install]
+WantedBy=multi-user.target

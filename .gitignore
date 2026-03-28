@@ -18,6 +18,12 @@
 !.yarn/releases
 !.yarn/versions
 
+# Signing keys (public key is safe to commit, private key MUST NOT be committed)
+keys/*.key
+
+# Artifact staging
+.artifact-staging/
+
 # Environment
 .env
 .env.local

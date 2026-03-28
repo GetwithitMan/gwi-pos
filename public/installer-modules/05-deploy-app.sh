@@ -1,81 +1,56 @@
 #!/usr/bin/env bash
 # =============================================================================
-# 05-deploy-app.sh — Git clone/pull, npm install, prisma generate, build
+# 05-deploy-app.sh — Artifact-based deployment (replaces git clone + npm ci)
 # =============================================================================
 # Entry: run_deploy_app
 # Expects: STATION_ROLE, APP_BASE, APP_DIR, ENV_FILE, KEY_DIR, POSUSER,
 #          GIT_REPO, DEPLOY_TOKEN
+#
+# Deploys a pre-built, self-contained artifact via deploy-release.sh.
+# No git clone. No npm ci. No prisma generate. The artifact has everything.
+#
+# Legacy git+npm flow preserved behind LEGACY_DEPLOY=1 env var.
 # =============================================================================
 
-# _git_repair — Clean up stale state that prevents git operations from succeeding.
-# Fixes: lock files from interrupted ops, merge/rebase state, ownership mismatches.
+# ── Minisign public key (embedded) ─────────────────────────────────────────
+readonly _GWI_MINISIGN_PUB='untrusted comment: minisign public key 6A8006EFB1B4BF0A
+RWQKv7Sx7waAahboOQ+1oTmS1uU5fHebSLBqOoOBHpFa6MsLyFMqZdVl'
+
+# ── Legacy helpers (only loaded when LEGACY_DEPLOY=1) ──────────────────────
+if [[ "${LEGACY_DEPLOY:-}" == "1" ]]; then
+
 _git_repair() {
   local dir="$1"
-
-  # Safety: refuse to operate on empty, root-like, or unexpected paths
   if [[ -z "$dir" ]] || [[ "$dir" == "/" ]] || [[ ! "$dir" == /opt/gwi-pos/* ]]; then
     log "  ERROR: _git_repair refused to operate on path: '$dir'"
     return 1
   fi
-
   [[ -d "$dir/.git" ]] || return 0
-
   log "  Running git self-repair on $dir..."
-
-  # 1. Remove stale lock files (left by interrupted fetch/reset/merge)
   local locks=(
-    "$dir/.git/index.lock"
-    "$dir/.git/refs/remotes/origin/main.lock"
-    "$dir/.git/HEAD.lock"
-    "$dir/.git/config.lock"
-    "$dir/.git/shallow.lock"
-    "$dir/.git/refs/heads/main.lock"
+    "$dir/.git/index.lock" "$dir/.git/refs/remotes/origin/main.lock"
+    "$dir/.git/HEAD.lock" "$dir/.git/config.lock"
+    "$dir/.git/shallow.lock" "$dir/.git/refs/heads/main.lock"
   )
   for lf in "${locks[@]}"; do
-    if [[ -f "$lf" ]]; then
-      log "  Removing stale lock: $lf"
-      rm -f "$lf"
-    fi
+    [[ -f "$lf" ]] && log "  Removing stale lock: $lf" && rm -f "$lf"
   done
-
-  # 2. Abort interrupted merge/rebase/cherry-pick state
-  if [[ -f "$dir/.git/MERGE_HEAD" ]]; then
-    log "  Aborting interrupted merge"
-    sudo -u "$POSUSER" bash -c "cd '$dir' && git merge --abort" 2>/dev/null || true
-  fi
+  [[ -f "$dir/.git/MERGE_HEAD" ]] && sudo -u "$POSUSER" bash -c "cd '$dir' && git merge --abort" 2>/dev/null || true
   if [[ -d "$dir/.git/rebase-merge" ]] || [[ -d "$dir/.git/rebase-apply" ]]; then
-    log "  Aborting interrupted rebase"
     sudo -u "$POSUSER" bash -c "cd '$dir' && git rebase --abort" 2>/dev/null || true
   fi
-  if [[ -f "$dir/.git/CHERRY_PICK_HEAD" ]]; then
-    log "  Aborting interrupted cherry-pick"
-    sudo -u "$POSUSER" bash -c "cd '$dir' && git cherry-pick --abort" 2>/dev/null || true
-  fi
-
-  # 3. Fix ownership — previous sudo/root operations may have left files root-owned,
-  #    causing git (running as POSUSER) to fail with "Permission denied"
-  log "  Fixing file ownership for $POSUSER..."
+  [[ -f "$dir/.git/CHERRY_PICK_HEAD" ]] && sudo -u "$POSUSER" bash -c "cd '$dir' && git cherry-pick --abort" 2>/dev/null || true
   chown -R "$POSUSER":"$POSUSER" "$dir" 2>/dev/null || true
-  # Re-lock sensitive files that must stay root-owned
   [[ -f "$ENV_FILE" ]] && chown root:"$POSUSER" "$ENV_FILE" && chmod 640 "$ENV_FILE"
   [[ -d "$KEY_DIR" ]] && chown -R root:root "$KEY_DIR" && chmod 700 "$KEY_DIR"
   local _cred="$APP_BASE/.git-credentials"
   [[ -f "$_cred" ]] && chown root:"$POSUSER" "$_cred" && chmod 640 "$_cred"
-
   log "  Git self-repair complete."
 }
 
-# _git_validate_credentials — Test that git can authenticate before attempting clone/pull.
-# Returns 0 if credentials work, 1 if not.
 _git_validate_credentials() {
-  local cred_file="$1"
-  local repo="$2"
-
-  if [[ ! -f "$cred_file" ]]; then
-    log "  WARNING: Credentials file missing at $cred_file"
-    return 1
-  fi
-
+  local cred_file="$1" repo="$2"
+  [[ ! -f "$cred_file" ]] && log "  WARNING: Credentials file missing at $cred_file" && return 1
   log "  Validating git credentials..."
   if sudo -u "$POSUSER" bash -c "
     git config --global credential.helper 'store --file=$cred_file'
@@ -85,38 +60,104 @@ _git_validate_credentials() {
     sudo -u "$POSUSER" git config --global --unset credential.helper 2>/dev/null || true
     return 0
   else
-    log "  WARNING: Credentials failed — git ls-remote returned non-zero."
+    log "  WARNING: Credentials failed."
     sudo -u "$POSUSER" git config --global --unset credential.helper 2>/dev/null || true
     return 1
   fi
 }
 
-# _git_with_retry — Run a git command with retry logic for transient network failures.
-# Usage: _git_with_retry <max_attempts> <delay_seconds> <command...>
 _git_with_retry() {
   local max_attempts="$1"; shift
   local delay="$1"; shift
   local attempt=1
-
   while [[ $attempt -le $max_attempts ]]; do
-    if eval "$@"; then
-      return 0
-    fi
-    if [[ $attempt -lt $max_attempts ]]; then
-      log "  Git operation failed (attempt $attempt/$max_attempts). Retrying in ${delay}s..."
-      sleep "$delay"
-    fi
+    if eval "$@"; then return 0; fi
+    [[ $attempt -lt $max_attempts ]] && log "  Git failed (attempt $attempt/$max_attempts). Retrying in ${delay}s..." && sleep "$delay"
     attempt=$(( attempt + 1 ))
   done
-
   return 1
 }
 
+fi  # end LEGACY_DEPLOY guard
+
+# ── Module refresh (shared by both paths) ──────────────────────────────────
+_refresh_modules_from_checkout() {
+  local checkout_modules="${APP_DIR}/public/installer-modules"
+  local checkout_scripts="${APP_DIR}/public/scripts"
+  local checkout_watchdog="${APP_DIR}/public/watchdog.sh"
+
+  if [[ ! -d "$checkout_modules" ]]; then
+    warn "IMPORTANT: No installer modules found in checkout at $checkout_modules"
+    warn "Stages 06-12 will use embedded (potentially stale) modules"
+    track_warn "Module refresh skipped — checkout modules not found"
+    return 0
+  fi
+
+  local checkout_version=""
+  if [[ -f "${APP_DIR}/package.json" ]]; then
+    checkout_version=$(node -e "console.log(require('${APP_DIR}/package.json').version)" 2>/dev/null || true)
+  fi
+
+  log "Refreshing installer modules from deployed release (v${checkout_version:-unknown})..."
+
+  if [[ -d "$MODULES_DIR" ]]; then
+    cp -a "$checkout_modules"/* "$MODULES_DIR/" 2>/dev/null || true
+    chmod +x "$MODULES_DIR"/*.sh 2>/dev/null || true
+    [[ -d "$MODULES_DIR/lib" ]] && chmod +x "$MODULES_DIR"/lib/*.sh 2>/dev/null || true
+    log "  Updated installer modules from release"
+
+    for _mod in "$MODULES_DIR"/*.sh; do
+      [[ -f "$_mod" ]] && source "$_mod"
+    done
+    log "  Re-sourced updated module definitions"
+
+    if [[ -d "$MODULES_DIR/lib" ]]; then
+      for _lib in "$MODULES_DIR"/lib/*.sh; do
+        [[ -f "$_lib" ]] && source "$_lib"
+      done
+      log "  Re-sourced installer libraries"
+    fi
+
+    local _refresh_ok=true
+    for _expected_mod in 06-schema 07-services 08-ha 09-remote-access 10-finalize 11-system-hardening 12-dashboard; do
+      [[ ! -f "$MODULES_DIR/${_expected_mod}.sh" ]] && warn "Module $_expected_mod missing after refresh" && _refresh_ok=false
+    done
+    [[ "$_refresh_ok" == "true" ]] && log "  Module integrity validated (all stages 06-12 present)" \
+      || { warn "  Module refresh incomplete — some stages may use embedded (stale) code"; track_warn "Module refresh incomplete"; }
+  fi
+
+  # Deploy operational scripts
+  mkdir -p /opt/gwi-pos/scripts /opt/gwi-pos/installer-modules/lib 2>/dev/null || true
+
+  if [[ -f "$checkout_watchdog" ]]; then
+    cp "$checkout_watchdog" /opt/gwi-pos/watchdog.sh && chmod +x /opt/gwi-pos/watchdog.sh && log "  Deployed watchdog.sh"
+  fi
+  [[ -f "${APP_DIR}/public/watchdog.service" ]] && cp "${APP_DIR}/public/watchdog.service" /opt/gwi-pos/ && log "  Deployed watchdog.service"
+  [[ -f "${APP_DIR}/public/watchdog.timer" ]] && cp "${APP_DIR}/public/watchdog.timer" /opt/gwi-pos/ && log "  Deployed watchdog.timer"
+
+  for script in hardware-inventory.sh disk-pressure-monitor.sh version-compat.sh rolling-restart.sh pre-update-backup.sh; do
+    if [[ -f "$checkout_scripts/$script" ]]; then
+      cp "$checkout_scripts/$script" /opt/gwi-pos/scripts/ 2>/dev/null && chmod +x "/opt/gwi-pos/scripts/$script" \
+        && log "  Deployed scripts/$script" || warn "  FAILED to deploy scripts/$script"
+    fi
+  done
+
+  if [[ -d "$checkout_modules/lib" ]]; then
+    cp -a "$checkout_modules"/lib/*.sh /opt/gwi-pos/installer-modules/lib/ 2>/dev/null || true
+    chmod +x /opt/gwi-pos/installer-modules/lib/*.sh 2>/dev/null || true
+    log "  Deployed installer libraries"
+  fi
+
+  [[ -f "${APP_DIR}/public/sync-agent.js" ]] && cp "${APP_DIR}/public/sync-agent.js" /opt/gwi-pos/sync-agent.js && log "  Deployed sync-agent.js"
+
+  log "Module refresh complete — remaining stages will use latest code"
+}
+
+# ── Main entry ──────────────────────────────────────────────────────────────
 run_deploy_app() {
   local _start=$(date +%s)
   log "Stage: deploy_app — starting"
 
-  # Load error codes library
   source "$(dirname "${BASH_SOURCE[0]}")/lib/error-codes.sh" 2>/dev/null || true
 
   # Only server + backup roles need the app
@@ -127,16 +168,11 @@ run_deploy_app() {
 
   header "Installing POS Application"
 
-  # ── Offline install mode — app already deployed by offline installer ──
+  # ── Offline install mode — app already deployed ──
   if [[ "${SKIP_GIT_CLONE:-}" == "1" ]]; then
-    log "Offline mode: Skipping git clone (app pre-deployed)"
-    if [[ "${SKIP_NPM_INSTALL:-}" == "1" ]]; then
-      log "Offline mode: Skipping npm install (dependencies pre-bundled)"
-    fi
-    if [[ "${SKIP_BUILD:-}" == "1" ]]; then
-      log "Offline mode: Skipping build (pre-built)"
-    fi
-    # Just ensure symlinks and prisma client
+    log "Offline mode: Skipping deploy (app pre-deployed)"
+    [[ "${SKIP_NPM_INSTALL:-}" == "1" ]] && log "Offline mode: Skipping npm install (dependencies pre-bundled)"
+    [[ "${SKIP_BUILD:-}" == "1" ]] && log "Offline mode: Skipping build (pre-built)"
     ln -sf "$ENV_FILE" "$APP_DIR/.env" 2>/dev/null || true
     ln -sf "$ENV_FILE" "$APP_DIR/.env.local" 2>/dev/null || true
     if [[ "${SKIP_NPM_INSTALL:-}" == "1" ]] && [[ "${SKIP_BUILD:-}" == "1" ]]; then
@@ -144,272 +180,246 @@ run_deploy_app() {
       log "Stage: deploy_app — completed in $(( $(date +%s) - _start ))s"
       return 0
     fi
-    # Partial offline — still need some steps, fall through to normal flow
   fi
 
-  # Disk space check — build requires ~5 GB temp space
+  # Disk space check — artifact deploy needs ~2 GB
   local _disk_path="$APP_BASE"
   [[ ! -d "$_disk_path" ]] && _disk_path=$(dirname "$APP_BASE")
   AVAIL_KB=$(df -k "$_disk_path" 2>/dev/null | awk 'NR==2 {print $4}' || echo 0)
-  if [[ "$AVAIL_KB" -lt 5000000 ]]; then
-    err_code "ERR-INST-003" "$(( AVAIL_KB / 1024 ))MB free in $APP_BASE, need 5GB for build"
-    err "Insufficient disk space: $(( AVAIL_KB / 1024 )) MB free in $APP_BASE (need ~5 GB)"
-    err "Free up space and re-run the installer."
+  if [[ "$AVAIL_KB" -lt 2000000 ]]; then
+    err_code "ERR-INST-003" "$(( AVAIL_KB / 1024 ))MB free in $APP_BASE, need 2GB for artifact deploy"
+    err "Insufficient disk space: $(( AVAIL_KB / 1024 )) MB free in $APP_BASE (need ~2 GB)"
     return 1
   fi
 
-  # ── Credential setup ────────────────────────────────────────────────────
+  # ── LEGACY PATH ────────────────────────────────────────────────────────────
+  if [[ "${LEGACY_DEPLOY:-}" == "1" ]]; then
+    log "LEGACY_DEPLOY=1 — using git clone + npm ci flow"
+    if ! _run_legacy_deploy; then
+      return 1
+    fi
+    _refresh_modules_from_checkout
+    log "Stage: deploy_app — completed in $(( $(date +%s) - _start ))s"
+    return 0
+  fi
+
+  # ── ARTIFACT PATH (default) ────────────────────────────────────────────────
+
+  # Step 1: Bootstrap prerequisites
+  _bootstrap_artifact_dirs
+
+  # Step 2: Install deploy-release.sh
+  _install_deploy_script
+
+  # Step 3: Copy shared .env for deploy-release.sh
+  # deploy-release.sh reads from /opt/gwi-pos/shared/.env
+  if [[ -f "$ENV_FILE" ]] && [[ ! -f "$APP_BASE/shared/.env" ]]; then
+    cp "$ENV_FILE" "$APP_BASE/shared/.env"
+    chown gwipos:gwipos "$APP_BASE/shared/.env" 2>/dev/null || true
+    chmod 640 "$APP_BASE/shared/.env"
+    log "Copied .env to shared directory for deploy-release.sh"
+  elif [[ -f "$ENV_FILE" ]]; then
+    # Always sync latest .env
+    cp "$ENV_FILE" "$APP_BASE/shared/.env"
+    chown gwipos:gwipos "$APP_BASE/shared/.env" 2>/dev/null || true
+    chmod 640 "$APP_BASE/shared/.env"
+  fi
+
+  # Step 4: Deploy artifact
+  local _pos_domain="${POS_DOMAIN:-ordercontrolcenter.com}"
+  local _manifest_url="https://${_pos_domain}/artifacts/manifest.json"
+
+  log "Deploying artifact from ${_manifest_url}..."
+  if ! "$APP_BASE/deploy-release.sh" --manifest-url "$_manifest_url" --force; then
+    err_code "ERR-INST-150" "Artifact deploy failed from $_manifest_url"
+    err "Artifact deploy failed."
+    err "  Possible causes: network issue, no published artifact, signature mismatch"
+    err "  To fall back to git clone: LEGACY_DEPLOY=1 installer.run --resume-from=05-deploy-app"
+    return 1
+  fi
+
+  # Step 5: Verify current symlink exists
+  if [[ ! -L "$APP_BASE/current" ]]; then
+    err_code "ERR-INST-150" "deploy-release.sh succeeded but /opt/gwi-pos/current symlink missing"
+    err "FATAL: Deploy reported success but current symlink is missing."
+    return 1
+  fi
+
+  # Step 6: Update APP_DIR for downstream stages and create compat symlink
+  APP_DIR="$APP_BASE/current"
+  export APP_DIR
+  # Compat symlink: /opt/gwi-pos/app -> /opt/gwi-pos/current
+  # So any hardcoded references to /opt/gwi-pos/app still work
+  rm -f "$APP_BASE/app" 2>/dev/null || true
+  ln -sfn "$APP_BASE/current" "$APP_BASE/app"
+  log "APP_DIR updated to $APP_DIR (compat symlink at $APP_BASE/app)"
+
+  # Step 7: Verify .env symlink inside the release
+  if [[ ! -e "$APP_DIR/.env" ]]; then
+    # deploy-release.sh should have wired this, but belt-and-suspenders
+    ln -sf "$APP_BASE/shared/.env" "$APP_DIR/.env" 2>/dev/null || true
+    ln -sf "$APP_BASE/shared/.env" "$APP_DIR/.env.local" 2>/dev/null || true
+    log "Wired .env symlinks manually (deploy-release.sh may not have done it)"
+  fi
+
+  log "App deployed at $APP_DIR ($(readlink -f "$APP_BASE/current" 2>/dev/null || echo '?'))"
+
+  # Step 8: Refresh installer modules from the deployed release
+  _refresh_modules_from_checkout
+
+  # Step 9: Copy deploy-release.sh from the deployed release (for future updates)
+  if [[ -f "$APP_DIR/public/scripts/deploy-release.sh" ]]; then
+    cp "$APP_DIR/public/scripts/deploy-release.sh" "$APP_BASE/deploy-release.sh"
+    chmod +x "$APP_BASE/deploy-release.sh"
+    log "Updated deploy-release.sh from deployed release"
+  fi
+
+  log "Stage: deploy_app — completed in $(( $(date +%s) - _start ))s"
+  return 0
+}
+
+# ── Bootstrap artifact directory skeleton ──────────────────────────────────
+_bootstrap_artifact_dirs() {
+  log "Bootstrapping artifact directory structure..."
+
+  # Create gwipos service user if not exists
+  if ! id -u gwipos &>/dev/null; then
+    useradd -r -s /bin/false -m -d /home/gwipos gwipos
+    log "Created gwipos service user"
+  fi
+
+  # Create directory skeleton
+  mkdir -p \
+    "$APP_BASE/releases" \
+    "$APP_BASE/shared/logs/deploys" \
+    "$APP_BASE/shared/data" \
+    "$APP_BASE/shared/state" \
+    "$APP_BASE/cache/artifacts" \
+    "$APP_BASE/keys"
+
+  # Embed minisign public key
+  local _pub_key="$APP_BASE/keys/gwi-pos-release.pub"
+  if [[ ! -f "$_pub_key" ]]; then
+    cat > "$_pub_key" <<'PUBKEY'
+untrusted comment: minisign public key 6A8006EFB1B4BF0A
+RWQKv7Sx7waAahboOQ+1oTmS1uU5fHebSLBqOoOBHpFa6MsLyFMqZdVl
+PUBKEY
+    log "Embedded minisign public key"
+  fi
+
+  # Set ownership (but preserve root-owned sensitive dirs)
+  chown -R gwipos:gwipos "$APP_BASE" 2>/dev/null || true
+  # Re-lock sensitive paths
+  [[ -f "$ENV_FILE" ]] && chown root:gwipos "$ENV_FILE" && chmod 640 "$ENV_FILE"
+  [[ -d "$APP_BASE/keys" ]] && chown -R root:root "$APP_BASE/keys" && chmod 700 "$APP_BASE/keys"
+  local _cred="$APP_BASE/.git-credentials"
+  [[ -f "$_cred" ]] && chown root:gwipos "$_cred" && chmod 640 "$_cred"
+
+  log "Directory skeleton ready at $APP_BASE"
+}
+
+# ── Install deploy-release.sh ─────────────────────────────────────────────
+_install_deploy_script() {
+  local _target="$APP_BASE/deploy-release.sh"
+  local _src_local="$(dirname "${BASH_SOURCE[0]}")/../scripts/deploy-release.sh"
+  local _src_url="https://${POS_DOMAIN:-ordercontrolcenter.com}/scripts/deploy-release.sh"
+
+  # Prefer the local copy from the installer bundle
+  if [[ -f "$_src_local" ]]; then
+    cp "$_src_local" "$_target"
+    chmod +x "$_target"
+    log "Installed deploy-release.sh from installer bundle"
+  elif curl -fsSL --connect-timeout 10 --max-time 30 -o "$_target" "$_src_url" 2>/dev/null; then
+    chmod +x "$_target"
+    log "Downloaded deploy-release.sh from $_src_url"
+  else
+    err_code "ERR-INST-150" "Cannot find deploy-release.sh locally or download from $_src_url"
+    err "FATAL: deploy-release.sh not available. Cannot proceed with artifact deploy."
+    return 1
+  fi
+
+  chown root:gwipos "$_target" 2>/dev/null || true
+}
+
+# ── Legacy deploy (git clone + npm ci) ─────────────────────────────────────
+_run_legacy_deploy() {
+  log "=== LEGACY DEPLOY PATH ==="
+
+  # Credential setup
   CRED_FILE="$APP_BASE/.git-credentials"
   if [[ -n "${DEPLOY_TOKEN:-}" ]] && [[ "${DEPLOY_TOKEN:-}" != "null" ]]; then
-    log "Configuring deploy token via git credential store."
     echo "https://${DEPLOY_TOKEN}:x-oauth-basic@github.com" > "$CRED_FILE"
     chown root:"$POSUSER" "$CRED_FILE" && chmod 640 "$CRED_FILE"
-  elif [[ -f "$CRED_FILE" ]]; then
-    log "No new deploy token — reusing existing credentials file."
-  else
-    err "WARNING: No deploy token available and no existing credentials file."
-    err "  Git clone/pull will likely fail. Ensure MC registration provides a deploy token."
-    track_warn "No git credentials available — deploy may fail"
+  elif [[ ! -f "$CRED_FILE" ]]; then
+    err "WARNING: No deploy token and no credentials file."
+    track_warn "No git credentials available — legacy deploy may fail"
   fi
 
-  # Validate credentials before attempting git operations
-  if [[ -f "$CRED_FILE" ]]; then
-    if ! _git_validate_credentials "$CRED_FILE" "$GIT_REPO"; then
-      err_code "ERR-INST-152" "git ls-remote failed for $GIT_REPO"
-      err "WARNING: Git credentials validation failed."
-      err "  The deploy token may be expired or revoked."
-      err "  Re-register this NUC from Mission Control to get a fresh token."
-      track_warn "Git credentials invalid — token may be expired"
-    fi
-  fi
+  [[ -f "$CRED_FILE" ]] && ! _git_validate_credentials "$CRED_FILE" "$GIT_REPO" && \
+    track_warn "Git credentials invalid — token may be expired"
 
-  # ── Clone or update ─────────────────────────────────────────────────────
+  # Clone or update
   if [[ -d "$APP_DIR/.git" ]]; then
     log "Updating existing app code..."
-
-    # Self-repair: fix ownership, locks, merge state BEFORE git operations
     _git_repair "$APP_DIR"
-
     if ! _git_with_retry 3 5 "sudo -u '$POSUSER' bash -c \"
-      cd '$APP_DIR'
-      git config credential.helper 'store --file=$CRED_FILE'
+      cd '$APP_DIR' && git config credential.helper 'store --file=$CRED_FILE'
       git remote set-url origin '$GIT_REPO' 2>/dev/null || true
       git fetch --all --prune
     \""; then
-      err_code "ERR-INST-151" "git fetch failed after 3 attempts for $GIT_REPO"
-      err "Failed to fetch from git after 3 attempts."
-      err "  Check: network connectivity, deploy token, firewall rules."
-      err "  If this persists, re-register the NUC to get a fresh deploy token."
+      err_code "ERR-INST-151" "git fetch failed after 3 attempts"
       return 1
     fi
-
-    # Reset to remote HEAD (separate from fetch so we get clear error attribution)
-    if ! sudo -u "$POSUSER" bash -c "
-      cd '$APP_DIR'
-      git reset --hard origin/main
-      git clean -fd
-    "; then
-      err_code "ERR-INST-155" "git reset --hard failed in $APP_DIR"
-      err "Git reset failed. Attempting nuclear recovery..."
-      # Nuclear option: blow away the checkout and re-clone
-      # Safety: validate path before rm -rf
+    if ! sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && git reset --hard origin/main && git clean -fd"; then
       if [[ -n "$APP_DIR" ]] && [[ "$APP_DIR" == /opt/gwi-pos/* ]] && [[ ${#APP_DIR} -gt 15 ]]; then
-        log "  Removing corrupted git state at $APP_DIR and re-cloning..."
         rm -rf "$APP_DIR"
       else
-        err_code "ERR-INST-155" "Refusing to rm -rf suspicious path: '$APP_DIR'"
         err "FATAL: Refusing to rm -rf suspicious path: '$APP_DIR'"
         return 1
       fi
-      # Fall through to the clone path below
     fi
   fi
 
-  # Clone path (either fresh install or nuclear recovery from failed reset)
   if [[ ! -d "$APP_DIR/.git" ]]; then
     log "Cloning app from repository..."
     mkdir -p "$(dirname "$APP_DIR")"
     chown -R "$POSUSER":"$POSUSER" "$APP_BASE"
-    # Re-lock sensitive files after bulk chown
     [[ -f "$ENV_FILE" ]] && chown root:"$POSUSER" "$ENV_FILE" && chmod 640 "$ENV_FILE"
     [[ -d "$KEY_DIR" ]] && chown -R root:root "$KEY_DIR" && chmod 700 "$KEY_DIR"
     [[ -f "$CRED_FILE" ]] && chown root:"$POSUSER" "$CRED_FILE" && chmod 640 "$CRED_FILE"
-
     if ! _git_with_retry 3 10 "sudo -u '$POSUSER' bash -c \"
       git config --global credential.helper 'store --file=$CRED_FILE'
       git clone --depth 1 '$GIT_REPO' '$APP_DIR'
-      cd '$APP_DIR'
-      git config credential.helper 'store --file=$CRED_FILE'
+      cd '$APP_DIR' && git config credential.helper 'store --file=$CRED_FILE'
     \""; then
-      err_code "ERR-INST-150" "git clone failed after 3 attempts to $GIT_REPO"
-      err "Failed to clone app repository after 3 attempts."
-      err "  Check: network connectivity, deploy token, repo access."
-      err "  Try: curl -sI https://github.com (should return 200)"
+      err_code "ERR-INST-150" "git clone failed after 3 attempts"
       return 1
     fi
-    # Remove global credential helper (keep it repo-local only)
     sudo -u "$POSUSER" git config --global --unset credential.helper 2>/dev/null || true
   fi
 
-  log "App code ready at $APP_DIR"
-
-  # ── Env symlinks ────────────────────────────────────────────────────────
+  # Env symlinks
   rm -f "$APP_DIR/.env" "$APP_DIR/.env.local"
   ln -sf "$ENV_FILE" "$APP_DIR/.env"
   ln -sf "$ENV_FILE" "$APP_DIR/.env.local"
   chown -h "$POSUSER":"$POSUSER" "$APP_DIR/.env" "$APP_DIR/.env.local"
 
-  for _ef in "$APP_DIR/.env" "$APP_DIR/.env.local"; do
-    if [[ ! -L "$_ef" ]]; then
-      err_code "ERR-INST-150" "Failed to create symlink at $_ef"
-      err "FATAL: Failed to create symlink at $_ef"
-      err "  This usually means a permission issue prevented rm -f or ln -sf from succeeding."
-      err "  Check ownership of $APP_DIR and ensure $POSUSER has write access."
-      return 1
-    fi
-  done
-
-  # ── npm install + prisma generate (build deferred to 06-schema after DB setup) ──
-  # Source atomic-update library for rollback support (used by 06-schema build)
-  _atomic_lib="$(dirname "${BASH_SOURCE[0]}")/lib/atomic-update.sh"
-  if [[ -f "$_atomic_lib" ]]; then
-    source "$_atomic_lib"
-    log "Atomic update library loaded."
-  else
-    log "WARNING: atomic-update.sh not found at $_atomic_lib — build failures will not auto-rollback."
-  fi
-
+  # npm install + prisma generate
   rm -rf "$APP_DIR/.next" 2>/dev/null || true
-
-  log "Installing npm dependencies..."
+  log "Installing npm dependencies (legacy)..."
   if ! sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npm ci --production=false"; then
-    err "npm install failed. Attempting cache clean + retry..."
     sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npm cache clean --force" 2>/dev/null || true
     if ! sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && rm -rf node_modules && npm ci --production=false"; then
-      err_code "ERR-INST-153" "npm ci failed after retry in $APP_DIR"
-      err "npm install failed after retry. Check Node.js version and network."
+      err_code "ERR-INST-153" "npm ci failed after retry"
       return 1
     fi
   fi
 
-  log "Generating Prisma client..."
+  log "Generating Prisma client (legacy)..."
   if ! sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npx prisma generate"; then
-    err_code "ERR-INST-154" "npx prisma generate failed in $APP_DIR"
-    err "Prisma generate failed. Check schema.prisma for errors."
+    err_code "ERR-INST-154" "npx prisma generate failed"
     return 1
   fi
 
-  # NOTE: Next.js build is NOT run here — it happens in 06-schema.sh AFTER
-  # prisma db push + nuc-pre-migrate.js apply the schema to local PG.
-  # Building here would waste 3-5 minutes on NUC hardware since 06-schema
-  # must rebuild anyway after schema changes.
-
-  # ── Refresh installer modules from git checkout ──────────────────────────
-  # The git checkout has the LATEST modules. The installer.run we're running
-  # from may be stale (downloaded before the git pull). Switch to using the
-  # checkout's modules so stages 06-12 use the latest code.
-  _refresh_modules_from_checkout() {
-    local checkout_modules="${APP_DIR}/public/installer-modules"
-    local checkout_scripts="${APP_DIR}/public/scripts"
-    local checkout_watchdog="${APP_DIR}/public/watchdog.sh"
-
-    if [[ ! -d "$checkout_modules" ]]; then
-      warn "IMPORTANT: No installer modules found in checkout at $checkout_modules"
-      warn "Stages 06-12 will use embedded (potentially stale) modules"
-      track_warn "Module refresh skipped — checkout modules not found"
-      return 0
-    fi
-
-    local checkout_version=""
-    if [[ -f "${APP_DIR}/package.json" ]]; then
-      checkout_version=$(node -e "console.log(require('${APP_DIR}/package.json').version)" 2>/dev/null || true)
-    fi
-
-    log "Refreshing installer modules from git checkout (v${checkout_version:-unknown})..."
-
-    # Copy updated modules to the running installer's module dir
-    # This ensures stages 06-12 use the LATEST code
-    if [[ -d "$MODULES_DIR" ]]; then
-      cp -a "$checkout_modules"/* "$MODULES_DIR/" 2>/dev/null || true
-      chmod +x "$MODULES_DIR"/*.sh 2>/dev/null || true
-      [[ -d "$MODULES_DIR/lib" ]] && chmod +x "$MODULES_DIR"/lib/*.sh 2>/dev/null || true
-      log "  Updated installer modules from checkout"
-
-      # Re-source all modules so the running installer picks up new function definitions
-      for _mod in "$MODULES_DIR"/*.sh; do
-        if [[ -f "$_mod" ]]; then
-          source "$_mod"
-        fi
-      done
-      log "  Re-sourced updated module definitions"
-
-      # Also re-source lib files (error codes, atomic update, safety, etc.)
-      if [[ -d "$MODULES_DIR/lib" ]]; then
-        for _lib in "$MODULES_DIR"/lib/*.sh; do
-          [[ -f "$_lib" ]] && source "$_lib"
-        done
-        log "  Re-sourced installer libraries"
-      fi
-
-      # Validate refreshed modules have expected entry functions
-      local _refresh_ok=true
-      for _expected_mod in 06-schema 07-services 08-ha 09-remote-access 10-finalize 11-system-hardening 12-dashboard; do
-        local _mod_file="$MODULES_DIR/${_expected_mod}.sh"
-        if [[ ! -f "$_mod_file" ]]; then
-          warn "Module $_expected_mod missing after refresh"
-          _refresh_ok=false
-        fi
-      done
-      if [[ "$_refresh_ok" == "true" ]]; then
-        log "  Module integrity validated (all stages 06-12 present)"
-      else
-        warn "  Module refresh incomplete — some stages may use embedded (stale) code"
-        track_warn "Module refresh incomplete after git pull"
-      fi
-    fi
-
-    # Deploy operational scripts to /opt/gwi-pos for service use
-    mkdir -p /opt/gwi-pos/scripts /opt/gwi-pos/installer-modules/lib 2>/dev/null || true
-
-    # Watchdog
-    if [[ -f "$checkout_watchdog" ]]; then
-      cp "$checkout_watchdog" /opt/gwi-pos/watchdog.sh
-      chmod +x /opt/gwi-pos/watchdog.sh
-      log "  Deployed watchdog.sh"
-    fi
-    [[ -f "${APP_DIR}/public/watchdog.service" ]] && cp "${APP_DIR}/public/watchdog.service" /opt/gwi-pos/ && log "  Deployed watchdog.service"
-    [[ -f "${APP_DIR}/public/watchdog.timer" ]] && cp "${APP_DIR}/public/watchdog.timer" /opt/gwi-pos/ && log "  Deployed watchdog.timer"
-
-    # Monitoring scripts
-    for script in hardware-inventory.sh disk-pressure-monitor.sh version-compat.sh rolling-restart.sh pre-update-backup.sh; do
-      if [[ -f "$checkout_scripts/$script" ]]; then
-        if cp "$checkout_scripts/$script" /opt/gwi-pos/scripts/ 2>/dev/null && chmod +x "/opt/gwi-pos/scripts/$script"; then
-          log "  Deployed scripts/$script"
-        else
-          warn "  FAILED to deploy scripts/$script"
-        fi
-      fi
-    done
-
-    # Shared libraries (error codes, etc.)
-    if [[ -d "$checkout_modules/lib" ]]; then
-      cp -a "$checkout_modules"/lib/*.sh /opt/gwi-pos/installer-modules/lib/ 2>/dev/null || true
-      chmod +x /opt/gwi-pos/installer-modules/lib/*.sh 2>/dev/null || true
-      log "  Deployed installer libraries"
-    fi
-
-    # Sync agent
-    if [[ -f "${APP_DIR}/public/sync-agent.js" ]]; then
-      cp "${APP_DIR}/public/sync-agent.js" /opt/gwi-pos/sync-agent.js
-      log "  Deployed sync-agent.js"
-    fi
-
-    log "Module refresh complete — remaining stages will use latest code"
-  }
-
-  # Always refresh modules after successful deploy
-  _refresh_modules_from_checkout
-
-  log "Stage: deploy_app — completed in $(( $(date +%s) - _start ))s"
-  return 0
+  log "=== LEGACY DEPLOY COMPLETE ==="
 }

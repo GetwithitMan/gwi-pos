@@ -378,6 +378,17 @@
     - role: reboot_manager
       tags: ['required', 'reboot_manager']
 
+    # ── Application Deployment ─────────────────────────────────────────
+    - role: app_deploy
+      tags: [app, deploy]
+      when: gwi_deploy_enabled | default(false)
+
+    - role: app_services
+      tags: [app, services]
+
+    - role: db_verify
+      tags: [app, database, verify]
+
   # ═══════════════════════════════════════════════════════════════════════════
   # POST-TASKS — Write structured state artifacts
   # ═══════════════════════════════════════════════════════════════════════════
@@ -403,6 +414,9 @@
           - post_reboot_verify
           - mc_phone_home
           - reboot_manager
+          - app_deploy
+          - app_services
+          - db_verify
 
     # ── Write baseline-applied.json ────────────────────────────────────────
     - name: Write baseline-applied.json

@@ -1,0 +1,48 @@
+---
+# ═══════════════════════════════════════════════════════════════════════════════
+# app_services — Systemd unit management for GWI POS
+# ═══════════════════════════════════════════════════════════════════════════════
+# Templates, enables, and starts the main POS server service and the
+# sync agent sidecar.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ── Main POS service ─────────────────────────────────────────────────────────
+- name: Template thepasspos.service
+  ansible.builtin.template:
+    src: thepasspos.service.j2
+    dest: /etc/systemd/system/thepasspos.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart thepasspos
+
+# ── Sync agent service ───────────────────────────────────────────────────────
+- name: Template thepasspos-sync.service
+  ansible.builtin.template:
+    src: thepasspos-sync.service.j2
+    dest: /etc/systemd/system/thepasspos-sync.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart sync agent
+
+# ── Flush handlers so daemon-reload runs before enable ───────────────────────
+- name: Flush handlers
+  ansible.builtin.meta: flush_handlers
+
+# ── Enable + start ───────────────────────────────────────────────────────────
+- name: Enable and start thepasspos service
+  ansible.builtin.systemd:
+    name: thepasspos
+    enabled: true
+    state: started
+
+- name: Enable and start thepasspos-sync service
+  ansible.builtin.systemd:
+    name: thepasspos-sync
+    enabled: true
+    state: started

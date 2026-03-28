@@ -260,6 +260,69 @@ LOGIND_CONF
       systemctl mask "$svc.service" 2>/dev/null || true
     done
 
+    # ── Phase 5B: Complete auto-update suppression ────────────────────────────
+    log "Suppressing ALL auto-update mechanisms..."
+
+    # Mask apt-daily timers (with retry)
+    for svc in apt-daily.timer apt-daily.service apt-daily-upgrade.timer apt-daily-upgrade.service; do
+        systemctl stop "$svc" 2>/dev/null || true
+        systemctl disable "$svc" 2>/dev/null || true
+        systemctl mask "$svc" 2>/dev/null || true
+    done
+
+    # Authoritative APT periodic config
+    cat > /etc/apt/apt.conf.d/20auto-upgrades <<'APTEOF'
+APT::Periodic::Enable "0";
+APT::Periodic::Update-Package-Lists "0";
+APT::Periodic::Unattended-Upgrade "0";
+APT::Periodic::Download-Upgradeable-Packages "0";
+APT::Periodic::AutocleanInterval "0";
+APTEOF
+
+    # Remove update GUI/daemon packages
+    DEBIAN_FRONTEND=noninteractive apt-get remove -y \
+        plasma-discover plasma-discover-notifier \
+        plasma-discover-backend-flatpak plasma-discover-backend-snap \
+        packagekit apport apport-gtk whoopsie popularity-contest 2>/dev/null || true
+    apt-get autoremove -y 2>/dev/null || true
+
+    # Suppress release upgrade prompts
+    if [ -f /etc/update-manager/release-upgrades ]; then
+        sed -i 's/^Prompt=.*/Prompt=never/' /etc/update-manager/release-upgrades
+    fi
+
+    # Disable apport permanently
+    echo "enabled=0" > /etc/default/apport 2>/dev/null || true
+
+    log "Auto-update suppression complete"
+
+    # ── Phase 5E: PowerDevil masking ──────────────────────────────────────────
+    # KDE's power management daemon can override systemd sleep target masking.
+    # Use BOTH config file (works without user session) AND service masking.
+    log "Disabling PowerDevil..."
+    if [ -n "$POSUSER" ] && [ -d "/home/$POSUSER" ]; then
+        mkdir -p "/home/$POSUSER/.config"
+        cat > "/home/$POSUSER/.config/powerdevilrc" <<'PDEOF'
+[AC][SuspendAndShutdown]
+AutoSuspendAction=0
+AutoSuspendIdleTimeoutSec=0
+PowerButtonAction=0
+
+[Battery][SuspendAndShutdown]
+AutoSuspendAction=0
+AutoSuspendIdleTimeoutSec=0
+PowerButtonAction=0
+PDEOF
+        chown "$POSUSER:$POSUSER" "/home/$POSUSER/.config/powerdevilrc"
+    fi
+    # Also try service masking (may fail if no session — that's OK, config file is the primary)
+    if sudo -u "$POSUSER" systemctl --user status plasma-powerdevil.service &>/dev/null 2>&1; then
+        sudo -u "$POSUSER" systemctl --user mask --now plasma-powerdevil.service 2>/dev/null || true
+        log "PowerDevil service masked"
+    else
+        log "PowerDevil service not found (config file approach used instead)"
+    fi
+
     # X11 DPMS off for all future sessions
     if [[ -n "$POSUSER" ]]; then
       local home_dir
@@ -294,27 +357,38 @@ XSRC
         log "  GNOME idle/screensaver settings applied"
       fi
 
-      # KDE settings (KDE Power Devil overrides xset — must be fully disabled)
-      if command -v kwriteconfig5 &>/dev/null; then
-        sudo -u "$POSUSER" kwriteconfig5 --file kscreenlockerrc --group Daemon --key Autolock false 2>/dev/null || true
-        sudo -u "$POSUSER" kwriteconfig5 --file kscreenlockerrc --group Daemon --key LockOnResume false 2>/dev/null || true
-        sudo -u "$POSUSER" kwriteconfig5 --file kscreenlockerrc --group Daemon --key Timeout 0 2>/dev/null || true
-        # Kill the running lock screen — config only takes effect on next session start
-        loginctl unlock-sessions 2>/dev/null || true
-        pkill -9 kscreenlocker_greet 2>/dev/null || true
-        # Disable ALL KDE power management (DPMS, suspend, dim)
-        sudo -u "$POSUSER" kwriteconfig5 --file powermanagementprofilesrc --group AC --group DPMSControl --key idleTime 0 2>/dev/null || true
-        sudo -u "$POSUSER" kwriteconfig5 --file powermanagementprofilesrc --group AC --group DPMSControl --key lockBeforeTurnOff 0 2>/dev/null || true
-        sudo -u "$POSUSER" kwriteconfig5 --file powermanagementprofilesrc --group AC --group SuspendSession --key idleTime 0 2>/dev/null || true
-        sudo -u "$POSUSER" kwriteconfig5 --file powermanagementprofilesrc --group AC --group SuspendSession --key suspendType 0 2>/dev/null || true
-        sudo -u "$POSUSER" kwriteconfig5 --file powermanagementprofilesrc --group AC --group DimDisplay --key idleTime 0 2>/dev/null || true
-        sudo -u "$POSUSER" kwriteconfig5 --file powermanagementprofilesrc --group AC --group HandleButtonEvents --key lidAction 0 2>/dev/null || true
-        sudo -u "$POSUSER" kwriteconfig5 --file powermanagementprofilesrc --group AC --group HandleButtonEvents --key powerButtonAction 0 2>/dev/null || true
-        # Kill and mask Power Devil so it can't re-enable DPMS
-        killall org_kde_powerdevil 2>/dev/null || true
-        sudo -u "$POSUSER" systemctl --user mask plasma-powerdevil.service 2>/dev/null || true
-        log "  KDE Power Devil disabled and masked"
-      fi
+      # ── Phase 5F: Plasma version detection + read-before-write ────────────────
+      detect_plasma_version() {
+          local ver
+          ver=$(plasmashell --version 2>/dev/null | awk '{print $2}')
+          case "$ver" in
+              5.*) KREAD="kreadconfig5"; KWRITE="kwriteconfig5" ;;
+              6.*) KREAD="kreadconfig6"; KWRITE="kwriteconfig6" ;;
+              *)   KREAD="kreadconfig5"; KWRITE="kwriteconfig5" ;;  # fallback
+          esac
+          log "Plasma version: ${ver:-unknown} (using $KWRITE)"
+      }
+
+      kde_set_if_different() {
+          local file="$1" group="$2" key="$3" value="$4"
+          if ! command -v "$KREAD" &>/dev/null; then return 0; fi
+          local current
+          current=$("$KREAD" --file "$file" --group "$group" --key "$key" 2>/dev/null) || true
+          if [ "$current" != "$value" ]; then
+              sudo -u "$POSUSER" "$KWRITE" --file "$file" --group "$group" --key "$key" "$value" 2>/dev/null || true
+              log "  KDE: $file [$group] $key = $value (was: ${current:-unset})"
+          fi
+      }
+
+      detect_plasma_version
+      kde_set_if_different kscreenlockerrc Daemon Autolock false
+      kde_set_if_different kscreenlockerrc Daemon Timeout 0
+      kde_set_if_different kscreenlockerrc Daemon LockOnResume false
+      kde_set_if_different ksmserverrc General loginMode emptySession
+
+      # Kill the running lock screen — config only takes effect on next session start
+      loginctl unlock-sessions 2>/dev/null || true
+      pkill -9 kscreenlocker_greet 2>/dev/null || true
 
       # Xorg server-level DPMS disable (cannot be overridden by ANY desktop environment)
       mkdir -p /etc/X11/xorg.conf.d
@@ -362,6 +436,30 @@ KATMR
 
     # Remove notification nags (non-fatal)
     apt-get remove -y update-notifier update-manager gnome-software 2>/dev/null || true
+
+    # ── Phase 5G: Touchscreen detection (best-effort, never blocks install) ───
+    detect_touchscreen() {
+        grep -q ID_INPUT_TOUCHSCREEN=1 /sys/class/input/event*/device/uevent 2>/dev/null && return 0
+        command -v libinput &>/dev/null && libinput list-devices 2>/dev/null | grep -q 'Capabilities:.*touch' && return 0
+        return 1
+    }
+
+    if detect_touchscreen; then
+        log "Touchscreen detected — configuring..."
+        # Install on-screen keyboard
+        DEBIAN_FRONTEND=noninteractive apt-get install -y onboard 2>/dev/null || warn "Onboard keyboard install failed (non-fatal)"
+        # Disable right-click emulation on touchscreen
+        mkdir -p /etc/libinput
+        cat > /etc/libinput/local-overrides.quirks <<'TOUCHEOF'
+[Disable right-click on touchscreens]
+MatchUdevType=touchscreen
+AttrEventCodeDisable=BTN_RIGHT
+TOUCHEOF
+        udevadm control --reload-rules 2>/dev/null || true
+        log "Touchscreen: on-screen keyboard installed, right-click disabled"
+    else
+        log "No touchscreen detected — skipping touch configuration"
+    fi
 
     log "Critical hardening applied (screen never sleeps, no notifications)"
   }

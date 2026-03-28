@@ -1,0 +1,47 @@
+---
+# ═══════════════════════════════════════════════════════════════════════════════
+# db_verify — PostgreSQL verification (read-only)
+# ═══════════════════════════════════════════════════════════════════════════════
+# Validates that PostgreSQL is running, the POS database exists with the
+# expected minimum table count, and optionally checks schema version.
+# Does NOT provision or modify the database.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ── PostgreSQL connectivity ──────────────────────────────────────────────────
+- name: Test PostgreSQL connectivity
+  ansible.builtin.command: pg_isready -h localhost -p 5432
+  register: pg_ready
+  changed_when: false
+  failed_when: pg_ready.rc != 0
+
+# ── Table count ──────────────────────────────────────────────────────────────
+- name: Count public tables in POS database
+  ansible.builtin.command: >-
+    sudo -u postgres psql -d {{ gwi_db_name }} -tAc
+    "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public'"
+  register: table_count
+  changed_when: false
+
+- name: Verify minimum table count (expect {{ gwi_db_min_tables }}+)
+  ansible.builtin.assert:
+    that:
+      - (table_count.stdout | trim | int) >= gwi_db_min_tables
+    fail_msg: >-
+      Database {{ gwi_db_name }} has only {{ table_count.stdout | trim }} public tables
+      (minimum required: {{ gwi_db_min_tables }}). Schema may not be fully migrated.
+    success_msg: >-
+      Database {{ gwi_db_name }} has {{ table_count.stdout | trim }} public tables (OK).
+    quiet: false
+
+# ── Schema version (best-effort) ────────────────────────────────────────────
+- name: Check _venue_schema_state for schema version
+  ansible.builtin.command: >-
+    sudo -u postgres psql -d {{ gwi_db_name }} -tAc
+    "SELECT \"schemaVersion\" FROM \"_venue_schema_state\" LIMIT 1"
+  register: schema_version
+  changed_when: false
+  failed_when: false
+
+- name: Report schema version
+  ansible.builtin.debug:
+    msg: "Schema version: {{ schema_version.stdout | default('unknown — _venue_schema_state not accessible') | trim }}"

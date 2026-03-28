@@ -7,9 +7,23 @@
 # Sets: POSUSER, POSUSER_HOME, FREE_MB
 # =============================================================================
 
+# APT cache TTL — skip apt-get update if cache is fresh (< 1 hour)
+apt_update_if_stale() {
+    local stamp="/var/lib/apt/periodic/update-success-stamp"
+    if [ -f "$stamp" ] && [ $(( $(date +%s) - $(stat -c %Y "$stamp" 2>/dev/null || echo 0) )) -lt 3600 ]; then
+        log "APT cache is fresh — skipping apt-get update"
+        return 0
+    fi
+    apt-get update -y
+}
+
 run_preflight() {
   local _start=$(date +%s)
   log "Stage: preflight — starting"
+
+  # Ensure all apt operations are non-interactive (prevents dpkg dialog hangs)
+  export DEBIAN_FRONTEND=noninteractive
+  export DEBCONF_NONINTERACTIVE_SEEN=true
 
   # Load error codes library
   source "$(dirname "${BASH_SOURCE[0]}")/lib/error-codes.sh" 2>/dev/null || true
@@ -75,12 +89,31 @@ run_preflight() {
   # ── Install Essential Tools (BEFORE registration — jq and openssl required) ──
   header "Installing Essential Tools"
 
-  apt-get update -y
-  apt-get install -y curl git jq openssl ca-certificates gnupg chrony
+  apt_update_if_stale
+  apt-get install -y curl git jq openssl ca-certificates gnupg chrony axel
   systemctl enable chrony 2>/dev/null || true
   systemctl start chrony 2>/dev/null || true
 
   log "Essential tools + NTP (chrony) installed."
+
+  # ── Phase 5A: Security updates (fresh install only) ───────────────────────
+  # Apply security-only patches. SmartTab does this; we now do too.
+  # Only on fresh install — routine deploys skip this.
+  if [[ ! -f "$APP_BASE/shared/state/.security-updates-applied" ]]; then
+    log "Applying security updates (first-time only)..."
+    apt_update_if_stale
+    if DEBIAN_FRONTEND=noninteractive apt-get -y dist-upgrade -t "$(lsb_release -cs)-security" 2>&1 | tail -5; then
+      mkdir -p "$APP_BASE/shared/state"
+      date -u +%FT%TZ > "$APP_BASE/shared/state/.security-updates-applied"
+      log "Security updates applied"
+      if [ -f /var/run/reboot-required ]; then
+        warn "Kernel security patches require reboot"
+        track_warn "Security patches applied — reboot required after install"
+      fi
+    else
+      warn "Security updates failed (non-fatal) — continuing installation"
+    fi
+  fi
 
   # ── Force X11 on GNOME (kiosk requires X11, Wayland not supported) ──
   # Must happen BEFORE Stage 7 creates kiosk services. On Ubuntu 24.04+, GDM3

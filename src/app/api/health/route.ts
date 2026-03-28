@@ -1,8 +1,11 @@
 /**
- * Health Check API
+ * Health Check API (liveness probe)
  *
  * Used by Docker healthcheck and monitoring systems to verify
  * the application is running and database is connected.
+ *
+ * For deploy gating, use /api/health/ready instead — it checks env,
+ * DB connectivity, critical tables, and schema version.
  *
  * GET /api/health
  */

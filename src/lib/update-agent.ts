@@ -312,6 +312,138 @@ async function performRollingRestart(targetVersion: string): Promise<boolean> {
   }
 }
 
+// ── Artifact-based deploy (v3.1 — replaces git+build flow) ────────────────
+
+const DEPLOY_SCRIPT = '/opt/gwi-pos/deploy-release.sh'
+const MANIFEST_URL = `https://${process.env.POS_DOMAIN || 'ordercontrolcenter.com'}/artifacts/manifest.json`
+
+/**
+ * Check if artifact-based deployment is available.
+ * Returns true if deploy-release.sh exists on the NUC.
+ */
+function isArtifactDeployAvailable(): boolean {
+  return existsSync(DEPLOY_SCRIPT)
+}
+
+/**
+ * Perform an artifact-based deploy using deploy-release.sh.
+ * This is the preferred path — no git, no npm ci, no build on the NUC.
+ * deploy-release.sh handles everything: download, verify, extract, schema, swap, restart, health check.
+ *
+ * Returns the deploy result or null if artifact deploy is not available.
+ */
+async function performArtifactDeploy(targetVersion: string, commandId?: string): Promise<UpdateResult | null> {
+  if (!isArtifactDeployAvailable()) {
+    log.info('[UpdateAgent] deploy-release.sh not found — falling back to legacy git-based deploy')
+    return null
+  }
+
+  const startTime = Date.now()
+  const previousVersion = getCurrentVersion()
+
+  log.info(`[UpdateAgent] Artifact deploy: ${previousVersion} → ${targetVersion} via deploy-release.sh`)
+
+  try {
+    // deploy-release.sh handles its own locking, maintenance mode, health checks, and rollback.
+    // We just call it and read the result.
+    const output = execSync(
+      `bash "${DEPLOY_SCRIPT}" --manifest-url "${MANIFEST_URL}"`,
+      {
+        encoding: 'utf8',
+        timeout: 600_000, // 10 min max (download + extract + schema + restart + health)
+        stdio: 'pipe',
+        env: { ...process.env, PATH: process.env.PATH },
+      }
+    )
+
+    log.info('[UpdateAgent] Artifact deploy completed successfully')
+
+    // Read deploy log for details
+    let deployLog: Record<string, unknown> = {}
+    try {
+      const logsDir = '/opt/gwi-pos/shared/logs/deploys'
+      if (existsSync(logsDir)) {
+        const logs = readdirSync(logsDir).filter(f => f.endsWith('.json')).sort()
+        if (logs.length > 0) {
+          deployLog = JSON.parse(readFileSync(path.join(logsDir, logs[logs.length - 1]), 'utf8'))
+        }
+      }
+    } catch {}
+
+    const finalState: UpdateState = {
+      attemptId: (deployLog.deployId as string) || randomUUID(),
+      commandId,
+      attemptedAt: new Date(startTime).toISOString(),
+      targetVersion,
+      previousVersion,
+      gitShaBefore: 'n/a-artifact',
+      gitShaAfter: (deployLog.releaseId as string) || targetVersion,
+      status: 'COMPLETED',
+      backupStatus: 'ARTIFACT_DEPLOY',
+      rollbackAttempted: false,
+      manualInterventionRequired: false,
+      proceededWithoutBackup: false,
+      duration: Date.now() - startTime,
+      steps: ['artifact-download', 'artifact-verify', 'artifact-extract', 'schema-push', 'symlink-swap', 'restart', 'health-ok'],
+    }
+    writeUpdateState(finalState)
+
+    return {
+      success: true,
+      previousVersion,
+      targetVersion,
+      preflightResult: { passed: true, checks: [] },
+      durationMs: Date.now() - startTime,
+    }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    const stderr = (err as { stderr?: string }).stderr || ''
+    log.error(`[UpdateAgent] Artifact deploy failed: ${msg.slice(0, 500)}`)
+    if (stderr) log.error(`[UpdateAgent] stderr: ${stderr.slice(0, 500)}`)
+
+    // deploy-release.sh handles its own rollback — if it failed, the previous release
+    // should already be restored. Check deploy state for details.
+    let finalStatus = 'FAILED'
+    try {
+      const stateFile = '/opt/gwi-pos/shared/state/deploy-state.json'
+      if (existsSync(stateFile)) {
+        const state = JSON.parse(readFileSync(stateFile, 'utf8'))
+        if (state.state === 'rolled_back') finalStatus = 'ROLLED_BACK'
+        if (state.state === 'rollback_failed') finalStatus = 'ROLLBACK_FAILED'
+      }
+    } catch {}
+
+    writeUpdateState({
+      attemptId: randomUUID(),
+      commandId,
+      attemptedAt: new Date(startTime).toISOString(),
+      targetVersion,
+      previousVersion,
+      gitShaBefore: 'n/a-artifact',
+      status: finalStatus,
+      backupStatus: 'ARTIFACT_DEPLOY',
+      rollbackAttempted: finalStatus !== 'FAILED',
+      rollbackSucceeded: finalStatus === 'ROLLED_BACK',
+      manualInterventionRequired: finalStatus === 'ROLLBACK_FAILED',
+      proceededWithoutBackup: false,
+      duration: Date.now() - startTime,
+      steps: ['artifact-deploy-failed'],
+      error: msg.slice(0, 500),
+    })
+
+    // Return null to signal: artifact deploy was attempted but failed.
+    // Caller can decide whether to fall back to legacy.
+    return {
+      success: false,
+      previousVersion,
+      targetVersion,
+      preflightResult: { passed: true, checks: [] },
+      error: `Artifact deploy failed: ${msg.slice(0, 200)}`,
+      durationMs: Date.now() - startTime,
+    }
+  }
+}
+
 // ── Rollback reporting ─────────────────────────────────────────────────────
 
 interface RollbackReport {
@@ -436,6 +568,28 @@ export async function executeUpdate(targetVersion: string, options?: { rollingRe
   log.info(`[UpdateAgent] Starting update: ${previousVersion} → ${targetVersion}`)
 
   try {
+    // ── Artifact-first deploy path (v3.1) ──────────────────────────────
+    // If deploy-release.sh is available, use it instead of the legacy
+    // git fetch → npm ci → build flow. deploy-release.sh handles its own
+    // locking, maintenance mode, health checks, rollback, and quarantine.
+    if (isArtifactDeployAvailable()) {
+      log.info('[UpdateAgent] Artifact deploy path available — using deploy-release.sh')
+      const artifactResult = await performArtifactDeploy(targetVersion, options?.commandId)
+      if (artifactResult) {
+        isUpdating = false
+        return artifactResult
+      }
+      // If performArtifactDeploy returned null, it means the script wasn't found
+      // (shouldn't happen since we checked, but defensive). Fall through to legacy.
+      log.warn('[UpdateAgent] Artifact deploy returned null — falling through to legacy path')
+    }
+
+    // ── Legacy git-based deploy path ──────────────────────────────────
+    // This path is used when deploy-release.sh is not yet installed on the NUC
+    // (pre-artifact fleet transition period). Once all NUCs have deploy-release.sh,
+    // this entire legacy section can be removed.
+    log.info('[UpdateAgent] Using legacy git-based deploy path')
+
     // Write lock file
     writeFileSync(UPDATE_LOCK_FILE, JSON.stringify({ targetVersion, startedAt: new Date().toISOString() }))
 

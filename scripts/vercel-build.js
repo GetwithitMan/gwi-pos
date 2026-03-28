@@ -78,6 +78,25 @@ async function main() {
   console.log('[vercel-build] Running next build...')
   execSync('npx next build', { stdio: 'inherit' })
 
+  // 7. Compile custom server (server.ts → server.js) for NUC artifact
+  // Vercel itself doesn't use the custom server, but the NUC artifact does.
+  // Must run AFTER next build so standalone output exists.
+  console.log('[vercel-build] Building custom server for NUC artifact...')
+  execSync('node scripts/build-server.mjs', { stdio: 'inherit' })
+
+  // 8. Build NUC release artifact (pre-built, self-contained, signed)
+  // Packages .next/standalone + server.js + Prisma CLI + migrations into a
+  // compressed, signed artifact. NUCs download this instead of running npm ci + build.
+  console.log('[vercel-build] Building NUC release artifact...')
+  try {
+    execSync('bash scripts/build-nuc-artifact.sh', { stdio: 'inherit' })
+  } catch (artifactErr) {
+    // Artifact build failure should not block the Vercel deployment itself.
+    // NUCs will fall back to legacy git-based deploy until artifact is available.
+    console.error('[vercel-build] WARNING: NUC artifact build failed:', artifactErr.message)
+    console.error('[vercel-build] Vercel deployment will proceed, but NUC fleet will not get this release as an artifact.')
+  }
+
   console.log('[vercel-build] Build complete!')
 }
 

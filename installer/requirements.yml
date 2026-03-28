@@ -1,0 +1,14 @@
+---
+# Ansible Galaxy collection dependencies for GWI POS baseline enforcement.
+# Install with: ansible-galaxy collection install -r requirements.yml
+#
+# Used by: installer/site.yml, 11-system-hardening.sh
+# Pattern from: SmartTab's ubuntu24/requirements.yml
+
+collections:
+  # community.general provides:
+  #   - community.general.alternatives (Java/Node version management)
+  #   - community.general.ufw (firewall management)
+  #   - community.general.ini_file (config file editing)
+  - name: community.general
+    version: ">=10.6.0"

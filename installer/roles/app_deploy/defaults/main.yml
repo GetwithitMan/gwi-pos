@@ -1,0 +1,6 @@
+---
+manifest_url: "https://ordercontrolcenter.com/artifacts/manifest.json"
+gwi_force_deploy: false
+gwi_signing_public_key: |
+  untrusted comment: minisign public key 6A8006EFB1B4BF0A
+  RWQKv7Sx7waAahboOQ+1oTmS1uU5fHebSLBqOoOBHpFa6MsLyFMqZdVl

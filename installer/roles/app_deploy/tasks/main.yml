@@ -1,0 +1,70 @@
+---
+# ═══════════════════════════════════════════════════════════════════════════════
+# app_deploy — Thin deploy orchestrator
+# ═══════════════════════════════════════════════════════════════════════════════
+# Ensures the gwipos system user, directory skeleton, signing key, and
+# deploy-release.sh are in place, then delegates the actual deploy to the
+# script.  Does NOT contain inline deploy logic.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ── System user / group ──────────────────────────────────────────────────────
+- name: Ensure gwipos system user exists
+  ansible.builtin.user:
+    name: gwipos
+    system: true
+    shell: /bin/false
+    create_home: true
+    home: /home/gwipos
+    state: present
+
+# ── Directory skeleton ───────────────────────────────────────────────────────
+- name: Create GWI POS directory skeleton
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: gwipos
+    group: gwipos
+    mode: "0755"
+  loop:
+    - /opt/gwi-pos
+    - /opt/gwi-pos/releases
+    - /opt/gwi-pos/shared
+    - /opt/gwi-pos/shared/logs
+    - /opt/gwi-pos/shared/logs/deploys
+    - /opt/gwi-pos/shared/data
+    - /opt/gwi-pos/shared/state
+    - /opt/gwi-pos/cache
+    - /opt/gwi-pos/cache/artifacts
+    - /opt/gwi-pos/keys
+
+# ── Minisign public key ─────────────────────────────────────────────────────
+- name: Install minisign public key for release verification
+  ansible.builtin.copy:
+    content: "{{ gwi_signing_public_key }}"
+    dest: /opt/gwi-pos/keys/gwi-pos-release.pub
+    owner: gwipos
+    group: gwipos
+    mode: "0644"
+
+# ── Deploy script ────────────────────────────────────────────────────────────
+- name: Check if /opt/gwi-pos/current exists
+  ansible.builtin.stat:
+    path: /opt/gwi-pos/current
+  register: _current_link
+
+- name: Copy deploy-release.sh from current release
+  ansible.builtin.copy:
+    src: /opt/gwi-pos/current/public/scripts/deploy-release.sh
+    dest: /opt/gwi-pos/deploy-release.sh
+    remote_src: true
+    owner: gwipos
+    group: gwipos
+    mode: "0755"
+  when: _current_link.stat.exists | default(false)
+
+# ── Run artifact deploy ──────────────────────────────────────────────────────
+- name: Run artifact deploy
+  command: /opt/gwi-pos/deploy-release.sh --manifest-url "{{ manifest_url }}" {{ '--force' if gwi_force_deploy | default(false) else '' }}
+  register: deploy_result
+  changed_when: "'healthy' in deploy_result.stdout"
+  failed_when: deploy_result.rc != 0
