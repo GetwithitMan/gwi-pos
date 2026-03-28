@@ -56,7 +56,7 @@ export const PATCH = withVenue(async function PATCH(
     })
 
     if (!result.success) {
-      return err(result.error)
+      return err(result.error!)
     }
 
     pushUpstream()

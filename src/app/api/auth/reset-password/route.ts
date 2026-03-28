@@ -146,7 +146,7 @@ export async function POST(request: NextRequest) {
     }
 
     return err('Invalid or expired code')
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('[reset-password] Error:', err)
     return err('Connection error. Please try again.', 500)
   }

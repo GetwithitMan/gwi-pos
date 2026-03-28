@@ -79,7 +79,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     if (approvedById && !remoteApprovalCode) {
       try {
         validateManagerReauthFromHeaders(request, approvedById, managerPinHash)
-      } catch (err) {
+      } catch (caughtErr) {
         if (err instanceof CellularAuthError) {
           return err(err.message, err.status)
         }
@@ -92,7 +92,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     if (isCellularCompVoid) {
       try {
         await validateCellularOrderAccess(true, orderId, 'mutate', db)
-      } catch (err) {
+      } catch (caughtErr) {
         if (err instanceof CellularAuthError) {
           return err(err.message, err.status)
         }
@@ -298,7 +298,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     // ── Outage queue protection for VoidLog ────────────────────────────────
     try {
       await queueIfOutageOrFail('VoidLog', order.locationId, voidLogId, 'INSERT')
-    } catch (err) {
+    } catch (caughtErr) {
       if (err instanceof OutageQueueFullError) {
         return err('Service temporarily unavailable — outage queue full', 507)
       }
@@ -599,7 +599,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
           taxFromInclusive: totals.taxFromInclusive,
           taxFromExclusive: totals.taxFromExclusive,
         })
-      } catch (err) {
+      } catch (caughtErr) {
         console.error('[CompVoid] CFD dispatch failed:', err)
       }
     })()
@@ -666,7 +666,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
               orderId: order.parentOrderId!,
             }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.comp-void'))
           }
-        } catch (err) {
+        } catch (caughtErr) {
           console.error('[CompVoid] Failed to resolve parent order after all children cancelled:', err)
         }
       })()

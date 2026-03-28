@@ -58,7 +58,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     `, ...params)
 
     return NextResponse.json({ data: rows, total: countResult[0]?.total ?? 0 })
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('[memberships] GET error:', err)
     return err('Internal error', 500)
   }
@@ -168,7 +168,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         })
         recurringData = resp.recurringData || null
         if (resp.token) token = resp.token
-      } catch (err) {
+      } catch (caughtErr) {
         if (err instanceof PayApiError) {
           return err(`Setup fee charge failed: ${err.message}`, 402)
         }
@@ -210,7 +210,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return created(membership)
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('[memberships] POST error:', err)
     return err('Internal error', 500)
   }

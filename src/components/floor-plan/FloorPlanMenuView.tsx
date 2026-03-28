@@ -12,13 +12,13 @@ import { motion } from 'framer-motion'
 import { FloorPlanMenuItem } from './FloorPlanMenuItem'
 import { QuantityMultiplier } from './QuantityMultiplier'
 import type { MenuItem, PricingOption } from '@/types'
-import type { PricingAdjustment } from '@/lib/settings'
+import type { PricingAdjustment, MenuItemCustomization } from '@/lib/settings'
 
 interface FloorPlanMenuViewProps {
   menuItems: MenuItem[]
   loadingMenuItems: boolean
   isCategoryPending: boolean
-  menuItemColors: Record<string, { bgColor?: string; textColor?: string } | undefined>
+  menuItemColors: Record<string, MenuItemCustomization | undefined>
   isInQuickBar: (itemId: string) => boolean
   pricing: any
   pricingAdjustmentMap: Map<string, PricingAdjustment | null>

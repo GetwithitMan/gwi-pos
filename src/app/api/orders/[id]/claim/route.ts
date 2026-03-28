@@ -214,7 +214,7 @@ export const DELETE = withVenue(withAuth({ allowCellular: true }, async function
 
     // Handle error responses from transaction
     if ('error' in result) {
-      return err(result.error, result.status)
+      return err(result.error!, result.status)
     }
 
     // Fire-and-forget socket dispatch

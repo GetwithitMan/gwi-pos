@@ -117,7 +117,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     })
 
     if (!result.success) {
-      return err(result.error)
+      return err(result.error!)
     }
 
     pushUpstream()

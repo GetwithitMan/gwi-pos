@@ -100,7 +100,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     // ── Outage queue protection ────────────────────────────────────────────
     try {
       await queueIfOutageOrFail('TipGroup', groupInfo.locationId, groupId, 'UPDATE')
-    } catch (err) {
+    } catch (caughtErr) {
       if (err instanceof OutageQueueFullError) {
         return err('Service temporarily unavailable — outage queue full', 507)
       }
@@ -183,7 +183,7 @@ export const PUT = withVenue(withAuth({ allowCellular: true }, async function PU
     // ── Outage queue protection ────────────────────────────────────────────
     try {
       await queueIfOutageOrFail('TipGroup', groupInfo.locationId, groupId, 'UPDATE')
-    } catch (err) {
+    } catch (caughtErr) {
       if (err instanceof OutageQueueFullError) {
         return err('Service temporarily unavailable — outage queue full', 507)
       }
@@ -304,7 +304,7 @@ export const DELETE = withVenue(withAuth({ allowCellular: true }, async function
     if (locationId) {
       try {
         await queueIfOutageOrFail('TipGroup', locationId, groupId, 'UPDATE')
-      } catch (err) {
+      } catch (caughtErr) {
         if (err instanceof OutageQueueFullError) {
           return err('Service temporarily unavailable — outage queue full', 507)
         }

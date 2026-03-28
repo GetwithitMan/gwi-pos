@@ -144,7 +144,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       employees: employeeRows,
       summary,
     })
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('[reports/berg-employee]', err)
     return err('Failed to load employee accountability report', 500)
   }

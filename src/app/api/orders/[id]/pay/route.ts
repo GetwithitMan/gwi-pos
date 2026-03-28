@@ -269,7 +269,7 @@ export const POST = withVenue(withTiming(async function POST(
           reservationId: sel.reservationId,
           idempotencyKey: idempotencyKey_pms,
         }
-      } catch (err) {
+      } catch (caughtErr) {
         // Mark attempt FAILED for reconciliation
         await db.pmsChargeAttempt.update({
           where: { id: pmsAttempt.id },
@@ -1521,7 +1521,7 @@ export const POST = withVenue(withTiming(async function POST(
             sourceTerminalId: terminalId || undefined,
           } as any).catch(err => log.warn({ err }, 'R3: total drift socket dispatch failed'))
         }
-      } catch (err) {
+      } catch (caughtErr) {
         log.warn({ err, orderId }, 'R3: Total drift detection failed (non-blocking)')
       }
     })()
@@ -1579,7 +1579,7 @@ export const POST = withVenue(withTiming(async function POST(
             void printKitchenTicketsForManifests(routingResult, order.locationId).catch(err => log.warn({ err }, 'Background task failed'))
             void deductPrepStockForOrder(orderId, autoSendIds).catch(err => log.warn({ err }, 'Background task failed'))
             void emitOrderEvent(order.locationId, orderId, 'ORDER_SENT', { sentItemIds: autoSendIds })
-          } catch (err) {
+          } catch (caughtErr) {
             console.error('[pay] Auto-send to kitchen failed:', err)
           }
         })()
@@ -1621,7 +1621,7 @@ export const POST = withVenue(withTiming(async function POST(
             parentTableId = parentResult?.tableId ?? null
           }
         })
-      } catch (err) {
+      } catch (caughtErr) {
         console.error('[Pay] Split parent check failed:', err)
       }
     }
@@ -1682,7 +1682,7 @@ export const POST = withVenue(withTiming(async function POST(
                 }
               }
             }
-          } catch (err) {
+          } catch (caughtErr) {
             console.error('Post-ingestion loyalty transaction/tier check failed:', err)
           }
         })()
@@ -1746,7 +1746,7 @@ export const POST = withVenue(withTiming(async function POST(
 
     try {
       await OrderRepository.updateOrder(orderId, order.locationId, postPaymentOrderUpdate)
-    } catch (err) {
+    } catch (caughtErr) {
       console.error('[CRITICAL-PAYMENT] Post-payment order update failed, retrying:', err)
       try {
         // Retry without version increment — if the first write committed but timed out,
@@ -1886,7 +1886,7 @@ export const POST = withVenue(withTiming(async function POST(
           })
         }
         // If already succeeded or dead, skip — no re-deduction
-      } catch (err) {
+      } catch (caughtErr) {
         console.error('[Pay] Failed to create PendingDeduction outbox row:', err)
       }
 
@@ -1895,7 +1895,7 @@ export const POST = withVenue(withTiming(async function POST(
         try {
           const { processNextDeduction } = await import('@/lib/deduction-processor')
           await processNextDeduction()
-        } catch (err) {
+        } catch (caughtErr) {
           console.error('[Pay] Best-effort deduction trigger failed (outbox will retry):', err)
         }
       })()
@@ -1953,7 +1953,7 @@ export const POST = withVenue(withTiming(async function POST(
               commissionTotal: recalculatedCommission, lastMutatedBy: paymentMutationOrigin,
             })
           }
-        } catch (err) {
+        } catch (caughtErr) {
           console.error('[Pay] Commission recalculation failed:', err)
         }
       })()
@@ -1992,7 +1992,7 @@ export const POST = withVenue(withTiming(async function POST(
                   },
                 }).catch(err => log.warn({ err }, 'Background task failed'))
               }
-            } catch (err) {
+            } catch (caughtErr) {
               console.error('[Pay] Manager drawer access audit failed:', err)
             }
           })()
@@ -2028,7 +2028,7 @@ export const POST = withVenue(withTiming(async function POST(
             )
             tipOwnerEmployeeId = resolved.recipientId
           }
-        } catch (err) {
+        } catch (caughtErr) {
           // Delivery tip resolution failure falls back to standard tip owner
           console.error('[Pay] Delivery tip recipient resolution failed, using default:', err)
         }
@@ -2197,7 +2197,7 @@ export const POST = withVenue(withTiming(async function POST(
               invalidateSnapshotCache(order.locationId)
               void dispatchTableStatusChanged(order.locationId, { tableId: order.tableId!, status: 'available' }).catch(err => log.warn({ err }, 'Background task failed'))
             }
-          } catch (err) {
+          } catch (caughtErr) {
             console.error('[Pay] Table status reset failed:', err)
           }
         })()
@@ -2349,7 +2349,7 @@ export const POST = withVenue(withTiming(async function POST(
             locationId: order.locationId,
             employeeId: order.employeeId || '',
           })
-        } catch (err) {
+        } catch (caughtErr) {
           console.error('[Pay] Cake settlement completion hook failed:', err)
         }
       })()
@@ -2398,7 +2398,7 @@ export const POST = withVenue(withTiming(async function POST(
               cardLast4: matchedProfile.cardLast4,
             },
           })
-        } catch (err) {
+        } catch (caughtErr) {
           log.warn({ err }, 'Card recognition fire-and-forget failed')
         }
       })()

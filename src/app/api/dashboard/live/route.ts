@@ -130,7 +130,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
         businessDate: current.date,
         generatedAt: new Date().toISOString(),
       })
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('Dashboard live API error:', err)
     return err('Internal server error', 500)
   }

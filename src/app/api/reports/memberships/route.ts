@@ -32,7 +32,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       default:
         return err('Invalid report type')
     }
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('[reports/memberships] error:', err)
     return err('Internal error', 500)
   }

@@ -72,7 +72,7 @@ export const PUT = withVenue(async function PUT(
       )
 
       if (!result.success) {
-        return err(result.error)
+        return err(result.error!)
       }
 
       updatedSession = result.session

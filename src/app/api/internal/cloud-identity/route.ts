@@ -45,7 +45,7 @@ export async function GET(request: Request) {
       cloudEnterpriseId: location.cloudEnterpriseId,
       isBound: !!location.cloudLocationId,
     })
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('[cloud-identity] GET error:', err)
     return err('Internal error', 500)
   }
@@ -94,7 +94,7 @@ export async function POST(request: NextRequest) {
     })
 
     return ok({ updated: true, locationId: location.id })
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('[cloud-identity] POST error:', err)
     return err('Internal error', 500)
   }

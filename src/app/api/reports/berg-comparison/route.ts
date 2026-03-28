@@ -148,7 +148,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       totals,
       unmappedPluCount,
     })
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('[berg-comparison GET]', err)
     return err('Failed to generate Berg comparison report', 500)
   }

@@ -223,7 +223,7 @@ export default function OrdersPage() {
   const cardTabOrderId = store(s => s.cardTabOrderId)
 
   // State that was previously from usePaymentFlow but only paymentMethod needs local state
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'credit'>('credit')
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card'>('card')
 
   // Shift checked needs local state (used only in bootstrap)
   const [shiftChecked, setShiftChecked] = useState(false)

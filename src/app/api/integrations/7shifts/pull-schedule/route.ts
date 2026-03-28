@@ -139,7 +139,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     return ok({ upserted, deleted, skipped })
-  } catch (err) {
+  } catch (caughtErr) {
     const message = err instanceof Error ? err.message : 'Unknown error'
     console.error('[7shifts/pull-schedule] Error:', message)
 

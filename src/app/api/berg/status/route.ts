@@ -73,7 +73,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     return ok({ devices: deviceStats, timeSyncWarning })
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('[berg/status GET]', err)
     return err('Failed to get Berg status', 500)
   }

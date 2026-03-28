@@ -31,7 +31,7 @@ export const GET = withVenue(async function GET(
     `, id, locationId)
 
     return NextResponse.json({ data: rows, total: countResult[0]?.total ?? 0 })
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('[memberships/charges] error:', err)
     return err('Internal error', 500)
   }

@@ -175,7 +175,7 @@ export const PATCH = withVenue(withAuth({ allowCellular: true }, async function 
 
     // Handle early-return errors from inside the transaction
     if ('error' in txResult) {
-      return err(txResult.error, txResult.status)
+      return err(txResult.error!, txResult.status)
     }
 
     const { order, payment, updatedPayment, oldTipAmount, newTotalAmount, newOrderTipTotal, newOrderTotal } = txResult

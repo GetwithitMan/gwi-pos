@@ -86,7 +86,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           },
         })
         pushed++
-      } catch (err) {
+      } catch (caughtErr) {
         const message = err instanceof Error ? err.message : 'Unknown error'
         console.error(`[7shifts/push-time-punches] Entry ${entry.id} failed:`, message)
         await db.timeClockEntry.update({
@@ -105,7 +105,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     return ok({ pushed, skipped, failed })
-  } catch (err) {
+  } catch (caughtErr) {
     const message = err instanceof Error ? err.message : 'Unknown error'
     console.error('[7shifts/push-time-punches] Error:', message)
 

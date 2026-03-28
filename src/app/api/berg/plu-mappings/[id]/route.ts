@@ -34,7 +34,7 @@ export const GET = withVenue(async function GET(
     }
 
     return ok({ mapping })
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('[berg/plu-mappings/[id] GET]', err)
     return err('Failed to load mapping', 500)
   }
@@ -81,7 +81,7 @@ export const PUT = withVenue(async function PUT(
 
     const mapping = await db.bergPluMapping.update({ where: { id }, data: updateData })
     return ok({ mapping })
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('[berg/plu-mappings/[id] PUT]', err)
     return err('Failed to update mapping', 500)
   }
@@ -114,7 +114,7 @@ export const DELETE = withVenue(async function DELETE(
 
     await db.bergPluMapping.delete({ where: { id } })
     return ok({ success: true })
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('[berg/plu-mappings/[id] DELETE]', err)
     return err('Failed to delete mapping', 500)
   }

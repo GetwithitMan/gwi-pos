@@ -127,7 +127,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
           employeeId: toEmployeeId,
           approvedBy: requestingEmployeeId,
         })
-      } catch (err) {
+      } catch (caughtErr) {
         const message = err instanceof Error ? err.message : String(err)
         if (message === 'EMPLOYEE_ALREADY_MEMBER') {
           // Race condition — already added, continue
@@ -148,7 +148,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
           groupId,
           employeeId: previousOwnerId,
         })
-      } catch (err) {
+      } catch (caughtErr) {
         // If removal fails (e.g., already left), log but don't block
         console.warn(`[TipGroupTransfer] Failed to remove previous owner ${previousOwnerId}:`, err)
       }
@@ -175,7 +175,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     // ── Outage queue protection ────────────────────────────────────────────
     try {
       await queueIfOutageOrFail('TipGroup', group.locationId, groupId, 'UPDATE')
-    } catch (err) {
+    } catch (caughtErr) {
       if (err instanceof OutageQueueFullError) {
         return err('Service temporarily unavailable — outage queue full', 507)
       }

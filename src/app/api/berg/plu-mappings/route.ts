@@ -35,7 +35,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     })
 
     return ok({ mappings })
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('[berg/plu-mappings GET]', err)
     return err('Failed to load PLU mappings', 500)
   }
@@ -90,12 +90,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     return created({ mapping })
-  } catch (err: unknown) {
-    const error = err as { code?: string; message?: string }
+  } catch (caughtErr: unknown) {
+    const error = caughtErr as { code?: string; message?: string }
     if (error?.code === 'P2002') {
       return err('PLU number already mapped for this scope', 409)
     }
-    console.error('[berg/plu-mappings POST]', err)
+    console.error('[berg/plu-mappings POST]', caughtErr)
     return err('Failed to create PLU mapping', 500)
   }
 })

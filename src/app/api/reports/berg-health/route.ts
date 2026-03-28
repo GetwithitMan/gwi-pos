@@ -129,7 +129,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       overallAlerts,
       timeSyncWarning,
     })
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('[reports/berg-health]', err)
     return err('Failed to load health report', 500)
   }

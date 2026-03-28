@@ -13,6 +13,7 @@ import { useOrderStore } from '@/stores/order-store'
 import { logger } from '@/lib/logger'
 import { toast } from '@/stores/toast-store'
 import type { PricingRule } from '@/lib/settings'
+import type { TableStatus } from '../use-floor-plan'
 
 function playNotificationSound() {
   try {
@@ -42,7 +43,7 @@ interface UseFloorPlanSocketsOptions {
   addTableOrder: (tableId: string, order: any) => void
   removeTableOrder: (tableId: string) => void
   patchTableOrder: (tableId: string, patch: any) => void
-  updateSingleTableStatus: (tableId: string, status: string) => void
+  updateSingleTableStatus: (tableId: string, status: TableStatus) => void
   // Callbacks
   setEodSummary: (summary: { cancelledDrafts: number; rolledOverOrders: number; tablesReset: number; businessDay: string } | null) => void
   setPricingRules: (rules: PricingRule[]) => void

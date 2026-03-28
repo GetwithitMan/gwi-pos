@@ -8,6 +8,7 @@
  * endpoint always returns them — the dashboard needs them.
  */
 
+import { NextResponse } from 'next/server'
 import { db, getVenueClientCount } from '@/lib/db'
 import { CONNECTION_BUDGET } from '@/lib/db-connection-budget'
 import { withVenue } from '@/lib/with-venue'

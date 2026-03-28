@@ -152,7 +152,7 @@ export async function POST(request: NextRequest) {
     })
 
     return response
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('[forgot-password] Error:', err)
     return err('Connection error. Please try again.', 500)
   }

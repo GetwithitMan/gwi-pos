@@ -102,7 +102,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     // ── Outage queue protection ────────────────────────────────────────────
     try {
       await queueIfOutageOrFail('Seat', existingSeat.table.locationId, seatId, 'UPDATE')
-    } catch (err) {
+    } catch (caughtErr) {
       if (err instanceof OutageQueueFullError) {
         return err('Service temporarily unavailable — outage queue full', 507)
       }
@@ -200,7 +200,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     // ── Outage queue protection ────────────────────────────────────────────
     try {
       await queueIfOutageOrFail('Seat', existingSeat.table.locationId, seatId, 'DELETE')
-    } catch (err) {
+    } catch (caughtErr) {
       if (err instanceof OutageQueueFullError) {
         return err('Service temporarily unavailable — outage queue full', 507)
       }

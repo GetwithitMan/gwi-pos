@@ -65,7 +65,7 @@ export const POST = withVenue(async function POST(
     }, { timeout: 15000 })
 
     if ('error' in lockedRead) {
-      return err(lockedRead.error, lockedRead.status)
+      return err(lockedRead.error!, lockedRead.status)
     }
 
     const { order } = lockedRead

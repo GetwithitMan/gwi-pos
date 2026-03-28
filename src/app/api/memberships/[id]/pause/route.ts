@@ -59,7 +59,7 @@ export const POST = withVenue(async function POST(
     }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return ok({ success: true })
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('[memberships/pause] error:', err)
     return err('Internal error', 500)
   }

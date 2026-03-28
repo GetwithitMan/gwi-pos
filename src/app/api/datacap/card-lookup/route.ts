@@ -29,7 +29,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     const result = await client.cardLookup(readerId)
 
     return ok(result)
-  } catch (err) {
+  } catch (caughtErr) {
     const message = err instanceof Error ? err.message : 'CardLookup failed'
     return err(message, 500)
   }

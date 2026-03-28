@@ -29,7 +29,7 @@ export const GET = withVenue(async function GET() {
         location_ids: u.location_ids,
         is_active: u.is_active,
       })))
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('[7shifts/users] Failed to fetch users:', err instanceof Error ? err.message : 'unknown')
     return err('Failed to fetch 7shifts users', 502)
   }
