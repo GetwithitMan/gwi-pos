@@ -207,10 +207,10 @@ elif [[ "$STATION_ROLE" == "backup" ]]; then
   # Check 2: PG is in recovery mode (standby)
   IN_RECOVERY=$(sudo -u postgres psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT pg_is_in_recovery()" 2>/dev/null || echo "unknown")
   if [[ "$IN_RECOVERY" != "t" ]]; then
-    log "WARN: Standby PostgreSQL is NOT in recovery mode — may have been promoted"
-    # Still exit 0 — this is informational, keepalived handles state
+    log "FAIL: Standby PostgreSQL is NOT in recovery mode — may have been promoted"
+    # Exit 1 — a promoted standby is no longer a valid standby; keepalived must detect this
     trim_log
-    exit 0
+    exit 1
   fi
 
   # Check 3: Replication lag (warn-only — no auto-failover per design)

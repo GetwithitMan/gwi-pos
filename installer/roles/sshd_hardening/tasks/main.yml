@@ -25,11 +25,15 @@
     content: |
       # GWI POS — SSH hardening configuration
       # Managed by Ansible sshd_hardening role — do not edit manually
-      PermitRootLogin prohibit-password
+      PermitRootLogin no
+      PasswordAuthentication no
       MaxAuthTries 3
-      AllowUsers {{ gwi_posuser }} root
+      AllowUsers {{ gwi_posuser }}
       ClientAliveInterval 300
       ClientAliveCountMax 2
+      Ciphers aes256-gcm@openssh.com,chacha20-poly1305@openssh.com,aes256-ctr
+      MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com
+      KexAlgorithms curve25519-sha256,curve25519-sha256@libssh.org,diffie-hellman-group16-sha512
   notify: restart sshd
 
 # ── Validate SSH config before restart ───────────────────────────────────────

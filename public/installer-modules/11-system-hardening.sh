@@ -274,7 +274,7 @@ LOGIND_CONF
     cat > /etc/apt/apt.conf.d/20auto-upgrades <<'APTEOF'
 APT::Periodic::Enable "0";
 APT::Periodic::Update-Package-Lists "0";
-APT::Periodic::Unattended-Upgrade "0";
+APT::Periodic::Unattended-Upgrade "1";
 APT::Periodic::Download-Upgradeable-Packages "0";
 APT::Periodic::AutocleanInterval "0";
 APTEOF
