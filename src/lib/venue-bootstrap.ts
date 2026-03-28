@@ -22,6 +22,7 @@ import { config } from '@/lib/system-config'
 import { EXPECTED_SCHEMA_VERSION, EXPECTED_SEED_VERSION, PROVISIONER_VERSION, APP_VERSION } from '@/lib/version-contract'
 import { ensureSchemaStateTable, readSchemaState, writeSchemaState, markRepair } from '@/lib/venue-schema-state'
 import { checkBaseSeedPresent } from '@/lib/base-seed-check'
+import { classifyConnectionError } from '@/lib/neon-connection'
 
 const log = createChildLogger('venue-bootstrap')
 
@@ -388,8 +389,9 @@ async function recheckNeonSchema(): Promise<void> {
       await neonClient.$disconnect()
     }
   } catch (err) {
-    log.warn({ err: err instanceof Error ? err.message : err, attempt: schemaRecheckCount },
-      'Schema re-check failed (Neon unreachable?) — will retry')
+    const classified = classifyConnectionError(err)
+    log.warn({ errorClass: classified.class, detail: classified.message, attempt: schemaRecheckCount },
+      `Schema re-check ${classified.class} — will retry`)
     if (cachedResult) {
       writeSyncStatusFile(cachedResult)
     }
@@ -759,7 +761,8 @@ export async function runBootstrap(): Promise<BootstrapResult> {
           await neonClient.$disconnect()
         }
       } catch (err) {
-        log.warn({ err: err instanceof Error ? err.message : err }, 'Neon unreachable — operating in local-only mode')
+        const classified = classifyConnectionError(err)
+        log.warn({ errorClass: classified.class, detail: classified.message }, `Neon ${classified.class} — operating in local-only mode`)
         result.neonReachable = false
         result.degradedReasons.push('neon-unreachable')
       }

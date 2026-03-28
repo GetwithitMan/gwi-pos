@@ -54,7 +54,7 @@ RLSEOF
     cat > "$PRE_START" <<'PSEOF'
 #!/usr/bin/env bash
 # GWI POS Pre-Start -- runs before thepasspos.service on every boot/restart.
-# Ensures the database schema matches the deployed Prisma schema.
+# Ensures the database schema is current via deploy-tools migrations.
 set -euo pipefail
 _APP_DIR="/opt/gwi-pos/app"
 cd "$_APP_DIR"
@@ -94,9 +94,6 @@ if [[ -f "$_CANONICAL_ENV" ]]; then
   done
 fi
 
-echo "[pre-start] Cleaning stale Prisma cache..."
-rm -rf node_modules/.prisma 2>/dev/null || true
-
 # Clean stale .next.backup from inside project dir (Turbopack crash -- scans 17k+ files)
 rm -rf "$_APP_DIR/.next.backup" 2>/dev/null || true
 # Also clean the outside-project backup if it exists from a previously failed build
@@ -110,16 +107,15 @@ if [[ -z "${DATABASE_URL:-}" ]]; then
   exit 1
 fi
 
-echo "[pre-start] Regenerating Prisma client..."
-if timeout --kill-after=10 60 npx --yes prisma generate 2>&1; then
-  echo "[pre-start] Prisma client regenerated."
+# ── Prisma client validation (pre-built in artifact, never generated on NUC) ──
+# The artifact ships a pre-built Prisma client at src/generated/prisma/.
+# We validate it exists but do NOT regenerate — prisma generate is a
+# build-time step that runs on Vercel, never on a production NUC.
+if [[ -d "$_APP_DIR/src/generated/prisma" ]]; then
+  echo "[pre-start] Prisma client: present (pre-built in artifact)"
 else
-  EXIT_CODE=$?
-  if [[ $EXIT_CODE -eq 124 ]]; then
-    echo "[pre-start] WARNING: prisma generate timed out after 60s -- continuing with existing client."
-  else
-    echo "[pre-start] WARNING: prisma generate failed -- continuing with existing client."
-  fi
+  echo "[pre-start] WARNING: Prisma client not found at $_APP_DIR/src/generated/prisma"
+  echo "[pre-start] The app may fail to start. Redeploy with a complete artifact."
 fi
 
 # Timeout check
@@ -133,9 +129,10 @@ fi
 # Clean stale .schema-stage-done marker from older installers
 rm -f /opt/gwi-pos/.schema-stage-done 2>/dev/null || true
 
-# NOTE: prisma db push removed -- deploy-tools migrate.js is the SOLE schema
-# migration path on NUCs. prisma generate (above) builds the client; schema
-# changes come exclusively from deploy-tools migrations.
+# ── Schema validation + migrations (deploy-tools only) ──
+# The artifact ships a pre-built Prisma client at src/generated/prisma/.
+# Schema mutations use deploy-tools/migrate.js exclusively.
+# prisma generate and prisma db push are build-time only — never on NUC boot.
 
 # Disable RLS on all tables before migrations.
 # Schema changes or migrations may (re-)enable RLS, but the POS app

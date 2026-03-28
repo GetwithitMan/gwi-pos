@@ -1,11 +1,19 @@
 #!/usr/bin/env bash
 # =============================================================================
-# 06-schema.sh -- prisma db push, nuc-pre-migrate.js, seed, build
+# 06-schema.sh -- Schema bootstrap + migrations via deploy-tools
 # =============================================================================
 # Entry: run_schema
-# Expects: STATION_ROLE, APP_DIR, APP_BASE, ENV_FILE, POSUSER, NEON_PSQL,
-#          NEON_DIRECT_URL, SYNC_ENABLED, NEON_DATABASE_URL,
-#          DB_USER, DB_NAME, DB_PASSWORD, USE_LOCAL_PG
+# Expects: APP_BASE, APP_DIR, ENV_FILE, DATABASE_URL, NEON_DATABASE_URL,
+#          POSUSER, STATION_ROLE, IS_REINSTALL
+#
+# Schema path: deploy-tools ONLY (no Prisma CLI on NUC runtime).
+#   1. deploy-tools/apply-schema.js -- bootstrap empty DBs from schema.sql
+#   2. deploy-tools/migrate.js -- run numbered migrations (local PG)
+#   3. deploy-tools/migrate.js -- run numbered migrations (venue Neon, non-fatal)
+#   4. seed-from-neon.sh -- restore venue data from Neon cloud
+#
+# Fresh install: schema/migration failure is FATAL (fail-closed).
+# Re-install: migration failure is a warning (existing data intact).
 # =============================================================================
 
 run_schema() {
@@ -35,8 +43,9 @@ run_schema() {
     # ── Step 1: Read schema version from Neon (source of record) ──
     # Neon is the canonical schema authority. We read the version from Neon
     # to know what version local PG should report, but we use LOCAL tested
-    # migration paths (prisma db push + nuc-pre-migrate.js) to build the schema.
-    # NO pg_dump. NO Neon schema cloning. Local migrations are the schema path.
+    # migration paths (deploy-tools/apply-schema.js + deploy-tools/migrate.js)
+    # to build the schema. NO pg_dump. NO Neon schema cloning. Local migrations
+    # are the schema path.
     NEON_SCHEMA_VERSION=""
     if [[ -n "$NEON_DIRECT_URL" ]]; then
       log "Reading schema version from Neon (source of record)..."
@@ -48,11 +57,10 @@ run_schema() {
       fi
     fi
 
-    # ── Step 2: Apply schema to LOCAL PG using local tested migration path ──
-    # prisma db push creates tables/columns from schema.prisma.
-    # nuc-pre-migrate.js runs numbered migrations for data backfills + DDL patches.
-    # Timeout 120s: Prisma schema engine can hang when diffing large schemas already in sync.
-    # --accept-data-loss is BANNED -- schema must only move forward. See ARCHITECTURE-RULES.md.
+    # ── Step 2: Apply schema to LOCAL PG using deploy-tools ──
+    # deploy-tools/apply-schema.js bootstraps empty DBs from schema.sql.
+    # deploy-tools/migrate.js runs numbered migrations for data backfills + DDL patches.
+    # Timeout 120s: apply-schema can be slow on first run against an empty DB.
 
     # Capture pre-push table list for drift detection
     local PRE_PUSH_TABLES
@@ -77,9 +85,13 @@ run_schema() {
 
       log "Running local migrations via deploy-tools..."
       if ! sudo -u "$POSUSER" bash -c "cd '$deploy_tools_dir' && DATABASE_URL='$DATABASE_URL' node src/migrate.js" 2>&1; then
-        err_code "ERR-INST-184" "Migration runner (deploy-tools/migrate.js) failed"
-        warn "Migrations failed -- continuing but venue may have issues"
-        track_warn "deploy-tools migrate.js failed"
+        if [[ "${IS_REINSTALL:-false}" == "false" ]]; then
+          err_code "ERR-INST-184" "Migration runner failed on fresh install -- cannot continue with partial schema"
+          return 1
+        else
+          warn "Migrations failed on re-install -- continuing (existing data should be intact)"
+          track_warn "deploy-tools migrate.js failed on re-install"
+        fi
       fi
 
       # ── Run migrations on venue Neon (if NEON_DATABASE_URL set) ──
@@ -177,18 +189,18 @@ run_schema() {
           log "  $tbl: $count rows"
         fi
       else
-        err "$tbl table MISSING -- schema push may have failed"
+        err "$tbl table MISSING -- schema apply may have failed"
         validation_failed=true
       fi
     done
     if [[ "$validation_failed" == "true" ]]; then
-      err_code "ERR-INST-182" "One or more critical tables missing after schema push"
+      err_code "ERR-INST-182" "One or more critical tables missing after schema apply"
       err "Critical tables missing -- cannot proceed"
       return 1
     fi
 
     # ── Post-schema: disable RLS on all tables ──
-    # prisma db push may enable RLS via the Prisma schema.
+    # Schema migrations may enable RLS on some tables.
     # The POS app user doesn't have RLS policies configured, so RLS must be off.
     log "Disabling RLS on all tables..."
     sudo -u postgres psql -d "$DB_NAME" -c "
