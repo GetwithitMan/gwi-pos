@@ -194,15 +194,29 @@ PKGJSON
 echo "    Running Prisma postinstall (engine download)..."
 (cd "$PRISMA_BUNDLE_DIR" && node node_modules/prisma/scripts/postinstall.js 2>&1 | tail -3) || true
 
-# Validate the installed CLI works
+# Validate the installed CLI works — two checks:
+# 1. --version: proves the CLI loads and its core deps resolve
+# 2. db push --help: exercises schema engine + WASM loading (no DB needed)
 echo "    Validating isolated Prisma CLI..."
-PRISMA_TEST_OUTPUT=$("$PRISMA_BUNDLE_DIR/node_modules/.bin/prisma" --version 2>&1) || true
+PRISMA_BIN="$PRISMA_BUNDLE_DIR/node_modules/.bin/prisma"
+
+PRISMA_TEST_OUTPUT=$("$PRISMA_BIN" --version 2>&1) || true
 if echo "$PRISMA_TEST_OUTPUT" | grep -qE '[0-9]+\.[0-9]+\.[0-9]+'; then
     PRISMA_CLI_VERSION=$(echo "$PRISMA_TEST_OUTPUT" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
-    echo "    Prisma CLI validated: v${PRISMA_CLI_VERSION}"
+    echo "    prisma --version: v${PRISMA_CLI_VERSION} OK"
 else
-    echo "FATAL: Isolated Prisma CLI install failed:" >&2
+    echo "FATAL: Prisma CLI --version failed:" >&2
     echo "$PRISMA_TEST_OUTPUT" | head -10 >&2
+    rm -rf "$PRISMA_BUNDLE_DIR"
+    exit 1
+fi
+
+# Validate schema engine loads (db push --help triggers WASM + engine resolution)
+if "$PRISMA_BIN" db push --help > /dev/null 2>&1; then
+    echo "    prisma db push --help: OK (schema engine loads)"
+else
+    echo "FATAL: Prisma CLI 'db push --help' failed — schema engine may be missing" >&2
+    "$PRISMA_BIN" db push --help 2>&1 | tail -5 >&2
     rm -rf "$PRISMA_BUNDLE_DIR"
     exit 1
 fi
