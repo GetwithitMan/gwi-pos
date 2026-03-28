@@ -161,6 +161,10 @@ run_schema() {
           return 1
         else
           warn "Neon seed had warnings -- check $APP_BASE/.seed-status"
+          if [[ "${IS_REINSTALL:-false}" == "false" ]]; then
+            err_code "ERR-INST-186" "Seed incomplete on fresh install -- venue cannot operate without data"
+            return 1
+          fi
         fi
       fi
       # Verify seed completed successfully
@@ -175,6 +179,10 @@ run_schema() {
         fi
       else
         warn "No seed status file found -- seed may not have run the hardened version"
+        if [[ "${IS_REINSTALL:-false}" == "false" ]]; then
+          err_code "ERR-INST-186" "Seed incomplete on fresh install -- venue cannot operate without data"
+          return 1
+        fi
       fi
     fi
 

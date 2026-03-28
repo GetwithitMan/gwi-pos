@@ -615,21 +615,34 @@ elif [[ -z "$RESUME_FROM" ]]; then
   if [[ "$STATION_ROLE" == "server" ]] || [[ "$STATION_ROLE" == "backup" ]]; then
     log "Running post-install health check..."
     _health_ok=false
-    for _attempt in 1 2 3; do
-      if curl -sf --connect-timeout 3 --max-time 5 http://localhost:3005/api/health >/dev/null 2>&1; then
-        _health_ok=true
-        break
+    _consecutive=0
+    for _attempt in 1 2 3 4 5; do
+      if curl -sf --connect-timeout 3 --max-time 5 http://localhost:3005/api/health/ready >/dev/null 2>&1; then
+        _consecutive=$((_consecutive + 1))
+        if [[ $_consecutive -ge 2 ]]; then
+          _health_ok=true
+          break
+        fi
+      else
+        _consecutive=0
       fi
-      sleep 2
+      sleep 3
     done
     if [[ "$_health_ok" == "true" ]]; then
       log "Health check passed -- POS is responding on port 3005"
     else
-      err "Health check FAILED -- POS not responding on port 3005 after 3 attempts"
+      track_warn "Health check FAILED -- POS not responding on port 3005 after 3 attempts"
       warn "Proceeding to reboot anyway -- services should recover on boot"
       _report_install_progress "health_check" "FAILED" "" "POS not responding on port 3005 after 3 attempts"
     fi
   fi
+
+  # Send final summary to MC
+  local _final_status="COMPLETED"
+  if [[ ${#INSTALL_WARNINGS[@]} -gt 0 ]]; then
+    _final_status="DEGRADED"
+  fi
+  _report_install_progress "summary" "$_final_status" "" "warnings=${#INSTALL_WARNINGS[@]}"
 
   log ""
   log "Installation complete! Rebooting now..."
