@@ -62,8 +62,10 @@ if [[ "$_SKIP_SELF_UPDATE" == "false" ]] && [[ "${GWI_OFFLINE_INSTALL:-}" != "1"
   _TEMP_INSTALLER=$(mktemp /tmp/installer-update.XXXXXX)
   if curl -fsSL --connect-timeout 10 --max-time 30 "$_SELF_UPDATE_URL" -o "$_TEMP_INSTALLER" 2>/dev/null; then
     _REMOTE_SHA=$(grep '^INSTALLER_GIT_SHA=' "$_TEMP_INSTALLER" 2>/dev/null | head -1 | cut -d'"' -f2)
-    if [[ -n "$_REMOTE_SHA" && "$_REMOTE_SHA" != "$INSTALLER_GIT_SHA" ]]; then
-      echo -e "\033[0;32m[GWI POS]\033[0m Updating installer: $INSTALLER_GIT_SHA → $_REMOTE_SHA"
+    _REMOTE_VER=$(grep '^INSTALLER_VERSION=' "$_TEMP_INSTALLER" 2>/dev/null | head -1 | cut -d'"' -f2)
+    # Update if SHA OR version differs — catches both code changes and version bumps
+    if [[ -n "$_REMOTE_SHA" ]] && { [[ "$_REMOTE_SHA" != "$INSTALLER_GIT_SHA" ]] || [[ "$_REMOTE_VER" != "$INSTALLER_VERSION" ]]; }; then
+      echo -e "\033[0;32m[GWI POS]\033[0m Updating installer: v${INSTALLER_VERSION}/${INSTALLER_GIT_SHA} → v${_REMOTE_VER}/${_REMOTE_SHA}"
       # Keep last-known-good copy for rollback
       cp "$0" "${0}.bak"
       # Replace ourselves with the new version
@@ -75,7 +77,7 @@ if [[ "$_SKIP_SELF_UPDATE" == "false" ]] && [[ "${GWI_OFFLINE_INSTALL:-}" != "1"
       # Re-exec with same args + --skip-self-update to prevent infinite loop
       exec "$0" "$@" --skip-self-update
     else
-      echo -e "\033[0;32m[GWI POS]\033[0m Installer is up to date ($INSTALLER_GIT_SHA)"
+      echo -e "\033[0;32m[GWI POS]\033[0m Installer is up to date (v${INSTALLER_VERSION}, ${INSTALLER_GIT_SHA})"
     fi
     rm -f "$_TEMP_INSTALLER"
   else
@@ -105,7 +107,7 @@ ENV_FILE="$APP_BASE/.env"
 KEY_DIR="$APP_BASE/keys"
 BACKUP_DIR="$APP_BASE/backups"
 BACKUP_SCRIPT="$APP_BASE/backup-pos.sh"
-MC_URL="https://app.thepasspos.com"
+MC_URL="${MISSION_CONTROL_URL:-https://app.thepasspos.com}"
 MC_REGISTER_URL="$MC_URL/api/fleet/register"
 BACKOFFICE_API_URL="${BACKOFFICE_API_URL_OVERRIDE:-https://api.ordercontrolcenter.com}"
 # Repo URL set during registration (encryptedRepoUrl), fallback for backwards compat
@@ -392,6 +394,9 @@ header "GWI POS Installer"
 # Display version info
 if [[ "$INSTALLER_VERSION" != "__INSTALLER_VERSION__" ]] && [[ -n "$INSTALLER_VERSION" ]]; then
   log "Installer v${INSTALLER_VERSION} (built ${INSTALLER_BUILD_DATE:-unknown}, sha ${INSTALLER_GIT_SHA:-unknown})"
+  log "  POS assets: ${POS_BASE_URL}"
+  log "  MC API:     ${MC_URL}"
+  log "  Self-update: ${_SELF_UPDATE_URL}"
 else
   log "Installer version: development (unstamped)"
 fi

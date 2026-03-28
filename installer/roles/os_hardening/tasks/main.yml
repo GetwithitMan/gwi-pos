@@ -256,3 +256,31 @@
   when:
     - gwi_desktop_env == 'gnome'
     - _gnome_dconf_override is changed or _gnome_dconf_locks is changed
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Display manager auto-login (POS NUCs should never show a login screen)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+- name: "SDDM — Configure auto-login"
+  ansible.builtin.copy:
+    dest: /etc/sddm.conf.d/autologin.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      [Autologin]
+      User={{ gwi_posuser }}
+      Session={{ gwi_sddm_session | default('plasma.desktop') }}
+  when: gwi_desktop_env == 'kde'
+
+- name: "GDM — Configure auto-login"
+  ansible.builtin.lineinfile:
+    path: /etc/gdm3/custom.conf
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+    insertafter: '^\[daemon\]'
+    create: true
+  loop:
+    - { regexp: '^AutomaticLoginEnable=', line: 'AutomaticLoginEnable=true' }
+    - { regexp: '^AutomaticLogin=', line: 'AutomaticLogin={{ gwi_posuser }}' }
+  when: gwi_desktop_env == 'gnome'

@@ -163,6 +163,31 @@ for pkg in "${_SERVER_PKGS[@]}"; do
     fi
 done
 
+# Validate: every require() in server.js must resolve in staging node_modules
+echo "    Validating server.js dependencies in artifact..."
+_MISSING_DEPS=()
+for _dep in $(grep -oP 'require\("[^"]+"\)' "$REPO_DIR/server.js" 2>/dev/null | sed 's/require("//;s/")//' | grep -v '^node:' | grep -v '^\.' | sort -u); do
+    # Extract package name (handle scoped: @foo/bar → @foo/bar, foo/bar → foo)
+    _pkg_name="$_dep"
+    if [[ "$_dep" == @* ]]; then
+        _pkg_name=$(echo "$_dep" | cut -d/ -f1,2)
+    else
+        _pkg_name=$(echo "$_dep" | cut -d/ -f1)
+    fi
+    if [[ ! -d "$STAGING/node_modules/$_pkg_name" ]]; then
+        _MISSING_DEPS+=("$_pkg_name (required by: $_dep)")
+    fi
+done
+if [[ ${#_MISSING_DEPS[@]} -gt 0 ]]; then
+    echo "FATAL: server.js requires packages missing from artifact node_modules:" >&2
+    for _m in "${_MISSING_DEPS[@]}"; do
+        echo "  - $_m" >&2
+    done
+    echo "Add them to _SERVER_PKGS in build-nuc-artifact.sh" >&2
+    exit 1
+fi
+echo "    All server.js dependencies present in artifact"
+
 # .next/static/ -> staging/.next/static/ (browser assets)
 echo "    static assets..."
 mkdir -p "$STAGING/.next/static"

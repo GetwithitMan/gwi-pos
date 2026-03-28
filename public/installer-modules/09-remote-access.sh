@@ -168,9 +168,15 @@ RVNCEOF
 
   mkdir -p "$APP_BASE"
 
-  # Clean old launchers before re-creating (prevents stale URLs after role switch)
+  # Clean old launchers (prevents stale URLs after role switch)
   rm -f /usr/share/applications/gwi-pos.desktop 2>/dev/null || true
   rm -f "$POSUSER_HOME/Desktop/gwi-pos.desktop" 2>/dev/null || true
+
+  # Server/backup: dashboard is the desktop app, NOT a web UI shortcut.
+  # Only terminals need the Chromium POS launcher on the desktop.
+  if [[ "$STATION_ROLE" == "server" || "$STATION_ROLE" == "backup" ]]; then
+    log "Server role — skipping web UI desktop shortcut (dashboard handles this)"
+  else
 
   POS_URL="http://localhost:3005"
   [[ "$STATION_ROLE" == "terminal" ]] && POS_URL="$SERVER_URL"
@@ -255,6 +261,8 @@ DTEOF
 
   log "Desktop launcher created: $DESKTOP_DIR/gwi-pos.desktop"
   log "  Quick launch: $LAUNCHER_SCRIPT"
+
+  fi # end terminal-only desktop shortcut block
 
   # ─────────────────────────────────────────────────────────────────────────────
   # TeamViewer (backup remote access — server/backup roles only)

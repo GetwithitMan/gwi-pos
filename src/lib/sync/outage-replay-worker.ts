@@ -218,7 +218,11 @@ async function replayEntry(entry: {
     case 'DELETE': {
       // P2-3: Check if the record was recreated/modified on Neon during the outage.
       // If a newer version exists on Neon, skip the delete to avoid data loss.
+      // Only check updatedAt if the table actually has that column (use cached metadata).
+      const deleteTableCols = columnCache.get(tableName) ?? []
+      const tableHasUpdatedAt = deleteTableCols.includes('updatedAt')
       try {
+        if (!tableHasUpdatedAt) throw new Error('skip') // no updatedAt → skip guard, proceed to delete
         const neonRow = await neonClient.$queryRawUnsafe<Array<{ updatedAt: Date }>>(
           `SELECT "updatedAt" FROM "${tableName}" WHERE id = $1`,
           recordId,
