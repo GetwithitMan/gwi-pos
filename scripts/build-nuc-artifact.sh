@@ -151,7 +151,7 @@ _SERVER_PKGS=(
     @socket.io/component-emitter
     twilio
     zod
-    @prisma/adapter-pg @prisma/driver-adapter-utils pg
+    @prisma/adapter-pg @prisma/driver-adapter-utils @prisma/debug pg
     postgres-array postgres-bytea postgres-date postgres-interval pg-types
 )
 for pkg in "${_SERVER_PKGS[@]}"; do
