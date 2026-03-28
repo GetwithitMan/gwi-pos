@@ -1283,25 +1283,17 @@ run_schema_step() {
     local failure_class=""
 
     # Step 1: prisma db push (schema sync)
-    # Use npx prisma from the release's node_modules (bundled by standalone).
-    # This avoids the fragile manual Prisma CLI bundling approach — npx resolves
-    # the full dependency tree automatically from the existing node_modules.
+    # The artifact ships a complete, isolated Prisma CLI install at prisma/cli/
+    # Built via `npm install prisma@X` in a clean temp dir during CI.
     local db_url
     db_url="$(grep '^DATABASE_URL=' "${SHARED_DIR}/.env" 2>/dev/null | cut -d= -f2-)"
 
-    # Ensure prisma is available: check release node_modules, then global
+    # Find the Prisma CLI from the artifact's bundled install
     local prisma_cmd=""
-    if [[ -f "${release_dir}/node_modules/.bin/prisma" ]]; then
-        prisma_cmd="${release_dir}/node_modules/.bin/prisma"
-    elif [[ -f "${release_dir}/node_modules/prisma/build/index.js" ]]; then
-        prisma_cmd="node ${release_dir}/node_modules/prisma/build/index.js"
-    elif command -v npx &>/dev/null; then
-        # Install prisma globally if not in node_modules (one-time on NUC)
-        if ! command -v prisma &>/dev/null; then
-            log "Installing prisma CLI globally (one-time)..."
-            npm install -g prisma@7 2>/dev/null || true
-        fi
-        prisma_cmd="prisma"
+    if [[ -x "${release_dir}/prisma/cli/node_modules/.bin/prisma" ]]; then
+        prisma_cmd="${release_dir}/prisma/cli/node_modules/.bin/prisma"
+    elif [[ -f "${release_dir}/prisma/cli/prisma" ]]; then
+        prisma_cmd="${release_dir}/prisma/cli/prisma"
     fi
 
     if [[ -n "$prisma_cmd" ]]; then
@@ -1309,7 +1301,7 @@ run_schema_step() {
         local schema_exit=0
         timeout "$SCHEMA_TIMEOUT_SECONDS" \
             env DATABASE_URL="$db_url" \
-            $prisma_cmd db push --skip-generate --schema="${release_dir}/prisma/schema.prisma" \
+            "$prisma_cmd" db push --skip-generate --schema="${release_dir}/prisma/schema.prisma" \
             > >(tee -a "${DEPLOY_LOG_DIR}/schema-${RELEASE_ID}.log") 2>&1 \
             || schema_exit=$?
 
@@ -1324,7 +1316,7 @@ run_schema_step() {
             schema_failed=true
         fi
     else
-        warn "No Prisma CLI available — skipping schema push"
+        warn "Prisma CLI not found in artifact — skipping schema push"
     fi
 
     # Step 2: nuc-pre-migrate.js (custom migrations)

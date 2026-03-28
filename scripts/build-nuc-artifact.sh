@@ -165,108 +165,60 @@ cp -r "$REPO_DIR/src/generated/prisma/." "$STAGING/src/generated/prisma/"
 echo "    package.json..."
 cp "$REPO_DIR/package.json" "$STAGING/package.json"
 
-# ─── 5. Bundle Prisma CLI ────────────────────────────────────────────────────
+# ─── 5. Bundle Prisma CLI (isolated npm install — complete dependency tree) ──
 echo "==> [5/12] Bundling Prisma CLI..."
 
-mkdir -p "$STAGING/prisma/cli"
+# Get the exact prisma version from the project
+PRISMA_VERSION=$(node -e "console.log(require('$REPO_DIR/node_modules/prisma/package.json').version)" 2>/dev/null || echo "7.5.0")
+echo "    Prisma version: $PRISMA_VERSION"
 
-# Locate the prisma CLI entry point
-PRISMA_BIN=""
-if [ -f "$REPO_DIR/node_modules/.bin/prisma" ]; then
-    # Resolve symlink to actual file
-    PRISMA_BIN=$(readlink -f "$REPO_DIR/node_modules/.bin/prisma" 2>/dev/null \
-        || readlink "$REPO_DIR/node_modules/.bin/prisma" 2>/dev/null \
-        || echo "$REPO_DIR/node_modules/.bin/prisma")
-fi
+# Create an isolated temp directory and do a clean npm install.
+# This guarantees the COMPLETE dependency tree — no missing transitive deps.
+# No more whack-a-mole with graphmatch, zeptomatch, @neondatabase, etc.
+PRISMA_BUNDLE_DIR=$(mktemp -d)
+echo "    Installing prisma@${PRISMA_VERSION} in isolated context..."
 
-if [ -n "$PRISMA_BIN" ] && [ -f "$PRISMA_BIN" ]; then
-    cp "$PRISMA_BIN" "$STAGING/prisma/cli/prisma"
-    chmod +x "$STAGING/prisma/cli/prisma"
-    echo "    Prisma CLI binary copied."
-else
-    echo "FATAL: Prisma CLI binary not found at node_modules/.bin/prisma" >&2
-    echo "  Run 'npm install' to ensure prisma devDependency is installed." >&2
-    exit 1
-fi
+cat > "$PRISMA_BUNDLE_DIR/package.json" << PKGJSON
+{
+  "name": "prisma-cli-bundle",
+  "private": true,
+  "dependencies": {
+    "prisma": "${PRISMA_VERSION}"
+  }
+}
+PKGJSON
 
-# Copy the ENTIRE prisma package + all @prisma/* dependencies.
-# Prisma CLI has a deep dependency tree (@prisma/engines → @prisma/debug → etc).
-# Copying individual packages will never work. Copy everything.
-echo "    Copying full Prisma dependency tree..."
+(cd "$PRISMA_BUNDLE_DIR" && npm install --no-audit --no-fund --ignore-scripts 2>&1 | tail -3)
 
-# 1. Copy the prisma package itself (the CLI entry point + its bundled node_modules)
-PRISMA_PKG_DIR="$REPO_DIR/node_modules/prisma"
-if [ -d "$PRISMA_PKG_DIR" ]; then
-    cp -r "$PRISMA_PKG_DIR/." "$STAGING/prisma/cli/"
-    echo "    prisma package copied"
-fi
+# Run prisma postinstall to download engines (schema-engine, etc.)
+echo "    Running Prisma postinstall (engine download)..."
+(cd "$PRISMA_BUNDLE_DIR" && node node_modules/prisma/scripts/postinstall.js 2>&1 | tail -3) || true
 
-# 2. Copy ALL @prisma/* packages into prisma/cli/node_modules/@prisma/
-# This ensures every require('@prisma/...') resolves correctly.
-mkdir -p "$STAGING/prisma/cli/node_modules/@prisma"
-for pkg_dir in "$REPO_DIR/node_modules/@prisma/"*/; do
-    [ -d "$pkg_dir" ] || continue
-    pkg_name="$(basename "$pkg_dir")"
-    # Skip the huge generated client (already at src/generated/prisma/)
-    if [ "$pkg_name" = "client" ]; then continue; fi
-    cp -r "$pkg_dir" "$STAGING/prisma/cli/node_modules/@prisma/$pkg_name"
-done
-echo "    @prisma/* packages: $(ls "$STAGING/prisma/cli/node_modules/@prisma/" | tr '\n' ' ')"
-
-# 3. Copy non-@prisma dependencies that prisma requires (mysql2, postgres, etc.)
-# Read prisma's package.json deps and copy any that aren't @prisma-scoped
-PRISMA_DEPS=$(node -e "const p=require('$REPO_DIR/node_modules/prisma/package.json'); Object.keys(p.dependencies||{}).filter(d=>!d.startsWith('@prisma/')).forEach(d=>console.log(d))" 2>/dev/null)
-for dep in $PRISMA_DEPS; do
-    if [ -d "$REPO_DIR/node_modules/$dep" ]; then
-        cp -r "$REPO_DIR/node_modules/$dep" "$STAGING/prisma/cli/node_modules/$dep"
-    fi
-done
-[ -n "$PRISMA_DEPS" ] && echo "    Non-prisma deps: $PRISMA_DEPS"
-
-# Also copy any transitive deps that @prisma/* packages need from top-level node_modules
-# Walk all @prisma/*/package.json deps and copy missing ones
-for prisma_pkg in "$STAGING/prisma/cli/node_modules/@prisma/"*/; do
-    [ -f "$prisma_pkg/package.json" ] || continue
-    TRANSITIVE=$(node -e "
-        const p=require('$prisma_pkg/package.json');
-        Object.keys({...p.dependencies,...p.peerDependencies}).filter(d=>!d.startsWith('@prisma/')).forEach(d=>console.log(d))
-    " 2>/dev/null)
-    for dep in $TRANSITIVE; do
-        if [ ! -d "$STAGING/prisma/cli/node_modules/$dep" ] && [ -d "$REPO_DIR/node_modules/$dep" ]; then
-            # Create parent dir for scoped packages (e.g., @neondatabase/serverless)
-            mkdir -p "$(dirname "$STAGING/prisma/cli/node_modules/$dep")"
-            cp -r "$REPO_DIR/node_modules/$dep" "$STAGING/prisma/cli/node_modules/$dep"
-            echo "    Transitive dep: $dep (from $(basename "$prisma_pkg"))"
-        fi
-    done
-done
-
-# 4. Verify schema engine binary exists somewhere in the bundle
-SCHEMA_ENGINE=$(find "$STAGING/prisma/cli" -name "schema-engine-*" -type f 2>/dev/null | head -1)
-[ -n "$SCHEMA_ENGINE" ] && echo "    Schema engine: $(basename "$SCHEMA_ENGINE")" || echo "    WARNING: No schema engine found"
-
-# 4. Validate the bundled Prisma CLI actually runs (fail-hard if broken)
-echo "    Validating bundled Prisma CLI..."
-# Use build/index.js as entry point (WASM files are resolved relative to it)
-PRISMA_ENTRY="$STAGING/prisma/cli/build/index.js"
-[ ! -f "$PRISMA_ENTRY" ] && PRISMA_ENTRY="$STAGING/prisma/cli/prisma"
-PRISMA_TEST_OUTPUT=$(NODE_PATH="$STAGING/prisma/cli/node_modules:$STAGING/prisma/cli" \
-   node "$PRISMA_ENTRY" --version 2>&1) || true
+# Validate the installed CLI works
+echo "    Validating isolated Prisma CLI..."
+PRISMA_TEST_OUTPUT=$("$PRISMA_BUNDLE_DIR/node_modules/.bin/prisma" --version 2>&1) || true
 if echo "$PRISMA_TEST_OUTPUT" | grep -qE '[0-9]+\.[0-9]+\.[0-9]+'; then
     PRISMA_CLI_VERSION=$(echo "$PRISMA_TEST_OUTPUT" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
     echo "    Prisma CLI validated: v${PRISMA_CLI_VERSION}"
 else
-    echo "FATAL: Bundled Prisma CLI failed to run:" >&2
+    echo "FATAL: Isolated Prisma CLI install failed:" >&2
     echo "$PRISMA_TEST_OUTPUT" | head -10 >&2
-    echo "" >&2
-    echo "  Missing modules in: $STAGING/prisma/cli/node_modules/" >&2
-    echo "  Contents: $(ls "$STAGING/prisma/cli/node_modules/" 2>/dev/null | tr '\n' ' ')" >&2
+    rm -rf "$PRISMA_BUNDLE_DIR"
     exit 1
 fi
 
-# Prisma CLI version for metadata
-PRISMA_CLI_VERSION=$(cd "$REPO_DIR" && npx prisma --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "unknown")
-echo "    Prisma CLI version: $PRISMA_CLI_VERSION"
+# Copy the complete, working prisma installation into the artifact
+mkdir -p "$STAGING/prisma/cli"
+cp -r "$PRISMA_BUNDLE_DIR/node_modules" "$STAGING/prisma/cli/node_modules"
+
+# Create a convenience symlink/script so deploy can find the CLI
+cp "$PRISMA_BUNDLE_DIR/node_modules/.bin/prisma" "$STAGING/prisma/cli/prisma" 2>/dev/null || true
+chmod +x "$STAGING/prisma/cli/prisma" 2>/dev/null || true
+
+echo "    Prisma CLI bundle: $(du -sh "$STAGING/prisma/cli/node_modules" | cut -f1)"
+
+# Clean up temp dir
+rm -rf "$PRISMA_BUNDLE_DIR"
 
 # ─── 6. Generate required-env.json ───────────────────────────────────────────
 echo "==> [6/12] Generating required-env.json..."
@@ -277,7 +229,7 @@ cat > "$STAGING/required-env.json" << 'ENVJSON'
     { "key": "DATABASE_URL", "format": "^postgres(ql)?://", "description": "Local PostgreSQL connection" },
     { "key": "NEXTAUTH_URL", "format": "^https?://", "description": "POS web URL for auth callbacks" },
     { "key": "NEXTAUTH_SECRET", "format": ".{32,}", "description": "Auth secret (min 32 chars)" },
-    { "key": "LOCATION_ID", "format": "^[0-9]+$", "description": "Venue location ID" }
+    { "key": "LOCATION_ID", "format": "^[a-zA-Z0-9_-]+$", "description": "Venue location ID (cuid or numeric)" }
   ],
   "optional": [
     { "key": "NEON_DATABASE_URL", "description": "Cloud Neon DB for sync" },
