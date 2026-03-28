@@ -130,32 +130,15 @@ if [[ $(date +%s) -gt $PRE_START_DEADLINE ]]; then
   exit 0
 fi
 
-# Skip prisma db push if schema stage just ran (installer sets this marker)
-if [[ -f /opt/gwi-pos/.schema-stage-done ]]; then
-  echo "[pre-start] Schema stage already completed — skipping prisma db push"
-  rm -f /opt/gwi-pos/.schema-stage-done
-else
-  echo "[pre-start] Checking database schema..."
-  # --accept-data-loss is BANNED — schema must only move forward.
-  # Pre-push migrations handle all data safety. TIMEOUT: 120s prevents hung prisma schema engine.
-  PUSH_OUTPUT=$(timeout --kill-after=10 120 npx --yes prisma db push 2>&1) && {
-    echo "[pre-start] Schema sync complete."
-  } || {
-    EXIT_CODE=$?
-    if [[ $EXIT_CODE -eq 124 ]]; then
-      echo "[pre-start] WARNING: prisma db push timed out after 120s — continuing with existing schema."
-    elif echo "$PUSH_OUTPUT" | grep -qi "error\|fatal"; then
-      echo "[pre-start] WARNING: prisma db push had errors — continuing with existing schema."
-      echo "[pre-start] Details: $PUSH_OUTPUT"
-    else
-      echo "[pre-start] WARNING: prisma db push failed (non-destructive): $PUSH_OUTPUT"
-      # Non-destructive failure (e.g., network issue) — continue anyway
-    fi
-  }
-fi
+# Clean stale .schema-stage-done marker from older installers
+rm -f /opt/gwi-pos/.schema-stage-done 2>/dev/null || true
 
-# Disable RLS on all tables after schema push.
-# prisma db push may (re-)enable RLS via the Prisma schema, but the POS app
+# NOTE: prisma db push removed — deploy-tools migrate.js is the SOLE schema
+# migration path on NUCs. prisma generate (above) builds the client; schema
+# changes come exclusively from deploy-tools migrations.
+
+# Disable RLS on all tables before migrations.
+# Schema changes or migrations may (re-)enable RLS, but the POS app
 # user doesn't have RLS policies configured. RLS blocks sync, queries, login.
 # NOTE: ALTER TABLE DISABLE ROW LEVEL SECURITY requires superuser.
 # The POS app user ($POSUSER) is NOT a superuser, so we must run as postgres.
@@ -186,6 +169,10 @@ fi
 # TIMEOUT: 300s (5min) matches the internal timeout in the runner
 _DT_DIR="/opt/gwi-pos/deploy-tools"
 if [[ -f "$_DT_DIR/src/migrate.js" ]]; then
+  echo "[pre-start] Setting migration state..."
+  mkdir -p /opt/gwi-pos/shared/state
+  echo "migrating" > /opt/gwi-pos/shared/state/schema-state 2>/dev/null || true
+
   echo "[pre-start] Running migrations via deploy-tools..."
   DATABASE_URL="$DATABASE_URL" timeout --kill-after=10 300 node "$_DT_DIR/src/migrate.js" 2>&1 || {
     EXIT_CODE=$?
@@ -200,6 +187,8 @@ if [[ -f "$_DT_DIR/src/migrate.js" ]]; then
       fi
     fi
   }
+
+  echo "ready" > /opt/gwi-pos/shared/state/schema-state 2>/dev/null || true
 else
   echo "[pre-start] WARNING: deploy-tools not found at $_DT_DIR — skipping migrations."
 fi
@@ -285,6 +274,50 @@ PSEOF
     chown "$POSUSER":"$POSUSER" "$PRE_START"
     log "Pre-start schema sync script created."
 
+    # ── Self-healing sudoers repair script (called by ExecStartPre as root) ──
+    # Ensures enumerated NOPASSWD rules exist on every boot.
+    # Replaces legacy NOPASSWD: ALL on older venues.
+    FIX_SUDOERS="$APP_BASE/fix-sudoers.sh"
+    cat > "$FIX_SUDOERS" <<FIXEOF
+#!/usr/bin/env bash
+set -euo pipefail
+SUDOERS_FILE="/etc/sudoers.d/gwi-pos"
+# If the enumerated rules already exist, nothing to do
+if grep -q "systemctl restart thepasspos" "\$SUDOERS_FILE" 2>/dev/null; then
+  exit 0
+fi
+echo "[sudoers] Repairing: writing enumerated NOPASSWD rules for $POSUSER"
+cat > "\$SUDOERS_FILE" <<'SUDOFIX'
+# GWI POS — enumerated passwordless sudo for POS service user
+# --- systemctl: service lifecycle ---
+$POSUSER ALL=(ALL) NOPASSWD: /bin/systemctl restart thepasspos, /bin/systemctl stop thepasspos, /bin/systemctl start thepasspos, /bin/systemctl enable thepasspos
+$POSUSER ALL=(ALL) NOPASSWD: /bin/systemctl restart thepasspos-sync, /bin/systemctl start thepasspos-sync
+$POSUSER ALL=(ALL) NOPASSWD: /bin/systemctl restart thepasspos-kiosk, /bin/systemctl stop thepasspos-kiosk, /bin/systemctl start thepasspos-kiosk
+$POSUSER ALL=(ALL) NOPASSWD: /bin/systemctl restart gwi-watchdog.timer, /bin/systemctl restart gwi-watchdog.service
+$POSUSER ALL=(ALL) NOPASSWD: /bin/systemctl enable gwi-watchdog.timer, /bin/systemctl enable --now gwi-watchdog.timer
+$POSUSER ALL=(ALL) NOPASSWD: /bin/systemctl daemon-reload
+$POSUSER ALL=(ALL) NOPASSWD: /bin/systemctl status *, /bin/systemctl is-active *, /bin/systemctl is-enabled *, /bin/systemctl list-unit-files *
+# --- Database tools ---
+$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/psql, /usr/lib/postgresql/*/bin/psql, /usr/bin/pg_isready, /usr/bin/pg_dump
+# --- POS scripts ---
+$POSUSER ALL=(ALL) NOPASSWD: /opt/gwi-pos/deploy-release.sh, /opt/gwi-pos/scripts/*, /opt/gwi-pos/watchdog.sh, /opt/gwi-pos/heartbeat.sh
+$POSUSER ALL=(ALL) NOPASSWD: /opt/gwi-pos/backup-pos.sh, /opt/gwi-pos/disable-rls.sh, /opt/gwi-pos/pre-start.sh, /opt/gwi-pos/clear-kiosk-session.sh
+$POSUSER ALL=(ALL) NOPASSWD: /opt/gwi-pos/kiosk-control.sh, /opt/gwi-pos/boot-diagnostic.sh
+# --- Package management ---
+$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/apt-get, /usr/bin/dpkg
+# --- System administration ---
+$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/timedatectl, /bin/journalctl
+$POSUSER ALL=(ALL) NOPASSWD: /sbin/shutdown, /usr/sbin/shutdown
+# --- File management (sync-agent: ownership fixes, file deployment) ---
+$POSUSER ALL=(ALL) NOPASSWD: /bin/chown, /usr/bin/chown, /bin/chmod, /usr/bin/chmod, /bin/cp, /usr/bin/cp, /bin/mkdir, /usr/bin/mkdir
+SUDOFIX
+chmod 440 "\$SUDOERS_FILE"
+echo "[sudoers] Fixed: enumerated NOPASSWD for $POSUSER"
+FIXEOF
+    chown root:root "$FIX_SUDOERS"
+    chmod 755 "$FIX_SUDOERS"
+    log "Self-healing sudoers script created: $FIX_SUDOERS"
+
     # thepasspos.service — POS backend/UI
     PG_AFTER=""
     PG_WANTS=""
@@ -306,9 +339,8 @@ WorkingDirectory=$APP_DIR
 EnvironmentFile=$ENV_FILE
 Environment=NODE_ENV=production
 # Self-healing sudoers: runs as root (+prefix) before pre-start.sh runs as POSUSER.
-# Existing venues installed before NOPASSWD ALL may have per-command sudoers that break
-# updates, component installs, and watchdog operations. This ensures NOPASSWD ALL on every boot.
-ExecStartPre=+/bin/bash -c 'grep -q "NOPASSWD: ALL" /etc/sudoers.d/gwi-pos 2>/dev/null || { echo "$POSUSER ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/gwi-pos && chmod 440 /etc/sudoers.d/gwi-pos && echo "[sudoers] Fixed: NOPASSWD ALL for $POSUSER"; }'
+# Ensures enumerated NOPASSWD rules exist. Replaces legacy NOPASSWD: ALL on older venues.
+ExecStartPre=+/opt/gwi-pos/fix-sudoers.sh
 ExecStartPre=$APP_BASE/pre-start.sh
 ExecStart=/usr/bin/node -r ./preload.js server.js
 Restart=always
@@ -525,10 +557,36 @@ BKEOF
     # Server role has no kiosk service.
 
     cat > /etc/sudoers.d/gwi-pos <<SUDEOF
-# GWI POS — full passwordless sudo for POS service user
-# Required for: service management, component updates, schema sync,
-# backups, watchdog, dashboard install, file deployment
-$POSUSER ALL=(ALL) NOPASSWD: ALL
+# GWI POS — enumerated passwordless sudo for POS service user
+# Principle of least privilege: only commands the POS service actually needs.
+# If a new command is required, add it here — do NOT revert to NOPASSWD: ALL.
+#
+# --- systemctl: service lifecycle (restart, stop, start, enable, daemon-reload) ---
+$POSUSER ALL=(ALL) NOPASSWD: /bin/systemctl restart thepasspos, /bin/systemctl stop thepasspos, /bin/systemctl start thepasspos, /bin/systemctl enable thepasspos
+$POSUSER ALL=(ALL) NOPASSWD: /bin/systemctl restart thepasspos-sync, /bin/systemctl start thepasspos-sync
+$POSUSER ALL=(ALL) NOPASSWD: /bin/systemctl restart thepasspos-kiosk, /bin/systemctl stop thepasspos-kiosk, /bin/systemctl start thepasspos-kiosk
+$POSUSER ALL=(ALL) NOPASSWD: /bin/systemctl restart gwi-watchdog.timer, /bin/systemctl restart gwi-watchdog.service
+$POSUSER ALL=(ALL) NOPASSWD: /bin/systemctl enable gwi-watchdog.timer, /bin/systemctl enable --now gwi-watchdog.timer
+$POSUSER ALL=(ALL) NOPASSWD: /bin/systemctl daemon-reload
+$POSUSER ALL=(ALL) NOPASSWD: /bin/systemctl status *, /bin/systemctl is-active *, /bin/systemctl is-enabled *, /bin/systemctl list-unit-files *
+#
+# --- Database tools ---
+$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/psql, /usr/lib/postgresql/*/bin/psql, /usr/bin/pg_isready, /usr/bin/pg_dump
+#
+# --- POS scripts (deploy, watchdog, backups, schema) ---
+$POSUSER ALL=(ALL) NOPASSWD: /opt/gwi-pos/deploy-release.sh, /opt/gwi-pos/scripts/*, /opt/gwi-pos/watchdog.sh, /opt/gwi-pos/heartbeat.sh
+$POSUSER ALL=(ALL) NOPASSWD: /opt/gwi-pos/backup-pos.sh, /opt/gwi-pos/disable-rls.sh, /opt/gwi-pos/pre-start.sh, /opt/gwi-pos/clear-kiosk-session.sh
+$POSUSER ALL=(ALL) NOPASSWD: /opt/gwi-pos/kiosk-control.sh, /opt/gwi-pos/boot-diagnostic.sh
+#
+# --- Package management (dashboard .deb installs, minisign, etc.) ---
+$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/apt-get, /usr/bin/dpkg
+#
+# --- System administration ---
+$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/timedatectl, /bin/journalctl
+$POSUSER ALL=(ALL) NOPASSWD: /sbin/shutdown, /usr/sbin/shutdown
+#
+# --- File management (sync-agent: ownership fixes, file deployment) ---
+$POSUSER ALL=(ALL) NOPASSWD: /bin/chown, /usr/bin/chown, /bin/chmod, /usr/bin/chmod, /bin/cp, /usr/bin/cp, /bin/mkdir, /usr/bin/mkdir
 SUDEOF
     chmod 440 /etc/sudoers.d/gwi-pos
 

@@ -27,7 +27,7 @@ Complete gift card system overhaul: card number pool management, balance adjustm
 
 ### Files
 - ~37 new files, ~11 modified across gwi-pos + gwi-mission-control
-- Migration: `scripts/migrations/109-gift-card-pool.js`
+- Migration: `scripts/migrations/113-gift-card-pool.js` (renumbered from 109 to resolve duplicate)
 - Plan: `~/.claude/plans/curious-plotting-rose.md`
 
 ### Status

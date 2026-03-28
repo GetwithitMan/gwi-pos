@@ -39,12 +39,6 @@
   changed_when: "'Rule added' in _ufw_ssh.stdout or 'Rules updated' in _ufw_ssh.stdout"
   failed_when: _ufw_ssh.rc != 0 and 'Skipping' not in _ufw_ssh.stdout
 
-- name: "Allow VNC ({{ gwi_vnc_port }}/tcp)"
-  ansible.builtin.command: "ufw allow {{ gwi_vnc_port }}/tcp comment 'GWI POS — VNC remote support'"
-  register: _ufw_vnc
-  changed_when: "'Rule added' in _ufw_vnc.stdout or 'Rules updated' in _ufw_vnc.stdout"
-  failed_when: _ufw_vnc.rc != 0 and 'Skipping' not in _ufw_vnc.stdout
-
 # ── POS port (servers and backups only, skip for terminals) ──────────────────
 
 - name: "Allow POS application port ({{ gwi_pos_port }}/tcp)"

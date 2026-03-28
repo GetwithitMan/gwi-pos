@@ -81,5 +81,26 @@ if [[ "$BASE_VERSION" == "$HEAD_VERSION" ]]; then
     exit 1
 fi
 
+# Verify version is not a downgrade (semver comparison)
+version_gte() {
+  local v1="$1" v2="$2"
+  local v1_major v1_minor v1_patch v2_major v2_minor v2_patch
+  IFS='.' read -r v1_major v1_minor v1_patch <<< "$v1"
+  IFS='.' read -r v2_major v2_minor v2_patch <<< "$v2"
+  v1_major="${v1_major:-0}"; v1_minor="${v1_minor:-0}"; v1_patch="${v1_patch:-0}"
+  v2_major="${v2_major:-0}"; v2_minor="${v2_minor:-0}"; v2_patch="${v2_patch:-0}"
+  if [[ "$v1_major" -gt "$v2_major" ]]; then return 0; fi
+  if [[ "$v1_major" -lt "$v2_major" ]]; then return 1; fi
+  if [[ "$v1_minor" -gt "$v2_minor" ]]; then return 0; fi
+  if [[ "$v1_minor" -lt "$v2_minor" ]]; then return 1; fi
+  if [[ "$v1_patch" -ge "$v2_patch" ]]; then return 0; fi
+  return 1
+}
+
+if ! version_gte "$HEAD_VERSION" "$BASE_VERSION"; then
+  echo "FAIL: Version downgrade detected: $HEAD_VERSION < $BASE_VERSION"
+  exit 1
+fi
+
 echo "Version bumped: $BASE_VERSION → $HEAD_VERSION — PASS"
 exit 0

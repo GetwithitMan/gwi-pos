@@ -58,6 +58,7 @@ async function runMigrations() {
   await client.connect()
 
   let lockAcquired = false
+  let timeoutId = null
   try {
     console.log(`${PREFIX} Running migrations...`)
 
@@ -79,6 +80,20 @@ async function runMigrations() {
     }
     lockAcquired = true
     console.log(`${PREFIX} Acquired advisory lock`)
+
+    // Timeout with proper lock cleanup (inside try so finally always clears it)
+    timeoutId = setTimeout(async () => {
+      console.error(`${PREFIX} FATAL: Migration runner timed out after ${MIGRATION_TIMEOUT_MS}ms`)
+      if (lockAcquired) {
+        try {
+          await client.$queryRawUnsafe(`SELECT pg_advisory_unlock(20250101)`)
+          console.log(`${PREFIX} Advisory lock released before timeout exit`)
+        } catch { /* best effort */ }
+      }
+      try { await client.$disconnect() } catch { /* best effort */ }
+      process.exit(2)
+    }, MIGRATION_TIMEOUT_MS)
+    timeoutId.unref()
 
     // Discover migrations
     const migrationsDir = path.join(__dirname, '..', 'migrations')
@@ -114,14 +129,20 @@ async function runMigrations() {
       }
 
       // Pass the PgCompat instance — exposes $executeRawUnsafe/$queryRawUnsafe
-      await migration.up(client)
-
-      // Record as applied (ON CONFLICT guards against race conditions)
-      await client.$executeRawUnsafe(
-        `INSERT INTO "_gwi_migrations" (name) VALUES ($1) ON CONFLICT (name) DO NOTHING`, name
-      )
-      applied++
-      console.log(`${PREFIX}    Done: ${name}`)
+      // Wrap in transaction so migration + tracking record are atomic
+      await client.$executeRawUnsafe('BEGIN')
+      try {
+        await migration.up(client)
+        await client.$executeRawUnsafe(
+          `INSERT INTO "_gwi_migrations" (name) VALUES ($1) ON CONFLICT (name) DO NOTHING`, name
+        )
+        await client.$executeRawUnsafe('COMMIT')
+        applied++
+        console.log(`${PREFIX}    Done: ${name}`)
+      } catch (err) {
+        await client.$executeRawUnsafe('ROLLBACK').catch(() => {})
+        throw new Error(`Migration ${name} failed: ${err.message}`)
+      }
     }
 
     if (skipped > 0) {
@@ -129,6 +150,7 @@ async function runMigrations() {
     }
     console.log(`${PREFIX} Migrations complete (${applied} applied, ${skipped} skipped)`)
   } finally {
+    if (timeoutId) clearTimeout(timeoutId)
     if (lockAcquired) {
       try {
         await client.$queryRawUnsafe(`SELECT pg_advisory_unlock(20250101)`)
@@ -137,13 +159,6 @@ async function runMigrations() {
     await client.$disconnect()
   }
 }
-
-// Global timeout
-const timeout = setTimeout(() => {
-  console.error(`${PREFIX} FATAL: Migration runner timed out after ${MIGRATION_TIMEOUT_MS / 1000}s`)
-  process.exit(2)
-}, MIGRATION_TIMEOUT_MS)
-timeout.unref()
 
 runMigrations().catch((err) => {
   console.error(`${PREFIX} Fatal error:`, err.message)

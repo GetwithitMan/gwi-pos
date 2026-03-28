@@ -214,6 +214,8 @@ run_schema() {
       SCHEMA_SOURCE="unknown"
     fi
 
+    # Escape single quotes to prevent SQL injection
+    local _esc_version="${SCHEMA_VERSION//\'/\'\'}"
     sudo -u "$POSUSER" PGPASSWORD="$DB_PASSWORD" psql -h localhost -U "$DB_USER" -d "$DB_NAME" -c "
       CREATE TABLE IF NOT EXISTS \"_local_install_state\" (
         id SERIAL PRIMARY KEY,
@@ -222,7 +224,7 @@ run_schema() {
         installer_version TEXT,
         schema_migrations_run INTEGER
       );
-      INSERT INTO \"_local_install_state\" (pos_version, installer_version) VALUES ('$SCHEMA_VERSION', 'installer.run');
+      INSERT INTO \"_local_install_state\" (pos_version, installer_version) VALUES ('$_esc_version', 'installer.run');
     " >/dev/null 2>&1
     log "Local install state recorded (pos_version=$SCHEMA_VERSION, source=$SCHEMA_SOURCE)"
     log "NOTE: _venue_schema_state is MC-owned — installer does not write to it"
@@ -265,8 +267,10 @@ run_schema() {
     fi
     if [[ -n "$BUILT_VERSION" ]] && [[ "$BUILT_VERSION" != "${SCHEMA_VERSION:-}" ]]; then
       log "Recording post-build version in _local_install_state: $BUILT_VERSION (was: ${SCHEMA_VERSION:-unknown})"
+      # Escape single quotes to prevent SQL injection
+      local _esc_built_version="${BUILT_VERSION//\'/\'\'}"
       sudo -u "$POSUSER" PGPASSWORD="$DB_PASSWORD" psql -h localhost -U "$DB_USER" -d "$DB_NAME" -c "
-        INSERT INTO \"_local_install_state\" (pos_version, installer_version) VALUES ('$BUILT_VERSION', 'installer-post-build');
+        INSERT INTO \"_local_install_state\" (pos_version, installer_version) VALUES ('$_esc_built_version', 'installer-post-build');
       " >/dev/null 2>&1
     fi
   fi

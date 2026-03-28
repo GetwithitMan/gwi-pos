@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # =============================================================================
-# 10-finalize.sh — Summary, warnings, VNC password storage, first-boot marker
+# 10-finalize.sh — Summary, warnings, first-boot marker
 # =============================================================================
 # Entry: run_finalize
 # Expects: STATION_ROLE, POSUSER, POSUSER_HOME, APP_BASE, ENV_FILE,
 #          USE_LOCAL_PG, VIRTUAL_IP, PRIMARY_NUC_IP, SERVER_URL,
-#          BACKUP_SCRIPT, VNC_PASSWORD, INSTALL_START, INSTALL_WARNINGS,
+#          BACKUP_SCRIPT, INSTALL_START, INSTALL_WARNINGS,
 #          VENUE_NAME, LOCATION_NAME, BACKUP_DIR
 # =============================================================================
 
@@ -77,10 +77,6 @@ run_finalize() {
     if [[ -n "${VIRTUAL_IP:-}" ]]; then
       echo "    keepalived        — $(systemctl is-active keepalived 2>/dev/null || echo 'unknown')"
     fi
-    echo "    x11vnc            — $(systemctl is-active x11vnc 2>/dev/null || echo 'unknown')"
-    if command -v vncserver-x11 >/dev/null 2>&1; then
-      echo "    realvnc      — $(systemctl is-active vncserver-x11-serviced 2>/dev/null || echo 'unknown')"
-    fi
   elif [[ "$STATION_ROLE" == "backup" ]]; then
     echo -e "  ${GREEN}HA Mode:${NC}  Backup standby (VIP: ${VIRTUAL_IP:-none})"
     echo -e "  ${GREEN}Primary:${NC}  ${PRIMARY_NUC_IP:-unknown}"
@@ -93,33 +89,12 @@ run_finalize() {
     echo "    thepasspos-sync   — $SYNC_STATUS"
     echo "    postgresql        — $(systemctl is-active postgresql 2>/dev/null || echo 'unknown') (standby)"
     echo "    keepalived        — $(systemctl is-active keepalived 2>/dev/null || echo 'unknown')"
-    echo "    x11vnc            — $(systemctl is-active x11vnc 2>/dev/null || echo 'unknown')"
-    if command -v vncserver-x11 >/dev/null 2>&1; then
-      echo "    realvnc           — $(systemctl is-active vncserver-x11-serviced 2>/dev/null || echo 'unknown')"
-    fi
   else
     echo -e "  ${GREEN}Server:${NC}   $SERVER_URL"
     echo ""
     echo -e "  ${CYAN}Services:${NC}"
     echo "    thepasspos-kiosk      — $(systemctl is-active thepasspos-kiosk 2>/dev/null || echo 'unknown')"
     echo "    thepasspos-exit-kiosk — $(systemctl is-active thepasspos-exit-kiosk 2>/dev/null || echo 'unknown')"
-    echo "    x11vnc                — $(systemctl is-active x11vnc 2>/dev/null || echo 'unknown')"
-    if command -v vncserver-x11 >/dev/null 2>&1; then
-      echo "    realvnc               — $(systemctl is-active vncserver-x11-serviced 2>/dev/null || echo 'unknown')"
-    fi
-  fi
-
-  LOCAL_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
-  if command -v x11vnc >/dev/null 2>&1; then
-    echo -e "  ${GREEN}VNC:${NC}          localhost:5900 (SSH tunnel: ssh -L 5900:localhost:5900 $POSUSER@$LOCAL_IP)"
-    # Write VNC password to root-owned file instead of printing to console
-    echo "$VNC_PASSWORD" > /opt/gwi-pos/.vnc-password
-    chmod 600 /opt/gwi-pos/.vnc-password
-    chown root:root /opt/gwi-pos/.vnc-password
-    echo -e "  ${GREEN}VNC Password:${NC} stored in /opt/gwi-pos/.vnc-password (read with: sudo cat /opt/gwi-pos/.vnc-password)"
-  fi
-  if command -v vncserver-x11 >/dev/null 2>&1; then
-    echo -e "  ${GREEN}RealVNC:${NC}      Installed — sign in via desktop icon or: vncserver-x11 -config"
   fi
 
   echo ""
@@ -482,31 +457,7 @@ _run_verification() {
     _record "Svc:keepalived" "N/A" "N/A" "SKIPPED" "no HA configured"
   fi
 
-  # ── 9. VNC ─────────────────────────────────────────────────────────────────
-  local vnc_state
-  vnc_state=$(systemctl is-active x11vnc 2>/dev/null || echo "MISSING")
-  if [[ "$vnc_state" == "active" ]]; then
-    _record "Svc:x11vnc" "active" "$vnc_state" "PASS"
-  elif [[ "$vnc_state" == "MISSING" ]]; then
-    _record "Svc:x11vnc" "active" "MISSING" "WARN" "not installed"
-  else
-    _record "Svc:x11vnc" "active" "$vnc_state" "WARN"
-  fi
-
-  # RealVNC (optional addon)
-  if command -v vncserver-x11 >/dev/null 2>&1; then
-    local rvnc_state
-    rvnc_state=$(systemctl is-active vncserver-x11-serviced 2>/dev/null || echo "MISSING")
-    if [[ "$rvnc_state" == "active" ]]; then
-      _record "Svc:realvnc" "active" "$rvnc_state" "PASS"
-    else
-      _record "Svc:realvnc" "active" "$rvnc_state" "WARN"
-    fi
-  else
-    _record "Svc:realvnc" "optional" "not installed" "SKIPPED"
-  fi
-
-  # ── 10. Watchdog Timer ─────────────────────────────────────────────────────
+  # ── 9. Watchdog Timer ─────────────────────────────────────────────────────
   if [[ -f /etc/systemd/system/gwi-watchdog.timer ]]; then
     local wd_state
     wd_state=$(systemctl is-active gwi-watchdog.timer 2>/dev/null || echo "inactive")

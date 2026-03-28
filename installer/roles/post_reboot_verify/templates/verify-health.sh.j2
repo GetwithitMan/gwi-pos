@@ -147,7 +147,7 @@ fi
 # Service tier definitions from manifest
 # Critical: thepasspos, postgresql
 # Degraded: thepasspos-kiosk, thepasspos-sync, keepalived
-# Informational: x11vnc, gwi-pos-verify, gwi-pos-drift
+# Informational: gwi-pos-verify, gwi-pos-drift
 
 declare -A SERVICE_TIERS
 SERVICE_TIERS=(
@@ -156,7 +156,6 @@ SERVICE_TIERS=(
   ["thepasspos-kiosk"]="degraded"
   ["thepasspos-sync"]="degraded"
   ["keepalived"]="degraded"
-  ["x11vnc"]="informational"
   ["gwi-pos-verify"]="informational"
   ["gwi-pos-drift"]="informational"
 )

@@ -16,7 +16,6 @@ gwi_keys_dir: /opt/gwi-pos/keys
 
 # ── Network ports ────────────────────────────────────────────────────────────
 gwi_pos_port: 3005
-gwi_vnc_port: 5900
 gwi_ssh_port: 22
 gwi_pg_port: 5432
 

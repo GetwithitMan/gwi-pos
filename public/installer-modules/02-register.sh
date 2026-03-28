@@ -5,7 +5,7 @@
 # Entry: run_register
 # Expects: POSUSER, POSUSER_HOME, APP_BASE, ENV_FILE, MC_URL, MC_REGISTER_URL,
 #          KEY_DIR, BACKUP_SCRIPT, BACKOFFICE_API_URL, GIT_REPO
-# Sets: STATION_ROLE, ALREADY_REGISTERED, REG_CODE, VNC_PASSWORD, SERVER_URL,
+# Sets: STATION_ROLE, ALREADY_REGISTERED, REG_CODE, SERVER_URL,
 #       PRIMARY_NUC_IP, VIRTUAL_IP, PREV_ROLE, SERVER_NODE_ID, SERVER_API_KEY,
 #       HARDWARE_FINGERPRINT, DATABASE_URL, DIRECT_URL, DEPLOY_TOKEN,
 #       USE_LOCAL_PG, NEON_DATABASE_URL, NEON_DIRECT_URL, SYNC_ENABLED,
@@ -141,7 +141,7 @@ attempt_quick_code_registration() {
   chmod 700 "$KEY_DIR"
   if [[ ! -f "$KEY_DIR/private.pem" ]]; then
     log "Generating RSA keypair..."
-    openssl genrsa -out "$KEY_DIR/private.pem" 2048 2>/dev/null
+    openssl genrsa -out "$KEY_DIR/private.pem" 4096 2>/dev/null
     openssl rsa -in "$KEY_DIR/private.pem" -pubout -out "$KEY_DIR/public.pem" 2>/dev/null
   fi
   chmod 600 "$KEY_DIR/private.pem"
@@ -370,14 +370,6 @@ run_register() {
 
   if attempt_quick_code_registration; then
     log "Quick-code provisioning complete — skipping manual registration prompts."
-    # Still need VNC password for remote access
-    echo ""
-    read -rsp "VNC remote access password [press Enter to auto-generate]: " VNC_PASSWORD < /dev/tty
-    echo ""
-    if [[ -z "$VNC_PASSWORD" ]]; then
-      VNC_PASSWORD=$(openssl rand -base64 20 | tr '+/' '-_' | cut -c1-20)
-      log "VNC password auto-generated."
-    fi
     # Skip all manual prompts and MC registration — jump to end
     log "Stage: register — completed in $(( $(date +%s) - _start ))s"
     return 0
@@ -546,16 +538,7 @@ run_register() {
     fi
   fi
 
-  # 4. VNC password (for remote desktop access via x11vnc)
-  echo ""
-  read -rsp "VNC remote access password [press Enter to auto-generate]: " VNC_PASSWORD < /dev/tty
-  echo ""
-  if [[ -z "$VNC_PASSWORD" ]]; then
-    VNC_PASSWORD=$(openssl rand -base64 20 | tr '+/' '-_' | cut -c1-20)
-    log "VNC password auto-generated."
-  fi
-
-  # 5. Terminal: server URL
+  # 4. Terminal: server URL
   SERVER_URL=""
   if [[ "$STATION_ROLE" == "terminal" ]]; then
     echo ""
@@ -773,7 +756,7 @@ run_register() {
     chmod 700 "$KEY_DIR"
     if [[ ! -f "$KEY_DIR/private.pem" ]]; then
       log "Generating RSA keypair..."
-      openssl genrsa -out "$KEY_DIR/private.pem" 2048 2>/dev/null
+      openssl genrsa -out "$KEY_DIR/private.pem" 4096 2>/dev/null
       openssl rsa -in "$KEY_DIR/private.pem" -pubout -out "$KEY_DIR/public.pem" 2>/dev/null
     fi
     chmod 600 "$KEY_DIR/private.pem"
@@ -859,7 +842,7 @@ run_register() {
     CLOUD_ORGANIZATION_ID=$(echo "$REG_RESPONSE" | jq -r '.data.organizationId // empty')
     CLOUD_ENTERPRISE_ID=$(echo "$REG_RESPONSE" | jq -r '.data.enterpriseId // empty')
     VENUE_SLUG=$(echo "$REG_RESPONSE" | jq -r '.data.venueSlug // empty')
-    # Extract venue/location name for RealVNC friendly name + desktop launcher
+    # Extract venue/location name for desktop launcher
     LOCATION_NAME=$(echo "$REG_RESPONSE" | jq -r '.data.locationName // .data.venueName // empty')
     if [[ -n "$LOCATION_NAME" ]]; then
       VENUE_NAME="$LOCATION_NAME"

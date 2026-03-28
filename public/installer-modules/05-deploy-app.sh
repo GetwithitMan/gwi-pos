@@ -227,12 +227,73 @@ run_deploy_app() {
   local _manifest_url="https://${_pos_domain}/artifacts/manifest.json"
 
   log "Deploying artifact from ${_manifest_url}..."
-  if ! "$APP_BASE/deploy-release.sh" --manifest-url "$_manifest_url" --force; then
-    err_code "ERR-INST-150" "Artifact deploy failed from $_manifest_url"
-    err "Artifact deploy failed."
-    err "  Possible causes: network issue, no published artifact, signature mismatch"
-    err "  To fall back to git clone: LEGACY_DEPLOY=1 installer.run --resume-from=05-deploy-app"
-    return 1
+  local _deploy_exit=0
+  "$APP_BASE/deploy-release.sh" --manifest-url "$_manifest_url" --force || _deploy_exit=$?
+
+  if [[ $_deploy_exit -ne 0 ]]; then
+    # Parse the structured deploy log to determine ACTUAL failure cause
+    local _latest_log=""
+    _latest_log=$(ls -1t "$APP_BASE/shared/logs/deploys/"*.json 2>/dev/null | head -1)
+
+    local _final_status="" _readiness_result="" _rollback_result="" _release_id="" _prev_release=""
+    if [[ -n "$_latest_log" ]] && command -v jq &>/dev/null; then
+      _final_status=$(jq -r '.finalStatus // empty' "$_latest_log" 2>/dev/null)
+      _readiness_result=$(jq -r '.readinessResult // empty' "$_latest_log" 2>/dev/null)
+      _rollback_result=$(jq -r '.rollbackResult // empty' "$_latest_log" 2>/dev/null)
+      _release_id=$(jq -r '.releaseId // empty' "$_latest_log" 2>/dev/null)
+      _prev_release=$(jq -r '.previousReleaseId // empty' "$_latest_log" 2>/dev/null)
+    elif [[ -n "$_latest_log" ]]; then
+      # Fallback without jq
+      _final_status=$(sed -n 's/.*"finalStatus"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$_latest_log" 2>/dev/null | head -1)
+      _readiness_result=$(sed -n 's/.*"readinessResult"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$_latest_log" 2>/dev/null | head -1)
+      _rollback_result=$(sed -n 's/.*"rollbackResult"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$_latest_log" 2>/dev/null | head -1)
+      _release_id=$(sed -n 's/.*"releaseId"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$_latest_log" 2>/dev/null | head -1)
+      _prev_release=$(sed -n 's/.*"previousReleaseId"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$_latest_log" 2>/dev/null | head -1)
+    fi
+
+    # Rolled back = the deploy pipeline worked correctly, old release is running
+    if [[ "$_final_status" == "rolled_back" ]]; then
+      warn "Release ${_release_id:-unknown} failed readiness and was safely rolled back to ${_prev_release:-unknown}"
+      warn "The previous release is running normally. Investigate the new release before retrying."
+      if [[ -n "$_latest_log" ]]; then
+        local _debug_file="${_latest_log%.json}"
+        _debug_file="${APP_BASE}/shared/logs/deploys/$(basename "$_latest_log" .json | sed 's/\.json$//')"
+        warn "Debug bundle: ${APP_BASE}/shared/logs/deploys/ (check *-readiness-debug.txt)"
+      fi
+      # Treat as success — old release is healthy, installer can continue
+      log "Continuing installation with previous release (rolled_back is acceptable)"
+    elif [[ "$_final_status" == "rollback_failed" ]]; then
+      err_code "ERR-INST-150" "Release ${_release_id:-unknown} failed readiness AND rollback failed"
+      err "CRITICAL: Both the new release and rollback failed."
+      err "  The system may be in a broken state. Check deploy logs at: $_latest_log"
+      err "  Manual intervention required."
+      return 1
+    elif [[ "$_readiness_result" == "fail" ]]; then
+      err_code "ERR-INST-150" "Release ${_release_id:-unknown} failed readiness (rollback: ${_rollback_result:-unknown})"
+      err "Artifact deployed but the new release did not become ready."
+      err "  Deploy log: $_latest_log"
+      return 1
+    elif [[ "$_final_status" == "failed" ]]; then
+      # Parse more specific cause from the log
+      local _schema_result=""
+      if command -v jq &>/dev/null && [[ -n "$_latest_log" ]]; then
+        _schema_result=$(jq -r '.schemaResult // empty' "$_latest_log" 2>/dev/null)
+      fi
+      if [[ "$_schema_result" == "fail" ]]; then
+        err_code "ERR-INST-150" "Schema migration failed for release ${_release_id:-unknown}"
+        err "Database schema migration failed. Check: ${APP_BASE}/shared/logs/deploys/schema-*.log"
+      else
+        err_code "ERR-INST-150" "Artifact deploy failed (status: ${_final_status:-unknown})"
+        err "Deploy log: ${_latest_log:-no log found}"
+      fi
+      return 1
+    else
+      # Generic fallback only when we truly can't parse
+      err_code "ERR-INST-150" "Artifact deploy failed from $_manifest_url (exit code: $_deploy_exit)"
+      err "Could not parse deploy log. Check: ${APP_BASE}/shared/logs/deploys/"
+      err "  To fall back to git clone: LEGACY_DEPLOY=1 installer.run --resume-from=05-deploy-app"
+      return 1
+    fi
   fi
 
   # Step 5: Verify current symlink exists

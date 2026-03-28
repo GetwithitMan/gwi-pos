@@ -68,7 +68,6 @@ rm -f /etc/systemd/system/thepasspos.service
 rm -f /etc/systemd/system/thepasspos-kiosk.service
 rm -f /etc/systemd/system/thepasspos-sync.service
 rm -f /etc/systemd/system/thepasspos-exit-kiosk.service
-rm -f /etc/systemd/system/x11vnc.service
 rm -f /etc/systemd/system/gwi-pos-verify.service
 rm -f /etc/systemd/system/gwi-pos-drift.service
 rm -f /etc/systemd/system/gwi-pos-drift.timer
@@ -125,7 +124,6 @@ log "Plymouth theme removed."
 log "Removing desktop shortcuts..."
 POSUSER_HOME=$(getent passwd "$POSUSER" 2>/dev/null | cut -d: -f6 || echo "/home/$POSUSER")
 rm -f "$POSUSER_HOME/Desktop/gwi-pos.desktop"
-rm -f "$POSUSER_HOME/Desktop/realvnc-server.desktop"
 rm -f "$POSUSER_HOME/.xbindkeysrc"
 rm -f /usr/share/applications/gwi-pos.desktop
 rm -f /usr/share/backgrounds/gwi-wallpaper.png
@@ -133,13 +131,7 @@ rm -f /etc/motd
 rm -f /etc/issue.net
 log "Desktop shortcuts removed."
 
-# ── Step 9: Remove VNC configs ──────────────────────────────────────────────
-log "Removing VNC configs..."
-rm -rf /etc/x11vnc
-rm -rf /root/.vnc/config.d/vncserver-x11-serviced
-log "VNC configs removed."
-
-# ── Step 10: Drop database (optional) ───────────────────────────────────────
+# ── Step 9: Drop database (optional) ───────────────────────────────────────
 if [[ "$KEEP_DB" == "true" ]]; then
   log "Keeping database (--keep-db flag)."
 else
@@ -174,8 +166,8 @@ echo -e "${GREEN}  GWI POS Uninstalled${NC}"
 echo -e "${GREEN}═══════════════════════════════════════════════════════${NC}"
 echo ""
 log "The following were NOT removed (system packages):"
-echo "  - Node.js, PostgreSQL, Chromium, x11vnc, RealVNC, fail2ban"
-echo "  - To remove: sudo apt remove nodejs postgresql-17 chromium x11vnc realvnc-vnc-server fail2ban"
+echo "  - Node.js, PostgreSQL, Chromium, fail2ban"
+echo "  - To remove: sudo apt remove nodejs postgresql-17 chromium fail2ban"
 echo ""
 log "To reinstall:"
 echo "  curl -fsSL https://ordercontrolcenter.com/installer.run -o installer.run && chmod +x installer.run && sudo ./installer.run"

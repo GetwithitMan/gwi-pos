@@ -47,3 +47,14 @@ jobs:
 
       - name: Lint
         run: npm run lint
+
+      - name: Check version stamps
+        run: bash scripts/ci/check-version-stamps.sh
+
+      - name: Check forbidden domains
+        run: bash scripts/ci/check-forbidden-domains.sh
+
+      - name: Enforce version bump
+        if: github.event_name == 'pull_request'
+        run: |
+          bash scripts/ci/enforce-version-bump.sh "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}"

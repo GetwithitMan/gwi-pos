@@ -38,5 +38,5 @@
 
 # ── Admin escape: Ctrl+Shift+A+L — toggle kiosk on/off ──
 # Stops the kiosk service and shows the desktop. Run again to restart.
-"sudo systemctl stop thepasspos-kiosk 2>/dev/null || sudo systemctl start thepasspos-kiosk"
+"/opt/gwi-pos/kiosk-control.sh toggle-auth"
   Control + Shift + a + l

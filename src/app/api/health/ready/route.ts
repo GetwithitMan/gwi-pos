@@ -99,37 +99,69 @@ async function checkSchema(): Promise<CheckResult> {
   return { pass: true, version: String(EXPECTED_SCHEMA_VERSION) }
 }
 
+function checkBoot(): CheckResult {
+  return {
+    pass: true,
+    latencyMs: Math.round(process.uptime() * 1000),
+  }
+}
+
 // ── Route handler ────────────────────────────────────────────────────────────
 
 export async function GET() {
-  const envResult = checkEnv()
+  try {
+    const bootResult = checkBoot()
+    const envResult = checkEnv()
 
-  // Run async checks in parallel — each has its own timeout/catch
-  const [dbResult, tablesResult, schemaResult] = await Promise.all([
-    checkDb(),
-    checkTables(),
-    checkSchema(),
-  ])
+    // Run async checks in parallel — each has its own timeout/catch
+    const [dbResult, tablesResult, schemaResult] = await Promise.all([
+      checkDb(),
+      checkTables(),
+      checkSchema(),
+    ])
 
-  const checks = {
-    env: envResult,
-    db: dbResult,
-    tables: tablesResult,
-    schema: schemaResult,
+    const checks = {
+      boot: bootResult,
+      env: envResult,
+      db: dbResult,
+      tables: tablesResult,
+      schema: schemaResult,
+    }
+
+    const ready = Object.values(checks).every((c) => c.pass)
+
+    return NextResponse.json(
+      {
+        ready,
+        timestamp: new Date().toISOString(),
+        version: APP_VERSION,
+        checks,
+      },
+      {
+        status: ready ? 200 : 503,
+        headers: { 'Cache-Control': 'no-store' },
+      },
+    )
+  } catch (err) {
+    // NEVER return a blank 500 — always return structured JSON
+    return NextResponse.json(
+      {
+        ready: false,
+        timestamp: new Date().toISOString(),
+        version: APP_VERSION ?? 'unknown',
+        checks: {
+          boot: { pass: true },
+          env: { pass: false, error: 'Handler crashed before env check' },
+          db: { pass: false, error: 'Handler crashed before db check' },
+          tables: { pass: false, error: 'Handler crashed before tables check' },
+          schema: { pass: false, error: 'Handler crashed before schema check' },
+        },
+        error: err instanceof Error ? err.message : String(err),
+      },
+      {
+        status: 503,
+        headers: { 'Cache-Control': 'no-store' },
+      },
+    )
   }
-
-  const ready = Object.values(checks).every((c) => c.pass)
-
-  return NextResponse.json(
-    {
-      ready,
-      timestamp: new Date().toISOString(),
-      version: APP_VERSION,
-      checks,
-    },
-    {
-      status: ready ? 200 : 503,
-      headers: { 'Cache-Control': 'no-store' },
-    },
-  )
 }

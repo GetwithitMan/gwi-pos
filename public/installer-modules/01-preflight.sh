@@ -90,7 +90,7 @@ run_preflight() {
   header "Installing Essential Tools"
 
   apt_update_if_stale
-  apt-get install -y curl git jq openssl ca-certificates gnupg chrony axel
+  apt-get install -y curl git jq openssl ca-certificates gnupg chrony axel dnsutils lsb-release bc
   systemctl enable chrony 2>/dev/null || true
   systemctl start chrony 2>/dev/null || true
 

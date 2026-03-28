@@ -109,7 +109,7 @@
           "items": {
             "$ref": "#/$defs/service_status"
           },
-          "description": "Services whose failure has no direct customer impact (x11vnc, gwi-pos-verify, gwi-pos-drift)."
+          "description": "Services whose failure has no direct customer impact (gwi-pos-verify, gwi-pos-drift)."
         }
       }
     },

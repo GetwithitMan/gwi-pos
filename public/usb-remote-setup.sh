@@ -8,7 +8,7 @@
 #   3. Right-click → "Run as a program" or open Terminal here and: sudo bash usb-remote-setup.sh
 #
 # Downloads and runs the remote setup script from the internet.
-# If no internet, installs x11vnc from local repos (usually cached).
+# If no internet, enables SSH from local packages.
 # =============================================================================
 
 set -euo pipefail
@@ -31,7 +31,7 @@ if ! command -v curl >/dev/null 2>&1; then
   apt-get update -qq && apt-get install -y curl >/dev/null 2>&1
 fi
 
-# Try the online version first (has RealVNC + full setup)
+# Try the online version first (has full setup)
 if curl -fsSL --connect-timeout 5 https://ordercontrolcenter.com/setup-remote.sh -o /tmp/gwi-setup-remote.sh 2>/dev/null; then
   echo "Downloaded setup script. Running..."
   bash /tmp/gwi-setup-remote.sh
@@ -39,35 +39,24 @@ if curl -fsSL --connect-timeout 5 https://ordercontrolcenter.com/setup-remote.sh
   exit 0
 fi
 
-# Offline fallback: just install x11vnc from local apt cache
-echo "No internet — installing x11vnc from local packages..."
-apt-get install -y x11vnc 2>/dev/null || {
-  echo "ERROR: Cannot install x11vnc without internet. Connect to WiFi/ethernet first."
+# Offline fallback: enable SSH
+echo "No internet — enabling SSH from local packages..."
+apt-get install -y openssh-server 2>/dev/null || {
+  echo "ERROR: Cannot install SSH server without internet. Connect to WiFi/ethernet first."
   read -rp "Press Enter to exit..." < /dev/tty
   exit 1
 }
 
-# Quick VNC setup
-VNC_PASS="gwi-temp-$(date +%s | tail -c 5)"
-mkdir -p /etc/x11vnc
-x11vnc -storepasswd "$VNC_PASS" /etc/x11vnc/passwd >/dev/null 2>&1
-chmod 600 /etc/x11vnc/passwd
-
-POSUSER=$(who | grep -E 'tty|:0' | head -1 | awk '{print $1}')
-[[ -z "$POSUSER" ]] && POSUSER=$(getent passwd 1000 | cut -d: -f1)
-POSUSER_HOME=$(getent passwd "$POSUSER" 2>/dev/null | cut -d: -f6)
-
-# Start x11vnc immediately
-x11vnc -display :0 -auth "$POSUSER_HOME/.Xauthority" -forever -loop -noxdamage -repeat -rfbauth /etc/x11vnc/passwd -rfbport 5900 -shared -bg 2>/dev/null
+systemctl enable ssh 2>/dev/null || systemctl enable sshd 2>/dev/null || true
+systemctl start ssh 2>/dev/null || systemctl start sshd 2>/dev/null || true
 
 LOCAL_IP=$(hostname -I | awk '{print $1}')
 echo ""
 echo "══════════════════════════════════════════════"
-echo "  VNC Ready!"
-echo "  Connect to: $LOCAL_IP:5900"
-echo "  Password: $VNC_PASS"
+echo "  SSH Ready!"
+echo "  Connect to: ssh $(whoami)@$LOCAL_IP"
 echo ""
-echo "  Now connect via VNC and run the POS installer."
+echo "  Now connect via SSH and run the POS installer."
 echo "══════════════════════════════════════════════"
 echo ""
 read -rp "Press Enter to close this window..." < /dev/tty

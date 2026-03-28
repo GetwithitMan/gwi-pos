@@ -20,6 +20,8 @@ echo "=== Forbidden Domain Check ==="
 # Files to check — POS asset/installer/deploy code
 CHECK_PATHS=(
     "public/installer-modules/"
+    "public/scripts/"
+    "public/installer.run"
     "public/install.sh"
     "public/setup-remote.sh"
     "public/uninstall.sh"
@@ -36,8 +38,8 @@ ALLOWED_PATTERNS=(
     "mc_url="
     "api/fleet/"
     "api/admin/"
+    "api/internal/"
     "/heartbeat"
-    "/api/"
     "mc.getwithitpos.com"
 )
 

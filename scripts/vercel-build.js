@@ -44,13 +44,12 @@ async function main() {
 
   // 3. Push full Prisma schema to master
   // Pre-push migrations (step 2) handle all data safety (column renames, type casts,
-  // constraint changes). By the time db push runs, the schema diff is safe.
-  // --accept-data-loss is used ONLY on Vercel because migrations (step 2) already handle
-  // safe column narrowing (e.g., Decimal(65,30) → Decimal(10,2)). Prisma still flags these
-  // as "data loss" even after the migration has applied the same change. On NUCs, the flag
-  // stays BANNED — pre-start.sh uses bare `prisma db push` which fails loudly on destructive changes.
+  // constraint changes). Prisma db push runs WITHOUT --accept-data-loss — if Prisma
+  // flags a destructive change, the build fails. Developers must write a safe migration
+  // in scripts/migrations/ to handle the transition. This is intentional: master Neon
+  // is the canonical SOR and must never silently lose data.
   console.log('[vercel-build] Running prisma db push (master)...')
-  execSync('npx prisma db push --accept-data-loss', { stdio: 'inherit' })
+  execSync('npx prisma db push', { stdio: 'inherit' })
 
   // 4. REGENERATE schema.sql AFTER db push — this is the FINAL truth.
   // The schema.sql generated in step 1b may be stale if prisma db push applied

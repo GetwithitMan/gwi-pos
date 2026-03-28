@@ -539,7 +539,7 @@ WRAPPER
     else
       DB_PASSWORD=$(openssl rand -hex 16)
       # If PG role already exists, warn that password is being reset
-      if sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='$DB_USER'" 2>/dev/null | grep -q 1; then
+      if sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='${DB_USER//\'/\'\'}'" 2>/dev/null | grep -q 1; then
         warn "Database user '$DB_USER' exists but password not found in .env or .pgpass."
         warn "Generating new password — ALTER ROLE will update PostgreSQL to match."
       fi
@@ -548,18 +548,22 @@ WRAPPER
 
     # Create database and user (idempotent)
     log "Creating database '$DB_NAME' and user '$DB_USER'..."
+    # Escape single quotes in credentials to prevent SQL injection
+    local _esc_password="${DB_PASSWORD//\'/\'\'}"
+    local _esc_user="${DB_USER//\'/\'\'}"
+    local _esc_dbname="${DB_NAME//\'/\'\'}"
     sudo -u postgres psql -v ON_ERROR_STOP=0 <<EOSQL
 DO \$\$
 BEGIN
-  IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = '$DB_USER') THEN
-    CREATE ROLE $DB_USER LOGIN PASSWORD '$DB_PASSWORD';
+  IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = '$_esc_user') THEN
+    CREATE ROLE $_esc_user LOGIN PASSWORD '$_esc_password';
   ELSE
-    ALTER ROLE $DB_USER WITH PASSWORD '$DB_PASSWORD';
+    ALTER ROLE $_esc_user WITH PASSWORD '$_esc_password';
   END IF;
 END\$\$;
 
-SELECT 'CREATE DATABASE $DB_NAME OWNER $DB_USER'
-WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '$DB_NAME')\gexec
+SELECT 'CREATE DATABASE $_esc_dbname OWNER $_esc_user'
+WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '$_esc_dbname')\gexec
 EOSQL
 
     # Allow local connections with password
@@ -591,11 +595,13 @@ HBAEOF
     # This is critical because prisma db push may be run as postgres (root) but
     # the POS app connects as $DB_USER. Without these grants, the app gets
     # "relation does not exist" errors despite tables existing.
+    # Use double-quoted identifiers to prevent SQL injection via DB_USER
+    local _qi_user="\"${DB_USER//\"/\"\"}\""
     sudo -u postgres psql -d "$DB_NAME" -c "
-      GRANT ALL ON ALL TABLES IN SCHEMA public TO $DB_USER;
-      GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO $DB_USER;
-      ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO $DB_USER;
-      ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO $DB_USER;
+      GRANT ALL ON ALL TABLES IN SCHEMA public TO ${_qi_user};
+      GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO ${_qi_user};
+      ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO ${_qi_user};
+      ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO ${_qi_user};
     " >/dev/null 2>&1
     # Disable RLS on all tables — prisma db push enables it as part of the schema,
     # but the POS app user doesn't have the right RLS policies configured.
@@ -614,8 +620,10 @@ HBAEOF
     # local timezone offset when inserted into "timestamp without time zone" columns.
     # See Skill 449 for full root cause analysis.
     log "Setting database timezone to UTC..."
+    # Use double-quoted identifier to prevent SQL injection via DB_NAME
+    local _qi_dbname="\"${DB_NAME//\"/\"\"}\""
     sudo -u "$POSUSER" PGPASSWORD="$DB_PASSWORD" psql -h localhost -U "$DB_USER" -d "$DB_NAME" \
-      -c "ALTER DATABASE $DB_NAME SET timezone = 'UTC';" >/dev/null 2>&1 || {
+      -c "ALTER DATABASE ${_qi_dbname} SET timezone = 'UTC';" >/dev/null 2>&1 || {
       warn "Failed to set database timezone to UTC — data sync may have timestamp inconsistencies."
     }
 
@@ -697,13 +705,15 @@ REPLEOF
         REPL_PASSWORD=$(openssl rand -hex 16)
         log "Generated new replication password."
       fi
+      # Escape single quotes in replication password to prevent SQL injection
+      local _esc_repl_password="${REPL_PASSWORD//\'/\'\'}"
       sudo -u postgres psql -v ON_ERROR_STOP=0 <<REPLSQL
 DO \$\$
 BEGIN
   IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'replicator') THEN
-    CREATE ROLE replicator WITH REPLICATION LOGIN PASSWORD '$REPL_PASSWORD';
+    CREATE ROLE replicator WITH REPLICATION LOGIN PASSWORD '$_esc_repl_password';
   ELSE
-    ALTER ROLE replicator WITH PASSWORD '$REPL_PASSWORD';
+    ALTER ROLE replicator WITH PASSWORD '$_esc_repl_password';
   END IF;
 END\$\$;
 REPLSQL

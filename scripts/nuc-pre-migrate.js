@@ -28,7 +28,7 @@
  *   032: 032-host-delivery.js, 032-third-party-delivery.js
  *   033: 033-report-shares.js, 033-text-to-pay.js
  *   036: 036-overtime-pricing.js, 036-pizza-enhancements.js
- *   109: 109-add-cascade-rules.js, 109-gift-card-pool.js
+ *   (109 duplicate fixed → 109-add-cascade-rules.js stays, gift-card-pool renumbered to 113)
  */
 // dotenv: load .env files for local dev / Vercel builds.
 // On NUC artifacts, dotenv is not shipped — DATABASE_URL comes from

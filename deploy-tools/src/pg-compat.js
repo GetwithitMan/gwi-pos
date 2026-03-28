@@ -47,7 +47,14 @@ class PgCompat {
    */
   async $queryRawUnsafe(sql, ...params) {
     const result = await this._client.query(sql, params.length > 0 ? params : undefined)
-    return result.rows
+    // Convert BigInt values to Number for compatibility with Prisma-style code
+    return result.rows.map(row => {
+      const converted = {}
+      for (const [key, value] of Object.entries(row)) {
+        converted[key] = typeof value === 'bigint' ? Number(value) : value
+      }
+      return converted
+    })
   }
 
   /**

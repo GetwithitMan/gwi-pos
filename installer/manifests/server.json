@@ -23,11 +23,6 @@
     ],
     "optional": [
       {
-        "name": "x11vnc",
-        "tier": "informational",
-        "description": "VNC remote access"
-      },
-      {
         "name": "keepalived",
         "tier": "degraded",
         "description": "HA virtual IP failover (only if HA configured)",
@@ -38,8 +33,7 @@
   "ports": {
     "required": [
       { "port": 22, "protocol": "tcp", "description": "SSH remote access" },
-      { "port": 3005, "protocol": "tcp", "description": "POS application" },
-      { "port": 5900, "protocol": "tcp", "description": "VNC remote access" }
+      { "port": 3005, "protocol": "tcp", "description": "POS application" }
     ],
     "optional": [
       { "port": 5432, "protocol": "tcp", "description": "PostgreSQL (if local PG)" }

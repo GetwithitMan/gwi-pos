@@ -71,8 +71,6 @@ GWI_ERROR_CODES[ERR-INST-241]="VIP failover test failed"
 GWI_ERROR_CODES[ERR-INST-242]="Streaming replication setup failed"
 
 # Remote access errors (260-279)
-GWI_ERROR_CODES[ERR-INST-260]="VNC installation failed"
-GWI_ERROR_CODES[ERR-INST-261]="RealVNC setup failed"
 GWI_ERROR_CODES[ERR-INST-262]="TeamViewer installation failed"
 GWI_ERROR_CODES[ERR-INST-263]="SSH hardening failed"
 

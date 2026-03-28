@@ -16,18 +16,12 @@
         "name": "thepasspos-exit-kiosk",
         "tier": "informational",
         "description": "Exit kiosk service for maintenance access"
-      },
-      {
-        "name": "x11vnc",
-        "tier": "informational",
-        "description": "VNC remote access"
       }
     ]
   },
   "ports": {
     "required": [
-      { "port": 22, "protocol": "tcp", "description": "SSH remote access" },
-      { "port": 5900, "protocol": "tcp", "description": "VNC remote access" }
+      { "port": 22, "protocol": "tcp", "description": "SSH remote access" }
     ]
   },
   "peripherals": {

@@ -103,8 +103,12 @@ autoinstall:
   identity:
     hostname: gwi-pos-nuc
     username: gwipos
-    # Password: 123 (change on first login recommended)
+    # Password: 123 (must be changed on first login — see chpasswd below)
     password: "$6$rounds=4096$gwi$5rGzp5mTYQj3GmXKGnQH.BF3YJqKZ3L2qJGhQOxWEI8KZ0wZ8rFb3gXQ8z.YL9UpZ7e.K4QJ5N8iJD.Jf3Yp/"
+
+  # Force password change on first login
+  chpasswd:
+    expire: true
 
   # SSH
   ssh:

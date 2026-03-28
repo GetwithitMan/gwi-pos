@@ -104,6 +104,11 @@ RESTART_RESULT="skipped"
 READINESS_RESULT="skipped"
 ROLLBACK_RESULT="null"
 ROLLBACK_READINESS_RESULT="null"
+DIAG_SERVICE_ACTIVE=""
+DIAG_PORT_BOUND=""
+DIAG_LIVE_HTTP=""
+DIAG_READY_HTTP=""
+DIAG_READY_BODY=""
 FINAL_STATUS="pending"
 
 # ---------------------------------------------------------------------------
@@ -550,11 +555,7 @@ fetch_manifest() {
 
     # Fetch detached signature and verify (fail-closed when infrastructure exists)
     if ! download_file_no_cache "${url}.minisig?_=$(date +%s)" "$sig_file" && ! download_file_no_cache "${url}.minisig" "$sig_file"; then
-        if [[ -f "$PUB_KEY" ]] && command -v minisign &>/dev/null; then
-            fatal "Manifest signature not available — cannot verify manifest integrity"
-        else
-            warn "Manifest signature not available and minisign not installed — skipping (transition period)"
-        fi
+        fatal "Manifest signature verification required but minisign not installed. Run: apt-get install -y minisign"
     else
         if [[ -f "$PUB_KEY" ]] && command -v minisign &>/dev/null; then
             if ! minisign -Vm "$manifest_file" -p "$PUB_KEY" -x "$sig_file" 2>/dev/null; then
@@ -1079,8 +1080,12 @@ set_permissions() {
     local release_dir="${RELEASES_DIR}/${RELEASE_ID}"
 
     log "Setting ownership and permissions on $release_dir"
-    chown -R gwipos:gwipos "$release_dir" 2>/dev/null || {
-        warn "chown failed — user 'gwipos' may not exist. Attempting with current user."
+    # Derive service user from base directory ownership (set by installer)
+    local svc_user svc_group
+    svc_user="$(stat -c '%U' "$BASE_DIR" 2>/dev/null || echo "gwipos")"
+    svc_group="$(stat -c '%G' "$BASE_DIR" 2>/dev/null || echo "gwipos")"
+    chown -R "${svc_user}:${svc_group}" "$release_dir" 2>/dev/null || {
+        warn "chown failed — user '${svc_user}' may not exist. Attempting with current user."
     }
     chmod -R u+rwX,g+rX,o-rwx "$release_dir" 2>/dev/null || {
         warn "chmod failed on $release_dir"
@@ -1404,9 +1409,13 @@ swap_symlinks() {
         local temp_prev="${PREVIOUS_LINK}.tmp.$$"
         ln -sfn "$current_target" "$temp_prev"
         mv -Tf "$temp_prev" "$PREVIOUS_LINK" 2>/dev/null || {
-            # mv -T not available on all systems
-            rm -f "$PREVIOUS_LINK" 2>/dev/null || true
-            mv -f "$temp_prev" "$PREVIOUS_LINK"
+            # Fallback for systems without mv -T: use ln -sfn which is atomic on most filesystems
+            ln -sfn "$(readlink -f "$temp_prev")" "$PREVIOUS_LINK" 2>/dev/null || {
+                # Last resort: rm + mv (brief gap)
+                rm -f "$PREVIOUS_LINK" 2>/dev/null || true
+                mv -f "$temp_prev" "$PREVIOUS_LINK"
+            }
+            rm -f "$temp_prev" 2>/dev/null || true
         }
         log "Previous symlink updated: $PREVIOUS_RELEASE_ID"
     fi
@@ -1416,8 +1425,13 @@ swap_symlinks() {
     local temp_current="${CURRENT_LINK}.tmp.$$"
     ln -sfn "$new_target" "$temp_current"
     mv -Tf "$temp_current" "$CURRENT_LINK" 2>/dev/null || {
-        rm -f "$CURRENT_LINK" 2>/dev/null || true
-        mv -f "$temp_current" "$CURRENT_LINK"
+        # Fallback for systems without mv -T: use ln -sfn which is atomic on most filesystems
+        ln -sfn "$(readlink -f "$temp_current")" "$CURRENT_LINK" 2>/dev/null || {
+            # Last resort: rm + mv (brief gap)
+            rm -f "$CURRENT_LINK" 2>/dev/null || true
+            mv -f "$temp_current" "$CURRENT_LINK"
+        }
+        rm -f "$temp_current" 2>/dev/null || true
     }
 
     log "Current symlink swapped: $RELEASE_ID"
@@ -1468,10 +1482,21 @@ check_readiness() {
                 return 0
             fi
         else
-            if [[ $consecutive_ok -gt 0 ]]; then
-                warn "Readiness check $attempt/$max_attempts: FAIL (HTTP $http_code) — resetting consecutive counter"
+            # Probe liveness to distinguish "process dead" from "process alive but not ready"
+            local live_code
+            live_code="$(curl -sf -o /dev/null -w "%{http_code}" --connect-timeout 2 --max-time 3 "http://localhost:${POS_PORT}/api/health" 2>/dev/null)" || live_code="000"
+
+            local state_desc
+            if [[ "$live_code" == "000" ]] || [[ "$live_code" -ge 500 ]]; then
+                state_desc="live=down ready=down"
             else
-                log "Readiness check $attempt/$max_attempts: waiting (HTTP $http_code)"
+                state_desc="live=up ready=down"
+            fi
+
+            if [[ $consecutive_ok -gt 0 ]]; then
+                warn "Readiness check $attempt/$max_attempts: FAIL (ready=$http_code $state_desc) — resetting consecutive counter"
+            else
+                log "Readiness check $attempt/$max_attempts: waiting (ready=$http_code $state_desc)"
             fi
             consecutive_ok=0
         fi
@@ -1481,6 +1506,85 @@ check_readiness() {
 
     err "Readiness check failed after $max_attempts attempts"
     return 1
+}
+
+# ---------------------------------------------------------------------------
+# Readiness Failure Diagnostics
+# ---------------------------------------------------------------------------
+capture_readiness_diagnostics() {
+    local restart_timestamp="${1:-}"
+    local debug_dir="${DEPLOY_LOG_DIR}"
+    local debug_file="${debug_dir}/${DEPLOY_ID}-readiness-debug.txt"
+
+    mkdir -p "$debug_dir"
+
+    log "Capturing readiness failure diagnostics..."
+
+    {
+        echo "=== READINESS FAILURE DIAGNOSTICS ==="
+        echo "Deploy ID:    ${DEPLOY_ID}"
+        echo "Release ID:   ${RELEASE_ID:-unknown}"
+        echo "Previous:     ${PREVIOUS_RELEASE_ID:-unknown}"
+        echo "Timestamp:    $(date -u +%FT%TZ)"
+        echo ""
+
+        echo "=== SERVICE STATUS ==="
+        systemctl status "$SERVICE_NAME" --no-pager -l 2>&1 || echo "(systemctl status failed)"
+        echo ""
+
+        echo "=== JOURNAL (last 200 lines) ==="
+        journalctl -u "$SERVICE_NAME" -n 200 --no-pager 2>&1 || echo "(journalctl failed)"
+        echo ""
+
+        if [[ -n "$restart_timestamp" ]]; then
+            echo "=== JOURNAL (since restart: $restart_timestamp) ==="
+            journalctl -u "$SERVICE_NAME" --since "$restart_timestamp" --no-pager 2>&1 || echo "(journalctl --since failed)"
+            echo ""
+        fi
+
+        echo "=== LIVENESS PROBE (/api/health) ==="
+        curl -i --connect-timeout 3 --max-time 5 "http://localhost:${POS_PORT}/api/health" 2>&1 || echo "(curl /api/health failed — process likely not listening)"
+        echo ""
+
+        echo "=== READINESS PROBE (/api/health/ready) ==="
+        curl -i --connect-timeout 3 --max-time 5 "$HEALTH_URL" 2>&1 || echo "(curl /api/health/ready failed)"
+        echo ""
+
+        echo "=== PORT BINDING ==="
+        ss -tlnp 2>/dev/null | grep "${POS_PORT}" || echo "Port ${POS_PORT} not bound by any process"
+        echo ""
+
+        echo "=== CURRENT SYMLINK ==="
+        echo "readlink: $(readlink -f "$CURRENT_LINK" 2>/dev/null || echo 'MISSING')"
+        echo ""
+
+        echo "=== ENV SYMLINK ==="
+        if [[ -e "${CURRENT_LINK}/.env" ]]; then
+            echo ".env exists: $(ls -la "${CURRENT_LINK}/.env" 2>/dev/null)"
+        else
+            echo ".env MISSING at ${CURRENT_LINK}/.env"
+        fi
+        echo ""
+
+        echo "=== DISK SPACE ==="
+        df -h "$BASE_DIR" 2>/dev/null || echo "(df failed)"
+        echo ""
+
+        echo "=== MEMORY ==="
+        free -m 2>/dev/null || echo "(free failed)"
+        echo ""
+
+        echo "=== END DIAGNOSTICS ==="
+    } > "$debug_file" 2>&1
+
+    log "Diagnostics written to: $debug_file"
+
+    # Also store key diagnostic fields for the deploy log JSON
+    DIAG_SERVICE_ACTIVE="$(systemctl is-active "$SERVICE_NAME" 2>/dev/null || echo "unknown")"
+    DIAG_PORT_BOUND="$(ss -tlnp 2>/dev/null | grep -q ":${POS_PORT} " && echo "true" || echo "false")"
+    DIAG_LIVE_HTTP="$(curl -sf -o /dev/null -w "%{http_code}" --connect-timeout 3 --max-time 5 "http://localhost:${POS_PORT}/api/health" 2>/dev/null || echo "000")"
+    DIAG_READY_HTTP="$(curl -sf -o /dev/null -w "%{http_code}" --connect-timeout 3 --max-time 5 "$HEALTH_URL" 2>/dev/null || echo "000")"
+    DIAG_READY_BODY="$(curl -s --connect-timeout 3 --max-time 5 "$HEALTH_URL" 2>/dev/null | head -c 2000 || echo "")"
 }
 
 # ---------------------------------------------------------------------------
@@ -1513,8 +1617,13 @@ do_rollback() {
     local temp_current="${CURRENT_LINK}.tmp.$$"
     ln -sfn "$target_dir" "$temp_current"
     mv -Tf "$temp_current" "$CURRENT_LINK" 2>/dev/null || {
-        rm -f "$CURRENT_LINK" 2>/dev/null || true
-        mv -f "$temp_current" "$CURRENT_LINK"
+        # Fallback for systems without mv -T: use ln -sfn which is atomic on most filesystems
+        ln -sfn "$(readlink -f "$temp_current")" "$CURRENT_LINK" 2>/dev/null || {
+            # Last resort: rm + mv (brief gap)
+            rm -f "$CURRENT_LINK" 2>/dev/null || true
+            mv -f "$temp_current" "$CURRENT_LINK"
+        }
+        rm -f "$temp_current" 2>/dev/null || true
     }
 
     # Restart service
@@ -1693,7 +1802,15 @@ write_deploy_log() {
   "rollbackReadinessResult": "${ROLLBACK_READINESS_RESULT}",
   "finalStatus": "${FINAL_STATUS}",
   "durationMs": ${duration_ms},
-  "errors": ${errors_json}
+  "errors": ${errors_json},
+  "diagnostics": {
+    "serviceActive": "${DIAG_SERVICE_ACTIVE:-}",
+    "portBound": "${DIAG_PORT_BOUND:-}",
+    "liveHttpCode": "${DIAG_LIVE_HTTP:-}",
+    "readyHttpCode": "${DIAG_READY_HTTP:-}",
+    "readyBody": $(if [[ -n "${DIAG_READY_BODY:-}" ]] && has_jq; then echo "$DIAG_READY_BODY" | jq -c . 2>/dev/null || printf '"%s"' "${DIAG_READY_BODY:0:500}"; else echo "null"; fi),
+    "debugFile": "${DEPLOY_LOG_DIR}/${DEPLOY_ID}-readiness-debug.txt"
+  }
 }
 DLJEOF
 )
@@ -1908,7 +2025,10 @@ do_deploy() {
                 tar xzf "$dt_cache" -C "$DEPLOY_TOOLS_DIR"
             fi
             # Make deploy-tools readable by the service user (extracted as root)
-            chown -R gwipos:gwipos "$DEPLOY_TOOLS_DIR" 2>/dev/null || true
+            local svc_user svc_group
+            svc_user="$(stat -c '%U' "$BASE_DIR" 2>/dev/null || echo "gwipos")"
+            svc_group="$(stat -c '%G' "$BASE_DIR" 2>/dev/null || echo "gwipos")"
+            chown -R "${svc_user}:${svc_group}" "$DEPLOY_TOOLS_DIR" 2>/dev/null || true
             log "Deploy-tools extracted ($(ls "$DEPLOY_TOOLS_DIR/migrations/"*.js 2>/dev/null | wc -l | tr -d ' ') migrations)"
         fi
     fi
@@ -1983,9 +2103,14 @@ do_deploy() {
         release_lock
         remove_maintenance_mode
     else
-        # Step 21: FAILED — quarantine + rollback
+        # Step 21: FAILED — capture diagnostics, quarantine, rollback
         READINESS_RESULT="fail"
-        err "Readiness check failed — quarantining release $RELEASE_ID and rolling back"
+        err "Readiness check failed — capturing diagnostics before rollback"
+
+        # Capture diagnostics BEFORE rollback (while the failed release is still active)
+        capture_readiness_diagnostics "$(date -u -d "@$DEPLOY_START_EPOCH" +%FT%TZ 2>/dev/null || date -u +%FT%TZ)"
+
+        err "Quarantining release $RELEASE_ID and rolling back"
         quarantine_release "$RELEASE_ID" "readiness_check_failed"
 
         if do_rollback "$PREVIOUS_RELEASE_ID"; then
@@ -2076,6 +2201,44 @@ Disk (releases):    ${releases_usage}
 Current link:       $(readlink "$CURRENT_LINK" 2>/dev/null || echo "not set")
 Previous link:      $(readlink "$PREVIOUS_LINK" 2>/dev/null || echo "not set")
 STATUS_EOF
+
+    # Show detailed quarantine info
+    if [[ "$quarantined" != "none" ]]; then
+        echo ""
+        echo "Quarantine Details"
+        echo "=================="
+        if has_jq; then
+            jq -r '.quarantined[] | "  Release:     \(.releaseId)\n  Reason:      \(.reason)\n  When:        \(.quarantinedAt)\n"' "$BAD_RELEASES_FILE" 2>/dev/null
+        fi
+
+        # Show last failure debug bundle
+        local latest_debug
+        latest_debug="$(ls -1t "${DEPLOY_LOG_DIR}/"*-readiness-debug.txt 2>/dev/null | head -1)"
+        if [[ -n "$latest_debug" ]]; then
+            echo "  Debug bundle: $latest_debug"
+        fi
+
+        # Show last failure deploy log
+        local latest_fail_log
+        latest_fail_log="$(ls -1t "${DEPLOY_LOG_DIR}/"*.json 2>/dev/null | head -1)"
+        if [[ -n "$latest_fail_log" ]] && has_jq; then
+            local fail_status fail_release
+            fail_status="$(jq -r '.finalStatus // empty' "$latest_fail_log" 2>/dev/null)"
+            fail_release="$(jq -r '.releaseId // empty' "$latest_fail_log" 2>/dev/null)"
+            if [[ "$fail_status" == "rolled_back" ]] || [[ "$fail_status" == "failed" ]]; then
+                echo "  Last failure: $fail_release (status: $fail_status)"
+                echo "  Deploy log:   $latest_fail_log"
+
+                # Show diagnostics summary if available
+                local diag_service diag_ready
+                diag_service="$(jq -r '.diagnostics.serviceActive // empty' "$latest_fail_log" 2>/dev/null)"
+                diag_ready="$(jq -r '.diagnostics.readyHttpCode // empty' "$latest_fail_log" 2>/dev/null)"
+                if [[ -n "$diag_service" ]]; then
+                    echo "  Service was:  $diag_service | Ready HTTP: ${diag_ready:-unknown}"
+                fi
+            fi
+        fi
+    fi
 }
 
 # --list-releases
@@ -2342,7 +2505,7 @@ DEPLOY FLOW:
   6. Download artifact (axel || curl, 3x retry)
   7. Verify (SHA256 + minisign)
   8. Extract (zstd/gzip, security scan)
-  9. Set permissions (gwipos:gwipos)
+  9. Set permissions (derived from base dir ownership)
   10. Validate (required files, checksums.txt, .env)
   11. Wire symlinks (.env, logs)
   12. Schema (prisma db push + nuc-pre-migrate.js)

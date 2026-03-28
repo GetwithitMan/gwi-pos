@@ -17,7 +17,9 @@
 #   APP_DIR   (default: /opt/gwi-pos/app)
 #   APP_BASE  (default: /opt/gwi-pos)
 # =============================================================================
-set -euo pipefail
+# NOTE: Do NOT set -euo pipefail here — this file is sourced into callers
+# and would change their error handling behavior unexpectedly.
+# Callers are responsible for their own error handling mode.
 
 # ---------------------------------------------------------------------------
 # Defaults — callers may override before sourcing or via env

@@ -88,10 +88,10 @@ ENVEOF
       echo "POS_VENUE_SLUG=\"${VENUE_SLUG}\"" >> "$ENV_FILE"
     fi
 
-    # Append LOCATION_NAME if available from registration (used by RealVNC + desktop launcher)
+    # Append LOCATION_NAME if available from registration (used by desktop launcher)
     if [[ -n "${LOCATION_NAME:-}" ]]; then
       echo "" >> "$ENV_FILE"
-      echo "# Venue display name (from MC registration, used for RealVNC + desktop)" >> "$ENV_FILE"
+      echo "# Venue display name (from MC registration, used for desktop launcher)" >> "$ENV_FILE"
       # Double-quote the value to handle apostrophes and special chars (e.g. "Zoya's")
       echo "LOCATION_NAME=\"${LOCATION_NAME}\"" >> "$ENV_FILE"
     fi
