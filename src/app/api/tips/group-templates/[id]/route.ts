@@ -115,7 +115,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
     // ── Outage queue protection ────────────────────────────────────────────
     try {
       await queueIfOutageOrFail('TipGroupTemplate', locationId, id, 'UPDATE')
-    } catch (err) {
+    } catch (caughtErr) {
       if (err instanceof OutageQueueFullError) {
         return err('Service temporarily unavailable — outage queue full', 507)
       }
@@ -177,7 +177,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(request:
     // ── Outage queue protection ────────────────────────────────────────────
     try {
       await queueIfOutageOrFail('TipGroupTemplate', locationId, id, 'DELETE')
-    } catch (err) {
+    } catch (caughtErr) {
       if (err instanceof OutageQueueFullError) {
         return err('Service temporarily unavailable — outage queue full', 507)
       }

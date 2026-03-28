@@ -11,7 +11,7 @@
  * Auth: INTERNAL_API_SECRET or HA_SHARED_SECRET (bearer token)
  */
 
-import { NextRequest } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { err, ok, unauthorized } from '@/lib/api-response'
 
 export const dynamic = 'force-dynamic'
@@ -49,7 +49,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     return err('Unknown action')
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('[HA-FENCE] POST error:', err)
     return err('Internal error', 500)
   }

@@ -110,7 +110,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
 
         const result = await freezeGiftCard(db, id, parsed.data.reason, employeeId)
         if (!result.success) {
-          return err(result.error)
+          return err(result.error!)
         }
 
         void notifyDataChanged({ locationId: (result.data as Record<string, string>).locationId, domain: 'gift-cards', action: 'updated', entityId: id })
@@ -122,7 +122,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
       case 'unfreeze': {
         const result = await unfreezeGiftCard(db, id, employeeId)
         if (!result.success) {
-          return err(result.error)
+          return err(result.error!)
         }
 
         void notifyDataChanged({ locationId: (result.data as Record<string, string>).locationId, domain: 'gift-cards', action: 'updated', entityId: id })
@@ -138,7 +138,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
 
         const result = await adjustGiftCardBalance(db, id, parsed.data.amount, parsed.data.notes, employeeId)
         if (!result.success) {
-          return err(result.error)
+          return err(result.error!)
         }
 
         void notifyDataChanged({ locationId: (result.data as Record<string, string>).locationId, domain: 'gift-cards', action: 'updated', entityId: id })

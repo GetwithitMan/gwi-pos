@@ -588,22 +588,127 @@ else
   _reset_all_markers
 fi
 
-# ── Execute stages ───────────────────────────────────────────────────────────
-for stage in "${STAGES[@]}"; do
-  _num="${STAGE_NUM[$stage]}"
-  _label="${STAGE_LABEL[$stage]}"
+# ── Two-phase install with mid-reboot ────────────────────────────────────────
+# Phase 1 (stages 01-10): Core POS — registration, database, deploy, schema,
+#   services, HA, remote access, finalize. Reboots to activate SDDM auto-login
+#   and systemd services cleanly.
+# Phase 2 (stages 11-12): System hardening + dashboard. Runs automatically
+#   on first boot after Phase 1 via a systemd oneshot service.
+#
+# --resume-from skips this logic and runs exactly what was requested.
 
-  if [[ "$stage" == "preflight" ]]; then
-    # Preflight needs the extra installer args for user detection
-    run_stage "$_num" "$_label" run_preflight "${INSTALLER_ARGS[@]}" || exit 1
-  else
+PHASE1_STAGES=(preflight register secrets database deploy_app schema services ha remote_access finalize)
+PHASE2_STAGES=(system_hardening dashboard)
+PHASE2_TOKEN="$APP_BASE/shared/state/.phase2-pending"
+PHASE2_SERVICE="/etc/systemd/system/gwi-installer-phase2.service"
+
+# Check if this is Phase 2 resuming after reboot
+if [[ -f "$PHASE2_TOKEN" ]] && [[ -z "$RESUME_FROM" ]]; then
+  log "Phase 2: Resuming after reboot (hardening + dashboard)..."
+  for stage in "${PHASE2_STAGES[@]}"; do
+    _num="${STAGE_NUM[$stage]}"
+    _label="${STAGE_LABEL[$stage]}"
     run_stage "$_num" "$_label" "run_${stage}" || exit 1
-  fi
-done
+  done
+  # Phase 2 complete -- clean up token and oneshot service
+  rm -f "$PHASE2_TOKEN"
+  rm -f "$PHASE2_SERVICE"
+  rm -f "$APP_BASE/installer-phase2.run"
+  systemctl disable gwi-installer-phase2.service 2>/dev/null || true
+  systemctl daemon-reload 2>/dev/null || true
 
-# ── Clean reboot after successful full install ─────────────────────────────
-# Only reboot on full install (not --resume-from), ensures all services,
-# autostart entries, and the dashboard come up cleanly.
+  # ── Final install verification ──
+  log ""
+  log "Verifying full installation..."
+  _install_ok=true
+  _checks=()
+
+  # Check POS service
+  if systemctl is-active thepasspos >/dev/null 2>&1; then
+    _checks+=("POS service: active")
+  else
+    _checks+=("POS service: NOT ACTIVE")
+    _install_ok=false
+  fi
+
+  # Check dashboard
+  if command -v gwi-dashboard >/dev/null 2>&1; then
+    _checks+=("Dashboard: installed")
+  else
+    _checks+=("Dashboard: NOT INSTALLED")
+    _install_ok=false
+  fi
+
+  # Check health
+  if curl -sf --connect-timeout 3 --max-time 5 http://localhost:3005/api/health/ready >/dev/null 2>&1; then
+    _checks+=("Health: ready")
+  else
+    _checks+=("Health: not ready (may still be starting)")
+  fi
+
+  # Check SDDM auto-login
+  if grep -q "Session=plasma.desktop" /etc/sddm.conf 2>/dev/null; then
+    _checks+=("Auto-login: configured")
+  else
+    _checks+=("Auto-login: NOT configured")
+  fi
+
+  log "Installation verification:"
+  for _c in "${_checks[@]}"; do
+    log "  $_c"
+  done
+
+  if [[ "$_install_ok" == "true" ]]; then
+    log ""
+    log "INSTALLATION COMPLETE -- all checks passed."
+    _report_install_progress "summary" "COMPLETED" "" "phase=2,warnings=${#INSTALL_WARNINGS[@]}"
+  else
+    log ""
+    track_warn "Installation has issues -- see verification above"
+    _report_install_progress "summary" "DEGRADED" "" "phase=2,warnings=${#INSTALL_WARNINGS[@]}"
+  fi
+
+  # Write final install marker
+  echo "COMPLETE $(date -u +%FT%TZ)" > "$APP_BASE/shared/state/.install-complete"
+
+  log ""
+
+  # Flush log
+  if [[ -n "${INSTALL_LOG:-}" ]]; then
+    exec 1>&- 2>&-
+    sleep 1
+    exec 1>/dev/tty 2>&1 || true
+    sync
+  fi
+  exit 0
+fi
+
+# ── Execute stages ───────────────────────────────────────────────────────────
+if [[ -n "$RESUME_FROM" ]]; then
+  # --resume-from: run all stages from the requested point (no phase split)
+  for stage in "${STAGES[@]}"; do
+    _num="${STAGE_NUM[$stage]}"
+    _label="${STAGE_LABEL[$stage]}"
+    if [[ "$stage" == "preflight" ]]; then
+      run_stage "$_num" "$_label" run_preflight "${INSTALLER_ARGS[@]}" || exit 1
+    else
+      run_stage "$_num" "$_label" "run_${stage}" || exit 1
+    fi
+  done
+else
+  # Fresh install: run Phase 1, reboot, Phase 2 auto-runs on boot
+  for stage in "${PHASE1_STAGES[@]}"; do
+    _num="${STAGE_NUM[$stage]}"
+    _label="${STAGE_LABEL[$stage]}"
+    if [[ "$stage" == "preflight" ]]; then
+      run_stage "$_num" "$_label" run_preflight "${INSTALLER_ARGS[@]}" || exit 1
+    else
+      run_stage "$_num" "$_label" "run_${stage}" || exit 1
+    fi
+  done
+fi
+
+# ── Post-Phase-1: health check + reboot ─────────────────────────────────────
 if [[ "$DRY_RUN" == "true" ]]; then
   echo ""
   echo -e "${YELLOW}═══════════════════════════════════════════════════════${NC}"
@@ -637,28 +742,54 @@ elif [[ -z "$RESUME_FROM" ]]; then
     fi
   fi
 
-  # Send final summary to MC
-  local _final_status="COMPLETED"
-  if [[ ${#INSTALL_WARNINGS[@]} -gt 0 ]]; then
-    _final_status="DEGRADED"
-  fi
-  _report_install_progress "summary" "$_final_status" "" "warnings=${#INSTALL_WARNINGS[@]}"
+  _report_install_progress "phase1" "COMPLETED" "" "warnings=${#INSTALL_WARNINGS[@]}"
 
   log ""
-  log "Installation complete! Rebooting now..."
-  log "  All services, dashboard, and autostart entries will activate on boot."
+  log "Phase 1 complete! Core POS installed."
+  log "  Setting up Phase 2 (hardening + dashboard) to run after reboot..."
   log ""
 
-  # Flush install log fully before reboot. The exec > >(tee ...) pipe buffers
-  # output -- closing stdout forces tee to flush, then sync ensures disk write.
+  # ── Create Phase 2 token + oneshot service ──
+  # Phase 2 runs on first boot: system hardening + dashboard install.
+  # Uses a systemd oneshot that calls the installer with the phase2 token.
+  mkdir -p "$(dirname "$PHASE2_TOKEN")"
+  date -u +%FT%TZ > "$PHASE2_TOKEN"
+
+  # Copy installer to a stable location (the ~/installer.run may get deleted)
+  cp "$0" "$APP_BASE/installer-phase2.run" 2>/dev/null || true
+  chmod +x "$APP_BASE/installer-phase2.run" 2>/dev/null || true
+
+  cat > "$PHASE2_SERVICE" << 'P2SVCEOF'
+[Unit]
+Description=GWI POS Installer Phase 2 (hardening + dashboard)
+After=network-online.target thepasspos.service graphical.target
+Wants=network-online.target graphical.target
+ConditionPathExists=/opt/gwi-pos/shared/state/.phase2-pending
+
+[Service]
+Type=oneshot
+ExecStart=/opt/gwi-pos/installer-phase2.run --skip-self-update
+RemainAfterExit=no
+TimeoutStartSec=600
+
+[Install]
+WantedBy=multi-user.target
+P2SVCEOF
+
+  systemctl daemon-reload
+  systemctl enable gwi-installer-phase2.service
+  log "Phase 2 service enabled -- will run automatically after reboot"
+
+  # Flush install log
   if [[ -n "${INSTALL_LOG:-}" ]]; then
-    exec 1>&- 2>&-            # close stdout/stderr (flushes tee pipe)
-    sleep 1                    # give tee a moment to write remaining buffer
-    exec 1>/dev/tty 2>&1       # reopen for final messages
-    sync                       # flush filesystem
-    echo "[GWI POS] Install log finalized: $INSTALL_LOG"
+    exec 1>&- 2>&-
+    sleep 1
+    exec 1>/dev/tty 2>&1 || true
+    sync
+    echo "[GWI POS] Phase 1 log finalized: $INSTALL_LOG"
   fi
 
+  echo "[GWI POS] Rebooting now -- Phase 2 will run automatically..."
   sync
   reboot
 else

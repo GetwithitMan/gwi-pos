@@ -415,7 +415,7 @@ export const PUT = withVenue(async function PUT(
       const { validateCellularOrderAccess, CellularAuthError } = await import('@/lib/cellular-validation')
       try {
         await validateCellularOrderAccess(true, id, 'mutate', db)
-      } catch (err) {
+      } catch (caughtErr) {
         if (err instanceof CellularAuthError) {
           return err(err.message, err.status)
         }
@@ -842,7 +842,7 @@ export const PATCH = withVenue(async function PATCH(
       const { validateCellularOrderAccess, CellularAuthError } = await import('@/lib/cellular-validation')
       try {
         await validateCellularOrderAccess(true, id, 'mutate', db)
-      } catch (err) {
+      } catch (caughtErr) {
         if (err instanceof CellularAuthError) {
           return err(err.message, err.status)
         }

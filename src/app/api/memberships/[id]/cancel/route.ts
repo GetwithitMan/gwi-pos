@@ -71,7 +71,7 @@ export const POST = withVenue(async function POST(
     }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return ok({ success: true, immediate: !!immediate })
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('[memberships/cancel] error:', err)
     return err('Internal error', 500)
   }

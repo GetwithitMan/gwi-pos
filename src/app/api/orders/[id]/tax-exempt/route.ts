@@ -171,7 +171,7 @@ export const POST = withVenue(async function POST(
 
     // Handle transaction results
     if ('error' in updated) {
-      return err(updated.error, updated.status)
+      return err(updated.error!, updated.status)
     }
     if ('earlyReturn' in updated) {
       return ok({ success: true, alreadyExempt: true })
@@ -353,7 +353,7 @@ export const DELETE = withVenue(async function DELETE(
 
     // Handle transaction results
     if ('error' in deleteResult) {
-      return err(deleteResult.error, deleteResult.status)
+      return err(deleteResult.error!, deleteResult.status)
     }
     if ('earlyReturn' in deleteResult) {
       return ok({ success: true, alreadyNotExempt: true })

@@ -334,9 +334,9 @@ export const POST = withVenue(async function POST(
 
     return ok(result)
   } catch (error: unknown) {
-    const err = error as { statusCode?: number; message?: string }
-    if (err.statusCode) {
-      return err(err.message, err.statusCode)
+    const caughtErr = error as { statusCode?: number; message?: string }
+    if (caughtErr.statusCode) {
+      return err(caughtErr.message ?? 'Error', caughtErr.statusCode)
     }
     console.error('Failed to apply deposit:', error)
     return err('Failed to apply deposit', 500)

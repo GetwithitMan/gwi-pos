@@ -180,7 +180,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Check for error from transaction
     if ('error' in result) {
-      return err(result.error, result.status)
+      return err(result.error!, result.status)
     }
 
     pushUpstream()

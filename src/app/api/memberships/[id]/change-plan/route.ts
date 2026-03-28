@@ -96,7 +96,7 @@ export const POST = withVenue(async function POST(
               UPDATE "Membership" SET "recurringData" = $2 WHERE "id" = $1
             `, id, resp.recurringData)
           }
-        } catch (err) {
+        } catch (caughtErr) {
           if (err instanceof PayApiError) {
             return err(`Proration charge failed: ${err.message}`, 402)
           }
@@ -136,7 +136,7 @@ export const POST = withVenue(async function POST(
     }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return ok({ success: true, effective: effectiveMode })
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('[memberships/change-plan] error:', err)
     return err('Internal error', 500)
   }

@@ -42,7 +42,7 @@ export const PUT = withVenue(async function PUT(
     const device = await db.bergDevice.update({ where: { id }, data })
     const { bridgeSecretHash: _, ...deviceData } = device
     return ok({ device: deviceData })
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('[berg/devices/[id] PUT]', err)
     return err('Failed to update device', 500)
   }
@@ -89,7 +89,7 @@ export const PATCH = withVenue(async function PATCH(
       warning: 'Save this secret now — it cannot be retrieved again.',
       encryptedUpdated: Boolean(process.env.BRIDGE_MASTER_KEY),
     })
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('[berg/devices/[id] PATCH]', err)
     return err('Failed to rotate secret', 500)
   }
@@ -112,7 +112,7 @@ export const DELETE = withVenue(async function DELETE(
 
     await db.bergDevice.update({ where: { id }, data: { isActive: false } })
     return ok({ success: true })
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('[berg/devices/[id] DELETE]', err)
     return err('Failed to deactivate device', 500)
   }

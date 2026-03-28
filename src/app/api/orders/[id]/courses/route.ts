@@ -477,7 +477,7 @@ export const POST = withVenue(async function POST(
     })
 
     if ('error' in result) {
-      return err(result.error, result.status)
+      return err(result.error!, result.status)
     }
 
     pushUpstream()

@@ -77,7 +77,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     // ── Outage queue protection ───────────────────────────────────────────
     try {
       await queueIfOutageOrFail('CashTipDeclaration', locationId, declaration.id, 'INSERT')
-    } catch (err) {
+    } catch (caughtErr) {
       if (err instanceof OutageQueueFullError) {
         return err('Service temporarily unavailable — outage queue full', 507)
       }

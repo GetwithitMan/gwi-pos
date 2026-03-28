@@ -348,7 +348,7 @@ export async function POST(
   let normalized: NormalizedWebhookPayload
   try {
     normalized = NORMALIZERS[platform](body)
-  } catch (err) {
+  } catch (caughtErr) {
     const message = err instanceof Error ? err.message : 'Payload normalization failed'
     return err(message)
   }
@@ -613,7 +613,7 @@ export async function POST(
       action: normalized.action,
       externalId: normalized.externalId,
     })
-  } catch (err) {
+  } catch (caughtErr) {
     console.error(`[Webhook:${platform}] Error processing reservation:`, err)
     const message = err instanceof Error ? err.message : 'Internal error processing webhook'
     return err(message, 500)

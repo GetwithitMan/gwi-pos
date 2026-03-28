@@ -148,7 +148,7 @@ export const PUT = withVenue(async function PUT(
       })
 
       if (!result.success) {
-        return err(result.error)
+        return err(result.error!)
       }
 
       // If run status changes, cascade to orders via state machine

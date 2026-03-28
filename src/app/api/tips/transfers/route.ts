@@ -157,7 +157,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     try {
       await queueIfOutageOrFail('TipLedgerEntry', locationId, result.debit.id, 'INSERT')
       await queueIfOutageOrFail('TipLedgerEntry', locationId, result.credit.id, 'INSERT')
-    } catch (err) {
+    } catch (caughtErr) {
       if (err instanceof OutageQueueFullError) {
         return err('Service temporarily unavailable — outage queue full', 507)
       }

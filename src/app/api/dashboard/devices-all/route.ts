@@ -5,6 +5,7 @@
  * Used by the NUC Dashboard app to render the devices overview.
  */
 
+import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { err, ok } from '@/lib/api-response'

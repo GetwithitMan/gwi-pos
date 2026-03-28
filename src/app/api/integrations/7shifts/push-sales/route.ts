@@ -119,7 +119,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         tipsAmountCents,
         receiptId: result.receipt_id ?? result.id,
       })
-  } catch (err) {
+  } catch (caughtErr) {
     const message = err instanceof Error ? err.message : 'Unknown error'
     console.error('[7shifts/push-sales] Error:', message)
 

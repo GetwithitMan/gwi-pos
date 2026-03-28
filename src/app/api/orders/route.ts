@@ -59,7 +59,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
     let employeeId: string
     try {
       employeeId = validateCellularEmployeeFromHeaders(request, claimedEmployeeId)
-    } catch (err) {
+    } catch (caughtErr) {
       if (err instanceof CellularAuthError) {
         return err(err.message, err.status)
       }

@@ -14,7 +14,7 @@
  * Auth: INTERNAL_API_SECRET or HA_SHARED_SECRET (bearer token)
  */
 
-import { NextRequest } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { updateLocalLeaseExpiry, getLocalLeaseExpiry } from '@/lib/ha-lease-state'
 import { err, ok, unauthorized } from '@/lib/api-response'
 
@@ -54,7 +54,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     updateLocalLeaseExpiry(expiry)
     return ok({ updated: true, leaseExpiresAt: expiry.toISOString() })
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('[ha-lease] POST error:', err)
     return err('Internal error', 500)
   }

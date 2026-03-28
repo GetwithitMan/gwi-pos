@@ -614,7 +614,7 @@ export function OpenOrdersPanel({
       result = result.filter(o => {
         const tabName = o.tabName?.toLowerCase() || ''
         const tableName = o.table?.name?.toLowerCase() || ''
-        const customerName = o.customer?.name?.toLowerCase() || ''
+        const customerName = o.customer ? `${o.customer.firstName} ${o.customer.lastName}`.toLowerCase() : ''
         const cardholderName = o.cardholderName?.toLowerCase() || ''
         const cardLast4 = o.preAuth?.last4 || ''
         const orderNum = String(o.orderNumber)
@@ -628,8 +628,8 @@ export function OpenOrdersPanel({
 
     // Client-side sort (for fields not supported by API sort)
     result.sort((a, b) => {
-      const nameA = (a.tabName || a.customer?.name || `Order #${a.orderNumber}`).toLowerCase()
-      const nameB = (b.tabName || b.customer?.name || `Order #${b.orderNumber}`).toLowerCase()
+      const nameA = (a.tabName || (a.customer ? `${a.customer.firstName} ${a.customer.lastName}` : null) || `Order #${a.orderNumber}`).toLowerCase()
+      const nameB = (b.tabName || (b.customer ? `${b.customer.firstName} ${b.customer.lastName}` : null) || `Order #${b.orderNumber}`).toLowerCase()
       switch (sortBy) {
         case 'newest': return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
         case 'oldest': return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
@@ -665,7 +665,7 @@ export function OpenOrdersPanel({
         secondary = order.cardholderName
       }
     }
-    else if (order.customer?.name) primary = order.customer.name
+    else if (order.customer) primary = `${order.customer.firstName} ${order.customer.lastName}`
     if (order.table) {
       secondary = order.table.section ? `${order.table.section} - ${order.table.name}` : order.table.name
     }
@@ -1516,7 +1516,7 @@ export function OpenOrdersPanel({
           <ClosedOrderActionsModal
             isOpen={true}
             onClose={() => setClosedOrderModalOrder(null)}
-            order={closedOrderModalOrder}
+            order={{...closedOrderModalOrder, tabName: closedOrderModalOrder.tabName ?? null}}
             employeeId={employeeId}
             employeePermissions={employeePermissions}
             onActionComplete={() => {
@@ -1534,7 +1534,7 @@ export function OpenOrdersPanel({
             isOpen={true}
             onClose={() => setTabTransferOrder(null)}
             tabId={tabTransferOrder.id}
-            tabName={tabTransferOrder.tabName}
+            tabName={tabTransferOrder.tabName ?? null}
             currentEmployeeId={employeeId}
             currentEmployeeName={tabTransferOrder.employee.name}
             locationId={locationId}
@@ -1552,7 +1552,7 @@ export function OpenOrdersPanel({
     <ClosedOrderActionsModal
       isOpen={true}
       onClose={() => setClosedOrderModalOrder(null)}
-      order={closedOrderModalOrder}
+      order={{...closedOrderModalOrder, tabName: closedOrderModalOrder.tabName ?? null}}
       employeeId={employeeId}
       employeePermissions={employeePermissions}
       onActionComplete={() => {
@@ -1580,7 +1580,7 @@ export function OpenOrdersPanel({
           isOpen={true}
           onClose={() => setTabTransferOrder(null)}
           tabId={tabTransferOrder.id}
-          tabName={tabTransferOrder.tabName}
+          tabName={tabTransferOrder.tabName ?? null}
           currentEmployeeId={employeeId}
           currentEmployeeName={tabTransferOrder.employee.name}
           locationId={locationId}

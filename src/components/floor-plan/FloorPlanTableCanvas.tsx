@@ -294,6 +294,7 @@ export const FloorPlanTableCanvas = memo(function FloorPlanTableCanvas({
                                 price: element.linkedMenuItem.price,
                                 categoryId: '',
                                 itemType: 'timed_rental',
+                                isAvailable: true,
                                 entertainmentStatus: element.linkedMenuItem.entertainmentStatus as 'available' | 'in_use' | 'maintenance' | undefined,
                                 blockTimeMinutes: element.linkedMenuItem.blockTimeMinutes || undefined,
                               }

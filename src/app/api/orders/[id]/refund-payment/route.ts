@@ -41,7 +41,7 @@ export const POST = withVenue(async function POST(
     // Cellular terminal: block refunds entirely (canRefund=false for CELLULAR_ROAMING)
     try {
       validateCellularRefundFromHeaders(request)
-    } catch (err) {
+    } catch (caughtErr) {
       if (err instanceof CellularAuthError) {
         return err(err.message, err.status)
       }
@@ -51,7 +51,7 @@ export const POST = withVenue(async function POST(
     // Cellular terminal: require manager PIN re-authentication for refund
     try {
       validateManagerReauthFromHeaders(request, managerId, managerPinHash)
-    } catch (err) {
+    } catch (caughtErr) {
       if (err instanceof CellularAuthError) {
         return err(err.message, err.status)
       }
@@ -160,7 +160,7 @@ export const POST = withVenue(async function POST(
     }, { timeout: 15000 })
 
     if ('error' in phase1Result) {
-      return err(phase1Result.error, phase1Result.status)
+      return err(phase1Result.error!, phase1Result.status)
     }
 
     const { payment, totalAlreadyRefunded } = phase1Result
@@ -288,7 +288,7 @@ export const POST = withVenue(async function POST(
           `Manual reconciliation required.`
         )
       }
-      return err(txResult.error, txResult.status)
+      return err(txResult.error!, txResult.status)
     }
 
     const { refundLog, isPartial } = txResult
@@ -296,7 +296,7 @@ export const POST = withVenue(async function POST(
     // ── Outage queue protection for RefundLog ───────────────────────────────
     try {
       await queueIfOutageOrFail('RefundLog', order.locationId, refundLog.id, 'INSERT')
-    } catch (err) {
+    } catch (caughtErr) {
       if (err instanceof OutageQueueFullError) {
         return err('Service temporarily unavailable — outage queue full', 507)
       }
@@ -432,7 +432,7 @@ export const POST = withVenue(async function POST(
             console.warn('[refund-payment] Tip chargeback skipped or failed:', err.message)
           })
         }
-      } catch (err) {
+      } catch (caughtErr) {
         console.error('[refund-payment] Failed to adjust tip proportionally:', err)
       }
     })()
@@ -496,7 +496,7 @@ export const POST = withVenue(async function POST(
           txnId, orderWithCustomer.customerId, order.locationId, id, -pointsToReverse,
           desc, managerId || null,
         )
-      } catch (err) {
+      } catch (caughtErr) {
         console.error('[refund-payment] Loyalty point reversal failed:', err)
       }
     })()
@@ -571,7 +571,7 @@ export const POST = withVenue(async function POST(
 
         console.log(`[refund-payment] Gift card ${giftCardId} balance restored by $${refundAmount.toFixed(2)} for orderId=${id}`)
         void dispatchGiftCardBalanceChanged(order.locationId, { giftCardId, newBalance })
-      } catch (err) {
+      } catch (caughtErr) {
         console.error('[refund-payment] Gift card balance restoration failed:', err)
       }
     })()
@@ -589,7 +589,7 @@ export const POST = withVenue(async function POST(
           if (!hasActivePayments) {
             await restoreInventoryForOrder(id, order.locationId)
           }
-        } catch (err) {
+        } catch (caughtErr) {
           console.error('[refund-payment] Failed to restore inventory:', err)
         }
       })()

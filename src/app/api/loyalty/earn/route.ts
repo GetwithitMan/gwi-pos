@@ -238,7 +238,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }, { timeout: 15000 })
 
     if ('error' in result) {
-      return err(result.error, result.status)
+      return err(result.error!, result.status)
     }
 
     pushUpstream()

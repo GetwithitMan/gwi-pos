@@ -159,7 +159,7 @@ export function ShiftCloseoutModal({
   const [openOrderBlock, setOpenOrderBlock] = useState<{ count: number } | null>(null)
   // Handoff modal state
   const [showHandoffModal, setShowHandoffModal] = useState(false)
-  const [handoffOpenOrders, setHandoffOpenOrders] = useState<{ id: string; orderNumber: number | null; tabName: string | null; status: string; total: number }[]>([])
+  const [handoffOpenOrders, setHandoffOpenOrders] = useState<{ id: string; orderNumber: number; tabName: string | null; status: string; total: number }[]>([])
   const [handoffTipGroups, setHandoffTipGroups] = useState<{ id: string; memberCount: number }[]>([])
 
   // Closeout result
@@ -536,7 +536,7 @@ export function ShiftCloseoutModal({
         if (response.status === 409 && data.requiresManagerOverride) {
           setOpenOrderBlock({ count: data.openOrderCount })
           // Capture detailed order list and tip groups for the handoff modal
-          if (data.openOrders) setHandoffOpenOrders(data.openOrders)
+          if (data.openOrders) setHandoffOpenOrders(data.openOrders.map((o: any) => ({ ...o, orderNumber: o.orderNumber ?? 0 })))
           if (data.tipGroupsOwned) setHandoffTipGroups(data.tipGroupsOwned)
           return
         }

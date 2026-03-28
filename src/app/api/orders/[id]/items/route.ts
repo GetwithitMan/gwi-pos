@@ -169,7 +169,7 @@ export const POST = withVenue(async function POST(
       const { validateCellularOrderAccess, CellularAuthError } = await import('@/lib/cellular-validation')
       try {
         await validateCellularOrderAccess(true, orderId, 'mutate', db)
-      } catch (err) {
+      } catch (caughtErr) {
         if (err instanceof CellularAuthError) {
           return err(err.message, err.status)
         }

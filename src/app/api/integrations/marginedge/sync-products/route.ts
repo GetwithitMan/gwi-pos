@@ -49,7 +49,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         mappedCount: existingMappings.length,
         unmappedProducts,
       })
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('[marginedge/sync-products] Error:', err instanceof Error ? err.message : 'unknown')
     return err('Failed to sync products from MarginEdge', 500)
   }

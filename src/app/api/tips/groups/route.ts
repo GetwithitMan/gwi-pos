@@ -170,7 +170,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     // ── Outage queue protection ────────────────────────────────────────────
     try {
       await queueIfOutageOrFail('TipGroup', locationId, group.id, 'INSERT')
-    } catch (err) {
+    } catch (caughtErr) {
       if (err instanceof OutageQueueFullError) {
         return err('Service temporarily unavailable — outage queue full', 507)
       }

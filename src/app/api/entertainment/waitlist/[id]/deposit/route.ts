@@ -169,7 +169,7 @@ export const POST = withVenue(withAuth(async function POST(
         depositCardBrand: response.cardType || null,
         authCode: response.authCode || null,
       })
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('Failed to collect waitlist deposit:', err)
     const message = err instanceof Error ? err.message : 'Failed to collect deposit'
     return err(message, 500)
@@ -278,7 +278,7 @@ export const DELETE = withVenue(withAuth(async function DELETE(
         depositStatus: 'refunded',
         depositRefundedAt: new Date().toISOString(),
       })
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('Failed to refund waitlist deposit:', err)
     const message = err instanceof Error ? err.message : 'Failed to refund deposit'
     return err(message, 500)

@@ -53,7 +53,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     return ok(result)
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('[marginedge/sync-invoices] Error:', err instanceof Error ? err.message : 'unknown')
     return err('Failed to sync invoices from MarginEdge', 500)
   }

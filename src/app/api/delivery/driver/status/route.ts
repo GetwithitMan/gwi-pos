@@ -72,7 +72,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
         actor.employeeId ?? 'unknown',
       )
       if (!result.success) {
-        return err(result.error)
+        return err(result.error!)
       }
       session = result.session
     }

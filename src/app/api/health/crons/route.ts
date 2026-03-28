@@ -82,7 +82,7 @@ export async function GET(request: NextRequest) {
       crons: entries,
       timestamp: now.toISOString(),
     })
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('[health/crons] Error:', err)
     return err('Internal error', 500)
   }

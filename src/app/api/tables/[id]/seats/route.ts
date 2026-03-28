@@ -135,7 +135,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     // ── Outage queue protection ────────────────────────────────────────────
     try {
       await queueIfOutageOrFail('Seat', table.locationId, seat.id, 'INSERT')
-    } catch (err) {
+    } catch (caughtErr) {
       if (err instanceof OutageQueueFullError) {
         return err('Service temporarily unavailable — outage queue full', 507)
       }

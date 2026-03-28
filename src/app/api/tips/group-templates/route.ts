@@ -120,7 +120,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     // ── Outage queue protection ────────────────────────────────────────────
     try {
       await queueIfOutageOrFail('TipGroupTemplate', locationId, template.id, 'INSERT')
-    } catch (err) {
+    } catch (caughtErr) {
       if (err instanceof OutageQueueFullError) {
         return err('Service temporarily unavailable — outage queue full', 507)
       }

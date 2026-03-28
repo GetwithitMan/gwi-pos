@@ -210,7 +210,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       },
       alertCount: mappingResults.filter(r => Math.abs(r.variancePct ?? 0) > alertThreshold).length,
     })
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('[reports/berg-variance]', err)
     return err('Failed to load variance report', 500)
   }

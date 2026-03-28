@@ -50,7 +50,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     })
 
     return ok({ events: events.reverse() }) // oldest-first for display
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('[berg/listen GET]', err)
     return err('Failed to load events', 500)
   }

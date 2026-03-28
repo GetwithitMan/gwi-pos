@@ -27,7 +27,7 @@ export async function POST(request: Request) {
     void emitToLocation(locationId, 'system:reload', {}).catch(err => log.warn({ err }, 'Background task failed'))
 
     return ok({ ok: true })
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('[Reload Terminals] Error:', err)
     return err('Internal error', 500)
   }
