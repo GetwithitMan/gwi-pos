@@ -166,7 +166,15 @@ done
 # Validate: every require() in server.js must resolve in staging node_modules
 echo "    Validating server.js dependencies in artifact..."
 _MISSING_DEPS=()
+# Node.js builtins — never in node_modules
+_NODE_BUILTINS="crypto fs http https net os path stream url util child_process events buffer tls dgram dns zlib readline tty cluster worker_threads v8 vm assert perf_hooks async_hooks inspector string_decoder punycode querystring"
 for _dep in $(grep -oP 'require\("[^"]+"\)' "$REPO_DIR/server.js" 2>/dev/null | sed 's/require("//;s/")//' | grep -v '^node:' | grep -v '^\.' | sort -u); do
+    # Skip Node.js builtins
+    _is_builtin=false
+    for _bi in $_NODE_BUILTINS; do
+        [[ "$_dep" == "$_bi" || "$_dep" == "$_bi/"* ]] && _is_builtin=true && break
+    done
+    [[ "$_is_builtin" == "true" ]] && continue
     # Extract package name (handle scoped: @foo/bar → @foo/bar, foo/bar → foo)
     _pkg_name="$_dep"
     if [[ "$_dep" == @* ]]; then
