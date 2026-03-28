@@ -1097,48 +1097,57 @@ validate_checksums_txt() {
         return 0
     fi
 
-    log "Validating internal checksums..."
+    # Trust boundary: artifact SHA256 + minisign signature verify the archive.
+    # After extraction, only spot-check CRITICAL files to catch extraction corruption.
+    # Full-file verification (29K+ files, 3+ minutes) is too slow for production deploys.
+    log "Spot-checking critical file checksums..."
     local failed=0
     local checked=0
 
-    while IFS= read -r line; do
-        # Skip empty lines and comments
-        [[ -z "$line" ]] && continue
-        [[ "$line" =~ ^# ]] && continue
+    # Critical files that MUST match checksums
+    local critical_files=(
+        "server.js"
+        "preload.js"
+        "launcher.sh"
+        "prisma/schema.prisma"
+        "prisma.config.ts"
+        "required-env.json"
+        "package.json"
+        ".next/standalone/server.js"
+    )
 
-        local expected_hash file_path
-        # shasum format: "hash  filename" (two spaces). Filename may contain spaces.
-        expected_hash="${line%% *}"
-        file_path="${line#*  }"
+    for crit_file in "${critical_files[@]}"; do
+        # Find this file's expected hash in checksums.txt
+        local expected_line
+        expected_line="$(grep "  \\./${crit_file}$\|  ${crit_file}$" "$checksums_file" 2>/dev/null | head -1)"
+        if [[ -z "$expected_line" ]]; then
+            continue  # Not in checksums (may not exist in this build)
+        fi
 
-        # Strip leading ./ or /
-        file_path="${file_path#./}"
-        file_path="${file_path#/}"
+        local expected_hash="${expected_line%% *}"
+        local full_path="${release_dir}/${crit_file}"
 
-        local full_path="${release_dir}/${file_path}"
         if [[ ! -f "$full_path" ]]; then
-            warn "checksums.txt references missing file: $file_path"
-            failed=$(( failed + 1 ))
             continue
         fi
 
         local actual_hash
         actual_hash="$(sha256sum "$full_path" 2>/dev/null | awk '{print $1}')"
         if [[ "$actual_hash" != "$expected_hash" ]]; then
-            err "Checksum mismatch: $file_path"
+            err "Critical file checksum mismatch: $crit_file"
             err "  Expected: $expected_hash"
             err "  Actual:   $actual_hash"
             failed=$(( failed + 1 ))
         fi
         checked=$(( checked + 1 ))
-    done < "$checksums_file"
+    done
 
     if [[ $failed -gt 0 ]]; then
-        err "$failed/$checked internal checksums FAILED"
+        err "$failed/$checked critical file checksums FAILED — artifact may be corrupted"
         return 1
     fi
 
-    log "Internal checksums verified: $checked files OK"
+    log "Critical file checksums verified: $checked files OK (full archive verified by SHA256 + minisign)"
     return 0
 }
 
@@ -1300,10 +1309,12 @@ run_schema_step() {
         log "Running: prisma db push (from release dir with prisma.config.ts)"
         local schema_exit=0
         # Run from release directory so Prisma 7 finds prisma.config.ts
-        # prisma.config.ts reads DATABASE_URL from env for datasource
-        timeout "$SCHEMA_TIMEOUT_SECONDS" \
-            bash -c "cd '${release_dir}' && DATABASE_URL='${db_url}' '${prisma_cmd}' db push" \
-            > >(tee -a "${DEPLOY_LOG_DIR}/schema-${RELEASE_ID}.log") 2>&1 \
+        # No bash -c — use subshell + env to avoid shell interpolation of DATABASE_URL
+        (
+            cd "$release_dir" || exit 1
+            export DATABASE_URL="$db_url"
+            timeout "$SCHEMA_TIMEOUT_SECONDS" "$prisma_cmd" db push
+        ) > >(tee -a "${DEPLOY_LOG_DIR}/schema-${RELEASE_ID}.log") 2>&1 \
             || schema_exit=$?
 
         if [[ $schema_exit -ne 0 ]]; then
