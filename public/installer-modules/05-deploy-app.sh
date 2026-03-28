@@ -211,18 +211,15 @@ run_deploy_app() {
   # Step 2: Install deploy-release.sh
   _install_deploy_script
 
-  # Step 3: Copy shared .env for deploy-release.sh
-  # deploy-release.sh reads from /opt/gwi-pos/shared/.env
-  if [[ -f "$ENV_FILE" ]] && [[ ! -f "$APP_BASE/shared/.env" ]]; then
+  # Step 3: Sync .env to shared/.env for deploy-release.sh
+  # deploy-release.sh validates against /opt/gwi-pos/shared/.env.
+  # ALWAYS copy — stale shared/.env from failed installs causes validation failures.
+  if [[ -f "$ENV_FILE" ]]; then
+    mkdir -p "$APP_BASE/shared"
     cp "$ENV_FILE" "$APP_BASE/shared/.env"
     chown gwipos:gwipos "$APP_BASE/shared/.env" 2>/dev/null || true
     chmod 640 "$APP_BASE/shared/.env"
-    log "Copied .env to shared directory for deploy-release.sh"
-  elif [[ -f "$ENV_FILE" ]]; then
-    # Always sync latest .env
-    cp "$ENV_FILE" "$APP_BASE/shared/.env"
-    chown gwipos:gwipos "$APP_BASE/shared/.env" 2>/dev/null || true
-    chmod 640 "$APP_BASE/shared/.env"
+    log "Synced .env to shared directory for deploy-release.sh"
   fi
 
   # Step 4: Deploy artifact
