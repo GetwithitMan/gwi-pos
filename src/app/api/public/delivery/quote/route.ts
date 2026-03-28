@@ -12,6 +12,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getDbForVenue } from '@/lib/db'
 import { mergeWithDefaults, DEFAULT_DELIVERY } from '@/lib/settings'
 import { checkOnlineRateLimit } from '@/lib/online-rate-limiter'
+import { getClientIp } from '@/lib/get-client-ip'
 
 export const dynamic = 'force-dynamic'
 
@@ -41,10 +42,7 @@ interface DeliveryZoneRow {
 export async function POST(request: NextRequest) {
   try {
     // ── Rate limit (menu bucket — 30/min) ──────────────────────────────
-    const ip =
-      request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
-      request.headers.get('x-real-ip') ||
-      'unknown'
+    const ip = getClientIp(request)
 
     const rateCheck = checkOnlineRateLimit(ip, 'delivery-quote', 'menu')
     if (!rateCheck.allowed) {

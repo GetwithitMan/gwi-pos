@@ -85,6 +85,7 @@ export const useAuthStore = create<AuthState>()(
         void fetch('/api/auth/logout', { method: 'POST' }).catch(err => console.warn('logout request failed:', err))
         set({
           employee: null,
+          locationId: null,
           isAuthenticated: false,
           clockedIn: false,
           clockInTime: null,
@@ -101,6 +102,7 @@ export const useAuthStore = create<AuthState>()(
         }
         set({
           employee: null,
+          locationId: null,
           isAuthenticated: false,
           clockedIn: false,
           clockInTime: null,

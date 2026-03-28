@@ -27,6 +27,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db, getDbForVenue } from '@/lib/db'
 import { computeIsOrderableOnline, getStockStatus } from '@/lib/online-availability'
 import { checkOnlineRateLimit } from '@/lib/online-rate-limiter'
+import { getClientIp } from '@/lib/get-client-ip'
 
 export async function GET(request: NextRequest) {
   try {
@@ -63,10 +64,7 @@ export async function GET(request: NextRequest) {
     }
 
     // ── Rate limit (BUG #388) ───────────────────────────────────────────────
-    const ip =
-      request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
-      request.headers.get('x-real-ip') ||
-      'unknown'
+    const ip = getClientIp(request)
 
     const rateCheck = checkOnlineRateLimit(ip, locationId!, 'menu')
     if (!rateCheck.allowed) {

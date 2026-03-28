@@ -236,6 +236,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
         totalCostImpact,
         employeeId: employeeId || null,
         reason: reason || 'Quick stock adjustment',
+        lastMutatedBy: 'cloud',
       },
     })
 
@@ -459,6 +460,7 @@ export const PATCH = withVenue(withAuth('ADMIN', async function PATCH(request: N
               totalCostImpact: itemCostImpact,
               employeeId,
               reason: 'Quick stock adjustment (bulk)',
+              lastMutatedBy: 'cloud',
             },
           })
 

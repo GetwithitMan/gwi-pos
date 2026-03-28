@@ -7,6 +7,7 @@ import { withVenue } from '@/lib/with-venue'
 import { dispatchCFDOrderUpdated } from '@/lib/socket-dispatch'
 import { parseSettings } from '@/lib/settings'
 import { requirePermission } from '@/lib/api-auth'
+import { withAuth, type AuthenticatedContext } from '@/lib/api-auth-middleware'
 import { PERMISSIONS, hasPermission } from '@/lib/auth-utils'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { checkOrderClaim } from '@/lib/order-claim'
@@ -34,13 +35,18 @@ interface ApplyDiscountRequest {
 }
 
 // POST - Apply a discount to an order
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth({ allowCellular: true }, async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  ctx: AuthenticatedContext
 ) {
   try {
-    const { id: orderId } = await params
+    const { id: orderId } = await ctx.params
     const body = await request.json() as ApplyDiscountRequest
+
+    // SECURITY: Use authenticated employee ID for permission checks.
+    // body.employeeId is still used for business logic (employee discount clock-in check)
+    // but the auth gate uses the verified session identity.
+    const authEmployeeId = ctx.auth.employeeId || body.employeeId
 
     // HA cellular sync — detect mutation origin for downstream sync
     const isCellularDiscount = request.headers.get('x-cellular-authenticated') === '1'
@@ -95,8 +101,8 @@ export const POST = withVenue(async function POST(
       // Capture locationId for outbox flush after commit
       outboxLocationId = order.locationId
 
-      // Auth check — require manager.discounts permission
-      const auth = await requirePermission(body.employeeId, order.locationId, PERMISSIONS.MGR_DISCOUNTS)
+      // Auth check — require manager.discounts permission using verified identity
+      const auth = await requirePermission(authEmployeeId, order.locationId, PERMISSIONS.MGR_DISCOUNTS)
       if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
       if (!isDiscountable(order.status)) {
@@ -668,7 +674,7 @@ export const POST = withVenue(async function POST(
       { status: 500 }
     )
   }
-})
+}))
 
 // GET - Get discounts applied to an order
 export const GET = withVenue(async function GET(
@@ -715,15 +721,16 @@ export const GET = withVenue(async function GET(
 })
 
 // DELETE - Remove a discount from an order
-export const DELETE = withVenue(async function DELETE(
+export const DELETE = withVenue(withAuth({ allowCellular: true }, async function DELETE(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  ctx: AuthenticatedContext
 ) {
   try {
-    const { id: orderId } = await params
+    const { id: orderId } = await ctx.params
     const searchParams = request.nextUrl.searchParams
     const discountId = searchParams.get('discountId')
-    const employeeId = searchParams.get('employeeId')
+    // SECURITY: Use authenticated employee ID for permission check, fall back to query param for business logic
+    const employeeId = ctx.auth.employeeId || searchParams.get('employeeId')
 
     // HA cellular sync — detect mutation origin for downstream sync
     const isCellularDelete = request.headers.get('x-cellular-authenticated') === '1'
@@ -960,4 +967,4 @@ export const DELETE = withVenue(async function DELETE(
       { status: 500 }
     )
   }
-})
+}))

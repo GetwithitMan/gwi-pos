@@ -173,11 +173,15 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       if (!schedule) {
         results.schedule = { error: 'No schedule exists', skipped: shifts.length }
       } else {
+        // Pre-fetch all linked employees in one query to avoid N+1
+        const linkedEmployees = await db.employee.findMany({
+          where: { locationId: location.id, sevenShiftsUserId: { not: null }, deletedAt: null },
+          select: { id: true, sevenShiftsUserId: true },
+        })
+        const employeeMap = new Map(linkedEmployees.map(e => [e.sevenShiftsUserId!, e]))
+
         for (const shift of shifts) {
-          const employee = await db.employee.findFirst({
-            where: { locationId: location.id, sevenShiftsUserId: String(shift.user_id), deletedAt: null },
-            select: { id: true },
-          })
+          const employee = employeeMap.get(String(shift.user_id))
           if (!employee) { skippedShifts++; continue }
 
           const shiftDate = new Date(shift.start)

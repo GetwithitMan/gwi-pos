@@ -4,6 +4,7 @@ import { requireDatacapClient, validateReader, parseBody, datacapErrorResponse }
 import { parseError } from '@/lib/datacap/xml-parser'
 import { withVenue } from '@/lib/with-venue'
 import { requirePermission } from '@/lib/api-auth'
+import { withAuth, type AuthenticatedContext } from '@/lib/api-auth-middleware'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { roundToCents } from '@/lib/pricing'
 import { db } from '@/lib/db'
@@ -24,10 +25,12 @@ interface SaleRequest {
   taxAmount?: number      // Level II — tax for interchange qualification
 }
 
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth({ allowCellular: true }, async function POST(request: NextRequest, ctx: AuthenticatedContext) {
   try {
     const body = await parseBody<SaleRequest>(request)
-    const { locationId, readerId, invoiceNo, tipAmount, tipMode, tipSuggestions, employeeId } = body
+    const { locationId, readerId, invoiceNo, tipAmount, tipMode, tipSuggestions } = body
+    // SECURITY: Use authenticated employee ID for permission check, not body.employeeId
+    const employeeId = ctx.auth.employeeId || body.employeeId
     let { amount } = body
 
     if (!locationId || !readerId || !invoiceNo || amount === undefined || amount === null) {
@@ -170,4 +173,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   } catch (err) {
     return datacapErrorResponse(err)
   }
-})
+}))

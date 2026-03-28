@@ -5,6 +5,7 @@ import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { getClientIp } from '@/lib/get-client-ip'
 
 // POST complete terminal pairing with code
 export const POST = withVenue(withAuth('ADMIN', async function POST(request: NextRequest) {
@@ -39,10 +40,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     }
 
     // Get client IP
-    const clientIp =
-      request.headers.get('x-forwarded-for')?.split(',')[0].trim() ||
-      request.headers.get('x-real-ip') ||
-      'unknown'
+    const clientIp = getClientIp(request)
 
     // IP affinity check for fixed stations
     // If a static IP is configured, the pairing device must match

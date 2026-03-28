@@ -32,6 +32,7 @@ export const GET = withVenue(async function GET() {
           defaultToListView: false,
           allowCondimentSections: false,
           condimentDivisionMax: 1,
+          lastMutatedBy: 'cloud',
         }
       }),
       // Sizes

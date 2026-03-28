@@ -4,6 +4,7 @@ import * as EmployeeRepository from '@/lib/repositories/employee-repository'
 import { withVenue } from '@/lib/with-venue'
 import { hashPassword, hashPin } from '@/lib/auth'
 import { checkLoginRateLimit, recordLoginFailure, recordLoginSuccess } from '@/lib/auth-rate-limiter'
+import { getClientIp } from '@/lib/get-client-ip'
 
 /**
  * POST /api/auth/venue-setup
@@ -26,9 +27,7 @@ import { checkLoginRateLimit, recordLoginFailure, recordLoginSuccess } from '@/l
  */
 export const POST = withVenue(async function POST(request: NextRequest) {
   // ── Rate limiting (5 attempts / 5 minutes) ─────────────────────
-  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
-    || request.headers.get('x-real-ip')
-    || 'unknown'
+  const ip = getClientIp(request)
 
   const rateCheck = checkLoginRateLimit(ip)
   if (!rateCheck.allowed) {

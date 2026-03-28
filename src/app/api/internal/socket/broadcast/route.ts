@@ -24,6 +24,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
+import { timingSafeEqual } from 'crypto'
 import type { RoutingResult } from '@/types/routing'
 import { withVenue } from '@/lib/with-venue'
 
@@ -43,7 +44,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Internal API secret not configured' }, { status: 500 })
   }
   const secret = request.headers.get('X-Internal-Secret') || request.headers.get('x-api-key')
-  if (secret !== INTERNAL_SECRET) {
+  if (
+    !secret ||
+    !INTERNAL_SECRET ||
+    Buffer.byteLength(secret) !== Buffer.byteLength(INTERNAL_SECRET) ||
+    !timingSafeEqual(Buffer.from(secret), Buffer.from(INTERNAL_SECRET))
+  ) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

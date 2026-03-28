@@ -132,6 +132,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
         defaultSplitMode: (defaultSplitMode ?? 'equal') as TipGroupSplitMode,
         active: active ?? true,
         sortOrder: nextSort,
+        lastMutatedBy: 'cloud',
       },
     })
 

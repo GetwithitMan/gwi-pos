@@ -106,6 +106,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
         ...(label !== undefined ? { label } : {}),
         ...(seatType !== undefined ? { seatType } : {}),
         ...(isActive !== undefined ? { isActive } : {}),
+        lastMutatedBy: 'cloud',
       },
     });
 
@@ -158,7 +159,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     // Soft delete
     await db.seat.update({
       where: { id },
-      data: softDeleteData(),
+      data: { ...softDeleteData(), lastMutatedBy: 'cloud' },
     });
 
     pushUpstream()

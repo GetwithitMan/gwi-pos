@@ -16,7 +16,7 @@ import { isTempId } from '@/lib/order-utils'
 import { useFloorPlanStore } from '@/components/floor-plan/use-floor-plan'
 import dynamic from 'next/dynamic'
 import { FloorPlanHome } from '@/components/floor-plan'
-import { SilentErrorBoundary } from '@/components/ui/SilentErrorBoundary'
+import { SilentErrorBoundary } from '@/lib/error-boundary'
 
 // BartenderView (~2K lines) is only rendered for the 'bartender' role.
 // Dynamic import keeps it out of the main POS bundle for all other roles.

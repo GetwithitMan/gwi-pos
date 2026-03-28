@@ -23,7 +23,6 @@ export {
   mergeWithDefaults, getPricingProgram, effectivePricingProgram,
   getEffectiveDepositMode, parseSettings,
   // Pricing Rules
-  getHappyHourEndTime, isHappyHourActive, getHappyHourPrice,
   isPricingRuleActive, getActivePricingRules, getAdjustedPrice,
   getBestPricingRuleForItem, getPricingRuleEndTime,
   // Validators

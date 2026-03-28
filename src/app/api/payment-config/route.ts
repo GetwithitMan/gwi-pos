@@ -8,6 +8,7 @@ import { withVenue } from '@/lib/with-venue'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { dispatchSettingsUpdated } from '@/lib/socket-dispatch'
+import { getClientIp } from '@/lib/get-client-ip'
 
 /**
  * GET /api/payment-config
@@ -69,7 +70,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     const internalSecret = process.env.INTERNAL_API_SECRET
     if (internalSecret && apiKey !== internalSecret) {
       // Allow localhost for backward compatibility with sync agent
-      const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || ''
+      const ip = getClientIp(request)
       const isLocalhost = ['127.0.0.1', '::1', 'localhost'].includes(ip)
       if (!isLocalhost) {
         return NextResponse.json({ error: 'Unauthorized — internal API secret required' }, { status: 401 })

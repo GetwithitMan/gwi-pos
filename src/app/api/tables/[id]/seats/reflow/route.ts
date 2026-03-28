@@ -132,6 +132,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
           data: {
             relativeX: Math.round(newRelX),
             relativeY: Math.round(newRelY),
+            lastMutatedBy: 'cloud',
           },
         });
       })

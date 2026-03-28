@@ -49,7 +49,7 @@ export const DELETE = withVenue(withAuth(async function DELETE(
     // Soft delete
     await db.shiftSwapRequest.update({
       where: { id: requestId },
-      data: { deletedAt: new Date(), status: 'cancelled' },
+      data: { deletedAt: new Date(), status: 'cancelled', lastMutatedBy: 'cloud' },
     })
 
     // ── Outage queue protection ────────────────────────────────────────────

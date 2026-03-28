@@ -2,142 +2,13 @@
 // Split from src/lib/settings.ts for maintainability
 
 import type { GwiLogger } from '@/lib/logger'
-import type { PricingRule, PricingAdjustment, HappyHourSettings } from './types'
+import type { PricingRule, PricingAdjustment } from './types'
 
 // Lazy logger — avoids module-scope side effects that inflate middleware bundles
 let _log: GwiLogger | null = null
 function log(): GwiLogger {
   if (!_log) { _log = require('@/lib/logger').createChildLogger('settings') }
   return _log!
-}
-
-// ─── Legacy Happy Hour Functions (Deprecated) ───────────────────────────────
-
-/**
- * Get the active happy hour end time for the current schedule.
- * Returns null if happy hour is not active right now.
- * @deprecated Use getPricingRuleEndTime() with the new pricing rules engine instead.
- */
-export function getHappyHourEndTime(settings: HappyHourSettings): Date | null {
-  if (!settings.enabled) return null
-
-  const now = new Date()
-  const currentDay = now.getDay()
-  const currentTimeMinutes = now.getHours() * 60 + now.getMinutes()
-
-  for (const schedule of settings.schedules) {
-    if (!schedule.dayOfWeek.includes(currentDay)) continue
-
-    const [startHour, startMin] = schedule.startTime.split(':').map(Number)
-    const [endHour, endMin] = schedule.endTime.split(':').map(Number)
-
-    const startMinutes = startHour * 60 + startMin
-    const endMinutes = endHour * 60 + endMin
-
-    let isActive = false
-    if (endMinutes < startMinutes) {
-      isActive = currentTimeMinutes >= startMinutes || currentTimeMinutes <= endMinutes
-    } else {
-      isActive = currentTimeMinutes >= startMinutes && currentTimeMinutes <= endMinutes
-    }
-
-    if (isActive) {
-      const endDate = new Date(now)
-      endDate.setSeconds(0, 0)
-      if (endMinutes < startMinutes && currentTimeMinutes < startMinutes) {
-        // Past midnight in overnight schedule — end time is today
-        endDate.setHours(endHour, endMin)
-      } else if (endMinutes < startMinutes) {
-        // Before midnight in overnight schedule — end time is tomorrow
-        endDate.setDate(endDate.getDate() + 1)
-        endDate.setHours(endHour, endMin)
-      } else {
-        endDate.setHours(endHour, endMin)
-      }
-      return endDate
-    }
-  }
-
-  return null
-}
-
-/**
- * Check if happy hour is currently active.
- * @deprecated Use isPricingRuleActive() with the new pricing rules engine instead.
- */
-export function isHappyHourActive(settings: HappyHourSettings): boolean {
-  if (!settings.enabled) return false
-
-  const now = new Date()
-  const currentDay = now.getDay() // 0-6, Sunday-Saturday
-  const currentTimeMinutes = now.getHours() * 60 + now.getMinutes()
-
-  for (const schedule of settings.schedules) {
-    if (!schedule.dayOfWeek.includes(currentDay)) continue
-
-    const [startHour, startMin] = schedule.startTime.split(':').map(Number)
-    const [endHour, endMin] = schedule.endTime.split(':').map(Number)
-
-    const startMinutes = startHour * 60 + startMin
-    const endMinutes = endHour * 60 + endMin
-
-    // Handle overnight schedules (e.g., 22:00 - 02:00)
-    if (endMinutes < startMinutes) {
-      // Schedule spans midnight
-      if (currentTimeMinutes >= startMinutes || currentTimeMinutes <= endMinutes) {
-        return true
-      }
-    } else {
-      // Normal schedule
-      if (currentTimeMinutes >= startMinutes && currentTimeMinutes <= endMinutes) {
-        return true
-      }
-    }
-  }
-
-  return false
-}
-
-/**
- * Calculate happy hour price for an item.
- * @deprecated Use getBestPricingRuleForItem() with the new pricing rules engine instead.
- */
-export function getHappyHourPrice(
-  originalPrice: number,
-  settings: HappyHourSettings,
-  itemId?: string,
-  categoryId?: string
-): { price: number; isDiscounted: boolean } {
-  if (!settings.enabled || !isHappyHourActive(settings)) {
-    return { price: originalPrice, isDiscounted: false }
-  }
-
-  // Check if item qualifies for happy hour
-  let qualifies = false
-  if (settings.appliesTo === 'all') {
-    qualifies = true
-  } else if (settings.appliesTo === 'categories' && categoryId) {
-    qualifies = settings.categoryIds.includes(categoryId)
-  } else if (settings.appliesTo === 'items' && itemId) {
-    qualifies = settings.itemIds.includes(itemId)
-  }
-
-  if (!qualifies) {
-    return { price: originalPrice, isDiscounted: false }
-  }
-
-  // Apply discount
-  let discountedPrice: number
-  if (settings.discountType === 'percent') {
-    discountedPrice = originalPrice * (1 - settings.discountValue / 100)
-  } else {
-    discountedPrice = Math.max(0, originalPrice - settings.discountValue)
-  }
-
-  return {
-    price: Math.round(discountedPrice * 100) / 100,
-    isDiscounted: true,
-  }
 }
 
 // ─── Pricing Rules Engine Functions ──────────────────────────────────────────
@@ -353,13 +224,6 @@ function isYearlyRecurringRuleActive(rule: PricingRule, now: Date, timezone?: st
     return currentMinutes >= startMin && currentMinutes < endMin
   }
   return false
-}
-
-function formatLocalDate(d: Date): string {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
 }
 
 function formatLocalDateFromParts(year: number, month: number, day: number): string {

@@ -2615,7 +2615,7 @@ export function FloorPlanHome({
                     guestCount={guestCount}
                     onGuestCountChange={setGuestCount}
                     orderItems={inlineOrderItems}
-                    orderTotal={useOrderStore.getState().currentOrder?.total ?? 0}
+                    orderTotal={orderTotal}
                     splitOrderIds={hasSplitChips ? splitChips.map(s => s.id) : undefined}
                   />
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>

@@ -14,7 +14,7 @@ import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { WebReportBanner } from '@/components/admin/WebReportBanner'
 import { useDataRetention } from '@/hooks/useDataRetention'
 import { Modal } from '@/components/ui/modal'
-import { ManagerPinModal } from '@/components/auth/ManagerPinModal'
+import { ManagerPinModal } from '@/components/ui/manager-pin-modal'
 import { toast } from '@/stores/toast-store'
 import { getSharedSocket, releaseSharedSocket, isSharedSocketConnected } from '@/lib/shared-socket'
 

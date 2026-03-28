@@ -109,7 +109,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
     if (notes !== undefined) {
       await db.dailyPrepCount.update({
         where: { id },
-        data: { notes },
+        data: { notes, lastMutatedBy: 'cloud' },
       })
     }
 
@@ -155,6 +155,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
             costPerUnit,
             totalCost,
             notes: itemNotes,
+            lastMutatedBy: 'cloud',
           },
           update: {
             trayBreakdown: trayBreakdown || {},
@@ -165,6 +166,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
             costPerUnit,
             totalCost,
             notes: itemNotes,
+            lastMutatedBy: 'cloud',
           },
         })
       }
@@ -221,7 +223,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(request:
 
     await db.dailyPrepCount.update({
       where: { id },
-      data: { deletedAt: new Date() },
+      data: { deletedAt: new Date(), lastMutatedBy: 'cloud' },
     })
 
     void notifyDataChanged({ locationId: existing.locationId, domain: 'inventory', action: 'deleted', entityId: id })

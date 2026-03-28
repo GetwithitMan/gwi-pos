@@ -2,35 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
+import { createRateLimiter } from '@/lib/rate-limiter'
+import { getClientIp } from '@/lib/get-client-ip'
 
 export const dynamic = 'force-dynamic'
 
-// ── Simple rate limiter for public endpoint ─────────────────────────────────
-// Rate limit: 60 req/min/IP (matches tracking endpoint)
-const rateLimitMap = new Map<string, { count: number; resetAt: number }>()
-const RATE_LIMIT = 60
-const RATE_WINDOW_MS = 60_000
-
-function checkRateLimit(ip: string): boolean {
-  const now = Date.now()
-  const entry = rateLimitMap.get(ip)
-  if (!entry || now > entry.resetAt) {
-    rateLimitMap.set(ip, { count: 1, resetAt: now + RATE_WINDOW_MS })
-    return true
-  }
-  if (entry.count >= RATE_LIMIT) return false
-  entry.count++
-  return true
-}
-
-// Cleanup stale rate limit entries
-const cleanup = setInterval(() => {
-  const now = Date.now()
-  for (const [key, entry] of rateLimitMap) {
-    if (now > entry.resetAt) rateLimitMap.delete(key)
-  }
-}, 60_000)
-if (cleanup && typeof cleanup === 'object' && 'unref' in cleanup) (cleanup as NodeJS.Timeout).unref()
+// ── Rate limiter (60 req/min/IP) ────────────────────────────────────────────
+const limiter = createRateLimiter({ maxAttempts: 60, windowMs: 60_000 })
 
 /** UUID v4 format regex */
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -70,8 +48,8 @@ export const GET = withVenue(async function GET(
 ) {
   try {
     // Rate limit
-    const ip = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown'
-    if (!checkRateLimit(ip)) {
+    const ip = getClientIp(request)
+    if (!limiter.check(ip).allowed) {
       return NextResponse.json({ error: 'Too many requests' }, { status: 429 })
     }
 

@@ -19,52 +19,15 @@ import { parseSettings, DEFAULT_TEXT_TO_PAY } from '@/lib/settings'
 import { getDatacapClient } from '@/lib/datacap/helpers'
 import { dispatchPaymentProcessed, dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { createRateLimiter } from '@/lib/rate-limiter'
+import { getClientIp } from '@/lib/get-client-ip'
 import { createChildLogger } from '@/lib/logger'
 
 const log = createChildLogger('public.pay.token')
 
 // ── Rate Limiting ───────────────────────────────────────────────────────────
-
-const getRateLimitMap = new Map<string, { count: number; resetAt: number }>()
-const postRateLimitMap = new Map<string, { count: number; resetAt: number }>()
-const GET_RATE_LIMIT = 10
-const POST_RATE_LIMIT = 5
-const RATE_WINDOW_MS = 60_000
-
-function checkRateLimit(
-  map: Map<string, { count: number; resetAt: number }>,
-  ip: string,
-  limit: number
-): boolean {
-  const now = Date.now()
-  const entry = map.get(ip)
-
-  if (!entry || now > entry.resetAt) {
-    map.set(ip, { count: 1, resetAt: now + RATE_WINDOW_MS })
-    return true
-  }
-
-  if (entry.count >= limit) return false
-  entry.count++
-  return true
-}
-
-// Periodic cleanup (every 5 minutes)
-setInterval(() => {
-  const now = Date.now()
-  for (const [key, val] of getRateLimitMap) {
-    if (now > val.resetAt) getRateLimitMap.delete(key)
-  }
-  for (const [key, val] of postRateLimitMap) {
-    if (now > val.resetAt) postRateLimitMap.delete(key)
-  }
-}, 300_000)
-
-function getIp(request: NextRequest): string {
-  return request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
-    || request.headers.get('x-real-ip')
-    || 'unknown'
-}
+const getLimiter = createRateLimiter({ maxAttempts: 10, windowMs: 60_000 })
+const postLimiter = createRateLimiter({ maxAttempts: 5, windowMs: 60_000 })
 
 // ── Shared: look up PaymentLink + venue DB ──────────────────────────────────
 
@@ -138,8 +101,8 @@ export async function GET(
   context: { params: Promise<{ token: string }> }
 ) {
   try {
-    const ip = getIp(request)
-    if (!checkRateLimit(getRateLimitMap, ip, GET_RATE_LIMIT)) {
+    const ip = getClientIp(request)
+    if (!getLimiter.check(ip).allowed) {
       return NextResponse.json(
         { error: 'Too many requests. Please try again later.' },
         { status: 429 }
@@ -264,8 +227,8 @@ export async function POST(
   context: { params: Promise<{ token: string }> }
 ) {
   try {
-    const ip = getIp(request)
-    if (!checkRateLimit(postRateLimitMap, ip, POST_RATE_LIMIT)) {
+    const ip = getClientIp(request)
+    if (!postLimiter.check(ip).allowed) {
       return NextResponse.json(
         { error: 'Too many attempts. Please wait and try again.' },
         { status: 429 }

@@ -8,26 +8,11 @@ import { db } from '@/lib/db'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 
-// ─── In-memory rate limiter: 10 lookups per employee per minute ───────────────
+// ─── Rate limiter: 10 lookups per employee per minute ────────────────────────
+import { createRateLimiter } from '@/lib/rate-limiter'
+import { getClientIp } from '@/lib/get-client-ip'
 
-const rateLimitMap = new Map<string, { count: number; resetAt: number }>()
-const RATE_LIMIT = 10
-const RATE_WINDOW_MS = 60 * 1000
-
-function checkRateLimit(key: string): boolean {
-  const now = Date.now()
-  const entry = rateLimitMap.get(key)
-
-  if (!entry || now >= entry.resetAt) {
-    rateLimitMap.set(key, { count: 1, resetAt: now + RATE_WINDOW_MS })
-    return true
-  }
-
-  if (entry.count >= RATE_LIMIT) return false
-
-  entry.count++
-  return true
-}
+const limiter = createRateLimiter({ maxAttempts: 10, windowMs: 60_000 })
 
 // ─── Input validation ─────────────────────────────────────────────────────────
 
@@ -93,9 +78,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   // Rate limiting per verified employee (or IP fallback for unverified/anonymous)
   const rateLimitKey = trustedEmployeeId
     ? `employee:${trustedEmployeeId}`
-    : `ip:${request.headers.get('x-forwarded-for') ?? request.headers.get('x-real-ip') ?? 'unknown'}`
+    : `ip:${getClientIp(request)}`
 
-  if (!checkRateLimit(rateLimitKey)) {
+  if (!limiter.check(rateLimitKey).allowed) {
     return NextResponse.json(
       { error: 'Too many guest lookups. Please wait before trying again.' },
       { status: 429 }

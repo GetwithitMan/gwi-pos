@@ -482,7 +482,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(request:
       // Soft delete menu item links
       await db.menuItemIngredient.updateMany({
         where: { ingredientId: id },
-        data: { deletedAt: new Date() },
+        data: { deletedAt: new Date(), lastMutatedBy: 'cloud' },
       })
 
       // Soft delete children too
@@ -514,7 +514,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(request:
         if (childIds.length > 0) {
           await db.menuItemIngredient.updateMany({
             where: { ingredientId: { in: childIds } },
-            data: { deletedAt: new Date() },
+            data: { deletedAt: new Date(), lastMutatedBy: 'cloud' },
           })
           await db.ingredient.updateMany({
             where: { parentIngredientId: id },
@@ -532,7 +532,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(request:
     // Soft delete menu item links
     await db.menuItemIngredient.updateMany({
       where: { ingredientId: id },
-      data: { deletedAt: new Date() },
+      data: { deletedAt: new Date(), lastMutatedBy: 'cloud' },
     })
 
     // Soft delete the ingredient

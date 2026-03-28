@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { getDatacapClient, parseBody } from '@/lib/datacap/helpers'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 interface CardLookupRequest {
   locationId: string
@@ -14,7 +15,7 @@ interface CardLookupRequest {
  * without placing a charge. Used by Model 3 (dual_price_pan_debit) to
  * determine the correct pricing tier before sending the actual sale.
  */
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth({ allowCellular: true }, async function POST(request: NextRequest) {
   try {
     const body = await parseBody<CardLookupRequest>(request)
     const { locationId, readerId } = body
@@ -34,4 +35,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const message = err instanceof Error ? err.message : 'CardLookup failed'
     return Response.json({ error: message }, { status: 500 })
   }
-})
+}))

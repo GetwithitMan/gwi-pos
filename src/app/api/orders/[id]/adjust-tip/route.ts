@@ -9,6 +9,7 @@ import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { requireDatacapClient } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
 import { requirePermission } from '@/lib/api-auth'
+import { withAuth, type AuthenticatedContext } from '@/lib/api-auth-middleware'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { roundToCents } from '@/lib/pricing'
 import { isInOutageMode } from '@/lib/sync/upstream-sync-worker'
@@ -17,12 +18,12 @@ import { getRequestLocationId } from '@/lib/request-context'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('orders-adjust-tip')
 
-export const PATCH = withVenue(async function PATCH(
+export const PATCH = withVenue(withAuth({ allowCellular: true }, async function PATCH(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  ctx: AuthenticatedContext
 ) {
   try {
-    const { id: orderId } = await params
+    const { id: orderId } = await ctx.params
     const { paymentId, newTipAmount, reason, managerId } = await request.json()
 
     // HA cellular sync — detect mutation origin for downstream sync
@@ -44,8 +45,8 @@ export const PATCH = withVenue(async function PATCH(
       )
     }
 
-    // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
-    let locationId = getRequestLocationId()
+    // Fast path: locationId from auth context or request context. Fallback: bootstrap from DB.
+    let locationId = ctx.auth.locationId || getRequestLocationId()
     if (!locationId) {
       // Lightweight order check for locationId (needed by auth)
       // NOTE: First fetch uses db directly because we don't have locationId yet.
@@ -64,6 +65,9 @@ export const PATCH = withVenue(async function PATCH(
       locationId = orderCheck.locationId
     }
 
+    // SECURITY: The manager (approver) ID comes from the body, but their permission
+    // is verified server-side via requirePermission which checks their PIN/role in DB.
+    // The caller must be authenticated (withAuth above ensures this).
     const authResult = await requirePermission(managerId, locationId, PERMISSIONS.TIPS_PERFORM_ADJUSTMENTS)
     if (!authResult.authorized) {
       return NextResponse.json({ error: authResult.error }, { status: authResult.status ?? 403 })
@@ -397,4 +401,4 @@ export const PATCH = withVenue(async function PATCH(
       { status: 500 }
     )
   }
-})
+}))

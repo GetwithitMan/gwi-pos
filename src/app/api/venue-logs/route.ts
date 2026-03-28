@@ -12,6 +12,7 @@ import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { getLocationId } from '@/lib/location-cache'
 import { createRateLimiter } from '@/lib/rate-limiter'
+import { getClientIp } from '@/lib/get-client-ip'
 import { logVenueEventsBatch, cleanupExpiredLogs } from '@/lib/venue-logger'
 import type { VenueLogEntry } from '@/lib/venue-logger'
 import { createChildLogger } from '@/lib/logger'
@@ -137,9 +138,7 @@ export const GET = withVenue(async function GET(req: NextRequest) {
 export const POST = withVenue(withAuth(async function POST(req: NextRequest) {
   try {
     // Rate limit
-    const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
-      || req.headers.get('x-real-ip')
-      || 'unknown'
+    const ip = getClientIp(req)
     const rateCheck = ingestLimiter.check(ip)
     if (!rateCheck.allowed) {
       return NextResponse.json(

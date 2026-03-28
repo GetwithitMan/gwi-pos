@@ -104,7 +104,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
 
     const seat = await db.seat.update({
       where: { id: seatId },
-      data: updateData,
+      data: { ...updateData, lastMutatedBy: 'cloud' },
     })
 
     // ── Outage queue protection ────────────────────────────────────────────

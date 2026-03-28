@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { checkLoginRateLimit } from '@/lib/auth-rate-limiter'
+import { getClientIp } from '@/lib/get-client-ip'
 
 /**
  * POST /api/auth/forgot-password
@@ -47,9 +48,7 @@ function extractClientToken(res: Response): string | null {
 
 export async function POST(request: NextRequest) {
   // Rate limiting: 5 requests per IP before lockout
-  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
-    || request.headers.get('x-real-ip')
-    || 'unknown'
+  const ip = getClientIp(request)
 
   const rateCheck = checkLoginRateLimit(ip)
   if (!rateCheck.allowed) {

@@ -75,7 +75,8 @@ interface Summary {
 
 export default function MembershipsPage() {
   const ready = useAuthenticationGuard()
-  const { employee, locationId } = useAuthStore()
+  const employee = useAuthStore(s => s.employee)
+  const locationId = useAuthStore(s => s.locationId)
   const [tab, setTab] = useState<Tab>('dashboard')
   const [members, setMembers] = useState<MembershipRow[]>([])
   const [plans, setPlans] = useState<Plan[]>([])

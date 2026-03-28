@@ -22,7 +22,9 @@ import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
  * Used as a safety net for heavy analytical queries (lateral joins, etc.)
  */
 async function setQueryTimeout(ms: number = 30000): Promise<void> {
-  await db.$executeRawUnsafe(`SET LOCAL statement_timeout = '${ms}'`)
+  const safeMs = Math.max(1, Math.min(300000, Math.floor(Number(ms))))
+  if (!Number.isFinite(safeMs)) throw new Error('Invalid timeout value')
+  await db.$executeRawUnsafe(`SET LOCAL statement_timeout = '${safeMs}'`)
 }
 
 export interface TimedQueryResult<T> {

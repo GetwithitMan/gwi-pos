@@ -5,12 +5,12 @@ import { z } from 'zod'
 // ============================================
 
 // ID validation - flexible to support various ID formats (CUID, UUID, etc.)
-export const idSchema = z.string().min(1, 'ID is required')
-export const pinSchema = z.string().regex(/^\d{4,6}$/, 'PIN must be 4-6 digits')
-export const emailSchema = z.string().email().optional().or(z.literal(''))
-export const phoneSchema = z.string().min(7).max(20).optional().or(z.literal(''))
-export const positiveNumber = z.number().positive()
-export const nonNegativeNumber = z.number().nonnegative()
+const idSchema = z.string().min(1, 'ID is required')
+const pinSchema = z.string().regex(/^\d{4,6}$/, 'PIN must be 4-6 digits')
+const emailSchema = z.string().email().optional().or(z.literal(''))
+const phoneSchema = z.string().min(7).max(20).optional().or(z.literal(''))
+const positiveNumber = z.number().positive()
+const nonNegativeNumber = z.number().nonnegative()
 
 // ============================================
 // Employee schemas
@@ -30,14 +30,9 @@ export const createEmployeeSchema = z.object({
   color: z.string().max(20).optional(),
 })
 
-export const updateEmployeeSchema = createEmployeeSchema.partial().omit({ locationId: true })
-
 // ============================================
 // Order schemas
 // ============================================
-
-export const orderTypeSchema = z.enum(['dine_in', 'takeout', 'delivery', 'bar_tab'])
-export const orderStatusSchema = z.enum(['open', 'sent', 'in_progress', 'ready', 'completed', 'closed', 'cancelled'])
 
 const orderItemModifierSchema = z.object({
   modifierId: z.string(),
@@ -160,90 +155,6 @@ export const createOrderSchema = z.object({
   customFields: z.record(z.string(), z.string()).optional(), // Custom fields for configurable order types
   idempotencyKey: z.string().max(128).nullish(), // Client-generated UUID to prevent double-tap duplicates
   scheduledFor: z.string().nullish(), // ISO datetime for pre-orders / future orders
-})
-
-export const updateOrderSchema = z.object({
-  tabName: z.string().max(50).optional(),
-  guestCount: z.number().int().positive().optional(),
-  notes: z.string().max(500).optional(),
-  items: z.array(orderItemSchema).optional(),
-})
-
-// ============================================
-// Payment schemas
-// ============================================
-
-export const paymentMethodSchema = z.enum(['cash', 'credit', 'debit', 'gift_card', 'house_account'])
-
-export const processPaymentSchema = z.object({
-  method: paymentMethodSchema,
-  amount: positiveNumber,
-  tipAmount: nonNegativeNumber.default(0),
-  // Cash specific
-  cashTendered: positiveNumber.optional(),
-  // Card specific
-  cardLast4: z.string().regex(/^\d{4}$/).optional(),
-  cardBrand: z.string().optional(),
-  authCode: z.string().optional(),
-  // Gift card specific
-  giftCardId: idSchema.optional(),
-  // House account specific
-  houseAccountId: idSchema.optional(),
-})
-
-// ============================================
-// Menu item schemas
-// ============================================
-
-export const createMenuItemSchema = z.object({
-  locationId: idSchema,
-  categoryId: idSchema,
-  name: z.string().min(1).max(100),
-  description: z.string().max(500).optional(),
-  price: nonNegativeNumber,
-  comparePrice: positiveNumber.optional(),
-  sku: z.string().max(50).optional(),
-  isAvailable: z.boolean().default(true),
-  isPopular: z.boolean().default(false),
-  allowSpecialNotes: z.boolean().default(true),
-  trackInventory: z.boolean().default(false),
-  currentStock: z.number().int().optional(),
-  lowStockAlert: z.number().int().optional(),
-})
-
-export const updateMenuItemSchema = createMenuItemSchema.partial().omit({ locationId: true })
-
-// ============================================
-// Customer schemas
-// ============================================
-
-export const createCustomerSchema = z.object({
-  locationId: idSchema,
-  firstName: z.string().min(1).max(50),
-  lastName: z.string().min(1).max(50),
-  email: emailSchema,
-  phone: phoneSchema,
-  birthDate: z.string().datetime().optional(),
-  notes: z.string().max(500).optional(),
-})
-
-export const updateCustomerSchema = createCustomerSchema.partial().omit({ locationId: true })
-
-// ============================================
-// Discount schemas
-// ============================================
-
-export const discountTypeSchema = z.enum(['percent', 'fixed'])
-
-export const createDiscountSchema = z.object({
-  locationId: idSchema,
-  name: z.string().min(1).max(100),
-  type: discountTypeSchema,
-  value: positiveNumber,
-  minOrderAmount: nonNegativeNumber.optional(),
-  maxDiscountAmount: positiveNumber.optional(),
-  requiresManagerApproval: z.boolean().default(false),
-  isActive: z.boolean().default(true),
 })
 
 // ============================================

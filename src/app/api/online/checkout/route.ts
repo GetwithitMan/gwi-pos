@@ -29,6 +29,7 @@ import { getPayApiClient } from '@/lib/datacap/payapi-client'
 import { getCurrentBusinessDay } from '@/lib/business-day'
 import { getLocationTaxRate, calculateSplitTax, isItemTaxInclusive, type TaxInclusiveSettings } from '@/lib/order-calculations'
 import { checkOnlineRateLimit } from '@/lib/online-rate-limiter'
+import { getClientIp } from '@/lib/get-client-ip'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
 import { upsertOnlineCustomer, accrueOnlineLoyaltyPoints } from '@/lib/customer-upsert'
 import { generateOrderViewToken } from '@/app/api/public/order-status/[id]/route'
@@ -137,10 +138,7 @@ type CheckoutBody = z.infer<typeof CheckoutBodySchema>
 
 export async function POST(request: NextRequest) {
   // Extract client IP for rate limiting
-  const ip =
-    request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
-    request.headers.get('x-real-ip') ||
-    'unknown'
+  const ip = getClientIp(request)
 
   let body: CheckoutBody
 

@@ -144,6 +144,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
         notes: notes || null,
         status: 'pending',
         expiresAt,
+        lastMutatedBy: 'cloud',
       },
       include: {
         requestedByEmployee: {

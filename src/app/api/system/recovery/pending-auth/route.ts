@@ -12,6 +12,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { getClientIp } from '@/lib/get-client-ip'
 
 const STALE_THRESHOLD_MS = 5 * 60 * 1000 // 5 minutes
 
@@ -27,7 +28,7 @@ function checkInternalAuth(request: NextRequest): NextResponse | null {
   const isAuthorized = (cronSecret && (authHeader === cronSecret || apiKey === cronSecret)) ||
                        (internalSecret && (authHeader === internalSecret || apiKey === internalSecret))
   if (!isAuthorized) {
-    const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || ''
+    const ip = getClientIp(request)
     if (!['127.0.0.1', '::1', 'localhost'].includes(ip)) {
       return NextResponse.json({ error: 'Unauthorized — API key required' }, { status: 401 })
     }

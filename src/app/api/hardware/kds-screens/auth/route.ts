@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { getClientIp } from '@/lib/get-client-ip'
 
 // Cookie name for device token
 const DEVICE_TOKEN_COOKIE = 'kds_device_token'
@@ -46,9 +47,7 @@ function recordKdsAuthFailure(ip: string): void {
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     // ── Rate limiting (5 attempts / minute) ────────────────────
-    const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
-      || request.headers.get('x-real-ip')
-      || 'unknown'
+    const ip = getClientIp(request)
 
     const rateCheck = checkKdsAuthRateLimit(ip)
     if (!rateCheck.allowed) {

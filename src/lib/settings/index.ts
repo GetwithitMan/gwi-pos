@@ -169,9 +169,6 @@ export {
 
 // ─── Pricing Rules Engine ───────────────────────────────────────────────────
 export {
-  getHappyHourEndTime,
-  isHappyHourActive,
-  getHappyHourPrice,
   isPricingRuleActive,
   getActivePricingRules,
   getAdjustedPrice,

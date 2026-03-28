@@ -136,7 +136,7 @@ export const POST = withVenue(withAuth(async function POST(
 
         await tx.orderCard.update({
           where: { id: capturedCard!.id },
-          data: { status: 'captured', capturedAmount: purchaseAmount, capturedAt: now, tipAmount: 0 },
+          data: { status: 'captured', capturedAmount: purchaseAmount, capturedAt: now, tipAmount: 0, lastMutatedBy: 'cloud' },
         })
         await OrderRepository.updateOrder(orderId, locationId, {
           status: 'paid',
@@ -161,11 +161,12 @@ export const POST = withVenue(withAuth(async function POST(
             authCode: captureResponse!.authCode || null,
             datacapRecordNo: capturedCard!.recordNo,
             status: PAYMENT_STATES.COMPLETED,
+            lastMutatedBy: 'cloud',
           },
         })
         // Void remaining authorized cards
         for (const c of order.cards.filter(c => c.id !== capturedCard!.id)) {
-          await tx.orderCard.update({ where: { id: c.id }, data: { status: PAYMENT_STATES.VOIDED } })
+          await tx.orderCard.update({ where: { id: c.id }, data: { status: PAYMENT_STATES.VOIDED, lastMutatedBy: 'cloud' } })
         }
 
         // Queue critical socket events inside transaction for crash safety
@@ -237,7 +238,7 @@ export const POST = withVenue(withAuth(async function POST(
           await validateReader(card.readerId, locationId)
           const client = await requireDatacapClient(locationId)
           await client.voidSale(card.readerId, { recordNo: card.recordNo })
-          await db.orderCard.update({ where: { id: card.id }, data: { status: PAYMENT_STATES.VOIDED } })
+          await db.orderCard.update({ where: { id: card.id }, data: { status: PAYMENT_STATES.VOIDED, lastMutatedBy: 'cloud' } })
         } catch (err) {
           console.warn(`[Retry Cash] Failed to void card ${card.cardLast4}:`, err)
         }
@@ -263,6 +264,7 @@ export const POST = withVenue(withAuth(async function POST(
             status: PAYMENT_STATES.COMPLETED,
             amountTendered: paymentAmount + tipAmount,
             changeGiven: 0,
+            lastMutatedBy: 'cloud',
           },
         })
         await OrderRepository.updateOrder(orderId, locationId, {
@@ -352,7 +354,7 @@ export const POST = withVenue(withAuth(async function POST(
 
         await tx.orderCard.updateMany({
           where: { orderId, status: 'authorized' },
-          data: { status: PAYMENT_STATES.VOIDED },
+          data: { status: PAYMENT_STATES.VOIDED, lastMutatedBy: 'cloud' },
         })
         await OrderRepository.updateOrder(orderId, locationId, {
           status: PAYMENT_STATES.VOIDED,

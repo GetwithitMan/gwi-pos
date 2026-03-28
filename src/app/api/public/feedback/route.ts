@@ -1,28 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { createRateLimiter } from '@/lib/rate-limiter'
+import { getClientIp } from '@/lib/get-client-ip'
 
-// Simple in-memory rate limiter: 5 submissions per minute per IP
-const rateLimitMap = new Map<string, { count: number; resetAt: number }>()
-
-function isRateLimited(ip: string): boolean {
-  const now = Date.now()
-  const entry = rateLimitMap.get(ip)
-  if (!entry || now > entry.resetAt) {
-    rateLimitMap.set(ip, { count: 1, resetAt: now + 60_000 })
-    return false
-  }
-  entry.count++
-  return entry.count > 5
-}
+// Rate limiter: 5 submissions per minute per IP
+const limiter = createRateLimiter({ maxAttempts: 5, windowMs: 60_000 })
 
 // POST: Public feedback submission (no auth, rate limited)
 export async function POST(request: NextRequest) {
   try {
-    const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
-      || request.headers.get('x-real-ip')
-      || 'unknown'
+    const ip = getClientIp(request)
 
-    if (isRateLimited(ip)) {
+    const rateCheck = limiter.check(ip)
+    if (!rateCheck.allowed) {
       return NextResponse.json({ error: 'Too many requests. Please wait a moment.' }, { status: 429 })
     }
 

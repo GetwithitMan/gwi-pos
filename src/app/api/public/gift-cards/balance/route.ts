@@ -13,15 +13,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getDbForVenue } from '@/lib/db'
 import { GiftCardBalanceSchema } from '@/lib/site-api-schemas'
 import { checkOnlineRateLimit } from '@/lib/online-rate-limiter'
+import { getClientIp } from '@/lib/get-client-ip'
 import { createChildLogger } from '@/lib/logger'
 
 const log = createChildLogger('public.gift-cards.balance')
 
 export async function POST(request: NextRequest) {
-  const ip =
-    request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
-    request.headers.get('x-real-ip') ||
-    'unknown'
+  const ip = getClientIp(request)
 
   // Rate limit: reuse 'menu' bucket (30/min)
   const rateCheck = checkOnlineRateLimit(ip, 'gift-card-balance', 'menu')

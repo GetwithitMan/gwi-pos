@@ -30,26 +30,10 @@ import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('webhooks-reservations')
 
-// ─── Rate Limiting ───────────────────────────────────────────────────────────
+// ─── Rate Limiting (100/min per platform) ───────────────────────────────────
+import { createRateLimiter } from '@/lib/rate-limiter'
 
-const rateLimitMap = new Map<string, { count: number; resetAt: number }>()
-const RATE_LIMIT = 100
-const RATE_WINDOW_MS = 60_000
-
-function checkRateLimit(platform: string): boolean {
-  const now = Date.now()
-  const key = `webhook:${platform}`
-  const entry = rateLimitMap.get(key)
-
-  if (!entry || now > entry.resetAt) {
-    rateLimitMap.set(key, { count: 1, resetAt: now + RATE_WINDOW_MS })
-    return true
-  }
-
-  if (entry.count >= RATE_LIMIT) return false
-  entry.count++
-  return true
-}
+const limiter = createRateLimiter({ maxAttempts: 100, windowMs: 60_000 })
 
 // ─── Normalized Payload ──────────────────────────────────────────────────────
 
@@ -294,7 +278,7 @@ export async function POST(
   }
 
   // Rate limit
-  if (!checkRateLimit(platform)) {
+  if (!limiter.check(`webhook:${platform}`).allowed) {
     return NextResponse.json({ error: 'Rate limit exceeded (100/min)' }, { status: 429 })
   }
 

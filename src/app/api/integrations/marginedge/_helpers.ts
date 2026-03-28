@@ -137,6 +137,7 @@ export async function syncInvoicesForLocation(
                     invoiceNumber: invoice.invoiceNumber,
                     vendorName: meInvoice.vendorName ?? null,
                     effectiveDate: invoiceDate,
+                    lastMutatedBy: 'cloud',
                   },
                 })
                 costUpdates++

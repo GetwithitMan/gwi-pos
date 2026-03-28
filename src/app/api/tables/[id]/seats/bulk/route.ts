@@ -76,6 +76,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
             ...(seatUpdate.relativeY !== undefined ? { relativeY: seatUpdate.relativeY } : {}),
             ...(seatUpdate.angle !== undefined ? { angle: seatUpdate.angle } : {}),
             ...(seatUpdate.seatType !== undefined ? { seatType: seatUpdate.seatType } : {}),
+            lastMutatedBy: 'cloud',
           },
         })
       )

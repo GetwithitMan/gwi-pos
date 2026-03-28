@@ -131,7 +131,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
 
     const template = await db.tipGroupTemplate.update({
       where: { id },
-      data: updateData,
+      data: { ...updateData, lastMutatedBy: 'cloud' },
     })
 
     // ── Outage queue protection ────────────────────────────────────────────
@@ -207,7 +207,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(request:
 
     await db.tipGroupTemplate.update({
       where: { id },
-      data: { deletedAt: new Date() },
+      data: { deletedAt: new Date(), lastMutatedBy: 'cloud' },
     })
 
     // ── Outage queue protection ────────────────────────────────────────────

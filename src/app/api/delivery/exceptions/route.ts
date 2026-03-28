@@ -37,28 +37,10 @@ const VALID_EXCEPTION_TYPES = [
 
 const VALID_SEVERITIES = ['low', 'medium', 'high', 'critical'] as const
 
-// ── Rate Limiting (in-memory, per-location) ─────────────────────────────────
-// TODO: Replace with Redis or middleware-based rate limiter in production
-const rateLimitMap = new Map<string, { count: number; resetAt: number }>()
-const RATE_LIMIT_MAX = 30
-const RATE_LIMIT_WINDOW_MS = 60_000 // 1 minute
+// ── Rate Limiting (in-memory, per-location, 30/min) ─────────────────────────
+import { createRateLimiter } from '@/lib/rate-limiter'
 
-function checkRateLimit(locationId: string): boolean {
-  const now = Date.now()
-  const entry = rateLimitMap.get(locationId)
-
-  if (!entry || now >= entry.resetAt) {
-    rateLimitMap.set(locationId, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS })
-    return true
-  }
-
-  if (entry.count >= RATE_LIMIT_MAX) {
-    return false
-  }
-
-  entry.count++
-  return true
-}
+const limiter = createRateLimiter({ maxAttempts: 30, windowMs: 60_000 })
 
 /**
  * GET /api/delivery/exceptions — List delivery exceptions
@@ -178,8 +160,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.DELIVERY_EXCEPTIONS)
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
-    // Rate limit: 10/min per location
-    if (!checkRateLimit(locationId)) {
+    // Rate limit: 30/min per location
+    if (!limiter.check(locationId).allowed) {
       return NextResponse.json(
         { error: 'Rate limit exceeded. Maximum 30 exceptions per minute per location.' },
         { status: 429 }

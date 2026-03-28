@@ -56,32 +56,58 @@ export const POST = withVenue(withAuth(async function POST(
 
     // Update all orders to new employee (open, sent, and split parents)
     const transferableOrders = openOrders.filter(o => o.status === 'open' || o.status === 'sent' || o.status === 'split')
-    for (const order of transferableOrders) {
-      await OrderRepository.updateOrder(order.id, table.locationId, { employeeId: toEmployeeId })
 
-      // When transferring a split parent, also update all its child orders
-      if (order.status === 'split') {
-        await db.order.updateMany({
-          where: { parentOrderId: order.id, deletedAt: null },
+    // Wrap all mutations in a transaction for atomicity
+    await db.$transaction(async (tx) => {
+      for (const order of transferableOrders) {
+        await tx.order.update({
+          where: { id: order.id },
           data: { employeeId: toEmployeeId },
         })
-      }
-    }
 
-    // Create audit log entry for each transferred order
-    for (const order of transferableOrders) {
-      await db.auditLog.create({
+        // When transferring a split parent, also update all its child orders
+        if (order.status === 'split') {
+          await tx.order.updateMany({
+            where: { parentOrderId: order.id, deletedAt: null },
+            data: { employeeId: toEmployeeId },
+          })
+        }
+      }
+
+      // Create audit log entry for each transferred order
+      for (const order of transferableOrders) {
+        await tx.auditLog.create({
+          data: {
+            locationId: table.locationId,
+            employeeId: fromEmployeeId,
+            action: 'table_transfer',
+            entityType: 'order',
+            entityId: order.id,
+            details: {
+              tableId,
+              tableName: table.name,
+              orderId: order.id,
+              orderNumber: order.orderNumber,
+              fromEmployeeId,
+              toEmployeeId,
+              toEmployeeName: toEmployee.displayName || `${toEmployee.firstName} ${toEmployee.lastName}`,
+              reason,
+            },
+          },
+        })
+      }
+
+      // Also create a single audit log for the table transfer
+      await tx.auditLog.create({
         data: {
           locationId: table.locationId,
           employeeId: fromEmployeeId,
           action: 'table_transfer',
-          entityType: 'order',
-          entityId: order.id,
+          entityType: 'table',
+          entityId: tableId,
           details: {
-            tableId,
             tableName: table.name,
-            orderId: order.id,
-            orderNumber: order.orderNumber,
+            ordersTransferred: transferableOrders.length,
             fromEmployeeId,
             toEmployeeId,
             toEmployeeName: toEmployee.displayName || `${toEmployee.firstName} ${toEmployee.lastName}`,
@@ -89,25 +115,6 @@ export const POST = withVenue(withAuth(async function POST(
           },
         },
       })
-    }
-
-    // Also create a single audit log for the table transfer
-    await db.auditLog.create({
-      data: {
-        locationId: table.locationId,
-        employeeId: fromEmployeeId,
-        action: 'table_transfer',
-        entityType: 'table',
-        entityId: tableId,
-        details: {
-          tableName: table.name,
-          ordersTransferred: transferableOrders.length,
-          fromEmployeeId,
-          toEmployeeId,
-          toEmployeeName: toEmployee.displayName || `${toEmployee.firstName} ${toEmployee.lastName}`,
-          reason,
-        },
-      },
     })
 
     // Emit order events for each transferred order (fire-and-forget)

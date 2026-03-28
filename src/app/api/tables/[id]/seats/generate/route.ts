@@ -74,6 +74,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
             relativeY: Math.round(pos.relativeY),
             angle: Math.round(pos.angle),
             seatType: 'standard',
+            lastMutatedBy: 'cloud',
           },
         })
       )

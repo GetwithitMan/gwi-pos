@@ -159,7 +159,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
       if (Object.keys(updateData).length > 0) {
         await tx.vendorOrder.update({
           where: { id },
-          data: updateData,
+          data: { ...updateData, lastMutatedBy: 'cloud' },
         })
       }
 
@@ -224,7 +224,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     const now = new Date()
     await db.vendorOrder.update({
       where: { id },
-      data: { deletedAt: now },
+      data: { deletedAt: now, lastMutatedBy: 'cloud' },
     })
 
     void notifyDataChanged({ locationId, domain: 'inventory', action: 'deleted', entityId: id })

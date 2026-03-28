@@ -64,6 +64,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
           data: {
             isActive: false,
             deletedAt: new Date(),
+            lastMutatedBy: 'cloud',
           },
         })
       }
@@ -111,6 +112,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
           relativeY: pos.relativeY,
           angle: pos.angle,
           seatType: 'standard',
+          lastMutatedBy: 'cloud',
         })),
       })
 

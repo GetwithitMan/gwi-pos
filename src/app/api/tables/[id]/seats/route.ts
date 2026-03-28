@@ -136,6 +136,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
         relativeY: finalRelativeY,
         angle: finalAngle,
         seatType: seatType ?? 'standard',
+        lastMutatedBy: 'cloud',
       },
     })
 

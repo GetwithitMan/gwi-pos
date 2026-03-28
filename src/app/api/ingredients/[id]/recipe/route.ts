@@ -112,6 +112,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
         batchSize,
         batchUnit,
         sortOrder,
+        lastMutatedBy: 'cloud',
       },
       include: {
         component: {
@@ -166,6 +167,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
         ...(unit !== undefined ? { unit } : {}),
         ...(batchSize !== undefined ? { batchSize } : {}),
         ...(batchUnit !== undefined ? { batchUnit } : {}),
+        lastMutatedBy: 'cloud',
       },
       include: {
         component: {
@@ -211,7 +213,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(request:
 
     await db.ingredientRecipe.update({
       where: { id: recipeId },
-      data: { deletedAt: new Date() },
+      data: { deletedAt: new Date(), lastMutatedBy: 'cloud' },
     })
 
     pushUpstream()

@@ -74,6 +74,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
         extraPrice: extraPrice !== undefined
           ? (extraPrice === Number(menuItemIngredient.ingredient.extraPrice) ? null : extraPrice)
           : undefined,
+        lastMutatedBy: 'cloud',
       },
       include: {
         ingredient: {

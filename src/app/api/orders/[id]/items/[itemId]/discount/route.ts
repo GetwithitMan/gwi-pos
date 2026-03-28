@@ -5,6 +5,7 @@ import type { OrderItemForCalculation } from '@/lib/order-calculations'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate } from '@/lib/socket-dispatch'
 import { requirePermission } from '@/lib/api-auth'
+import { withAuth, type AuthenticatedContext } from '@/lib/api-auth-middleware'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
@@ -24,16 +25,18 @@ interface ApplyItemDiscountRequest {
 }
 
 // POST — Apply item-level discount
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth({ allowCellular: true }, async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string; itemId: string }> }
+  ctx: AuthenticatedContext
 ) {
   try {
-    const { id: orderId, itemId } = await params
+    const { id: orderId, itemId } = await ctx.params
     const body = await request.json() as ApplyItemDiscountRequest
+    // SECURITY: Use authenticated employee ID for permission check
+    const authEmployeeId = ctx.auth.employeeId || body.employeeId
 
     // Validate required fields
-    if (!body.type || body.value === undefined || body.value === null || !body.employeeId) {
+    if (!body.type || body.value === undefined || body.value === null || !authEmployeeId) {
       return NextResponse.json(
         { error: 'type, value, and employeeId are required' },
         { status: 400 }
@@ -80,8 +83,8 @@ export const POST = withVenue(async function POST(
         )
       }
 
-      // Auth check — require manager.discounts permission
-      const auth = await requirePermission(body.employeeId, order.locationId, PERMISSIONS.MGR_DISCOUNTS)
+      // Auth check — require manager.discounts permission using verified identity
+      const auth = await requirePermission(authEmployeeId, order.locationId, PERMISSIONS.MGR_DISCOUNTS)
       if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
       if (order.status === 'paid' || order.status === 'closed') {
@@ -303,18 +306,19 @@ export const POST = withVenue(async function POST(
       { status: 500 }
     )
   }
-})
+}))
 
 // DELETE — Remove an item discount
 // Query: ?discountId={id}
-export const DELETE = withVenue(async function DELETE(
+export const DELETE = withVenue(withAuth({ allowCellular: true }, async function DELETE(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string; itemId: string }> }
+  ctx: AuthenticatedContext
 ) {
   try {
-    const { id: orderId, itemId } = await params
+    const { id: orderId, itemId } = await ctx.params
     const discountId = request.nextUrl.searchParams.get('discountId')
-    const employeeId = request.nextUrl.searchParams.get('employeeId')
+    // SECURITY: Use authenticated employee ID for permission check
+    const employeeId = ctx.auth.employeeId || request.nextUrl.searchParams.get('employeeId')
 
     if (!discountId) {
       return NextResponse.json(
@@ -459,4 +463,4 @@ export const DELETE = withVenue(async function DELETE(
       { status: 500 }
     )
   }
-})
+}))

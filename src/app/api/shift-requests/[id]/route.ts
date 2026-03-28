@@ -72,7 +72,7 @@ export const PUT = withVenue(async function PUT(
       if (requestType === 'cover' && !swapRequest.requestedToEmployeeId && resolvedEmployeeId) {
         updateData.requestedToEmployeeId = resolvedEmployeeId
       }
-      const updated = await db.shiftSwapRequest.update({ where: { id: requestId }, data: updateData })
+      const updated = await db.shiftSwapRequest.update({ where: { id: requestId }, data: { ...updateData, lastMutatedBy: 'cloud' } })
       pushUpstream()
       void dispatchShiftRequestUpdate(locationId, {
         action: 'accepted', requestId, type: requestType,
@@ -100,7 +100,7 @@ export const PUT = withVenue(async function PUT(
       }
       const updated = await db.shiftSwapRequest.update({
         where: { id: requestId },
-        data: { status: 'rejected', respondedAt: now, declineReason: reason || null },
+        data: { status: 'rejected', respondedAt: now, declineReason: reason || null, lastMutatedBy: 'cloud' },
       })
       pushUpstream()
       void dispatchShiftRequestUpdate(locationId, {
@@ -124,7 +124,7 @@ export const PUT = withVenue(async function PUT(
         const [updatedReq, updatedShift] = await db.$transaction([
           db.shiftSwapRequest.update({
             where: { id: requestId },
-            data: { status: 'approved', approvedAt: now, approvedByEmployeeId: resolvedEmployeeId, managerNote: managerNote || null },
+            data: { status: 'approved', approvedAt: now, approvedByEmployeeId: resolvedEmployeeId, managerNote: managerNote || null, lastMutatedBy: 'cloud' },
           }),
           db.scheduledShift.update({
             where: { id: swapRequest.shiftId },
@@ -133,7 +133,7 @@ export const PUT = withVenue(async function PUT(
         ])
         await db.shiftSwapRequest.updateMany({
           where: { shiftId: swapRequest.shiftId, status: 'pending', id: { not: requestId }, deletedAt: null },
-          data: { status: 'cancelled' },
+          data: { status: 'cancelled', lastMutatedBy: 'cloud' },
         })
         pushUpstream()
         void dispatchShiftRequestUpdate(locationId, {
@@ -160,7 +160,7 @@ export const PUT = withVenue(async function PUT(
       const [updatedReq, updatedShift] = await db.$transaction([
         db.shiftSwapRequest.update({
           where: { id: requestId },
-          data: { status: 'approved', approvedAt: now, approvedByEmployeeId: resolvedEmployeeId, managerNote: managerNote || null },
+          data: { status: 'approved', approvedAt: now, approvedByEmployeeId: resolvedEmployeeId, managerNote: managerNote || null, lastMutatedBy: 'cloud' },
         }),
         db.scheduledShift.update({
           where: { id: swapRequest.shiftId },
@@ -174,7 +174,7 @@ export const PUT = withVenue(async function PUT(
       ])
       await db.shiftSwapRequest.updateMany({
         where: { shiftId: swapRequest.shiftId, status: 'pending', id: { not: requestId }, deletedAt: null },
-        data: { status: 'cancelled' },
+        data: { status: 'cancelled', lastMutatedBy: 'cloud' },
       })
       pushUpstream()
       void dispatchShiftRequestUpdate(locationId, {
@@ -200,6 +200,7 @@ export const PUT = withVenue(async function PUT(
         declineReason: reason || null,
         managerNote: managerNote || null,
         approvedAt: now,
+        lastMutatedBy: 'cloud',
       },
     })
     pushUpstream()
@@ -251,7 +252,7 @@ export const DELETE = withVenue(async function DELETE(
 
     await db.shiftSwapRequest.update({
       where: { id: requestId },
-      data: { deletedAt: new Date(), status: 'cancelled' },
+      data: { deletedAt: new Date(), status: 'cancelled', lastMutatedBy: 'cloud' },
     })
 
     pushUpstream()

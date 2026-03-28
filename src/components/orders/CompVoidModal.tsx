@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { formatCurrency } from '@/lib/utils'
 import { getOrderVersion, handleVersionConflict } from '@/lib/order-version'
 import { RemoteVoidApprovalModal } from './RemoteVoidApprovalModal'
-import { ManagerPinModal } from '@/components/auth/ManagerPinModal'
+import { ManagerPinModal } from '@/components/ui/manager-pin-modal'
 import type { UiModifier } from '@/types/orders'
 
 interface OrderItem {

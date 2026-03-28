@@ -152,8 +152,8 @@ export const SYNC_MODELS: Readonly<Record<string, SyncModelConfig>> = {
   ScheduledShift:         { direction: 'downstream', owner: 'cloud', priority: 253, batchSize: 100 },
   Event:                  { direction: 'downstream', owner: 'cloud', priority: 254, batchSize: 100 },
   EventPricingTier:       { direction: 'downstream', owner: 'cloud', priority: 255, batchSize: 50 },
-  EventTableConfig:       { direction: 'downstream', owner: 'cloud', priority: 256, batchSize: 50 },
-  Reservation:            { direction: 'bidirectional', owner: 'both', priority: 261, batchSize: 100 },
+  EventTableConfig:       { direction: 'downstream', owner: 'cloud', priority: 260, batchSize: 50 },
+  Reservation:            { direction: 'bidirectional', owner: 'both', priority: 256, batchSize: 100 },
   ItemBarcode:            { direction: 'downstream', owner: 'cloud', priority: 262, batchSize: 100 },
   VoidReason:             { direction: 'downstream', owner: 'cloud', priority: 263, batchSize: 50 },
   CompReason:             { direction: 'downstream', owner: 'cloud', priority: 264, batchSize: 50 },
@@ -370,6 +370,10 @@ export const LOCAL_ONLY_TABLES = new Set([
   'MembershipPlan', 'Membership', 'MembershipCharge', 'MembershipEvent',
   // Marketing + upsell
   'MarketingCampaign', 'MarketingRecipient', 'UpsellRule', 'UpsellEvent',
+  // Notification infrastructure
+  'CardDetection', 'NotificationJob', 'NotificationAttempt', 'NotificationProvider',
+  'NotificationDevice', 'NotificationDeviceEvent', 'NotificationTargetAssignment',
+  'NotificationRoutingRule', 'NotificationTemplate', 'ExternalWebhookEvent',
   // Misc operational
   'CoverCharge', 'WaitlistEntry', 'MenuSnapshot', 'CustomerFeedback', 'PourLog',
   'SavedCard', 'CateringOrder', 'CateringOrderItem', 'ServerRotationState',

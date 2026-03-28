@@ -47,7 +47,6 @@ export type {
 // PUBLIC HOOKS
 // =============================================================================
 
-export { useFloorPlan } from './hooks/useFloorPlan'
 export { useSeating } from './hooks/useSeating'
 
 // =============================================================================

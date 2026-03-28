@@ -100,6 +100,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       data: {
         deletedAt: new Date(),
         isActive: false,
+        lastMutatedBy: 'cloud',
       },
     });
 

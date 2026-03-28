@@ -12,8 +12,6 @@
 import { useState, useEffect } from 'react'
 import {
   isDeliveryFeatureActive,
-  isFeatureConfigStale,
-  isEmergencyDisabled,
   type DeliveryFeatureFlags,
 } from '@/lib/delivery/feature-check'
 
@@ -84,40 +82,4 @@ export function useDeliveryFeature(subfeature?: SubfeatureKey): boolean {
   }, [subfeature])
 
   return active
-}
-
-export function useDeliveryFeatureStale(): boolean {
-  const [stale, setStale] = useState(() => {
-    if (!cachedSettings) return false
-    return isFeatureConfigStale(cachedSettings)
-  })
-
-  useEffect(() => {
-    let cancelled = false
-    void fetchDeliverySettings().then((settings) => {
-      if (cancelled || !settings) return
-      setStale(isFeatureConfigStale(settings))
-    })
-    return () => { cancelled = true }
-  }, [])
-
-  return stale
-}
-
-export function useDeliveryEmergencyDisabled(): boolean {
-  const [emergency, setEmergency] = useState(() => {
-    if (!cachedSettings) return false
-    return isEmergencyDisabled(cachedSettings)
-  })
-
-  useEffect(() => {
-    let cancelled = false
-    void fetchDeliverySettings().then((settings) => {
-      if (cancelled || !settings) return
-      setEmergency(isEmergencyDisabled(settings))
-    })
-    return () => { cancelled = true }
-  }, [])
-
-  return emergency
 }

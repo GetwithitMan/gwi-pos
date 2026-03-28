@@ -8,6 +8,7 @@ import { verifyPassword } from '@/lib/auth'
 import { signVenueToken, signOwnerToken } from '@/lib/cloud-auth'
 import { verifyWithClerk } from '@/lib/clerk-verify'
 import { checkLoginRateLimit, recordLoginFailure, recordLoginSuccess } from '@/lib/auth-rate-limiter'
+import { getClientIp } from '@/lib/get-client-ip'
 import { config } from '@/lib/system-config'
 
 /**
@@ -23,9 +24,7 @@ import { config } from '@/lib/system-config'
  */
 export const POST = withVenue(async function POST(request: NextRequest) {
   // ── Rate limiting ──────────────────────────────────────────────
-  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
-    || request.headers.get('x-real-ip')
-    || 'unknown'
+  const ip = getClientIp(request)
 
   const rateCheck = checkLoginRateLimit(ip)
   if (!rateCheck.allowed) {

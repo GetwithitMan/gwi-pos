@@ -14,6 +14,7 @@ import { getDbForVenue } from '@/lib/db'
 import { getStockStatus } from '@/lib/online-availability'
 import { PrismaClient } from '@/generated/prisma/client'
 import { checkOnlineRateLimit } from '@/lib/online-rate-limiter'
+import { getClientIp } from '@/lib/get-client-ip'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -176,10 +177,7 @@ export async function GET(
     }
 
     // ── Rate limit ────────────────────────────────────────────────────────────
-    const ip =
-      request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
-      request.headers.get('x-real-ip') ||
-      'unknown'
+    const ip = getClientIp(request)
 
     const rateCheck = checkOnlineRateLimit(ip, slug, 'menu')
     if (!rateCheck.allowed) {

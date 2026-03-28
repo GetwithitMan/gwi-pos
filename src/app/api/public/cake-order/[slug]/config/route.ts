@@ -11,6 +11,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDbForVenue } from '@/lib/db'
 import { createRateLimiter } from '@/lib/rate-limiter'
+import { getClientIp } from '@/lib/get-client-ip'
 import { DEFAULT_CAKE_ORDERING, type CakeOrderingSettings } from '@/lib/settings'
 
 export const dynamic = 'force-dynamic'
@@ -29,9 +30,7 @@ export async function GET(
     }
 
     // ── Rate limit ─────────────────────────────────────────────────────
-    const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
-      || request.headers.get('x-real-ip')
-      || 'unknown'
+    const ip = getClientIp(request)
 
     const rl = limiter.check(`cake-config:${ip}`)
     if (!rl.allowed) {

@@ -66,6 +66,7 @@ export const PATCH = withVenue(withAuth('ADMIN', async function PATCH(
           variance,
           varianceCost,
           notes: notes || null,
+          lastMutatedBy: 'cloud',
         },
         create: {
           locationId: count.locationId,
@@ -78,6 +79,7 @@ export const PATCH = withVenue(withAuth('ADMIN', async function PATCH(
           variance,
           varianceCost,
           notes: notes || null,
+          lastMutatedBy: 'cloud',
         },
       })
 

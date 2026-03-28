@@ -11,42 +11,19 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getDbForVenue } from '@/lib/db'
+import { createRateLimiter } from '@/lib/rate-limiter'
+import { getClientIp } from '@/lib/get-client-ip'
 
-// ── Simple in-memory rate limiter ───────────────────────────────────────────
-const rateLimitMap = new Map<string, { count: number; resetAt: number }>()
-const RATE_LIMIT = 30
-const RATE_WINDOW_MS = 60_000
-
-function checkRateLimit(ip: string): boolean {
-  const now = Date.now()
-  const entry = rateLimitMap.get(ip)
-
-  if (!entry || now > entry.resetAt) {
-    rateLimitMap.set(ip, { count: 1, resetAt: now + RATE_WINDOW_MS })
-    return true
-  }
-
-  if (entry.count >= RATE_LIMIT) return false
-  entry.count++
-  return true
-}
-
-// Periodic cleanup (every 5 minutes, remove stale entries)
-setInterval(() => {
-  const now = Date.now()
-  for (const [key, val] of rateLimitMap) {
-    if (now > val.resetAt) rateLimitMap.delete(key)
-  }
-}, 300_000)
+// ── Rate limiter (30 req/min/IP) ────────────────────────────────────────────
+const limiter = createRateLimiter({ maxAttempts: 30, windowMs: 60_000 })
 
 export async function GET(request: NextRequest) {
   try {
     // Rate limit
-    const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
-      || request.headers.get('x-real-ip')
-      || 'unknown'
+    const ip = getClientIp(request)
 
-    if (!checkRateLimit(ip)) {
+    const rateCheck = limiter.check(ip)
+    if (!rateCheck.allowed) {
       return NextResponse.json(
         { error: 'Too many requests. Please try again later.' },
         { status: 429 }

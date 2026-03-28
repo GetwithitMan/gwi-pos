@@ -75,6 +75,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         blockedTableIds: blockedTableIds || [],
         blockedSectionIds: blockedSectionIds || [],
         createdBy: actor.employeeId,
+        lastMutatedBy: 'cloud',
       },
     })
 
@@ -131,6 +132,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
         ...(reducedCapacityPercent !== undefined ? { reducedCapacityPercent } : {}),
         ...(blockedTableIds !== undefined ? { blockedTableIds } : {}),
         ...(blockedSectionIds !== undefined ? { blockedSectionIds } : {}),
+        lastMutatedBy: 'cloud',
       },
     })
 
@@ -172,7 +174,7 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
 
     await db.reservationBlock.update({
       where: { id },
-      data: { deletedAt: new Date() },
+      data: { deletedAt: new Date(), lastMutatedBy: 'cloud' },
     })
 
     void notifyDataChanged({ locationId, domain: 'reservations', action: 'deleted', entityId: id })

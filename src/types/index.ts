@@ -307,26 +307,6 @@ export interface PaymentInfo {
 export type OrderStatus = 'open' | 'paid' | 'closed' | 'voided' | 'refunded'
 
 /**
- * Open order summary for display
- */
-export interface OpenOrderSummary {
-  id: string
-  orderNumber: string
-  tableId?: string
-  tableName?: string
-  tabId?: string
-  tabName?: string
-  employeeId: string
-  employeeName: string
-  status: OrderStatus
-  subtotal: number
-  total: number
-  itemCount: number
-  createdAt: string
-  updatedAt: string
-}
-
-/**
  * Timed session for entertainment items
  */
 export interface TimedSession {

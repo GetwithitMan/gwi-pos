@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { Modal } from '@/components/ui/modal'
-import { ManagerPinModal } from '@/components/auth/ManagerPinModal'
+import { ManagerPinModal } from '@/components/ui/manager-pin-modal'
 import { toast } from '@/stores/toast-store'
 
 interface Payment {

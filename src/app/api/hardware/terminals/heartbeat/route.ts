@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { getClientIp } from '@/lib/get-client-ip'
 // POST terminal heartbeat - updates online status
 // NO withAuth — this route does its own token validation via terminal_token cookie.
 export const POST = withVenue(async function POST(request: NextRequest) {
@@ -15,10 +16,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Get client IP
-    const clientIp =
-      request.headers.get('x-forwarded-for')?.split(',')[0].trim() ||
-      request.headers.get('x-real-ip') ||
-      'unknown'
+    const clientIp = getClientIp(request)
 
     // Find terminal by token
     const terminal = await db.terminal.findFirst({

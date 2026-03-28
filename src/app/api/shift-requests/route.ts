@@ -189,6 +189,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         notes: notes || null,
         status: 'pending',
         expiresAt,
+        lastMutatedBy: 'cloud',
       },
       include: {
         shift: {

@@ -54,7 +54,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
       categoryIds.map((id: string, index: number) =>
         db.spiritCategory.update({
           where: { id },
-          data: { sortOrder: index },
+          data: { sortOrder: index, lastMutatedBy: 'cloud' },
         })
       )
     )

@@ -3,6 +3,7 @@ import { db, adminDb } from '@/lib/db'
 import { OrderRepository } from '@/lib/repositories'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { getClientIp } from '@/lib/get-client-ip'
 
 /**
  * GET /api/internal/payment-reconciliation?locationId=xxx
@@ -21,7 +22,7 @@ function authorize(request: NextRequest): boolean {
   const apiKey = request.headers.get('x-api-key') || request.headers.get('authorization')?.replace('Bearer ', '')
   if (!apiKey || apiKey !== process.env.INTERNAL_API_SECRET) {
     // Allow localhost for backward compatibility
-    const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || ''
+    const ip = getClientIp(request)
     return ['127.0.0.1', '::1', 'localhost'].includes(ip)
   }
   return true

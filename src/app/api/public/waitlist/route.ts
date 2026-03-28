@@ -5,40 +5,15 @@ import { getLocationId } from '@/lib/location-cache'
 import { getLocationSettings } from '@/lib/location-cache'
 import { mergeWithDefaults, DEFAULT_WAITLIST_SETTINGS } from '@/lib/settings'
 import { dispatchWaitlistChanged } from '@/lib/socket-dispatch'
+import { createRateLimiter } from '@/lib/rate-limiter'
+import { getClientIp } from '@/lib/get-client-ip'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('public-waitlist')
 
 export const dynamic = 'force-dynamic'
 
-// ─── In-memory rate limiter (per IP, 3 per minute) ──────────────────────────
-const rateLimitMap = new Map<string, { count: number; resetAt: number }>()
-const RATE_LIMIT_WINDOW_MS = 60_000
-const RATE_LIMIT_MAX = 3
-
-function checkRateLimit(ip: string): boolean {
-  const now = Date.now()
-  const entry = rateLimitMap.get(ip)
-
-  if (!entry || now > entry.resetAt) {
-    rateLimitMap.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS })
-    return true
-  }
-
-  if (entry.count >= RATE_LIMIT_MAX) {
-    return false
-  }
-
-  entry.count++
-  return true
-}
-
-// Periodic cleanup (every 5 minutes)
-setInterval(() => {
-  const now = Date.now()
-  for (const [ip, entry] of rateLimitMap.entries()) {
-    if (now > entry.resetAt) rateLimitMap.delete(ip)
-  }
-}, 5 * 60_000)
+// ─── Rate limiter (per IP, 3 per minute) ────────────────────────────────────
+const limiter = createRateLimiter({ maxAttempts: 3, windowMs: 60_000 })
 
 /**
  * GET /api/public/waitlist — Check waitlist position by phone number (no auth)
@@ -118,14 +93,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     // Rate limit check
-    const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
-      || request.headers.get('x-real-ip')
-      || 'unknown'
+    const ip = getClientIp(request)
 
-    if (!checkRateLimit(ip)) {
+    const rateCheck = limiter.check(ip)
+    if (!rateCheck.allowed) {
       return NextResponse.json(
         { error: 'Too many requests. Please wait a moment and try again.' },
-        { status: 429 }
+        { status: 429, headers: rateCheck.retryAfter ? { 'Retry-After': String(rateCheck.retryAfter) } : undefined }
       )
     }
 

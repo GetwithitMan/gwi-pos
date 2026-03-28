@@ -127,6 +127,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
         countDate: today,
         status: 'draft',
         notes,
+        lastMutatedBy: 'cloud',
       },
       include: {
         createdBy: {

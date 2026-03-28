@@ -5,6 +5,7 @@ import * as OrderItemRepository from '@/lib/repositories/order-item-repository'
 import * as PaymentRepository from '@/lib/repositories/payment-repository'
 import { deductInventoryForVoidedItem, restorePrepStockForVoid, restoreInventoryForRestoredItem, WASTE_VOID_REASONS } from '@/lib/inventory-calculations'
 import { requirePermission } from '@/lib/api-auth'
+import { withAuth, type AuthenticatedContext } from '@/lib/api-auth-middleware'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { roundToCents, calculateCardPrice } from '@/lib/pricing'
 import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate, dispatchFloorPlanUpdate, dispatchOrderSummaryUpdated, dispatchOrderClosed, dispatchTabItemsUpdated, dispatchEntertainmentStatusChanged, dispatchCFDOrderUpdated, dispatchTableStatusChanged } from '@/lib/socket-dispatch'
@@ -54,15 +55,19 @@ interface CompVoidRequest {
 }
 
 // POST - Comp or void an item
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth({ allowCellular: true }, async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  ctx: AuthenticatedContext
 ) {
   try {
-    const { id: orderId } = await params
+    const { id: orderId } = await ctx.params
     const body = await request.json() as CompVoidRequest
 
-    const { action, itemId, reason, employeeId, wasMade, approvedById, managerPinHash, remoteApprovalCode, version } = body
+    const { action, itemId, reason, wasMade, approvedById, managerPinHash, remoteApprovalCode, version } = body
+    // SECURITY: Use authenticated employee ID for the performer, not body.employeeId.
+    // body.employeeId is accepted as a fallback for cellular terminals (which may have
+    // employeeId in the token but also send it in body for legacy compatibility).
+    const employeeId = ctx.auth.employeeId || body.employeeId
 
     if (!action || !itemId || !reason || !employeeId) {
       return NextResponse.json(
@@ -764,17 +769,19 @@ export const POST = withVenue(async function POST(
       { status: 500 }
     )
   }
-})
+}))
 
 // PUT - Undo a comp/void (restore item)
-export const PUT = withVenue(async function PUT(
+export const PUT = withVenue(withAuth({ allowCellular: true }, async function PUT(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  ctx: AuthenticatedContext
 ) {
   try {
-    const { id: orderId } = await params
+    const { id: orderId } = await ctx.params
     const body = await request.json()
-    const { itemId, employeeId } = body as { itemId: string; employeeId: string }
+    const { itemId } = body as { itemId: string; employeeId: string }
+    // SECURITY: Use authenticated employee ID for permission check
+    const employeeId = ctx.auth.employeeId || body.employeeId
 
     if (!itemId || !employeeId) {
       return NextResponse.json(
@@ -913,7 +920,7 @@ export const PUT = withVenue(async function PUT(
       { status: 500 }
     )
   }
-})
+}))
 
 // GET - Get comp/void history for an order
 export const GET = withVenue(async function GET(

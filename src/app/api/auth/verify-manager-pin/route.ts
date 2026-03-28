@@ -3,6 +3,8 @@ import { db } from '@/lib/db'
 import { compare } from 'bcryptjs'
 import { withVenue } from '@/lib/with-venue'
 import { hasPermission } from '@/lib/auth-utils'
+import { createRateLimiter } from '@/lib/rate-limiter'
+import { getClientIp } from '@/lib/get-client-ip'
 
 // ── Action → Permission mapping ─────────────────────────────────────────────
 // Maps action strings to the permission key(s) required to authorize them.
@@ -24,76 +26,21 @@ const ACTION_PERMISSION_MAP: Record<string, string[]> = {
 }
 
 // ── Rate limiter (in-memory, per-IP) ─────────────────────────────────────────
-const MAX_FAILURES = 5
-const LOCKOUT_MS = 5 * 60 * 1000 // 5 minutes
-
-interface RateLimitEntry {
-  count: number
-  windowStart: number
-}
-
-const rateLimitMap = new Map<string, RateLimitEntry>()
-
-function checkRateLimit(ip: string): { allowed: boolean; retryAfterSeconds?: number } {
-  const now = Date.now()
-  const entry = rateLimitMap.get(ip)
-
-  if (!entry || now - entry.windowStart > LOCKOUT_MS) {
-    return { allowed: true }
-  }
-
-  if (entry.count >= MAX_FAILURES) {
-    const retryAfterSeconds = Math.ceil((entry.windowStart + LOCKOUT_MS - now) / 1000)
-    return { allowed: false, retryAfterSeconds }
-  }
-
-  return { allowed: true }
-}
-
-function recordFailure(ip: string): void {
-  const now = Date.now()
-  const entry = rateLimitMap.get(ip)
-
-  if (!entry || now - entry.windowStart > LOCKOUT_MS) {
-    rateLimitMap.set(ip, { count: 1, windowStart: now })
-  } else {
-    entry.count++
-  }
-}
-
-function recordSuccess(ip: string): void {
-  rateLimitMap.delete(ip)
-}
-
-// Clean up stale entries every 60 seconds
-const cleanupTimer = setInterval(() => {
-  const now = Date.now()
-  for (const [key, entry] of rateLimitMap) {
-    if (now - entry.windowStart > LOCKOUT_MS) {
-      rateLimitMap.delete(key)
-    }
-  }
-}, 60_000)
-if (cleanupTimer && typeof cleanupTimer === 'object' && 'unref' in cleanupTimer) {
-  cleanupTimer.unref()
-}
+const limiter = createRateLimiter({ maxAttempts: 5, windowMs: 5 * 60 * 1000 })
 
 // ── POST /api/auth/verify-manager-pin ────────────────────────────────────────
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
-    const ip =
-      request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
-      request.headers.get('x-real-ip') ||
-      'unknown'
+    const ip = getClientIp(request)
 
-    const rateCheck = checkRateLimit(ip)
+    const rateCheck = limiter.check(ip)
     if (!rateCheck.allowed) {
       return NextResponse.json(
         { authorized: false, error: 'Too many failed attempts. Try again later.' },
         {
           status: 429,
-          headers: rateCheck.retryAfterSeconds
-            ? { 'Retry-After': String(rateCheck.retryAfterSeconds) }
+          headers: rateCheck.retryAfter
+            ? { 'Retry-After': String(rateCheck.retryAfter) }
             : undefined,
         }
       )
@@ -187,7 +134,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     if (!matchedEmployee) {
-      recordFailure(ip)
+      limiter.check(ip) // additional attempt counted
       return NextResponse.json(
         { authorized: false, error: 'Invalid PIN' },
         { status: 401 }
@@ -203,7 +150,6 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     )
 
     if (!hasRequired) {
-      recordFailure(ip)
       return NextResponse.json(
         {
           authorized: false,
@@ -214,7 +160,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // ── Success ───────────────────────────────────────────────────────────
-    recordSuccess(ip)
+    limiter.reset(ip)
 
     const employeeName = matchedEmployee.displayName
       || `${matchedEmployee.firstName} ${matchedEmployee.lastName}`

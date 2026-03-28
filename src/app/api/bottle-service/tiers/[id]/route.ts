@@ -102,6 +102,7 @@ export const PUT = withVenue(async function PUT(
         ...(autoGratuityPercent !== undefined && { autoGratuityPercent }),
         ...(sortOrder !== undefined && { sortOrder }),
         ...(isActive !== undefined && { isActive }),
+        lastMutatedBy: 'cloud',
       },
     })
 
@@ -169,7 +170,7 @@ export const DELETE = withVenue(async function DELETE(
 
     await db.bottleServiceTier.update({
       where: { id },
-      data: { deletedAt: new Date() },
+      data: { deletedAt: new Date(), lastMutatedBy: 'cloud' },
     })
 
     void emitToLocation(locationId, 'settings:updated', { source: 'bottle-service-tier', action: 'deleted', tierId: id }).catch(console.error)

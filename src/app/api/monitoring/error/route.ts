@@ -11,6 +11,7 @@ import { dispatchAlert } from '@/lib/alert-service'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { createRateLimiter } from '@/lib/rate-limiter'
+import { getClientIp } from '@/lib/get-client-ip'
 import { queueIfOutage } from '@/lib/sync/outage-safe-write'
 
 // 30 requests per minute per IP to prevent log flooding
@@ -26,9 +27,7 @@ export const dynamic = 'force-dynamic'
 export const POST = withVenue(withAuth(async function POST(req: NextRequest) {
   try {
     // Rate limit: 30 req/min per IP to prevent log flooding
-    const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
-      || req.headers.get('x-real-ip')
-      || 'unknown'
+    const ip = getClientIp(req)
     const rateCheck = errorLogLimiter.check(ip)
     if (!rateCheck.allowed) {
       return NextResponse.json(

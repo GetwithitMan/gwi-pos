@@ -93,9 +93,16 @@ function buildConfig(): SystemConfig {
 
   // Cloud JWT secret — used for signing/verifying cloud session JWTs.
   // Falls back to PROVISION_API_KEY for backward compatibility.
+  // SECURITY: In Vercel production, CLOUD_JWT_SECRET MUST be set as a dedicated secret.
+  // Sharing PROVISION_API_KEY weakens the security boundary — a single leaked key
+  // compromises both provisioning AND cloud session signing.
   const cloudJwtSecret = process.env.CLOUD_JWT_SECRET || provisionApiKey
-  if (!process.env.CLOUD_JWT_SECRET && provisionApiKey && requireProdKeys) {
-    log.warn('CLOUD_JWT_SECRET not set — falling back to PROVISION_API_KEY for JWT signing. Set CLOUD_JWT_SECRET to a separate secret before scaling.')
+  if (!process.env.CLOUD_JWT_SECRET && requireProdKeys) {
+    if (process.env.VERCEL) {
+      log.error('CRITICAL: CLOUD_JWT_SECRET is not set in Vercel production. Falling back to PROVISION_API_KEY — this is a security risk. Set CLOUD_JWT_SECRET to a separate secret immediately.')
+    } else if (provisionApiKey) {
+      log.warn('CLOUD_JWT_SECRET not set — falling back to PROVISION_API_KEY for JWT signing. Set CLOUD_JWT_SECRET to a separate secret before scaling.')
+    }
   }
 
   // Venue DB ID — immutable UUID that decouples DB name from slug.

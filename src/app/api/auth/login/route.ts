@@ -4,15 +4,14 @@ import { compare } from 'bcryptjs'
 import { withVenue } from '@/lib/with-venue'
 import { checkLoginRateLimit, recordLoginFailure, recordLoginSuccess } from '@/lib/auth-rate-limiter'
 import { setSessionCookie } from '@/lib/auth-session'
+import { getClientIp } from '@/lib/get-client-ip'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('auth-login')
 
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     // ── Rate limiting (W1-S1) ──────────────────────────────────
-    const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
-      || request.headers.get('x-real-ip')
-      || 'unknown'
+    const ip = getClientIp(request)
 
     const rateCheck = checkLoginRateLimit(ip)
     if (!rateCheck.allowed) {

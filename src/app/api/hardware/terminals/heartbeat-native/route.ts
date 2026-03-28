@@ -5,6 +5,7 @@ import { emitToLocation } from '@/lib/socket-server'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { getClientIp } from '@/lib/get-client-ip'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('hardware-terminals-heartbeat-native')
 // POST terminal heartbeat for native apps (Android/iOS) - Bearer token auth
@@ -36,10 +37,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Get client IP
-    const clientIp =
-      request.headers.get('x-forwarded-for')?.split(',')[0].trim() ||
-      request.headers.get('x-real-ip') ||
-      'unknown'
+    const clientIp = getClientIp(request)
 
     // ── Cellular fast-path ────────────────────────────────────────────────────
     // Cellular terminals don't have a Terminal record in the POS Neon DB —

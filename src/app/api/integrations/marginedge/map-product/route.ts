@@ -54,6 +54,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       marginEdgeUnit: body.marginEdgeUnit ?? null,
       lastSyncAt: new Date(),
       isActive: true,
+      lastMutatedBy: 'cloud',
     },
     update: {
       marginEdgeProductName: body.marginEdgeProductName,
@@ -63,6 +64,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       marginEdgeUnit: body.marginEdgeUnit ?? null,
       lastSyncAt: new Date(),
       isActive: true,
+      lastMutatedBy: 'cloud',
     },
   })
 

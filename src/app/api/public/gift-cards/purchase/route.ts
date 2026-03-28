@@ -14,6 +14,7 @@ import { getDbForVenue } from '@/lib/db'
 import { getPayApiClient } from '@/lib/datacap/payapi-client'
 import { sendEmail } from '@/lib/email-service'
 import { checkOnlineRateLimit } from '@/lib/online-rate-limiter'
+import { getClientIp } from '@/lib/get-client-ip'
 
 // ─── Request Body Shape ──────────────────────────────────────────────────────
 
@@ -49,10 +50,7 @@ function escapeHtml(str: string): string {
 // ─── Handler ─────────────────────────────────────────────────────────────────
 
 export async function POST(request: NextRequest) {
-  const ip =
-    request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
-    request.headers.get('x-real-ip') ||
-    'unknown'
+  const ip = getClientIp(request)
 
   let body: PurchaseBody
   try {

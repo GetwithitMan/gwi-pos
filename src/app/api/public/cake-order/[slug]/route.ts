@@ -13,6 +13,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { getDbForVenue } from '@/lib/db'
 import { createRateLimiter } from '@/lib/rate-limiter'
+import { getClientIp } from '@/lib/get-client-ip'
 import { createCakeOrderSchema } from '@/lib/cake-orders/schemas'
 import { DEFAULT_CAKE_ORDERING, type CakeOrderingSettings } from '@/lib/settings'
 import { normalizePhone } from '@/lib/utils'
@@ -34,9 +35,7 @@ export async function POST(
     }
 
     // ── Rate limit ─────────────────────────────────────────────────────
-    const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
-      || request.headers.get('x-real-ip')
-      || 'unknown'
+    const ip = getClientIp(request)
 
     const rl = limiter.check(`cake-submit:${ip}`)
     if (!rl.allowed) {

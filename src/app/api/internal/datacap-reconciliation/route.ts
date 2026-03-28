@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getClientIp } from '@/lib/get-client-ip'
 
 // TODO (PAY-P2-4): Add a scheduled cron route (/api/cron/datacap-reconciliation) that:
 // 1. Finds orphaned _pending_datacap_sales rows older than 5 minutes with status='pending'
@@ -29,13 +30,13 @@ import { db } from '@/lib/db'
  * Auth: INTERNAL_API_SECRET via x-api-key header
  */
 
-function authorize(request: NextRequest | Request): boolean {
+function authorize(request: NextRequest): boolean {
   const apiKey = request.headers.get('x-api-key') || request.headers.get('authorization')?.replace('Bearer ', '')
   if (apiKey && apiKey === process.env.INTERNAL_API_SECRET) {
     return true
   }
   // Allow localhost for backward compatibility
-  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || ''
+  const ip = getClientIp(request)
   return ['127.0.0.1', '::1', 'localhost'].includes(ip)
 }
 

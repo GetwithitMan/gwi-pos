@@ -4,6 +4,7 @@ import crypto from 'crypto'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { getClientIp } from '@/lib/get-client-ip'
 const VALID_PLATFORMS = ['BROWSER', 'ANDROID', 'IOS'] as const
 
 // POST complete terminal pairing for native apps (Android/iOS)
@@ -54,10 +55,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Get client IP
-    const clientIp =
-      request.headers.get('x-forwarded-for')?.split(',')[0].trim() ||
-      request.headers.get('x-real-ip') ||
-      'unknown'
+    const clientIp = getClientIp(request)
 
     // IP affinity is NOT checked during pairing — the pairing code is the
     // authentication. Static IP enforcement happens on subsequent heartbeats

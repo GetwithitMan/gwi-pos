@@ -108,6 +108,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
         relativeY: relativeY || 0,
         angle: angle || 0,
         seatType: seatType || 'standard',
+        lastMutatedBy: 'cloud',
       },
     });
 

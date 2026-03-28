@@ -50,24 +50,9 @@ export const STATUS_COLORS = {
 } as const
 
 /**
- * Default tip percentage options
- */
-export const DEFAULT_TIP_PERCENTAGES = [15, 18, 20, 25] as const
-
-/**
  * Pre-modifier options for modifiers
  */
 export const PRE_MODIFIERS = ['no', 'light', 'extra', 'side', 'well done', 'medium', 'rare'] as const
-
-/**
- * Time intervals for timed rentals
- */
-export const TIMED_RATE_INTERVALS = [
-  { value: 'per_15_min', label: 'Per 15 Min' },
-  { value: 'per_30_min', label: 'Per 30 Min' },
-  { value: 'per_hour', label: 'Per Hour' },
-  { value: 'flat_rate', label: 'Flat Rate' },
-] as const
 
 /**
  * Payment methods
@@ -91,27 +76,6 @@ export const DAYS_OF_WEEK = [
   { value: 4, label: 'Thursday', short: 'Thu' },
   { value: 5, label: 'Friday', short: 'Fri' },
   { value: 6, label: 'Saturday', short: 'Sat' },
-] as const
-
-/**
- * Price rounding increments
- */
-export const ROUNDING_INCREMENTS = [
-  { value: 'none', label: 'None (exact)' },
-  { value: '0.05', label: 'Nickel ($0.05)' },
-  { value: '0.10', label: 'Dime ($0.10)' },
-  { value: '0.25', label: 'Quarter ($0.25)' },
-  { value: '0.50', label: 'Half Dollar ($0.50)' },
-  { value: '1.00', label: 'Dollar ($1.00)' },
-] as const
-
-/**
- * Commission types
- */
-export const COMMISSION_TYPES = [
-  { value: null, label: 'None' },
-  { value: 'fixed', label: 'Fixed Amount ($)' },
-  { value: 'percent', label: 'Percentage (%)' },
 ] as const
 
 /**

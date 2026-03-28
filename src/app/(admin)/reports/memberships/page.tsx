@@ -12,7 +12,8 @@ type ReportTab = 'summary' | 'revenue' | 'declines' | 'by_plan' | 'aging'
 
 export default function MembershipReportsPage() {
   const ready = useAuthenticationGuard()
-  const { employee, locationId } = useAuthStore()
+  const employee = useAuthStore(s => s.employee)
+  const locationId = useAuthStore(s => s.locationId)
   const [tab, setTab] = useState<ReportTab>('summary')
   const [data, setData] = useState<any>(null)
   const [period, setPeriod] = useState('monthly')

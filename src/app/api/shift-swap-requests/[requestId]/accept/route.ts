@@ -61,7 +61,7 @@ export const POST = withVenue(withAuth(async function POST(
 
     const updated = await db.shiftSwapRequest.update({
       where: { id: requestId },
-      data: updateData,
+      data: { ...updateData, lastMutatedBy: 'cloud' },
     })
 
     // ── Outage queue protection ────────────────────────────────────────────

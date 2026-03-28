@@ -96,6 +96,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
         name,
         description,
         sortOrder: finalSortOrder,
+        lastMutatedBy: 'cloud',
       },
     })
 
@@ -156,6 +157,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
         ...(description !== undefined && { description }),
         ...(sortOrder !== undefined && { sortOrder }),
         ...(isActive !== undefined && { isActive }),
+        lastMutatedBy: 'cloud',
       },
       include: {
         ingredients: {
@@ -212,7 +214,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(request:
     // Soft delete
     await db.ingredientSwapGroup.update({
       where: { id },
-      data: { deletedAt: new Date() },
+      data: { deletedAt: new Date(), lastMutatedBy: 'cloud' },
     })
 
     return NextResponse.json({ data: { message: 'Swap group deleted' } })

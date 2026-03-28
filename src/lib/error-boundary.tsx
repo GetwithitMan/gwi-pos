@@ -30,6 +30,8 @@ interface Props {
   children: ReactNode
   fallback?: ReactNode
   onError?: (error: Error, errorInfo: ErrorInfo) => void
+  /** Optional label for the boundary — included in error logs and fallback UI */
+  name?: string
 }
 
 interface State {
@@ -182,7 +184,7 @@ export class SilentErrorBoundary extends Component<Props, State> {
       message: error.message,
       error,
       component: errorInfo.componentStack?.split('\n')[1]?.trim(),
-      action: 'Rendering React component (silent boundary)',
+      action: `Rendering React component (silent boundary${this.props.name ? `: ${this.props.name}` : ''})`,
     })
 
     if (this.props.onError) {
@@ -199,11 +201,11 @@ export class SilentErrorBoundary extends Component<Props, State> {
         return this.props.fallback
       }
 
-      // Minimal fallback - just show nothing
+      // Minimal fallback
       return (
         <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
           <p className="text-sm text-red-600">
-            This section encountered an error and has been hidden.
+            Something went wrong{this.props.name ? ` in ${this.props.name}` : ''}.
           </p>
         </div>
       )

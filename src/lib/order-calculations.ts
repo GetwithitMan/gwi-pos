@@ -502,36 +502,6 @@ export function calculateTax(subtotal: number, taxRate: number): number {
   return roundToCents(subtotal * taxRate)
 }
 
-/**
- * @deprecated Use calculateOrderTotals() instead — this function uses single-rate
- * tax math and does NOT support tax-inclusive pricing. Remaining callers should
- * be migrated.
- */
-export function calculateSimpleOrderTotals(
-  subtotal: number,
-  discountTotal: number,
-  locationSettings: { tax?: { defaultRate?: number } } | null | undefined,
-  isTaxExempt?: boolean
-): {
-  subtotal: number
-  discountTotal: number
-  taxTotal: number
-  total: number
-} {
-  const taxRate = isTaxExempt ? 0 : getLocationTaxRate(locationSettings)
-  const effectiveDiscount = Math.min(discountTotal, subtotal)
-  const taxableAmount = subtotal - effectiveDiscount
-  const taxTotal = roundToCents(taxableAmount * taxRate)
-  const total = roundToCents(taxableAmount + taxTotal)
-
-  return {
-    subtotal,
-    discountTotal: effectiveDiscount,
-    taxTotal,
-    total,
-  }
-}
-
 // ============================================================================
 // DISCOUNT RECALCULATION
 // ============================================================================

@@ -7,7 +7,7 @@ import { Card } from '@/components/ui/card'
 import { formatCurrency } from '@/lib/utils'
 import { toast } from '@/stores/toast-store'
 import { getOrderVersion, handleVersionConflict } from '@/lib/order-version'
-import { ManagerPinModal } from '@/components/auth/ManagerPinModal'
+import { ManagerPinModal } from '@/components/ui/manager-pin-modal'
 
 interface DiscountRule {
   id: string

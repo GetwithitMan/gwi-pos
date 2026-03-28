@@ -151,6 +151,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
           offlineTerminalId: terminalId || null,
           // Flag for reconciliation if offline
           needsReconciliation: isOfflineCapture || false,
+          lastMutatedBy: 'cloud',
         },
       })
 
@@ -330,6 +331,7 @@ export const PATCH = withVenue(withAuth(async function PATCH(request: NextReques
         needsReconciliation: false,
         reconciledAt: new Date(),
         reconciledBy: reconciledBy || null,
+        lastMutatedBy: 'cloud',
       },
     })
 

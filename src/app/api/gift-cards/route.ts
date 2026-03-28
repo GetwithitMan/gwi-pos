@@ -195,6 +195,7 @@ export const POST = withVenue(withAuth('CUSTOMERS_GIFT_CARDS', async function PO
           purchasedById,
           orderId,
           expiresAt: expiresAt ? new Date(expiresAt) : null,
+          lastMutatedBy: 'cloud',
           transactions: {
             create: {
               locationId,

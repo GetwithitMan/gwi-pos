@@ -13,35 +13,13 @@ import { getCurrentBusinessDay } from '@/lib/business-day'
 import { parseSettings } from '@/lib/settings'
 import { emitToLocation } from '@/lib/socket-server'
 import { isItemTaxInclusive, calculateSplitTax } from '@/lib/order-calculations'
+import { createRateLimiter } from '@/lib/rate-limiter'
+import { getClientIp } from '@/lib/get-client-ip'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('public-orders')
 
-// ── Simple in-memory rate limiter ───────────────────────────────────────────
-const orderRateLimitMap = new Map<string, { count: number; resetAt: number }>()
-const ORDER_RATE_LIMIT = 5
-const ORDER_RATE_WINDOW_MS = 60_000
-
-function checkOrderRateLimit(ip: string): boolean {
-  const now = Date.now()
-  const entry = orderRateLimitMap.get(ip)
-
-  if (!entry || now > entry.resetAt) {
-    orderRateLimitMap.set(ip, { count: 1, resetAt: now + ORDER_RATE_WINDOW_MS })
-    return true
-  }
-
-  if (entry.count >= ORDER_RATE_LIMIT) return false
-  entry.count++
-  return true
-}
-
-// Periodic cleanup
-setInterval(() => {
-  const now = Date.now()
-  for (const [key, val] of orderRateLimitMap) {
-    if (now > val.resetAt) orderRateLimitMap.delete(key)
-  }
-}, 300_000)
+// ── Rate limiter (5 orders/min/IP) ──────────────────────────────────────────
+const limiter = createRateLimiter({ maxAttempts: 5, windowMs: 60_000 })
 
 interface OrderItemInput {
   menuItemId: string
@@ -52,11 +30,9 @@ interface OrderItemInput {
 export async function POST(request: NextRequest) {
   try {
     // Rate limit
-    const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
-      || request.headers.get('x-real-ip')
-      || 'unknown'
+    const ip = getClientIp(request)
 
-    if (!checkOrderRateLimit(ip)) {
+    if (!limiter.check(ip).allowed) {
       return NextResponse.json(
         { error: 'Too many orders. Please wait a minute before trying again.' },
         { status: 429 }

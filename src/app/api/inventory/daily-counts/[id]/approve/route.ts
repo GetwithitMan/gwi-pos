@@ -56,6 +56,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
           approvedById,
           approvedAt: new Date(),
           rejectionReason: rejectionReason || 'Rejected by manager',
+          lastMutatedBy: 'cloud',
         },
       })
 
@@ -135,6 +136,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
         status: 'approved',
         approvedById,
         approvedAt: new Date(),
+        lastMutatedBy: 'cloud',
       },
       include: {
         createdBy: {

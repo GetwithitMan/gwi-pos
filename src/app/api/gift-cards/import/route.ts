@@ -175,6 +175,7 @@ export const POST = withVenue(withAuth('CUSTOMERS_GIFT_CARDS', async function PO
         status: 'unactivated' as const,
         source: 'import',
         batchId,
+        lastMutatedBy: 'cloud',
       })),
     })
 

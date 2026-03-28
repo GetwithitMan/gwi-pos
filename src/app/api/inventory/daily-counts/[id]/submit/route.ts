@@ -45,6 +45,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
         status: 'submitted',
         submittedById,
         submittedAt: new Date(),
+        lastMutatedBy: 'cloud',
       },
       include: {
         createdBy: {

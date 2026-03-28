@@ -62,7 +62,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
 
     const entry = await db.wasteLogEntry.update({
       where: { id },
-      data: updateData,
+      data: { ...updateData, lastMutatedBy: 'cloud' },
       include: {
         inventoryItem: {
           select: { id: true, name: true, sku: true },
@@ -139,7 +139,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
       // 3. Soft delete the waste log entry
       db.wasteLogEntry.update({
         where: { id },
-        data: { deletedAt: new Date() },
+        data: { deletedAt: new Date(), lastMutatedBy: 'cloud' },
       }),
     ])
 

@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { useShallow } from 'zustand/react/shallow'
 
 // ─── Types ───
 
@@ -263,19 +264,20 @@ export const useCartItemCount = () =>
 export const useCartSubtotal = () =>
   useSiteCartStore((s) => s.items.reduce((sum, item) => sum + getItemTotal(item), 0))
 export const useCartOrderType = () => useSiteCartStore((s) => s.orderType)
-export const useCartCustomerInfo = () => useSiteCartStore((s) => s.customerInfo)
+export const useCartCustomerInfo = () =>
+  useSiteCartStore(useShallow((s) => s.customerInfo))
 export const useCartTip = () =>
-  useSiteCartStore((s) => ({ tipPercent: s.tipPercent, tipAmount: s.tipAmount }))
+  useSiteCartStore(useShallow((s) => ({ tipPercent: s.tipPercent, tipAmount: s.tipAmount })))
 export const useCartSpecialRequests = () => useSiteCartStore((s) => s.specialRequests)
 export const useCartTableContext = () => useSiteCartStore((s) => s.tableContext)
 export const useCartCoupon = () =>
-  useSiteCartStore((s) => ({ code: s.couponCode, discount: s.couponDiscount }))
+  useSiteCartStore(useShallow((s) => ({ code: s.couponCode, discount: s.couponDiscount })))
 export const useCartGiftCard = () =>
-  useSiteCartStore((s) => ({ number: s.giftCardNumber, applied: s.giftCardApplied }))
+  useSiteCartStore(useShallow((s) => ({ number: s.giftCardNumber, applied: s.giftCardApplied })))
 export const useCartSlug = () => useSiteCartStore((s) => s.slug)
 export const useCartMenuVersion = () => useSiteCartStore((s) => s.menuVersion)
 export const useCartDelivery = () =>
-  useSiteCartStore((s) => ({
+  useSiteCartStore(useShallow((s) => ({
     address: s.deliveryAddress,
     city: s.deliveryCity,
     state: s.deliveryState,
@@ -283,4 +285,4 @@ export const useCartDelivery = () =>
     instructions: s.deliveryInstructions,
     zoneId: s.deliveryZoneId,
     fee: s.deliveryFee,
-  }))
+  })))

@@ -42,7 +42,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
 
     await db.vendorOrder.update({
       where: { id },
-      data: { status: 'sent' },
+      data: { status: 'sent', lastMutatedBy: 'cloud' },
     })
 
     void notifyDataChanged({ locationId, domain: 'inventory', action: 'updated', entityId: id })

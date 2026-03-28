@@ -137,7 +137,7 @@ export const POST = withVenue(withAuth(async function POST(
       if (makeDefault) {
         await db.orderCard.updateMany({
           where: { orderId, isDefault: true, deletedAt: null },
-          data: { isDefault: false },
+          data: { isDefault: false, lastMutatedBy: 'cloud' },
         })
       }
 
@@ -153,6 +153,7 @@ export const POST = withVenue(withAuth(async function POST(
           authAmount: preAuthAmount,
           isDefault: makeDefault,
           status: 'authorized',
+          lastMutatedBy: 'cloud',
         },
       })
 
@@ -215,7 +216,7 @@ export const POST = withVenue(withAuth(async function POST(
     if (makeDefault) {
       await db.orderCard.updateMany({
         where: { orderId, isDefault: true, deletedAt: null },
-        data: { isDefault: false },
+        data: { isDefault: false, lastMutatedBy: 'cloud' },
       })
     }
 
@@ -231,6 +232,7 @@ export const POST = withVenue(withAuth(async function POST(
         authAmount: preAuthAmount,
         isDefault: makeDefault,
         status: 'authorized',
+        lastMutatedBy: 'cloud',
       },
     })
 

@@ -27,24 +27,10 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 
 export const dynamic = 'force-dynamic'
 
-// Simple in-memory rate limiter (per employee)
-const rateLimitMap = new Map<string, { count: number; windowStart: number }>()
-const RATE_LIMIT_WINDOW_MS = 60_000
-const RATE_LIMIT_MAX = 30
+// Rate limiter (per employee, 30/min)
+import { createRateLimiter } from '@/lib/rate-limiter'
 
-function checkRateLimit(employeeId: string): boolean {
-  const now = Date.now()
-  const entry = rateLimitMap.get(employeeId)
-  if (!entry || now - entry.windowStart > RATE_LIMIT_WINDOW_MS) {
-    rateLimitMap.set(employeeId, { count: 1, windowStart: now })
-    return true
-  }
-  if (entry.count >= RATE_LIMIT_MAX) {
-    return false
-  }
-  entry.count++
-  return true
-}
+const limiter = createRateLimiter({ maxAttempts: 30, windowMs: 60_000 })
 
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
@@ -58,7 +44,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     // Rate limit
-    if (!checkRateLimit(auth.employee.id)) {
+    if (!limiter.check(auth.employee.id).allowed) {
       return NextResponse.json(
         { error: 'Rate limit exceeded. Max 30 requests per minute.' },
         { status: 429 }

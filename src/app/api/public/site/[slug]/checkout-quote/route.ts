@@ -12,6 +12,7 @@ import { getDbForVenue } from '@/lib/db'
 import { getLocationTaxRate, calculateSplitTax, isItemTaxInclusive, type TaxInclusiveSettings } from '@/lib/order-calculations'
 import { computeIsOrderableOnline } from '@/lib/online-availability'
 import { checkOnlineRateLimit } from '@/lib/online-rate-limiter'
+import { getClientIp } from '@/lib/get-client-ip'
 
 export const dynamic = 'force-dynamic'
 
@@ -50,10 +51,7 @@ export async function POST(
     }
 
     // ── Rate limit ──────────────────────────────────────────────────────────
-    const ip =
-      request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
-      request.headers.get('x-real-ip') ||
-      'unknown'
+    const ip = getClientIp(request)
     const rateCheck = checkOnlineRateLimit(ip, slug, 'menu') // 30/min
     if (!rateCheck.allowed) {
       const resp = NextResponse.json(

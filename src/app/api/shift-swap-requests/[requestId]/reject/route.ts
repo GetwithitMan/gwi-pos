@@ -58,6 +58,7 @@ export const POST = withVenue(withAuth(async function POST(
         declineReason: reason || null,
         managerNote: managerNote || null,
         approvedAt: new Date(),
+        lastMutatedBy: 'cloud',
       },
     })
 

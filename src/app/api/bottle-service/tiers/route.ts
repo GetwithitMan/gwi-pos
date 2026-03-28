@@ -76,6 +76,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         minimumSpend,
         autoGratuityPercent: autoGratuityPercent ?? null,
         sortOrder: sortOrder ?? 0,
+        lastMutatedBy: 'cloud',
       },
     })
 

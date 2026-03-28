@@ -12,6 +12,23 @@
  *   NEON_MIGRATE=true NEON_DATABASE_URL=... node scripts/nuc-pre-migrate.js  # Neon
  *
  * Requires: DATABASE_URL in environment (loaded from /opt/gwi-pos/.env by systemd)
+ *
+ * KNOWN DUPLICATE MIGRATION PREFIXES:
+ *   These exist because multiple migrations were added concurrently in the same sprint.
+ *   They are tracked by full filename (not prefix), so execution order within a
+ *   duplicate prefix set is alphabetical by filename. DO NOT renumber — that would
+ *   cause already-applied migrations to re-run on existing NUCs.
+ *
+ *   021: 021-dedup-modifier-pricing-discount.js, 021-order-claim-fields.js,
+ *        021-pending-datacap-sales.js, 021-print-retry-sos-tracking.js
+ *   025: 025-allergen-age-verification.js, 025-seasonal-menu.js
+ *   027: 027-cover-charge-qr-ordering.js, 027-server-banking-preorders.js
+ *   029: 029-customer-feedback-pour-control.js, 029-reservation-deposits-saved-cards.js
+ *   031: 031-marketing-campaigns.js, 031-upsell-rules.js
+ *   032: 032-host-delivery.js, 032-third-party-delivery.js
+ *   033: 033-report-shares.js, 033-text-to-pay.js
+ *   036: 036-overtime-pricing.js, 036-pizza-enhancements.js
+ *   109: 109-add-cascade-rules.js, 109-gift-card-pool.js
  */
 // dotenv: load .env files for local dev / Vercel builds.
 // On NUC artifacts, dotenv is not shipped — DATABASE_URL comes from

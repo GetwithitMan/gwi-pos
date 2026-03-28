@@ -1752,7 +1752,7 @@ model MenuItem {
   // This enables bottles to be the source of truth for liquor menu items
   linkedBottleProductId String?
   linkedBottleProduct   BottleProduct? @relation("LinkedBottleMenuItems", fields: [linkedBottleProductId], references: [id])
-  linkedPourSizeOz      Decimal? // Custom pour size override for linked bottle (oz)
+  linkedPourSizeOz      Decimal? @db.Decimal(6, 3) // Custom pour size override for linked bottle (oz)
 
   // Modifiers that link to this item (for spirit upgrades, etc.)
   linkedModifiers Modifier[] @relation("LinkedModifierItem")
@@ -1935,7 +1935,7 @@ model Modifier {
   spiritTier            String? // 'well', 'call', 'premium', 'top_shelf'
   linkedBottleProductId String? // Links to bottle inventory
   linkedBottleProduct   BottleProduct? @relation(fields: [linkedBottleProductId], references: [id])
-  pourSizeOz            Decimal? // Override default pour size
+  pourSizeOz            Decimal? @db.Decimal(6, 3) // Override default pour size
 
   // Display
   sortOrder Int     @default(0)
@@ -1965,7 +1965,7 @@ model Modifier {
   swapTargets              Json? // SwapTarget[] — targets with pricing modes
   customPreModifiers       Json? // CustomPreMod[] — custom pre-modifier options (Well Done, Blackened, etc.)
   // Inventory deduction override
-  inventoryDeductionAmount Decimal? // Amount of ingredient to deduct per selection
+  inventoryDeductionAmount Decimal? @db.Decimal(10, 4) // Amount of ingredient to deduct per selection
   inventoryDeductionUnit   String? // Unit for deduction (oz, ml, unit, g)
 
   createdAt DateTime  @default(now())
@@ -4726,15 +4726,15 @@ model InventoryItem {
 
   // Purchase info
   purchaseUnit    String // "case", "lb", "bottle", "each"
-  purchaseSize    Decimal // 15 (for 15lb case), 1 (for single bottle)
-  purchaseCost    Decimal // $65.00 per case
+  purchaseSize    Decimal @db.Decimal(10, 4) // 15 (for 15lb case), 1 (for single bottle)
+  purchaseCost    Decimal @db.Decimal(10, 2) // $65.00 per case
   defaultVendorId String?
   defaultVendor   Vendor? @relation("DefaultVendor", fields: [defaultVendorId], references: [id])
 
   // Storage/usage unit (what you count in)
   storageUnit      String // "oz", "each", "bottle"
-  unitsPerPurchase Decimal // 240 oz per 15lb case
-  costPerUnit      Decimal // Auto-calc: purchaseCost / unitsPerPurchase
+  unitsPerPurchase Decimal @db.Decimal(10, 4) // 240 oz per 15lb case
+  costPerUnit      Decimal @db.Decimal(10, 4) // Auto-calc: purchaseCost / unitsPerPurchase
 
   // Costing method & tracking
   costingMethod   String    @default("weighted_average") // "weighted_average" or "fifo"
@@ -4742,20 +4742,20 @@ model InventoryItem {
   priceSource     String    @default("manual") // "manual", "invoice", "api"
 
   // Yield (for items with waste)
-  yieldPercent     Decimal  @default(100) // 75% = 25% trim/cooking loss
-  yieldCostPerUnit Decimal? // Cost adjusted for yield
+  yieldPercent     Decimal  @default(100) @db.Decimal(6, 4) // 75% = 25% trim/cooking loss
+  yieldCostPerUnit Decimal? @db.Decimal(10, 4) // Cost adjusted for yield
 
   // For liquor items
   spiritCategoryId String?
   spiritCategory   SpiritCategory? @relation("InventoryItemSpirit", fields: [spiritCategoryId], references: [id])
-  pourSizeOz       Decimal? // Standard pour size (overrides location default)
-  proofPercent     Decimal? // Alcohol proof
+  pourSizeOz       Decimal? @db.Decimal(6, 3) // Standard pour size (overrides location default)
+  proofPercent     Decimal? @db.Decimal(6, 2) // Alcohol proof
 
   // Inventory levels (aggregate across all storage locations)
-  currentStock Decimal  @default(0) // Total in storage units
-  parLevel     Decimal? // Minimum to keep on hand (total)
-  reorderPoint Decimal? // When to reorder
-  reorderQty   Decimal? // How much to order
+  currentStock Decimal  @default(0) @db.Decimal(10, 4) // Total in storage units
+  parLevel     Decimal? @db.Decimal(10, 4) // Minimum to keep on hand (total)
+  reorderPoint Decimal? @db.Decimal(10, 4) // When to reorder
+  reorderQty   Decimal? @db.Decimal(10, 4) // How much to order
 
   // Status
   isActive       Boolean @default(true)
@@ -4833,8 +4833,8 @@ model InventoryItemStorage {
   storageLocationId String
   storageLocation   StorageLocation @relation(fields: [storageLocationId], references: [id])
 
-  currentStock Decimal  @default(0) // Stock at THIS location
-  parLevel     Decimal? // Par level for THIS location
+  currentStock Decimal  @default(0) @db.Decimal(10, 4) // Stock at THIS location
+  parLevel     Decimal? @db.Decimal(10, 4) // Par level for THIS location
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -4858,9 +4858,9 @@ model PrepItem {
 
   // Output specifications
   outputUnit  String // "oz", "each", "qt"
-  batchYield  Decimal // How much one batch makes
+  batchYield  Decimal @db.Decimal(10, 4) // How much one batch makes
   batchUnit   String // Unit for batch (may differ from output)
-  costPerUnit Decimal? // Auto-calculated from ingredients
+  costPerUnit Decimal? @db.Decimal(10, 4) // Auto-calculated from ingredients
 
   // Shelf life
   shelfLifeHours Int?
@@ -4871,13 +4871,13 @@ model PrepItem {
   // currentPrepStock/lastCountedAt = live running balance (read frequently).
   // DailyPrepCountTransaction = audit trail (append-only log).
   isDailyCountItem Boolean   @default(false) // Can this item be counted daily?
-  currentPrepStock Decimal   @default(0) // Current prepared quantity on hand
+  currentPrepStock Decimal   @default(0) @db.Decimal(10, 4) // Current prepared quantity on hand
   lastCountedAt    DateTime? // When was this last counted?
 
   // Stock alert thresholds
-  lowStockThreshold      Decimal? // Show 🟡 warning when below this
-  criticalStockThreshold Decimal? // Show 🔴 critical when below this
-  onlineStockThreshold   Decimal? // Show "Limited availability" online when below this
+  lowStockThreshold      Decimal? @db.Decimal(10, 4) // Show warning when below this
+  criticalStockThreshold Decimal? @db.Decimal(10, 4) // Show critical when below this
+  onlineStockThreshold   Decimal? @db.Decimal(10, 4) // Show "Limited availability" online when below this
 
   // Relations
   ingredients   PrepItemIngredient[]
@@ -4911,7 +4911,7 @@ model PrepItemIngredient {
   inventoryItemId String
   inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id])
 
-  quantity Decimal // Amount used
+  quantity Decimal @db.Decimal(10, 4) // Amount used
   unit     String // Unit (should match inventory storageUnit)
 
   sortOrder Int @default(0)
@@ -4934,8 +4934,8 @@ model MenuItemRecipe {
   menuItem   MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
 
   // Calculated costs
-  totalCost   Decimal? // Sum of all ingredients
-  foodCostPct Decimal? // totalCost / menuItem.price
+  totalCost   Decimal? @db.Decimal(10, 2) // Sum of all ingredients
+  foodCostPct Decimal? @db.Decimal(8, 4) // totalCost / menuItem.price
 
   // Relations
   ingredients MenuItemRecipeIngredient[]
@@ -4964,9 +4964,9 @@ model MenuItemRecipeIngredient {
   prepItemId      String?
   prepItem        PrepItem?      @relation(fields: [prepItemId], references: [id])
 
-  quantity Decimal // Amount used
+  quantity Decimal @db.Decimal(10, 4) // Amount used
   unit     String // Unit
-  cost     Decimal? // Calculated cost for this ingredient
+  cost     Decimal? @db.Decimal(10, 2) // Calculated cost for this ingredient
 
   sortOrder Int     @default(0)
   notes     String? // "lightly toasted", "diced"
@@ -5131,10 +5131,10 @@ model InventoryCount {
   reviewedBy    Employee? @relation("InvCountReviewedBy", fields: [reviewedById], references: [id])
 
   // Totals
-  expectedValue     Decimal?
-  countedValue      Decimal?
-  varianceValue     Decimal?
-  variancePct       Decimal?
+  expectedValue     Decimal? @db.Decimal(10, 2)
+  countedValue      Decimal? @db.Decimal(10, 2)
+  varianceValue     Decimal? @db.Decimal(10, 2)
+  variancePct       Decimal? @db.Decimal(8, 4)
   totalVarianceCost Decimal? @db.Decimal(10, 2)
 
   // COGS extensions
@@ -5171,11 +5171,11 @@ model InventoryCountItem {
   inventoryItemId  String
   inventoryItem    InventoryItem  @relation(fields: [inventoryItemId], references: [id])
 
-  expectedQty   Decimal // What system says
-  countedQty    Decimal? // What was counted
-  variance      Decimal? // countedQty - expectedQty
-  varianceValue Decimal? // variance * costPerUnit
-  variancePct   Decimal?
+  expectedQty   Decimal @db.Decimal(10, 4) // What system says
+  countedQty    Decimal? @db.Decimal(10, 4) // What was counted
+  variance      Decimal? @db.Decimal(10, 4) // countedQty - expectedQty
+  varianceValue Decimal? @db.Decimal(10, 2) // variance * costPerUnit
+  variancePct   Decimal? @db.Decimal(8, 4)
 
   countedAt DateTime?
   notes     String?
@@ -5416,20 +5416,20 @@ model InventorySettings {
   countReminderDay      String? // "sunday", "monday"
   countReminderTime     String? // "06:00"
   requireManagerReview  Boolean @default(true)
-  varianceAlertPct      Decimal @default(5) // Alert if >5% variance
+  varianceAlertPct      Decimal @default(5) @db.Decimal(8, 4) // Alert if >5% variance
 
   // Cost settings
-  costChangeAlertPct  Decimal  @default(10) // Alert if cost changes >10%
-  targetFoodCostPct   Decimal? // Target food cost %
-  targetLiquorCostPct Decimal? // Target liquor cost %
+  costChangeAlertPct  Decimal  @default(10) @db.Decimal(8, 4) // Alert if cost changes >10%
+  targetFoodCostPct   Decimal? @db.Decimal(8, 4) // Target food cost %
+  targetLiquorCostPct Decimal? @db.Decimal(8, 4) // Target liquor cost %
 
   // Modifier instruction multipliers (for Lite, Extra, etc.)
-  multiplierLite   Decimal @default(0.5) // "Lite" = 50% of standard amount
-  multiplierExtra  Decimal @default(2.0) // "Extra" = 200% of standard amount
-  multiplierTriple Decimal @default(3.0) // "Triple" = 300% of standard amount
+  multiplierLite   Decimal @default(0.5) @db.Decimal(6, 4) // "Lite" = 50% of standard amount
+  multiplierExtra  Decimal @default(2.0) @db.Decimal(6, 4) // "Extra" = 200% of standard amount
+  multiplierTriple Decimal @default(3.0) @db.Decimal(6, 4) // "Triple" = 300% of standard amount
 
   // Default pour sizes (for liquor)
-  defaultPourSizeOz Decimal @default(1.5)
+  defaultPourSizeOz Decimal @default(1.5) @db.Decimal(6, 3)
 
   // Integration settings
   exportEnabled Boolean @default(false)
@@ -5533,13 +5533,13 @@ model BottleProduct {
 
   // Bottle specs
   bottleSizeMl Int // 1750, 750, 1000
-  bottleSizeOz Decimal? // Auto-calculated from mL
-  unitCost     Decimal // Cost per bottle ($25.99)
+  bottleSizeOz Decimal? @db.Decimal(10, 4) // Auto-calculated from mL
+  unitCost     Decimal @db.Decimal(10, 2) // Cost per bottle ($25.99)
 
   // Pour calculation (uses location default or override)
-  pourSizeOz     Decimal? // Override location default
+  pourSizeOz     Decimal? @db.Decimal(6, 3) // Override location default
   poursPerBottle Int? // Auto-calculated: bottleSizeMl / pourSizeMl
-  pourCost       Decimal? // Auto-calculated: unitCost / poursPerBottle
+  pourCost       Decimal? @db.Decimal(10, 2) // Auto-calculated: unitCost / poursPerBottle
 
   // Container & subtype classification
   containerType  String  @default("bottle") // 'bottle' | 'can' | 'draft' | 'glass'
@@ -5599,13 +5599,13 @@ model RecipeIngredient {
   ingredient   Ingredient? @relation(fields: [ingredientId], references: [id])
 
   // Pour amount (for spirits)
-  pourCount       Decimal  @default(1) // 1 pour, 0.5 pour, 2 pours
-  pourSizeOz      Decimal? // Override location default
+  pourCount       Decimal  @default(1) @db.Decimal(6, 3) // 1 pour, 0.5 pour, 2 pours
+  pourSizeOz      Decimal? @db.Decimal(6, 3) // Override location default
   isRequired      Boolean  @default(true)
   isSubstitutable Boolean  @default(true) // Can swap for different tier (premium upgrade)
 
   // Quantity for food items (e.g., 1 each, 2 slices)
-  quantity Decimal?
+  quantity Decimal? @db.Decimal(10, 4)
   unit     String? // "each", "oz", "slice", "wedge", "sprig", "dash"
 
   // For display
@@ -5783,7 +5783,7 @@ model Ingredient {
   prepItem        PrepItem?      @relation("IngredientPrepLink", fields: [prepItemId], references: [id])
 
   // Standard portion (used in recipes and for deduction)
-  standardQuantity Decimal? // e.g., 1.5
+  standardQuantity Decimal? @db.Decimal(10, 4) // e.g., 1.5
   standardUnit     String? // "oz", "slice", "each", "g"
 
   // Source type: How is this item obtained?
@@ -5791,8 +5791,8 @@ model Ingredient {
 
   // Purchase info (for delivered items)
   purchaseUnit     String? // What you order: "case", "bag", "bottle", "gallon", "box", "jar", "each"
-  purchaseCost     Decimal? // Cost per purchase unit (e.g., $45 per case)
-  unitsPerPurchase Decimal? // How many storage units per purchase (e.g., 120 slices per case)
+  purchaseCost     Decimal? @db.Decimal(10, 2) // Cost per purchase unit (e.g., $45 per case)
+  unitsPerPurchase Decimal? @db.Decimal(10, 4) // How many storage units per purchase (e.g., 120 slices per case)
   // Note: standardUnit is the storage/usage unit (slices, lb, oz, etc.)
   // costPerUnit is calculated: purchaseCost / unitsPerPurchase
 
@@ -5803,17 +5803,17 @@ model Ingredient {
   allowOnSide Boolean @default(false) // Customer can say "X on side"
 
   // Pricing for customizations
-  extraPrice Decimal @default(0) // Upcharge for "Extra"
+  extraPrice Decimal @default(0) @db.Decimal(10, 2) // Upcharge for "Extra"
 
   // Inventory multipliers for customizations
-  liteMultiplier  Decimal @default(0.5) // Lite = 50% of standard
-  extraMultiplier Decimal @default(2.0) // Extra = 200% of standard
+  liteMultiplier  Decimal @default(0.5) @db.Decimal(6, 4) // Lite = 50% of standard
+  extraMultiplier Decimal @default(2.0) @db.Decimal(6, 4) // Extra = 200% of standard
 
   // Swap configuration
   allowSwap    Boolean              @default(false)
   swapGroupId  String? // Links to a group of swappable ingredients
   swapGroup    IngredientSwapGroup? @relation(fields: [swapGroupId], references: [id])
-  swapUpcharge Decimal              @default(0)
+  swapUpcharge Decimal              @default(0) @db.Decimal(10, 2)
 
   // Visibility (for future use)
   // "visible" = staff sees in counts/POS
@@ -5840,46 +5840,46 @@ model Ingredient {
 
   // Preparation info (for child ingredients)
   preparationType String? // "Sliced", "Diced", "Cooked", "Marinated", "Ground"
-  yieldPercent    Decimal? // e.g., 0.94 = 94% yield (6% cooking loss)
-  batchYield      Decimal? // How many of this prep item from 1 unit of parent (e.g., 16 slices from 1 lb)
+  yieldPercent    Decimal? @db.Decimal(6, 4) // e.g., 0.94 = 94% yield (6% cooking loss)
+  batchYield      Decimal? @db.Decimal(10, 4) // How many of this prep item from 1 unit of parent (e.g., 16 slices from 1 lb)
 
   // ========== EXPLICIT INPUT → OUTPUT (New Model) ==========
   // For prep items: defines the transformation from parent to this item
   // Example: 6 oz Raw Chicken → 2 oz Shredded Chicken
 
   // INPUT: How much of parent is consumed to make this prep item
-  inputQuantity Decimal? // e.g., 6 (oz of raw chicken)
+  inputQuantity Decimal? @db.Decimal(10, 4) // e.g., 6 (oz of raw chicken)
   inputUnit     String? // e.g., "oz" - should match or be convertible to parent's unit
 
   // OUTPUT: How much of this prep item is produced
-  outputQuantity Decimal? @default(1) // e.g., 2 (oz shredded) or 1 (crust)
+  outputQuantity Decimal? @default(1) @db.Decimal(10, 4) // e.g., 2 (oz shredded) or 1 (crust)
   outputUnit     String?  @default("each") // e.g., "oz" for bulk, "each" for discrete items
 
   // ========== RECIPE BATCH YIELD (For Inventory Items) ==========
   // For inventory items with recipes: defines how much one recipe batch makes
   // Example: "This dough recipe makes 50 lb" or "This sauce recipe makes 1 gallon"
-  recipeYieldQuantity Decimal? // e.g., 50
+  recipeYieldQuantity Decimal? @db.Decimal(10, 4) // e.g., 50
   recipeYieldUnit     String? // e.g., "lb", "gallons", "batches"
 
   // DEPRECATED: Legacy fields - kept for migration, use inputQuantity/outputQuantity instead
-  portionSize Decimal? // DEPRECATED: Use inputQuantity
+  portionSize Decimal? @db.Decimal(10, 4) // DEPRECATED: Use inputQuantity
   portionUnit String? // DEPRECATED: Use inputUnit
 
   // Daily counting (for prep items counted each morning)
   isDailyCountItem Boolean   @default(false) // Include in daily prep count
-  currentPrepStock Decimal   @default(0) // Current stock from last count
+  currentPrepStock Decimal   @default(0) @db.Decimal(10, 4) // Current stock from last count
   lastCountedAt    DateTime? // When last counted
   countPrecision   String    @default("whole") // 'whole' = integers only (pizzas), 'decimal' = allow decimals (oz, lbs)
 
   // Stock alert thresholds (for prep items)
-  lowStockThreshold      Decimal? // Show 🟡 warning on POS when below this
-  criticalStockThreshold Decimal? // Show 🔴 critical on POS when below this
-  onlineStockThreshold   Decimal? // Show "Limited availability" online when below this
+  lowStockThreshold      Decimal? @db.Decimal(10, 4) // Show warning on POS when below this
+  criticalStockThreshold Decimal? @db.Decimal(10, 4) // Show critical on POS when below this
+  onlineStockThreshold   Decimal? @db.Decimal(10, 4) // Show "Limited availability" online when below this
 
   // Daily count behavior
   resetDailyToZero  Boolean @default(true) // true = fresh prep (expect 0), false = carry forward
   varianceHandling  String  @default("auto_adjust") // 'auto_adjust', 'require_reason', 'auto_waste'
-  varianceThreshold Decimal @default(10) // % threshold for requiring reason (e.g., 10 = 10%)
+  varianceThreshold Decimal @default(10) @db.Decimal(8, 4) // % threshold for requiring reason (e.g., 10 = 10%)
 
   // Is this a base ingredient (root) or a preparation (child)?
   isBaseIngredient Boolean @default(true)
@@ -6003,12 +6003,12 @@ model IngredientRecipe {
   component   Ingredient @relation("RecipeComponent", fields: [componentId], references: [id])
 
   // How much of the component is needed
-  quantity Decimal // e.g., 2
+  quantity Decimal @db.Decimal(10, 4) // e.g., 2
   unit     String // e.g., "lb"
 
   // For batch recipes - this makes X units of output
   // If null, assumes recipe makes 1 unit of output
-  batchSize Decimal?
+  batchSize Decimal? @db.Decimal(10, 4)
   batchUnit String?
 
   sortOrder Int @default(0)
@@ -6045,7 +6045,7 @@ model MenuItemIngredient {
   isIncluded Boolean @default(true) // Comes on item by default?
 
   // Override quantity for this specific item (null = use ingredient's standard)
-  quantity Decimal?
+  quantity Decimal? @db.Decimal(10, 4)
   unit     String?
 
   // Override customization options for this item
@@ -6053,7 +6053,7 @@ model MenuItemIngredient {
   allowLite   Boolean?
   allowExtra  Boolean?
   allowOnSide Boolean?
-  extraPrice  Decimal? // Override extra price for this item
+  extraPrice  Decimal? @db.Decimal(10, 2) // Override extra price for this item
 
   // Is this a "base" ingredient or optional add-on?
   isBase Boolean @default(true) // Base ingredients show by default
@@ -6151,7 +6151,7 @@ model OrderItemIngredient {
 
   // Modification type: "standard", "no", "lite", "on_side", "extra", "swap"
   modificationType String  @default("standard")
-  priceAdjustment  Decimal @default(0)
+  priceAdjustment  Decimal @default(0) @db.Decimal(10, 2)
 
   // For swaps - what was it replaced with?
   swappedToModifierId   String?
@@ -6608,7 +6608,7 @@ model Scale {
   networkPort    Int? // TCP port of serial device server (typically 4001 or 8234)
 
   // Weight Configuration
-  maxCapacity Decimal? // Max weight capacity
+  maxCapacity Decimal? @db.Decimal(10, 4) // Max weight capacity
   weightUnit  String   @default("lb") // "lb" | "kg" | "oz" | "g"
   precision   Int      @default(2) // Decimal places
 
@@ -6667,7 +6667,7 @@ model PaymentReader {
 
   // Health Metrics
   avgResponseTime Int? // Average ms for last 10 transactions
-  successRate     Decimal? // % successful in last 24 hours
+  successRate     Decimal? @db.Decimal(6, 2) // % successful in last 24 hours
 
   sortOrder Int @default(0)
 
@@ -6889,7 +6889,7 @@ model PizzaConfig {
   // per_size: different free count per size (configured in PizzaSize)
 
   // Extra topping charges (after free toppings exhausted)
-  extraToppingPrice Decimal? // Override price for toppings after free ones (null = use topping's own price)
+  extraToppingPrice Decimal? @db.Decimal(10, 2) // Override price for toppings after free ones (null = use topping's own price)
 
   // Display settings
   showVisualBuilder Boolean @default(true) // Toggle for visual pizza graphic
@@ -6933,9 +6933,9 @@ model PizzaSize {
   slices      Int     @default(8) // Number of slices
 
   // Pricing
-  basePrice         Decimal // Base price for cheese pizza this size
-  priceMultiplier   Decimal @default(1.0) // For calculating from base (legacy support)
-  toppingMultiplier Decimal @default(1.0) // Topping price multiplier for this size
+  basePrice         Decimal @db.Decimal(10, 2) // Base price for cheese pizza this size
+  priceMultiplier   Decimal @default(1.0) @db.Decimal(6, 4) // For calculating from base (legacy support)
+  toppingMultiplier Decimal @default(1.0) @db.Decimal(6, 4) // Topping price multiplier for this size
 
   // Free toppings per size (when freeToppingsMode = "per_size")
   freeToppings Int @default(0) // Number of free toppings for this size
@@ -6943,7 +6943,7 @@ model PizzaSize {
   // Inventory tracking (Skill 115)
   // Multiplier for ingredient usage - base usage is defined on each component (crust/sauce/cheese/topping)
   // Small=0.75, Medium=1.0, Large=1.3, XL=1.6 (example)
-  inventoryMultiplier Decimal @default(1.0)
+  inventoryMultiplier Decimal @default(1.0) @db.Decimal(6, 4)
 
   // Ingredient link — connects size to the ingredient library for
   // cost tracking and inventory deduction (same pattern as MenuItemIngredient)
@@ -6953,7 +6953,7 @@ model PizzaSize {
   // Direct inventory linkage (e.g., dough ball per size)
   inventoryItemId String?
   inventoryItem   InventoryItem? @relation("PizzaSizeInventory", fields: [inventoryItemId], references: [id])
-  usageQuantity   Decimal?
+  usageQuantity   Decimal? @db.Decimal(10, 4)
   usageUnit       String?
 
   sortOrder Int     @default(0)
@@ -6983,7 +6983,7 @@ model PizzaCrust {
   name        String // "Hand Tossed", "Thin", "Deep Dish", "Stuffed"
   displayName String?
   description String?
-  price       Decimal @default(0) // Upcharge for specialty crusts
+  price       Decimal @default(0) @db.Decimal(10, 2) // Upcharge for specialty crusts
 
   // Ingredient link — connects crust to the ingredient library for
   // cost tracking and inventory deduction (same pattern as MenuItemIngredient)
@@ -6994,7 +6994,7 @@ model PizzaCrust {
   // Links to dough inventory - usage is for MEDIUM size, scaled by size multiplier
   inventoryItemId String?
   inventoryItem   InventoryItem? @relation("PizzaCrustInventory", fields: [inventoryItemId], references: [id])
-  usageQuantity   Decimal? // Base usage for medium pizza (e.g., 12 oz dough)
+  usageQuantity   Decimal? @db.Decimal(10, 4) // Base usage for medium pizza (e.g., 12 oz dough)
   usageUnit       String? // "oz", "each"
 
   sortOrder Int     @default(0)
@@ -7025,12 +7025,12 @@ model PizzaSauce {
   name        String // "Marinara", "White", "BBQ", "Buffalo", "No Sauce"
   displayName String?
   description String?
-  price       Decimal @default(0)
+  price       Decimal @default(0) @db.Decimal(10, 2)
 
   // Sauce amount options
   allowLight Boolean @default(true)
   allowExtra Boolean @default(true)
-  extraPrice Decimal @default(0)
+  extraPrice Decimal @default(0) @db.Decimal(10, 2)
 
   // Ingredient link — connects sauce to the ingredient library for
   // cost tracking and inventory deduction (same pattern as MenuItemIngredient)
@@ -7040,7 +7040,7 @@ model PizzaSauce {
   // Inventory tracking (Skill 115)
   inventoryItemId String?
   inventoryItem   InventoryItem? @relation("PizzaSauceInventory", fields: [inventoryItemId], references: [id])
-  usageQuantity   Decimal? // Base usage for medium pizza (e.g., 4 oz sauce)
+  usageQuantity   Decimal? @db.Decimal(10, 4) // Base usage for medium pizza (e.g., 4 oz sauce)
   usageUnit       String? // "oz"
 
   sortOrder Int     @default(0)
@@ -7071,12 +7071,12 @@ model PizzaCheese {
   name        String // "Mozzarella", "No Cheese", "Extra Cheese", "Vegan"
   displayName String?
   description String?
-  price       Decimal @default(0)
+  price       Decimal @default(0) @db.Decimal(10, 2)
 
   // Cheese amount options
   allowLight Boolean @default(true)
   allowExtra Boolean @default(true)
-  extraPrice Decimal @default(0)
+  extraPrice Decimal @default(0) @db.Decimal(10, 2)
 
   // Ingredient link — connects cheese to the ingredient library for
   // cost tracking and inventory deduction (same pattern as MenuItemIngredient)
@@ -7086,7 +7086,7 @@ model PizzaCheese {
   // Inventory tracking (Skill 115)
   inventoryItemId String?
   inventoryItem   InventoryItem? @relation("PizzaCheeseInventory", fields: [inventoryItemId], references: [id])
-  usageQuantity   Decimal? // Base usage for medium pizza (e.g., 8 oz cheese)
+  usageQuantity   Decimal? @db.Decimal(10, 4) // Base usage for medium pizza (e.g., 8 oz cheese)
   usageUnit       String? // "oz"
 
   sortOrder Int     @default(0)
@@ -7122,8 +7122,8 @@ model PizzaTopping {
   category String @default("standard") // "meat", "veggie", "premium", "cheese", "seafood", "specialty", "standard"
 
   // Pricing
-  price      Decimal // Base price for whole pizza
-  extraPrice Decimal? // Price for "extra" (2x amount)
+  price      Decimal @db.Decimal(10, 2) // Base price for whole pizza
+  extraPrice Decimal? @db.Decimal(10, 2) // Price for "extra" (2x amount)
 
   // Visual (for visual pizza builder)
   color   String? // Hex color for visual builder representation
@@ -7137,7 +7137,7 @@ model PizzaTopping {
   // Inventory tracking (Skill 115) — resolved from ingredient chain when available
   inventoryItemId String?
   inventoryItem   InventoryItem? @relation("PizzaToppingInventory", fields: [inventoryItemId], references: [id])
-  usageQuantity   Decimal? // Base usage for medium whole pizza (e.g., 2 oz pepperoni)
+  usageQuantity   Decimal? @db.Decimal(10, 4) // Base usage for medium whole pizza (e.g., 2 oz pepperoni)
   usageUnit       String? // "oz", "each"
 
   sortOrder Int     @default(0)
@@ -7324,8 +7324,8 @@ model PayStub {
   employee      Employee      @relation(fields: [employeeId], references: [id])
 
   // Time worked
-  regularHours  Decimal @default(0)
-  overtimeHours Decimal @default(0)
+  regularHours  Decimal @default(0) @db.Decimal(6, 2)
+  overtimeHours Decimal @default(0) @db.Decimal(6, 2)
   breakMinutes  Int     @default(0)
 
   // Wages
@@ -7459,7 +7459,7 @@ model ScheduledShift {
   // Actual vs scheduled (filled after shift)
   actualStartTime DateTime?
   actualEndTime   DateTime?
-  actualHours     Decimal?
+  actualHours     Decimal? @db.Decimal(6, 2)
 
   // Trade/swap tracking
   originalEmployeeId String? // If swapped, who was originally scheduled
@@ -7598,7 +7598,7 @@ model PrepTrayConfig {
 
   // Identity
   name        String // "Large Dough Tray", "Small Dough Tray", "Loose"
-  capacity    Decimal // 6 (balls, portions, etc.)
+  capacity    Decimal @db.Decimal(10, 4) // 6 (balls, portions, etc.)
   description String?
   sortOrder   Int     @default(0)
   isActive    Boolean @default(true)
@@ -7671,14 +7671,14 @@ model DailyPrepCountItem {
   trayBreakdown Json?
 
   // Calculated values
-  totalCounted     Decimal // Sum of all trays: (Large * 6) + (Small * 12) + loose
-  expectedQuantity Decimal? // Previous closing stock (for variance)
-  variance         Decimal? // totalCounted - expectedQuantity
-  variancePercent  Decimal? // (variance / expectedQuantity) * 100
+  totalCounted     Decimal @db.Decimal(10, 4) // Sum of all trays: (Large * 6) + (Small * 12) + loose
+  expectedQuantity Decimal? @db.Decimal(10, 4) // Previous closing stock (for variance)
+  variance         Decimal? @db.Decimal(10, 4) // totalCounted - expectedQuantity
+  variancePercent  Decimal? @db.Decimal(8, 4) // (variance / expectedQuantity) * 100
 
   // Cost impact (calculated on approval)
-  costPerUnit Decimal? // Snapshot of prep item cost
-  totalCost   Decimal? // totalCounted * costPerUnit
+  costPerUnit Decimal? @db.Decimal(10, 4) // Snapshot of prep item cost
+  totalCost   Decimal? @db.Decimal(10, 2) // totalCounted * costPerUnit
 
   notes String?
 
@@ -9046,7 +9046,7 @@ model ItemBarcode {
   barcode  String // UPC/EAN/custom code
   label    String? // "Single", "6-Pack", "Case", "750ml"
   packSize Int      @default(1) // Units per scan (1, 6, 12, 24)
-  price    Decimal? // Override price for this pack size (null = use base × packSize)
+  price    Decimal? @db.Decimal(10, 2) // Override price for this pack size (null = use base × packSize)
 
   // Link to one of: MenuItem or InventoryItem (or both)
   menuItemId      String?

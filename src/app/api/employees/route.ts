@@ -60,25 +60,23 @@ export const GET = withVenue(async function GET(
       take: limit,
     })
 
+    // Strip PII from unauthenticated response — this endpoint is used by
+    // POS terminals for login/selection and must NOT expose email, phone,
+    // hourlyRate, or full role permissions to unauthenticated callers.
     return NextResponse.json({ data: {
       employees: employees.map(emp => ({
         id: emp.id,
         firstName: emp.firstName,
         lastName: emp.lastName,
         displayName: emp.displayName || `${emp.firstName} ${emp.lastName.charAt(0)}.`,
-        email: emp.email,
-        phone: emp.phone,
         role: {
           id: emp.role.id,
           name: emp.role.name,
-          permissions: emp.role.permissions as string[],
         },
-        hourlyRate: emp.hourlyRate ? Number(emp.hourlyRate) : null,
-        hireDate: emp.hireDate?.toISOString() || null,
         isActive: emp.isActive,
         color: emp.color,
         avatarUrl: emp.avatarUrl,
-        createdAt: emp.createdAt.toISOString(),
+        locationId: emp.locationId,
       })),
       pagination: {
         page,

@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import * as EmployeeRepository from '@/lib/repositories/employee-repository'
 import { compare } from 'bcryptjs'
 import { withVenue } from '@/lib/with-venue'
+import { getClientIp } from '@/lib/get-client-ip'
 
 // ── Dedicated rate limiter for PIN verification ────────────────────────────
 // Stricter than login: 5 failed attempts per IP → 5-minute lockout.
@@ -112,9 +113,7 @@ if (PIN_CLEANUP_INTERVAL && typeof PIN_CLEANUP_INTERVAL === 'object' && 'unref' 
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     // Rate limiting — dedicated to verify-pin (stricter than login)
-    const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
-      || request.headers.get('x-real-ip')
-      || 'unknown'
+    const ip = getClientIp(request)
     const rateCheck = checkPinRateLimit(ip)
     if (!rateCheck.allowed) {
       return NextResponse.json(

@@ -96,6 +96,7 @@ export const POST = withVenue(withAuth(async function POST(
             approvedAt: now,
             approvedByEmployeeId,
             managerNote: managerNote || null,
+            lastMutatedBy: 'cloud',
           },
         }),
         db.scheduledShift.update({
@@ -114,7 +115,7 @@ export const POST = withVenue(withAuth(async function POST(
           id: { not: requestId },
           deletedAt: null,
         },
-        data: { status: 'cancelled' },
+        data: { status: 'cancelled', lastMutatedBy: 'cloud' },
       })
 
       // ── Outage queue protection ────────────────────────────────────────────
@@ -150,6 +151,7 @@ export const POST = withVenue(withAuth(async function POST(
           approvedAt: now,
           approvedByEmployeeId,
           managerNote: managerNote || null,
+          lastMutatedBy: 'cloud',
         },
       }),
       db.scheduledShift.update({
@@ -171,7 +173,7 @@ export const POST = withVenue(withAuth(async function POST(
         id: { not: requestId },
         deletedAt: null,
       },
-      data: { status: 'cancelled' },
+      data: { status: 'cancelled', lastMutatedBy: 'cloud' },
     })
 
     // ── Outage queue protection ────────────────────────────────────────────
