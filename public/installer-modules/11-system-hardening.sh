@@ -461,7 +461,39 @@ TOUCHEOF
         log "No touchscreen detected — skipping touch configuration"
     fi
 
-    log "Critical hardening applied (screen never sleeps, no notifications)"
+    # ── SDDM auto-login (server/backup only — no login screen on POS NUCs) ──
+    if [[ "$STATION_ROLE" == "server" || "$STATION_ROLE" == "backup" ]]; then
+      if command -v sddm &>/dev/null || systemctl is-active sddm &>/dev/null 2>&1; then
+        mkdir -p /etc/sddm.conf.d
+        # Detect available session file
+        local _session="plasma.desktop"
+        if [[ -f /usr/share/xsessions/plasma.desktop ]]; then
+          _session="plasma.desktop"
+        elif ls /usr/share/xsessions/*.desktop &>/dev/null; then
+          _session="$(ls /usr/share/xsessions/*.desktop | head -1 | xargs basename)"
+        fi
+        cat > /etc/sddm.conf.d/autologin.conf << SDDMEOF
+[Autologin]
+User=${POSUSER}
+Session=${_session}
+SDDMEOF
+        log "SDDM auto-login configured (user=${POSUSER}, session=${_session})"
+      elif command -v gdm3 &>/dev/null || systemctl is-active gdm3 &>/dev/null 2>&1; then
+        # GDM auto-login
+        mkdir -p /etc/gdm3
+        sed -i '/^\[daemon\]/,/^\[/{s/^AutomaticLoginEnable=.*/AutomaticLoginEnable=true/;s/^AutomaticLogin=.*/AutomaticLogin='"$POSUSER"'/}' /etc/gdm3/custom.conf 2>/dev/null || {
+          cat >> /etc/gdm3/custom.conf << GDMEOF
+
+[daemon]
+AutomaticLoginEnable=true
+AutomaticLogin=${POSUSER}
+GDMEOF
+        }
+        log "GDM auto-login configured (user=${POSUSER})"
+      fi
+    fi
+
+    log "Critical hardening applied (screen never sleeps, no notifications, auto-login)"
   }
 
   # ─────────────────────────────────────────────────────────────────────────

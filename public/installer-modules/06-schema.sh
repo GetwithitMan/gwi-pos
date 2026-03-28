@@ -60,6 +60,11 @@ run_schema() {
 
     local deploy_tools_dir="/opt/gwi-pos/deploy-tools"
 
+    # Ensure deploy-tools is readable by POSUSER (extracted as root by deploy-release.sh)
+    if [[ -d "$deploy_tools_dir" ]]; then
+      chown -R "$POSUSER":"$POSUSER" "$deploy_tools_dir" 2>/dev/null || true
+    fi
+
     # ── Preferred path: deploy-tools (pg-only, no Prisma) ──
     if [[ -f "$deploy_tools_dir/src/apply-schema.js" ]]; then
       log "Applying schema via deploy-tools (pg-only)..."

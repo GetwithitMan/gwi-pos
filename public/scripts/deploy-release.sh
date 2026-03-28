@@ -1964,6 +1964,8 @@ do_deploy() {
             else
                 tar xzf "$dt_cache" -C "$DEPLOY_TOOLS_DIR"
             fi
+            # Make deploy-tools readable by the service user (extracted as root)
+            chown -R gwipos:gwipos "$DEPLOY_TOOLS_DIR" 2>/dev/null || true
             log "Deploy-tools extracted ($(ls "$DEPLOY_TOOLS_DIR/migrations/"*.js 2>/dev/null | wc -l | tr -d ' ') migrations)"
         fi
     fi

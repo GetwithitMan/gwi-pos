@@ -277,7 +277,7 @@ _ensure_dashboard_autostart() {
   # Systemd user service
   local SYSTEMD_USER_DIR
   SYSTEMD_USER_DIR=$(eval echo "~${POSUSER}/.config/systemd/user")
-  if [[ -n "$DASHBOARD_EXEC" ]] && [[ ! -f "${SYSTEMD_USER_DIR}/gwi-dashboard.service" ]]; then
+  if [[ -n "$DASHBOARD_EXEC" ]]; then
     mkdir -p "$SYSTEMD_USER_DIR"
     chown -R "${POSUSER}:${POSUSER}" "$(eval echo "~${POSUSER}/.config")"
     cat > "${SYSTEMD_USER_DIR}/gwi-dashboard.service" << SVCEOF
@@ -299,8 +299,9 @@ WantedBy=default.target
 SVCEOF
     chown "${POSUSER}:${POSUSER}" "${SYSTEMD_USER_DIR}/gwi-dashboard.service"
     loginctl enable-linger "${POSUSER}" 2>/dev/null || true
-    sudo -u "${POSUSER}" bash -c "XDG_RUNTIME_DIR=/run/user/\$(id -u) systemctl --user daemon-reload && systemctl --user enable gwi-dashboard.service" 2>/dev/null || true
-    log "Dashboard autostart configured"
+    # Always enable (idempotent) — ensures service starts on boot even after fresh OS install
+    sudo -u "${POSUSER}" bash -c "XDG_RUNTIME_DIR=/run/user/\$(id -u) systemctl --user daemon-reload && systemctl --user enable gwi-dashboard.service && systemctl --user start gwi-dashboard.service" 2>/dev/null || true
+    log "Dashboard autostart configured and started"
   fi
 
   # Remove stale XDG autostart entry if it exists from a previous install
