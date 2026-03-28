@@ -280,13 +280,17 @@ rm -rf "$PRISMA_BUNDLE_DIR"
 echo "    Wiring prisma into release-root node_modules..."
 if [ -d "$STAGING/node_modules" ]; then
     # Standalone ships its own node_modules/ — we CANNOT replace it.
-    # Copy the prisma package INTO the existing node_modules.
-    if [ ! -d "$STAGING/node_modules/prisma" ]; then
-        cp -r "$STAGING/prisma/cli/node_modules/prisma" "$STAGING/node_modules/prisma"
-        echo "    Copied prisma package into standalone node_modules (for config resolution)"
-    else
-        echo "    prisma package already exists in standalone node_modules"
-    fi
+    # Copy prisma packages INTO the existing node_modules.
+    # prisma/config.js re-exports from @prisma/config, so we need BOTH.
+    for pkg in prisma @prisma/config @prisma/generator @prisma/internals; do
+        src="$STAGING/prisma/cli/node_modules/$pkg"
+        dest="$STAGING/node_modules/$pkg"
+        if [ -d "$src" ] && [ ! -d "$dest" ]; then
+            mkdir -p "$(dirname "$dest")"
+            cp -r "$src" "$dest"
+            echo "    Copied $pkg into standalone node_modules"
+        fi
+    done
 else
     # No standalone node_modules — create symlink (shouldn't happen normally)
     ln -sfn prisma/cli/node_modules "$STAGING/node_modules"
@@ -315,13 +319,35 @@ if [ -f "$STAGED_PRISMA" ]; then
         echo "  node_modules is link: $([ -L "$STAGING/node_modules" ] && echo 'yes' || echo 'no')" >&2
         exit 1
     fi
-    # Verify the prisma/config module is actually resolvable (what prisma.config.mjs imports)
+    # Verify the prisma/config module chain is resolvable:
+    # prisma.config.mjs -> prisma/config -> @prisma/config
     if [ ! -e "$STAGING/node_modules/prisma/config.js" ] && [ ! -e "$STAGING/node_modules/prisma/config/index.js" ]; then
         echo "FATAL: prisma/config module not found in release-root node_modules" >&2
         echo "  Checked: node_modules/prisma/config.js and node_modules/prisma/config/index.js" >&2
         ls -la "$STAGING/node_modules/prisma/" 2>&1 | head -10 >&2
         exit 1
     fi
+    if [ ! -d "$STAGING/node_modules/@prisma/config" ]; then
+        echo "FATAL: @prisma/config missing from release-root node_modules" >&2
+        echo "  prisma/config.js requires @prisma/config — it must be copied from the CLI bundle" >&2
+        exit 1
+    fi
+    # Validate the config import chain BEFORE running CLI.
+    # This catches the exact failure mode: prisma.config.mjs -> prisma/config -> @prisma/config
+    echo "    Validating config import chain (node -e require)..."
+    CONFIG_CHAIN_TEST=$(cd "$STAGING" && node -e "require('prisma/config'); console.log('prisma/config OK')" 2>&1) || true
+    if echo "$CONFIG_CHAIN_TEST" | grep -q "prisma/config OK"; then
+        echo "    Config chain: prisma/config resolves OK"
+    else
+        echo "FATAL: prisma/config import chain broken from release root:" >&2
+        echo "$CONFIG_CHAIN_TEST" | head -10 >&2
+        echo "  Staged @prisma contents:" >&2
+        ls -la "$STAGING/node_modules/@prisma/" 2>&1 | head -10 >&2
+        echo "  Staged prisma contents:" >&2
+        ls -la "$STAGING/node_modules/prisma/" 2>&1 | head -10 >&2
+        exit 1
+    fi
+
     # Simulate NUC: cd to release dir, set DATABASE_URL, run prisma db push --help
     NUC_TEST_OUTPUT=$(cd "$STAGING" && DATABASE_URL="postgresql://test:test@localhost:5432/test" "$STAGED_PRISMA" db push --help 2>&1) || true
     if echo "$NUC_TEST_OUTPUT" | grep -qi "prisma db push\|push the state"; then
