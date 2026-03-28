@@ -477,6 +477,17 @@ TOUCHEOF
 User=${POSUSER}
 Session=${_session}
 SDDMEOF
+        # Also fix /etc/sddm.conf if it has a stale [Autologin] section
+        # (sddm.conf takes precedence over sddm.conf.d — a stale Session=plasma
+        # will override the correct Session=plasma.desktop and show login screen)
+        if [[ -f /etc/sddm.conf ]] && grep -q '\[Autologin\]' /etc/sddm.conf 2>/dev/null; then
+          cat > /etc/sddm.conf << SDDMCONFEOF
+[Autologin]
+User=${POSUSER}
+Session=${_session}
+SDDMCONFEOF
+          log "Fixed stale /etc/sddm.conf autologin (Session=${_session})"
+        fi
         log "SDDM auto-login configured (user=${POSUSER}, session=${_session})"
       elif command -v gdm3 &>/dev/null || systemctl is-active gdm3 &>/dev/null 2>&1; then
         # GDM auto-login
