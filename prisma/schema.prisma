@@ -1007,7 +1007,7 @@ model Role {
 
   // Tip configuration
   isTipped  Boolean @default(false) // Is this a tipped position?
-  tipWeight Decimal @default(1.0) @db.Decimal(6, 4) // Weight for role-weighted tip group splits (e.g., 1.5 for lead bartender)
+  tipWeight Decimal @default(1.0) @db.Decimal(10, 4) // Weight for role-weighted tip group splits (e.g., 1.5 for lead bartender)
 
   // Cash handling configuration
   cashHandlingMode CashHandlingMode @default(drawer)
@@ -1611,7 +1611,7 @@ model MenuItem {
   onlinePrice Decimal? @db.Decimal(10, 2) // Online ordering price override (null = use POS price)
 
   // Tax
-  taxRate     Decimal? @db.Decimal(6, 4) // Override location default
+  taxRate     Decimal? @db.Decimal(10, 4) // Override location default
   isTaxExempt Boolean  @default(false)
 
   // Display & Behavior
@@ -1674,7 +1674,7 @@ model MenuItem {
   // Overtime pricing
   overtimeEnabled       Boolean? @default(false)
   overtimeMode          String? // 'multiplier' | 'custom_rate' | 'flat_fee' | 'per_minute'
-  overtimeMultiplier    Decimal? @db.Decimal(6, 4) // e.g., 1.5, 2.0 — scales base rate
+  overtimeMultiplier    Decimal? @db.Decimal(10, 4) // e.g., 1.5, 2.0 — scales base rate
   overtimePerMinuteRate Decimal? @db.Decimal(10, 2) // custom per-minute rate in dollars
   overtimeFlatFee       Decimal? @db.Decimal(10, 2) // flat fee charged for any overtime
   overtimeGraceMinutes  Int?     @default(5) // grace before overtime kicks in
@@ -1906,8 +1906,8 @@ model Modifier {
 
   // Per-modifier deduction multipliers (override location-level defaults)
   // null = fall back to location MultiplierSettings (0.5 for lite, 2.0 for extra)
-  liteMultiplier  Decimal? @db.Decimal(6, 4) // Multiplier applied when "Lite" selected (default 0.5x)
-  extraMultiplier Decimal? @db.Decimal(6, 4) // Multiplier applied when "Extra" selected (default 2.0x)
+  liteMultiplier  Decimal? @db.Decimal(10, 4) // Multiplier applied when "Lite" selected (default 0.5x)
+  extraMultiplier Decimal? @db.Decimal(10, 4) // Multiplier applied when "Extra" selected (default 2.0x)
 
   // Legacy JSON field - kept for backwards compatibility
   allowedPreModifiers Json? // Array of allowed prefixes: ["no", "lite", "extra", "side"]
@@ -2486,7 +2486,7 @@ model Order {
   taxTotal         Decimal @default(0) @db.Decimal(10, 2)
   taxFromInclusive Decimal @default(0) @db.Decimal(10, 2) // Tax backed out of inclusive items
   taxFromExclusive Decimal @default(0) @db.Decimal(10, 2) // Tax added on top of exclusive items
-  inclusiveTaxRate Decimal @default(0) @db.Decimal(6, 4) // Inclusive tax rate snapshot at order creation (survives setting changes)
+  inclusiveTaxRate Decimal @default(0) @db.Decimal(10, 4) // Inclusive tax rate snapshot at order creation (survives setting changes)
   tipTotal         Decimal @default(0) @db.Decimal(10, 2)
   donationAmount   Decimal? @db.Decimal(10, 2) // Optional donation added to order
   total            Decimal @default(0) @db.Decimal(10, 2)
@@ -2681,7 +2681,7 @@ model OrderItem {
 
   // Pour size (liquor items) — T-006
   pourSize       String? // "shot", "double", "tall", "short" (null = no pour selection)
-  pourMultiplier Decimal? @db.Decimal(6, 4) // 1.0, 2.0, 1.5, 0.75 (null = no pour multiplier applied)
+  pourMultiplier Decimal? @db.Decimal(10, 4) // 1.0, 2.0, 1.5, 0.75 (null = no pour multiplier applied)
 
   // Item-level pricing truth (Layer 2)
   cardPrice      Decimal? @db.Decimal(10, 2) // Computed card price at time of order (null if no dual pricing)
@@ -4498,7 +4498,7 @@ model TaxRule {
   location   Location @relation(fields: [locationId], references: [id])
 
   name String // "State Tax", "City Tax", "Alcohol Tax"
-  rate Decimal @db.Decimal(6, 4) // 0.0825 = 8.25%
+  rate Decimal @db.Decimal(10, 4) // 0.0825 = 8.25%
 
   // Application rules
   appliesTo   String @default("all") // all, category, item
@@ -4742,7 +4742,7 @@ model InventoryItem {
   priceSource     String    @default("manual") // "manual", "invoice", "api"
 
   // Yield (for items with waste)
-  yieldPercent     Decimal  @default(100) @db.Decimal(6, 4) // 75% = 25% trim/cooking loss
+  yieldPercent     Decimal  @default(100) @db.Decimal(8, 4) // 75% = 25% trim/cooking loss
   yieldCostPerUnit Decimal? @db.Decimal(10, 4) // Cost adjusted for yield
 
   // For liquor items
@@ -5424,9 +5424,9 @@ model InventorySettings {
   targetLiquorCostPct Decimal? @db.Decimal(8, 4) // Target liquor cost %
 
   // Modifier instruction multipliers (for Lite, Extra, etc.)
-  multiplierLite   Decimal @default(0.5) @db.Decimal(6, 4) // "Lite" = 50% of standard amount
-  multiplierExtra  Decimal @default(2.0) @db.Decimal(6, 4) // "Extra" = 200% of standard amount
-  multiplierTriple Decimal @default(3.0) @db.Decimal(6, 4) // "Triple" = 300% of standard amount
+  multiplierLite   Decimal @default(0.5) @db.Decimal(10, 4) // "Lite" = 50% of standard amount
+  multiplierExtra  Decimal @default(2.0) @db.Decimal(10, 4) // "Extra" = 200% of standard amount
+  multiplierTriple Decimal @default(3.0) @db.Decimal(10, 4) // "Triple" = 300% of standard amount
 
   // Default pour sizes (for liquor)
   defaultPourSizeOz Decimal @default(1.5) @db.Decimal(6, 3)
@@ -5806,8 +5806,8 @@ model Ingredient {
   extraPrice Decimal @default(0) @db.Decimal(10, 2) // Upcharge for "Extra"
 
   // Inventory multipliers for customizations
-  liteMultiplier  Decimal @default(0.5) @db.Decimal(6, 4) // Lite = 50% of standard
-  extraMultiplier Decimal @default(2.0) @db.Decimal(6, 4) // Extra = 200% of standard
+  liteMultiplier  Decimal @default(0.5) @db.Decimal(10, 4) // Lite = 50% of standard
+  extraMultiplier Decimal @default(2.0) @db.Decimal(10, 4) // Extra = 200% of standard
 
   // Swap configuration
   allowSwap    Boolean              @default(false)
@@ -5840,7 +5840,7 @@ model Ingredient {
 
   // Preparation info (for child ingredients)
   preparationType String? // "Sliced", "Diced", "Cooked", "Marinated", "Ground"
-  yieldPercent    Decimal? @db.Decimal(6, 4) // e.g., 0.94 = 94% yield (6% cooking loss)
+  yieldPercent    Decimal? @db.Decimal(10, 4) // e.g., 0.94 = 94% yield (6% cooking loss)
   batchYield      Decimal? @db.Decimal(10, 4) // How many of this prep item from 1 unit of parent (e.g., 16 slices from 1 lb)
 
   // ========== EXPLICIT INPUT → OUTPUT (New Model) ==========
@@ -6934,8 +6934,8 @@ model PizzaSize {
 
   // Pricing
   basePrice         Decimal @db.Decimal(10, 2) // Base price for cheese pizza this size
-  priceMultiplier   Decimal @default(1.0) @db.Decimal(6, 4) // For calculating from base (legacy support)
-  toppingMultiplier Decimal @default(1.0) @db.Decimal(6, 4) // Topping price multiplier for this size
+  priceMultiplier   Decimal @default(1.0) @db.Decimal(10, 4) // For calculating from base (legacy support)
+  toppingMultiplier Decimal @default(1.0) @db.Decimal(10, 4) // Topping price multiplier for this size
 
   // Free toppings per size (when freeToppingsMode = "per_size")
   freeToppings Int @default(0) // Number of free toppings for this size
@@ -6943,7 +6943,7 @@ model PizzaSize {
   // Inventory tracking (Skill 115)
   // Multiplier for ingredient usage - base usage is defined on each component (crust/sauce/cheese/topping)
   // Small=0.75, Medium=1.0, Large=1.3, XL=1.6 (example)
-  inventoryMultiplier Decimal @default(1.0) @db.Decimal(6, 4)
+  inventoryMultiplier Decimal @default(1.0) @db.Decimal(10, 4)
 
   // Ingredient link — connects size to the ingredient library for
   // cost tracking and inventory deduction (same pattern as MenuItemIngredient)
@@ -7544,22 +7544,22 @@ model PayrollSettings {
   payDayOfMonth2 Int? // Second pay day for semimonthly
 
   // Overtime Configuration
-  overtimeThresholdDaily  Decimal  @default(8) @db.Decimal(6, 4) // Hours per day before OT kicks in
-  overtimeThresholdWeekly Decimal  @default(40) @db.Decimal(6, 4) // Hours per week before OT kicks in
-  overtimeMultiplier      Decimal  @default(1.5) @db.Decimal(6, 4) // 1.5x for time-and-a-half
-  doubleTimeThreshold     Decimal? @db.Decimal(6, 4) // Hours before double-time (California: 12 hrs/day)
-  doubleTimeMultiplier    Decimal  @default(2.0) @db.Decimal(6, 4)
+  overtimeThresholdDaily  Decimal  @default(8) @db.Decimal(10, 4) // Hours per day before OT kicks in
+  overtimeThresholdWeekly Decimal  @default(40) @db.Decimal(10, 4) // Hours per week before OT kicks in
+  overtimeMultiplier      Decimal  @default(1.5) @db.Decimal(10, 4) // 1.5x for time-and-a-half
+  doubleTimeThreshold     Decimal? @db.Decimal(10, 4) // Hours before double-time (California: 12 hrs/day)
+  doubleTimeMultiplier    Decimal  @default(2.0) @db.Decimal(10, 4)
 
   // Tax Configuration
   stateTaxState   String? // State code: 'CA', 'TX', 'NY', etc.
-  stateTaxRate    Decimal? @db.Decimal(6, 4) // Flat rate if applicable
+  stateTaxRate    Decimal? @db.Decimal(10, 4) // Flat rate if applicable
   localTaxEnabled Boolean  @default(false)
-  localTaxRate    Decimal? @db.Decimal(6, 4)
+  localTaxRate    Decimal? @db.Decimal(10, 4)
   localTaxName    String? // 'City Tax', 'School District', etc.
 
   // FICA (Social Security & Medicare)
-  socialSecurityRate     Decimal @default(6.2) @db.Decimal(6, 4) // Employee portion %
-  medicareRate           Decimal @default(1.45) @db.Decimal(6, 4) // Employee portion %
+  socialSecurityRate     Decimal @default(6.2) @db.Decimal(10, 4) // Employee portion %
+  medicareRate           Decimal @default(1.45) @db.Decimal(10, 4) // Employee portion %
   socialSecurityWageBase Decimal @default(168600) @db.Decimal(10, 2) // 2024 wage base
 
   // Minimum Wage
@@ -7979,7 +7979,7 @@ model BottleServiceTier {
   // Financial
   depositAmount       Decimal  @db.Decimal(10, 2) // Pre-auth amount (e.g., $500, $1000, $2000)
   minimumSpend        Decimal  @db.Decimal(10, 2) // Soft minimum spend requirement
-  autoGratuityPercent Decimal? @db.Decimal(6, 4) // Override auto-gratuity for this tier (e.g., 20%)
+  autoGratuityPercent Decimal? @db.Decimal(10, 4) // Override auto-gratuity for this tier (e.g., 20%)
 
   // Configuration
   sortOrder Int     @default(0) // Display order
