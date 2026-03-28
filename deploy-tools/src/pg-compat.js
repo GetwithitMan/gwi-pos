@@ -18,6 +18,8 @@ class PgCompat {
   constructor(connectionString) {
     this._connectionString = connectionString
     this._client = null
+    this._inTransaction = false
+    this._savepointCounter = 0
   }
 
   async connect() {
@@ -35,8 +37,44 @@ class PgCompat {
 
   /**
    * Execute DDL/DML. Returns affected row count (no migration checks this).
+   *
+   * When inside a transaction (BEGIN issued by migrate.js), individual
+   * statements are wrapped in SAVEPOINTs so that try/catch in migration
+   * files works correctly. Without this, a caught error (e.g., "constraint
+   * already exists") aborts the PostgreSQL transaction and all subsequent
+   * statements fail with "current transaction is aborted."
    */
   async $executeRawUnsafe(sql, ...params) {
+    const trimmed = sql.trim().toUpperCase()
+
+    // Track transaction state for SAVEPOINT wrapping
+    if (trimmed.startsWith('BEGIN')) {
+      this._inTransaction = true
+      this._savepointCounter = 0
+      const result = await this._client.query(sql, params.length > 0 ? params : undefined)
+      return result.rowCount ?? 0
+    }
+    if (trimmed.startsWith('COMMIT') || trimmed.startsWith('ROLLBACK')) {
+      this._inTransaction = false
+      const result = await this._client.query(sql, params.length > 0 ? params : undefined)
+      return result.rowCount ?? 0
+    }
+
+    // Inside a transaction: wrap in SAVEPOINT so caught errors don't abort the txn
+    if (this._inTransaction) {
+      const sp = `_sp_${++this._savepointCounter}`
+      await this._client.query(`SAVEPOINT ${sp}`)
+      try {
+        const result = await this._client.query(sql, params.length > 0 ? params : undefined)
+        await this._client.query(`RELEASE SAVEPOINT ${sp}`)
+        return result.rowCount ?? 0
+      } catch (err) {
+        await this._client.query(`ROLLBACK TO SAVEPOINT ${sp}`)
+        throw err
+      }
+    }
+
+    // Outside transaction: execute directly
     const result = await this._client.query(sql, params.length > 0 ? params : undefined)
     return result.rowCount ?? 0
   }
