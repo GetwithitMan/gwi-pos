@@ -571,6 +571,15 @@ fetch_manifest() {
         fatal "Manifest missing required field: artifactUrl"
     fi
 
+    # Resolve relative artifact URL against manifest base URL
+    if [[ "$ARTIFACT_URL" == /* ]]; then
+        # Relative path — resolve against the manifest URL's origin
+        local base_origin
+        base_origin="$(echo "$url" | sed 's|^\(https\?://[^/]*\).*|\1|')"
+        ARTIFACT_URL="${base_origin}${ARTIFACT_URL}"
+        log "Resolved artifact URL: $ARTIFACT_URL"
+    fi
+
     log "Manifest parsed: releaseId=$RELEASE_ID"
 
     # Run compatibility gates from manifest
