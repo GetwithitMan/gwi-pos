@@ -1538,7 +1538,7 @@ async function updateDashboard(): Promise<void> {
   // Method 2: Fallback to POS base URL (Vercel)
   if (!downloaded) {
     try {
-      const baseUrl = process.env.POS_BASE_URL || 'https://app.thepasspos.com'
+      const baseUrl = process.env.POS_BASE_URL || 'https://ordercontrolcenter.com'
       const res = await fetch(`${baseUrl}/gwi-nuc-dashboard.deb`, {
         signal: AbortSignal.timeout(60_000),
       })
