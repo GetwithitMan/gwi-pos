@@ -119,6 +119,7 @@ rm -rf \
     "$STAGING/keys" \
     "$STAGING/ecosystem.config.js" \
     "$STAGING/package-lock.json" \
+    "$STAGING/prisma.config.ts" \
     2>/dev/null || true
 
 # Aggressive cleanup: remove test files, markdown, .git dirs from node_modules
