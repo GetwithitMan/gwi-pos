@@ -156,7 +156,7 @@ export function ItemDetailPopover({
               color: '#f87171',
               marginBottom: '10px',
             }}>
-              86'd - Currently Unavailable
+              86&apos;d - Currently Unavailable
             </div>
           )}
 

@@ -52,7 +52,7 @@ export const POST = withVenue(async function POST(
     })
 
     return ok({ ...proration, newPlanName: plan.name, newPrice: parseFloat(plan.price) })
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('[memberships/preview-change-plan] error:', err)
     return err('Internal error', 500)
   }

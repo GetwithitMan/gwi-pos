@@ -176,7 +176,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const expiresAt = new Date()
     expiresAt.setDate(expiresAt.getDate() + expiresInDays)
 
-    const created = await db.shiftSwapRequest.create({
+    const newRequest = await db.shiftSwapRequest.create({
       data: {
         locationId,
         shiftId,
@@ -223,14 +223,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Socket event
     void dispatchShiftRequestUpdate(locationId, {
       action: 'created',
-      requestId: created.id,
+      requestId: newRequest.id,
       type,
       requestedByEmployeeId,
       requestedToEmployeeId: requestedToEmployeeId || null,
       shiftId,
-    }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
+    }, { async: true }).catch(e => log.warn({ err: e }, 'Background task failed'))
 
-    return created({ request: created })
+    return created({ request: newRequest })
   } catch (error) {
     console.error('Failed to create shift request:', error)
     return err('Failed to create shift request', 500)

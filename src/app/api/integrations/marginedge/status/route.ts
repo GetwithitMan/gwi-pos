@@ -1,4 +1,3 @@
-import { NextResponse } from 'next/server'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationSettings } from '@/lib/location-cache'
 import { parseSettings } from '@/lib/settings'

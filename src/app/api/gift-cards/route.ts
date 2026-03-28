@@ -151,7 +151,7 @@ export const POST = withVenue(withAuth('CUSTOMERS_GIFT_CARDS', async function PO
       })
 
       if (!result.success) {
-        return err(result.error)
+        return err(result.error!)
       }
 
       giftCard = result.data as Record<string, unknown>

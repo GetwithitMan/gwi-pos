@@ -89,7 +89,7 @@ export function CheckoutPageClient({ bootstrap, slug }: CheckoutPageClientProps)
       const amt = Math.round(subtotal * (orderingConfig.defaultTip / 100) * 100) / 100
       setTipAmount(amt)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [])
 
   // ── Redirect to menu if cart is empty ────────────────────────

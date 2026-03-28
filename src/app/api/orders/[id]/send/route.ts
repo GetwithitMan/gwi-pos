@@ -60,7 +60,7 @@ export const POST = withVenue(withTiming(async function POST(
       const { validateCellularOrderAccess, CellularAuthError } = await import('@/lib/cellular-validation')
       try {
         await validateCellularOrderAccess(true, id, 'mutate', db)
-      } catch (err) {
+      } catch (caughtErr) {
         if (err instanceof CellularAuthError) {
           return err(err.message, err.status)
         }
@@ -497,7 +497,7 @@ export const POST = withVenue(withTiming(async function POST(
             }))
           })
         }
-      } catch (err) {
+      } catch (caughtErr) {
         console.error('[API /orders/[id]/send] Fulfillment routing failed, persisting for bridge worker:', err)
         // Persist as 'pending' so bridge worker picks them up as fallback
         try {

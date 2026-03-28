@@ -10,7 +10,9 @@ import { db } from '@/lib/db'
 import { parseSettings } from '@/lib/settings'
 import { createChildLogger } from '@/lib/logger'
 import type { DeliveryPlatform, PlatformItem } from './order-mapper'
+import type { DeliveryPlatformId } from './clients/types'
 import { mapThirdPartyOrder } from './order-mapper'
+import { emitToLocation } from '@/lib/socket-server'
 
 const log = createChildLogger('delivery')
 
@@ -319,7 +321,7 @@ export async function createPosOrderFromDelivery(
 
     // Emit order events so KDS, kitchen tickets, and cross-terminal sync work
     try {
-      const { emitOrderEvent } = require('@/lib/order-events/emitter')
+      const { emitOrderEvent } = await import('@/lib/order-events/emitter')
       await emitOrderEvent(locationId, orderId, 'ORDER_CREATED', {
         orderType: `delivery_${platform}`,
         source: `delivery_${platform}`,
@@ -333,7 +335,6 @@ export async function createPosOrderFromDelivery(
 
     // Emit socket events for POS terminals
     try {
-      const { emitToLocation } = require('@/lib/socket-server')
       emitToLocation(locationId, 'orders:list-changed', { source: `delivery_${platform}` })
       emitToLocation(locationId, 'order:summary-updated', { orderId })
     } catch (err) {
@@ -360,11 +361,10 @@ export async function confirmWithPlatform(
   prepTimeMinutes?: number,
 ): Promise<void> {
   try {
-    const { getPlatformClient } = require('@/lib/delivery/clients/platform-registry')
-    const { parseSettings } = require('@/lib/settings')
-    const { getLocationSettings } = require('@/lib/location-cache')
+    const { getPlatformClient } = await import('@/lib/delivery/clients/platform-registry')
+    const { getLocationSettings } = await import('@/lib/location-cache')
     const settings = parseSettings(await getLocationSettings(locationId))
-    const client = getPlatformClient(platform, settings)
+    const client = getPlatformClient(platform as DeliveryPlatformId, settings)
     if (!client) return
     const prepTime = prepTimeMinutes ?? settings.thirdPartyDelivery?.[platform as 'doordash' | 'ubereats' | 'grubhub']?.prepTimeMinutes ?? 20
     await client.confirmOrder(externalOrderId, prepTime)
@@ -407,7 +407,6 @@ export async function voidLinkedPosOrder(
 
     // Emit events
     try {
-      const { emitToLocation } = require('@/lib/socket-server')
       emitToLocation(locationId, 'orders:list-changed', { source: `cancel_${platform}` })
       emitToLocation(locationId, 'order:summary-updated', { orderId })
       emitToLocation(locationId, 'kds:order-bumped', { orderId })
@@ -460,7 +459,6 @@ export function dispatchDeliveryEvent(
   payload: Record<string, unknown>,
 ): void {
   try {
-    const { emitToLocation } = require('@/lib/socket-server')
     void emitToLocation(locationId, event, payload).catch((err: unknown) => log.error({ err }, 'emitToLocation failed'))
   } catch (err) {
     log.error({ err }, 'Failed to load socket-server for delivery event dispatch')

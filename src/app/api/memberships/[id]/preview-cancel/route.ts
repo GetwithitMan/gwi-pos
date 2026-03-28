@@ -34,7 +34,7 @@ export const POST = withVenue(async function POST(
         currentPeriodActive: periodEnd > now,
         refundEligible: false, // v1: no refunds on cancel
       })
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('[memberships/preview-cancel] error:', err)
     return err('Internal error', 500)
   }

@@ -9,7 +9,6 @@
  * Fire-and-forget from client: `void fetch('/api/cfd/notify', ...).catch(err => console.warn('cfd notify failed:', err))`
  */
 
-import { NextResponse } from 'next/server'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import {

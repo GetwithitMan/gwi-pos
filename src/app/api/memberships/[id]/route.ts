@@ -37,7 +37,7 @@ export const GET = withVenue(async function GET(
 
     if (rows.length === 0) return notFound('Membership not found')
     return ok(rows[0])
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('[memberships/[id]] GET error:', err)
     return err('Internal error', 500)
   }
@@ -67,7 +67,7 @@ export const DELETE = withVenue(async function DELETE(
 
     if (rows.length === 0) return notFound('Membership not found')
     return ok({ success: true })
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('[memberships/[id]] DELETE error:', err)
     return err('Internal error', 500)
   }
@@ -98,7 +98,7 @@ export const PUT = withVenue(async function PUT(
 
     if (rows.length === 0) return notFound('Membership not found')
     return ok(rows[0])
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('[memberships/[id]] PUT error:', err)
     return err('Internal error', 500)
   }

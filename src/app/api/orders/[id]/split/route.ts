@@ -59,7 +59,7 @@ export const POST = withVenue(async function POST(
     })
 
     if ('error' in lockResult) {
-      return err(lockResult.error, lockResult.status)
+      return err(lockResult.error!, lockResult.status)
     }
 
     // Get the original order with all details (row was validated above)

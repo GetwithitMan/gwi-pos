@@ -104,7 +104,7 @@ export const GET = withVenue(async (request: Request) => {
           lastError: r.lastError,
         })),
       })
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('[GET /api/hardware/readers/health]', err)
     return err('Internal server error', 500)
   }

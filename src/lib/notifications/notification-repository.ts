@@ -8,7 +8,7 @@
 
 import type { PrismaClient } from '@/generated/prisma/client'
 import { createChildLogger } from '@/lib/logger'
-import type { JobStatus, TerminalResult, AttemptResult } from './types'
+import type { TerminalResult, AttemptResult } from './types'
 
 const log = createChildLogger('notification-repo')
 

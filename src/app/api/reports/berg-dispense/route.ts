@@ -93,7 +93,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     return ok({ events, total, page, limit, pages: Math.ceil(total / limit) })
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('[reports/berg-dispense]', err)
     return err('Failed to load dispense log', 500)
   }

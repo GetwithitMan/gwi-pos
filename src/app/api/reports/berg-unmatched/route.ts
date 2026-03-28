@@ -109,7 +109,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       totalCount: events.length,
       unmatchedTypeLabels: UNMATCHED_TYPE_LABELS,
     })
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('[reports/berg-unmatched]', err)
     return err('Failed to load unmatched report', 500)
   }

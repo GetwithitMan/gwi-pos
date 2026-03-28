@@ -59,7 +59,7 @@ export async function POST(request: Request) {
     }
 
     return ok({ success: true, domain, action })
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('[Cache Invalidate] Error:', err)
     return err('Internal error', 500)
   }

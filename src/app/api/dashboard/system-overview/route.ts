@@ -8,6 +8,7 @@
  * endpoint always returns them — the dashboard needs them.
  */
 
+import { NextResponse } from 'next/server'
 import { db, getVenueClientCount } from '@/lib/db'
 import { CONNECTION_BUDGET } from '@/lib/db-connection-budget'
 import { withVenue } from '@/lib/with-venue'
@@ -105,6 +106,7 @@ export const GET = withVenue(async function GET(): Promise<NextResponse> {
   let pendingReconciliation = 0
   if (databaseCheck && locationId) {
     try {
+      // eslint-disable-next-line no-restricted-syntax -- dashboard aggregate count not suited for repository pattern
       pendingReconciliation = await db.order.count({
         where: {
           locationId,
@@ -209,6 +211,7 @@ export const GET = withVenue(async function GET(): Promise<NextResponse> {
         // File doesn't exist — that's fine
       }
 
+      // eslint-disable-next-line no-restricted-syntax -- dashboard aggregate count not suited for repository pattern
       const openOrderCount = await db.order.count({
         where: {
           deletedAt: null,
@@ -216,6 +219,7 @@ export const GET = withVenue(async function GET(): Promise<NextResponse> {
         },
       })
 
+      // eslint-disable-next-line no-restricted-syntax -- dashboard aggregate count not suited for repository pattern
       const unadjustedTipCount = await db.payment.count({
         where: {
           deletedAt: null,
@@ -226,6 +230,7 @@ export const GET = withVenue(async function GET(): Promise<NextResponse> {
         },
       })
 
+      // eslint-disable-next-line no-restricted-syntax -- dashboard aggregate sum not suited for repository pattern
       const batchAgg = await db.payment.aggregate({
         where: {
           deletedAt: null,

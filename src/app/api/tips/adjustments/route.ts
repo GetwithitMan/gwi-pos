@@ -222,7 +222,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
 
       try {
         await queueIfOutageOrFail('TipAdjustment', locationId, result.adjustmentId, 'INSERT')
-      } catch (err) {
+      } catch (caughtErr) {
         if (err instanceof OutageQueueFullError) {
           return err('Service temporarily unavailable — outage queue full', 507)
         }
@@ -404,7 +404,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
 
         try {
           await queueIfOutageOrFail('TipAdjustment', locationId, result.adjustmentId, 'INSERT')
-        } catch (err) {
+        } catch (caughtErr) {
           if (err instanceof OutageQueueFullError) {
             return err('Service temporarily unavailable — outage queue full', 507)
           }
@@ -428,7 +428,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
 
         try {
           await queueIfOutageOrFail('TipAdjustment', locationId, result.adjustmentId, 'INSERT')
-        } catch (err) {
+        } catch (caughtErr) {
           if (err instanceof OutageQueueFullError) {
             return err('Service temporarily unavailable — outage queue full', 507)
           }
@@ -455,7 +455,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
 
     try {
       await queueIfOutageOrFail('TipAdjustment', locationId, result.adjustmentId, 'INSERT')
-    } catch (err) {
+    } catch (caughtErr) {
       if (err instanceof OutageQueueFullError) {
         return err('Service temporarily unavailable — outage queue full', 507)
       }

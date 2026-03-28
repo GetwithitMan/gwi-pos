@@ -1,7 +1,6 @@
 import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
-import type { EventReplayResponse } from '@/lib/order-events/types'
 import { authenticateTerminal } from '@/lib/terminal-auth'
 import { err, ok } from '@/lib/api-response'
 

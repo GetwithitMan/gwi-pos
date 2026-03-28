@@ -53,6 +53,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Req
     }
 
     // Find employee by PIN + locationId
+    // eslint-disable-next-line no-restricted-syntax -- admin PIN verification needs role/permission includes not available in EmployeeRepository
     const employee = await db.employee.findFirst({
       where: {
         locationId,

@@ -20,7 +20,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     `, locationId)
 
     return ok(plans)
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('[membership-plans] GET error:', err)
     return err('Internal error', 500)
   }
@@ -58,7 +58,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     )
 
     return created(rows[0])
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('[membership-plans] POST error:', err)
     return err('Internal error', 500)
   }

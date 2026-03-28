@@ -104,7 +104,7 @@ export function PaymentForm({
         for (const mod of mods) {
           result.push({ modifierId: mod.modifierId, name: mod.name, price: mod.price, quantity: mod.quantity, preModifier: mod.preModifier })
           if (mod.childSelections && Array.isArray(mod.childSelections)) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+             
             result.push(...flattenModifiers(mod.childSelections as any))
           }
         }

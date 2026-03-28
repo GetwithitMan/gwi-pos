@@ -35,9 +35,9 @@ interface SyncMetrics {
 // Using globalThis ensures both module systems share the same state.
 
 declare global {
-  // eslint-disable-next-line no-var
+   
   var __gwi_upstream_metrics: SyncMetrics | undefined
-  // eslint-disable-next-line no-var
+   
   var __gwi_upstream_outage: { isInOutage: boolean; consecutiveFailures: number } | undefined
 }
 

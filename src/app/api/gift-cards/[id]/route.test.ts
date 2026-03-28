@@ -10,7 +10,7 @@ const mockDb = vi.hoisted(() => ({
     findUnique: vi.fn(),
     update: vi.fn(),
   },
-  $transaction: vi.fn((fn: Function) => fn(mockDb)),
+  $transaction: vi.fn((fn: (db: typeof mockDb) => unknown) => fn(mockDb)),
 }))
 
 const mockFreezeGiftCard = vi.hoisted(() => vi.fn())
@@ -23,7 +23,7 @@ vi.mock('@/lib/with-venue', () => ({
   withVenue: (handler: (...args: unknown[]) => unknown) => handler,
 }))
 vi.mock('@/lib/api-auth-middleware', () => ({
-  withAuth: (_perm: string, handler: Function) => handler,
+  withAuth: (_perm: string, handler: (...args: unknown[]) => unknown) => handler,
 }))
 vi.mock('@/lib/cloud-notify', () => ({ notifyDataChanged: mockNotifyDataChanged }))
 vi.mock('@/lib/domain/gift-cards/freeze-gift-card', () => ({
@@ -203,7 +203,7 @@ describe('PUT /api/gift-cards/[id]', () => {
       data: { id: 'gc-1', locationId: 'loc-1', status: 'frozen', initialBalance: 50, currentBalance: 25 },
     })
 
-    const res = await (PUT as Function)(
+    const res = await (PUT as (...args: unknown[]) => Promise<Response>)(
       makePutRequest('gc-1', { action: 'freeze', reason: 'Suspected fraud', employeeId: 'emp-1' }),
       { params: PARAMS_PROMISE('gc-1') }
     )
@@ -220,7 +220,7 @@ describe('PUT /api/gift-cards/[id]', () => {
       data: { id: 'gc-1', locationId: 'loc-1', status: 'active', initialBalance: 50, currentBalance: 25 },
     })
 
-    const res = await (PUT as Function)(
+    const res = await (PUT as (...args: unknown[]) => Promise<Response>)(
       makePutRequest('gc-1', { action: 'unfreeze', employeeId: 'emp-1' }),
       { params: PARAMS_PROMISE('gc-1') }
     )
@@ -250,7 +250,7 @@ describe('PUT /api/gift-cards/[id]', () => {
       transactions: [{ id: 'txn-r', type: 'reload', amount: 50 }],
     })
 
-    const res = await (PUT as Function)(
+    const res = await (PUT as (...args: unknown[]) => Promise<Response>)(
       makePutRequest('gc-1', { action: 'reload', amount: 50, employeeId: 'emp-1' }),
       { params: PARAMS_PROMISE('gc-1') }
     )
@@ -277,7 +277,7 @@ describe('PUT /api/gift-cards/[id]', () => {
       data: { id: 'gc-1', locationId: 'loc-1', initialBalance: 50, currentBalance: 60, status: 'active' },
     })
 
-    const res = await (PUT as Function)(
+    const res = await (PUT as (...args: unknown[]) => Promise<Response>)(
       makePutRequest('gc-1', { action: 'adjust', amount: 10, notes: 'Goodwill credit', employeeId: 'emp-1' }),
       { params: PARAMS_PROMISE('gc-1') }
     )
@@ -294,7 +294,7 @@ describe('PUT /api/gift-cards/[id]', () => {
       data: { id: 'gc-1', locationId: 'loc-1', initialBalance: 50, currentBalance: 15, status: 'active' },
     })
 
-    const res = await (PUT as Function)(
+    const res = await (PUT as (...args: unknown[]) => Promise<Response>)(
       makePutRequest('gc-1', { action: 'adjust', amount: -10, notes: 'Correction', employeeId: 'emp-1' }),
       { params: PARAMS_PROMISE('gc-1') }
     )
@@ -305,7 +305,7 @@ describe('PUT /api/gift-cards/[id]', () => {
   })
 
   it('adjust: requires notes (returns 400 without)', async () => {
-    const res = await (PUT as Function)(
+    const res = await (PUT as (...args: unknown[]) => Promise<Response>)(
       makePutRequest('gc-1', { action: 'adjust', amount: 10, employeeId: 'emp-1' }),
       { params: PARAMS_PROMISE('gc-1') }
     )
@@ -321,7 +321,7 @@ describe('PUT /api/gift-cards/[id]', () => {
       data: { id: 'gc-1', locationId: 'loc-1', initialBalance: 50, currentBalance: 10, status: 'active' },
     })
 
-    const res = await (PUT as Function)(
+    const res = await (PUT as (...args: unknown[]) => Promise<Response>)(
       makePutRequest('gc-1', { action: 'adjust', amount: 10, notes: 'Reactivation credit', employeeId: 'emp-1' }),
       { params: PARAMS_PROMISE('gc-1') }
     )
@@ -334,7 +334,7 @@ describe('PUT /api/gift-cards/[id]', () => {
   // ─── Invalid Action ─────────────────────────────────────────────────────────
 
   it('returns 400 for invalid action', async () => {
-    const res = await (PUT as Function)(
+    const res = await (PUT as (...args: unknown[]) => Promise<Response>)(
       makePutRequest('gc-1', { action: 'invalid_action', employeeId: 'emp-1' }),
       { params: PARAMS_PROMISE('gc-1') }
     )

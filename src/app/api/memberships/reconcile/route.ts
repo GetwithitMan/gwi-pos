@@ -46,7 +46,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     `, ...params)
 
     return ok(rows)
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('[memberships/reconcile] error:', err)
     return err('Internal error', 500)
   }

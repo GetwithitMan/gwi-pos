@@ -223,7 +223,7 @@ export default function OrdersPage() {
   const cardTabOrderId = store(s => s.cardTabOrderId)
 
   // State that was previously from usePaymentFlow but only paymentMethod needs local state
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'credit'>('credit')
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card'>('card')
 
   // Shift checked needs local state (used only in bootstrap)
   const [shiftChecked, setShiftChecked] = useState(false)
@@ -711,15 +711,6 @@ export default function OrdersPage() {
   const totalDiscounts = pricing.discounts + pricing.cashDiscount
   const grandTotal = pricing.total
 
-  // ── Auth guard ──
-  if (!hydrated || !isAuthenticated || !employee) {
-    return null
-  }
-
-  if (!(viewMode === 'floor-plan' || viewMode === 'bartender') || !employee.location?.id) {
-    return null
-  }
-
   // ── Repeat Round handler — duplicates all items from the last sent batch ──
   // Uses stored item data (ref) so it works even after the order is cleared
   const handleRepeatRound = useCallback(() => {
@@ -758,6 +749,15 @@ export default function OrdersPage() {
 
     toast.success(`Repeated ${addedCount} item${addedCount !== 1 ? 's' : ''} from last round`)
   }, [handlers.lastSentItemsDataRef])
+
+  // ── Auth guard ──
+  if (!hydrated || !isAuthenticated || !employee) {
+    return null
+  }
+
+  if (!(viewMode === 'floor-plan' || viewMode === 'bartender') || !employee.location?.id) {
+    return null
+  }
 
   // ── Shared OrderPanel element ──
   const sharedOrderPanel = (

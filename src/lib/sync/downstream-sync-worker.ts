@@ -57,7 +57,7 @@ interface DownstreamMetrics {
 // Using globalThis ensures both module systems share the same metrics state.
 
 declare global {
-  // eslint-disable-next-line no-var
+   
   var __gwi_downstream_metrics: DownstreamMetrics | undefined
 }
 

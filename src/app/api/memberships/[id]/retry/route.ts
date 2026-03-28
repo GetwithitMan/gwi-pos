@@ -105,7 +105,7 @@ export const POST = withVenue(async function POST(
       }).catch(err => log.warn({ err }, 'Background task failed'))
 
       return ok({ success: true, refNo: resp.refNo })
-    } catch (err) {
+    } catch (caughtErr) {
       if (err instanceof PayApiError) {
         const decline = classifyDecline(err.response?.returnCode, err.response?.message)
 
@@ -140,7 +140,7 @@ export const POST = withVenue(async function POST(
       }
       throw err
     }
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('[memberships/retry] error:', err)
     return err('Internal error', 500)
   }

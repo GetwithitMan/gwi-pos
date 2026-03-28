@@ -174,7 +174,7 @@ export const PUT = withVenue(withAuth({ allowCellular: true }, async function PU
     if (newOwnerId) {
       try {
         await transferGroupOwnership({ groupId: id, newOwnerId })
-      } catch (err) {
+      } catch (caughtErr) {
         const message = err instanceof Error ? err.message : String(err)
         if (message === 'NEW_OWNER_NOT_ACTIVE_MEMBER') {
           return err('New owner must be an active member of the group')
@@ -202,7 +202,7 @@ export const PUT = withVenue(withAuth({ allowCellular: true }, async function PU
     // ── Outage queue protection ────────────────────────────────────────────
     try {
       await queueIfOutageOrFail('TipGroup', existingGroup.locationId, id, 'UPDATE')
-    } catch (err) {
+    } catch (caughtErr) {
       if (err instanceof OutageQueueFullError) {
         return err('Service temporarily unavailable — outage queue full', 507)
       }
@@ -270,7 +270,7 @@ export const DELETE = withVenue(withAuth({ allowCellular: true }, async function
     // ── Outage queue protection ────────────────────────────────────────────
     try {
       await queueIfOutageOrFail('TipGroup', existingGroup.locationId, id, 'UPDATE')
-    } catch (err) {
+    } catch (caughtErr) {
       if (err instanceof OutageQueueFullError) {
         return err('Service temporarily unavailable — outage queue full', 507)
       }

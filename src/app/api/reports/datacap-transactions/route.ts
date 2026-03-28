@@ -212,7 +212,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           datacapTotal: datacapTransactions.length,
         },
       })
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('GET /api/reports/datacap-transactions error:', err)
     return err('Internal server error', 500)
   }

@@ -50,7 +50,7 @@ export async function GET(request: NextRequest) {
     })
 
     return ok({ devices, locationId: locationId ?? null })
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('[berg/bootstrap]', err)
     return err('Failed to load devices', 500)
   }

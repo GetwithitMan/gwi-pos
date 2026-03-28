@@ -27,7 +27,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     return ok({
       devices: devices.map(({ bridgeSecretHash: _, ...d }) => d),
     })
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('[berg/devices GET]', err)
     return err('Failed to load devices', 500)
   }
@@ -81,7 +81,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       bridgeSecret: plainSecret, // returned ONCE — never again
       warning: 'Save this secret now — it cannot be retrieved again.',
     })
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('[berg/devices POST]', err)
     return err('Failed to create device', 500)
   }

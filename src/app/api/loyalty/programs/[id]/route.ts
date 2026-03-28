@@ -117,8 +117,8 @@ export const PUT = withVenue(async function PUT(
     for (const [key, { column, validate, isArray }] of Object.entries(fields)) {
       if (key in body) {
         if (validate) {
-          const err = validate(body[key])
-          if (err) return err(err)
+          const validationErr = validate(body[key])
+          if (validationErr) return err(validationErr)
         }
         if (isArray) {
           setClauses.push(`"${column}" = $${paramIdx}::text[]`)

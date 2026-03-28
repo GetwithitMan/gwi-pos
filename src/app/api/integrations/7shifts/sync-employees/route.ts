@@ -44,7 +44,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   let users
   try {
     users = await getCompanyUsers(s, location.id)
-  } catch (err) {
+  } catch (caughtErr) {
     const msg = err instanceof Error ? err.message : 'Unknown error'
     return err(`Failed to fetch 7shifts users: ${msg}`, 502)
   }

@@ -105,7 +105,7 @@ export async function GET(request: Request) {
           paymentReaders: paymentReaders.length,
         },
       })
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('[Device Inventory] Error:', err)
     return err('Internal error', 500)
   }

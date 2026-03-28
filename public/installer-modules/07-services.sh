@@ -56,6 +56,17 @@ RLSEOF
 # GWI POS Pre-Start -- runs before thepasspos.service on every boot/restart.
 # Ensures the database schema is current via deploy-tools migrations.
 set -euo pipefail
+
+# ── Boot report timing ──
+_BOOT_START=$(date +%s%N)
+_BOOT_STEPS=()
+_boot_step() {
+  local name="$1" status="$2" detail="${3:-}"
+  local now=$(date +%s%N)
+  local elapsed_ms=$(( (now - _BOOT_START) / 1000000 ))
+  _BOOT_STEPS+=("{\"step\":\"$name\",\"status\":\"$status\",\"detail\":\"$detail\",\"elapsedMs\":$elapsed_ms}")
+}
+
 _APP_DIR="/opt/gwi-pos/app"
 cd "$_APP_DIR"
 
@@ -113,9 +124,11 @@ fi
 # build-time step that runs on Vercel, never on a production NUC.
 if [[ -d "$_APP_DIR/src/generated/prisma" ]]; then
   echo "[pre-start] Prisma client: present (pre-built in artifact)"
+  _boot_step "prisma-client" "ok" "pre-built"
 else
   echo "[pre-start] WARNING: Prisma client not found at $_APP_DIR/src/generated/prisma"
   echo "[pre-start] The app may fail to start. Redeploy with a complete artifact."
+  _boot_step "prisma-client" "missing" ""
 fi
 
 # Timeout check
@@ -152,7 +165,11 @@ sudo /opt/gwi-pos/disable-rls.sh "$_DB_NAME" && {
   else
     echo "[pre-start] RLS disabled."
   fi
-} || echo "[pre-start] WARNING: RLS disable had issues -- continuing."
+  _boot_step "rls-disable" "ok" ""
+} || {
+  echo "[pre-start] WARNING: RLS disable had issues -- continuing."
+  _boot_step "rls-disable" "warn" "issues"
+}
 
 # Timeout check
 if [[ $(date +%s) -gt $PRE_START_DEADLINE ]]; then
@@ -171,16 +188,26 @@ if [[ -f "$_DT_DIR/src/migrate.js" ]]; then
   echo "migrating" > /opt/gwi-pos/shared/state/schema-state 2>/dev/null || true
 
   echo "[pre-start] Running migrations via deploy-tools..."
-  DATABASE_URL="$DATABASE_URL" timeout --kill-after=10 300 node "$_DT_DIR/src/migrate.js" 2>&1 || {
+  _MIGRATE_OUTPUT=$(DATABASE_URL="$DATABASE_URL" timeout --kill-after=10 300 node "$_DT_DIR/src/migrate.js" 2>&1) && {
+    # Parse applied/skipped counts from output if available
+    _m_applied=$(echo "$_MIGRATE_OUTPUT" | grep -c 'Applied\|applied' 2>/dev/null || echo "0")
+    _m_skipped=$(echo "$_MIGRATE_OUTPUT" | grep -c 'Skipped\|skipped\|already' 2>/dev/null || echo "0")
+    echo "$_MIGRATE_OUTPUT"
+    _boot_step "local-migrations" "ok" "${_m_applied} applied, ${_m_skipped} skipped"
+  } || {
     EXIT_CODE=$?
+    echo "$_MIGRATE_OUTPUT"
     if [[ $EXIT_CODE -eq 124 ]]; then
       echo "[pre-start] WARNING: deploy-tools migrations timed out after 300s -- continuing."
+      _boot_step "local-migrations" "warn" "timeout"
     else
       if [[ ! -f /opt/gwi-pos/.first-boot-done ]]; then
         echo "[pre-start] CRITICAL: deploy-tools migrate.js failed on first boot (exit $EXIT_CODE) -- aborting."
+        _boot_step "local-migrations" "fail" "exit $EXIT_CODE (first boot)"
         exit 1
       else
         echo "[pre-start] WARNING: deploy-tools migrations had issues (exit $EXIT_CODE) -- continuing (not first boot)."
+        _boot_step "local-migrations" "warn" "exit $EXIT_CODE"
       fi
     fi
   }
@@ -188,6 +215,7 @@ if [[ -f "$_DT_DIR/src/migrate.js" ]]; then
   echo "ready" > /opt/gwi-pos/shared/state/schema-state 2>/dev/null || true
 else
   echo "[pre-start] WARNING: deploy-tools not found at $_DT_DIR -- skipping migrations."
+  _boot_step "local-migrations" "skipped" "deploy-tools not found"
 fi
 
 # ── Neon schema VALIDATION (read-only -- NUC never mutates venue Neon) ──
@@ -206,9 +234,13 @@ if [[ -n "$NEON_DATABASE_URL" ]]; then
   if [[ "$_neon_count" != "-1" ]] && [[ "$_local_count" != "-1" ]] && [[ "$_neon_count" != "$_local_count" ]]; then
     echo "[pre-start] WARNING: Neon migration count ($_neon_count) differs from local ($_local_count)"
     echo "[pre-start] MC will reconcile via sync-schema API. NUC does NOT mutate Neon."
+    _boot_step "neon-validate" "warn" "mismatch neon=$_neon_count local=$_local_count"
   else
     echo "[pre-start] Neon schema validation OK (count: $_neon_count)"
+    _boot_step "neon-validate" "ok" "count=$_neon_count"
   fi
+else
+  _boot_step "neon-validate" "skip" "no NEON_DATABASE_URL"
 fi
 
 # Check seed completion status -- hard stop on first boot if incomplete
@@ -269,6 +301,23 @@ if [[ -d "$_APP_DIR/public/scripts" ]]; then
     [[ -f "$_APP_DIR/public/scripts/$_script" ]] && cp "$_APP_DIR/public/scripts/$_script" /opt/gwi-pos/scripts/ && chmod +x "/opt/gwi-pos/scripts/$_script" 2>/dev/null || true
   done
 fi
+
+# ── Boot report ──
+_BOOT_END=$(date +%s%N)
+_BOOT_DURATION_MS=$(( (_BOOT_END - _BOOT_START) / 1000000 ))
+_REPORT_DIR="/opt/gwi-pos/shared/state"
+mkdir -p "$_REPORT_DIR" 2>/dev/null || true
+_STEPS_JSON=$(IFS=,; echo "${_BOOT_STEPS[*]}")
+cat > "$_REPORT_DIR/boot-report.json" << BOOTEOF
+{
+  "timestamp": "$(date -u +%FT%TZ)",
+  "durationMs": $_BOOT_DURATION_MS,
+  "hostname": "$(hostname)",
+  "release": "$(basename "$(readlink -f /opt/gwi-pos/current 2>/dev/null)" 2>/dev/null || echo "unknown")",
+  "steps": [$_STEPS_JSON]
+}
+BOOTEOF
+echo "[pre-start] Boot report written ($_BOOT_DURATION_MS ms)"
 
 # ── Mark reconciliation complete for this boot ──
 mkdir -p /opt/gwi-pos/state

@@ -21,6 +21,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react'
+import Link from 'next/link'
 import { formatCurrency } from '@/lib/utils'
 import type { SiteBootstrapResponse } from '@/lib/site-api-schemas'
 import type { PublicDatacapVirtualGiftSettings } from '@/lib/settings/types'
@@ -148,7 +149,7 @@ function DatacapVirtualGiftWidget({ embeddedUrl, publicLinkUrl }: { embeddedUrl:
           <p className="mb-6" style={{ color: 'var(--site-text-muted)' }}>
             Preparing your gift card... You will receive a confirmation shortly.
           </p>
-          <a
+          <Link
             href="/"
             className="inline-block py-3 px-8 rounded-xl font-semibold transition-opacity hover:opacity-90"
             style={{
@@ -157,7 +158,7 @@ function DatacapVirtualGiftWidget({ embeddedUrl, publicLinkUrl }: { embeddedUrl:
             }}
           >
             Back to Home
-          </a>
+          </Link>
         </div>
       </div>
     )
@@ -520,7 +521,7 @@ function PayApiGiftCardForm({ bootstrap, slug }: { bootstrap: SiteBootstrapRespo
             </div>
           </div>
 
-          <a
+          <Link
             href="/"
             className="inline-block py-3 px-8 rounded-xl font-semibold transition-opacity hover:opacity-90"
             style={{
@@ -529,7 +530,7 @@ function PayApiGiftCardForm({ bootstrap, slug }: { bootstrap: SiteBootstrapRespo
             }}
           >
             Back to Home
-          </a>
+          </Link>
         </div>
       </div>
     )

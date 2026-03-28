@@ -1,4 +1,3 @@
-import { NextResponse } from 'next/server'
 import { withVenue } from '@/lib/with-venue'
 import { err, ok } from '@/lib/api-response'
 

@@ -214,9 +214,9 @@ export async function POST(request: NextRequest) {
       schemaAudit,
     })
   } catch (error: unknown) {
-    const err = error as { message?: string }
-    console.error(`[sync-schema] Failed for ${slug}:`, err.message || error)
-    return err('Schema sync failed', 500, err.message || 'Unknown error')
+    const msg = error instanceof Error ? error.message : 'Unknown error'
+    console.error(`[sync-schema] Failed for ${slug}:`, msg)
+    return err('Schema sync failed', 500, msg)
   }
 }
 

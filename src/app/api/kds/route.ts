@@ -232,7 +232,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     // Batch-fetch delivery info for all orders in a single query
     const orderIds = orders.map(o => o.id)
-    let deliveryInfoMap: Record<string, { customerName: string | null; phone: string | null; address: string | null; notes: string | null }> = {}
+    const deliveryInfoMap: Record<string, { customerName: string | null; phone: string | null; address: string | null; notes: string | null }> = {}
     if (orderIds.length > 0 && !deliveryTableMissing) {
       try {
         const deliveryRows: Array<{ orderId: string; customerName: string | null; phone: string | null; address: string | null; addressLine2: string | null; city: string | null; state: string | null; zipCode: string | null; notes: string | null }> = await db.$queryRawUnsafe(

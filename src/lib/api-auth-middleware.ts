@@ -76,7 +76,7 @@ export interface AuthenticatedContext {
    *  Typed as `any` so route handlers can narrow to their specific param shape
    *  (e.g., `{ params: Promise<{ id: string }> }`) without type conflicts.
    *  Next.js always provides params for dynamic routes; non-dynamic routes get `{}`. */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   params: any
 }
 

@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import * as EmployeeRepository from '@/lib/repositories/employee-repository'
 import { withVenue } from '@/lib/with-venue'
 import { hashPassword, hashPin } from '@/lib/auth'
-import { checkLoginRateLimit, recordLoginFailure, recordLoginSuccess } from '@/lib/auth-rate-limiter'
+import { checkLoginRateLimit, recordLoginFailure } from '@/lib/auth-rate-limiter'
 import { getClientIp } from '@/lib/get-client-ip'
 import { err, forbidden, notFound, ok } from '@/lib/api-response'
 

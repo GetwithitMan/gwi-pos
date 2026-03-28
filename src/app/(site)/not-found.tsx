@@ -6,6 +6,8 @@
  * (canBrowseMenu check), so this page only handles true 404s.
  */
 
+import Link from 'next/link'
+
 export default function SiteNotFound() {
   return (
     <div className="min-h-[60vh] flex items-center justify-center px-6">
@@ -28,7 +30,7 @@ export default function SiteNotFound() {
         >
           The page you&apos;re looking for doesn&apos;t exist or has been moved.
         </p>
-        <a
+        <Link
           href="/"
           className="inline-block px-6 py-2.5 transition-opacity hover:opacity-90"
           style={{
@@ -39,7 +41,7 @@ export default function SiteNotFound() {
           }}
         >
           Go Home
-        </a>
+        </Link>
       </div>
     </div>
   )

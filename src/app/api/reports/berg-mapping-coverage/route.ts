@@ -156,7 +156,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         unmappedExposure,
       },
     })
-  } catch (err) {
+  } catch (caughtErr) {
     console.error('[reports/berg-mapping-coverage]', err)
     return err('Failed to load mapping coverage report', 500)
   }

@@ -141,6 +141,7 @@ export type MenuItemFloorPlan = Pick<MenuItem,
   | 'stockStatus' | 'stockCount' | 'stockIngredientName' | 'is86d' | 'reasons86d'
   | 'pricingOptionGroups' | 'hasPricingOptions' | 'calories' | 'alwaysOpenModifiers'
   | 'pourSizes' | 'defaultPourSize' | 'applyPourToModifiers' | 'isLiquorItem'
+  | 'isAvailable'
 >
 
 /** Minimal fields for prep station assignment */

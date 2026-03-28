@@ -65,7 +65,7 @@ export const POST = withVenue(async function POST(
     // Cellular terminal: require manager PIN re-authentication for void
     try {
       validateManagerReauthFromHeaders(request, managerId, managerPinHash)
-    } catch (err) {
+    } catch (caughtErr) {
       if (err instanceof CellularAuthError) {
         return err(err.message, err.status)
       }
@@ -77,7 +77,7 @@ export const POST = withVenue(async function POST(
     if (isCellularVoid) {
       try {
         await validateCellularOrderAccess(true, orderId, 'mutate', db)
-      } catch (err) {
+      } catch (caughtErr) {
         if (err instanceof CellularAuthError) {
           return err(err.message, err.status)
         }
@@ -136,7 +136,7 @@ export const POST = withVenue(async function POST(
     }, { timeout: 15000 })
 
     if ('error' in lockedRead) {
-      return err(lockedRead.error, lockedRead.status)
+      return err(lockedRead.error!, lockedRead.status)
     }
 
     const { order, payment } = lockedRead
@@ -388,7 +388,7 @@ export const POST = withVenue(async function POST(
         if (fullPayment) await queueIfOutageOrFail('Payment', order.locationId, paymentId, 'UPDATE', fullPayment as unknown as Record<string, unknown>)
         const fullOrder = await OrderRepository.getOrderById(orderId, order.locationId)
         if (fullOrder) await queueIfOutageOrFail('Order', order.locationId, orderId, 'UPDATE', fullOrder as unknown as Record<string, unknown>)
-      } catch (err) {
+      } catch (caughtErr) {
         if (err instanceof OutageQueueFullError) {
           return NextResponse.json(
             { error: 'Payment voided but outage queue is full — manual reconciliation required', critical: true },
@@ -458,7 +458,7 @@ export const POST = withVenue(async function POST(
     if (newOrderStatus === 'voided') {
       try {
         await restoreInventoryForOrder(orderId, order.locationId)
-      } catch (err) {
+      } catch (caughtErr) {
         console.error('[VOID] Inventory restoration failed — manual stock adjustment may be needed:', err)
       }
     }
@@ -490,7 +490,7 @@ export const POST = withVenue(async function POST(
               orderId: order.parentOrderId!,
             }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
           }
-        } catch (err) {
+        } catch (caughtErr) {
           console.error('[void-payment] Failed to resolve parent order after all children voided:', err)
         }
       })()
@@ -566,7 +566,7 @@ export const POST = withVenue(async function POST(
 
         console.log(`[void-payment] Gift card ${giftCardId} balance restored by $${voidAmount.toFixed(2)} for orderId=${orderId}`)
         void dispatchGiftCardBalanceChanged(order.locationId, { giftCardId, newBalance })
-      } catch (err) {
+      } catch (caughtErr) {
         console.error('[void-payment] Gift card balance restoration failed:', err)
       }
     })()
@@ -612,7 +612,7 @@ export const POST = withVenue(async function POST(
           `Reversed: payment voided on order #${order.orderNumber}`,
           managerId || null,
         )
-      } catch (err) {
+      } catch (caughtErr) {
         console.error('[void-payment] Loyalty point reversal failed:', err)
       }
     })()
@@ -643,7 +643,7 @@ export const POST = withVenue(async function POST(
           paymentId,
           groupId: `void-${order.locationId}-${orderId}`,
         }).catch(err => log.warn({ err }, 'Background task failed'))
-      } catch (err) {
+      } catch (caughtErr) {
         console.error('[void-payment] Alert dispatch failed:', err)
       }
     })()

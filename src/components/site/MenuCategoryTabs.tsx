@@ -8,7 +8,7 @@
  * as the user scrolls.
  */
 
-import { useRef, useEffect, useState, useCallback } from 'react'
+import { useRef, useEffect, useCallback } from 'react'
 
 interface CategoryTab {
   id: string
