@@ -135,7 +135,14 @@ find "$STAGING" -type d -name ".git" -exec rm -rf {} + 2>/dev/null || true
 # IMPORTANT: Do NOT replace the standalone-traced `next` package with the full
 # repo copy. The full `next` includes build-time code paths (SWC, browserslist,
 # transpile-config) that require additional deps not in standalone. Instead,
-# standalone's traced `next` is kept as-is — it works for the production server.
+# copy only the specific subpath files the server needs that standalone missed.
+echo "    patching next/ with server-required subpaths..."
+for subpath in headers.js server.js navigation.js; do
+    if [ -f "$REPO_DIR/node_modules/next/$subpath" ] && [ ! -f "$STAGING/node_modules/next/$subpath" ]; then
+        cp "$REPO_DIR/node_modules/next/$subpath" "$STAGING/node_modules/next/$subpath"
+        echo "      added next/$subpath"
+    fi
+done
 #
 # Derived from: grep -oP 'require\("[^"]+"\)' server.js | sort -u
 # Plus transitive deps of socket.io-client (8 packages).
