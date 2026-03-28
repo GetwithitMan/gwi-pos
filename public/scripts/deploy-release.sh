@@ -1288,25 +1288,30 @@ run_schema_step() {
 
     if [[ -f "$prisma_cli" ]]; then
         log "Running: prisma db push --skip-generate (expand-safe only, NO --accept-data-loss)"
-        if ! timeout "$SCHEMA_TIMEOUT_SECONDS" \
+        # Use process substitution instead of pipe to tee — preserves real exit code.
+        # With `cmd | tee`, $? gives tee's exit code (always 0), not cmd's.
+        local schema_exit=0
+        timeout "$SCHEMA_TIMEOUT_SECONDS" \
             env DATABASE_URL="$(grep '^DATABASE_URL=' "${SHARED_DIR}/.env" 2>/dev/null | cut -d= -f2-)" \
                 NODE_PATH="${prisma_cli_dir}/node_modules:${prisma_cli_dir}" \
                 PRISMA_SCHEMA_ENGINE_BINARY="${schema_engine:-}" \
                 PRISMA_QUERY_ENGINE_LIBRARY="${prisma_cli_dir}/libquery_engine-rhel-openssl-3.0.x.so.node" \
-            node "$prisma_cli" db push --skip-generate --schema="${release_dir}/prisma/schema.prisma" 2>&1 | tee -a "${DEPLOY_LOG_DIR}/schema-${RELEASE_ID}.log"; then
+            node "$prisma_cli" db push --skip-generate --schema="${release_dir}/prisma/schema.prisma" \
+            > >(tee -a "${DEPLOY_LOG_DIR}/schema-${RELEASE_ID}.log") 2>&1 \
+            || schema_exit=$?
 
-            local exit_code=$?
-            if [[ $exit_code -eq 124 ]]; then
+        if [[ $schema_exit -ne 0 ]]; then
+            if [[ $schema_exit -eq 124 ]]; then
                 failure_class="schema_timeout"
                 err "Schema push timed out after ${SCHEMA_TIMEOUT_SECONDS}s"
             else
                 failure_class="schema_push_failed"
-                err "Schema push failed with exit code $exit_code"
+                err "Schema push failed with exit code $schema_exit"
             fi
             schema_failed=true
         fi
     else
-        warn "Prisma CLI not found or not executable at $prisma_cli — skipping schema push"
+        warn "Prisma CLI not found at $prisma_cli — skipping schema push"
     fi
 
     # Step 2: nuc-pre-migrate.js (custom migrations)
@@ -1314,17 +1319,20 @@ run_schema_step() {
         local migrate_script="${release_dir}/scripts/nuc-pre-migrate.js"
         if [[ -f "$migrate_script" ]]; then
             log "Running: nuc-pre-migrate.js"
-            if ! timeout "$SCHEMA_TIMEOUT_SECONDS" \
+            local migrate_exit=0
+            timeout "$SCHEMA_TIMEOUT_SECONDS" \
                 env DATABASE_URL="$(grep '^DATABASE_URL=' "${SHARED_DIR}/.env" 2>/dev/null | cut -d= -f2-)" \
-                node "$migrate_script" 2>&1 | tee -a "${DEPLOY_LOG_DIR}/schema-${RELEASE_ID}.log"; then
+                node "$migrate_script" \
+                > >(tee -a "${DEPLOY_LOG_DIR}/schema-${RELEASE_ID}.log") 2>&1 \
+                || migrate_exit=$?
 
-                local exit_code=$?
-                if [[ $exit_code -eq 124 ]]; then
+            if [[ $migrate_exit -ne 0 ]]; then
+                if [[ $migrate_exit -eq 124 ]]; then
                     failure_class="post_migrate_timeout"
                     err "Migration script timed out after ${SCHEMA_TIMEOUT_SECONDS}s"
                 else
                     failure_class="post_migrate_failed"
-                    err "Migration script failed with exit code $exit_code"
+                    err "Migration script failed with exit code $migrate_exit"
                 fi
                 schema_failed=true
             fi

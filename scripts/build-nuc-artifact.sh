@@ -217,6 +217,19 @@ echo "    @prisma/* packages: $(ls "$STAGING/prisma/cli/node_modules/@prisma/" |
 SCHEMA_ENGINE=$(find "$STAGING/prisma/cli" -name "schema-engine-*" -type f 2>/dev/null | head -1)
 [ -n "$SCHEMA_ENGINE" ] && echo "    Schema engine: $(basename "$SCHEMA_ENGINE")" || echo "    WARNING: No schema engine found"
 
+# 4. Validate the bundled Prisma CLI actually runs (fail-hard if broken)
+echo "    Validating bundled Prisma CLI..."
+if NODE_PATH="$STAGING/prisma/cli/node_modules:$STAGING/prisma/cli" \
+   node "$STAGING/prisma/cli/prisma" --version > /dev/null 2>&1; then
+    PRISMA_CLI_VERSION=$(NODE_PATH="$STAGING/prisma/cli/node_modules:$STAGING/prisma/cli" \
+        node "$STAGING/prisma/cli/prisma" --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "unknown")
+    echo "    Prisma CLI validated: v${PRISMA_CLI_VERSION}"
+else
+    echo "FATAL: Bundled Prisma CLI failed to run. Missing dependencies." >&2
+    echo "  Test: NODE_PATH=prisma/cli/node_modules node prisma/cli/prisma --version" >&2
+    exit 1
+fi
+
 # Prisma CLI version for metadata
 PRISMA_CLI_VERSION=$(cd "$REPO_DIR" && npx prisma --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "unknown")
 echo "    Prisma CLI version: $PRISMA_CLI_VERSION"
