@@ -89,6 +89,9 @@ MANIFEST_URL=""
 ARTIFACT_PATH=""
 ARTIFACT_URL=""
 RELEASE_ID=""
+DEPLOY_TOOLS_URL=""
+DEPLOY_TOOLS_SHA256=""
+DEPLOY_TOOLS_DIR="${BASE_DIR}/deploy-tools"
 PREVIOUS_RELEASE_ID=""
 FORCE=false
 OFFLINE=false
@@ -589,12 +592,19 @@ fetch_manifest() {
     fi
 
     # Resolve relative artifact URL against manifest base URL
+    local base_origin
+    base_origin="$(echo "$url" | sed 's|^\(https\?://[^/]*\).*|\1|')"
     if [[ "$ARTIFACT_URL" == /* ]]; then
-        # Relative path — resolve against the manifest URL's origin
-        local base_origin
-        base_origin="$(echo "$url" | sed 's|^\(https\?://[^/]*\).*|\1|')"
         ARTIFACT_URL="${base_origin}${ARTIFACT_URL}"
         log "Resolved artifact URL: $ARTIFACT_URL"
+    fi
+
+    # Extract deploy-tools artifact fields (format version 3+)
+    DEPLOY_TOOLS_URL="$(json_get "$manifest_file" "deployToolsUrl")"
+    DEPLOY_TOOLS_SHA256="$(json_get "$manifest_file" "deployToolsSha256")"
+    if [[ -n "$DEPLOY_TOOLS_URL" ]] && [[ "$DEPLOY_TOOLS_URL" == /* ]]; then
+        DEPLOY_TOOLS_URL="${base_origin}${DEPLOY_TOOLS_URL}"
+        log "Deploy-tools artifact available: $DEPLOY_TOOLS_URL"
     fi
 
     log "Manifest parsed: releaseId=$RELEASE_ID"
@@ -609,8 +619,8 @@ check_manifest_compatibility() {
     # Gate 1: artifactFormatVersion
     local format_version
     format_version="$(json_get "$manifest" "artifactFormatVersion")"
-    if [[ -n "$format_version" ]] && [[ "$format_version" -gt 2 ]]; then
-        fatal "Unsupported artifact format version: $format_version (max supported: 2). Update deploy-release.sh first."
+    if [[ -n "$format_version" ]] && [[ "$format_version" -gt 3 ]]; then
+        fatal "Unsupported artifact format version: $format_version (max supported: 3). Update deploy-release.sh first."
     fi
 
     # Gate 2: minInstallerVersion
@@ -1294,85 +1304,124 @@ wire_symlinks() {
 # ---------------------------------------------------------------------------
 run_schema_step() {
     local release_dir="${RELEASES_DIR}/${RELEASE_ID}"
-    # Prisma CLI entry point: build/index.js (where the WASM files live)
-    # NOT prisma/cli/prisma (which is a copy of build/index.js but loses path context for WASM)
-    local prisma_cli="${release_dir}/prisma/cli/build/index.js"
-    if [[ ! -f "$prisma_cli" ]]; then
-        prisma_cli="${release_dir}/prisma/cli/prisma"  # fallback
-    fi
 
     log "Running schema migration step (timeout: ${SCHEMA_TIMEOUT_SECONDS}s)..."
 
-    # Ensure .env is available for prisma
-    export DOTENV_CONFIG_PATH="${SHARED_DIR}/.env"
-
     local schema_failed=false
     local failure_class=""
-
-    # Step 1: prisma db push (schema sync)
-    # The artifact ships a complete, isolated Prisma CLI install at prisma/cli/
-    # Built via `npm install prisma@X` in a clean temp dir during CI.
     local db_url
     db_url="$(get_env_var "DATABASE_URL")"
+    local used_deploy_tools=false
 
-    # Find the Prisma CLI from the artifact's bundled install
-    local prisma_cmd=""
-    if [[ -x "${release_dir}/prisma/cli/node_modules/.bin/prisma" ]]; then
-        prisma_cmd="${release_dir}/prisma/cli/node_modules/.bin/prisma"
-    elif [[ -f "${release_dir}/prisma/cli/prisma" ]]; then
-        prisma_cmd="${release_dir}/prisma/cli/prisma"
-    fi
+    # ── Preferred path: deploy-tools (pg-only, no Prisma) ──────────────────
+    if [[ -f "${DEPLOY_TOOLS_DIR}/src/migrate.js" ]]; then
+        used_deploy_tools=true
 
-    if [[ -n "$prisma_cmd" ]]; then
-        log "Running: prisma db push (prisma.config.mjs reads DATABASE_URL from env)"
-        local schema_exit=0
-        # Prisma 7: datasource URL comes from prisma.config.mjs at release root.
-        # Config reads process.env.DATABASE_URL. node_modules symlink resolves 'prisma/config'.
-        (
-            cd "$release_dir" || exit 1
-            export DATABASE_URL="$db_url"
-            timeout "$SCHEMA_TIMEOUT_SECONDS" "$prisma_cmd" db push
-        ) > >(tee -a "${DEPLOY_LOG_DIR}/schema-${RELEASE_ID}.log") 2>&1 \
-            || schema_exit=$?
+        # Step 1: apply-schema.js (bootstrap empty DBs, skip non-empty)
+        if [[ -f "${DEPLOY_TOOLS_DIR}/src/apply-schema.js" ]]; then
+            log "Running: deploy-tools/apply-schema.js"
+            local schema_exit=0
+            timeout "$SCHEMA_TIMEOUT_SECONDS" \
+                env DATABASE_URL="$db_url" \
+                node "${DEPLOY_TOOLS_DIR}/src/apply-schema.js" \
+                > >(tee -a "${DEPLOY_LOG_DIR}/schema-${RELEASE_ID}.log") 2>&1 \
+                || schema_exit=$?
 
-        if [[ $schema_exit -ne 0 ]]; then
-            if [[ $schema_exit -eq 124 ]]; then
-                failure_class="schema_timeout"
-                err "Schema push timed out after ${SCHEMA_TIMEOUT_SECONDS}s"
-            else
-                failure_class="schema_push_failed"
-                err "Schema push failed with exit code $schema_exit"
+            if [[ $schema_exit -ne 0 ]]; then
+                if [[ $schema_exit -eq 124 ]]; then
+                    failure_class="schema_timeout"
+                    err "apply-schema.js timed out after ${SCHEMA_TIMEOUT_SECONDS}s"
+                else
+                    failure_class="schema_push_failed"
+                    err "apply-schema.js failed with exit code $schema_exit"
+                fi
+                schema_failed=true
             fi
-            schema_failed=true
         fi
-    else
-        warn "Prisma CLI not found in artifact — skipping schema push"
-    fi
 
-    # Step 2: nuc-pre-migrate.js (custom migrations)
-    if [[ "$schema_failed" == "false" ]]; then
-        local migrate_script="${release_dir}/scripts/nuc-pre-migrate.js"
-        if [[ -f "$migrate_script" ]]; then
-            log "Running: nuc-pre-migrate.js"
+        # Step 2: migrate.js (run numbered migrations)
+        if [[ "$schema_failed" == "false" ]]; then
+            log "Running: deploy-tools/migrate.js"
             local migrate_exit=0
             timeout "$SCHEMA_TIMEOUT_SECONDS" \
-                env DATABASE_URL="$(get_env_var "DATABASE_URL")" \
-                node "$migrate_script" \
+                env DATABASE_URL="$db_url" \
+                node "${DEPLOY_TOOLS_DIR}/src/migrate.js" \
                 > >(tee -a "${DEPLOY_LOG_DIR}/schema-${RELEASE_ID}.log") 2>&1 \
                 || migrate_exit=$?
 
             if [[ $migrate_exit -ne 0 ]]; then
                 if [[ $migrate_exit -eq 124 ]]; then
                     failure_class="post_migrate_timeout"
-                    err "Migration script timed out after ${SCHEMA_TIMEOUT_SECONDS}s"
+                    err "migrate.js timed out after ${SCHEMA_TIMEOUT_SECONDS}s"
                 else
                     failure_class="post_migrate_failed"
-                    err "Migration script failed with exit code $migrate_exit"
+                    err "migrate.js failed with exit code $migrate_exit"
+                fi
+                schema_failed=true
+            fi
+        fi
+    fi
+
+    # ── Legacy fallback: Prisma CLI + nuc-pre-migrate.js ───────────────────
+    if [[ "$used_deploy_tools" == "false" ]]; then
+        log "Deploy-tools not available — using legacy Prisma path"
+
+        # Ensure .env is available for prisma
+        export DOTENV_CONFIG_PATH="${SHARED_DIR}/.env"
+
+        # Step 1: prisma db push
+        local prisma_cmd=""
+        if [[ -x "${release_dir}/prisma/cli/node_modules/.bin/prisma" ]]; then
+            prisma_cmd="${release_dir}/prisma/cli/node_modules/.bin/prisma"
+        elif [[ -f "${release_dir}/prisma/cli/prisma" ]]; then
+            prisma_cmd="${release_dir}/prisma/cli/prisma"
+        fi
+
+        if [[ -n "$prisma_cmd" ]]; then
+            log "Running: prisma db push (legacy)"
+            local schema_exit=0
+            (
+                cd "$release_dir" || exit 1
+                export DATABASE_URL="$db_url"
+                timeout "$SCHEMA_TIMEOUT_SECONDS" "$prisma_cmd" db push
+            ) > >(tee -a "${DEPLOY_LOG_DIR}/schema-${RELEASE_ID}.log") 2>&1 \
+                || schema_exit=$?
+
+            if [[ $schema_exit -ne 0 ]]; then
+                if [[ $schema_exit -eq 124 ]]; then
+                    failure_class="schema_timeout"
+                else
+                    failure_class="schema_push_failed"
                 fi
                 schema_failed=true
             fi
         else
-            log "No nuc-pre-migrate.js found — skipping custom migrations"
+            warn "Prisma CLI not found in artifact — skipping schema push"
+        fi
+
+        # Step 2: nuc-pre-migrate.js
+        if [[ "$schema_failed" == "false" ]]; then
+            local migrate_script="${release_dir}/scripts/nuc-pre-migrate.js"
+            if [[ -f "$migrate_script" ]]; then
+                log "Running: nuc-pre-migrate.js (legacy)"
+                local migrate_exit=0
+                timeout "$SCHEMA_TIMEOUT_SECONDS" \
+                    env DATABASE_URL="$db_url" \
+                    node "$migrate_script" \
+                    > >(tee -a "${DEPLOY_LOG_DIR}/schema-${RELEASE_ID}.log") 2>&1 \
+                    || migrate_exit=$?
+
+                if [[ $migrate_exit -ne 0 ]]; then
+                    if [[ $migrate_exit -eq 124 ]]; then
+                        failure_class="post_migrate_timeout"
+                    else
+                        failure_class="post_migrate_failed"
+                    fi
+                    schema_failed=true
+                fi
+            else
+                log "No nuc-pre-migrate.js found — skipping custom migrations"
+            fi
         fi
     fi
 
@@ -1882,6 +1931,42 @@ do_deploy() {
 
     # Step 15: Wire symlinks
     wire_symlinks
+
+    # Step 15b: Download and extract deploy-tools artifact (if available in manifest)
+    if [[ -n "$DEPLOY_TOOLS_URL" ]]; then
+        log "Downloading deploy-tools artifact..."
+        local dt_cache="${CACHE_DIR}/deploy-tools-${RELEASE_ID}.tar"
+        local dt_ext="${DEPLOY_TOOLS_URL##*.}"
+        dt_cache="${CACHE_DIR}/deploy-tools-${RELEASE_ID}.tar.${dt_ext}"
+
+        if [[ ! -f "$dt_cache" ]]; then
+            if download_file_no_cache "$DEPLOY_TOOLS_URL" "$dt_cache"; then
+                # Verify checksum if available
+                if [[ -n "$DEPLOY_TOOLS_SHA256" ]]; then
+                    local actual_sha
+                    actual_sha="$(shasum -a 256 "$dt_cache" | cut -d' ' -f1)"
+                    if [[ "$actual_sha" != "$DEPLOY_TOOLS_SHA256" ]]; then
+                        warn "Deploy-tools checksum mismatch (expected ${DEPLOY_TOOLS_SHA256:0:16}..., got ${actual_sha:0:16}...)"
+                        rm -f "$dt_cache"
+                    fi
+                fi
+            else
+                warn "Failed to download deploy-tools artifact — will use legacy migration path"
+            fi
+        fi
+
+        if [[ -f "$dt_cache" ]]; then
+            log "Extracting deploy-tools to ${DEPLOY_TOOLS_DIR}..."
+            rm -rf "$DEPLOY_TOOLS_DIR"
+            mkdir -p "$DEPLOY_TOOLS_DIR"
+            if [[ "$dt_cache" == *.zst ]]; then
+                zstd -d "$dt_cache" --stdout | tar xf - -C "$DEPLOY_TOOLS_DIR" 2>/dev/null || tar xf "$dt_cache" -C "$DEPLOY_TOOLS_DIR"
+            else
+                tar xzf "$dt_cache" -C "$DEPLOY_TOOLS_DIR"
+            fi
+            log "Deploy-tools extracted ($(ls "$DEPLOY_TOOLS_DIR/migrations/"*.js 2>/dev/null | wc -l | tr -d ' ') migrations)"
+        fi
+    fi
 
     # Step 16: Schema migration
     if ! run_schema_step; then
