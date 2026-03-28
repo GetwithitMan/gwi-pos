@@ -1283,25 +1283,33 @@ run_schema_step() {
     local failure_class=""
 
     # Step 1: prisma db push (schema sync)
-    # The bundled Prisma CLI needs NODE_PATH to find @prisma/engines in its own directory.
-    # Also set PRISMA_SCHEMA_ENGINE_BINARY to the bundled schema engine.
-    local prisma_cli_dir="${release_dir}/prisma/cli"
-    local schema_engine="${prisma_cli_dir}/schema-engine-rhel-openssl-3.0.x"
-    if [[ ! -f "$schema_engine" ]]; then
-        schema_engine="$(find "$prisma_cli_dir" -name 'schema-engine-*' -type f 2>/dev/null | head -1)"
+    # Use npx prisma from the release's node_modules (bundled by standalone).
+    # This avoids the fragile manual Prisma CLI bundling approach — npx resolves
+    # the full dependency tree automatically from the existing node_modules.
+    local db_url
+    db_url="$(grep '^DATABASE_URL=' "${SHARED_DIR}/.env" 2>/dev/null | cut -d= -f2-)"
+
+    # Ensure prisma is available: check release node_modules, then global
+    local prisma_cmd=""
+    if [[ -f "${release_dir}/node_modules/.bin/prisma" ]]; then
+        prisma_cmd="${release_dir}/node_modules/.bin/prisma"
+    elif [[ -f "${release_dir}/node_modules/prisma/build/index.js" ]]; then
+        prisma_cmd="node ${release_dir}/node_modules/prisma/build/index.js"
+    elif command -v npx &>/dev/null; then
+        # Install prisma globally if not in node_modules (one-time on NUC)
+        if ! command -v prisma &>/dev/null; then
+            log "Installing prisma CLI globally (one-time)..."
+            npm install -g prisma@7 2>/dev/null || true
+        fi
+        prisma_cmd="prisma"
     fi
 
-    if [[ -f "$prisma_cli" ]]; then
+    if [[ -n "$prisma_cmd" ]]; then
         log "Running: prisma db push --skip-generate (expand-safe only, NO --accept-data-loss)"
-        # Use process substitution instead of pipe to tee — preserves real exit code.
-        # With `cmd | tee`, $? gives tee's exit code (always 0), not cmd's.
         local schema_exit=0
         timeout "$SCHEMA_TIMEOUT_SECONDS" \
-            env DATABASE_URL="$(grep '^DATABASE_URL=' "${SHARED_DIR}/.env" 2>/dev/null | cut -d= -f2-)" \
-                NODE_PATH="${prisma_cli_dir}/node_modules:${prisma_cli_dir}" \
-                PRISMA_SCHEMA_ENGINE_BINARY="${schema_engine:-}" \
-                PRISMA_QUERY_ENGINE_LIBRARY="${prisma_cli_dir}/libquery_engine-rhel-openssl-3.0.x.so.node" \
-            node "$prisma_cli" db push --skip-generate --schema="${release_dir}/prisma/schema.prisma" \
+            env DATABASE_URL="$db_url" \
+            $prisma_cmd db push --skip-generate --schema="${release_dir}/prisma/schema.prisma" \
             > >(tee -a "${DEPLOY_LOG_DIR}/schema-${RELEASE_ID}.log") 2>&1 \
             || schema_exit=$?
 
@@ -1316,7 +1324,7 @@ run_schema_step() {
             schema_failed=true
         fi
     else
-        warn "Prisma CLI not found at $prisma_cli — skipping schema push"
+        warn "No Prisma CLI available — skipping schema push"
     fi
 
     # Step 2: nuc-pre-migrate.js (custom migrations)
