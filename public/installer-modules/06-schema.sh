@@ -40,7 +40,7 @@ run_schema() {
     NEON_SCHEMA_VERSION=""
     if [[ -n "$NEON_DIRECT_URL" ]]; then
       log "Reading schema version from Neon (source of record)..."
-      NEON_SCHEMA_VERSION=$(PGPASSWORD="" $NEON_PSQL "$NEON_DIRECT_URL" --connect-timeout=10 -tAc "SELECT \"schemaVersion\" FROM \"_venue_schema_state\" WHERE id = 1" 2>/dev/null | tr -d '[:space:]' || echo "")
+      NEON_SCHEMA_VERSION=$($NEON_PSQL "$NEON_DIRECT_URL" --connect-timeout=10 -tAc "SELECT \"schemaVersion\" FROM \"_venue_schema_state\" WHERE id = 1" 2>/dev/null | tr -d '[:space:]' || echo "")
       if [[ -n "$NEON_SCHEMA_VERSION" ]]; then
         log "Neon schema version: $NEON_SCHEMA_VERSION"
       else

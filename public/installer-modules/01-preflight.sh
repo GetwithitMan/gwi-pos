@@ -228,12 +228,16 @@ run_preflight() {
     warn "High latency to GitHub (${latency}ms) -- install may be slow"
   fi
 
-  # Port availability
-  for port in 3005 5432; do
-    if ss -tlnp 2>/dev/null | grep -q ":${port} "; then
-      warn "Port $port already in use -- may conflict"
-    fi
-  done
+  # Port availability (expected on re-install, only warn on fresh)
+  if [[ "$IS_REINSTALL" == "true" ]]; then
+    log "Re-install detected -- skipping port availability check (3005/5432 expected in use)"
+  else
+    for port in 3005 5432; do
+      if ss -tlnp 2>/dev/null | grep -q ":${port} "; then
+        warn "Port $port already in use -- may conflict with fresh install"
+      fi
+    done
+  fi
 
   log "Stage: preflight -- completed in $(( $(date +%s) - _start ))s"
   return 0
