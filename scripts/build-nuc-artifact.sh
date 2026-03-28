@@ -258,6 +258,24 @@ echo "    Prisma CLI bundle: $(du -sh "$STAGING/prisma/cli/node_modules" | cut -
 # Clean up temp dir
 rm -rf "$PRISMA_BUNDLE_DIR"
 
+# Final validation: simulate NUC execution shape.
+# Run from STAGING dir (like deploy-release.sh does from release dir)
+# with prisma.config.ts + DATABASE_URL + bundled CLI.
+echo "    Validating NUC execution shape (cd staging + prisma.config.ts + DATABASE_URL)..."
+STAGED_PRISMA="$STAGING/prisma/cli/node_modules/.bin/prisma"
+if [ -f "$STAGED_PRISMA" ] && [ -f "$STAGING/prisma.config.ts" ]; then
+    NUC_TEST_OUTPUT=$(cd "$STAGING" && DATABASE_URL="postgresql://test:test@localhost:5432/test" "$STAGED_PRISMA" db push --help 2>&1) || true
+    if echo "$NUC_TEST_OUTPUT" | grep -qi "prisma db push\|push the state"; then
+        echo "    NUC execution shape: OK (config resolved, CLI loads from release dir)"
+    else
+        echo "FATAL: Prisma CLI failed when run from staged release directory:" >&2
+        echo "$NUC_TEST_OUTPUT" | head -10 >&2
+        exit 1
+    fi
+elif [ ! -f "$STAGING/prisma.config.ts" ]; then
+    echo "    WARNING: prisma.config.ts not in staging — Prisma 7 may fail on NUC"
+fi
+
 # ─── 6. Generate required-env.json ───────────────────────────────────────────
 echo "==> [6/12] Generating required-env.json..."
 
