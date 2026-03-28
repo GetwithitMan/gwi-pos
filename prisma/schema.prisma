@@ -9127,6 +9127,7 @@ model OutageQueueEntry {
   outageId       String? // Groups entries by connectivity window (incremented on outage start)
   metadata       Json?
   createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
   replayedAt     DateTime?
   location       Location          @relation(fields: [locationId], references: [id], onDelete: Cascade)
 
