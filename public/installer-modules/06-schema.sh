@@ -217,23 +217,30 @@ run_schema() {
     log "Skipping database migrations (backup standby — data replicated from primary)."
   fi
 
-  # NUC builds skip TypeScript type-checking (tsc --noEmit) because:
-  # 1. Types are already verified in CI/Vercel before code reaches the NUC
-  # 2. tsc needs 4-16GB heap and takes 2-3 minutes — wasteful on every install
-  # 3. Type errors don't affect runtime behavior (Next.js builds fine without tsc)
-  local BUILD_NODE_OPTS="--max-old-space-size=4096"
+  # ── Build step ──
+  # Artifact deploys are pre-built on Vercel — skip npm run build.
+  # Legacy deploys (git clone) need a local build.
+  if [[ -d "$APP_DIR/.next" ]] && [[ "${LEGACY_DEPLOY:-}" != "1" ]]; then
+    log "Artifact deploy detected (.next exists) — skipping build (already pre-built on Vercel)"
+  else
+    # NUC builds skip TypeScript type-checking (tsc --noEmit) because:
+    # 1. Types are already verified in CI/Vercel before code reaches the NUC
+    # 2. tsc needs 4-16GB heap and takes 2-3 minutes — wasteful on every install
+    # 3. Type errors don't affect runtime behavior (Next.js builds fine without tsc)
+    local BUILD_NODE_OPTS="--max-old-space-size=4096"
 
-  # Clear stale tsc incremental cache — prevents false type errors after schema changes
-  rm -f "$APP_DIR/tsconfig.tsbuildinfo" 2>/dev/null || true
+    # Clear stale tsc incremental cache — prevents false type errors after schema changes
+    rm -f "$APP_DIR/tsconfig.tsbuildinfo" 2>/dev/null || true
 
-  log "Building POS application (this takes a few minutes)..."
-  if ! sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && SKIP_TYPECHECK=1 NODE_OPTIONS='$BUILD_NODE_OPTS' npm run build" 2>&1 | tail -5; then
-    err_code "ERR-INST-186" "npm run build failed in $APP_DIR"
-    err "Application build failed. Re-running with full output..."
-    sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && SKIP_TYPECHECK=1 NODE_OPTIONS='$BUILD_NODE_OPTS' npm run build"
-    return 1
+    log "Building POS application (this takes a few minutes)..."
+    if ! sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && SKIP_TYPECHECK=1 NODE_OPTIONS='$BUILD_NODE_OPTS' npm run build" 2>&1 | tail -5; then
+      err_code "ERR-INST-186" "npm run build failed in $APP_DIR"
+      err "Application build failed. Re-running with full output..."
+      sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && SKIP_TYPECHECK=1 NODE_OPTIONS='$BUILD_NODE_OPTS' npm run build"
+      return 1
+    fi
+    log "POS application built successfully!"
   fi
-  log "POS application built successfully!"
 
   # ── Post-build: update _local_install_state with freshly generated version ──
   # The build step generates version-contract.json with the real schema version.
