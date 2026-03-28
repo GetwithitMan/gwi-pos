@@ -163,25 +163,8 @@ export default defineConfig({
 PRISMACONFIG
 echo "    prisma.config.mjs (Prisma 7 datasource config)"
 
-# Symlink release-root node_modules → prisma/cli/node_modules so that
-# prisma.config.mjs can resolve 'prisma/config' via normal Node resolution.
-# The isolated Prisma install has the complete dependency tree there.
-if [ -d "$STAGING/prisma/cli/node_modules" ]; then
-    # Standalone ships its own node_modules/ — we CANNOT delete it (Next.js needs it).
-    # Instead, copy the prisma package into the existing node_modules so that
-    # prisma.config.mjs can resolve 'prisma/config' via normal Node resolution.
-    if [ -d "$STAGING/node_modules" ]; then
-        # Copy prisma package (with config.js) into standalone's node_modules
-        if [ ! -d "$STAGING/node_modules/prisma" ]; then
-            cp -r "$STAGING/prisma/cli/node_modules/prisma" "$STAGING/node_modules/prisma"
-            echo "    Copied prisma package into standalone node_modules (for config resolution)"
-        fi
-    else
-        # No standalone node_modules — create symlink (shouldn't happen normally)
-        ln -sfn prisma/cli/node_modules "$STAGING/node_modules"
-        echo "    node_modules -> prisma/cli/node_modules (symlink)"
-    fi
-fi
+# NOTE: node_modules wiring happens AFTER step 5 (Prisma CLI bundle).
+# prisma/cli/node_modules doesn't exist yet at this point.
 
 # Migration scripts
 echo "    migration scripts..."
@@ -290,10 +273,29 @@ echo "    Prisma CLI bundle: $(du -sh "$STAGING/prisma/cli/node_modules" | cut -
 # Clean up temp dir
 rm -rf "$PRISMA_BUNDLE_DIR"
 
+# Wire prisma package into release-root node_modules so that
+# prisma.config.mjs can resolve 'prisma/config' via normal Node resolution.
+# This MUST happen after step 5 copies prisma/cli/node_modules into staging.
+echo "    Wiring prisma into release-root node_modules..."
+if [ -d "$STAGING/node_modules" ]; then
+    # Standalone ships its own node_modules/ — we CANNOT replace it.
+    # Copy the prisma package INTO the existing node_modules.
+    if [ ! -d "$STAGING/node_modules/prisma" ]; then
+        cp -r "$STAGING/prisma/cli/node_modules/prisma" "$STAGING/node_modules/prisma"
+        echo "    Copied prisma package into standalone node_modules (for config resolution)"
+    else
+        echo "    prisma package already exists in standalone node_modules"
+    fi
+else
+    # No standalone node_modules — create symlink (shouldn't happen normally)
+    ln -sfn prisma/cli/node_modules "$STAGING/node_modules"
+    echo "    node_modules -> prisma/cli/node_modules (symlink)"
+fi
+
 # Final validation: simulate NUC execution shape.
 # Run from STAGING dir (like deploy-release.sh does from release dir)
 # with prisma.config.ts + DATABASE_URL + bundled CLI.
-echo "    Validating NUC execution shape (cd staging + prisma.config.mjs + symlink)..."
+echo "    Validating NUC execution shape (cd staging + prisma.config.mjs + node_modules)..."
 STAGED_PRISMA="$STAGING/prisma/cli/node_modules/.bin/prisma"
 if [ -f "$STAGED_PRISMA" ]; then
     # Verify prisma.config.mjs exists
@@ -301,9 +303,22 @@ if [ -f "$STAGED_PRISMA" ]; then
         echo "FATAL: prisma.config.mjs missing from staged release" >&2
         exit 1
     fi
-    # Verify node_modules symlink exists
-    if [ ! -L "$STAGING/node_modules" ]; then
-        echo "FATAL: node_modules symlink missing from staged release root" >&2
+    # Verify prisma package is resolvable from release root.
+    # Standalone has a real node_modules dir (not a symlink) — we copy prisma into it.
+    # Either way, the prisma package must exist at node_modules/prisma for config resolution.
+    if [ ! -d "$STAGING/node_modules/prisma" ]; then
+        echo "FATAL: prisma package missing from release-root node_modules" >&2
+        echo "  Expected: $STAGING/node_modules/prisma/" >&2
+        echo "  node_modules exists: $([ -e "$STAGING/node_modules" ] && echo 'yes' || echo 'no')" >&2
+        echo "  node_modules is dir: $([ -d "$STAGING/node_modules" ] && echo 'yes' || echo 'no')" >&2
+        echo "  node_modules is link: $([ -L "$STAGING/node_modules" ] && echo 'yes' || echo 'no')" >&2
+        exit 1
+    fi
+    # Verify the prisma/config module is actually resolvable (what prisma.config.mjs imports)
+    if [ ! -e "$STAGING/node_modules/prisma/config.js" ] && [ ! -e "$STAGING/node_modules/prisma/config/index.js" ]; then
+        echo "FATAL: prisma/config module not found in release-root node_modules" >&2
+        echo "  Checked: node_modules/prisma/config.js and node_modules/prisma/config/index.js" >&2
+        ls -la "$STAGING/node_modules/prisma/" 2>&1 | head -10 >&2
         exit 1
     fi
     # Simulate NUC: cd to release dir, set DATABASE_URL, run prisma db push --help
