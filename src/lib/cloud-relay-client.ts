@@ -119,6 +119,8 @@ export function startCloudRelayClient(): void {
     log.info({ commandType }, 'COMMAND received')
     if (commandType === 'FORCE_SYNC') {
       void triggerSync()
+    } else if (commandType === 'PROMOTE') {
+      void handlePromoteCommand(payload)
     }
   })
 
@@ -175,6 +177,35 @@ export function getRelayHealth(): RelayHealthStats {
 }
 
 // ── Internal Helpers ───────────────────────────────────────────────────────
+
+async function handlePromoteCommand(payload: unknown): Promise<void> {
+  try {
+    const cmd = payload as Record<string, unknown>
+    log.info({ venueSlug: cmd?.venueSlug, oldPrimaryIp: cmd?.oldPrimaryIp }, 'PROMOTE command — dispatching to ha-promote handler')
+    const { handlePromotion } = await import('./ha-promote')
+    const command = {
+      command: 'PROMOTE' as const,
+      oldPrimaryNodeId: (cmd?.oldPrimaryNodeId as string) || 'unknown',
+      oldPrimaryIp: (cmd?.oldPrimaryIp as string) || '',
+      venueSlug: (cmd?.venueSlug as string) || '',
+      fenceCommandId: (cmd?.fenceCommandId as string) || '',
+      issuedAt: (cmd?.issuedAt as string) || undefined,
+      expiresAt: (cmd?.expiresAt as string) || undefined,
+    }
+    if (!command.oldPrimaryIp || !command.fenceCommandId) {
+      log.error({ command }, 'PROMOTE command missing required fields (oldPrimaryIp, fenceCommandId)')
+      return
+    }
+    const result = await handlePromotion(command)
+    if (result.success) {
+      log.info({ durationMs: result.durationMs }, 'PROMOTE completed successfully')
+    } else {
+      log.error({ error: result.error, steps: result.steps }, 'PROMOTE failed')
+    }
+  } catch (err) {
+    log.error({ err }, 'PROMOTE command handler failed')
+  }
+}
 
 async function triggerSync(models?: string[], domain?: string): Promise<void> {
   try {
