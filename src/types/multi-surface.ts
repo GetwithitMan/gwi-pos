@@ -100,6 +100,80 @@ export interface CFDReceiptChoiceEvent {
   contact?: string // email or phone
 }
 
+// ============================================
+// CFD PAYMENT TERMINAL (Integrated Card Reader)
+// ============================================
+
+/** Register → CFD: Initiate a card charge on the CFD payment terminal */
+export interface CfdChargeCardEvent {
+  orderId: string
+  invoiceNo: string
+  merchantId: string
+  operationMode: 'sale' | 'auth' | 'force' | 'return'
+  items: Array<{
+    name: string
+    quantity: number
+    priceCents: number
+    modifiers?: string[]
+  }>
+  subtotalCents: number
+  taxCents: number
+  totalCents: number
+  /** If dual-pricing / card total differs from cash total */
+  cardSubtotalCents?: number
+  cardTotalCents?: number
+  savingsCents?: number
+  tipMode: 'pre_tap' | 'post_auth' | 'on_device' | 'none'
+  tipOptions: number[]
+  tipShowNoTip: boolean
+  tipSmartSwitchThresholdCents: number
+  autoGratuityCents?: number
+  autoGratuityPercent?: number
+  signatureThresholdCents: number
+  receiptEmailEnabled: boolean
+  receiptSmsEnabled: boolean
+  receiptPrintEnabled: boolean
+  receiptTimeoutSeconds: number
+  customerName?: string
+  loyaltyPoints?: number
+  tierName?: string
+  pointsToNextTier?: number
+  locationName: string
+  thankYouMessage?: string
+}
+
+/** CFD → Register: Result of a card charge attempt */
+export interface CfdChargeResultEvent {
+  orderId: string
+  success: boolean
+  cardType: string
+  cardLast4: string
+  authCode: string
+  recordNo: string
+  entryMethod: 'swipe' | 'chip' | 'tap' | 'manual' | 'fallback'
+  cvm: 'signature' | 'pin' | 'no_cvm' | 'cdcvm'
+  storedOffline: boolean
+  errorCode?: string
+  errorText?: string
+  isRetryable?: boolean
+  tipAmountCents: number
+  signatureBase64?: string
+  signatureSkipped: boolean
+  receiptChoice: 'email' | 'sms' | 'print' | 'none'
+  receiptDestination?: string
+}
+
+/** Register → CFD: Cancel an in-progress card charge */
+export interface CfdCancelChargeEvent {
+  orderId: string
+}
+
+/** CFD → Register: Card reader hardware status */
+export interface CfdReaderStatusEvent {
+  status: 'ready' | 'busy' | 'error' | 'not_available'
+  message?: string
+}
+
 // Socket event name constants
 export const CFD_EVENTS = {
   // POS → CFD
@@ -119,6 +193,11 @@ export const CFD_EVENTS = {
   TIP_SELECTED: 'cfd:tip-selected',
   SIGNATURE_DONE: 'cfd:signature-done',
   RECEIPT_CHOICE: 'cfd:receipt-choice',
+  // Payment Terminal (integrated card reader on CFD)
+  CHARGE_CARD: 'cfd:charge-card',         // Register → CFD
+  CHARGE_RESULT: 'cfd:charge-result',     // CFD → Register
+  CANCEL_CHARGE: 'cfd:cancel-charge',     // Register → CFD
+  READER_STATUS: 'cfd:reader-status',     // CFD → Register
 } as const
 
 /** POS → CFD: Order mutated (discount, void, item change) — refresh display */

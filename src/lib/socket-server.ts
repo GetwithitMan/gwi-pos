@@ -1009,6 +1009,8 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
       'cfd:approved',
       'cfd:declined',
       'cfd:idle',
+      'cfd:charge-card',
+      'cfd:cancel-charge',
     ]
     for (const cfdEvent of CFD_REGISTER_TO_CFD_EVENTS) {
       socket.on(cfdEvent, (data: unknown) => {
@@ -1029,6 +1031,8 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
       'cfd:tip-selected',
       'cfd:signature-done',
       'cfd:receipt-choice',
+      'cfd:charge-result',
+      'cfd:reader-status',
     ]
     for (const cfdEvent of CFD_TO_REGISTER_EVENTS) {
       socket.on(cfdEvent, (data: unknown) => {

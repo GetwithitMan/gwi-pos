@@ -940,8 +940,8 @@ export const DEFAULT_SETTINGS: LocationSettings = {
     giftCardLowPoolThreshold: 10,
     acceptHouseAccounts: false,
     acceptHotelRoomCharge: false,
-    cashRounding: 'none',
-    roundingDirection: 'nearest',
+    cashRounding: 'none' as const,   // DEPRECATED — use top-level priceRounding
+    roundingDirection: 'nearest' as const, // DEPRECATED — use top-level priceRounding
     enablePreAuth: true,
     defaultPreAuthAmount: 100.00,
     preAuthExpirationDays: 7,

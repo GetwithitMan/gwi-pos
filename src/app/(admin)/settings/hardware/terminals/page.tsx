@@ -27,7 +27,7 @@ type HandheldMode = 'TABLE_SERVICE' | 'BAR_SERVICE' | 'PAYMENT_ONLY'
 interface Terminal {
   id: string
   name: string
-  category: 'FIXED_STATION' | 'HANDHELD'
+  category: 'FIXED_STATION' | 'HANDHELD' | 'CFD_DISPLAY'
   defaultMode: HandheldMode | null
   staticIp: string | null
   receiptPrinterId: string | null
@@ -48,6 +48,10 @@ interface Terminal {
   backupTerminalId: string | null
   failoverEnabled: boolean
   failoverTimeout: number
+  cfdTerminalId: string | null
+  cfdIpAddress: string | null
+  cfdConnectionMode: string | null
+  cfdTerminal?: { id: string; name: string } | null
   platform?: string
   appVersion?: string
   deviceInfo?: {
@@ -246,6 +250,45 @@ export default function TerminalsPage() {
 
   const fixedStations = terminals.filter((t) => t.category === 'FIXED_STATION')
   const handhelds = terminals.filter((t) => t.category === 'HANDHELD')
+  const cfdDisplays = terminals.filter((t) => t.category === 'CFD_DISPLAY')
+  // Registers that can be paired with a CFD (fixed stations + handhelds)
+  const registerTerminals = [...fixedStations, ...handhelds]
+
+  const handlePairCfd = async (registerId: string, cfdTerminalId: string) => {
+    try {
+      const res = await fetch(`/api/hardware/terminals/${registerId}/pair-cfd`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cfdTerminalId }),
+      })
+      if (res.ok) {
+        toast.success('CFD paired successfully')
+        fetchData()
+      } else {
+        const data = await res.json()
+        toast.error(data.error || 'Failed to pair CFD')
+      }
+    } catch {
+      toast.error('Failed to pair CFD')
+    }
+  }
+
+  const handleUnpairCfd = async (registerId: string) => {
+    if (!confirm('Unpair this CFD display from the register?')) return
+    try {
+      const res = await fetch(`/api/hardware/terminals/${registerId}/pair-cfd`, {
+        method: 'DELETE',
+      })
+      if (res.ok) {
+        toast.success('CFD unpaired')
+        fetchData()
+      } else {
+        toast.error('Failed to unpair CFD')
+      }
+    } catch {
+      toast.error('Failed to unpair CFD')
+    }
+  }
 
   if (loading) {
     return (
@@ -300,6 +343,9 @@ export default function TerminalsPage() {
                   onPair={() => handleGeneratePairingCode(terminal.id)}
                   onUnpair={() => handleUnpair(terminal.id)}
                   onToggleForce={() => handleToggleForceAllPrints(terminal)}
+                  cfdDisplays={cfdDisplays}
+                  onPairCfd={handlePairCfd}
+                  onUnpairCfd={handleUnpairCfd}
                 />
               ))}
             </div>
@@ -330,6 +376,9 @@ export default function TerminalsPage() {
                   onUnpair={() => handleUnpair(terminal.id)}
                   onToggleForce={() => handleToggleForceAllPrints(terminal)}
                   onModeChange={(mode) => handleUpdateDefaultMode(terminal.id, mode)}
+                  cfdDisplays={cfdDisplays}
+                  onPairCfd={handlePairCfd}
+                  onUnpairCfd={handleUnpairCfd}
                 />
               ))}
             </div>
@@ -440,6 +489,9 @@ function TerminalCard({
   onPair,
   onUnpair,
   onToggleForce,
+  cfdDisplays,
+  onPairCfd,
+  onUnpairCfd,
 }: {
   terminal: Terminal
   onEdit: () => void
@@ -447,6 +499,9 @@ function TerminalCard({
   onPair: () => void
   onUnpair: () => void
   onToggleForce: () => void
+  cfdDisplays: Terminal[]
+  onPairCfd: (registerId: string, cfdTerminalId: string) => void
+  onUnpairCfd: (registerId: string) => void
 }) {
   const skipRules = terminal.roleSkipRules || {}
   const hasSkipRules = Object.keys(skipRules).some((role) => skipRules[role]?.length > 0)
@@ -518,6 +573,35 @@ function TerminalCard({
               <span className="text-gray-900">None</span>
             )}
           </span>
+        </div>
+
+        {/* CFD Display Pairing */}
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-gray-900">CFD Display</span>
+          {terminal.cfdTerminalId && terminal.cfdTerminal ? (
+            <div className="flex items-center gap-2">
+              <span className="text-gray-900 text-xs font-medium">{terminal.cfdTerminal.name}</span>
+              <button
+                onClick={() => onUnpairCfd(terminal.id)}
+                className="px-1.5 py-0.5 text-[9px] font-bold uppercase bg-red-50 hover:bg-red-100 text-red-600 rounded transition-colors"
+              >
+                Unpair
+              </button>
+            </div>
+          ) : (
+            <select
+              value=""
+              onChange={(e) => {
+                if (e.target.value) onPairCfd(terminal.id, e.target.value)
+              }}
+              className="bg-white border border-gray-300 rounded-lg px-2 py-1 text-xs text-gray-900 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/20 outline-none max-w-[160px]"
+            >
+              <option value="">Not Paired</option>
+              {cfdDisplays.map((cfd) => (
+                <option key={cfd.id} value={cfd.id}>{cfd.name}</option>
+              ))}
+            </select>
+          )}
         </div>
 
         {/* Connected Hardware (Android terminals) */}
@@ -722,6 +806,9 @@ function HandheldTerminalCard({
   onUnpair,
   onToggleForce,
   onModeChange,
+  cfdDisplays,
+  onPairCfd,
+  onUnpairCfd,
 }: {
   terminal: Terminal
   onEdit: () => void
@@ -730,6 +817,9 @@ function HandheldTerminalCard({
   onUnpair: () => void
   onToggleForce: () => void
   onModeChange: (mode: HandheldMode | null) => void
+  cfdDisplays: Terminal[]
+  onPairCfd: (registerId: string, cfdTerminalId: string) => void
+  onUnpairCfd: (registerId: string) => void
 }) {
   const status = getTerminalStatus(terminal)
 
@@ -837,6 +927,35 @@ function HandheldTerminalCard({
           </div>
         )}
 
+        {/* CFD Display Pairing */}
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-gray-900">CFD Display</span>
+          {terminal.cfdTerminalId && terminal.cfdTerminal ? (
+            <div className="flex items-center gap-2">
+              <span className="text-gray-900 text-xs font-medium">{terminal.cfdTerminal.name}</span>
+              <button
+                onClick={() => onUnpairCfd(terminal.id)}
+                className="px-1.5 py-0.5 text-[9px] font-bold uppercase bg-red-50 hover:bg-red-100 text-red-600 rounded transition-colors"
+              >
+                Unpair
+              </button>
+            </div>
+          ) : (
+            <select
+              value=""
+              onChange={(e) => {
+                if (e.target.value) onPairCfd(terminal.id, e.target.value)
+              }}
+              className="bg-white border border-gray-300 rounded-lg px-2 py-1 text-xs text-gray-900 focus:border-purple-500 focus:ring-1 focus:ring-purple-500/20 outline-none max-w-[160px]"
+            >
+              <option value="">Not Paired</option>
+              {cfdDisplays.map((cfd) => (
+                <option key={cfd.id} value={cfd.id}>{cfd.name}</option>
+              ))}
+            </select>
+          )}
+        </div>
+
         {/* Force All Prints Toggle */}
         <div className="flex items-center justify-between text-sm pt-2 border-t border-gray-200">
           <span className="text-gray-900">Emergency Override: Print All</span>
@@ -915,7 +1034,9 @@ function TerminalModal({
   onSave: () => void
 }) {
   const [name, setName] = useState(terminal?.name || '')
-  const [category, setCategory] = useState<'FIXED_STATION' | 'HANDHELD'>(terminal?.category || 'FIXED_STATION')
+  const [category, setCategory] = useState<'FIXED_STATION' | 'HANDHELD'>(
+    terminal?.category === 'HANDHELD' ? 'HANDHELD' : 'FIXED_STATION'
+  )
   const [staticIp, setStaticIp] = useState(terminal?.staticIp || '')
   const [receiptPrinterId, setReceiptPrinterId] = useState(terminal?.receiptPrinterId || '')
   const [kitchenPrinterId, setKitchenPrinterId] = useState(terminal?.kitchenPrinterId || '')
