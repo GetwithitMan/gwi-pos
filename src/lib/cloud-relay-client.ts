@@ -119,6 +119,8 @@ export function startCloudRelayClient(): void {
     log.info({ commandType }, 'COMMAND received')
     if (commandType === 'FORCE_SYNC') {
       void triggerSync()
+    } else if (commandType === 'PROMOTE') {
+      void handlePromoteCommand(payload)
     }
   })
 
@@ -214,4 +216,40 @@ function resetFallbackInterval(): void {
  */
 export function getCloudRelayFallbackInterval(): number {
   return currentFallbackInterval
+}
+
+/**
+ * Handle a PROMOTE command from MC via the cloud relay.
+ * Uses dynamic import to avoid loading ha-promote (child_process, fs) until needed.
+ */
+async function handlePromoteCommand(payload: unknown): Promise<void> {
+  try {
+    const cmd = payload as Record<string, unknown>
+    if (!cmd || typeof cmd !== 'object' || !cmd.oldPrimaryIp || !cmd.fenceCommandId) {
+      log.error({ payload }, 'Invalid PROMOTE payload — missing required fields')
+      return
+    }
+
+    const { handlePromotion, isPromotionInProgress } = await import('./ha-promote')
+
+    if (isPromotionInProgress()) {
+      log.warn('PROMOTE received but promotion already in progress — ignoring')
+      return
+    }
+
+    log.info({ fenceCommandId: cmd.fenceCommandId, venueSlug: cmd.venueSlug }, 'Starting MC-arbitrated promotion')
+    const result = await handlePromotion({
+      command: 'PROMOTE',
+      oldPrimaryNodeId: String(cmd.oldPrimaryNodeId || ''),
+      oldPrimaryIp: String(cmd.oldPrimaryIp),
+      venueSlug: String(cmd.venueSlug || ''),
+      fenceCommandId: String(cmd.fenceCommandId),
+      issuedAt: String(cmd.issuedAt || new Date().toISOString()),
+      expiresAt: String(cmd.expiresAt || ''),
+    })
+
+    log.info({ status: result.status, detail: result.detail }, 'Promotion completed')
+  } catch (err) {
+    log.error({ err }, 'PROMOTE command handler failed')
+  }
 }
