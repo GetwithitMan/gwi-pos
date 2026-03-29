@@ -22,7 +22,7 @@
 
 import { execSync } from 'child_process'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
-import { join, dirname } from 'path'
+import { join } from 'path'
 import { createChildLogger } from '@/lib/logger'
 
 const log = createChildLogger('ha-promote')
