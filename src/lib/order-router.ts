@@ -325,30 +325,72 @@ export class OrderRouter {
     }
 
     // 6. KDS offline fallback routing (post-processing)
-    // When a KDS station has NO online screens, re-route its items to a fallback station
-    // so kitchen orders don't silently vanish. Print jobs still go to original station
-    // since printers may work even if the KDS screen is offline.
+    // When a KDS station's linked KDS screens are ALL offline, re-route its items
+    // to a fallback station so kitchen orders don't silently vanish. Print jobs
+    // still go to original station since printers may work even if KDS is offline.
+    // Check is per-station, not system-wide — a grill screen being online should
+    // not suppress fallback for an offline pizza screen.
     const kdsManifests = manifests.filter((m) => m.type === 'KDS' && !m.isExpo && m.primaryItems.length > 0)
     if (kdsManifests.length > 0) {
       try {
-        // Single batch query — check which KDS screens are online at this location
-        const onlineScreens = await db.kDSScreen.findMany({
+        // Batch: resolve Station names → PrepStation IDs at this location
+        const kdsStationNames = kdsManifests.map((m) => m.stationName)
+        const matchingPrepStations = await db.prepStation.findMany({
           where: {
             locationId: orderData.locationId,
+            name: { in: kdsStationNames },
             isActive: true,
             deletedAt: null,
-            isOnline: true,
           },
-          select: { id: true },
+          select: { id: true, name: true },
         })
-        const hasAnyOnlineScreen = onlineScreens.length > 0
+        const prepStationByName = new Map<string, string>(matchingPrepStations.map((ps) => [ps.name, ps.id]))
 
-        if (!hasAnyOnlineScreen) {
-          // ALL KDS screens offline — find a fallback for each KDS manifest
+        // Batch: find all KDSScreenStation links for these prep stations, include screen online status
+        const prepStationIds = matchingPrepStations.map((ps) => ps.id)
+        const screenLinks = prepStationIds.length > 0
+          ? await db.kDSScreenStation.findMany({
+              where: {
+                stationId: { in: prepStationIds },
+                deletedAt: null,
+                kdsScreen: {
+                  isActive: true,
+                  deletedAt: null,
+                },
+              },
+              select: {
+                stationId: true,
+                kdsScreen: {
+                  select: { id: true, isOnline: true },
+                },
+              },
+            })
+          : []
+
+        // Build a set of PrepStation IDs that have at least one online screen
+        const prepStationsWithOnlineScreen = new Set<string>()
+        for (const link of screenLinks) {
+          if (link.kdsScreen.isOnline) {
+            prepStationsWithOnlineScreen.add(link.stationId)
+          }
+        }
+
+        // Determine which KDS manifests have NO online screens for their specific station
+        const offlineKdsManifests: typeof kdsManifests = []
+        for (const kdsManifest of kdsManifests) {
+          const prepStationId = prepStationByName.get(kdsManifest.stationName)
+          // Offline if: no matching PrepStation found, OR no screen links, OR no online screens
+          if (!prepStationId || !prepStationsWithOnlineScreen.has(prepStationId)) {
+            offlineKdsManifests.push(kdsManifest)
+          }
+        }
+
+        if (offlineKdsManifests.length > 0) {
+          // Find fallback targets (shared across all offline stations)
           const expoManifest = manifests.find((m) => m.isExpo)
-          const firstOnlineStation = manifests.find((m) => m.type === 'PRINTER' && m.primaryItems.length > 0)
+          const firstPrinterStation = manifests.find((m) => m.type === 'PRINTER' && m.primaryItems.length > 0)
 
-          for (const kdsManifest of kdsManifests) {
+          for (const kdsManifest of offlineKdsManifests) {
             const originalStationName = kdsManifest.stationName
             const itemCount = kdsManifest.primaryItems.length
 
@@ -359,16 +401,16 @@ export class OrderRouter {
               console.warn(
                 `[OrderRouter] KDS station "${originalStationName}" offline — ${itemCount} items visible on expo "${expoManifest.stationName}"`
               )
-            } else if (firstOnlineStation) {
+            } else if (firstPrinterStation) {
               // Move items to the printer station so a ticket prints
-              firstOnlineStation.primaryItems.push(...kdsManifest.primaryItems)
-              firstOnlineStation.items.push(...kdsManifest.primaryItems)
-              firstOnlineStation.matchedTags.push('kds-offline-fallback')
+              firstPrinterStation.primaryItems.push(...kdsManifest.primaryItems)
+              firstPrinterStation.items.push(...kdsManifest.primaryItems)
+              firstPrinterStation.matchedTags.push('kds-offline-fallback')
               // Clear from the offline KDS manifest (items moved to printer)
               kdsManifest.primaryItems = []
               kdsManifest.items = []
               console.warn(
-                `[OrderRouter] KDS station "${originalStationName}" offline — ${itemCount} items re-routed to printer "${firstOnlineStation.stationName}"`
+                `[OrderRouter] KDS station "${originalStationName}" offline — ${itemCount} items re-routed to printer "${firstPrinterStation.stationName}"`
               )
             } else {
               // No fallback available — keep original routing (best effort)
@@ -382,7 +424,7 @@ export class OrderRouter {
             void emitToLocation(orderData.locationId, 'kds:station-offline', {
               stationName: originalStationName,
               stationId: kdsManifest.stationId,
-              fallbackStation: expoManifest?.stationName || firstOnlineStation?.stationName || 'none',
+              fallbackStation: expoManifest?.stationName || firstPrinterStation?.stationName || 'none',
               itemCount,
               orderId: orderData.id,
               orderNumber: orderData.orderNumber,

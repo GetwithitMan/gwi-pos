@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { OrderItemRepository } from '@/lib/repositories'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
 import { dispatchPrintWithRetry } from '@/lib/print-retry'
-import { dispatchItemStatus, dispatchOrderBumped } from '@/lib/socket-dispatch'
+import { dispatchItemStatus, dispatchOrderBumped, dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { parseSettings, DEFAULT_SPEED_OF_SERVICE } from '@/lib/settings'
@@ -224,6 +224,14 @@ export const GET = withVenue(async function GET(request: NextRequest) {
                 swappedToModifierName: true,
               },
             },
+            pizzaData: {
+              include: {
+                size: { select: { name: true, inches: true } },
+                crust: { select: { name: true } },
+                sauce: { select: { name: true } },
+                cheese: { select: { name: true } },
+              },
+            },
           },
         },
       },
@@ -389,6 +397,18 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           })),
           // Allergen tracking — passed to KDS for display
           allergens: item.menuItem.allergens || [],
+          // Pizza builder data — size, crust, sauce, cheese, toppings
+          pizzaData: item.pizzaData ? {
+            size: item.pizzaData.size?.name || null,
+            inches: item.pizzaData.size?.inches || null,
+            crust: item.pizzaData.crust?.name || null,
+            sauce: item.pizzaData.sauce?.name || null,
+            sauceAmount: item.pizzaData.sauceAmount || 'regular',
+            cheese: item.pizzaData.cheese?.name || null,
+            cheeseAmount: item.pizzaData.cheeseAmount || 'regular',
+            toppingsData: item.pizzaData.toppingsData || null,
+            cookingInstructions: item.pizzaData.cookingInstructions || null,
+          } : null,
         })),
       }
     }).filter(Boolean)
@@ -763,6 +783,13 @@ const putHandler = async function PUT(request: NextRequest) {
         })().catch(err => console.error('[order-events] KDS resend emit failed:', err))
       }
 
+      // Notify POS order screens that items changed (fire-and-forget)
+      // Without this, POS screens don't know items were bumped/completed until polling
+      void dispatchOpenOrdersChanged(locationId, {
+        trigger: 'item_updated',
+        orderId,
+      }).catch(err => console.error('[KDS] dispatchOpenOrdersChanged failed:', err))
+
       // Delivery auto-advance: preparing → ready_for_pickup when all items bumped
       if (action === 'complete' || action === 'bump_order') {
         void checkKdsBumpDeliveryAdvance(orderId, locationId).catch(err => log.warn({ err }, 'Background task failed'))
@@ -776,12 +803,12 @@ const putHandler = async function PUT(request: NextRequest) {
               where: { id: screenId },
               select: { orderBehavior: true },
             })
-            const behavior = screen?.orderBehavior as { printOnBump?: boolean } | null
+            const behavior = screen?.orderBehavior as { printOnBump?: boolean; printerId?: string | null } | null
             if (behavior?.printOnBump) {
               void dispatchPrintWithRetry(
                 `${process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 3005}`}/api/print/kitchen`,
                 { orderId, itemIds },
-                { locationId, employeeId: body.employeeId || null, orderId }
+                { locationId, employeeId: body.employeeId || null, orderId, printerId: behavior.printerId ?? null }
               )
             }
           } catch (err) {
