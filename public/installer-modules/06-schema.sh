@@ -9,7 +9,7 @@
 # Schema path: deploy-tools ONLY (no Prisma CLI on NUC runtime).
 #   1. deploy-tools/apply-schema.js -- bootstrap empty DBs from schema.sql
 #   2. deploy-tools/migrate.js -- run numbered migrations (local PG)
-#   3. deploy-tools/migrate.js -- run numbered migrations (venue Neon, non-fatal)
+#   3. Neon schema observe-only (MC is schema authority -- NUC never mutates Neon)
 #   4. seed-from-neon.sh -- restore venue data from Neon cloud
 #
 # Fresh install: schema/migration failure is FATAL (fail-closed).
@@ -99,13 +99,21 @@ run_schema() {
         fi
       fi
 
-      # ── Run migrations on venue Neon (if NEON_DATABASE_URL set) ──
-      if [[ -n "${NEON_DATABASE_URL:-}" ]] && [[ -f "$deploy_tools_dir/src/migrate.js" ]]; then
-        log "Running migrations on venue Neon..."
-        if DATABASE_URL="$NEON_DATABASE_URL" timeout --kill-after=10 120 node "$deploy_tools_dir/src/migrate.js" 2>&1; then
-          log "Venue Neon migrations complete"
+      # ── Venue Neon: observe-only (MC is schema authority) ──
+      if [[ -n "${NEON_DATABASE_URL:-}" ]]; then
+        log "Venue Neon migration skipped: MC is schema authority (observe-only mode)"
+        # Read Neon migration count for diagnostics only — never execute migrations
+        _neon_mig_count=$(DATABASE_URL="$NEON_DATABASE_URL" node -e "
+          const { Client } = require('pg');
+          const c = new Client({ connectionString: process.env.DATABASE_URL });
+          c.connect().then(() => c.query('SELECT COUNT(*)::int as cnt FROM \"_gwi_migrations\"'))
+            .then(r => { console.log(r.rows[0].cnt); c.end(); })
+            .catch(() => { console.log('-1'); c.end(); });
+        " 2>/dev/null || echo "-1")
+        if [[ "$_neon_mig_count" != "-1" ]]; then
+          log "Neon migration count (observed): $_neon_mig_count"
         else
-          warn "Venue Neon migration had issues — local install continues"
+          warn "Could not read Neon migration count (Neon may not be provisioned)"
         fi
       fi
     else

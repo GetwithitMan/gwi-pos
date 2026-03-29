@@ -560,6 +560,10 @@ WRAPPER
       log "Generated new random database password."
     fi
 
+    # Ensure passwords are stored in SCRAM format (not md5)
+    sudo -u postgres psql -c "ALTER SYSTEM SET password_encryption = 'scram-sha-256';"
+    sudo -u postgres psql -c "SELECT pg_reload_conf();"
+
     # Create database and user (idempotent)
     log "Creating database '$DB_NAME' and user '$DB_USER'..."
     # Escape single quotes in credentials to prevent SQL injection
@@ -589,8 +593,8 @@ EOSQL
       cat >> "$PG_HBA" <<HBAEOF
 
 $GWI_HBA_MARKER
-local   $DB_NAME   $DB_USER   md5
-host    $DB_NAME   $DB_USER   127.0.0.1/32   md5
+local   $DB_NAME   $DB_USER   scram-sha-256
+host    $DB_NAME   $DB_USER   127.0.0.1/32   scram-sha-256
 HBAEOF
       systemctl reload postgresql
     fi
@@ -601,7 +605,7 @@ HBAEOF
     else
       err "Cannot connect to PostgreSQL as $DB_USER."
       err "Check pg_hba.conf at: $PG_HBA"
-      err "Ensure the line 'local $DB_NAME $DB_USER md5' exists."
+      err "Ensure the line 'local $DB_NAME $DB_USER scram-sha-256' exists."
       return 1
     fi
 
@@ -762,7 +766,7 @@ REPLSQL
         cat >> "$PG_HBA" <<REPHBA
 
 $REPL_HBA_MARKER
-host    replication     replicator      ${LOCAL_SUBNET}       md5
+host    replication     replicator      ${LOCAL_SUBNET}       scram-sha-256
 REPHBA
       fi
 

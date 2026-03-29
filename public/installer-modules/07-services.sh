@@ -337,6 +337,7 @@ PSEOF
     cat > "$FIX_SUDOERS" <<FIXEOF
 #!/usr/bin/env bash
 set -euo pipefail
+POSUSER="$POSUSER"
 SUDOERS_FILE="/etc/sudoers.d/gwi-pos"
 # If the enumerated rules already exist, nothing to do
 if grep -q "systemctl restart thepasspos" "\$SUDOERS_FILE" 2>/dev/null; then
@@ -430,7 +431,12 @@ SVCEOF
       [[ -d "$KEY_DIR" ]] && chown -R root:root "$KEY_DIR" && chmod 700 "$KEY_DIR"
 
       log "Starting POS server..."
-      timeout --kill-after=10 180 systemctl restart thepasspos || { err_code "ERR-INST-211" "systemctl restart thepasspos failed"; warn "POS service failed to start -- will retry on reboot"; track_warn "POS service restart failed -- will retry on reboot"; }
+      if ! timeout --kill-after=10 180 systemctl restart thepasspos; then
+        err_code "ERR-INST-211" "systemctl restart thepasspos failed"
+        err "POS service failed to start -- installer cannot continue"
+        track_warn "POS service restart failed"
+        return 1
+      fi
 
       # Wait for POS to be order-ready, not just alive
       # Check /api/health AND verify response contains "status":"healthy"
@@ -465,7 +471,7 @@ SVCEOF
 
       if [[ "$POS_READY" != "true" ]]; then
         err_code "ERR-INST-212" "Health check failed after 180s -- /api/health did not return healthy"
-        track_warn "POS not ready after 180s -- will retry on reboot"
+        track_warn "POS not ready after 180s"
         track_warn "Check: sudo journalctl -u thepasspos -f"
         # Capture diagnostics for troubleshooting
         err "POS failed to start within timeout. Diagnostics:"
@@ -476,6 +482,7 @@ SVCEOF
         df -h /opt/gwi-pos 2>/dev/null || true
         echo "--- PostgreSQL ---"
         pg_isready 2>/dev/null || echo "PostgreSQL not reachable"
+        return 1
       fi
       log "Services configured and started (no kiosk -- web UI for settings/admin only)."
     fi

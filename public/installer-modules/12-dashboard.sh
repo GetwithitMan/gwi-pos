@@ -107,7 +107,7 @@ run_dashboard() {
       if [[ -n "$GIT_TOKEN" ]]; then
         local API_URL="https://api.github.com/repos/GetwithitMan/gwi-dashboard/releases/latest"
         local ASSET_URL=$(curl -sfL -H "Authorization: token $GIT_TOKEN" "$API_URL" 2>/dev/null \
-          | python3 -c "import json,sys;d=json.load(sys.stdin);assets=d.get('assets',[]);print(next((a['url'] for a in assets if a['name'].endswith('.deb')),'')" 2>/dev/null)
+          | python3 -c "import json,sys;d=json.load(sys.stdin);assets=d.get('assets',[]);print(next((a['url'] for a in assets if a['name'].endswith('.deb')),''))" 2>/dev/null)
         if [[ -n "$ASSET_URL" ]]; then
           curl -sfL -H "Authorization: token $GIT_TOKEN" -H "Accept: application/octet-stream" \
             "$ASSET_URL" -o "$DOWNLOAD_DIR/gwi-nuc-dashboard.deb" 2>/dev/null
