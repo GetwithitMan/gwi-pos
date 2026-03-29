@@ -42,15 +42,16 @@ async function applySchema() {
   await client.connect()
 
   try {
-    // Check if this is an empty database
+    // Check if this is an empty database (exclude _gwi_migrations from count)
     const [tableCount] = await client.$queryRawUnsafe(
       `SELECT COUNT(*)::int as cnt FROM information_schema.tables
-       WHERE table_schema = 'public' AND table_type = 'BASE TABLE'`
+       WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+       AND table_name != '_gwi_migrations'`
     )
 
     if (tableCount.cnt === 0) {
-      // Empty DB: apply full schema.sql inside a transaction
-      console.log(`${PREFIX} Empty database detected — applying full schema.sql`)
+      // Empty DB (or only _gwi_migrations): apply full schema.sql inside a transaction
+      console.log(`${PREFIX} Bootstrap detected: only _gwi_migrations present — applying full schema.sql`)
       await client.$executeRawUnsafe('BEGIN')
       try {
         await client.$executeRawUnsafe(schemaSql)
