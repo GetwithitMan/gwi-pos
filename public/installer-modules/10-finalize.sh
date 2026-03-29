@@ -607,11 +607,11 @@ _run_verification() {
 
   # ── 23. Heartbeat Cron ────────────────────────────────────────────────────
   local hb_cron
-  hb_cron=$(crontab -l -u root 2>/dev/null | grep -c "heartbeat" || echo "0")
+  hb_cron=$(crontab -l -u "$POSUSER" 2>/dev/null | grep -c "heartbeat" || echo "0")
   if [[ "$hb_cron" -gt 0 ]]; then
-    _record "Heartbeat Cron" "scheduled" "scheduled" "PASS"
+    _record "Heartbeat Cron" "scheduled" "scheduled (user=$POSUSER)" "PASS"
   else
-    _record "Heartbeat Cron" "scheduled" "MISSING" "WARN"
+    _record "Heartbeat Cron" "scheduled" "MISSING (checked user=$POSUSER)" "WARN"
   fi
 
   # ── 24. Backup Script (server + local PG only) ────────────────────────────
@@ -622,11 +622,11 @@ _run_verification() {
       _record "Backup Script" "executable" "MISSING" "FAIL"
     fi
     local bk_cron
-    bk_cron=$(crontab -l -u root 2>/dev/null | grep -c "backup-pos" || echo "0")
+    bk_cron=$(crontab -l -u "$POSUSER" 2>/dev/null | grep -c "backup-pos" || echo "0")
     if [[ "$bk_cron" -gt 0 ]]; then
-      _record "Backup Cron" "scheduled" "scheduled" "PASS"
+      _record "Backup Cron" "scheduled" "scheduled (user=$POSUSER)" "PASS"
     else
-      _record "Backup Cron" "scheduled" "MISSING" "WARN"
+      _record "Backup Cron" "scheduled" "MISSING (checked user=$POSUSER)" "WARN"
     fi
   else
     _record "Backup Script" "N/A" "N/A" "SKIPPED" "not server+localPG"
