@@ -2,10 +2,12 @@ import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { OrderItemRepository } from '@/lib/repositories'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
+import { dispatchPrintWithRetry } from '@/lib/print-retry'
 import { dispatchItemStatus, dispatchOrderBumped } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { checkKdsBumpDeliveryAdvance } from '@/lib/delivery/state-machine'
 import { processScreenLinks, processExpoFinalBump } from '@/lib/kds/screen-links'
+import { sendSMS, isTwilioConfigured, formatPhoneE164 } from '@/lib/twilio'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
@@ -309,6 +311,34 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
             console.error('[Expo] Failed to dispatch item status:', err)
           })
         }
+
+        // For serve actions, check if all items in the order are now complete and
+        // dispatch orderBumped with the correct allItemsServed flag
+        if (action === 'serve' || status === 'served') {
+          void (async () => {
+            try {
+              const remainingCount = await db.orderItem.count({
+                where: {
+                  orderId,
+                  locationId,
+                  isCompleted: false,
+                  deletedAt: null,
+                  voidedAt: null,
+                },
+              })
+              void dispatchOrderBumped(locationId, {
+                orderId,
+                stationId: body.stationId || '',
+                bumpedBy: body.employeeId || firstItem.order.employeeId || '',
+                allItemsServed: remainingCount === 0,
+              }, { async: true }).catch(err => {
+                console.error('[Expo] Failed to dispatch order bumped after serve:', err)
+              })
+            } catch (err) {
+              console.error('[Expo] Failed to check remaining items after serve:', err)
+            }
+          })()
+        }
       }
 
       // Speed-of-service tracking for serve/bump_order actions
@@ -429,6 +459,142 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
           screenId,
           bumpedBy,
         }).catch(err => console.error('[Expo] processExpoFinalBump failed:', err))
+      }
+
+      // Phase 9: Print on bump — fire-and-forget print when expo screen has printOnBump enabled
+      if ((action === 'serve' || action === 'bump_order') && screenId) {
+        void (async () => {
+          try {
+            const screen = await db.kDSScreen.findUnique({
+              where: { id: screenId },
+              select: { orderBehavior: true },
+            })
+            const behavior = screen?.orderBehavior as { printOnBump?: boolean } | null
+            if (behavior?.printOnBump) {
+              const targetOrderId = action === 'bump_order' ? (body.orderId || orderId) : orderId
+              void dispatchPrintWithRetry(
+                `${process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 3005}`}/api/print/kitchen`,
+                { orderId: targetOrderId, itemIds },
+                { locationId, employeeId: body.employeeId || null, orderId: targetOrderId }
+              )
+            }
+          } catch (err) {
+            console.error('[Expo] Print-on-bump check failed:', err)
+          }
+        })()
+      }
+
+      // Phase 8: SMS-on-ready — fire-and-forget notification when expo bumps an order
+      if (action === 'bump_order' && screenId) {
+        void (async () => {
+          try {
+            const targetOrderId = action === 'bump_order' ? (body.orderId || orderId) : orderId
+            const order = await db.order.findUnique({
+              where: { id: targetOrderId },
+              select: {
+                orderNumber: true,
+                orderType: true,
+                pagerNumber: true,
+                tabName: true,
+                parentOrderId: true,
+                customer: { select: { phone: true, firstName: true } },
+              },
+            })
+            if (!order) return
+
+            // Look up pagerNumber from target assignment (source of truth)
+            let pagerNumber: string | null = order.pagerNumber || null
+            try {
+              const pagerResult: any[] = await db.$queryRawUnsafe(
+                `SELECT "targetValue" FROM "NotificationTargetAssignment"
+                 WHERE "locationId" = $1
+                   AND "subjectType" = 'order'
+                   AND "subjectId" = $2
+                   AND status = 'active'
+                   AND "targetType" IN ('guest_pager', 'staff_pager')
+                 ORDER BY "isPrimary" DESC LIMIT 1`,
+                locationId, targetOrderId
+              )
+              if (pagerResult[0]?.targetValue) {
+                pagerNumber = pagerResult[0].targetValue
+              }
+            } catch { /* non-fatal */ }
+
+            // If split child with no pager, inherit from parent order's assignment
+            if (!pagerNumber && order.parentOrderId) {
+              try {
+                const parentPagerResult: any[] = await db.$queryRawUnsafe(
+                  `SELECT "targetValue" FROM "NotificationTargetAssignment"
+                   WHERE "locationId" = $1
+                     AND "subjectType" = 'order'
+                     AND "subjectId" = $2
+                     AND status = 'active'
+                     AND "targetType" IN ('guest_pager', 'staff_pager')
+                   ORDER BY "isPrimary" DESC LIMIT 1`,
+                  locationId, order.parentOrderId
+                )
+                if (parentPagerResult[0]?.targetValue) {
+                  pagerNumber = parentPagerResult[0].targetValue
+                }
+              } catch { /* non-fatal — parent lookup is best-effort */ }
+            }
+
+            // Try notification platform first (notifyEvent enqueues a job — fast INSERT)
+            let usedNotificationPlatform = false
+            try {
+              const { notifyEvent } = await import('@/lib/notifications/dispatcher')
+              const version = order.orderNumber || 1
+              await notifyEvent({
+                locationId,
+                eventType: 'order_ready' as any,
+                subjectType: 'order',
+                subjectId: targetOrderId,
+                subjectVersion: version,
+                sourceSystem: 'kds',
+                sourceEventId: `kds_expo_bump:${targetOrderId}:${screenId}:${version}`,
+                dispatchOrigin: 'automatic',
+                businessStage: 'initial_ready' as any,
+                contextSnapshot: {
+                  orderNumber: order.orderNumber,
+                  orderType: order.orderType,
+                  pagerNumber,
+                  tabName: order.tabName,
+                  customerName: order.customer?.firstName || null,
+                  customerPhone: order.customer?.phone || null,
+                },
+              })
+              usedNotificationPlatform = true
+            } catch {
+              // Dispatcher not available — fall back to legacy SMS
+            }
+
+            // Legacy fallback: direct Twilio SMS (best-effort, fire-and-forget)
+            if (!usedNotificationPlatform && isTwilioConfigured()) {
+              try {
+                const screen = await db.kDSScreen.findUnique({
+                  where: { id: screenId },
+                  select: { orderBehavior: true },
+                })
+                const behavior = screen?.orderBehavior as { sendSmsOnReady?: boolean } | null
+                if (!behavior?.sendSmsOnReady) return
+                if (!order.customer?.phone) return
+
+                const phone = formatPhoneE164(order.customer.phone)
+                if (!phone) return
+
+                const name = order.customer.firstName || 'there'
+                await sendSMS({
+                  to: phone,
+                  body: `Hi ${name}! Your order #${order.orderNumber} is ready${order.orderType === 'takeout' ? ' for pickup' : ''}. Thank you!`,
+                })
+              } catch (smsErr) {
+                console.error('[Expo] Legacy SMS-on-ready failed:', smsErr)
+              }
+            }
+          } catch (err) {
+            console.error('[Expo] Notification/SMS-on-ready failed:', err)
+          }
+        })()
       }
     }
 

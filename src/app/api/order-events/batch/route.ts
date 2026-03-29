@@ -14,6 +14,9 @@ import { ingestAndProject, type IngestEvent } from '@/lib/order-events/ingester'
 import { emitToTerminal } from '@/lib/socket-server'
 import { authenticateTerminal } from '@/lib/terminal-auth'
 import { err, ok } from '@/lib/api-response'
+import { OrderRouter } from '@/lib/order-router'
+import { dispatchNewOrder } from '@/lib/socket-dispatch'
+import { printKitchenTicketsForManifests } from '@/lib/print-template-factory'
 
 /**
  * POST /api/order-events/batch
@@ -101,6 +104,33 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
         })
       }
     }
+  }
+
+  // Fire-and-forget: dispatch KDS events for ORDER_SENT events from Android
+  // Without this, KDS screens never receive kds:order-received (no sound, no flash,
+  // no tag-based routing) and orders only appear on fallback polling.
+  const sentOrderIds = new Set<string>()
+  for (const [orderId, orderEvents] of validatedByOrder) {
+    if (orderEvents.some(e => e.type === 'ORDER_SENT')) {
+      sentOrderIds.add(orderId)
+    }
+  }
+  if (sentOrderIds.size > 0) {
+    void (async () => {
+      for (const orderId of sentOrderIds) {
+        try {
+          const routingResult = await OrderRouter.resolveRouting(orderId)
+          void dispatchNewOrder(locationId, routingResult, { async: true }).catch((err) => {
+            console.error('[batch] KDS dispatch failed for order', orderId, err)
+          })
+          void printKitchenTicketsForManifests(routingResult, locationId).catch((err) => {
+            console.warn('[batch] Kitchen ticket print failed for order', orderId, err)
+          })
+        } catch (err) {
+          console.error('[batch] KDS routing failed for order', orderId, err)
+        }
+      }
+    })()
   }
 
   // Fire-and-forget: dispatch cfd:show-order to the paired CFD terminal

@@ -701,7 +701,6 @@ function KDSContent() {
   }, [screenConfig, stationParam, showCompleted, deviceToken, expoMode])
 
   const handleBumpItem = useCallback(async (itemId: string) => {
-    if (!socketConnected) return
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       if (deviceToken) headers['x-device-token'] = deviceToken
@@ -720,10 +719,9 @@ function KDSContent() {
     } catch (error) {
       console.error('Failed to bump item:', error)
     }
-  }, [deviceToken, loadOrders, socketConnected, expoMode])
+  }, [deviceToken, loadOrders, expoMode])
 
   const handleBumpOrder = useCallback(async (order: KDSOrder) => {
-    if (!socketConnected) return
     const incompleteItemIds = order.items
       .filter(item => !item.isCompleted)
       .map(item => item.id)
@@ -750,10 +748,9 @@ function KDSContent() {
     } catch (error) {
       console.error('Failed to bump order:', error)
     }
-  }, [deviceToken, loadOrders, socketConnected, expoMode])
+  }, [deviceToken, loadOrders, expoMode])
 
   const handleUncompleteItem = useCallback(async (itemId: string) => {
-    if (!socketConnected) return
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       if (deviceToken) headers['x-device-token'] = deviceToken
@@ -784,7 +781,7 @@ function KDSContent() {
     } catch (error) {
       console.error('Failed to uncomplete item:', error)
     }
-  }, [deviceToken, loadOrders, socketConnected, expoMode])
+  }, [deviceToken, loadOrders, expoMode])
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {

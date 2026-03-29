@@ -37,6 +37,17 @@ export interface KDSItem {
   modifiers: { id: string; name: string; depth?: number; isCustomEntry?: boolean; isNoneSelection?: boolean; customEntryName?: string | null; swapTargetName?: string | null }[]
   ingredientModifications: IngredientMod[]
   allergens?: string[]
+  pizzaData?: {
+    size: string | null
+    inches: number | null
+    crust: string | null
+    sauce: string | null
+    sauceAmount: string
+    cheese: string | null
+    cheeseAmount: string
+    toppingsData: { toppings?: { toppingId: string; name: string; sections?: number[]; amount: string; price?: number }[]; sectionMode?: number } | null
+    cookingInstructions: string | null
+  } | null
 }
 
 export interface KDSOrder {
@@ -292,6 +303,60 @@ export const KDSOrderCard = memo(function KDSOrderCard({
                   )}
                 </div>
 
+                {/* Pizza data — size, crust, sauce, cheese, toppings */}
+                {item.pizzaData && (
+                  <div className={`mt-1 space-y-0.5 pl-4 ${item.isCompleted ? 'text-gray-600' : 'text-gray-400'}`}>
+                    {/* Size + Crust */}
+                    {(item.pizzaData.size || item.pizzaData.crust) && (
+                      <div className="text-sm font-semibold">
+                        {item.pizzaData.inches ? `${item.pizzaData.inches}" ` : ''}{item.pizzaData.size || ''}
+                        {item.pizzaData.crust ? ` | ${item.pizzaData.crust}` : ''}
+                      </div>
+                    )}
+                    {/* Sauce */}
+                    {item.pizzaData.sauce && (
+                      <div className="text-sm">
+                        {item.pizzaData.sauceAmount && item.pizzaData.sauceAmount !== 'regular'
+                          ? `${item.pizzaData.sauceAmount.charAt(0).toUpperCase() + item.pizzaData.sauceAmount.slice(1)} ${item.pizzaData.sauce}`
+                          : item.pizzaData.sauce}
+                      </div>
+                    )}
+                    {item.pizzaData.sauceAmount === 'none' && !item.pizzaData.sauce && (
+                      <div className="text-sm text-red-400 font-semibold">NO SAUCE</div>
+                    )}
+                    {/* Cheese */}
+                    {item.pizzaData.cheese && item.pizzaData.cheeseAmount !== 'none' && (
+                      <div className="text-sm">
+                        {item.pizzaData.cheeseAmount && item.pizzaData.cheeseAmount !== 'regular'
+                          ? `${item.pizzaData.cheeseAmount.charAt(0).toUpperCase() + item.pizzaData.cheeseAmount.slice(1)} ${item.pizzaData.cheese}`
+                          : item.pizzaData.cheese}
+                      </div>
+                    )}
+                    {item.pizzaData.cheeseAmount === 'none' && (
+                      <div className="text-sm text-red-400 font-semibold">NO CHEESE</div>
+                    )}
+                    {/* Toppings */}
+                    {item.pizzaData.toppingsData?.toppings && item.pizzaData.toppingsData.toppings.length > 0 && (
+                      <div className="text-sm space-y-0.5">
+                        {item.pizzaData.toppingsData.toppings.map((t, i) => (
+                          <div key={t.toppingId || i} className={item.isCompleted ? 'text-gray-600' : 'text-yellow-400'}>
+                            {'• '}
+                            {t.amount && t.amount !== 'regular'
+                              ? `${t.amount.charAt(0).toUpperCase() + t.amount.slice(1)} ${t.name}`
+                              : t.name}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {/* Cooking instructions */}
+                    {item.pizzaData.cookingInstructions && (
+                      <div className={`text-sm font-medium ${item.isCompleted ? 'text-gray-600' : 'text-orange-400'}`}>
+                        {item.pizzaData.cookingInstructions}
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {item.resendNote && (
                   <div className={`mt-1 text-sm font-medium ${item.isCompleted ? 'text-gray-600' : 'text-red-400'}`}>
                     {item.resendNote}
@@ -420,12 +485,7 @@ export const KDSOrderCard = memo(function KDSOrderCard({
         <div className="p-3 border-t border-gray-700">
           <button
             onClick={handleBumpOrderClick}
-            disabled={!socketConnected}
-            className={`w-full py-3 rounded-lg font-bold text-lg transition-colors ${
-              socketConnected
-                ? 'bg-green-600 hover:bg-green-700'
-                : 'bg-gray-600 cursor-not-allowed opacity-60'
-            }`}
+            className="w-full py-3 rounded-lg font-bold text-lg transition-colors bg-green-600 hover:bg-green-700"
           >
             BUMP ORDER
           </button>
