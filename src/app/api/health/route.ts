@@ -12,6 +12,7 @@
 
 import { NextResponse } from 'next/server'
 import { execSync } from 'child_process'
+import { readFileSync } from 'fs'
 import { db, getVenueClientCount } from '@/lib/db'
 import { CONNECTION_BUDGET } from '@/lib/db-connection-budget'
 import { withVenue } from '@/lib/with-venue'
@@ -169,11 +170,20 @@ export const GET = withVenue(async function GET(): Promise<NextResponse<{ data: 
     console.error('[Health] Database check failed:', error)
   }
 
-  // Check memory usage
+  // Check memory usage — compare RSS against system memory, not heap-against-heap.
+  // Node's heapTotal starts small and grows on demand, so heapUsed/heapTotal can be
+  // 90%+ even when the system has gigabytes free. RSS vs system total is the real signal.
   const memoryUsage = process.memoryUsage()
   const heapUsedMB = Math.round(memoryUsage.heapUsed / 1024 / 1024)
   const heapTotalMB = Math.round(memoryUsage.heapTotal / 1024 / 1024)
-  const memoryCheck = heapUsedMB < heapTotalMB * 0.9 // Less than 90% heap used
+  const rssMB = Math.round(memoryUsage.rss / 1024 / 1024)
+  let systemTotalMB = 4096 // safe default
+  try {
+    const meminfo = readFileSync('/proc/meminfo', 'utf8')
+    const match = meminfo.match(/MemTotal:\s+(\d+)\s+kB/)
+    if (match) systemTotalMB = Math.round(parseInt(match[1], 10) / 1024)
+  } catch { /* /proc not available (Vercel) — use default */ }
+  const memoryCheck = rssMB < systemTotalMB * 0.85 // RSS < 85% of system RAM
 
   // Check disk usage (NUC only — Vercel is ephemeral and has no meaningful disk)
   let diskInfo: HealthResponse['disk'] = null
