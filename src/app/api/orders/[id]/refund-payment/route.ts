@@ -6,6 +6,7 @@ import * as PaymentRepository from '@/lib/repositories/payment-repository'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission } from '@/lib/api-auth'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
+import { getPayApiClient, isPayApiSuccess } from '@/lib/datacap/payapi-client'
 import { handleTipChargeback } from '@/lib/domain/tips/tip-chargebacks'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { parseSettings } from '@/lib/settings'
@@ -83,18 +84,6 @@ export const POST = withVenue(async function POST(
     const authResult = await requirePermission(managerId, order.locationId, PERMISSIONS.MGR_REFUNDS)
     if (!authResult.authorized) return err(authResult.error, authResult.status ?? 403)
 
-    // W5-11: 2FA enforcement for large refunds
-    const locationSettings = parseSettings(await getLocationSettings(order.locationId))
-    const securitySettings = locationSettings.security
-    if (securitySettings.require2FAForLargeRefunds && refundAmount > securitySettings.refund2FAThreshold) {
-      if (!remoteApprovalCode && !approvedById) {
-        return NextResponse.json(
-          { error: `Manager approval required for refund over $${securitySettings.refund2FAThreshold}`, requiresApproval: true },
-          { status: 403 }
-        )
-      }
-    }
-
     // 3-Phase pattern (matches void-payment): Datacap call OUTSIDE the DB transaction
     // to prevent holding the FOR UPDATE lock during network I/O.
     //
@@ -126,6 +115,16 @@ export const POST = withVenue(async function POST(
       await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', id)
       await tx.$queryRawUnsafe('SELECT id FROM "Payment" WHERE id = $1 FOR UPDATE', paymentId)
 
+      // W5-11: 2FA enforcement for large refunds — MUST be inside the FOR UPDATE lock
+      // to prevent concurrent requests from bypassing the check before the lock serializes them.
+      const locationSettings = parseSettings(await getLocationSettings(order.locationId))
+      const securitySettings = locationSettings.security
+      if (securitySettings.require2FAForLargeRefunds && refundAmount > securitySettings.refund2FAThreshold) {
+        if (!remoteApprovalCode && !approvedById) {
+          return { error: `Manager approval required for refund over $${securitySettings.refund2FAThreshold}`, requiresApproval: true, status: 403 } as const
+        }
+      }
+
       const payment = await PaymentRepository.getPaymentById(paymentId, order.locationId, tx)
 
       if (!payment || payment.orderId !== id) {
@@ -140,8 +139,21 @@ export const POST = withVenue(async function POST(
         return { error: 'Payment has already been fully refunded', status: 400 } as const
       }
 
+      if (payment.status === 'declined' || payment.status === 'failed') {
+        return { error: `Cannot refund a ${payment.status} payment`, status: 400 } as const
+      }
+
       if (refundAmount > Number(payment.amount)) {
         return { error: 'Refund amount exceeds payment amount', status: 400 } as const
+      }
+
+      // Over-refund guard: check payment.refundedAmount field (fast path before aggregate query)
+      const totalRefunded = Number(payment.refundedAmount || 0) + refundAmount
+      if (totalRefunded > Number(payment.amount)) {
+        return {
+          error: `Refund amount $${refundAmount} would exceed original payment of $${payment.amount} (already refunded: $${payment.refundedAmount || 0})`,
+          status: 400,
+        } as const
       }
 
       const existingRefunds = await tx.refundLog.aggregate({
@@ -160,6 +172,13 @@ export const POST = withVenue(async function POST(
     }, { timeout: 15000 })
 
     if ('error' in phase1Result) {
+      // 2FA enforcement returns requiresApproval flag for the client to show approval UI
+      if ('requiresApproval' in phase1Result && phase1Result.requiresApproval) {
+        return NextResponse.json(
+          { error: phase1Result.error, requiresApproval: true },
+          { status: phase1Result.status }
+        )
+      }
       return err(phase1Result.error!, phase1Result.status)
     }
 
@@ -207,6 +226,47 @@ export const POST = withVenue(async function POST(
 
       console.log(`[PROCESSOR-ACTION] APPROVED: action=${refundActionId}, type=refund, refNo=${response.refNo ?? 'none'}`)
       datacapRefNo = response.refNo ?? null
+    }
+
+    // ── Phase 2b: ACH refund via PayAPI /ach/return/{RefNo} ────────────────────
+    const isAchPayment = payment.paymentMethod === 'ach'
+    if (isAchPayment && payment.datacapRefNumber) {
+      refundActionId = `ach-refund-${paymentId}-${Date.now()}`
+      log.info(
+        { action: refundActionId, paymentId, refNo: payment.datacapRefNumber, refundAmount },
+        'ACH refund initiated'
+      )
+
+      // ACH returns require routing/account info. Since we don't store raw bank details
+      // (PCI compliance), we rely on the Datacap token stored during the original authorize.
+      // The return endpoint also accepts the original RefNo to reference the authorization.
+      //
+      // Note: ACH returns must be within 45 days and cannot exceed original amount.
+      try {
+        const achResult = await getPayApiClient().achReturn({
+          refNo: payment.datacapRefNumber,
+          routingNo: '000000000', // Datacap fills from original txn via RefNo
+          acctNo: '0000',         // Datacap fills from original txn via RefNo
+          amount: refundAmount.toFixed(2),
+          custFirstName: 'Refund',
+          custLastName: 'Customer',
+          entryClass: 'Personal',
+        })
+
+        if (!isPayApiSuccess(achResult.status)) {
+          log.warn(
+            { action: refundActionId, status: achResult.status, message: achResult.message },
+            'ACH refund declined'
+          )
+          return err(achResult.message || 'ACH refund declined by processor', 422)
+        }
+
+        log.info({ action: refundActionId, refNo: achResult.refNo }, 'ACH refund approved')
+        datacapRefNo = achResult.refNo ?? null
+      } catch (achErr) {
+        log.error({ err: achErr, action: refundActionId }, 'ACH refund failed')
+        return err('ACH refund processing failed. Please try again.', 502)
+      }
     }
 
     // ── Phase 3: Write under lock (record refund result) ──────────────────────

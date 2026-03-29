@@ -11,6 +11,7 @@
 
 import { io, Socket } from 'socket.io-client'
 import { createChildLogger } from '@/lib/logger'
+import { db } from '@/lib/db'
 
 const log = createChildLogger('cloud-relay')
 
@@ -134,7 +135,11 @@ export function startCloudRelayClient(): void {
 
   const heartbeatTimer = setInterval(() => {
     if (relaySocket?.connected) {
-      relaySocket.emit('HEALTH', getHealthPayload())
+      void getHealthPayload().then(payload => {
+        if (relaySocket?.connected) {
+          relaySocket.emit('HEALTH', payload)
+        }
+      }).catch(err => log.warn({ err }, 'Failed to build health payload'))
     }
   }, 60_000) // Every 60s
   heartbeatTimer.unref()
@@ -192,11 +197,49 @@ async function triggerSync(models?: string[], domain?: string): Promise<void> {
   }
 }
 
-function getHealthPayload(): Record<string, unknown> {
+async function getHealthPayload(): Promise<Record<string, unknown>> {
   const locationId = process.env.POS_LOCATION_ID || process.env.LOCATION_ID || ''
+
+  // Fetch primary payment reader firmware (best-effort, non-blocking)
+  let readerFirmware: string | undefined
+  let terminalSdkVersion: string | undefined
+  try {
+    if (locationId) {
+      const [reader, terminals] = await Promise.all([
+        db.paymentReader.findFirst({
+          where: { locationId, isActive: true, deletedAt: null },
+          select: { firmwareVersion: true },
+          orderBy: { sortOrder: 'asc' },
+        }),
+        db.terminal.findMany({
+          where: { locationId, isOnline: true, deletedAt: null },
+          select: { deviceInfo: true },
+        }),
+      ])
+      readerFirmware = reader?.firmwareVersion ?? undefined
+
+      // Extract the highest dsiEMVAndroid SDK version reported by any online terminal
+      for (const t of terminals) {
+        const info = t.deviceInfo as Record<string, unknown> | null
+        const ver = info?.datacapSdkVersion as string | undefined
+        if (ver && (!terminalSdkVersion || ver > terminalSdkVersion)) {
+          terminalSdkVersion = ver
+        }
+      }
+    }
+  } catch {
+    // Non-critical — skip firmware/SDK version on DB error
+  }
+
   return {
     locationId,
     timestamp: new Date().toISOString(),
+    datacapVersions: {
+      sdkVersion: terminalSdkVersion,  // Highest dsiEMVAndroid SDK version from Android terminals
+      directVersion: 'protocol-v2',    // Datacap Direct XML protocol
+      payApiVersion: 'V2',             // PayAPI version from payapi-client
+      readerFirmware,                  // From primary PaymentReader.firmwareVersion
+    },
   }
 }
 

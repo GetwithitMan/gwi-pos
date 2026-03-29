@@ -45,11 +45,19 @@ export async function getDatacapClient(locationId: string): Promise<DatacapClien
   }
   // ─────────────────────────────────────────────────────────────────────────
 
+  // Map datacapEnvironment to OperationMode for XML requests
+  const operationMode: 'CERT' | 'PROD' | undefined = payments.datacapEnvironment === 'cert'
+    ? 'CERT'
+    : payments.datacapEnvironment === 'production'
+      ? 'PROD'
+      : undefined
+
   const config: DatacapConfig = {
     merchantId: payments.datacapMerchantId || '',
     operatorId: 'POS',
     posPackageId: POS_PACKAGE_ID,
     communicationMode: 'local',
+    operationMode,
     cloudUrl: isTestMode ? CLOUD_URLS.test : CLOUD_URLS.prod,
     // Datacap cloud auth: MID as username, tokenKey as password (used for cloud mode)
     cloudUsername: payments.datacapMerchantId || '',

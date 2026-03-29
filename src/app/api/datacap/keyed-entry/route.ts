@@ -1,7 +1,7 @@
 import crypto from 'crypto'
 import { NextRequest } from 'next/server'
 import { requireDatacapClient, parseBody, datacapErrorResponse } from '@/lib/datacap/helpers'
-import { parseError } from '@/lib/datacap/xml-parser'
+import { parseError, buildDeclineDetail } from '@/lib/datacap/xml-parser'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth, type AuthenticatedContext } from '@/lib/api-auth-middleware'
 import { db } from '@/lib/db'
@@ -108,6 +108,17 @@ export const POST = withVenue(withAuth('manager.keyed_entry', async function POS
       return err('Invalid CVV. Must be 3-4 digits.')
     }
 
+    // ─── Validate amount against order total ────────────────────────────
+    if (orderId && locationId) {
+      const orderRows = await db.$queryRawUnsafe<Array<{ total: string }>>(
+        `SELECT total::numeric::text as total FROM "Order" WHERE id = $1 AND "locationId" = $2 AND "deletedAt" IS NULL FOR UPDATE`,
+        orderId, locationId
+      )
+      if (orderRows[0] && amount > Number(orderRows[0].total)) {
+        return err(`Amount $${amount} exceeds order total $${orderRows[0].total}`, 400)
+      }
+    }
+
     // ─── Extract safe data BEFORE processing (never log full PAN) ──────
     const cardLast4 = cleanCardNumber.slice(-4)
     const cardBrand = detectCardBrand(cleanCardNumber)
@@ -154,6 +165,7 @@ export const POST = withVenue(withAuth('manager.keyed_entry', async function POS
     }
 
     const error = parseError(response)
+    const declineDetail = buildDeclineDetail(response, amount)
 
     // ─── Update pending sale record with outcome ───────────────────────
     if (response.cmdStatus === 'Approved') {
@@ -182,6 +194,7 @@ export const POST = withVenue(withAuth('manager.keyed_entry', async function POS
         gratuity: response.gratuityAmount,
         sequenceNo: response.sequenceNo,
         error: error ? { code: error.code, message: error.text, isRetryable: error.isRetryable } : null,
+        declineDetail: declineDetail || undefined,
       })
   } catch (err) {
     return datacapErrorResponse(err)

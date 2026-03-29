@@ -302,7 +302,7 @@ export async function getPaymentSummary(
       p."paymentMethod"::text AS payment_method,
       COALESCE(p."cardBrand", '') AS card_brand,
       COUNT(*)::int AS count,
-      COALESCE(SUM(p.amount), 0)::float AS total,
+      COALESCE(SUM(p.amount - COALESCE(p."refundedAmount", 0)), 0)::float AS total,
       COALESCE(SUM(p."tipAmount"), 0)::float AS tips,
       COALESCE(SUM(p."roundingAdjustment"), 0)::float AS rounding
     FROM "Payment" p

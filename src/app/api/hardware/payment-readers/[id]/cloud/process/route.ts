@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getDatacapClient, datacapErrorResponse } from '@/lib/datacap/helpers'
+import { buildDeclineDetail } from '@/lib/datacap/xml-parser'
 import { roundToCents } from '@/lib/pricing'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { err, notFound, ok } from '@/lib/api-response'
@@ -68,6 +69,7 @@ export const POST = withVenue(withAuth(async function POST(
     // Map DatacapResponse → the JSON shape useDatacap.ts expects
     const approved = response.cmdStatus === 'Approved'
     const amountAuthorized = response.authorize ? roundToCents(parseFloat(response.authorize)) : amount
+    const declineDetail = buildDeclineDetail(response, amount)
 
     return ok({
       approved,
@@ -82,6 +84,7 @@ export const POST = withVenue(withAuth(async function POST(
       responseMessage: response.textResponse,
       amountAuthorized: amountAuthorized.toFixed(2),
       signatureData: response.signatureData,
+      declineDetail: declineDetail || undefined,
     })
   } catch (error) {
     return datacapErrorResponse(error)

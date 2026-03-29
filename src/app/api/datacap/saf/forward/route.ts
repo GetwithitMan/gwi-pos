@@ -41,57 +41,71 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
 
     await validateReader(readerId, locationId)
 
-    const alreadyUploaded = await db.payment.count({
-      where: {
-        paymentReaderId: readerId,
-        safStatus: 'UPLOAD_SUCCESS',
-        order: { locationId },
-      },
-    })
-    if (alreadyUploaded > 0) {
-      return err(`${alreadyUploaded} payment(s) for this reader already have safStatus=UPLOAD_SUCCESS. Manual review required to avoid double-submission.`, 409)
+    // Advisory lock to prevent concurrent SAF forwards for the same reader.
+    // Derive a stable numeric key from readerId (first 12 hex chars → safe integer).
+    const lockKey = parseInt(readerId.replace(/-/g, '').slice(0, 12), 16)
+    const [lockResult] = await db.$queryRawUnsafe<[{ pg_try_advisory_lock: boolean }]>(
+      'SELECT pg_try_advisory_lock($1::bigint) as pg_try_advisory_lock', lockKey
+    )
+    if (!lockResult?.pg_try_advisory_lock) {
+      return err('SAF forward already in progress for this reader', 409)
     }
 
-    const client = await requireDatacapClient(locationId)
+    try {
+      const alreadyUploaded = await db.payment.count({
+        where: {
+          paymentReaderId: readerId,
+          safStatus: 'UPLOAD_SUCCESS',
+          order: { locationId },
+        },
+      })
+      if (alreadyUploaded > 0) {
+        return err(`${alreadyUploaded} payment(s) for this reader already have safStatus=UPLOAD_SUCCESS. Manual review required to avoid double-submission.`, 409)
+      }
 
-    const response = await client.safForwardAll(readerId)
-    const success = response.cmdStatus === 'Success'
-    const safForwarded = parseInt(response.safForwarded || '0', 10)
+      const client = await requireDatacapClient(locationId)
 
-    // Update Payment records: SAF_PENDING_UPLOAD → UPLOAD_SUCCESS or UPLOAD_FAILED
-    // Only update payments that are still pending upload for this reader
-    const newStatus = success ? 'UPLOAD_SUCCESS' : 'UPLOAD_FAILED'
-    const updateData: Record<string, unknown> = {
-      safStatus: newStatus,
-      safUploadedAt: success ? new Date() : undefined,
-      lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
-    }
-    if (!success) {
-      updateData.safError = response.textResponse || response.cmdStatus || 'SAF forward failed'
-    }
+      const response = await client.safForwardAll(readerId)
+      const success = response.cmdStatus === 'Success'
+      const safForwarded = parseInt(response.safForwarded || '0', 10)
 
-    const updated = await db.payment.updateMany({
-      where: {
-        paymentReaderId: readerId,
-        safStatus: 'APPROVED_SAF_PENDING_UPLOAD',
-        order: { locationId },
-      },
-      data: updateData,
-    })
+      // Update Payment records: SAF_PENDING_UPLOAD → UPLOAD_SUCCESS or UPLOAD_FAILED
+      // Only update payments that are still pending upload for this reader
+      const newStatus = success ? 'UPLOAD_SUCCESS' : 'UPLOAD_FAILED'
+      const updateData: Record<string, unknown> = {
+        safStatus: newStatus,
+        safUploadedAt: success ? new Date() : undefined,
+        lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
+      }
+      if (!success) {
+        updateData.safError = response.textResponse || response.cmdStatus || 'SAF forward failed'
+      }
 
-    logger.log('datacap', `SAF forward complete: ${safForwarded} forwarded, ${updated.count} payment records updated to ${newStatus}`, {
-      readerId, locationId, safForwarded, updatedCount: updated.count, success,
-    })
+      const updated = await db.payment.updateMany({
+        where: {
+          paymentReaderId: readerId,
+          safStatus: 'APPROVED_SAF_PENDING_UPLOAD',
+          order: { locationId },
+        },
+        data: updateData,
+      })
 
-    pushUpstream()
+      logger.log('datacap', `SAF forward complete: ${safForwarded} forwarded, ${updated.count} payment records updated to ${newStatus}`, {
+        readerId, locationId, safForwarded, updatedCount: updated.count, success,
+      })
 
-    return ok({
+      pushUpstream()
+
+      return ok({
         success,
         safForwarded,
         paymentsUpdated: updated.count,
         newStatus,
         sequenceNo: response.sequenceNo,
       })
+    } finally {
+      await db.$queryRawUnsafe('SELECT pg_advisory_unlock($1::bigint)', lockKey).catch(() => {})
+    }
   } catch (err) {
     return datacapErrorResponse(err)
   }

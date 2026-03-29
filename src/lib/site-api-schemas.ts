@@ -68,6 +68,11 @@ export const SiteBootstrapSchema = z.object({
     surchargeName: z.string(),
     minOrderAmount: z.number().nullable(),
     maxOrderAmount: z.number().nullable(),
+    achEnabled: z.boolean(),
+  }),
+  walletConfig: z.object({
+    applePayMid: z.string().nullable(),
+    googlePayBusinessId: z.string().nullable(),
   }),
 })
 

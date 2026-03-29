@@ -58,6 +58,7 @@ export type PaymentIntentStatus =
   | 'authorizing'         // Step 4: Sent to gateway, awaiting response
   | 'authorized'          // Step 5: Gateway approved
   | 'capture_pending'     // Step 6: Waiting to capture (store-and-forward)
+  | 'capturing'           // Step 6b: Claimed by a process, capture in progress
   | 'captured'            // Step 7: Payment captured successfully
   | 'declined'            // Gateway declined
   | 'failed'              // Network or system error
@@ -104,6 +105,10 @@ export interface PaymentIntent {
   isOfflineCapture: boolean       // Was this captured while offline?
   offlineCapturedAt?: string      // When it was queued for offline capture
   syncedAt?: string               // When it was synced to server
+
+  // Capture claim tracking (prevents duplicate capture across tabs/processes)
+  claimedAt?: string              // When this intent was claimed for capture
+  claimedBy?: string              // Tab/process ID that claimed it
 
   // Error handling
   attempts: number

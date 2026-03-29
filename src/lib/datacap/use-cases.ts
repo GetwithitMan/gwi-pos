@@ -63,6 +63,12 @@ export interface SaleResult {
   response?: DatacapResponse
   intentId: string
   error?: string
+  /** True when the processor approved less than the requested amount */
+  isPartialApproval?: boolean
+  /** Amount actually approved (for partial approvals) */
+  approvedAmount?: number
+  /** Amount originally requested (for partial approvals) */
+  requestedAmount?: number
 }
 
 // ─── Sale Use Case ───────────────────────────────────────────────────────────
@@ -128,6 +134,24 @@ export async function processSale(
       authCode: response.authCode,
       declineReason: isApproved ? undefined : response.textResponse,
     })
+
+    // Step 4.5: Check for partial approval — let caller decide to accept or void
+    if (isApproved && response.isPartialApproval) {
+      const approvedAmount = response.authorize ? parseFloat(response.authorize) : undefined
+      logger.debug('Partial approval detected', {
+        intentId: intent.id,
+        requestedAmount: totalAmount,
+        approvedAmount,
+      })
+      return {
+        success: true,
+        response,
+        intentId: intent.id,
+        isPartialApproval: true,
+        approvedAmount,
+        requestedAmount: totalAmount,
+      }
+    }
 
     // Step 5: Mark as captured if approved
     if (isApproved) {
@@ -220,6 +244,24 @@ export async function openBarTab(
       authCode: response.authCode,
       declineReason: isApproved ? undefined : response.textResponse,
     })
+
+    // Partial approval on pre-auth — let caller decide
+    if (isApproved && response.isPartialApproval) {
+      const approvedAmount = response.authorize ? parseFloat(response.authorize) : undefined
+      logger.debug('Partial approval on pre-auth', {
+        intentId: intent.id,
+        requestedAmount: params.preAuthAmount,
+        approvedAmount,
+      })
+      return {
+        success: true,
+        response,
+        intentId: intent.id,
+        isPartialApproval: true,
+        approvedAmount,
+        requestedAmount: params.preAuthAmount,
+      }
+    }
 
     if (isApproved) {
       logger.debug('Bar tab opened successfully', {

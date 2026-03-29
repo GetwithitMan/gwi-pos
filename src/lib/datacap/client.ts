@@ -364,7 +364,7 @@ export class DatacapClient {
     fn: (reader: ReaderInfo, seqNo: string) => Promise<DatacapResponse>
   ): Promise<DatacapResponse> {
     // Refuse transactions on degraded readers — operator must resolve first
-    assertReaderHealthy(readerId)
+    await assertReaderHealthy(readerId)
 
     const reader = await getReaderInfo(readerId)
     const seqNo = await getSequenceNo(readerId)
@@ -391,10 +391,10 @@ export class DatacapClient {
     // Always pad reset, even if the transaction failed
     try {
       await this.padReset(readerId)
-      markReaderHealthy(readerId)
+      await markReaderHealthy(readerId)
     } catch (resetError) {
       const reason = resetError instanceof Error ? resetError.message : 'Pad reset failed'
-      markReaderDegraded(readerId, reason)
+      await markReaderDegraded(readerId, reason)
       logger.error('datacap', `Pad reset failed — reader marked degraded`, resetError, { readerId })
     }
 
@@ -418,6 +418,7 @@ export class DatacapClient {
     return {
       merchantId: reader.merchantId || this.config.merchantId,
       operatorId: this.config.operatorId,
+      operationMode: this.config.operationMode,
       posPackageId: this.config.posPackageId || POS_PACKAGE_ID,
       sequenceNo: seqNo,
       acctNo: 'SecureDevice',

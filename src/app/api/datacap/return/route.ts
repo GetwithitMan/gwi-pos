@@ -31,10 +31,13 @@ export const POST = withVenue(withAuth('MGR_REFUNDS', async function POST(reques
     await validateReader(readerId, locationId)
     const client = await requireDatacapClient(locationId)
 
+    // Card-present returns use EMVReturn (customer dips/taps card at reader).
+    // Card-not-present returns use ReturnByRecordNo (refund by stored token).
+    // The emvReturn() method internally selects the correct tran code based on cardPresent.
     const response = await client.emvReturn(readerId, {
       amount,
       recordNo,
-      cardPresent,
+      cardPresent: !!cardPresent,
       invoiceNo,
     })
 

@@ -12,6 +12,7 @@ interface OnlineOrderingSettings {
   requireZip: boolean
   allowGuestCheckout: boolean
   requireContactForPickup: boolean
+  achEnabled: boolean
 }
 
 const DEFAULTS: OnlineOrderingSettings = {
@@ -20,6 +21,7 @@ const DEFAULTS: OnlineOrderingSettings = {
   requireZip: false,
   allowGuestCheckout: true,
   requireContactForPickup: false,
+  achEnabled: false,
 }
 
 export default function PaymentsPage() {
@@ -41,6 +43,7 @@ export default function PaymentsPage() {
           requireZip: d.requireZip ?? DEFAULTS.requireZip,
           allowGuestCheckout: d.allowGuestCheckout ?? DEFAULTS.allowGuestCheckout,
           requireContactForPickup: d.requireContactForPickup ?? DEFAULTS.requireContactForPickup,
+          achEnabled: d.achEnabled ?? DEFAULTS.achEnabled,
         })
       })
       .catch(() => toast.error('Failed to load settings'))
@@ -80,6 +83,7 @@ export default function PaymentsPage() {
               requireZip: settings.requireZip,
               allowGuestCheckout: settings.allowGuestCheckout,
               requireContactForPickup: settings.requireContactForPickup,
+              achEnabled: settings.achEnabled,
             },
           },
         }),
@@ -249,6 +253,49 @@ export default function PaymentsPage() {
                 />
               </button>
             </div>
+          </div>
+        </div>
+
+        {/* ACH Payments */}
+        <div className="bg-gray-900 rounded-xl border border-gray-800 p-6">
+          <h2 className="text-lg font-semibold text-white mb-1">ACH Bank Payments</h2>
+          <p className="text-sm text-gray-400 mb-5">
+            Allow customers to pay directly from their bank account via ACH. Payments settle in 2-3 business days.
+          </p>
+
+          <div className="space-y-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-white">Enable ACH / Bank Account payments</p>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  Customers will see a &quot;Bank Account (ACH)&quot; tab alongside credit/debit card at checkout.
+                  Requires Datacap ACH merchant enrollment.
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={settings.achEnabled}
+                onClick={() => handleToggle('achEnabled')}
+                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${
+                  settings.achEnabled ? 'bg-blue-600' : 'bg-gray-700'
+                }`}
+              >
+                <span
+                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg transition-transform ${
+                    settings.achEnabled ? 'translate-x-5' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
+
+            {settings.achEnabled && (
+              <div className="bg-gray-800/50 rounded-lg p-4 text-xs text-gray-400 space-y-2">
+                <p><strong className="text-white">Settlement timing:</strong> ACH debits take 2-3 business days to settle. The order will be confirmed immediately, but funds transfer is not instant.</p>
+                <p><strong className="text-white">Returns:</strong> ACH returns/refunds must be issued within 45 days and cannot exceed the original amount.</p>
+                <p><strong className="text-white">Same-day voids:</strong> ACH transactions can only be voided on the same day they were authorized.</p>
+              </div>
+            )}
           </div>
         </div>
 

@@ -1483,6 +1483,9 @@ export interface LocationSettings {
     surchargeType?: string | null
     surchargeAmount?: number
     surchargeName?: string
+    applePayMid?: string | null           // Apple Pay Merchant ID (from Datacap PSCS provisioning)
+    googlePayBusinessId?: string | null   // Google Pay Business ID (from Google Pay & Wallet Console)
+    achEnabled?: boolean                   // Enable ACH (bank account) payments via Datacap PayAPI
   }
   datacapVirtualGift?: PublicDatacapVirtualGiftSettings     // Read-only Datacap Virtual Gift storefront state (MC writes, POS reads)
 }

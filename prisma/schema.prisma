@@ -74,6 +74,7 @@ enum PaymentMethod {
   card
   credit
   debit
+  ach
   gift_card
   house_account
   loyalty
@@ -83,7 +84,10 @@ enum PaymentMethod {
 
 enum PaymentStatus {
   pending
+  processing
   completed
+  declined
+  failed
   refunded
   voided
 }

@@ -1,7 +1,7 @@
 // Datacap Direct API — XML Response Parser
 // Parses RStream XML responses from Datacap devices and cloud
 
-import type { DatacapResponse, CmdStatus, ResponseOrigin, EntryMethod, CVM, DatacapError } from './types'
+import type { DatacapResponse, CmdStatus, ResponseOrigin, EntryMethod, CVM, DatacapError, DeclineDetail } from './types'
 import { CARD_TYPE_MAP, ENTRY_METHOD_MAP, CVM_MAP, DATACAP_ERROR_CODES } from './constants'
 
 // ─── Tag Extraction ──────────────────────────────────────────────────────────
@@ -167,6 +167,9 @@ export function parseResponse(xml: string): DatacapResponse {
   // Level II response
   const level2Status = extractTag(xml, 'Level2Status')
 
+  // AVS (Address Verification Service) result — single char code from processor
+  const avsResult = extractTag(xml, 'AVSResult') || extractTag(xml, 'AVS')
+
   return {
     cmdStatus,
     dsixReturnCode,
@@ -200,6 +203,7 @@ export function parseResponse(xml: string): DatacapResponse {
     safForwarded,
     storedOffline,
     level2Status,
+    avsResult,
     // rawXml is only included in non-production to avoid accumulating sensitive data in logs
     rawXml: process.env.NODE_ENV === 'production' ? '' : xml,
   }
@@ -230,6 +234,99 @@ export function parseError(response: DatacapResponse): DatacapError | null {
     text: response.textResponse || 'Unknown Error',
     description: `${response.responseOrigin}: ${response.textResponse || 'No additional information'}`,
     isRetryable: false,
+    responseOrigin: response.responseOrigin,
+  }
+}
+
+// ─── Customer-facing message mapping ────────────────────────────────────────
+
+/** Map return code prefixes to customer-safe messages */
+const CUSTOMER_MESSAGES: Record<string, string> = {
+  '100001': 'Card declined. Please try another payment method.',
+  '100002': 'Card declined. Please try another payment method.',
+  '100003': 'Card declined. Please try another payment method.',
+  '100004': 'Card is expired. Please use a different card.',
+  '100005': 'Card could not be read. Please try again or use a different card.',
+  '100006': 'This card type is not accepted. Please try another card.',
+  '100007': 'Card declined. Please try another payment method.',
+  '100008': 'Card was removed too soon. Please try again.',
+  '100009': 'This transaction was already processed.',
+  '200001': 'Reader is not ready. Please wait a moment.',
+  '200002': 'Reader is busy. Please wait a moment.',
+  '200003': 'Reader error. Please try again.',
+  '200004': 'Reader not found. Please alert staff.',
+  '200005': 'Card could not be read. Please try again.',
+  '200006': 'Transaction timed out. Please try again.',
+  '200007': 'Transaction was cancelled.',
+  '300001': 'Unable to process payment. Please try again.',
+  '300002': 'Unable to process payment. Please try again in a moment.',
+  '300003': 'Connection timed out. Please try again.',
+}
+
+const DEFAULT_CUSTOMER_MESSAGE = 'Card declined. Please try another payment method.'
+const PARTIAL_CUSTOMER_MESSAGE = 'Card has insufficient funds for the full amount.'
+
+// ─── Decline Detail Builder ─────────────────────────────────────────────────
+
+/**
+ * Build a structured DeclineDetail from a Datacap response.
+ *
+ * This provides both staff-facing and customer-facing messages,
+ * plus retry guidance and partial approval info.
+ *
+ * @param response Parsed DatacapResponse from parseResponse()
+ * @param requestedAmount The original requested amount (for partial approval context)
+ * @returns DeclineDetail or null if the transaction was fully approved
+ */
+export function buildDeclineDetail(
+  response: DatacapResponse,
+  requestedAmount?: number
+): DeclineDetail | null {
+  // Fully approved — no decline detail needed
+  if (
+    (response.cmdStatus === 'Approved' || response.cmdStatus === 'Success') &&
+    !response.isPartialApproval
+  ) {
+    return null
+  }
+
+  const returnCode = response.dsixReturnCode || 'UNKNOWN'
+  const errorInfo = DATACAP_ERROR_CODES[returnCode]
+  const isRetryable = errorInfo?.isRetryable ?? false
+
+  // Parse authorized amount for partial approvals
+  const approvedAmount = response.authorize
+    ? parseFloat(response.authorize)
+    : undefined
+
+  // Build staff message — include full detail and return code
+  let staffMessage: string
+  if (response.isPartialApproval && approvedAmount !== undefined) {
+    staffMessage = `Partial Approval: $${approvedAmount.toFixed(2)} of $${(requestedAmount ?? 0).toFixed(2)} approved`
+  } else if (errorInfo) {
+    staffMessage = `Declined: ${errorInfo.message} (${returnCode})`
+  } else if (response.textResponse) {
+    staffMessage = `Declined: ${response.textResponse} (${returnCode})`
+  } else {
+    staffMessage = `Declined (${returnCode})`
+  }
+
+  // Build customer message — safe, no codes, no internal detail
+  let customerMessage: string
+  if (response.isPartialApproval) {
+    customerMessage = PARTIAL_CUSTOMER_MESSAGE
+  } else {
+    customerMessage = CUSTOMER_MESSAGES[returnCode] || DEFAULT_CUSTOMER_MESSAGE
+  }
+
+  return {
+    returnCode,
+    staffMessage,
+    customerMessage,
+    isRetryable,
+    isPartialApproval: response.isPartialApproval,
+    approvedAmount: response.isPartialApproval ? approvedAmount : undefined,
+    requestedAmount: response.isPartialApproval ? requestedAmount : undefined,
     responseOrigin: response.responseOrigin,
   }
 }

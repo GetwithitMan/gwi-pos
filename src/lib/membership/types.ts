@@ -67,6 +67,8 @@ export enum MembershipEventType {
   DUNNING_STARTED = 'dunning_started',
   DUNNING_ESCALATED = 'dunning_escalated',
   MARKED_UNCOLLECTIBLE = 'marked_uncollectible',
+  TOKEN_ENROLLED_UPDATER = 'token_enrolled_updater',
+  TOKEN_REFRESH_FAILED = 'token_refresh_failed',
 }
 
 // ── Decline Classification ──────────────────────────────────────────────────
@@ -131,6 +133,7 @@ export interface Membership {
 
   recurringData: string | null
   lastToken: string | null
+  accountUpdaterPid: string | null
 
   version: number
 
@@ -195,6 +198,7 @@ export interface MembershipCharge {
   declineReason: string | null
   returnCode: string | null
   processorResponseMessage: string | null
+  declineCategory: DeclineCategory | null
 
   idempotencyKey: string | null
 

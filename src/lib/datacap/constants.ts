@@ -175,7 +175,10 @@ export const DISCOVERY_RETRY_DELAY_MS = 500
 
 // ─── POS Identity ────────────────────────────────────────────────────────────
 
-export const POS_PACKAGE_ID = 'GWI-POS:1.0'
+// Read actual version from package.json so Datacap sees the real POS version
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const _pkg = require('../../../package.json') as { version: string }
+export const POS_PACKAGE_ID = `GWI-POS:${_pkg.version}`
 
 // ─── Default Sequence Number ─────────────────────────────────────────────────
 

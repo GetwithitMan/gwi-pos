@@ -66,7 +66,7 @@ export function CheckoutPageClient({ bootstrap, slug }: CheckoutPageClientProps)
   const applyGiftCard = useSiteCartStore((s) => s.applyGiftCard)
   const removeGiftCard = useSiteCartStore((s) => s.removeGiftCard)
 
-  const { orderingConfig, capabilities, venue } = bootstrap
+  const { orderingConfig, capabilities, venue, walletConfig } = bootstrap
 
   // ── Form validation ──────────────────────────────────────────
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -204,6 +204,19 @@ export function CheckoutPageClient({ bootstrap, slug }: CheckoutPageClientProps)
   const handlePaymentError = useCallback((_message: string) => {
     // Error is already shown in PaymentForm
   }, [])
+
+  // ── Estimated total for wallet payment sheet ─────────────────
+  const estimatedTotal = useMemo(() => {
+    let surcharge = 0
+    if (orderingConfig.surchargeType === 'flat' && orderingConfig.surchargeAmount > 0) {
+      surcharge = orderingConfig.surchargeAmount
+    } else if (orderingConfig.surchargeType === 'percent' && orderingConfig.surchargeAmount > 0) {
+      surcharge = Math.round(subtotal * (orderingConfig.surchargeAmount / 100) * 100) / 100
+    }
+    const afterDiscount = Math.max(0, subtotal - couponDiscount)
+    const fee = orderType === 'delivery' ? deliveryFee : 0
+    return afterDiscount + tipAmount + surcharge + fee - giftCardApplied
+  }, [subtotal, couponDiscount, tipAmount, giftCardApplied, orderType, deliveryFee, orderingConfig])
 
   // ── Form validity for enabling payment ───────────────────────
   const isFormValid = useMemo(() => {
@@ -536,6 +549,11 @@ export function CheckoutPageClient({ bootstrap, slug }: CheckoutPageClientProps)
             onSuccess={handlePaymentSuccess}
             onError={handlePaymentError}
             disabled={!isFormValid}
+            merchantName={venue.name}
+            applePayMid={walletConfig?.applePayMid}
+            googlePayBusinessId={walletConfig?.googlePayBusinessId}
+            estimatedTotal={estimatedTotal}
+            achEnabled={orderingConfig.achEnabled}
           />
           {!isFormValid && (
             <p className="text-xs mt-2 text-center" style={{ color: 'var(--site-text-muted)' }}>

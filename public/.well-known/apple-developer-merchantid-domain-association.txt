@@ -1,0 +1,3 @@
+Replace this file with the domain verification file downloaded from Datacap.
+See: https://wallet.dcap.com docs for the production verification file.
+For testing: download from Datacap cert environment.

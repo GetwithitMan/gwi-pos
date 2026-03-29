@@ -88,10 +88,16 @@ interface AuthorizationResult {
   declineReason?: string
 }
 
+// Stale claim timeout: if a capture was claimed but never completed
+// (e.g., tab crashed), reclaim it after this duration
+const STALE_CLAIM_TIMEOUT_MS = 5 * 60 * 1000 // 5 minutes
+
 class PaymentIntentManagerClass {
   private syncInterval: ReturnType<typeof setInterval> | null = null
   private isProcessing = false
   private processingGeneration = 0
+  // Unique identifier for this tab/process — used to track claim ownership
+  private readonly tabId = uuid()
 
   /**
    * Initialize the manager - starts the sync worker
@@ -327,18 +333,91 @@ class PaymentIntentManagerClass {
   }
 
   /**
+   * Atomically claim an intent for capture using a Dexie transaction.
+   *
+   * This is the distributed lock mechanism: inside a readwrite transaction,
+   * we re-read the intent and only transition it to 'capturing' if its status
+   * is still 'capture_pending' (or 'authorized' without capture). If another
+   * tab/process already claimed it, the status will have changed and we skip it.
+   *
+   * Also reclaims stale claims: if an intent has been in 'capturing' status
+   * for longer than STALE_CLAIM_TIMEOUT_MS, it is assumed the claiming process
+   * crashed and can be reclaimed.
+   *
+   * Returns the claimed intent if successful, or null if already claimed.
+   */
+  private async claimIntent(intentId: string): Promise<PaymentIntent | null> {
+    return offlineDb.transaction('rw', offlineDb.paymentIntents, async () => {
+      const intent = await offlineDb.paymentIntents.get(intentId)
+      if (!intent) return null
+
+      const now = new Date().toISOString()
+      const nowMs = Date.now()
+
+      // Check if this intent is in a claimable state
+      const isCapturePending = intent.status === 'capture_pending'
+      const isAuthorizedUncaptured = intent.status === 'authorized'
+        && !intent.capturedAt
+        && Boolean(intent.authorizedAt)
+      const isStaleClaim = intent.status === 'capturing'
+        && intent.claimedAt
+        && (nowMs - new Date(intent.claimedAt).getTime()) > STALE_CLAIM_TIMEOUT_MS
+
+      if (!isCapturePending && !isAuthorizedUncaptured && !isStaleClaim) {
+        // Already claimed by another process, or in a non-claimable state
+        return null
+      }
+
+      // Claim it atomically — this write happens inside the transaction,
+      // so only one tab can succeed for a given intent
+      intent.status = 'capturing'
+      intent.claimedAt = now
+      intent.claimedBy = this.tabId
+      intent.statusHistory.push({
+        status: 'capturing',
+        timestamp: now,
+        details: isStaleClaim
+          ? `Reclaimed stale capture (previous claim: ${intent.claimedBy})`
+          : `Claimed for capture by ${this.tabId}`,
+      })
+
+      await offlineDb.paymentIntents.put(intent)
+      return intent
+    })
+  }
+
+  /**
+   * Release a claim on an intent — reverts it back to capture_pending.
+   * Used when a capture attempt fails and the intent should be retried later.
+   */
+  private async releaseIntent(intentId: string): Promise<void> {
+    const intent = await offlineDb.paymentIntents.get(intentId)
+    if (!intent) return
+
+    // Only release if we still own the claim
+    if (intent.status === 'capturing' && intent.claimedBy === this.tabId) {
+      intent.status = 'capture_pending'
+      intent.claimedAt = undefined
+      intent.claimedBy = undefined
+      await offlineDb.paymentIntents.put(intent)
+    }
+  }
+
+  /**
    * Process pending intents when connection is restored
    * Uses batch sync-resolution endpoint for efficiency and idempotency
    *
    * Concurrency Protection:
    * - Uses generation counter to prevent race conditions when both interval and online event fire
    * - Only the latest generation will clear the isProcessing flag
+   * - Uses atomic IndexedDB claims to prevent duplicate captures across browser tabs
+   *   (each intent is transitioned to 'capturing' before being sent to the server)
    */
   async processPendingIntents(): Promise<void> {
     // Increment generation BEFORE checking isProcessing to track this attempt
     const currentGeneration = ++this.processingGeneration
 
-    // Prevent concurrent execution
+    // Prevent concurrent execution within this tab
     if (this.isProcessing) {
       return
     }
@@ -348,33 +427,44 @@ class PaymentIntentManagerClass {
     this.isProcessing = true
 
     try {
-      // Get all intents that need capture
+      // Get all intents that might need capture:
+      // 1. capture_pending — normal case
+      // 2. authorized but not captured — edge case
+      // 3. capturing with stale claim — crashed process recovery
       const pendingCaptures = await offlineDb.paymentIntents
         .where('status')
         .equals('capture_pending')
         .toArray()
 
-      // Also check for authorized but not captured (edge case)
       const authorizedNotCaptured = await offlineDb.paymentIntents
         .where('status')
         .equals('authorized')
         .filter((i: PaymentIntent) => !i.capturedAt && Boolean(i.authorizedAt))
         .toArray()
 
-      const allPending = [...pendingCaptures, ...authorizedNotCaptured]
+      const staleClaims = await offlineDb.paymentIntents
+        .where('status')
+        .equals('capturing')
+        .filter((i: PaymentIntent) => {
+          if (!i.claimedAt) return true // No claim timestamp = stale
+          return (Date.now() - new Date(i.claimedAt).getTime()) > STALE_CLAIM_TIMEOUT_MS
+        })
+        .toArray()
 
-      if (allPending.length === 0) {
+      const allCandidates = [...pendingCaptures, ...authorizedNotCaptured, ...staleClaims]
+
+      if (allCandidates.length === 0) {
         return
       }
 
-      // Filter intents using backoff logic
-      const readyToRetry = allPending.filter(shouldRetry)
-      const skippedCount = allPending.length - readyToRetry.length
+      // Filter candidates using backoff logic
+      const readyToRetry = allCandidates.filter(shouldRetry)
+      const skippedCount = allCandidates.length - readyToRetry.length
 
       if (skippedCount > 0) {
         logger.debug(
           `Skipping ${skippedCount} intents due to backoff delay`,
-          { skippedCount, totalPending: allPending.length }
+          { skippedCount, totalPending: allCandidates.length }
         )
       }
 
@@ -382,8 +472,27 @@ class PaymentIntentManagerClass {
         return
       }
 
-      // Use batch sync-resolution endpoint
-      await this.batchSyncIntents(readyToRetry)
+      // Atomically claim each intent — only intents we successfully claim will be processed.
+      // Other tabs racing on the same intents will get null back and skip them.
+      const claimedIntents: PaymentIntent[] = []
+      for (const candidate of readyToRetry) {
+        const claimed = await this.claimIntent(candidate.id)
+        if (claimed) {
+          claimedIntents.push(claimed)
+        } else {
+          logger.debug(
+            `Intent ${candidate.id} already claimed by another process — skipping`,
+            { orderId: candidate.orderId }
+          )
+        }
+      }
+
+      if (claimedIntents.length === 0) {
+        return
+      }
+
+      // Use batch sync-resolution endpoint with only our claimed intents
+      await this.batchSyncIntents(claimedIntents)
 
     } catch (error) {
       console.error('[PaymentIntentManager] Error processing intents:', error)
@@ -451,16 +560,22 @@ class PaymentIntentManagerClass {
                 attempts: intent.attempts + 1,
               })
             } else {
-              // Increment attempt counter and retry later with backoff
-              intent.attempts += 1
-              intent.lastAttempt = new Date().toISOString()
-              intent.lastError = result.error
-              await offlineDb.paymentIntents.put(intent)
+              // Release claim and increment attempt counter — returns to capture_pending for retry
+              const freshIntent = await offlineDb.paymentIntents.get(intent.id)
+              if (freshIntent) {
+                freshIntent.status = 'capture_pending'
+                freshIntent.claimedAt = undefined
+                freshIntent.claimedBy = undefined
+                freshIntent.attempts += 1
+                freshIntent.lastAttempt = new Date().toISOString()
+                freshIntent.lastError = result.error
+                await offlineDb.paymentIntents.put(freshIntent)
+              }
 
-              const nextDelay = calculateBackoffDelay(intent.attempts)
+              const nextDelay = calculateBackoffDelay(intent.attempts + 1)
               logger.debug(
-                `Intent ${intent.id} will retry in ${Math.round(nextDelay / 1000)}s (attempt ${intent.attempts}/${BACKOFF_CONFIG.maxRetries})`,
-                { orderId: intent.orderId, attempts: intent.attempts, nextDelayMs: nextDelay }
+                `Intent ${intent.id} will retry in ${Math.round(nextDelay / 1000)}s (attempt ${intent.attempts + 1}/${BACKOFF_CONFIG.maxRetries})`,
+                { orderId: intent.orderId, attempts: intent.attempts + 1, nextDelayMs: nextDelay }
               )
             }
           }
@@ -468,30 +583,42 @@ class PaymentIntentManagerClass {
       } else {
         const error = await response.json()
         console.error('[PaymentIntentManager] Batch sync failed:', error)
+
+        // Release all claims so intents can be retried
+        for (const intent of intents) {
+          await this.releaseIntent(intent.id)
+        }
       }
     } catch (error) {
       console.error('[PaymentIntentManager] Network error during batch sync:', error)
       logger.error('payment', 'Batch sync network error', error)
 
-      // Mark intents that exceeded max retries as failed
+      // Release claims and mark intents that exceeded max retries as failed
       for (const intent of intents) {
-        intent.attempts += 1
-        intent.lastAttempt = new Date().toISOString()
-        intent.lastError = error instanceof Error ? error.message : 'Network error'
+        const freshIntent = await offlineDb.paymentIntents.get(intent.id)
+        if (!freshIntent) continue
 
-        if (intent.attempts >= BACKOFF_CONFIG.maxRetries) {
-          const errorMsg = `Network error after ${BACKOFF_CONFIG.maxRetries} attempts: ${intent.lastError}`
-          await this.recordFailure(intent.id, errorMsg)
-          logger.error('payment', `Intent ${intent.id} marked as failed after network errors`, error, {
-            orderId: intent.orderId,
-            attempts: intent.attempts,
+        freshIntent.attempts += 1
+        freshIntent.lastAttempt = new Date().toISOString()
+        freshIntent.lastError = error instanceof Error ? error.message : 'Network error'
+
+        if (freshIntent.attempts >= BACKOFF_CONFIG.maxRetries) {
+          const errorMsg = `Network error after ${BACKOFF_CONFIG.maxRetries} attempts: ${freshIntent.lastError}`
+          await this.recordFailure(freshIntent.id, errorMsg)
+          logger.error('payment', `Intent ${freshIntent.id} marked as failed after network errors`, error, {
+            orderId: freshIntent.orderId,
+            attempts: freshIntent.attempts,
           })
         } else {
-          await offlineDb.paymentIntents.put(intent)
-          const nextDelay = calculateBackoffDelay(intent.attempts)
+          // Release claim back to capture_pending for retry
+          freshIntent.status = 'capture_pending'
+          freshIntent.claimedAt = undefined
+          freshIntent.claimedBy = undefined
+          await offlineDb.paymentIntents.put(freshIntent)
+          const nextDelay = calculateBackoffDelay(freshIntent.attempts)
           logger.debug(
-            `Intent ${intent.id} will retry after network error in ${Math.round(nextDelay / 1000)}s`,
-            { orderId: intent.orderId, attempts: intent.attempts }
+            `Intent ${freshIntent.id} will retry after network error in ${Math.round(nextDelay / 1000)}s`,
+            { orderId: freshIntent.orderId, attempts: freshIntent.attempts }
           )
         }
       }

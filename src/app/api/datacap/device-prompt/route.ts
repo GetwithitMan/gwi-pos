@@ -13,7 +13,7 @@ interface DevicePromptRequest {
   buttonLabels?: string[]
 }
 
-export const POST = withVenue(withAuth(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth('POS_CARD_PAYMENTS', async function POST(request: NextRequest) {
   try {
     const body = await parseBody<DevicePromptRequest>(request)
     const { locationId, readerId, promptType, promptText, suggestions, buttonLabels } = body

@@ -1,7 +1,7 @@
 import crypto from 'crypto'
 import { NextRequest } from 'next/server'
 import { requireDatacapClient, validateReader, parseBody, datacapErrorResponse } from '@/lib/datacap/helpers'
-import { parseError } from '@/lib/datacap/xml-parser'
+import { parseError, buildDeclineDetail } from '@/lib/datacap/xml-parser'
 import { withVenue } from '@/lib/with-venue'
 import { requirePermission } from '@/lib/api-auth'
 import { withAuth, type AuthenticatedContext } from '@/lib/api-auth-middleware'
@@ -9,6 +9,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { roundToCents } from '@/lib/pricing'
 import { db } from '@/lib/db'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { dispatchOpenOrdersChanged, dispatchPaymentProcessed } from '@/lib/socket-dispatch'
 import { err, ok } from '@/lib/api-response'
 
 interface SaleRequest {
@@ -113,6 +114,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     }
 
     const error = parseError(response)
+    const declineDetail = buildDeclineDetail(response, amount)
 
     // Update pending sale record with outcome
     if (response.cmdStatus === 'Approved') {
@@ -152,6 +154,23 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       }).catch(err => console.warn('[Card Recognition] Background update failed:', err))
     }
 
+    // Dispatch socket events for real-time multi-terminal sync (fire-and-forget)
+    if (response.cmdStatus === 'Approved' && body.orderId) {
+      void dispatchPaymentProcessed(locationId, {
+        orderId: body.orderId,
+        status: 'completed',
+        method: 'card',
+        amount: roundToCents(parseFloat(response.authorize || '0')) || amount,
+        cardBrand: response.cardType || null,
+        cardLast4: response.cardLast4 || null,
+      }).catch(e => console.warn('[Datacap Sale] Socket dispatch failed:', e))
+
+      void dispatchOpenOrdersChanged(locationId, {
+        trigger: 'payment_updated',
+        orderId: body.orderId,
+      }, { async: true }).catch(e => console.warn('[Datacap Sale] Socket dispatch failed:', e))
+    }
+
     return ok({
         approved: response.cmdStatus === 'Approved',
         authCode: response.authCode,
@@ -168,6 +187,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
         level2Status: response.level2Status,
         sequenceNo: response.sequenceNo,
         error: error ? { code: error.code, message: error.text, isRetryable: error.isRetryable } : null,
+        declineDetail: declineDetail || undefined,
       })
   } catch (err) {
     return datacapErrorResponse(err)

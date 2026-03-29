@@ -38,7 +38,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Get the order card to retry against (include card info for Payment record)
     const orderCard = await db.orderCard.findFirst({
       where: { id: retry.orderCardId, deletedAt: null },
-      select: { id: true, readerId: true, recordNo: true, cardType: true, cardLast4: true },
+      select: { id: true, readerId: true, recordNo: true, cardType: true, cardLast4: true, createdAt: true },
     })
 
     if (!orderCard) {
@@ -74,6 +74,20 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         })
     }
 
+    // ── Pre-auth expiration check ───────────────────────────────────────
+    // Most processors expire pre-auths after 7-30 days. Attempting capture
+    // on an expired auth wastes a retry attempt and may confuse the processor.
+    const cardCreatedAt = new Date(orderCard.createdAt)
+    const daysSinceAuth = (Date.now() - cardCreatedAt.getTime()) / (1000 * 60 * 60 * 24)
+    if (daysSinceAuth > 30) {
+      await db.$executeRawUnsafe(
+        `UPDATE "WalkoutRetry" SET status = 'exhausted', "lastRetryError" = 'Pre-auth expired (>30 days)', "updatedAt" = NOW() WHERE id = $1`,
+        walkoutRetryId
+      )
+      pushUpstream()
+      return ok({ success: false, reason: 'Pre-auth expired', daysSinceAuth: Math.floor(daysSinceAuth) })
+    }
+
     try {
       await validateReader(orderCard.readerId, locationId)
       const client = await requireDatacapClient(locationId)
@@ -87,56 +101,62 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       const approved = response.cmdStatus === 'Approved'
 
       if (approved) {
-        // BUG #459 FIX: Atomic guard — use updateMany with status filter to prevent double-charge.
-        // If another request already collected this retry, the updateMany matches 0 rows.
+        // BUG #459 FIX: Atomic guard — wrap WalkoutRetry status update + OrderCard/Order/Payment
+        // creation in a SINGLE transaction to prevent double-charge and partial writes.
         // Clock discipline: use DB-generated NOW() for payment-critical timestamps.
-        const updatedRows = await db.$executeRawUnsafe(
-          `UPDATE "WalkoutRetry"
-           SET status = 'collected', "collectedAt" = NOW(), "lastRetryAt" = NOW(),
-               "retryCount" = $1, "updatedAt" = NOW()
-           WHERE id = $2 AND status = 'pending'`,
-          retry.retryCount + 1,
-          walkoutRetryId,
-        )
-
-        if (updatedRows === 0) {
-          // Another request already collected — this is a duplicate
-          return ok({ success: true, duplicate: true, status: 'collected', amount: Number(retry.amount) })
-        }
-
-        // BUG #459 FIX: Update OrderCard, Order status, and create Payment record
-        // Clock discipline: use DB-generated NOW() for capturedAt, paidAt, closedAt.
         const captureAmount = Number(retry.amount)
         const paymentMethod = orderCard.cardType?.toLowerCase() === 'debit' ? 'debit' : 'credit'
         const cardBrand = orderCard.cardType || 'unknown'
 
-        // Use raw SQL transaction for DB-generated timestamps on payment-critical fields
-        const paymentRows = await db.$queryRawUnsafe<Array<{ id: string }>>(
-          `WITH oc AS (
-            UPDATE "OrderCard"
-            SET status = 'captured', "capturedAmount" = $1, "capturedAt" = NOW(), "updatedAt" = NOW()
-            WHERE id = $2
-          ), ord AS (
-            UPDATE "Order"
-            SET status = 'paid', "tabStatus" = 'closed', "paidAt" = NOW(), "closedAt" = NOW(), "updatedAt" = NOW()
-            WHERE id = $3
+        const txResult = await db.$transaction(async (tx) => {
+          // Atomically claim the walkout retry — if another request already collected, 0 rows updated
+          const updatedRows = await tx.$executeRawUnsafe(
+            `UPDATE "WalkoutRetry"
+             SET status = 'collected', "collectedAt" = NOW(), "lastRetryAt" = NOW(),
+                 "retryCount" = $1, "updatedAt" = NOW()
+             WHERE id = $2 AND status = 'pending'`,
+            retry.retryCount + 1,
+            walkoutRetryId,
           )
-          INSERT INTO "Payment" (id, "locationId", "orderId", "employeeId", amount, "tipAmount", "totalAmount",
-            "paymentMethod", "cardBrand", "cardLast4", "authCode", "datacapRecordNo", status, "createdAt", "updatedAt")
-          VALUES (gen_random_uuid()::text, $4, $3, $5, $1, 0, $1, $6, $7, $8, $9, $10, 'completed', NOW(), NOW())
-          RETURNING id`,
-          captureAmount,
-          orderCard.id,
-          retry.orderId,
-          locationId,
-          employeeId || null,
-          paymentMethod,
-          cardBrand,
-          orderCard.cardLast4,
-          response.authCode || null,
-          orderCard.recordNo,
-        )
-        const createdPaymentId = paymentRows[0]?.id
+
+          if (updatedRows === 0) {
+            return { duplicate: true } as const
+          }
+
+          // Update OrderCard, Order status, and create Payment record in the same transaction
+          const paymentRows = await tx.$queryRawUnsafe<Array<{ id: string }>>(
+            `WITH oc AS (
+              UPDATE "OrderCard"
+              SET status = 'captured', "capturedAmount" = $1, "capturedAt" = NOW(), "updatedAt" = NOW()
+              WHERE id = $2
+            ), ord AS (
+              UPDATE "Order"
+              SET status = 'paid', "tabStatus" = 'closed', "paidAt" = NOW(), "closedAt" = NOW(), "updatedAt" = NOW()
+              WHERE id = $3
+            )
+            INSERT INTO "Payment" (id, "locationId", "orderId", "employeeId", amount, "tipAmount", "totalAmount",
+              "paymentMethod", "cardBrand", "cardLast4", "authCode", "datacapRecordNo", status, "createdAt", "updatedAt")
+            VALUES (gen_random_uuid()::text, $4, $3, $5, $1, 0, $1, $6, $7, $8, $9, $10, 'completed', NOW(), NOW())
+            RETURNING id`,
+            captureAmount,
+            orderCard.id,
+            retry.orderId,
+            locationId,
+            employeeId || null,
+            paymentMethod,
+            cardBrand,
+            orderCard.cardLast4,
+            response.authCode || null,
+            orderCard.recordNo,
+          )
+          return { duplicate: false, paymentId: paymentRows[0]?.id } as const
+        }, { timeout: 15000 })
+
+        if (txResult.duplicate) {
+          return ok({ success: true, duplicate: true, status: 'collected', amount: captureAmount })
+        }
+
+        const createdPaymentId = txResult.paymentId
 
         pushUpstream()
 

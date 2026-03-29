@@ -25,7 +25,7 @@ import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { db, getDbForVenue } from '@/lib/db'
-import { getPayApiClient } from '@/lib/datacap/payapi-client'
+import { getPayApiClient, isPayApiSuccess, type PayApiAchResponse } from '@/lib/datacap/payapi-client'
 import { getCurrentBusinessDay } from '@/lib/business-day'
 import { getLocationTaxRate, calculateSplitTax, isItemTaxInclusive, type TaxInclusiveSettings } from '@/lib/order-calculations'
 import { checkOnlineRateLimit } from '@/lib/online-rate-limiter'
@@ -99,12 +99,25 @@ const CheckoutItemSchema = z.object({
   modifiers: z.array(CheckoutModifierSchema).default([]),
 })
 
+const AchDetailsSchema = z.object({
+  routingNumber: z.string().length(9).regex(/^\d{9}$/, 'Routing number must be 9 digits'),
+  accountNumber: z.string().min(4).max(24).regex(/^\d+$/, 'Account number must be numeric'),
+  accountType: z.enum(['Checking', 'Savings']),
+  accountHolderFirstName: z.string().min(1).max(50),
+  accountHolderLastName: z.string().min(1).max(50),
+})
+
 const CheckoutBodySchema = z.object({
   locationId: z.string().optional(), // backward compat: NUC direct path
   slug: z.string().min(1).optional(),
   token: z.string().optional(),
   cardBrand: z.string().max(50).optional(),
   cardLast4: z.string().max(4).optional(),
+  walletType: z.enum(['apple_pay', 'google_pay']).nullable().optional(), // wallet payment type
+  // Payment method: 'card' (default) or 'ach'
+  paymentMethod: z.enum(['card', 'ach']).optional(),
+  // ACH bank account details (required when paymentMethod === 'ach')
+  achDetails: AchDetailsSchema.optional(),
   items: z.array(CheckoutItemSchema).min(1).max(100),
   customerName: z.string().min(1).max(500),
   customerEmail: z.string().email().max(500),
@@ -193,9 +206,19 @@ export async function POST(request: NextRequest) {
     return resp
   }
 
-  // Token required unless a gift card number is provided (may cover full amount)
-  if (!token && !body.giftCardNumber) {
-    return err('Payment token is required')
+  // Determine payment method: 'ach' or 'card' (default)
+  const isAchPayment = body.paymentMethod === 'ach'
+
+  // Validate required fields based on payment method
+  if (isAchPayment) {
+    if (!body.achDetails) {
+      return err('Bank account details are required for ACH payment')
+    }
+  } else {
+    // Card payment: token required unless a gift card covers full amount
+    if (!token && !body.giftCardNumber) {
+      return err('Payment token is required')
+    }
   }
 
   // ── 1b. Resolve field name aliases (backward compat) ──────────────────────
@@ -805,39 +828,82 @@ export async function POST(request: NextRequest) {
       })
     })
 
-    // ── 8. Charge the card via Datacap PayAPI (skip if gift card covers all) ──
+    // ── 8. Charge via Datacap PayAPI (skip if gift card covers all) ────────────
 
     let payApiResult: any = null
+    let achResult: PayApiAchResponse | null = null
 
     if (!skipDcPayment) {
-      // Datacap charge required (full or partial after gift card)
-      if (!token) {
-        // Gift card didn't cover everything and no card token provided
-        await venueDb.order.update({
-          where: { id: order.id },
-          data: { status: 'cancelled', deletedAt: new Date(), lastMutatedBy: 'cloud' },
-        }).catch(err => log.warn({ err }, 'fire-and-forget failed in online.checkout'))
-        return err('Payment token is required for the remaining balance')
-      }
-      try {
-        payApiResult = await getPayApiClient().sale({
-          token,
-          amount: chargeAmount.toFixed(2),
-          invoiceNo: order.orderNumber.toString(),
-        })
-      } catch (payErr) {
-        // Payment error — soft-delete the order (BUG #389: never hard-delete)
-        await venueDb.order.update({
-          where: { id: order.id },
-          data: { status: 'cancelled', deletedAt: new Date(), lastMutatedBy: 'cloud' },
-        }).catch(err => log.warn({ err }, 'fire-and-forget failed in online.checkout'))
-        console.error('[checkout] PayAPI error:', payErr)
-        return err('Payment processing failed. Please try again.', 502)
+      if (isAchPayment && body.achDetails) {
+        // ── 8a. ACH payment flow ────────────────────────────────────────────
+        try {
+          achResult = await getPayApiClient().achAuthorize({
+            routingNo:     body.achDetails.routingNumber,
+            acctNo:        body.achDetails.accountNumber,
+            acctType:      body.achDetails.accountType,
+            amount:        chargeAmount.toFixed(2),
+            invoiceNo:     order.orderNumber.toString(),
+            custFirstName: body.achDetails.accountHolderFirstName,
+            custLastName:  body.achDetails.accountHolderLastName,
+            entryClass:    'Personal',
+            // WEB = web-initiated ACH, S = single (not recurring)
+            standardEntryClassCode: 'WEB',
+            singleOrRecurring: 'S',
+          })
+        } catch (payErr) {
+          // ACH error — soft-delete the order
+          await venueDb.order.update({
+            where: { id: order.id },
+            data: { status: 'cancelled', deletedAt: new Date(), lastMutatedBy: 'cloud' },
+          }).catch(err => log.warn({ err }, 'fire-and-forget failed in online.checkout'))
+          console.error('[checkout] PayAPI ACH error:', payErr)
+          return err('ACH payment processing failed. Please check your bank details and try again.', 502)
+        }
+
+        if (!isPayApiSuccess(achResult.status)) {
+          // ACH declined — soft-delete the order, return 402
+          await venueDb.order.update({
+            where: { id: order.id },
+            data: { status: 'cancelled', deletedAt: new Date(), lastMutatedBy: 'cloud' },
+          }).catch(err => log.warn({ err }, 'fire-and-forget failed in online.checkout'))
+          return NextResponse.json(
+            {
+              error: 'ACH payment declined. Please check your bank details or try a different account.',
+              declineMessage: achResult.message,
+            },
+            { status: 402 }
+          )
+        }
+      } else {
+        // ── 8b. Card payment flow (existing) ─────────────────────────────────
+        if (!token) {
+          // Gift card didn't cover everything and no card token provided
+          await venueDb.order.update({
+            where: { id: order.id },
+            data: { status: 'cancelled', deletedAt: new Date(), lastMutatedBy: 'cloud' },
+          }).catch(err => log.warn({ err }, 'fire-and-forget failed in online.checkout'))
+          return err('Payment token is required for the remaining balance')
+        }
+        try {
+          payApiResult = await getPayApiClient().sale({
+            token,
+            amount: chargeAmount.toFixed(2),
+            invoiceNo: order.orderNumber.toString(),
+          })
+        } catch (payErr) {
+          // Payment error — soft-delete the order (BUG #389: never hard-delete)
+          await venueDb.order.update({
+            where: { id: order.id },
+            data: { status: 'cancelled', deletedAt: new Date(), lastMutatedBy: 'cloud' },
+          }).catch(err => log.warn({ err }, 'fire-and-forget failed in online.checkout'))
+          console.error('[checkout] PayAPI error:', payErr)
+          return err('Payment processing failed. Please try again.', 502)
+        }
       }
 
       // ── 9. Handle payment result ─────────────────────────────────────────────
 
-      if (payApiResult.status !== 'Approved') {
+      if (payApiResult && !isPayApiSuccess(payApiResult.status)) {
         // Declined — soft-delete the order (BUG #389), return 402
         await venueDb.order.update({
           where: { id: order.id },
@@ -863,7 +929,34 @@ export async function POST(request: NextRequest) {
       }),
     ]
 
-    if (payApiResult) {
+    if (achResult) {
+      // TX-KEEP: CREATE — ACH payment record after PayAPI ACH approval
+      // ACH settlements take 2-3 business days
+      paymentOps.push(
+        venueDb.payment.create({
+          data: {
+            locationId,
+            orderId: order.id,
+            employeeId,
+            amount: chargeAmount - tip, // base amount (excl tip)
+            tipAmount: tip,
+            totalAmount: chargeAmount,
+            paymentMethod: 'ach',
+            // Store masked account info (last 4 digits only — never full account number)
+            cardLast4: achResult.acctNo ? achResult.acctNo.slice(-4) : null,
+            // Re-use cardBrand for account type (Checking/Savings)
+            cardBrand: achResult.acctType ?? null,
+            transactionId: achResult.invoiceNo ?? null,
+            datacapRefNumber: achResult.refNo ?? null,
+            entryMethod: 'ACH',
+            status: 'completed',
+            amountRequested: chargeAmount,
+            amountAuthorized: parseFloat(achResult.authorized) || chargeAmount,
+            lastMutatedBy: 'cloud',
+          },
+        })
+      )
+    } else if (payApiResult) {
       // TX-KEEP: CREATE — card payment record after PayAPI approval
       paymentOps.push(
         venueDb.payment.create({
@@ -880,7 +973,8 @@ export async function POST(request: NextRequest) {
             authCode: payApiResult.authCode ?? null,
             transactionId: payApiResult.invoiceNo ?? null,
             datacapRefNumber: payApiResult.refNo ?? null,
-            entryMethod: 'Manual',
+            entryMethod: body.walletType ? 'Wallet' : 'Manual',
+            walletType: body.walletType ?? null,
             status: 'completed',
             amountRequested: chargeAmount,
             amountAuthorized: chargeAmount,
@@ -1172,12 +1266,12 @@ export async function POST(request: NextRequest) {
           type: 'PAYMENT_APPLIED' as const,
           payload: {
             paymentId: paymentRecord?.id ?? crypto.randomUUID(),
-            method: skipDcPayment ? 'gift_card' : 'card',
+            method: skipDcPayment ? 'gift_card' : (achResult ? 'ach' : 'card'),
             amountCents: Math.round(total * 100),
             tipCents: Math.round(tip * 100),
             totalCents: Math.round(totalPlusTip * 100),
-            cardBrand: payApiResult?.brand ?? body.cardBrand ?? null,
-            cardLast4: payApiResult?.account ? payApiResult.account.slice(-4) : (body.cardLast4 ?? null),
+            cardBrand: achResult ? (achResult.acctType ?? null) : (payApiResult?.brand ?? body.cardBrand ?? null),
+            cardLast4: achResult ? (achResult.acctNo ? achResult.acctNo.slice(-4) : null) : (payApiResult?.account ? payApiResult.account.slice(-4) : (body.cardLast4 ?? null)),
             status: 'approved',
           },
         },
@@ -1208,6 +1302,9 @@ export async function POST(request: NextRequest) {
         prepTime: prepTimeMinutes,
         // Fix #3: Add status token for order tracking
         statusToken: generateOrderViewToken(order.id),
+        // ACH settlement note — inform the customer about settlement timing
+        paymentMethod: achResult ? 'ach' : 'card',
+        achSettlementNote: achResult ? 'Your bank account will be debited within 2-3 business days.' : undefined,
       })
   } catch (error) {
     console.error('[POST /api/online/checkout] Error:', error)

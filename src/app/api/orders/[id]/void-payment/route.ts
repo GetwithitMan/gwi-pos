@@ -8,6 +8,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { handleTipChargeback } from '@/lib/domain/tips/tip-chargebacks'
 import { dispatchPaymentProcessed, dispatchOrderTotalsUpdate, dispatchFloorPlanUpdate, dispatchOpenOrdersChanged, dispatchOrderClosed, dispatchGiftCardBalanceChanged } from '@/lib/socket-dispatch'
 import { requireDatacapClient } from '@/lib/datacap/helpers'
+import { getPayApiClient, isPayApiSuccess } from '@/lib/datacap/payapi-client'
 import { parseError } from '@/lib/datacap/xml-parser'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
@@ -51,7 +52,10 @@ export const POST = withVenue(async function POST(
 ) {
   try {
     const { id: orderId } = await params
-    const { paymentId, reason, notes, managerId, readerId, managerPinHash } = await request.json()
+    const body = await request.json()
+    const { paymentId, reason, notes, managerId, readerId, managerPinHash } = body as {
+      paymentId?: string; reason?: string; notes?: string; managerId?: string; readerId?: string; managerPinHash?: string
+    }
 
     // Validate inputs
     if (!paymentId || !reason || !managerId) {
@@ -130,6 +134,14 @@ export const POST = withVenue(async function POST(
 
       if (payment.status === 'voided') {
         return { error: 'Payment is already voided', status: 400 } as const
+      }
+
+      if (payment.status === 'refunded') {
+        return { error: 'Cannot void a fully refunded payment', status: 400 } as const
+      }
+
+      if (payment.status === 'declined' || payment.status === 'failed') {
+        return { error: `Cannot void a ${payment.status} payment`, status: 400 } as const
       }
 
       return { order, payment }
@@ -232,7 +244,44 @@ export const POST = withVenue(async function POST(
       }
     }
 
-    // Step 2: Datacap succeeded (or cash) — update DB
+    // Step 1b: ACH void via PayAPI (same-day only)
+    const isAchPayment = payment.paymentMethod === 'ach'
+    if (isAchPayment && payment.datacapRefNumber) {
+      voidActionId = `ach-void-${paymentId}-${Date.now()}`
+      console.log(
+        `[PROCESSOR-ACTION] PENDING: action=${voidActionId}, type=ach-void, ` +
+        `orderId=${orderId}, paymentId=${paymentId}, refNo=${payment.datacapRefNumber}, ` +
+        `amount=${Number(payment.totalAmount)}`
+      )
+
+      try {
+        // ACH void requires original token + customer name.
+        // We don't store the Datacap token on the Payment record (it's in the ACH response only),
+        // so we pass the RefNo and minimal customer info. Datacap resolves from the original txn.
+        const achResult = await getPayApiClient().achVoid({
+          refNo: payment.datacapRefNumber,
+          token: '', // Datacap resolves token from RefNo
+          custFirstName: 'Void',
+          custLastName: 'Customer',
+        })
+
+        if (!isPayApiSuccess(achResult.status)) {
+          console.log(
+            `[PROCESSOR-ACTION] DECLINED: action=${voidActionId}, ` +
+            `response=${achResult.message || 'Unknown'}`
+          )
+          return err(`ACH void failed: ${achResult.message || 'Unknown error'}. ACH voids must be same-day.`, 422)
+        }
+
+        console.log(`[PROCESSOR-ACTION] APPROVED: action=${voidActionId}, type=ach-void, refNo=${achResult.refNo ?? 'none'}`)
+      } catch (achErr) {
+        const msg = achErr instanceof Error ? achErr.message : 'ACH void request failed'
+        console.error(`[PROCESSOR-ACTION] ERROR: action=${voidActionId}, error=${msg}`)
+        return err(`ACH void failed: ${msg}. ACH voids must be same-day.`, 502)
+      }
+    }
+
+    // Step 2: Datacap succeeded (or cash/ACH) — update DB
     const activePayments = order.payments.filter(
       (p) => p.id !== paymentId && p.status !== 'voided'
     )
@@ -664,7 +713,8 @@ export const POST = withVenue(async function POST(
         refundAmount: Number(payment.totalAmount),
       })
   } catch (error) {
-    console.error('Failed to void payment:', error)
+    // SECURITY: Log only safe fields — never managerPinHash or full request body
+    console.error('Failed to void payment:', { error, orderId: (await params)?.id })
     return err('Failed to void payment', 500)
   }
 })
