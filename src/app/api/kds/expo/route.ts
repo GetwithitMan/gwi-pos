@@ -323,7 +323,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
                   locationId,
                   isCompleted: false,
                   deletedAt: null,
-                  voidedAt: null,
+                  status: { not: 'voided' },
                 },
               })
               void dispatchOrderBumped(locationId, {
