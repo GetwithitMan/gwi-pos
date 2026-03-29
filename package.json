@@ -1,7 +1,6 @@
 {
   "name": "gwi-pos",
-  "version": "1.2.33",
-  "version": "1.2.33",
+  "version": "1.2.34",
   "private": true,
   "scripts": {
     "dev": "next dev -p 3006 --webpack",

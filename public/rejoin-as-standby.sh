@@ -12,12 +12,41 @@
 #
 # Exit codes:
 #   0 = successfully rejoined as standby
-#   1 = fatal error
+#   1 = safety check failed
+#   2 = pg_basebackup failed
+#   3 = verification failed (PG not in recovery after rejoin)
+#
+# Flags:
+#   --automated           Skip interactive prompts (for programmatic use)
+#   --new-primary-ip=IP   Override HA_PEER_IP with the specified IP
 #
 # Deployed to: /opt/gwi-pos/scripts/rejoin-as-standby.sh
 # =============================================================================
 
 set -euo pipefail
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Parse arguments
+# ─────────────────────────────────────────────────────────────────────────────
+
+AUTOMATED=false
+NEW_PRIMARY_IP_ARG=""
+
+for arg in "$@"; do
+  case "$arg" in
+    --automated)
+      AUTOMATED=true
+      ;;
+    --new-primary-ip=*)
+      NEW_PRIMARY_IP_ARG="${arg#*=}"
+      ;;
+    *)
+      echo "Unknown argument: $arg" >&2
+      echo "Usage: $0 [--automated] [--new-primary-ip=IP]" >&2
+      exit 1
+      ;;
+  esac
+done
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Configuration
@@ -27,11 +56,14 @@ ENV_FILE="/opt/gwi-pos/.env"
 APP_DIR="/opt/gwi-pos/app"
 LOG_DIR="/var/log/gwi-pos"
 LOG_FILE="$LOG_DIR/rejoin.log"
+STATE_DIR="/opt/gwi-pos/state"
+REJOIN_RESULT_FILE="$STATE_DIR/rejoin-result.json"
 PG_DATA="/var/lib/postgresql/16/main"
 PG_REPLICATION_USER="replicator"
 BASEBACKUP_TIMEOUT=1800  # 30 minutes max for pg_basebackup
 
 mkdir -p "$LOG_DIR"
+mkdir -p "$STATE_DIR"
 
 log() {
   local msg="$(date -u +%Y-%m-%dT%H:%M:%SZ) [rejoin] $*"
@@ -39,8 +71,42 @@ log() {
   echo "$msg"
 }
 
+# Write structured JSON result for programmatic consumption
+write_result() {
+  local status="$1"
+  local error="${2:-}"
+  local wal_status="${3:-none}"
+  local lag_bytes="${4:--1}"
+  local primary_ip="${5:-unknown}"
+
+  cat > "$REJOIN_RESULT_FILE" <<EOJSON
+{"role":"backup","rejoinStatus":"$status","rejoinError":"$error","walStatus":"$wal_status","lagBytes":${lag_bytes},"primaryIp":"$primary_ip","checkedAt":"$(date -u +%FT%TZ)"}
+EOJSON
+  log "Result written to $REJOIN_RESULT_FILE (status=$status)"
+}
+
+die_safety() {
+  log "FATAL (safety): $*"
+  write_result "failed" "safety_check_failed" "none" "-1" "${CURRENT_PRIMARY_IP:-unknown}"
+  exit 1
+}
+
+die_basebackup() {
+  log "FATAL (basebackup): $*"
+  write_result "failed" "pg_basebackup_failed" "none" "-1" "${CURRENT_PRIMARY_IP:-unknown}"
+  exit 2
+}
+
+die_verification() {
+  log "FATAL (verification): $*"
+  write_result "failed" "verification_failed" "none" "-1" "${CURRENT_PRIMARY_IP:-unknown}"
+  exit 3
+}
+
+# Legacy die (defaults to safety exit code 1)
 die() {
   log "FATAL: $*"
+  write_result "failed" "fatal_error" "none" "-1" "${CURRENT_PRIMARY_IP:-unknown}"
   exit 1
 }
 
@@ -88,29 +154,59 @@ DB_NAME="${DB_NAME:-thepasspos}"
 
 log "=== REJOIN AS STANDBY STARTED ==="
 log "Current role: ${STATION_ROLE:-unknown}, Peer (new primary): ${HA_PEER_IP:-unknown}"
+if [[ "$AUTOMATED" == "true" ]]; then
+  log "Running in --automated mode (no interactive prompts)"
+fi
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Pre-flight: Determine the current primary's IP
 # ─────────────────────────────────────────────────────────────────────────────
 
-# The current primary is at HA_PEER_IP (the other node)
-CURRENT_PRIMARY_IP="${HA_PEER_IP:-}"
+# --new-primary-ip flag overrides the .env value
+if [[ -n "$NEW_PRIMARY_IP_ARG" ]]; then
+  CURRENT_PRIMARY_IP="$NEW_PRIMARY_IP_ARG"
+  log "Using --new-primary-ip override: $CURRENT_PRIMARY_IP"
+else
+  CURRENT_PRIMARY_IP="${HA_PEER_IP:-}"
+fi
 
 if [[ -z "$CURRENT_PRIMARY_IP" ]]; then
-  die "HA_PEER_IP not set in .env — cannot determine current primary"
+  die "HA_PEER_IP not set in .env and --new-primary-ip not provided — cannot determine current primary"
 fi
 
 # Verify the current primary is actually reachable and serving
 log "Verifying current primary at $CURRENT_PRIMARY_IP is reachable..."
 if ! curl -sf --max-time 5 "http://${CURRENT_PRIMARY_IP}:3005/api/health" >/dev/null 2>&1; then
   log "WARN: Current primary at $CURRENT_PRIMARY_IP is not responding on /api/health"
-  log "Attempting rejoin anyway — pg_basebackup will fail if primary is truly down"
+  if [[ "$AUTOMATED" == "true" ]]; then
+    log "In automated mode — proceeding anyway"
+  else
+    log "Attempting rejoin anyway — pg_basebackup will fail if primary is truly down"
+  fi
 fi
 
 # Verify the primary's PG is accepting replication connections
 if ! pg_isready -h "$CURRENT_PRIMARY_IP" -p 5432 -U "$PG_REPLICATION_USER" -t 5 >/dev/null 2>&1; then
   log "WARN: PostgreSQL on $CURRENT_PRIMARY_IP not accepting connections"
   log "Will attempt pg_basebackup anyway — it has its own timeout"
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Interactive confirmation (skipped in --automated mode)
+# ─────────────────────────────────────────────────────────────────────────────
+
+if [[ "$AUTOMATED" != "true" ]]; then
+  echo ""
+  echo "==================================================================="
+  echo "  WARNING: This will DESTROY all local PostgreSQL data."
+  echo "  The database will be rebuilt from $CURRENT_PRIMARY_IP."
+  echo "==================================================================="
+  echo ""
+  read -r -p "Type 'yes' to continue: " CONFIRM
+  if [[ "$CONFIRM" != "yes" ]]; then
+    log "User cancelled rejoin"
+    exit 1
+  fi
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -162,7 +258,7 @@ if [[ "$PG_IN_RECOVERY" != "t" ]] && [[ "$PG_IN_RECOVERY" != "" ]] && [[ "$PG_IN
   log "ERROR: PostgreSQL is NOT in recovery mode — it may still be acting as primary!"
   log "This means data could be lost. Refusing to proceed."
   log "If you are SURE this node should be standby, first promote the other node, then retry."
-  die "Safety check failed: PG not in recovery. Manual intervention required."
+  die_safety "Safety check failed: PG not in recovery. Manual intervention required."
 fi
 log "Safety check passed: PG is in recovery mode (standby)"
 
@@ -198,7 +294,7 @@ fi
 log "PG data directory cleared"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Step E: pg_basebackup from current primary
+# Step F: pg_basebackup from current primary
 # ─────────────────────────────────────────────────────────────────────────────
 
 log "Running pg_basebackup from $CURRENT_PRIMARY_IP (timeout ${BASEBACKUP_TIMEOUT}s)..."
@@ -249,20 +345,13 @@ if ! timeout "$BASEBACKUP_TIMEOUT" sudo -u postgres pg_basebackup \
     "SHOW wal_level" 2>/dev/null || echo "unknown")
   log "  DIAG: Primary wal_level = $WAL_LEVEL (must be 'replica' or 'logical')"
 
-  # Write failure state for heartbeat
-  STATE_DIR="/opt/gwi-pos/state"
-  mkdir -p "$STATE_DIR"
-  cat > "$STATE_DIR/replication-status.json" <<EOJSON
-{"role":"backup","inRecovery":false,"rejoinStatus":"failed","rejoinError":"pg_basebackup_failed","primaryIp":"$CURRENT_PRIMARY_IP","checkedAt":"$(date -u +%FT%TZ)"}
-EOJSON
-
-  die "pg_basebackup failed — see diagnostics above"
+  die_basebackup "pg_basebackup failed — see diagnostics above"
 fi
 
 log "pg_basebackup completed"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Step F: Verify standby.signal
+# Step G: Verify standby.signal
 # ─────────────────────────────────────────────────────────────────────────────
 
 # pg_basebackup -R creates standby.signal + postgresql.auto.conf, but verify
@@ -275,7 +364,7 @@ fi
 log "standby.signal present at $PG_DATA/standby.signal"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Step G: Verify/configure primary_conninfo
+# Step H: Verify/configure primary_conninfo
 # ─────────────────────────────────────────────────────────────────────────────
 
 AUTO_CONF="$PG_DATA/postgresql.auto.conf"
@@ -289,7 +378,7 @@ fi
 log "primary_conninfo configured: $(grep primary_conninfo "$AUTO_CONF" 2>/dev/null | head -1)"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Step H: Fix ownership
+# Step I: Fix ownership
 # ─────────────────────────────────────────────────────────────────────────────
 
 log "Setting ownership on PG data directory..."
@@ -298,7 +387,7 @@ chmod 700 "$PG_DATA"
 log "Ownership set"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Step I: Start PostgreSQL
+# Step J: Start PostgreSQL
 # ─────────────────────────────────────────────────────────────────────────────
 
 log "Starting PostgreSQL..."
@@ -318,11 +407,11 @@ while [[ $WAITED -lt 30 ]]; do
 done
 
 if [[ "$PG_READY" != "true" ]]; then
-  die "PostgreSQL did not start within 30s — check journalctl -u postgresql"
+  die_verification "PostgreSQL did not start within 30s — check journalctl -u postgresql"
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Step J: Verify replication streaming
+# Step K: Verify replication streaming
 # ─────────────────────────────────────────────────────────────────────────────
 
 log "Verifying replication streaming..."
@@ -336,6 +425,7 @@ else
   log "The standby setup failed. standby.signal may be missing or primary_conninfo wrong."
   log "Check: ls -la $PG_DATA/standby.signal"
   log "Check: grep primary_conninfo $PG_DATA/postgresql.auto.conf"
+  die_verification "PG not in recovery mode after rejoin"
 fi
 
 # Check WAL receiver status (may take a few seconds to connect)
@@ -358,18 +448,20 @@ if [[ "$LAG_BYTES" != "-1" ]]; then
   log "Replication lag: ${LAG_BYTES} bytes"
 fi
 
-# Write replication status to heartbeat state file
-STATE_DIR="/opt/gwi-pos/state"
-mkdir -p "$STATE_DIR"
+# Write structured result for programmatic consumption
 REPL_OK=$( [[ "$IN_RECOVERY" == "t" ]] && echo "true" || echo "false" )
 LAST_RECEIVE_LSN=$(sudo -u postgres psql -tAc "SELECT COALESCE(pg_last_wal_receive_lsn()::text, 'none')" 2>/dev/null || echo "none")
+
+# Write both the replication-status.json (legacy) and rejoin-result.json (new)
 cat > "$STATE_DIR/replication-status.json" <<EOJSON
 {"role":"backup","inRecovery":$REPL_OK,"rejoinStatus":"completed","walStatus":"$WAL_STATUS","lagBytes":${LAG_BYTES},"lastReceiveLsn":"$LAST_RECEIVE_LSN","primaryIp":"$CURRENT_PRIMARY_IP","checkedAt":"$(date -u +%FT%TZ)"}
 EOJSON
 log "Replication status written to $STATE_DIR/replication-status.json"
 
+write_result "completed" "" "$WAL_STATUS" "$LAG_BYTES" "$CURRENT_PRIMARY_IP"
+
 # ─────────────────────────────────────────────────────────────────────────────
-# Step K: Update .env to reflect standby role
+# Step L: Update .env to reflect standby role
 # ─────────────────────────────────────────────────────────────────────────────
 
 log "Updating STATION_ROLE=backup in .env..."
@@ -380,12 +472,22 @@ else
   echo "STATION_ROLE=backup" >> "$ENV_FILE"
 fi
 
+# Also update PRIMARY_NUC_IP to point at the new primary
+if [[ -n "$CURRENT_PRIMARY_IP" ]]; then
+  if grep -q "^PRIMARY_NUC_IP=" "$ENV_FILE" 2>/dev/null; then
+    sed -i "s|^PRIMARY_NUC_IP=.*|PRIMARY_NUC_IP=$CURRENT_PRIMARY_IP|" "$ENV_FILE"
+  fi
+  if grep -q "^HA_PEER_IP=" "$ENV_FILE" 2>/dev/null; then
+    sed -i "s|^HA_PEER_IP=.*|HA_PEER_IP=$CURRENT_PRIMARY_IP|" "$ENV_FILE"
+  fi
+fi
+
 # Copy updated .env into app directory
 cp "$ENV_FILE" "$APP_DIR/.env" 2>/dev/null || true
 cp "$ENV_FILE" "$APP_DIR/.env.local" 2>/dev/null || true
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Step L: Report to Mission Control
+# Step M: Report to Mission Control
 # ─────────────────────────────────────────────────────────────────────────────
 
 if [[ -n "${MISSION_CONTROL_URL:-}" ]] && [[ -n "${SERVER_API_KEY:-}" ]]; then

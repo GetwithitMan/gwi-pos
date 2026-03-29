@@ -121,6 +121,8 @@ export function startCloudRelayClient(): void {
       void triggerSync()
     } else if (commandType === 'PROMOTE') {
       void handlePromoteCommand(payload)
+    } else if (commandType === 'REJOIN_AS_STANDBY') {
+      void handleRejoinCommand(payload)
     }
   })
 
@@ -216,6 +218,42 @@ function resetFallbackInterval(): void {
  */
 export function getCloudRelayFallbackInterval(): number {
   return currentFallbackInterval
+}
+
+/**
+ * Handle a REJOIN_AS_STANDBY command from MC via the cloud relay.
+ * Uses dynamic import to avoid loading ha-rejoin (child_process, fs) until needed.
+ */
+async function handleRejoinCommand(payload: unknown): Promise<void> {
+  try {
+    const cmd = payload as Record<string, unknown>
+    if (!cmd || typeof cmd !== 'object' || !cmd.newPrimaryIp || !cmd.fenceCommandId) {
+      log.error({ payload }, 'Invalid REJOIN_AS_STANDBY payload — missing required fields')
+      return
+    }
+
+    const { handleRejoin, isRejoinInProgress } = await import('./ha-rejoin')
+
+    if (isRejoinInProgress()) {
+      log.warn('REJOIN_AS_STANDBY received but rejoin already in progress — ignoring')
+      return
+    }
+
+    log.info({ fenceCommandId: cmd.fenceCommandId, venueSlug: cmd.venueSlug }, 'Starting MC-arbitrated rejoin')
+    const result = await handleRejoin({
+      command: 'REJOIN_AS_STANDBY',
+      newPrimaryNodeId: String(cmd.newPrimaryNodeId || ''),
+      newPrimaryIp: String(cmd.newPrimaryIp),
+      venueSlug: String(cmd.venueSlug || ''),
+      fenceCommandId: String(cmd.fenceCommandId),
+      issuedAt: String(cmd.issuedAt || new Date().toISOString()),
+      expiresAt: String(cmd.expiresAt || ''),
+    })
+
+    log.info({ status: result.status, detail: result.detail }, 'Rejoin completed')
+  } catch (err) {
+    log.error({ err }, 'REJOIN_AS_STANDBY command handler failed')
+  }
 }
 
 /**
