@@ -364,7 +364,11 @@ export const GET = withVenue(async function GET(): Promise<NextResponse<{ data: 
       }
 
       let notifStatus: 'healthy' | 'degraded' | 'down' = 'healthy'
-      if (activeProviders.length === 0 || downCount === activeProviders.length) {
+      if (activeProviders.length === 0) {
+        // No notification providers configured — that is normal, not a failure.
+        // Skip degradation. Venues without guest pagers/SMS don't need them.
+        notifStatus = 'healthy'
+      } else if (downCount === activeProviders.length) {
         notifStatus = 'down'
       } else if (pendingQueueDepth > 100 || deadLetterCount > 10) {
         notifStatus = 'degraded'
