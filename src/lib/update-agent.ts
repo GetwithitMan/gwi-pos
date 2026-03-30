@@ -99,9 +99,27 @@ export function isReadinessVerified(): boolean {
 }
 
 /**
- * Get the current running app version from package.json
+ * Get the current running app version.
+ * Priority: running-version.json > /opt/gwi-pos/current/package.json > legacy APP_DIR
  */
 export function getCurrentVersion(): string {
+  // Single source of truth: running-version.json (written by deploy-release.sh)
+  try {
+    const rvPath = '/opt/gwi-pos/shared/state/running-version.json'
+    if (existsSync(rvPath)) {
+      const rv = JSON.parse(readFileSync(rvPath, 'utf8'))
+      if (rv.version) return rv.version
+    }
+  } catch {}
+  // Fallback: current symlink
+  try {
+    const currentPkg = '/opt/gwi-pos/current/package.json'
+    if (existsSync(currentPkg)) {
+      const pkg = JSON.parse(readFileSync(currentPkg, 'utf8'))
+      if (pkg.version) return pkg.version
+    }
+  } catch {}
+  // Legacy fallback
   try {
     const pkgPath = path.join(APP_DIR, 'package.json')
     if (existsSync(pkgPath)) {
