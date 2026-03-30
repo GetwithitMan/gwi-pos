@@ -29,38 +29,45 @@ async function main() {
   console.log('[vercel-build] Pre-generating schema.sql for migrations...')
   execSync('node scripts/generate-schema-sql.mjs', { stdio: 'inherit' })
 
-  // 2. Run pre-push migrations on master Neon DB (via PrismaClient + DIRECT_URL)
-  console.log('[vercel-build] Running pre-push migrations (master)...')
+  // 2–4. Database-dependent steps: migrations, schema push, post-push regeneration.
+  // These require DATABASE_URL / DIRECT_URL pointing at master Neon.
+  // Preview deployments (PR branches) may not have DB env vars — skip gracefully.
   const directUrl = process.env.DIRECT_URL || process.env.DATABASE_URL
-  try {
-    execSync('node scripts/nuc-pre-migrate.js', {
-      stdio: 'inherit',
-      env: { ...process.env, NEON_MIGRATE: 'true', NEON_DATABASE_URL: directUrl },
-    })
-  } catch (migrationErr) {
-    console.error('[vercel-build] Migration failed:', migrationErr.message)
-    process.exit(1)
+  if (directUrl) {
+    // 2. Run pre-push migrations on master Neon DB (via PrismaClient + DIRECT_URL)
+    console.log('[vercel-build] Running pre-push migrations (master)...')
+    try {
+      execSync('node scripts/nuc-pre-migrate.js', {
+        stdio: 'inherit',
+        env: { ...process.env, NEON_MIGRATE: 'true', NEON_DATABASE_URL: directUrl },
+      })
+    } catch (migrationErr) {
+      console.error('[vercel-build] Migration failed:', migrationErr.message)
+      process.exit(1)
+    }
+
+    // 3. Push full Prisma schema to master
+    // Pre-push migrations (step 2) handle all data safety (column renames, type casts,
+    // constraint changes). Prisma db push runs WITHOUT --accept-data-loss — if Prisma
+    // flags a destructive change, the build fails. Developers must write a safe migration
+    // in scripts/migrations/ to handle the transition. This is intentional: master Neon
+    // is the canonical SOR and must never silently lose data.
+    console.log('[vercel-build] Running prisma db push (master)...')
+    execSync('npx prisma db push', { stdio: 'inherit' })
+
+    // 4. REGENERATE schema.sql AFTER db push — this is the FINAL truth.
+    // The schema.sql generated in step 1b may be stale if prisma db push applied
+    // additional changes (enum alterations, constraint fixes, etc.).
+    // MC uses this file to provision new venues — it MUST match the Prisma client exactly.
+    console.log('[vercel-build] Regenerating schema.sql (post-push — final truth)...')
+    execSync('node scripts/generate-schema-sql.mjs', { stdio: 'inherit' })
+    execSync('cp prisma/schema.sql public/schema.sql', { stdio: 'inherit' })
+    execSync('node scripts/generate-version-contract.mjs', { stdio: 'inherit' })
+    execSync('cp src/generated/version-contract.json public/version-contract.json', { stdio: 'inherit' })
+    console.log('[vercel-build] schema.sql + version-contract regenerated from final schema state')
+  } else {
+    console.log('[vercel-build] No DATABASE_URL — skipping migrations, db push, and schema regeneration (preview deployment)')
   }
-
-  // 3. Push full Prisma schema to master
-  // Pre-push migrations (step 2) handle all data safety (column renames, type casts,
-  // constraint changes). Prisma db push runs WITHOUT --accept-data-loss — if Prisma
-  // flags a destructive change, the build fails. Developers must write a safe migration
-  // in scripts/migrations/ to handle the transition. This is intentional: master Neon
-  // is the canonical SOR and must never silently lose data.
-  console.log('[vercel-build] Running prisma db push (master)...')
-  execSync('npx prisma db push', { stdio: 'inherit' })
-
-  // 4. REGENERATE schema.sql AFTER db push — this is the FINAL truth.
-  // The schema.sql generated in step 1b may be stale if prisma db push applied
-  // additional changes (enum alterations, constraint fixes, etc.).
-  // MC uses this file to provision new venues — it MUST match the Prisma client exactly.
-  console.log('[vercel-build] Regenerating schema.sql (post-push — final truth)...')
-  execSync('node scripts/generate-schema-sql.mjs', { stdio: 'inherit' })
-  execSync('cp prisma/schema.sql public/schema.sql', { stdio: 'inherit' })
-  execSync('node scripts/generate-version-contract.mjs', { stdio: 'inherit' })
-  execSync('cp src/generated/version-contract.json public/version-contract.json', { stdio: 'inherit' })
-  console.log('[vercel-build] schema.sql + version-contract regenerated from final schema state')
 
   // 4b. Generate immutable versioned artifacts for fleet rollouts
   // MC pins rollouts to a specific artifact version instead of "whatever is live"
