@@ -1568,6 +1568,8 @@ swap_symlinks() {
 restart_service() {
     log "Restarting $SERVICE_NAME..."
 
+    # daemon-reload in case service file changed, then restart with sudo
+    sudo systemctl daemon-reload 2>/dev/null || true
     if ! sudo systemctl restart "$SERVICE_NAME" 2>&1; then
         err "systemctl restart $SERVICE_NAME failed"
         RESTART_RESULT="fail"
