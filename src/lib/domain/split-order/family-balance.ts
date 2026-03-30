@@ -61,9 +61,20 @@ export async function computeSplitFamilyBalance(
     throw new Error(`Split family root ${familyRootId} not found in location ${locationId}`)
   }
 
-  const familyTotal = root.splitFamilyTotal != null
-    ? Number(root.splitFamilyTotal)
-    : Number(root.total)
+  // Use immutable splitFamilyTotal if set (new code). Otherwise, reconstruct
+  // from root + children totals (legacy splits where splitFamilyTotal wasn't set).
+  // root.total alone is wrong for by-item splits where items were moved to children.
+  let familyTotal: number
+  if (root.splitFamilyTotal != null) {
+    familyTotal = Number(root.splitFamilyTotal)
+  } else {
+    // Legacy fallback: sum root total + all children totals to get original family total
+    const childrenTotalSum = await tx.order.aggregate({
+      where: { parentOrderId: familyRootId, deletedAt: null },
+      _sum: { total: true },
+    })
+    familyTotal = Number(root.total) + Number(childrenTotalSum._sum.total ?? 0)
+  }
 
   // 2. Fetch all non-deleted descendants (children + grandchildren via splitFamilyRootId)
   const descendants = await tx.order.findMany({

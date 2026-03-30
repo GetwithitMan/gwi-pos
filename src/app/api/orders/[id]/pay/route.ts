@@ -1617,7 +1617,10 @@ export const POST = withVenue(withTiming(async function POST(
     let parentWasMarkedPaid = false
     let parentTableId: string | null = null
     // Close split family when: (a) child payment completes family, or (b) parent pay-remaining
-    const isSplitFamilyMember = order.parentOrderId || splitPayRemainingOverride != null
+    // Note: splitPayRemainingOverride is scoped inside the tx block, so we detect parent
+    // pay-remaining by checking if the order has split children (splitOrders or was 'split' status)
+    const wasSplitParent = order.splitOrders?.length > 0 || (order as any).splitFamilyTotal != null
+    const isSplitFamilyMember = order.parentOrderId || wasSplitParent
     if (orderIsPaid && isSplitFamilyMember) {
       try {
         const { computeSplitFamilyBalance } = await import('@/lib/domain/split-order/family-balance')
