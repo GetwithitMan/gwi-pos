@@ -560,6 +560,13 @@ fetch_manifest() {
         fi
     fi
 
+    # Ensure keys directory is readable by the current user (fixes root:root 700 from legacy code)
+    if [[ -d "$KEYS_DIR" ]] && [[ ! -r "$KEYS_DIR" ]]; then
+        log "Keys directory not readable — fixing permissions (root:gwipos 750)"
+        sudo chmod 750 "$KEYS_DIR" 2>/dev/null || true
+        sudo chown root:gwipos "$KEYS_DIR" 2>/dev/null || true
+    fi
+
     # Fetch detached signature and verify (fail-closed when infrastructure exists)
     if ! download_file_no_cache "${url}.minisig?_=$(date +%s)" "$sig_file" && ! download_file_no_cache "${url}.minisig" "$sig_file"; then
         fatal "Manifest signature verification required but minisign not installed. Run: apt-get install -y minisign"
@@ -2064,6 +2071,15 @@ do_deploy() {
     log "=========================================="
     log "Deploy starting: $DEPLOY_ID"
     log "=========================================="
+
+    # Fix keys directory permissions before anything else.
+    # Legacy sync-agent code sets keys to root:root 700, blocking signature
+    # verification. This self-heals on every deploy attempt.
+    if [[ -d "$KEYS_DIR" ]] && ! test -r "$KEYS_DIR/gwi-pos-release.pub" 2>/dev/null; then
+        log "Fixing keys directory permissions (root:gwipos 750)..."
+        sudo chmod 750 "$KEYS_DIR" 2>/dev/null || true
+        sudo chown root:gwipos "$KEYS_DIR" 2>/dev/null || true
+    fi
 
     # Step 1: Acquire lock
     acquire_lock

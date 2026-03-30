@@ -199,6 +199,22 @@ async function handleForceUpdate(payload, cmdId) {
     log('[Update] Artifact deploy available — using deploy-release.sh')
     if (cmdId) ackProgress(cmdId, 'IN_PROGRESS', { step: 'artifact-deploy', targetVersion: targetVersion })
 
+    // Self-heal keys directory permissions before deploy (legacy code may re-lock to root:root 700)
+    try {
+      var keysDir = '/opt/gwi-pos/keys'
+      var pubKey = keysDir + '/gwi-pos-release.pub'
+      if (fs.existsSync(keysDir) && !fs.existsSync(pubKey)) {
+        // Can't read pub key — fix permissions
+        run('sudo chmod 750 ' + keysDir + ' && sudo chown root:gwipos ' + keysDir, '/opt/gwi-pos', 5)
+        log('[Update] Fixed keys directory permissions')
+      } else if (fs.existsSync(keysDir)) {
+        try { fs.accessSync(pubKey, fs.constants.R_OK) } catch (e) {
+          run('sudo chmod 750 ' + keysDir + ' && sudo chown root:gwipos ' + keysDir, '/opt/gwi-pos', 5)
+          log('[Update] Fixed keys directory permissions (pub key not readable)')
+        }
+      }
+    } catch (e) { log('[Update] Keys permission fix warning: ' + e.message) }
+
     // Check maintenance mode — another deploy may be in progress
     if (fs.existsSync('/opt/gwi-pos/shared/state/deploy-in-progress')) {
       log('[Update] Deploy already in progress (maintenance mode flag set) — skipping')
