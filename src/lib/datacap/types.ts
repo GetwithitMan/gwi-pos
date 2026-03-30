@@ -63,6 +63,8 @@ export interface DatacapConfig {
   operatorId: string
   posPackageId: string
   communicationMode: CommunicationMode
+  // Operation environment — routes transactions to cert or production processors
+  operationMode?: 'CERT' | 'PROD'
   // Local connection
   defaultPort?: number
   // Cloud connection
@@ -95,6 +97,8 @@ export interface DatacapRequestFields {
   merchantId: string
   operatorId: string
   tranCode: TranCode
+  // Operation environment — CERT or PROD (routes to cert or production processor)
+  operationMode?: 'CERT' | 'PROD'
   // Transaction identifiers
   invoiceNo?: string
   refNo?: string
@@ -180,6 +184,8 @@ export interface DatacapResponse {
   safForwarded?: string   // Number forwarded in SAF_ForwardAll response
   storedOffline?: boolean // True when transaction was stored offline (not processed online)
   level2Status?: string   // 'Accepted', 'Rejected', or undefined if not Level II
+  // AVS (Address Verification Service) result
+  avsResult?: string      // Single char: Y (full match), N (no match), Z (zip only), A (address only), etc.
   // Raw XML for debugging
   rawXml: string
 }
@@ -191,6 +197,27 @@ export interface DatacapError {
   text: string
   description: string
   isRetryable: boolean
+  responseOrigin?: ResponseOrigin
+}
+
+// ─── Decline Detail (structured decline/error info for UI) ──────────────────
+
+export interface DeclineDetail {
+  /** Raw DSIX 6-digit return code from Datacap (e.g., '100002') */
+  returnCode: string
+  /** Full detail for staff display: e.g., "Declined: Insufficient Funds (100002)" */
+  staffMessage: string
+  /** Safe for customer-facing display: e.g., "Card declined. Please try another card." */
+  customerMessage: string
+  /** Whether the same card can be retried (device errors = yes, hard declines = no) */
+  isRetryable: boolean
+  /** True when the card was partially approved for less than the requested amount */
+  isPartialApproval: boolean
+  /** The amount approved (for partial approvals) */
+  approvedAmount?: number
+  /** The amount originally requested (for partial approvals) */
+  requestedAmount?: number
+  /** Origin of the response: Client, Processor, or Device */
   responseOrigin?: ResponseOrigin
 }
 

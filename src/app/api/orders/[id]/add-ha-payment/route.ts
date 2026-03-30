@@ -52,10 +52,31 @@ export const POST = withVenue(async function POST(
       return err('amount must be a positive number')
     }
 
-    // Validate the order exists and fetch current totals
+    // Validate the order exists and fetch current totals under FOR UPDATE lock
+    // to prevent concurrent modifications (e.g., simultaneous HA payments or pay/close)
     const locationId = haLocationId
-    const order = locationId
-      ? await OrderRepository.getOrderByIdWithSelect(orderId, locationId, { id: true, locationId: true, status: true, taxTotal: true, discountTotal: true, tipTotal: true })
+    if (!locationId) {
+      return notFound('Order not found')
+    }
+
+    const lockedOrderRows = await db.$queryRawUnsafe<Array<{
+      id: string; locationId: string; status: string;
+      taxTotal: string; discountTotal: string; tipTotal: string;
+    }>>(
+      `SELECT id, "locationId", status, "taxTotal"::numeric::text as "taxTotal",
+              "discountTotal"::numeric::text as "discountTotal", "tipTotal"::numeric::text as "tipTotal"
+       FROM "Order" WHERE id = $1 AND "locationId" = $2 AND "deletedAt" IS NULL FOR UPDATE`,
+      orderId, locationId
+    )
+    const order = lockedOrderRows[0]
+      ? {
+          id: lockedOrderRows[0].id,
+          locationId: lockedOrderRows[0].locationId,
+          status: lockedOrderRows[0].status,
+          taxTotal: Number(lockedOrderRows[0].taxTotal),
+          discountTotal: Number(lockedOrderRows[0].discountTotal),
+          tipTotal: Number(lockedOrderRows[0].tipTotal),
+        }
       : null
 
     if (!order) {

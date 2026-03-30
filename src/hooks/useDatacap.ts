@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useCallback, useRef, useEffect } from 'react'
+import type { DeclineDetail } from '@/lib/datacap/types'
 
 // Processing status for UI feedback
 export type DatacapProcessingStatus =
@@ -60,6 +61,9 @@ export interface DatacapResult {
 
   // SAF (Store-and-Forward) — transaction stored offline on reader, pending upload
   storedOffline?: boolean
+
+  // Structured decline/error detail for staff and customer display
+  declineDetail?: DeclineDetail
 }
 
 // Datacap device info response
@@ -113,6 +117,69 @@ interface UseDatacapReturn {
   isSwapping: boolean
   showSwapModal: boolean
   setShowSwapModal: (show: boolean) => void
+}
+
+// ─── Client-Side Decline Detail Builder ─────────────────────────────────────
+// Lightweight mapping for direct reader responses (no server round-trip).
+// For cloud mode, the server returns pre-built declineDetail.
+
+const CLIENT_DECLINE_CODES: Record<string, { message: string; customerMessage: string; isRetryable: boolean }> = {
+  '100001': { message: 'Declined by Issuer', customerMessage: 'Card declined. Please try another payment method.', isRetryable: false },
+  '100002': { message: 'Insufficient Funds', customerMessage: 'Card declined. Please try another payment method.', isRetryable: false },
+  '100003': { message: 'Over Limit', customerMessage: 'Card declined. Please try another payment method.', isRetryable: false },
+  '100004': { message: 'Expired Card', customerMessage: 'Card is expired. Please use a different card.', isRetryable: false },
+  '100005': { message: 'Invalid Card', customerMessage: 'Card could not be read. Please try again or use a different card.', isRetryable: false },
+  '100006': { message: 'Restricted Card', customerMessage: 'This card type is not accepted. Please try another card.', isRetryable: false },
+  '100007': { message: 'Do Not Honor', customerMessage: 'Card declined. Please try another payment method.', isRetryable: false },
+  '100008': { message: 'Card Removed', customerMessage: 'Card was removed too soon. Please try again.', isRetryable: true },
+  '100009': { message: 'Duplicate Transaction', customerMessage: 'This transaction was already processed.', isRetryable: false },
+  '200001': { message: 'Device Not Ready', customerMessage: 'Reader is not ready. Please wait a moment.', isRetryable: true },
+  '200002': { message: 'Device Busy', customerMessage: 'Reader is busy. Please wait a moment.', isRetryable: true },
+  '200003': { message: 'Device Error', customerMessage: 'Reader error. Please try again.', isRetryable: true },
+  '200004': { message: 'No Device', customerMessage: 'Reader not found. Please alert staff.', isRetryable: true },
+  '200005': { message: 'Card Read Error', customerMessage: 'Card could not be read. Please try again.', isRetryable: true },
+  '200006': { message: 'Timeout', customerMessage: 'Transaction timed out. Please try again.', isRetryable: true },
+  '200007': { message: 'Cancelled', customerMessage: 'Transaction was cancelled.', isRetryable: false },
+  '300001': { message: 'Communication Error', customerMessage: 'Unable to process payment. Please try again.', isRetryable: true },
+  '300002': { message: 'Host Unavailable', customerMessage: 'Unable to process payment. Please try again in a moment.', isRetryable: true },
+  '300003': { message: 'Connection Timeout', customerMessage: 'Connection timed out. Please try again.', isRetryable: true },
+}
+
+function buildClientDeclineDetail(
+  returnCode: string,
+  textResponse: string,
+  isPartialApproval: boolean,
+  amountAuthorized: number,
+  requestedAmount: number,
+  responseOrigin?: string
+): DeclineDetail {
+  const known = CLIENT_DECLINE_CODES[returnCode]
+
+  let staffMessage: string
+  if (isPartialApproval && amountAuthorized > 0) {
+    staffMessage = `Partial Approval: $${amountAuthorized.toFixed(2)} of $${requestedAmount.toFixed(2)} approved`
+  } else if (known) {
+    staffMessage = `Declined: ${known.message} (${returnCode})`
+  } else if (textResponse) {
+    staffMessage = `Declined: ${textResponse} (${returnCode || 'UNKNOWN'})`
+  } else {
+    staffMessage = `Declined (${returnCode || 'UNKNOWN'})`
+  }
+
+  const customerMessage = isPartialApproval
+    ? 'Card has insufficient funds for the full amount.'
+    : (known?.customerMessage || 'Card declined. Please try another payment method.')
+
+  return {
+    returnCode: returnCode || 'UNKNOWN',
+    staffMessage,
+    customerMessage,
+    isRetryable: known?.isRetryable ?? false,
+    isPartialApproval,
+    approvedAmount: isPartialApproval ? amountAuthorized : undefined,
+    requestedAmount: isPartialApproval ? requestedAmount : undefined,
+    responseOrigin: responseOrigin as DeclineDetail['responseOrigin'],
+  }
 }
 
 /**
@@ -458,15 +525,18 @@ export function useDatacap(options: UseDatacapOptions): UseDatacapReturn {
           (typeof txResult.TextResponse === 'string' && txResult.TextResponse.toUpperCase().includes('STORED OFFLINE'))
 
         // Parse Datacap response
+        const responseCode = txResult.responseCode || txResult.ResponseCode || txResult.dsixReturnCode || ''
+        const responseMessage = txResult.textResponse || txResult.TextResponse || txResult.responseMessage || txResult.ResponseMessage || txResult.Message || ''
+
         const result: DatacapResult = {
-          approved: txResult.approved || txResult.status === 'APPROVED' || txResult.ResponseCode === '00',
+          approved: txResult.approved || txResult.status === 'APPROVED' || responseCode === '00',
           authCode: txResult.authCode || txResult.AuthCode,
           refNumber: txResult.refNumber || txResult.RefNumber || txResult.ReferenceNumber,
           cardBrand: txResult.cardBrand || txResult.CardBrand || txResult.CardType,
           cardLast4: txResult.cardLast4 || txResult.CardLast4 || txResult.MaskedPan?.slice(-4),
           entryMethod: txResult.entryMethod || txResult.EntryMethod,
-          responseCode: txResult.responseCode || txResult.ResponseCode,
-          responseMessage: txResult.textResponse || txResult.TextResponse || txResult.responseMessage || txResult.ResponseMessage || txResult.Message,
+          responseCode,
+          responseMessage,
 
           // Partial Approval tracking
           amountRequested: params.amount,
@@ -485,14 +555,33 @@ export function useDatacap(options: UseDatacapOptions): UseDatacapReturn {
           storedOffline,
         }
 
+        // Attach structured decline detail — prefer server-provided, build client-side as fallback
+        if (!result.approved || isPartialApproval) {
+          if (txResult.declineDetail) {
+            // Server (cloud proxy or sale route) already built the structured detail
+            result.declineDetail = txResult.declineDetail as DeclineDetail
+          } else {
+            // Direct reader response — build client-side from responseCode/responseMessage
+            result.declineDetail = buildClientDeclineDetail(
+              responseCode,
+              responseMessage,
+              isPartialApproval,
+              amountAuthorized,
+              params.amount,
+              txResult.responseOrigin || txResult.ResponseOrigin
+            )
+          }
+        }
+
         if (result.approved) {
           setProcessingStatus(storedOffline ? 'approved_saf' : 'approved')
           onSuccess?.(result)
         } else {
           setProcessingStatus('declined')
-          const declineReason = result.responseMessage || 'Card was declined'
+          const staffMsg = result.declineDetail?.staffMessage
+          const declineReason = staffMsg || responseMessage || 'Card was declined'
           result.error = declineReason
-          setError(`Declined: ${declineReason}`)
+          setError(declineReason)
           onDeclined?.(declineReason)
         }
 

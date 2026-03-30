@@ -160,6 +160,12 @@ export async function getSiteBootstrapData(
   // Email is not on the Location model; return null. Admin can configure via portal settings.
   const venueEmail: string | null = null
 
+  // ── Wallet config (Apple Pay / Google Pay) ─────────────────────────────
+  const onlineOrd = settings.onlineOrdering
+  const applePayMid = onlineOrd?.applePayMid ?? null
+  const googlePayBusinessId = onlineOrd?.googlePayBusinessId ?? null
+  const achEnabled = onlineOrd?.achEnabled === true
+
   return {
     venue: {
       name: location.name,
@@ -204,6 +210,11 @@ export async function getSiteBootstrapData(
       surchargeName,
       minOrderAmount: null,
       maxOrderAmount: null,
+      achEnabled,
+    },
+    walletConfig: {
+      applePayMid,
+      googlePayBusinessId,
     },
   }
 }

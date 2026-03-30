@@ -4,42 +4,39 @@
  * RULE: Payments can ONLY transition through valid states.
  * No route should set payment.status directly — use transitionPaymentState().
  *
- * ## Current Prisma enum (PaymentStatus):
- *   pending | completed | refunded | voided
+ * ## Prisma enum (PaymentStatus):
+ *   pending | processing | completed | declined | failed | refunded | voided
  *
- * ## How states are used today:
- *   - pending:   Created but not yet approved (e.g., offline SAF queue, walkout retry)
- *   - completed: Approved by processor or cash payment recorded in DB
- *   - voided:    Void confirmed by processor or manager-approved cash void
- *   - refunded:  Full refund confirmed by processor (partial refunds keep 'completed')
+ * ## How states are used:
+ *   - pending:    Created but not yet submitted (e.g., offline SAF queue, walkout retry)
+ *   - processing: Submitted to Datacap, awaiting processor response
+ *   - completed:  Approved by processor or cash payment recorded in DB
+ *   - declined:   Processor declined the charge (terminal)
+ *   - failed:     Unrecoverable processor/network error (terminal)
+ *   - voided:     Void confirmed by processor or manager-approved cash void (terminal)
+ *   - refunded:   Full refund confirmed by processor (terminal; partial refunds keep 'completed')
  *
- * ## Planned states (require Prisma migration to add to enum):
- *   - processing:      Submitted to Datacap, awaiting response
- *   - declined:        Processor declined the charge
+ * ## Planned states (require future Prisma migration):
  *   - void_pending:    Void requested, awaiting processor confirmation
  *   - refund_pending:  Refund requested, awaiting processor confirmation
  *   - partial_refund:  At least one partial refund applied (currently stays 'completed')
- *   - failed:          Unrecoverable processor/network error
- *
- * When migration adds new enum values, uncomment the planned states below.
  */
 
 // ─── States ──────────────────────────────────────────────────────────────────
 
 export const PAYMENT_STATES = {
-  // Active in Prisma enum today
   PENDING: 'pending',
+  PROCESSING: 'processing',
   COMPLETED: 'completed',
+  DECLINED: 'declined',
+  FAILED: 'failed',
   VOIDED: 'voided',
   REFUNDED: 'refunded',
 
   // Planned — uncomment after Prisma migration adds these to PaymentStatus enum
-  // PROCESSING: 'processing',
-  // DECLINED: 'declined',
   // VOID_PENDING: 'void_pending',
   // REFUND_PENDING: 'refund_pending',
   // PARTIAL_REFUND: 'partial_refund',
-  // FAILED: 'failed',
 } as const
 
 export type PaymentState = (typeof PAYMENT_STATES)[keyof typeof PAYMENT_STATES]
@@ -48,21 +45,33 @@ export type PaymentState = (typeof PAYMENT_STATES)[keyof typeof PAYMENT_STATES]
 //
 // If a transition is NOT in this map, it is ILLEGAL.
 //
-// Current transition diagram (Prisma enum states only):
+// Transition diagram:
 //
-//   pending ──────► completed ──────► voided     (terminal)
-//      │                │
-//      │                └──────────► refunded   (terminal)
-//      │
-//      └──────────► voided          (pre-auth cancel / SAF reject)
+//   pending ──┬──► processing ──┬──► completed ──┬──► voided     (terminal)
+//             │                 │        │        │
+//             │                 │        │        └──► refunded   (terminal)
+//             │                 │        │
+//             │                 │        └──► completed (self: partial refund)
+//             │                 │
+//             │                 ├──► declined     (terminal)
+//             │                 ├──► failed       (terminal)
+//             │                 └──► voided       (terminal)
+//             │
+//             ├──► completed    (instant cash/offline approval)
+//             ├──► voided       (pre-auth cancel / SAF reject)
+//             ├──► declined     (instant rejection)
+//             └──► failed       (instant failure)
 //
 // Note: partial refunds currently keep status = 'completed' and track
 // refundedAmount separately. The state machine validates this by allowing
 // completed → completed (self-transition for partial refund recording).
 
 const VALID_TRANSITIONS: Record<PaymentState, PaymentState[]> = {
-  pending: ['completed', 'voided'],
+  pending: ['processing', 'completed', 'voided', 'declined', 'failed'],
+  processing: ['completed', 'declined', 'failed', 'voided'],
   completed: ['voided', 'refunded', 'completed'], // completed→completed = partial refund (status unchanged)
+  declined: [],  // terminal — no transitions out
+  failed: [],    // terminal — no transitions out
   voided: [],    // terminal — no transitions out
   refunded: [],  // terminal — no transitions out
 }
@@ -110,16 +119,19 @@ export function transitionPaymentState(
  * Terminal states — payments in these states MUST NOT contribute to active totals.
  * A payment in a terminal state cannot transition to any other state.
  */
-export const TERMINAL_PAYMENT_STATES: readonly PaymentState[] = ['voided', 'refunded'] as const
+export const TERMINAL_PAYMENT_STATES: readonly PaymentState[] = ['voided', 'refunded', 'declined', 'failed'] as const
 
 /**
  * Active states — payments that contribute to order totals and financial sums.
+ *
+ * NOTE: 'processing' is active because the charge is in-flight at the processor.
+ * It represents money that is expected to settle.
  *
  * NOTE: 'completed' with refundedAmount > 0 is a partial refund. The payment is
  * still active but its effective amount is (amount - refundedAmount). Callers
  * computing totals MUST subtract refundedAmount from completed payments.
  */
-export const ACTIVE_PAYMENT_STATES: readonly PaymentState[] = ['pending', 'completed'] as const
+export const ACTIVE_PAYMENT_STATES: readonly PaymentState[] = ['pending', 'processing', 'completed'] as const
 
 /**
  * Check if a payment status represents an active (non-terminal) payment.

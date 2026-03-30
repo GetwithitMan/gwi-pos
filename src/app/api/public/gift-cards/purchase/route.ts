@@ -11,7 +11,7 @@
 import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { getDbForVenue } from '@/lib/db'
-import { getPayApiClient } from '@/lib/datacap/payapi-client'
+import { getPayApiClient, isPayApiSuccess } from '@/lib/datacap/payapi-client'
 import { sendEmail } from '@/lib/email-service'
 import { checkOnlineRateLimit } from '@/lib/online-rate-limiter'
 import { getClientIp } from '@/lib/get-client-ip'
@@ -177,7 +177,7 @@ export async function POST(request: NextRequest) {
       return err('Payment processing failed. Please try again.', 502)
     }
 
-    if (payApiResult.status !== 'Approved') {
+    if (!isPayApiSuccess(payApiResult.status)) {
       return NextResponse.json(
         {
           error: 'Payment declined. Please try a different card.',

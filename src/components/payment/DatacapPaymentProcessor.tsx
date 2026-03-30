@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { CreditCardIcon, ArrowPathIcon, CheckBadgeIcon, XCircleIcon } from '@heroicons/react/24/outline'
 import { useDatacap, DatacapResult } from '@/hooks/useDatacap'
+import type { DeclineDetail } from '@/lib/datacap/types'
 import { SwapConfirmationModal } from './SwapConfirmationModal'
 import { ReaderStatusIndicator } from './ReaderStatusIndicator'
 import { formatCurrency } from '@/lib/utils'
@@ -70,6 +71,9 @@ export function DatacapPaymentProcessor({
   const [isVoiding, setIsVoiding] = useState(false)
   const [voidError, setVoidError] = useState<string | null>(null)
 
+  // Track the last decline detail for the decline overlay
+  const [lastDeclineDetail, setLastDeclineDetail] = useState<DeclineDetail | null>(null)
+
   // Model 3: Card detection state
   const [isDetectingCard, setIsDetectingCard] = useState(false)
   const [cardDetection, setCardDetection] = useState<CardDetectionResult | null>(null)
@@ -113,7 +117,8 @@ export function DatacapPaymentProcessor({
       }
     },
     onDeclined: (_reason) => {
-      // Decline handled by parent via onDeclined callback
+      // Decline detail is captured after processPayment returns the result
+      // The result with declineDetail is handled in handleStartPayment below
     },
     onError: (err) => {
       console.error('[DatacapPaymentProcessor] Error:', err)
@@ -189,13 +194,16 @@ export function DatacapPaymentProcessor({
         notifyCFD('approved', { total: totalToCharge })
         break
       case 'declined':
-        notifyCFD('declined', { reason: error || 'Card was declined' })
+        notifyCFD('declined', {
+          reason: error || 'Card was declined',
+          customerMessage: lastDeclineDetail?.customerMessage || 'Card declined. Please try another payment method.',
+        })
         break
       case 'idle':
         notifyCFD('idle')
         break
     }
-  }, [processingStatus, locationId, orderId, error, totalToCharge])
+  }, [processingStatus, locationId, orderId, error, totalToCharge, lastDeclineDetail])
 
   // Suggested tip percentages
   const suggestedPercentages = tipSettings?.suggestedPercentages || [15, 18, 20, 25]
@@ -287,6 +295,14 @@ export function DatacapPaymentProcessor({
       tipAmount,
       tipMode: externalTipMode || 'none',
     })
+
+    // Capture decline detail from the result for the decline overlay
+    if (result?.declineDetail) {
+      setLastDeclineDetail(result.declineDetail)
+    } else if (result && !result.approved) {
+      // No structured decline detail — clear any stale one
+      setLastDeclineDetail(null)
+    }
 
     // Ambiguous abort/timeout: if processPayment returned null (timeout/network error),
     // the card MAY have been charged but we lost the response. Log for awareness.
@@ -559,10 +575,13 @@ export function DatacapPaymentProcessor({
           canSwap={canSwap}
         />
 
-        {/* Error Display */}
+        {/* Error Display — shows structured decline/error detail when available */}
         {error && processingStatus === 'error' && (
-          <div className="p-3 bg-red-900/30 border border-red-700 rounded-xl text-red-400 text-sm">
-            {error}
+          <div className="p-3 bg-red-900/30 border border-red-700 rounded-xl space-y-1">
+            <p className="text-red-400 text-sm font-semibold">{error}</p>
+            {lastDeclineDetail?.returnCode && lastDeclineDetail.returnCode !== 'UNKNOWN' && (
+              <p className="text-red-500/60 text-[11px] font-mono">Code: {lastDeclineDetail.returnCode}</p>
+            )}
           </div>
         )}
 
@@ -703,38 +722,73 @@ export function DatacapPaymentProcessor({
         )}
       </AnimatePresence>
 
-      {/* Declined Overlay */}
+      {/* Declined Overlay — detailed staff + customer messaging */}
       <AnimatePresence>
         {processingStatus === 'declined' && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="absolute inset-0 bg-red-600 flex flex-col items-center justify-center z-50 rounded-3xl"
+            className="absolute inset-0 bg-red-600 flex flex-col items-center justify-center z-50 rounded-3xl p-6"
           >
-            <XCircleIcon className="w-24 h-24 text-white mb-4" />
+            <XCircleIcon className="w-20 h-20 text-white mb-3" />
             <h2 className="text-3xl font-black text-white">DECLINED</h2>
-            <p className="text-red-100 font-bold mt-2">{error || 'Card was declined'}</p>
-            <button
-              onClick={() => cancelTransaction()}
-              className="mt-6 px-8 py-3 bg-white/20 text-white rounded-xl font-bold"
-            >
-              Try Again
-            </button>
-            {onPayCashInstead && (
-              <button
-                onClick={() => { cancelTransaction(); onPayCashInstead() }}
-                className="mt-3 px-8 py-3 bg-emerald-700 text-white rounded-xl font-bold"
-              >
-                Pay Cash Instead
-              </button>
+
+            {/* Staff message — specific reason, always visible */}
+            <p className="text-red-100 font-bold mt-3 text-lg text-center leading-snug px-4">
+              {lastDeclineDetail?.staffMessage || error || 'Card was declined'}
+            </p>
+
+            {/* Return code reference for staff */}
+            {lastDeclineDetail?.returnCode && lastDeclineDetail.returnCode !== 'UNKNOWN' && (
+              <p className="text-red-200/50 text-xs font-mono mt-1">
+                Code: {lastDeclineDetail.returnCode}
+                {lastDeclineDetail.responseOrigin ? ` (${lastDeclineDetail.responseOrigin})` : ''}
+              </p>
             )}
-            <button
-              onClick={() => { cancelTransaction(); onCancel() }}
-              className="mt-3 px-8 py-3 bg-white/10 text-red-100 rounded-xl font-bold text-sm"
-            >
-              Back to Order
-            </button>
+
+            {/* Customer-safe message — can be read aloud to customer */}
+            {lastDeclineDetail?.customerMessage && (
+              <div className="mt-4 px-4 py-2.5 bg-white/10 rounded-xl max-w-xs">
+                <p className="text-[10px] text-red-200/60 uppercase tracking-wider font-semibold mb-1">Tell Customer</p>
+                <p className="text-red-50 text-sm font-medium text-center">
+                  {lastDeclineDetail.customerMessage}
+                </p>
+              </div>
+            )}
+
+            {/* Action buttons — vary based on retryability */}
+            <div className="mt-5 flex flex-col items-center gap-2.5 w-full max-w-xs">
+              {lastDeclineDetail?.isRetryable !== false ? (
+                <button
+                  onClick={() => { setLastDeclineDetail(null); cancelTransaction() }}
+                  className="w-full px-8 py-3 bg-white/20 text-white rounded-xl font-bold hover:bg-white/30 transition-colors"
+                >
+                  Try Again
+                </button>
+              ) : (
+                <button
+                  onClick={() => { setLastDeclineDetail(null); cancelTransaction() }}
+                  className="w-full px-8 py-3 bg-white/20 text-white rounded-xl font-bold hover:bg-white/30 transition-colors"
+                >
+                  Use Different Card
+                </button>
+              )}
+              {onPayCashInstead && (
+                <button
+                  onClick={() => { setLastDeclineDetail(null); cancelTransaction(); onPayCashInstead() }}
+                  className="w-full px-8 py-3 bg-emerald-700 text-white rounded-xl font-bold hover:bg-emerald-600 transition-colors"
+                >
+                  Pay Cash Instead
+                </button>
+              )}
+              <button
+                onClick={() => { setLastDeclineDetail(null); cancelTransaction(); onCancel() }}
+                className="w-full px-8 py-3 bg-white/10 text-red-100 rounded-xl font-bold text-sm hover:bg-white/15 transition-colors"
+              >
+                Back to Order
+              </button>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

@@ -112,3 +112,15 @@ export {
   parseBody,
   datacapErrorResponse,
 } from './helpers'
+
+// ─── Response Code Mapping ──────────────────────────────────────────────────
+export {
+  getDeclineReason,
+  getDeclineReasonFromText,
+  getDeclineInfo,
+  getResponseDescription,
+  formatPartialApproval,
+  DSIX_RETURN_CODES,
+  CMD_STATUS_MAP,
+} from './response-codes'
+export type { DeclineInfo, ResponseCodeEntry } from './response-codes'

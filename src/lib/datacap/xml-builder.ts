@@ -141,6 +141,10 @@ export function buildRequest(fields: DatacapRequestFields): string {
   // Required fields (now guaranteed by type guard)
   parts.push(tag('MerchantID', fields.merchantId))
   parts.push(tag('OperatorID', fields.operatorId))
+
+  // Operation mode — routes to cert or production processor
+  if (fields.operationMode) parts.push(tag('OperationMode', fields.operationMode))
+
   parts.push(tag('TranCode', fields.tranCode))
 
   // Transaction identifiers
@@ -238,6 +242,10 @@ export function buildAdminRequest(fields: DatacapRequestFields): string {
 
   parts.push(tag('MerchantID', fields.merchantId))
   parts.push(tag('OperatorID', fields.operatorId))
+
+  // Operation mode — routes to cert or production processor
+  if (fields.operationMode) parts.push(tag('OperationMode', fields.operationMode))
+
   parts.push(tag('TranCode', fields.tranCode))
 
   if (fields.sequenceNo) parts.push(tag('SequenceNo', fields.sequenceNo))

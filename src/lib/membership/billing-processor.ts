@@ -372,6 +372,7 @@ async function processOneMembership(
         "recurringDataSent", "recurringDataReceived",
         "invoiceNo", "idempotencyKey",
         "declineReason", "returnCode", "processorResponseMessage",
+        "declineCategory",
         "requestStartedAt", "responseReceivedAt", "processedAt"
       ) VALUES (
         $1, $2, $3, $4, $5,
@@ -381,7 +382,8 @@ async function processOneMembership(
         $14, $15,
         $16, $17,
         $18, $19, $20,
-        $21, $22, NOW()
+        $21,
+        $22, $23, NOW()
       )
     `,
       mbr.locationId, mbr.id, subtotal, tax, total,
@@ -391,6 +393,7 @@ async function processOneMembership(
       mbr.recurringData || 'Recurring', newRecurringData || null,
       invoiceNo, idempotencyKey,
       decline?.message || response?.message || null, response?.returnCode || null, response?.message || null,
+      decline?.category || 'unknown',
       requestStartedAt, responseReceivedAt
     )
 

@@ -1717,6 +1717,14 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
                           >
                             <BookmarkPlus className="w-3.5 h-3.5" />
                           </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); deleteGroup(group.id) }}
+                            className="text-gray-500 hover:text-red-600 text-xs px-0.5"
+                            title="Delete Group"
+                            disabled={saving}
+                          >
+                            🗑
+                          </button>
                         </div>
 
                         {/* Expanded: Modifiers */}

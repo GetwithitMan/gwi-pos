@@ -28,10 +28,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Parse optional body for version info
     let appVersion: string | undefined
+    let datacapSdkVersion: string | undefined
     let connectedHardware: Record<string, unknown> | undefined
     try {
       const body = await request.json()
       appVersion = body?.appVersion
+      datacapSdkVersion = body?.datacapSdkVersion
       connectedHardware = body?.connectedHardware
     } catch {
       // No body or invalid JSON — fine, heartbeat still works
@@ -117,6 +119,17 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const wasOffline = !terminal.isOnline
 
     // Update last seen
+    const deviceInfoUpdate = (connectedHardware || datacapSdkVersion) ? {
+      deviceInfo: {
+        ...((terminal.deviceInfo as Record<string, unknown>) || {}),
+        ...(datacapSdkVersion ? { datacapSdkVersion } : {}),
+        ...(connectedHardware ? {
+          connectedHardware,
+          lastHardwareReportAt: new Date().toISOString(),
+        } : {}),
+      } as Prisma.InputJsonValue,
+    } : {}
+
     await db.terminal.update({
       where: { id: terminal.id },
       data: {
@@ -125,13 +138,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         lastKnownIp: clientIp,
         lastMutatedBy: 'local',
         ...(appVersion ? { appVersion } : {}),
-        ...(connectedHardware ? {
-          deviceInfo: {
-            ...((terminal.deviceInfo as Record<string, unknown>) || {}),
-            connectedHardware,
-            lastHardwareReportAt: new Date().toISOString(),
-          } as Prisma.InputJsonValue
-        } : {}),
+        ...deviceInfoUpdate,
       },
     })
 
