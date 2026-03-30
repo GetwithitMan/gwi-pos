@@ -27,7 +27,7 @@ export function processCashPayment(
   alreadyPaidInLoop: number,
   settings: {
     priceRounding?: { enabled: boolean; applyToCash: boolean; increment: string; direction: string; applyToCard: boolean }
-    payments: { cashRounding: string; roundingDirection?: string }
+    payments: { cashRounding?: string; roundingDirection?: string }
   },
   dualPricing: { enabled: boolean; cashDiscountPercent: number } | undefined,
   orderId: string,
@@ -44,16 +44,17 @@ export function processCashPayment(
     const rounded = applyPriceRounding(rawRemaining, settings.priceRounding as any, 'cash')
     roundingAdjustment = Math.round((rounded - rawRemaining) * 100) / 100
     finalAmount = payment.amount // already rounded by client
-  } else if (settings.payments.cashRounding !== 'none') {
+  } else if (settings.payments?.cashRounding && settings.payments.cashRounding !== 'none') {
+    // Legacy fallback — only for older NUC builds without priceRounding
     roundingAdjustment = calculateRoundingAdjustment(
       rawRemaining,
       settings.payments.cashRounding as any,
-      settings.payments.roundingDirection as any
+      (settings.payments.roundingDirection ?? 'nearest') as any
     )
     finalAmount = roundAmount(
       rawRemaining,
       settings.payments.cashRounding as any,
-      settings.payments.roundingDirection as any
+      (settings.payments.roundingDirection ?? 'nearest') as any
     )
   }
 

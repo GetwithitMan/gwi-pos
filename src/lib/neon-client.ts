@@ -34,7 +34,10 @@ function createNeonClient(): PrismaClient | null {
     adapter = new PrismaPg({
       connectionString: neonUrl,
       max: poolSize,
-      connectionTimeoutMillis: 10000,
+      // 30s — NUC networks may have broken IPv6 causing Node's "happy eyeballs"
+      // algorithm to waste time on failed IPv6 attempts before falling back to IPv4.
+      // Neon pooler cold-starts also add latency. 10s was too short for some venues.
+      connectionTimeoutMillis: 30000,
     })
   }
 

@@ -872,11 +872,12 @@ export const POST = withVenue(withTiming(async function POST(
       // (No adjustment needed here — validationRemaining stays as `remaining`.)
       if (settings.priceRounding?.enabled && settings.priceRounding.applyToCash) {
         validationRemaining = applyPriceRounding(validationRemaining, settings.priceRounding, 'cash')
-      } else if (settings.payments.cashRounding !== 'none') {
+      } else if (settings.payments?.cashRounding && settings.payments.cashRounding !== 'none') {
+        // Legacy fallback — only used by older NUC builds that haven't migrated to priceRounding
         validationRemaining = roundAmount(
           validationRemaining,
           settings.payments.cashRounding,
-          settings.payments.roundingDirection
+          settings.payments.roundingDirection ?? 'nearest'
         )
       }
     }
@@ -2363,7 +2364,7 @@ export const POST = withVenue(withTiming(async function POST(
 
     // Card recognition: fire-and-forget BEFORE response return.
     // Sends a separate socket event instead of blocking the HTTP response (-10-50ms).
-    if (!order.customer?.id && settings.tabs.cardRecognitionEnabled) {
+    if (!order.customer?.id && settings.tabs?.cardRecognitionEnabled) {
       void (async () => {
         try {
           const cardPayment = ingestResult.bridgedPayments.find(

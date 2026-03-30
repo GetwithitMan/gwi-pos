@@ -256,9 +256,10 @@ export interface PaymentSettings {
   acceptHouseAccounts: boolean
   acceptHotelRoomCharge: boolean   // Bill to Room via Oracle OPERA PMS
 
-  // Rounding (for cash)
-  cashRounding: 'none' | 'nickel' | 'dime' | 'quarter' | 'dollar'
-  roundingDirection: 'nearest' | 'up' | 'down'
+  // Legacy rounding fields — DEPRECATED. Use top-level priceRounding instead.
+  // Kept for backward compatibility with older NUC builds; ignored when priceRounding.enabled is true.
+  cashRounding?: 'none' | 'nickel' | 'dime' | 'quarter' | 'dollar'
+  roundingDirection?: 'nearest' | 'up' | 'down'
 
   // Pre-auth (bar tabs)
   enablePreAuth: boolean

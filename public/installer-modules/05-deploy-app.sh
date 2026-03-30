@@ -371,7 +371,9 @@ PUBKEY
   chown -R gwipos:gwipos "$APP_BASE" 2>/dev/null || true
   # Re-lock sensitive paths
   [[ -f "$ENV_FILE" ]] && chown root:gwipos "$ENV_FILE" && chmod 640 "$ENV_FILE"
-  [[ -d "$APP_BASE/keys" ]] && chown -R root:root "$APP_BASE/keys" && chmod 700 "$APP_BASE/keys"
+  [[ -d "$APP_BASE/keys" ]] && chown root:gwipos "$APP_BASE/keys" && chmod 750 "$APP_BASE/keys"
+  # Private key stays locked; pub key readable by gwipos for deploy signature verification
+  [[ -f "$APP_BASE/keys/private.pem" ]] && chown root:root "$APP_BASE/keys/private.pem" && chmod 600 "$APP_BASE/keys/private.pem"
   local _cred="$APP_BASE/.git-credentials"
   [[ -f "$_cred" ]] && chown root:gwipos "$_cred" && chmod 640 "$_cred"
 
