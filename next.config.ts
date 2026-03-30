@@ -18,7 +18,7 @@ const nextConfig: NextConfig = {
   // On NUC, the custom server.ts wraps Next.js directly (npm ci + full node_modules),
   // so the standalone .next/standalone folder is not used there.
   output: 'standalone',
-  serverExternalPackages: ['serialport', 'ws'],
+  serverExternalPackages: ['serialport', 'ws', 'accepts', 'negotiator'],
 
   // Disable x-powered-by header for security
   poweredByHeader: false,
