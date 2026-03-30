@@ -33,7 +33,7 @@ import { disconnectNeon } from './src/lib/neon-client'
 import { cleanupStaleOrders } from './src/lib/domain/cleanup/stale-order-cleanup'
 import { listPendingRetries, processWalkoutRetry } from './src/lib/domain/datacap/walkout-retry-service'
 import { runBootstrap, startSchemaRecheckIfBlocked, stopSchemaRecheck } from './src/lib/venue-bootstrap'
-import { computeReadiness, setReadinessState, getReadinessState, advanceToOrders, isReadyForSync, type ReadinessInputs } from './src/lib/readiness'
+import { computeReadiness, setReadinessState, getReadinessState, advanceToOrders, isReadyForSync, CRITICAL_OPERATIONAL_TABLES, type ReadinessInputs } from './src/lib/readiness'
 
 // Normalize POS_LOCATION_ID early — some NUC .env files only set LOCATION_ID.
 // This ensures all downstream code reading process.env.POS_LOCATION_ID gets the value.
@@ -44,6 +44,31 @@ if (!process.env.POS_LOCATION_ID && process.env.LOCATION_ID) {
 const dev = config.nodeEnv !== 'production'
 const hostname = process.env.HOSTNAME || 'localhost'
 const port = config.port
+
+/** Check critical operational tables in parallel and advance to ORDERS if populated. */
+async function verifyCriticalTablesAndAdvance(client: any, log: any): Promise<void> {
+  const results = await Promise.allSettled(
+    CRITICAL_OPERATIONAL_TABLES.map(table =>
+      client.$queryRawUnsafe<[{ count: bigint }]>(
+        `SELECT COUNT(*) as count FROM "${table}" WHERE "deletedAt" IS NULL`
+      )
+    )
+  )
+  const criticalCounts: Record<string, number> = {}
+  for (let i = 0; i < CRITICAL_OPERATIONAL_TABLES.length; i++) {
+    const r = results[i]
+    criticalCounts[CRITICAL_OPERATIONAL_TABLES[i]] = r.status === 'fulfilled'
+      ? Number(r.value[0]?.count ?? 0)
+      : 0
+  }
+  advanceToOrders(criticalCounts)
+  const current = getReadinessState()
+  if (current?.level === 'ORDERS') {
+    log.info({ criticalCounts }, 'Server fully ready — ORDERS level reached')
+  } else {
+    log.warn({ criticalCounts, level: current?.level }, 'Critical table check complete — awaiting full readiness')
+  }
+}
 
 // ============================================================================
 // EOD Scheduler — runs stale order cleanup daily at 4 AM
@@ -416,10 +441,10 @@ async function main() {
       startSchemaRecheckIfBlocked()
     }
 
-    // Offline-first: always start sync workers when sync is enabled.
-    // Workers handle Neon retries internally — they won't crash if Neon
-    // is unreachable, they'll just skip sync cycles until it's available.
-    if (syncReady || (config.syncEnabled && config.neonDatabaseUrl && readiness.level !== 'FAILED')) {
+    // Offline-first: start sync workers when sync is enabled and readiness is SYNC+.
+    // Workers handle Neon retries internally — they skip cycles when Neon is unreachable.
+    const shouldStartSync = syncReady || (config.syncEnabled && config.neonDatabaseUrl && readiness.level === 'SYNC')
+    if (shouldStartSync) {
       registerWorker('upstreamSync', 'degraded',
         () => startUpstreamSyncWorker(),
         () => stopUpstreamSyncWorker()
@@ -492,44 +517,21 @@ async function main() {
       logger.fatal({ err }, 'Required worker failed — aborting boot')
       process.exit(1)
     }
-    if (syncReady) {
+    if (shouldStartSync && syncReady) {
       logger.info('Bidirectional sync workers started (NUC <-> Neon)')
-
-      // Wait up to 15s for the first downstream sync cycle to complete.
       logger.info('Waiting for initial downstream sync cycle (max 15s)...')
       await Promise.race([
         initialSyncComplete,
         new Promise(resolve => setTimeout(resolve, 15_000))
       ])
-    } else {
+    } else if (shouldStartSync) {
       logger.info('Sync workers started in retry mode (Neon unreachable at boot)')
     }
 
     // Verify critical tables are populated before advancing to ORDERS.
-    // This runs regardless of Neon state — if a previous sync/seed populated
+    // Runs regardless of Neon state — if a previous sync/seed populated
     // these tables, the POS is ready for customer traffic.
-    {
-      const criticalCounts: Record<string, number> = {}
-      const criticalTables = ['Location', 'Organization', 'Role', 'Employee', 'Category', 'OrderType']
-      for (const table of criticalTables) {
-        try {
-          const rows = await masterClient.$queryRawUnsafe<[{ count: bigint }]>(
-            `SELECT COUNT(*) as count FROM "${table}" WHERE "deletedAt" IS NULL`
-          )
-          criticalCounts[table] = Number(rows[0]?.count ?? 0)
-        } catch {
-          criticalCounts[table] = 0
-        }
-      }
-      // advanceToOrders only advances from SYNC level (enforced internally)
-      advanceToOrders(criticalCounts)
-      const current = getReadinessState()
-      if (current?.level === 'ORDERS') {
-        logger.info({ criticalCounts }, 'Server fully ready — ORDERS level reached')
-      } else {
-        logger.warn({ criticalCounts, level: current?.level }, 'Critical table check complete — awaiting full readiness')
-      }
-    }
+    await verifyCriticalTablesAndAdvance(masterClient, logger)
   })
 
   // Graceful shutdown

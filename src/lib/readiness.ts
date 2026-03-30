@@ -50,6 +50,14 @@ export interface ReadinessInputs {
   seedComplete: boolean
 }
 
+/**
+ * Critical operational tables that must be populated before accepting customer traffic.
+ * Used by advanceToOrders() and server.ts startup to gate ORDERS level.
+ */
+export const CRITICAL_OPERATIONAL_TABLES = [
+  'Location', 'Organization', 'Role', 'Employee', 'Category', 'OrderType',
+] as const
+
 export interface ReadinessState {
   level: ReadinessLevel
   /** Individual check results */
@@ -63,7 +71,11 @@ export interface ReadinessState {
   syncEnabled: boolean
   initialSyncComplete: boolean
   seedComplete: boolean
-  /** True when all Neon checks pass and sync can start */
+  /**
+   * True when ALL Neon checks pass (reachable + schema + tables + enums + seed).
+   * Can be false while level=SYNC when operating in offline-first mode (local DB
+   * is ready but Neon is temporarily unreachable). Sync workers handle retries.
+   */
   syncContractReady: boolean
   /** Human-readable reasons for degradation or failure */
   degradedReasons: string[]
@@ -222,7 +234,7 @@ export function advanceToOrders(criticalTableCounts?: Record<string, number>): v
 
   // If counts provided, verify critical tables have data
   if (criticalTableCounts) {
-    const required = ['Location', 'Organization', 'Role', 'Employee', 'Category', 'OrderType']
+    const required: readonly string[] = CRITICAL_OPERATIONAL_TABLES
     const missing = required.filter(t => !criticalTableCounts[t] || criticalTableCounts[t] === 0)
     if (missing.length > 0) {
       // Don't advance — critical tables empty after first sync
