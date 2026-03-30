@@ -33,7 +33,7 @@ import { disconnectNeon } from './src/lib/neon-client'
 import { cleanupStaleOrders } from './src/lib/domain/cleanup/stale-order-cleanup'
 import { listPendingRetries, processWalkoutRetry } from './src/lib/domain/datacap/walkout-retry-service'
 import { runBootstrap, startSchemaRecheckIfBlocked, stopSchemaRecheck } from './src/lib/venue-bootstrap'
-import { computeReadiness, setReadinessState, advanceToOrders, isReadyForSync, type ReadinessInputs } from './src/lib/readiness'
+import { computeReadiness, setReadinessState, getReadinessState, advanceToOrders, isReadyForSync, type ReadinessInputs } from './src/lib/readiness'
 
 // Normalize POS_LOCATION_ID early — some NUC .env files only set LOCATION_ID.
 // This ensures all downstream code reading process.env.POS_LOCATION_ID gets the value.
