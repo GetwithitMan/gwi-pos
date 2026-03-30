@@ -27,7 +27,7 @@ export function processCashPayment(
   alreadyPaidInLoop: number,
   settings: {
     priceRounding?: { enabled: boolean; applyToCash: boolean; increment: string; direction: string; applyToCard: boolean }
-    payments: { cashRounding: string; roundingDirection?: string }
+    payments: { cashRounding?: string; roundingDirection?: string }
   },
   dualPricing: { enabled: boolean; cashDiscountPercent: number } | undefined,
   orderId: string,

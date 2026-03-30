@@ -14,8 +14,8 @@
 
 import type { PaymentSettings } from '../settings'
 
-export type RoundingMode = PaymentSettings['cashRounding']
-export type RoundingDirection = PaymentSettings['roundingDirection']
+export type RoundingMode = NonNullable<PaymentSettings['cashRounding']>
+export type RoundingDirection = NonNullable<PaymentSettings['roundingDirection']>
 
 /**
  * Rounding increments for each mode
