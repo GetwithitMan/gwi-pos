@@ -134,6 +134,18 @@ function run(cmd, cwd, timeoutSec) {
   }
 }
 
+// ── Deploy failure classifier ─────────────────────────────────────────────
+// Maps deploy-release.sh exit state to a structured failure reason for MC.
+function classifyDeployFailure(deployState, exitMessage) {
+  var reason = 'FAILED_DEPLOY_SCRIPT'
+  if (deployState === 'rolled_back') reason = 'FAILED_DEPLOY_SCRIPT'
+  else if (deployState === 'rollback_failed') reason = 'FAILED_DEPLOY_SCRIPT'
+  else if (/schema|migrat/i.test(exitMessage || '')) reason = 'FAILED_SCHEMA'
+  else if (/readiness|health/i.test(exitMessage || '')) reason = 'FAILED_READINESS'
+  else if (/verify|checksum|signature|minisign/i.test(exitMessage || '')) reason = 'FAILED_ARTIFACT_VERIFY'
+  return reason
+}
+
 // ── FORCE_UPDATE handler ───────────────────────────────────────────────────
 // Phase 8.2: First tries version-targeted update via local update agent
 // (preflight checks, payment safety, cloud event reporting).
@@ -213,6 +225,20 @@ async function handleForceUpdate(payload, cmdId) {
 
       // Self-update sync-agent + components from new release
       try { selfUpdateSyncAgent() } catch (e) { log('[Update] Self-update warning: ' + e.message) }
+
+      // Stage deploy-release.sh from the new release for next run
+      try {
+        var newDeployScript = '/opt/gwi-pos/current/public/scripts/deploy-release.sh'
+        if (fs.existsSync(newDeployScript)) {
+          fs.copyFileSync(newDeployScript, DEPLOY_SCRIPT + '.staged')
+          fs.renameSync(DEPLOY_SCRIPT + '.staged', DEPLOY_SCRIPT)
+          try { execSync('chmod 755 "' + DEPLOY_SCRIPT + '"', { timeout: 5000, stdio: 'pipe' }) } catch (e) {}
+          log('[Update] Staged deploy-release.sh from release for next run')
+        }
+      } catch (e) {
+        log('[Update] Deploy script staging warning: ' + e.message)
+      }
+
       var compResult = null
       try { compResult = updateComponentsFromCheckout() } catch (e) {}
 
@@ -244,409 +270,61 @@ async function handleForceUpdate(payload, cmdId) {
         return { ok: false, error: 'Artifact deploy AND rollback failed', steps: ['artifact-deploy-failed', 'rollback-failed'], _acked: true }
       }
 
-      // Artifact deploy failed for other reason — fall through to legacy path
-      log('[Update] Falling through to legacy update path...')
-    }
-  }
+      // Artifact deploy failed — report structured failure to MC (no legacy fallback)
+      var failReason = classifyDeployFailure(deployState, (deployErr.message || ''))
+      log('[Update] Deploy FAILED — reason: ' + failReason + ', state: ' + deployState)
 
-  // Try version-targeted update via local update agent (Phase 8.2 — legacy path)
-  if (targetVersion) {
-    log('[Update] Attempting version-targeted update to ' + targetVersion + ' via update agent...')
-    try {
-      var updateRes = await postJsonLocal('/api/system/update', { targetVersion: targetVersion })
-      if (updateRes.status === 200) {
-        var updateData = JSON.parse(updateRes.body)
-        if (updateData.success) {
-          log('[Update] Update agent accepted update to ' + targetVersion + ' — monitoring...')
-          // Wait for the update to complete (up to 15 minutes)
-          // The update agent runs in background; poll status
-          var waited = 0
-          var pollInterval = 10000 // 10s
-          var maxWait = 900000 // 15 min
-          while (waited < maxWait) {
-            await new Promise(function(r) { setTimeout(r, pollInterval) })
-            waited += pollInterval
-            try {
-              var statusRes = await new Promise(function(resolve, reject) {
-                var url = new URL('/api/system/update', 'http://localhost:3005')
-                http.get(url, function(res) {
-                  var d = ''
-                  res.on('data', function(c) { d += c })
-                  res.on('end', function() { resolve({ status: res.statusCode, body: d }) })
-                }).on('error', reject)
-              })
-              var statusData = JSON.parse(statusRes.body)
-              if (!statusData.isUpdating) {
-                // Update finished (or server restarted with new version)
-                var newVer = statusData.currentVersion || 'unknown'
-                log('[Update] Update agent finished — version: ' + newVer)
-                // Self-update sync-agent + deploy all components from checkout
-                selfUpdateSyncAgent()
-                var compResult = updateComponentsFromCheckout()
-                if (cmdId) ackProgress(cmdId, 'COMPLETED', { step: 'update-agent-done', version: newVer, steps: ['update-agent OK', 'components OK'], componentUpdates: compResult })
-                return { ok: true, version: newVer, steps: ['update-agent OK', 'components OK'], _acked: true }
-              }
-            } catch (pollErr) {
-              // Server may be restarting — expected. Wait a bit more.
-              log('[Update] Server unreachable during update (expected during restart), waiting...')
-              await new Promise(function(r) { setTimeout(r, 15000) })
-              waited += 15000
-              // Check if the server came back with new version
-              try {
-                var postRestartRes = await new Promise(function(resolve, reject) {
-                  var url = new URL('/api/system/update', 'http://localhost:3005')
-                  http.get(url, function(res) {
-                    var d = ''
-                    res.on('data', function(c) { d += c })
-                    res.on('end', function() { resolve({ status: res.statusCode, body: d }) })
-                  }).on('error', reject)
-                })
-                var prData = JSON.parse(postRestartRes.body)
-                if (!prData.isUpdating) {
-                  log('[Update] Server back online — version: ' + (prData.currentVersion || 'unknown'))
-                  selfUpdateSyncAgent()
-                  var compResult2 = updateComponentsFromCheckout()
-                  if (cmdId) ackProgress(cmdId, 'COMPLETED', { step: 'update-agent-done', version: prData.currentVersion || 'unknown', steps: ['update-agent OK', 'restart OK', 'components OK'], componentUpdates: compResult2 })
-                  return { ok: true, version: prData.currentVersion || 'unknown', steps: ['update-agent OK', 'restart OK', 'components OK'], _acked: true }
-                }
-              } catch (e) {
-                // Still down — continue waiting
-              }
-            }
-          }
-          log('[Update] Update agent timed out after 15min — falling back to direct update')
-        } else {
-          log('[Update] Update agent rejected: ' + (updateData.error || 'unknown') + ' — falling back to direct update')
-        }
-      } else if (updateRes.status === 409) {
-        log('[Update] Update already in progress — waiting...')
-        if (cmdId) ackProgress(cmdId, 'COMPLETED', { step: 'already-in-progress', version: 'pending', steps: ['update-agent already running'] })
-        return { ok: true, version: 'pending', steps: ['update-agent already running'], _acked: true }
-      } else {
-        log('[Update] Update agent HTTP ' + updateRes.status + ' — falling back to direct update')
+      if (cmdId) {
+        ackProgress(cmdId, 'FAILED', {
+          step: 'artifact-deploy-failed',
+          failureClass: failReason,
+          deployState: deployState,
+          error: (deployErr.message || '').slice(0, 300),
+          version: previousVersion
+        })
       }
-    } catch (agentErr) {
-      log('[Update] Update agent unreachable: ' + agentErr.message + ' — falling back to direct update')
+      writeUpdateState({
+        status: 'FAILED',
+        attemptId: currentAttemptId,
+        targetVersion: targetVersion || 'latest',
+        previousVersion: previousVersion,
+        attemptedAt: new Date().toISOString(),
+        completedAt: new Date().toISOString(),
+        method: 'artifact',
+        failureClass: failReason,
+        deployState: deployState,
+        error: (deployErr.message || '').slice(0, 300)
+      })
+      return { ok: false, error: failReason + ': ' + (deployErr.message || '').slice(0, 200), steps: ['artifact-deploy-failed'], _acked: true }
     }
   }
 
-  // Fallback: Direct update (original behavior)
-  log('[Update] Starting direct FORCE_UPDATE...')
-  var steps = []
-
-  // Write IN_PROGRESS state for boot recovery
+  // deploy-release.sh is the only supported deploy path.
+  // If it does not exist, report a structured failure — no legacy git clone fallback.
+  log('[Update] FAILED — deploy-release.sh not found at ' + DEPLOY_SCRIPT)
+  var missingResult = {
+    ok: false,
+    error: 'FAILED_DEPLOY_SCRIPT: deploy-release.sh not found — run installer to provision this NUC',
+    steps: ['deploy-script-missing']
+  }
+  if (cmdId) ackProgress(cmdId, 'FAILED', {
+    step: 'deploy-script-missing',
+    failureClass: 'FAILED_DEPLOY_SCRIPT',
+    error: missingResult.error,
+    version: previousVersion
+  })
   writeUpdateState({
-    status: 'IN_PROGRESS',
+    status: 'FAILED',
     attemptId: currentAttemptId,
     targetVersion: targetVersion || 'latest',
     previousVersion: previousVersion,
     attemptedAt: new Date().toISOString(),
-    method: 'direct'
+    completedAt: new Date().toISOString(),
+    method: 'none',
+    failureClass: 'FAILED_DEPLOY_SCRIPT',
+    error: missingResult.error
   })
-
-  function step(name, cmd, failOk, timeout) {
-    log('  ' + name + '...')
-    var ok = run(cmd, APP_DIR, timeout)
-    steps.push(name + (ok ? ' OK' : ' FAIL'))
-    return ok || failOk
-  }
-
-  // ── Git self-repair before any git operations ──
-  // Fix ownership: previous sudo/root operations leave files root-owned,
-  // causing git (running as service user) to fail with "Permission denied"
-  try {
-    var posUser = env.POSUSER || 'gwipos'
-    try { posUser = execSync('stat -c %U ' + APP_DIR, { encoding: 'utf-8', timeout: 5000, stdio: 'pipe' }).trim() } catch (e) {}
-    if (posUser && posUser !== 'root') {
-      execSync('sudo chown -R ' + posUser + ':' + posUser + ' "' + APP_DIR + '"', { timeout: 30000, stdio: 'pipe' })
-      // Re-lock sensitive files
-      try { execSync('sudo chown root:' + posUser + ' /opt/gwi-pos/.env && sudo chmod 640 /opt/gwi-pos/.env', { timeout: 5000, stdio: 'pipe' }) } catch (e) {}
-      try { execSync('sudo chown -R root:root /opt/gwi-pos/keys && sudo chmod 700 /opt/gwi-pos/keys', { timeout: 5000, stdio: 'pipe' }) } catch (e) {}
-      try { execSync('sudo chown root:' + posUser + ' /opt/gwi-pos/.git-credentials && sudo chmod 640 /opt/gwi-pos/.git-credentials', { timeout: 5000, stdio: 'pipe' }) } catch (e) {}
-      log('  Fixed file ownership for ' + posUser)
-      steps.push('ownership-fix OK')
-    }
-  } catch (e) {
-    log('  Ownership fix failed (non-fatal): ' + (e.message || '').slice(0, 100))
-  }
-
-  // Clear stale git lock files left by interrupted operations
-  try {
-    var lockFiles = [
-      path.join(APP_DIR, '.git', 'index.lock'),
-      path.join(APP_DIR, '.git', 'refs', 'remotes', 'origin', 'main.lock'),
-      path.join(APP_DIR, '.git', 'HEAD.lock'),
-      path.join(APP_DIR, '.git', 'config.lock'),
-      path.join(APP_DIR, '.git', 'shallow.lock'),
-      path.join(APP_DIR, '.git', 'refs', 'heads', 'main.lock'),
-    ]
-    lockFiles.forEach(function(f) {
-      try {
-        if (fs.existsSync(f)) {
-          fs.unlinkSync(f)
-          log('  Removed stale lock: ' + f)
-        }
-      } catch (e) {}
-    })
-  } catch (e) {}
-
-  // Abort interrupted merge/rebase/cherry-pick state
-  try {
-    if (fs.existsSync(path.join(APP_DIR, '.git', 'MERGE_HEAD'))) {
-      log('  Aborting interrupted merge')
-      run('git merge --abort', APP_DIR, 10)
-    }
-    if (fs.existsSync(path.join(APP_DIR, '.git', 'rebase-merge')) || fs.existsSync(path.join(APP_DIR, '.git', 'rebase-apply'))) {
-      log('  Aborting interrupted rebase')
-      run('git rebase --abort', APP_DIR, 10)
-    }
-    if (fs.existsSync(path.join(APP_DIR, '.git', 'CHERRY_PICK_HEAD'))) {
-      log('  Aborting interrupted cherry-pick')
-      run('git cherry-pick --abort', APP_DIR, 10)
-    }
-  } catch (e) {}
-  steps.push('git-repair OK')
-  if (cmdId) ackProgress(cmdId, 'IN_PROGRESS', { step: 'backup', detail: 'git-repair complete, starting fetch' })
-
-  // ── Git fetch with retry ──
-  var fetchOk = false
-  for (var fetchAttempt = 1; fetchAttempt <= 3; fetchAttempt++) {
-    if (step('git fetch (attempt ' + fetchAttempt + ')', 'git fetch origin --tags --prune', true, 60)) {
-      fetchOk = true
-      break
-    }
-    if (fetchAttempt < 3) {
-      log('  Retrying fetch in 5s...')
-      execSync('sleep 5', { timeout: 10000 })
-    }
-  }
-  if (!fetchOk) {
-    log('  WARNING: All fetch attempts failed — attempting checkout with existing refs')
-  }
-  if (cmdId) ackProgress(cmdId, 'IN_PROGRESS', { step: 'git-fetch', detail: fetchOk ? 'fetch OK' : 'fetch failed, using existing refs' })
-
-  // Version-targeted: try pinned tag first, fall back to origin/main
-  var tagRef = targetVersion ? 'v' + targetVersion : null
-  var tagExists = false
-  if (tagRef) {
-    try {
-      execSync('git rev-parse --verify refs/tags/' + tagRef, { cwd: APP_DIR, timeout: 5000, stdio: 'pipe' })
-      tagExists = true
-    } catch (e) { /* tag doesn't exist */ }
-  }
-
-  var gitCheckoutError = ''
-  if (tagExists) {
-    // Pinned release: deterministic checkout of the exact tagged commit
-    log('  Deploying pinned release: ' + tagRef)
-    try {
-      execSync('git checkout ' + tagRef, { cwd: APP_DIR, timeout: 30000, stdio: 'pipe', encoding: 'utf-8' })
-      steps.push('pinned-release: ' + tagRef)
-    } catch (e) {
-      gitCheckoutError = ((e.stderr || e.stdout || e.message || '') + '').slice(0, 500)
-      steps.push('git checkout FAIL: ' + gitCheckoutError.slice(0, 100))
-      log('  FAILED: ' + gitCheckoutError)
-      var failResult = { ok: false, error: 'git checkout failed: ' + gitCheckoutError, steps: steps }
-      if (cmdId) ackProgress(cmdId, 'FAILED', { step: 'git-checkout', error: failResult.error, steps: steps })
-      writeUpdateState({ status: 'FAILED', attemptId: currentAttemptId, targetVersion: targetVersion || 'latest', previousVersion: previousVersion, attemptedAt: new Date().toISOString(), completedAt: new Date().toISOString(), method: 'direct', error: failResult.error, steps: steps })
-      return Object.assign(failResult, { _acked: true })
-    }
-  } else {
-    // Fallback: use origin/main (backward compatible)
-    if (tagRef) {
-      log('  Tag ' + tagRef + ' not found, falling back to origin/main')
-    }
-    log('  git reset to origin/main...')
-    try {
-      execSync('git reset --hard origin/main', { cwd: APP_DIR, timeout: 30000, stdio: 'pipe', encoding: 'utf-8' })
-      steps.push('fallback: origin/main')
-    } catch (e) {
-      gitCheckoutError = ((e.stderr || e.stdout || e.message || '') + '').slice(0, 500)
-      // Nuclear recovery: if reset fails, nuke and re-clone
-      log('  git reset failed — attempting nuclear recovery (re-clone)...')
-      steps.push('git reset FAIL — nuclear recovery')
-      try {
-        var repoUrl = ''
-        try { repoUrl = execSync('git remote get-url origin', { cwd: APP_DIR, timeout: 5000, stdio: 'pipe', encoding: 'utf-8' }).trim() } catch (e) {}
-        if (!repoUrl) repoUrl = 'https://github.com/GetwithitMan/gwi-pos.git'
-        execSync('rm -rf "' + APP_DIR + '"', { timeout: 30000 })
-        execSync('git clone --depth 1 "' + repoUrl + '" "' + APP_DIR + '"', { timeout: 120000, stdio: 'pipe' })
-        log('  Nuclear re-clone succeeded')
-        steps.push('nuclear-reclone OK')
-        // Re-copy env files
-        try { fs.copyFileSync(ENV_FILE, path.join(APP_DIR, '.env')) } catch (e) {}
-        try { fs.copyFileSync(ENV_FILE, path.join(APP_DIR, '.env.local')) } catch (e) {}
-      } catch (cloneErr) {
-        log('  Nuclear re-clone FAILED: ' + ((cloneErr.message || '') + '').slice(0, 200))
-        var cloneFailResult = { ok: false, error: 'git recovery failed: ' + gitCheckoutError, steps: steps }
-        if (cmdId) ackProgress(cmdId, 'FAILED', { step: 'git-checkout', error: cloneFailResult.error, steps: steps })
-        writeUpdateState({ status: 'FAILED', attemptId: currentAttemptId, targetVersion: targetVersion || 'latest', previousVersion: previousVersion, attemptedAt: new Date().toISOString(), completedAt: new Date().toISOString(), method: 'direct', error: cloneFailResult.error, steps: steps })
-        return Object.assign(cloneFailResult, { _acked: true })
-      }
-    }
-  }
-
-  // Verify version-contract.json after checkout (schema + seed versions for diagnostics)
-  // Pre-deploy schema check: compare contract requirements vs local DB state
-  var contract = null
-  try {
-    contract = JSON.parse(fs.readFileSync(path.join(APP_DIR, 'public', 'version-contract.json'), 'utf-8'))
-    log('  Version contract: schema=' + contract.schemaVersion + ' seed=' + contract.seedVersion +
-        ' migrations=' + contract.migrationCount + ' generated=' + contract.generatedAt)
-    steps.push('contract: schema=' + contract.schemaVersion)
-  } catch (e) {
-    log('  Warning: could not read version-contract.json')
-  }
-
-  // Pre-deploy schema version gate: ensure local DB can support the new code's schema requirements.
-  // If the local DB has fewer migrations than the code requires, migrations MUST succeed or the
-  // deploy will produce a broken app. Query _gwi_migrations to get the current migration count.
-  if (contract && contract.migrationCount) {
-    try {
-      var dbUrl = env.DATABASE_URL || ''
-      var localMigrationCount = 0
-      if (dbUrl) {
-        try {
-          var countOutput = execSync(
-            'psql "' + dbUrl + '" -t -A -c "SELECT COUNT(*) FROM _gwi_migrations" 2>/dev/null',
-            { encoding: 'utf-8', timeout: 10000, stdio: 'pipe' }
-          ).trim()
-          localMigrationCount = parseInt(countOutput, 10) || 0
-        } catch (psqlErr) {
-          // _gwi_migrations may not exist yet (fresh install) — that's OK, count = 0
-          log('  Schema check: could not query _gwi_migrations (may not exist yet)')
-        }
-      }
-
-      var requiredMigrations = parseInt(contract.migrationCount, 10) || 0
-      var migrationGap = requiredMigrations - localMigrationCount
-
-      if (migrationGap > 0) {
-        log('  Schema check: local DB has ' + localMigrationCount + ' migrations, code requires ' + requiredMigrations + ' (gap: ' + migrationGap + ')')
-        // Large gap (>10 migrations) is a warning — migrations will run during build but
-        // a very large jump increases the risk of failure
-        if (migrationGap > 10) {
-          log('  WARNING: Large migration gap (' + migrationGap + ' pending). Deploy may take longer. Migrations will run during build.')
-          steps.push('schema-gap-warning: ' + migrationGap + ' pending migrations')
-        } else {
-          steps.push('schema-gap: ' + migrationGap + ' pending migrations')
-        }
-      } else {
-        log('  Schema check: local DB is current (' + localMigrationCount + ' migrations applied)')
-        steps.push('schema-check OK')
-      }
-    } catch (schemaCheckErr) {
-      log('  Schema check skipped: ' + ((schemaCheckErr.message || '') + '').slice(0, 100))
-    }
-  }
-
-  // Re-copy env files in case they were updated
-  try { fs.copyFileSync(ENV_FILE, path.join(APP_DIR, '.env')) } catch (e) {}
-  try { fs.copyFileSync(ENV_FILE, path.join(APP_DIR, '.env.local')) } catch (e) {}
-
-  // Stamp target version into package.json so NUC reports correct version to MC
-  if (targetVersion) {
-    try {
-      var pkgPath = path.join(APP_DIR, 'package.json')
-      var pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'))
-      if (pkg.version !== targetVersion) {
-        pkg.version = targetVersion
-        fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n')
-        log('  Stamped version ' + targetVersion + ' into package.json')
-        steps.push('version-stamp OK')
-      }
-    } catch (e) {
-      log('  Version stamp failed: ' + (e.message || '').slice(0, 100))
-    }
-  }
-
-  if (cmdId) ackProgress(cmdId, 'IN_PROGRESS', { step: 'npm-install', detail: 'starting npm ci' })
-  if (!step('npm install', 'npm ci --production=false', false, 180)) {
-    log('  npm ci failed — clearing cache and retrying...')
-    run('npm cache clean --force', APP_DIR, 30)
-    run('rm -rf node_modules', APP_DIR, 30)
-    if (!step('npm install (retry)', 'npm ci --production=false', false, 300)) {
-      var npmFailResult = { ok: false, error: 'npm install failed after retry', steps: steps }
-      if (cmdId) ackProgress(cmdId, 'FAILED', { step: 'npm-install', error: npmFailResult.error, steps: steps })
-      writeUpdateState({ status: 'FAILED', attemptId: currentAttemptId, targetVersion: targetVersion || 'latest', previousVersion: previousVersion, attemptedAt: new Date().toISOString(), completedAt: new Date().toISOString(), method: 'direct', error: npmFailResult.error, steps: steps })
-      return Object.assign(npmFailResult, { _acked: true })
-    }
-  }
-  // Clean stale Prisma v6 cache (Prisma 7 generates to src/generated/prisma/)
-  step('clean-prisma-cache', 'rm -rf node_modules/.prisma', true, 10)
-  step('prisma generate', 'npx prisma generate', true, 120)
-  step('pre-migrate', 'node scripts/nuc-pre-migrate.js', true, 180)
-
-  // ── Local schema migration via deploy-tools/migrate.js (sole schema path) ──
-  // Legacy Prisma CLI calls (prisma migrate deploy, prisma db push, prisma migrate resolve)
-  // have been removed. deploy-tools/migrate.js is the single migration runner for local PG.
-  // NUC never mutates Neon — MC owns venue Neon schema via provision + sync-schema APIs.
-  log('  deploy-tools migrate (local PG)...')
-  var migrateOk = false
-  var dtMigrateDir = path.join(APP_DIR, 'deploy-tools', 'src', 'migrate.js')
-  if (fs.existsSync(dtMigrateDir)) {
-    try {
-      run('node ' + dtMigrateDir, APP_DIR, 180)
-      migrateOk = true
-      steps.push('deploy-tools migrate OK')
-    } catch (dtErr) {
-      steps.push('deploy-tools migrate FAIL')
-      log('  deploy-tools migrate error: ' + (dtErr.message || '').slice(0, 300))
-    }
-  } else {
-    // Fallback: run nuc-pre-migrate.js which was already called above but handles idempotently
-    log('  deploy-tools not found, relying on pre-migrate step')
-    migrateOk = true
-    steps.push('deploy-tools not found (pre-migrate covers)')
-  }
-
-  // NOTE: NUC does NOT migrate Neon. MC owns Neon schema advancement.
-  // NUC reads version truth from Neon and blocks sync if behind.
-  // If Neon schema is behind, MC must push the update to this venue.
-  // Skip typecheck on NUC (already verified in CI) + set heap for Next.js build
-  // Clean stale .next/lock and .next.backup from previous failed builds
-  // .next.backup inside project dir causes Turbopack to scan 17k+ files = build crash
-  try { fs.unlinkSync(path.join(APP_DIR, '.next', 'lock')) } catch (e) { /* no lock = fine */ }
-  run('rm -rf "' + path.join(APP_DIR, '.next.backup') + '"', APP_DIR, 30)
-  run('rm -rf /opt/gwi-pos/.next.backup', APP_DIR, 10)
-  // Fix ownership (git operations as root can leave root-owned files)
-  run('sudo chown -R $(whoami):$(whoami) ' + APP_DIR, APP_DIR, 30)
-
-  // Stop POS service before build — prevents Prisma/pg concurrent query conflicts
-  // that cause "client.query() when already executing" deprecation → build failure
-  log('  stopping POS for clean build...')
-  run('sudo systemctl stop thepasspos', APP_DIR, 30)
-  if (cmdId) ackProgress(cmdId, 'IN_PROGRESS', { step: 'build', detail: 'starting npm run build' })
-  if (!step('build', 'SKIP_TYPECHECK=1 NODE_OPTIONS="--max-old-space-size=4096" npm run build', false, 600)) {
-    var buildFailResult = { ok: false, error: 'build failed', steps: steps }
-    if (cmdId) ackProgress(cmdId, 'FAILED', { step: 'build', error: buildFailResult.error, steps: steps })
-    writeUpdateState({ status: 'FAILED', attemptId: currentAttemptId, targetVersion: targetVersion || 'latest', previousVersion: previousVersion, attemptedAt: new Date().toISOString(), completedAt: new Date().toISOString(), method: 'direct', error: buildFailResult.error, steps: steps })
-    return Object.assign(buildFailResult, { _acked: true })
-  }
-  // Try current service name (thepasspos), fall back to legacy (pulse-pos)
-  if (cmdId) ackProgress(cmdId, 'IN_PROGRESS', { step: 'restart', detail: 'restarting POS service' })
-  log('  restart...')
-  // Report success BEFORE restart — the restart kills this process (we ARE the POS service).
-  // Use a detached background process so the restart survives our death.
-  // The service will come back via systemd Restart=on-failure.
-  steps.push('restart scheduled')
-  var ver = 'unknown'
-  try { ver = JSON.parse(fs.readFileSync(path.join(APP_DIR, 'package.json'), 'utf-8')).version } catch (e) {}
-  if (cmdId) ackProgress(cmdId, 'COMPLETED', { step: 'done', version: ver, steps: steps })
-  writeUpdateState({ status: 'COMPLETED', attemptId: currentAttemptId, targetVersion: targetVersion || 'latest', previousVersion: previousVersion, attemptedAt: new Date().toISOString(), completedAt: new Date().toISOString(), method: 'direct', steps: steps })
-  selfUpdateSyncAgent()
-
-  // Deploy all components from the checkout (dashboard, monitoring, watchdog)
-  var componentUpdates = updateComponentsFromCheckout()
-  steps.push('components ' + (componentUpdates._updated ? 'OK' : 'skip'))
-
-  log('[Update] SUCCESS — v' + ver + ' (restart in 2s)')
-  if (cmdId) ackProgress(cmdId, 'COMPLETED', { step: 'done', version: ver, steps: steps, componentUpdates: componentUpdates })
-  writeUpdateState({ status: 'COMPLETED', attemptId: currentAttemptId, targetVersion: targetVersion || 'latest', previousVersion: previousVersion, attemptedAt: new Date().toISOString(), completedAt: new Date().toISOString(), method: 'direct', version: ver, steps: steps, componentUpdates: componentUpdates })
-
-  // Schedule restart LAST — in background so it survives this process being killed
-  run('nohup bash -c "sleep 2 && sudo systemctl restart thepasspos" >/dev/null 2>&1 &', APP_DIR, 5)
-  return { ok: true, version: ver, steps: steps, _acked: true }
+  return Object.assign(missingResult, { _acked: true })
 }
 
 // ── Self-update sync agent from repo ──────────────────────────────────────
@@ -829,10 +507,18 @@ function getCurrentSchemaVersion() {
 }
 
 function getCurrentAppVersion() {
+  // Priority 1: running-version.json (authoritative, written by deploy-release.sh)
   try {
-    var pkg = JSON.parse(fs.readFileSync('/opt/gwi-pos/app/package.json', 'utf-8'))
-    return pkg.version || '0.0.0'
-  } catch (e) { return '0.0.0' }
+    var rv = JSON.parse(fs.readFileSync('/opt/gwi-pos/shared/state/running-version.json', 'utf-8'))
+    if (rv.version) return rv.version
+  } catch (e) { /* fall through */ }
+  // Priority 2: /opt/gwi-pos/current/package.json (symlink to active release)
+  try {
+    var pkg = JSON.parse(fs.readFileSync('/opt/gwi-pos/current/package.json', 'utf-8'))
+    if (pkg.version) return pkg.version
+  } catch (e) { /* fall through */ }
+  // Priority 3: unknown
+  return 'unknown'
 }
 
 // ── Process received command ───────────────────────────────────────────────
@@ -1089,29 +775,6 @@ async function processCommand(dataStr) {
         ackProgress(cmd.id, 'FAILED', { step: 'cleanup_failed', error: err.message })
         log('DISK_CLEANUP FAILED: ' + err.message)
         result = { ok: false, error: err.message, _acked: true }
-      }
-    } else if (cmd.type === 'REPAIR_GIT_CREDENTIALS') {
-      try {
-        var token = cmd.payload && cmd.payload.deployToken
-        if (!token || typeof token !== 'string' || token.length < 10) {
-          log('[Sync] REPAIR_GIT_CREDENTIALS: missing or invalid deployToken')
-          result = { ok: false, error: 'missing-deploy-token' }
-        } else {
-          var credContent = 'https://' + token + ':x-oauth-basic@github.com\n'
-          fs.writeFileSync('/opt/gwi-pos/.git-credentials', credContent, { mode: 0o600 })
-          log('[Sync] REPAIR_GIT_CREDENTIALS: credentials file updated')
-          var fetchOk = run('git fetch origin', APP_DIR, 60)
-          if (fetchOk) {
-            log('[Sync] REPAIR_GIT_CREDENTIALS: git fetch OK — credentials valid')
-            result = { ok: true }
-          } else {
-            log('[Sync] REPAIR_GIT_CREDENTIALS: git fetch failed after credential update')
-            result = { ok: false, error: 'git-fetch-failed-after-update' }
-          }
-        }
-      } catch (e) {
-        log('[Sync] REPAIR_GIT_CREDENTIALS error: ' + e.message)
-        result = { ok: false, error: e.message }
       }
     } else if (cmd.type === 'PROMOTE') {
       // Promote this BACKUP NUC to PRIMARY
@@ -1459,6 +1122,22 @@ function reportInterruptedUpdate(status, reason) {
 // ── Start ──────────────────────────────────────────────────────────────────
 log('[Sync] GWI POS Sync Agent started')
 log('[Sync] MC: ' + MC_URL + '  Node: ' + NODE_ID)
+
+// ── Legacy path drift warning ─────────────────────────────────────────────
+// /opt/gwi-pos/app should be a symlink to /opt/gwi-pos/current (or not exist).
+// If it exists as a real directory, a legacy git clone is lingering and wasting
+// disk. Warn loudly so MC and logs surface the drift.
+try {
+  if (fs.existsSync('/opt/gwi-pos/app')) {
+    var appStat = fs.lstatSync('/opt/gwi-pos/app')
+    if (!appStat.isSymbolicLink()) {
+      log('[WARN] /opt/gwi-pos/app exists as a real directory (not a symlink). '
+        + 'This is a legacy git clone — deploy-release.sh uses /opt/gwi-pos/current. '
+        + 'Consider removing /opt/gwi-pos/app to reclaim disk space.')
+    }
+  }
+} catch (e) { /* non-fatal */ }
+
 checkBootUpdate(function() {
   checkInterruptedUpdate(function() {
     backfillCloudIdentity().then(function() {

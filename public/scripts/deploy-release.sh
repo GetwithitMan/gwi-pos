@@ -32,6 +32,12 @@
 #   ├── keys/gwi-pos-release.pub   <- minisign public key
 #   └── deploy-release.sh          <- this script (also at current/public/scripts/)
 # =============================================================================
+
+# INVARIANTS:
+# - /opt/gwi-pos/current is the only active runtime
+# - /opt/gwi-pos/shared/state/running-version.json is the only authoritative running version
+# - deploy-release.sh is the only component allowed to change active runtime or schema state
+
 set -euo pipefail
 
 # ---------------------------------------------------------------------------
@@ -94,6 +100,7 @@ PREVIOUS_RELEASE_ID=""
 FORCE=false
 OFFLINE=false
 DRY_RUN=false
+SKIP_SELF_UPDATE=false
 CHECKSUM_RESULT="skipped"
 SIGNATURE_RESULT="skipped"
 PREFLIGHT_RESULT="skipped"
@@ -740,6 +747,95 @@ version_gte() {
     if [[ "$v1_minor" -lt "$v2_minor" ]]; then return 1; fi
     if [[ "$v1_patch" -ge "$v2_patch" ]]; then return 0; fi
     return 1
+}
+
+# ---------------------------------------------------------------------------
+# Self-Update
+# ---------------------------------------------------------------------------
+self_update_from_artifact() {
+    [[ "$SKIP_SELF_UPDATE" == "true" ]] && return 0
+
+    local manifest="${CACHE_DIR}/manifest.json"
+    [[ ! -f "$manifest" ]] && return 0
+
+    # Derive deploy script URL from artifact URL
+    local script_url=""
+    if has_jq; then
+        script_url="$(jq -r '.deployScriptUrl // empty' "$manifest" 2>/dev/null)" || true
+    fi
+    if [[ -z "$script_url" ]] && [[ -n "${ARTIFACT_URL:-}" ]]; then
+        local base_url
+        base_url="$(dirname "$ARTIFACT_URL")"
+        script_url="${base_url}/deploy-release.sh"
+    fi
+    [[ -z "$script_url" ]] && return 0
+
+    local tmp_script="${CACHE_DIR}/deploy-release.sh.new"
+    if ! download_file_no_cache "${script_url}" "$tmp_script" 2>/dev/null; then
+        warn "Self-update: could not download new deploy-release.sh — continuing with current version"
+        rm -f "$tmp_script" 2>/dev/null || true
+        return 0
+    fi
+
+    # Validate downloaded script
+    local new_size
+    new_size="$(stat -c%s "$tmp_script" 2>/dev/null || stat -f%z "$tmp_script" 2>/dev/null || echo 0)"
+    if [[ "$new_size" -lt 1000 ]]; then
+        warn "Self-update: downloaded file too small (${new_size} bytes) — skipping"
+        rm -f "$tmp_script" 2>/dev/null || true
+        return 0
+    fi
+
+    # Check shebang
+    local first_line
+    first_line="$(head -1 "$tmp_script" 2>/dev/null)" || true
+    if [[ "$first_line" != "#!/"* ]]; then
+        warn "Self-update: downloaded file missing shebang — skipping"
+        rm -f "$tmp_script" 2>/dev/null || true
+        return 0
+    fi
+
+    # Syntax check
+    if ! bash -n "$tmp_script" 2>/dev/null; then
+        warn "Self-update: downloaded script has syntax errors — skipping"
+        rm -f "$tmp_script" 2>/dev/null || true
+        return 0
+    fi
+
+    # Compare SHA256
+    local current_sha new_sha
+    current_sha="$(shasum -a 256 "$0" 2>/dev/null | cut -d' ' -f1)" || true
+    new_sha="$(shasum -a 256 "$tmp_script" 2>/dev/null | cut -d' ' -f1)" || true
+
+    if [[ "$current_sha" == "$new_sha" ]]; then
+        log "Self-update: deploy script is current"
+        rm -f "$tmp_script" 2>/dev/null || true
+        return 0
+    fi
+
+    log "Self-update: new deploy-release.sh detected (${current_sha:0:12} -> ${new_sha:0:12})"
+
+    # Atomic replace
+    cp "$tmp_script" "${BASE_DIR}/deploy-release.sh.tmp" 2>/dev/null || {
+        warn "Self-update: failed to stage new script — continuing with current version"
+        rm -f "$tmp_script" 2>/dev/null || true
+        return 0
+    }
+    mv -f "${BASE_DIR}/deploy-release.sh.tmp" "${BASE_DIR}/deploy-release.sh" || {
+        warn "Self-update: failed to install new script — continuing with current version"
+        rm -f "${BASE_DIR}/deploy-release.sh.tmp" 2>/dev/null || true
+        rm -f "$tmp_script" 2>/dev/null || true
+        return 0
+    }
+    chmod 755 "${BASE_DIR}/deploy-release.sh"
+    rm -f "$tmp_script" 2>/dev/null || true
+
+    # Release lock and maintenance mode before re-exec
+    release_lock 2>/dev/null || true
+    remove_maintenance_mode 2>/dev/null || true
+
+    log "Self-update: re-executing with updated script..."
+    exec "${BASE_DIR}/deploy-release.sh" "$@" --skip-self-update
 }
 
 # ---------------------------------------------------------------------------
@@ -1671,6 +1767,7 @@ do_rollback() {
         ROLLBACK_RESULT="pass"
         ROLLBACK_READINESS_RESULT="pass"
         log "Rollback successful — now running release: $target_release"
+        write_running_version_json "$target_release"
         return 0
     else
         ROLLBACK_READINESS_RESULT="fail"
@@ -1880,6 +1977,56 @@ ALERTEOF
 }
 
 # ---------------------------------------------------------------------------
+# Running Version Truth
+# ---------------------------------------------------------------------------
+write_running_version_json() {
+    local release_id="${1:-$RELEASE_ID}"
+    local release_dir="${RELEASES_DIR}/${release_id}"
+    local state_file="${STATE_DIR}/running-version.json"
+
+    local app_version="" schema_version="" git_sha="" build_date="" artifact_sha=""
+    local vc_file="${release_dir}/public/version-contract.json"
+
+    if [[ -f "$vc_file" ]]; then
+        app_version="$(json_get "$vc_file" "version" 2>/dev/null)" || true
+        schema_version="$(json_get "$vc_file" "schemaVersion" 2>/dev/null)" || true
+        git_sha="$(json_get "$vc_file" "gitSha" 2>/dev/null)" || true
+        build_date="$(json_get "$vc_file" "generatedAt" 2>/dev/null)" || true
+    fi
+
+    # Fallback to package.json
+    if [[ -z "$app_version" ]] && [[ -f "${release_dir}/package.json" ]]; then
+        app_version="$(json_get "${release_dir}/package.json" "version" 2>/dev/null)" || true
+    fi
+
+    # Fallback to manifest
+    if [[ -z "$artifact_sha" ]] && [[ -f "${CACHE_DIR}/manifest.json" ]]; then
+        artifact_sha="$(json_get "${CACHE_DIR}/manifest.json" "artifactSha256" 2>/dev/null)" || true
+    fi
+
+    local tmp_file="${state_file}.tmp"
+    cat > "$tmp_file" <<RVEOF
+{
+  "version": "${app_version:-unknown}",
+  "releaseId": "${release_id}",
+  "schemaVersion": "${schema_version:-unknown}",
+  "gitSha": "${git_sha:-unknown}",
+  "buildDate": "${build_date:-unknown}",
+  "deployedAt": "$(date -u +%FT%TZ)",
+  "deployId": "${DEPLOY_ID:-unknown}",
+  "artifactSha256": "${artifact_sha:-unknown}",
+  "deployMethod": "artifact"
+}
+RVEOF
+    mv -f "$tmp_file" "$state_file" 2>/dev/null || {
+        warn "Failed to write running-version.json"
+        return 0
+    }
+    chmod 644 "$state_file" 2>/dev/null || true
+    log "Version truth written: v${app_version:-unknown} (schema ${schema_version:-unknown})"
+}
+
+# ---------------------------------------------------------------------------
 # Trap Handler
 # ---------------------------------------------------------------------------
 cleanup_on_exit() {
@@ -1935,6 +2082,9 @@ do_deploy() {
     else
         fatal "No --manifest-url or --artifact provided"
     fi
+
+    # Step 3.5: Self-update deploy script from artifact
+    self_update_from_artifact "$@"
 
     if [[ -z "$RELEASE_ID" ]]; then
         fatal "Cannot determine release ID"
@@ -2094,6 +2244,7 @@ do_deploy() {
         log "Deploy STAGED (first install): $RELEASE_ID"
         log "Service creation + first boot handled by installer Stage 07"
         log "=========================================="
+        write_running_version_json
         write_deploy_log
         release_lock
         remove_maintenance_mode
@@ -2128,6 +2279,7 @@ do_deploy() {
         log "=========================================="
         log "Deploy SUCCESSFUL: $RELEASE_ID"
         log "=========================================="
+        write_running_version_json
         write_deploy_log
         release_lock
         remove_maintenance_mode
@@ -2473,6 +2625,10 @@ main() {
                 ;;
             --help|-h)
                 command="help"
+                shift
+                ;;
+            --skip-self-update)
+                SKIP_SELF_UPDATE=true
                 shift
                 ;;
             *)
