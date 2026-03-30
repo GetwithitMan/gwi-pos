@@ -5,7 +5,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { mapOrderForResponse, mapOrderItemForResponse } from '@/lib/api/order-response-mapper'
 import { parseSettings } from '@/lib/settings'
 import { apiError, ERROR_CODES, getErrorMessage } from '@/lib/api/error-responses'
-import { dispatchOrderTotalsUpdate, dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchOrderItemAdded, dispatchTabItemsUpdated, dispatchOrderSummaryUpdated, buildOrderSummary } from '@/lib/socket-dispatch'
+import { dispatchOrderTotalsUpdate, dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchTabItemsUpdated, dispatchOrderSummaryUpdated, buildOrderSummary } from '@/lib/socket-dispatch'
 import { emitToLocation } from '@/lib/socket-server'
 import { withVenue } from '@/lib/with-venue'
 import { getCurrentBusinessDay } from '@/lib/business-day'
@@ -619,11 +619,6 @@ export const POST = withVenue(async function POST(
       items: result.updatedOrder.items.map((item: any) =>
         mapOrderItemForResponse(item, correlationMap.get(item.id))
       ),
-    }
-
-    // Dispatch order:item-added for each newly created item (fire-and-forget)
-    for (const item of result.createdItems) {
-      void dispatchOrderItemAdded(result.updatedOrder.locationId, { orderId: result.updatedOrder.id, itemId: item.id }).catch(err => log.warn({ err }, 'order item added dispatch failed'))
     }
 
     // FIX-011: Dispatch real-time totals update (fire-and-forget)

@@ -170,7 +170,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     adminDb.order.findMany({
       where: {
         locationId,
-        status: { notIn: ['closed', 'voided', 'paid', 'cancelled'] },
+        status: { in: ['draft', 'open', 'sent', 'in_progress', 'split'] },
         deletedAt: null,
       },
       take: 500,
