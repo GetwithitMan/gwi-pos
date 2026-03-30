@@ -275,3 +275,9 @@ export interface GetSplitsResult {
   }>
   currentSplitId: string
 }
+
+// ─── Split Family Types (Phase 1+2: Unified Split Checks) ──────────────────
+
+export type SplitClass = 'structural' | 'allocation'
+export type SplitMode = 'by_item' | 'by_seat' | 'by_table' | 'even' | 'custom_amount'
+export type SplitResolution = 'superseded' | 'merged_back' | 'merged_into_other'

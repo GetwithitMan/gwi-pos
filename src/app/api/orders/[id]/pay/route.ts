@@ -640,12 +640,23 @@ export const POST = withVenue(withTiming(async function POST(
       ) }
     }
 
-    // Block direct payment of split parent orders — pay individual splits instead
+    // Parent = pay remaining — compute family remaining balance
+    let splitPayRemainingOverride: number | null = null
     if (order.status === 'split') {
-      return { earlyReturn: NextResponse.json(
-        { error: 'Cannot pay a split parent order directly. Pay individual split checks instead.' },
-        { status: 400 }
-      ) }
+      const { computeSplitFamilyBalance } = await import('@/lib/domain/split-order/family-balance')
+      const { closeSplitFamily } = await import('@/lib/domain/split-order/close-family')
+      const family = await computeSplitFamilyBalance(tx, order.id, order.locationId)
+      if (family.remainingBalance <= 0) {
+        await closeSplitFamily(tx, order.id, order.locationId)
+        return { earlyReturn: NextResponse.json({ data: {
+          success: true,
+          orderId,
+          message: 'Split family already fully paid',
+        } }) }
+      }
+      // Override effective total for this payment to the remaining balance
+      splitPayRemainingOverride = family.remainingBalance
+      log.info({ orderId, remaining: family.remainingBalance, familyTotal: family.familyTotal }, 'Split parent pay-remaining')
     }
 
     // Validate parent order is still in split state when paying a split child
@@ -833,8 +844,12 @@ export const POST = withVenue(withTiming(async function POST(
       .filter(p => p.status === 'completed')
       .reduce((sum, p) => sum + toNumber(p.amount), 0))
 
-    const orderTotal = toNumber(order.total ?? 0)
-    const remaining = roundToCents(orderTotal - alreadyPaid)
+    const orderTotal = splitPayRemainingOverride != null
+      ? splitPayRemainingOverride
+      : toNumber(order.total ?? 0)
+    const remaining = roundToCents(splitPayRemainingOverride != null
+      ? splitPayRemainingOverride  // Family balance already accounts for all paid amounts
+      : orderTotal - alreadyPaid)
 
     // If order total is $0 (e.g., all items voided), close the order without payment
     if (remaining <= 0 && alreadyPaid === 0) {
@@ -1598,32 +1613,18 @@ export const POST = withVenue(withTiming(async function POST(
     let parentTableId: string | null = null
     if (orderIsPaid && order.parentOrderId) {
       try {
-        await db.$transaction(async (ptx) => {
-          await ptx.$queryRaw`SELECT id FROM "Order" WHERE id = ${order.parentOrderId} FOR UPDATE`
-          // H7: Lock all sibling orders too — prevents two concurrent child payments
-          // from both reading siblings as unpaid and both skipping parent closure.
-          await ptx.$queryRawUnsafe(
-            `SELECT id FROM "Order" WHERE "parentOrderId" = $1 FOR UPDATE`,
-            order.parentOrderId!,
-          )
-          // TX-KEEP: LOCK — read all sibling split orders inside FOR UPDATE lock to check if all are paid
-          const allSiblings = await ptx.order.findMany({
-            where: { parentOrderId: order.parentOrderId!, locationId: order.locationId },
-            select: { id: true, status: true },
-          })
-          const terminalStatuses = ['paid', 'cancelled', 'voided', 'completed']
-          const allSiblingsDone = allSiblings.every(s => terminalStatuses.includes(s.status))
-          if (allSiblingsDone) {
-            await OrderRepository.updateOrder(order.parentOrderId!, order.locationId, {
-              status: 'paid', paidAt: new Date(), closedAt: new Date(),
-            }, ptx)
-            const parentResult = await OrderRepository.getOrderByIdWithSelect(order.parentOrderId!, order.locationId, { tableId: true }, ptx)
-            parentWasMarkedPaid = true
-            parentTableId = parentResult?.tableId ?? null
-          }
-        })
+        const { computeSplitFamilyBalance } = await import('@/lib/domain/split-order/family-balance')
+        const { closeSplitFamily } = await import('@/lib/domain/split-order/close-family')
+        const rootId = (order as any).splitFamilyRootId || order.parentOrderId
+        const family = await computeSplitFamilyBalance(db, rootId, order.locationId)
+        if (family.isFullyPaid) {
+          await closeSplitFamily(db, rootId, order.locationId)
+          parentWasMarkedPaid = true
+          const parentResult = await OrderRepository.getOrderByIdWithSelect(order.parentOrderId!, order.locationId, { tableId: true })
+          parentTableId = parentResult?.tableId ?? null
+        }
       } catch (caughtErr) {
-        console.error('[Pay] Split parent check failed:', err)
+        console.error('[Pay] Split family closure check failed:', caughtErr)
       }
     }
 

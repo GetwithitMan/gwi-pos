@@ -915,6 +915,9 @@ model Location {
   // Sync Infrastructure
   syncWatermark SyncWatermark?
 
+  // Unified Split Checks (Migration 118)
+  itemShares ItemShare[]
+
   @@index([organizationId])
 }
 
@@ -2443,6 +2446,19 @@ model Order {
   splitOrders   Order[] @relation("OrderSplits")
   splitIndex    Int? // 1, 2, 3... for display as "31-1", "31-2"
 
+  // Split semantics (Unified Split Checks — Phase 1)
+  splitClass         String?   @map("splitClass")   // 'structural' | 'allocation' | null (not a split child)
+  splitMode          String?   @map("splitMode")    // 'by_item' | 'by_seat' | 'by_table' | 'even' | 'custom_amount' | null
+  splitFamilyRootId  String?   @map("splitFamilyRootId")  // Authoritative family root for balance/closure
+  splitFamilyTotal   Decimal?  @map("splitFamilyTotal")   // Immutable family ceiling; authoritative on family root ONLY
+  splitResolution    String?   @map("splitResolution")    // null | 'superseded' | 'merged_back' | 'merged_into_other'
+  supersededBy       String?   @map("supersededBy")       // Order ID that absorbed this child's remaining balance
+  supersededAt       DateTime? @map("supersededAt")
+
+  // Split family self-relation
+  splitFamilyRoot    Order?    @relation("SplitFamilyRoot", fields: [splitFamilyRootId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  splitFamilyMembers Order[]   @relation("SplitFamilyRoot")
+
   // Type & Context
   orderType    String     @default("dine_in") // Legacy: dine_in, takeout, delivery, bar_tab
   orderTypeId  String? // New: Reference to configurable OrderType
@@ -2636,6 +2652,10 @@ model Order {
   fulfillmentMode   String? // dine_in, takeout, delivery, curbside, etc.
   readyCycleCounter Int     @default(0) // Increments on send-to-kitchen after recall/remake only
 
+  // Unified Split Checks — ItemShare reverse relations (Migration 118)
+  itemSharesAsSource ItemShare[] @relation("ItemShareSourceOrder")
+  itemSharesAsTarget ItemShare[] @relation("ItemShareTarget")
+
   @@index([employeeId])
   @@index([tableId])
   @@index([customerId])
@@ -2664,6 +2684,8 @@ model Order {
   @@index([locationId, status, businessDayDate])
   @@index([claimedByEmployeeId, claimedAt])
   @@index([id, version])
+  @@index([splitFamilyRootId])
+  @@index([splitResolution])
 }
 
 /// ACTIVE: Primary order item table — all reads and writes go here.
@@ -2800,6 +2822,9 @@ model OrderItem {
   voidLogs            VoidLog[]            @relation("VoidLogItem")
   remoteVoidApprovals RemoteVoidApproval[] @relation("RemoteVoidItem")
   seatCurrentItems    Seat[]               @relation("SeatCurrentItem")
+
+  // Unified Split Checks — ItemShare reverse relation (Migration 118)
+  itemShares ItemShare[] @relation("ItemShareSource")
 
   @@index([locationId])
   @@index([orderId])
@@ -9790,6 +9815,41 @@ model ExternalWebhookEvent {
   // multiple event types for the same transaction lifecycle
   @@unique([provider, externalTransactionId, eventType])
   @@index([provider, processingStatus])
+}
+
+// ============================================
+// UNIFIED SPLIT CHECKS (Phase 1, Migration 118)
+// ============================================
+
+/// Item-level share splits: one line item's cost divided across multiple checks.
+/// Source item stays canonical on its owning check; shares are accounting entries only.
+/// Receipt display: "1/3 Ribeye — $18.33"
+model ItemShare {
+  id                  String    @id @default(cuid())
+  locationId          String
+  sourceItemId        String    // The canonical OrderItem being shared
+  sourceOrderId       String    // Order that owns the canonical item
+  targetOrderId       String    // Check that owes this share
+  shareIndex          Int       // 1-based (1 of 3, 2 of 3, etc.)
+  totalShares         Int       // N in "split N ways"
+  allocatedAmount     Decimal   @db.Decimal(10, 2) // This share's dollar amount (after penny distribution)
+  allocatedTax        Decimal   @default(0) @db.Decimal(10, 2)
+  allocatedDiscount   Decimal   @default(0) @db.Decimal(10, 2)
+  resolvedAt          DateTime? // When this share was paid/superseded
+  resolvedByPaymentId String?   // Payment that resolved this share
+  splitResolution     String?   // null | 'paid' | 'superseded' | 'merged_back'
+  createdAt           DateTime  @default(now())
+  deletedAt           DateTime?
+
+  sourceItem  OrderItem @relation("ItemShareSource", fields: [sourceItemId], references: [id])
+  sourceOrder Order     @relation("ItemShareSourceOrder", fields: [sourceOrderId], references: [id])
+  targetOrder Order     @relation("ItemShareTarget", fields: [targetOrderId], references: [id])
+  location    Location  @relation(fields: [locationId], references: [id])
+
+  @@index([sourceItemId])
+  @@index([targetOrderId])
+  @@index([sourceOrderId])
+  @@index([locationId])
 }
 
 // NOTE: _local_schema_state and _local_install_state are NUC-only tables
