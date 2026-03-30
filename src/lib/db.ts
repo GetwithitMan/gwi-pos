@@ -20,14 +20,18 @@ const isVercel = !!process.env.VERCEL
 // Re-export so existing `import { CONNECTION_BUDGET } from '@/lib/db'` works
 export { CONNECTION_BUDGET } from './db-connection-budget'
 
-if (!process.env.DATABASE_URL) {
+// Build-time safety: during `next build`, API route modules are imported for static
+// analysis. DATABASE_URL may not be set in preview deployments (PR branches).
+// Defer the hard check to runtime so builds can complete without a database.
+const isBuildPhase = process.env.NEXT_PHASE === 'phase-production-build'
+if (!process.env.DATABASE_URL && !isBuildPhase) {
   throw new Error('DATABASE_URL environment variable is required')
 }
 
 // SAFETY: Prevent NUC from accidentally connecting to Neon as its primary DB.
 // If DATABASE_URL points to neon.tech, the entire offline-first architecture breaks —
 // every POS API route would depend on internet connectivity.
-if (!isVercel && process.env.DATABASE_URL.includes('neon.tech')) {
+if (!isVercel && process.env.DATABASE_URL?.includes('neon.tech')) {
   throw new Error(
     'FATAL: DATABASE_URL must NOT point to neon.tech on NUC. ' +
     'Use local PostgreSQL (e.g., postgres://user:pass@localhost:5432/thepasspos). ' +
@@ -127,8 +131,20 @@ export function createPrismaClient(url?: string) {
 // Master database client (gwi_pos — default/fallback)
 // ============================================================================
 
-export const masterClient = globalForPrisma.prisma ?? createPrismaClient()
-globalForPrisma.prisma = masterClient
+// Lazy init: skip client creation during next build when DATABASE_URL is absent.
+// The proxy (db) will throw at runtime if someone calls a query without DATABASE_URL.
+export const masterClient: PrismaClient = globalForPrisma.prisma ?? (
+  process.env.DATABASE_URL
+    ? createPrismaClient()
+    : new Proxy({} as PrismaClient, {
+        get(_, prop) {
+          throw new Error(`DATABASE_URL not set — cannot access db.${String(prop)} at runtime`)
+        },
+      })
+)
+if (process.env.DATABASE_URL) {
+  globalForPrisma.prisma = masterClient
+}
 
 // ============================================================================
 // Tenant-aware proxy
