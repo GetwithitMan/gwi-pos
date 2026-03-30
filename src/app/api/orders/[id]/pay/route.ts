@@ -1616,17 +1616,22 @@ export const POST = withVenue(withTiming(async function POST(
 
     let parentWasMarkedPaid = false
     let parentTableId: string | null = null
-    if (orderIsPaid && order.parentOrderId) {
+    // Close split family when: (a) child payment completes family, or (b) parent pay-remaining
+    // Note: splitPayRemainingOverride is scoped inside the tx block, so we detect parent
+    // pay-remaining by checking if the order has split children (splitOrders or was 'split' status)
+    const wasSplitParent = order.splitOrders?.length > 0 || (order as any).splitFamilyTotal != null
+    const isSplitFamilyMember = order.parentOrderId || wasSplitParent
+    if (orderIsPaid && isSplitFamilyMember) {
       try {
         const { computeSplitFamilyBalance } = await import('@/lib/domain/split-order/family-balance')
         const { closeSplitFamily } = await import('@/lib/domain/split-order/close-family')
-        const rootId = (order as any).splitFamilyRootId || order.parentOrderId
+        // For child: root is parentOrderId. For parent pay-remaining: root is this order.
+        const rootId = (order as any).splitFamilyRootId || order.parentOrderId || orderId
         const family = await computeSplitFamilyBalance(db, rootId, order.locationId)
         if (family.isFullyPaid) {
           await closeSplitFamily(db, rootId, order.locationId)
           parentWasMarkedPaid = true
-          const parentResult = await OrderRepository.getOrderByIdWithSelect(order.parentOrderId!, order.locationId, { tableId: true })
-          parentTableId = parentResult?.tableId ?? null
+          parentTableId = order.tableId ?? null
         }
       } catch (caughtErr) {
         console.error('[Pay] Split family closure check failed:', caughtErr)
