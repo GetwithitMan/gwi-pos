@@ -458,11 +458,22 @@ export const GET = withVenue(async function GET(): Promise<NextResponse<{ data: 
     readiness: (() => {
       const rs = getReadinessState()
       if (!rs) return null
+      // Filter stale neon warnings if sync is actually running
+      let reasons = rs.degradedReasons
+      if (!isInOutageMode() && rs.initialSyncComplete) {
+        reasons = reasons.filter(r =>
+          r !== 'neon-unreachable' &&
+          r !== 'neon-schema-version-incompatible' &&
+          r !== 'neon-core-tables-missing' &&
+          r !== 'neon-required-enums-missing' &&
+          r !== 'base-seed-missing'
+        )
+      }
       return {
         level: rs.level,
         syncContractReady: rs.syncContractReady,
         initialSyncComplete: rs.initialSyncComplete,
-        degradedReasons: rs.degradedReasons,
+        degradedReasons: reasons,
       }
     })(),
     connectionPool,
