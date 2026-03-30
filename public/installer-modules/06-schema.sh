@@ -73,29 +73,76 @@ run_schema() {
       chown -R "$POSUSER":"$POSUSER" "$deploy_tools_dir" 2>/dev/null || true
     fi
 
+    # ── Check if deploy-release.sh already completed schema migrations ──────
+    local _skip_migrations=false
+    if [[ "${LEGACY_DEPLOY:-}" != "1" ]]; then
+      local _ds_file="$APP_BASE/shared/state/deploy-state.json"
+      if [[ -f "$_ds_file" ]]; then
+        local _ds_state="" _ds_release=""
+        if command -v jq &>/dev/null; then
+          _ds_state=$(jq -r '.state // empty' "$_ds_file" 2>/dev/null) || true
+          _ds_release=$(jq -r '.releaseId // empty' "$_ds_file" 2>/dev/null) || true
+        else
+          _ds_state=$(sed -n 's/.*"state"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$_ds_file" 2>/dev/null | head -1) || true
+          _ds_release=$(sed -n 's/.*"releaseId"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$_ds_file" 2>/dev/null | head -1) || true
+        fi
+
+        # Read current release ID from deployed artifact
+        local _current_release=""
+        if [[ -f "$APP_DIR/artifact-metadata.json" ]]; then
+          if command -v jq &>/dev/null; then
+            _current_release=$(jq -r '.releaseId // empty' "$APP_DIR/artifact-metadata.json" 2>/dev/null) || true
+          else
+            _current_release=$(sed -n 's/.*"releaseId"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$APP_DIR/artifact-metadata.json" 2>/dev/null | head -1) || true
+          fi
+        fi
+
+        case "$_ds_state" in
+          migrated|healthy|activated|installed_pending_service)
+            if [[ -n "$_ds_release" ]] && [[ -n "$_current_release" ]] && [[ "$_ds_release" == "$_current_release" ]]; then
+              log "Schema migrations already completed by deploy-release.sh"
+              log "  Release: $_ds_release | State: $_ds_state"
+              log "  Skipping apply-schema + migrate — proceeding to seed/validation"
+              _skip_migrations=true
+            else
+              log "deploy-state shows '$_ds_state' but release mismatch (deploy: ${_ds_release:-none}, current: ${_current_release:-none})"
+              log "Running migrations to ensure consistency"
+            fi
+            ;;
+          *)
+            if [[ -n "$_ds_state" ]]; then
+              log "deploy-state is '$_ds_state' — running migrations"
+            fi
+            ;;
+        esac
+      fi
+    fi
+
     # ── Preferred path: deploy-tools (pg-only, no Prisma) ──
     if [[ -f "$deploy_tools_dir/src/apply-schema.js" ]]; then
-      log "Applying schema via deploy-tools (pg-only)..."
-      if ! timeout --kill-after=10 120 sudo -u "$POSUSER" bash -c "cd '$deploy_tools_dir' && DATABASE_URL='$DATABASE_URL' node src/apply-schema.js" 2>&1 | tail -5; then
-        if [[ "${IS_REINSTALL:-false}" == "false" ]]; then
-          err_code "ERR-INST-183" "apply-schema.js failed on fresh install -- cannot continue with empty database"
-          return 1
+      if [[ "$_skip_migrations" == "false" ]]; then
+        log "Applying schema via deploy-tools (pg-only)..."
+        if ! timeout --kill-after=10 120 sudo -u "$POSUSER" bash -c "cd '$deploy_tools_dir' && DATABASE_URL='$DATABASE_URL' node src/apply-schema.js" 2>&1 | tail -5; then
+          if [[ "${IS_REINSTALL:-false}" == "false" ]]; then
+            err_code "ERR-INST-183" "apply-schema.js failed on fresh install -- cannot continue with empty database"
+            return 1
+          else
+            warn "apply-schema.js had issues on re-install -- continuing (existing schema should be intact)"
+          fi
         else
-          warn "apply-schema.js had issues on re-install -- continuing (existing schema should be intact)"
+          log "Schema applied successfully (deploy-tools)"
+          touch /opt/gwi-pos/.schema-stage-done
         fi
-      else
-        log "Schema applied successfully (deploy-tools)"
-        touch /opt/gwi-pos/.schema-stage-done
-      fi
 
-      log "Running local migrations via deploy-tools..."
-      if ! sudo -u "$POSUSER" bash -c "cd '$deploy_tools_dir' && DATABASE_URL='$DATABASE_URL' node src/migrate.js" 2>&1; then
-        if [[ "${IS_REINSTALL:-false}" == "false" ]]; then
-          err_code "ERR-INST-184" "Migration runner failed on fresh install -- cannot continue with partial schema"
-          return 1
-        else
-          warn "Migrations failed on re-install -- continuing (existing data should be intact)"
-          track_warn "deploy-tools migrate.js failed on re-install"
+        log "Running local migrations via deploy-tools..."
+        if ! sudo -u "$POSUSER" bash -c "cd '$deploy_tools_dir' && DATABASE_URL='$DATABASE_URL' node src/migrate.js" 2>&1; then
+          if [[ "${IS_REINSTALL:-false}" == "false" ]]; then
+            err_code "ERR-INST-184" "Migration runner failed on fresh install -- cannot continue with partial schema"
+            return 1
+          else
+            warn "Migrations failed on re-install -- continuing (existing data should be intact)"
+            track_warn "deploy-tools migrate.js failed on re-install"
+          fi
         fi
       fi
 
