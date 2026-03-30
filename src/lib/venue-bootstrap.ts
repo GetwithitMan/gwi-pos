@@ -15,6 +15,7 @@
  * Dev/test environments retain auto-repair for convenience (applySchemaToEmptyDb).
  */
 
+import dns from 'dns'
 import { existsSync, mkdirSync, writeFileSync } from 'fs'
 import path from 'path'
 import { createChildLogger } from '@/lib/logger'
@@ -221,7 +222,12 @@ async function recheckNeonSchema(): Promise<void> {
     const { PrismaClient } = await import('@/generated/prisma/client')
     const directUrl = process.env.NEON_DIRECT_URL || neonUrl
     const { PrismaPg } = await import('@prisma/adapter-pg')
-    const neonAdapter = new PrismaPg({ connectionString: directUrl, max: 1, connectionTimeoutMillis: 30000 })
+    const neonAdapter = new PrismaPg({
+      connectionString: directUrl,
+      max: 1,
+      connectionTimeoutMillis: 45000,
+      ssl: { rejectUnauthorized: false },
+    })
     const neonClient = new PrismaClient({ adapter: neonAdapter })
 
     try {
@@ -591,13 +597,30 @@ export async function runBootstrap(): Promise<BootstrapResult> {
           const { PrismaPg } = await import('@prisma/adapter-pg')
           neonAdapter = new PrismaPg({ connectionString: directUrl, max: 1, connectionTimeoutMillis: 60000 })
         } else {
+          // Force IPv4 on NUC — some venue networks have broken IPv6/TLS inspection
+          dns.setDefaultResultOrder('ipv4first')
           const { PrismaPg } = await import('@prisma/adapter-pg')
-          neonAdapter = new PrismaPg({ connectionString: directUrl, max: 2, connectionTimeoutMillis: 60000 })
+          neonAdapter = new PrismaPg({
+            connectionString: directUrl,
+            max: 2,
+            connectionTimeoutMillis: 60000,
+            ssl: { rejectUnauthorized: false },
+          })
         }
         const neonClient = new PrismaClient({ adapter: neonAdapter })
 
         try {
-          await neonClient.$queryRawUnsafe('SELECT 1')
+          // Retry connectivity test once after 5s delay — gives the connection pool
+          // time to establish through slow/broken networks (TLS inspection, IPv6 fallback).
+          // The sync workers eventually connect on these networks, so the pool just needs time.
+          try {
+            await neonClient.$queryRawUnsafe('SELECT 1')
+          } catch (firstErr) {
+            log.warn({ err: firstErr instanceof Error ? firstErr.message : firstErr },
+              'Neon connectivity pre-check failed — retrying in 5s')
+            await new Promise(resolve => setTimeout(resolve, 5000))
+            await neonClient.$queryRawUnsafe('SELECT 1')
+          }
           result.neonReachable = true
 
           // Backup/standby: read-only observation only — NEVER mutate Neon
