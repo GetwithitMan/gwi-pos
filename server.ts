@@ -396,9 +396,9 @@ async function main() {
     }
     if (config.syncEnabled && config.neonDatabaseUrl && !syncReady) {
       if (!neonReady) {
-        logger.error('Sync workers NOT started — bootstrap did not produce Neon readiness. Fix bootstrap and restart.')
+        logger.warn('Neon unreachable at boot — sync workers will start and retry Neon connections internally.')
       } else {
-        logger.error({
+        logger.warn({
           coreTablesExist: neonReady.coreTablesExist,
           requiredEnumsExist: neonReady.requiredEnumsExist,
           schemaVersionMatch: neonReady.schemaVersionMatch,
@@ -406,20 +406,20 @@ async function main() {
           schemaVersion: neonReady.schemaVersion,
           readinessLevel: readiness.level,
           degradedReasons: readiness.degradedReasons,
-        }, 'Sync workers NOT started — readiness check failed. Schema re-check will retry every 5 minutes.')
+        }, 'Neon readiness incomplete — sync workers will start and retry.')
       }
     }
 
-    // If sync is blocked due to schema mismatch, start periodic re-check.
-    // When MC pushes the schema update, the re-check will detect it and
-    // update the cached bootstrap result + readiness state. Sync workers
-    // are auto-started via the worker registry when the re-check succeeds
-    // (see recheckNeonSchema in venue-bootstrap.ts) — no restart required.
-    if (!syncReady) {
+    // Start periodic re-check if Neon contract isn't fully satisfied.
+    // When Neon becomes reachable, the re-check updates cached state.
+    if (!readiness.syncContractReady) {
       startSchemaRecheckIfBlocked()
     }
 
-    if (syncReady) {
+    // Offline-first: always start sync workers when sync is enabled.
+    // Workers handle Neon retries internally — they won't crash if Neon
+    // is unreachable, they'll just skip sync cycles until it's available.
+    if (syncReady || (config.syncEnabled && config.neonDatabaseUrl && readiness.level !== 'FAILED')) {
       registerWorker('upstreamSync', 'degraded',
         () => startUpstreamSyncWorker(),
         () => stopUpstreamSyncWorker()
@@ -496,14 +496,19 @@ async function main() {
       logger.info('Bidirectional sync workers started (NUC <-> Neon)')
 
       // Wait up to 15s for the first downstream sync cycle to complete.
-      // This ensures menu items, employees, settings, etc. are available
-      // before API routes start serving requests to terminals.
       logger.info('Waiting for initial downstream sync cycle (max 15s)...')
       await Promise.race([
         initialSyncComplete,
         new Promise(resolve => setTimeout(resolve, 15_000))
       ])
-      // Verify critical tables are populated before advancing to ORDERS
+    } else {
+      logger.info('Sync workers started in retry mode (Neon unreachable at boot)')
+    }
+
+    // Verify critical tables are populated before advancing to ORDERS.
+    // This runs regardless of Neon state — if a previous sync/seed populated
+    // these tables, the POS is ready for customer traffic.
+    {
       const criticalCounts: Record<string, number> = {}
       const criticalTables = ['Location', 'Organization', 'Role', 'Employee', 'Category', 'OrderType']
       for (const table of criticalTables) {
@@ -516,8 +521,14 @@ async function main() {
           criticalCounts[table] = 0
         }
       }
+      // advanceToOrders only advances from SYNC level (enforced internally)
       advanceToOrders(criticalCounts)
-      logger.info({ criticalCounts }, 'Initial downstream sync gate passed — server fully ready')
+      const current = getReadinessState()
+      if (current?.level === 'ORDERS') {
+        logger.info({ criticalCounts }, 'Server fully ready — ORDERS level reached')
+      } else {
+        logger.warn({ criticalCounts, level: current?.level }, 'Critical table check complete — awaiting full readiness')
+      }
     }
   })
 
