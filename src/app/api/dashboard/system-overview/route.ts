@@ -32,13 +32,17 @@ const startTime = Date.now()
 export const GET = withVenue(async function GET(): Promise<NextResponse> {
   const generatedAt = new Date().toISOString()
   const uptime = Math.floor((Date.now() - startTime) / 1000)
-  // Read version from package.json at RUNTIME (not build time) so it stays current
-  // after git pull + restart, even without a full rebuild
+  // Read version from running-version.json (canonical), falling back to package.json
   let version = APP_VERSION
   try {
-    const pkg = JSON.parse(readFileSync(path.join(process.cwd(), 'package.json'), 'utf8'))
-    version = pkg.version || APP_VERSION
-  } catch { /* fallback to build-time version */ }
+    const rv = JSON.parse(readFileSync('/opt/gwi-pos/shared/state/running-version.json', 'utf8'))
+    if (rv.version) version = rv.version
+  } catch {
+    try {
+      const pkg = JSON.parse(readFileSync(path.join(process.cwd(), 'package.json'), 'utf8'))
+      version = pkg.version || APP_VERSION
+    } catch { /* fallback to build-time version */ }
+  }
 
   // ── Health data ─────────────────────────────────────────────────────────────
   let databaseStatus: 'connected' | 'disconnected' | 'error' = 'disconnected'
@@ -254,6 +258,7 @@ export const GET = withVenue(async function GET(): Promise<NextResponse> {
   }
 
   // ── Last update state ─────────────────────────────────────────────────────
+  // Priority: deploy-state.json (written by deploy-release.sh) > last-update.json (sync-agent)
   let lastUpdate: {
     attemptedAt: string
     targetVersion: string
@@ -265,29 +270,61 @@ export const GET = withVenue(async function GET(): Promise<NextResponse> {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const fs = require('fs') as typeof import('fs')
-    const raw = fs.readFileSync('/opt/gwi-pos/state/last-update.json', 'utf-8')
-    const state = JSON.parse(raw)
-    lastUpdate = {
-      attemptedAt: state.attemptedAt ?? '',
-      targetVersion: state.targetVersion ?? '',
-      previousVersion: state.previousVersion ?? '',
-      status: state.status ?? 'unknown',
-      error: state.error,
-      durationMs: state.duration ?? 0,
-    }
+    // Try deploy-state.json first (canonical, written by deploy-release.sh)
+    try {
+      const dsRaw = fs.readFileSync('/opt/gwi-pos/shared/state/deploy-state.json', 'utf-8')
+      const ds = JSON.parse(dsRaw)
+      if (ds.releaseId) {
+        const rvVersion = (() => { try { return JSON.parse(fs.readFileSync('/opt/gwi-pos/shared/state/running-version.json', 'utf-8')).version } catch { return ds.releaseId } })()
+        lastUpdate = {
+          attemptedAt: ds.updatedAt ?? '',
+          targetVersion: rvVersion,
+          previousVersion: ds.previousReleaseId ?? '',
+          status: ds.state === 'healthy' ? 'COMPLETED' : ds.state === 'rollback_failed' ? 'RECOVERY_UNKNOWN' : ds.state?.toUpperCase() ?? 'unknown',
+          durationMs: 0,
+        }
+      }
+    } catch { /* no deploy-state */ }
+    // Overlay with last-update.json if it has a more recent attempt
+    try {
+      const raw = fs.readFileSync('/opt/gwi-pos/state/last-update.json', 'utf-8')
+      const state = JSON.parse(raw)
+      if (state.attemptedAt && (!lastUpdate?.attemptedAt || state.attemptedAt > lastUpdate.attemptedAt)) {
+        lastUpdate = {
+          attemptedAt: state.attemptedAt ?? '',
+          targetVersion: state.targetVersion ?? state.version ?? '',
+          previousVersion: state.previousVersion ?? '',
+          status: state.status ?? 'unknown',
+          error: state.error,
+          durationMs: state.duration ?? 0,
+        }
+      }
+    } catch { /* no last-update */ }
   } catch {
     // File doesn't exist or parse error — that's fine
   }
 
   // ── Readiness data ──────────────────────────────────────────────────────────
+  // Use LIVE Neon connectivity from sync workers instead of stale bootstrap flag
   const readiness = (() => {
     const rs = getReadinessState()
     if (!rs) return null
+    let degradedReasons = rs.degradedReasons
+    // If sync workers report Neon is reachable (not in outage), filter out stale neon warnings
+    if (!isInOutageMode() && downstreamSync?.running) {
+      degradedReasons = degradedReasons.filter(r =>
+        r !== 'neon-unreachable' &&
+        r !== 'neon-schema-version-incompatible' &&
+        r !== 'neon-core-tables-missing' &&
+        r !== 'neon-required-enums-missing' &&
+        r !== 'base-seed-missing'
+      )
+    }
     return {
       level: rs.level,
       syncContractReady: rs.syncContractReady,
       initialSyncComplete: rs.initialSyncComplete,
-      degradedReasons: rs.degradedReasons,
+      degradedReasons,
     }
   })()
 
