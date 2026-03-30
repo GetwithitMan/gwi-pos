@@ -21,9 +21,18 @@ async function columnExists(prisma, table, column) {
   return rows.length > 0
 }
 
+async function tableExists(prisma, table) {
+  const rows = await prisma.$queryRawUnsafe(`
+    SELECT 1 FROM information_schema.tables
+    WHERE table_name = $1
+    LIMIT 1
+  `, table)
+  return rows.length > 0
+}
+
 module.exports.up = async function up(prisma) {
   // ── Membership.accountUpdaterPid ──────────────────────────────────────────
-  if (!(await columnExists(prisma, 'Membership', 'accountUpdaterPid'))) {
+  if ((await tableExists(prisma, 'Membership')) && !(await columnExists(prisma, 'Membership', 'accountUpdaterPid'))) {
     await prisma.$executeRawUnsafe(`
       ALTER TABLE "Membership" ADD COLUMN "accountUpdaterPid" TEXT
     `)
@@ -31,7 +40,7 @@ module.exports.up = async function up(prisma) {
   }
 
   // ── SavedCard.accountUpdaterPid ──────────────────────────────────────────
-  if (!(await columnExists(prisma, 'SavedCard', 'accountUpdaterPid'))) {
+  if ((await tableExists(prisma, 'SavedCard')) && !(await columnExists(prisma, 'SavedCard', 'accountUpdaterPid'))) {
     await prisma.$executeRawUnsafe(`
       ALTER TABLE "SavedCard" ADD COLUMN "accountUpdaterPid" TEXT
     `)
@@ -39,7 +48,7 @@ module.exports.up = async function up(prisma) {
   }
 
   // ── MembershipCharge.declineCategory ─────────────────────────────────────
-  if (!(await columnExists(prisma, 'MembershipCharge', 'declineCategory'))) {
+  if ((await tableExists(prisma, 'MembershipCharge')) && !(await columnExists(prisma, 'MembershipCharge', 'declineCategory'))) {
     await prisma.$executeRawUnsafe(`
       ALTER TABLE "MembershipCharge" ADD COLUMN "declineCategory" TEXT
     `)
