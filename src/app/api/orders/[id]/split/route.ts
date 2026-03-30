@@ -235,6 +235,10 @@ export const POST = withVenue(async function POST(
           total: Number(s.total),
           paidAmount: 0,
           isPaid: false,
+          // Split family fields (Phase 1+2: Unified Split Checks)
+          splitClass: (s as any).splitClass ?? 'allocation',
+          splitMode: (s as any).splitMode ?? 'even',
+          splitFamilyRootId: (s as any).splitFamilyRootId ?? order.id,
         })),
         numWays,
         message: `Order #${order.orderNumber} split into ${numWays} checks`,
@@ -350,6 +354,10 @@ export const POST = withVenue(async function POST(
           taxTotal: Number(newOrder.taxTotal),
           total: Number(newOrder.total),
           itemCount: newOrder.items.length,
+          // Split family fields (Phase 1+2: Unified Split Checks)
+          splitClass: (newOrder as any).splitClass ?? null,
+          splitMode: (newOrder as any).splitMode ?? null,
+          splitFamilyRootId: (newOrder as any).splitFamilyRootId ?? null,
           items: newOrder.items.map(item => ({
             id: item.id,
             name: item.name,

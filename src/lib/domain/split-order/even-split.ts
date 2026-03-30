@@ -102,6 +102,10 @@ export async function createEvenSplit(
           total: splitTotal,
           parentOrderId: order.id,
           splitIndex,
+          // Split family tracking (Phase 1+2: Unified Split Checks)
+          splitClass: 'allocation',
+          splitMode: 'even',
+          splitFamilyRootId: order.id,
           // Propagate tax-exempt status from parent
           isTaxExempt,
           ...(taxExemptReason ? { taxExemptReason } : {}),
@@ -131,11 +135,15 @@ export async function createEvenSplit(
   )
 
   // Mark parent order as 'split' so children become payable
+  // Set splitFamilyTotal on first split (immutable after — only set if not already present)
+  const parentAnyForFamily = order as any
   await tx.order.update({
     where: { id: order.id },
     data: {
       status: 'split',
       discountTotal: 0,
+      // Set splitFamilyTotal on first split (immutable snapshot of original total)
+      ...(parentAnyForFamily.splitFamilyTotal ? {} : { splitFamilyTotal: order.total }),
       // Zero out parent donation — it's been distributed to children
       ...(parentDonation > 0 ? { donationAmount: 0 } : {}),
       notes: order.notes
