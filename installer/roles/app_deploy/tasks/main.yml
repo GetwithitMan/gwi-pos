@@ -35,7 +35,14 @@
     - /opt/gwi-pos/shared/state
     - /opt/gwi-pos/cache
     - /opt/gwi-pos/cache/artifacts
-    - /opt/gwi-pos/keys
+
+- name: Create keys directory (root-owned, gwipos group-traversable for pub key reads)
+  ansible.builtin.file:
+    path: /opt/gwi-pos/keys
+    state: directory
+    owner: root
+    group: gwipos
+    mode: "0750"
 
 # ── Minisign public key ─────────────────────────────────────────────────────
 - name: Install minisign public key for release verification
