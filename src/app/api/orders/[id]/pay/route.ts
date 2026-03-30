@@ -684,7 +684,12 @@ export const POST = withVenue(withTiming(async function POST(
       const existingPaidTotal = toNumber(allSplitPayments._sum.amount ?? 0)
       const parentTotal = toNumber(parentOrder.total)
       const thisSplitPaymentTotal = payments.reduce((sum, p) => sum + p.amount, 0)
-      if (existingPaidTotal + thisSplitPaymentTotal > parentTotal + 0.01) {
+      // Tolerance must account for cash rounding accumulation across multiple splits.
+      // With dollar rounding and 10 splits, each can round up by ~$0.50 → $5.00 total drift.
+      // Use per-sibling rounding tolerance: $1.00 per split (covers dollar rounding worst case).
+      const siblingCount = await tx.order.count({ where: { parentOrderId: order.parentOrderId, deletedAt: null } })
+      const roundingTolerance = Math.max(0.01, siblingCount * 1.0)
+      if (existingPaidTotal + thisSplitPaymentTotal > parentTotal + roundingTolerance) {
         return { earlyReturn: NextResponse.json(
           { error: `Total split payments ($${(existingPaidTotal + thisSplitPaymentTotal).toFixed(2)}) would exceed original order total ($${parentTotal.toFixed(2)})` },
           { status: 400 }
