@@ -212,10 +212,55 @@ async function handleForceUpdate(payload, cmdId) {
     } catch (e) { log('[Update] Keys permission fix warning: ' + e.message) }
 
     // Check maintenance mode — another deploy may be in progress
-    if (fs.existsSync('/opt/gwi-pos/shared/state/deploy-in-progress')) {
-      log('[Update] Deploy already in progress (maintenance mode flag set) — skipping')
-      if (cmdId) ackProgress(cmdId, 'COMPLETED', { step: 'skipped-deploy-in-progress', version: previousVersion })
-      return { ok: true, version: previousVersion, steps: ['deploy-in-progress — skipped'], _acked: true }
+    var maintenanceFlagPath = '/opt/gwi-pos/shared/state/deploy-in-progress'
+    if (fs.existsSync(maintenanceFlagPath)) {
+      var flagIsStale = false
+      try {
+        var flagContent = fs.readFileSync(maintenanceFlagPath, 'utf-8').trim().split('\n')
+        var flagPid = flagContent[1] ? flagContent[1].trim() : ''
+
+        // Check 1: If a PID is recorded, see if that process is still alive
+        if (flagPid) {
+          try {
+            process.kill(parseInt(flagPid, 10), 0) // signal 0 = existence check
+            // Process is alive — flag is legitimate
+          } catch (e) {
+            // Process is dead — flag is stale
+            flagIsStale = true
+            log('[Update] Maintenance flag owner PID ' + flagPid + ' is dead — removing stale flag')
+          }
+        }
+
+        // Check 2: If no PID or PID check inconclusive, fall back to age check (10 min)
+        if (!flagIsStale && !flagPid) {
+          var flagStat = fs.statSync(maintenanceFlagPath)
+          var flagAgeMs = Date.now() - flagStat.mtimeMs
+          var STALE_THRESHOLD_MS = 10 * 60 * 1000 // 10 minutes
+          if (flagAgeMs > STALE_THRESHOLD_MS) {
+            flagIsStale = true
+            log('[Update] Maintenance flag is ' + Math.round(flagAgeMs / 1000) + 's old (>' + (STALE_THRESHOLD_MS / 1000) + 's) with no PID — removing stale flag')
+          }
+        }
+      } catch (e) {
+        // If we can't read/stat the flag, treat it as stale (file may be corrupted)
+        flagIsStale = true
+        log('[Update] Could not read maintenance flag (' + e.message + ') — removing stale flag')
+      }
+
+      if (flagIsStale) {
+        try {
+          fs.unlinkSync(maintenanceFlagPath)
+          log('[Update] Stale maintenance flag removed — proceeding with deploy')
+        } catch (e) {
+          log('[Update] Failed to remove stale flag: ' + e.message + ' — skipping deploy')
+          if (cmdId) ackProgress(cmdId, 'COMPLETED', { step: 'skipped-deploy-in-progress', version: previousVersion })
+          return { ok: true, version: previousVersion, steps: ['deploy-in-progress — skipped'], _acked: true }
+        }
+      } else {
+        log('[Update] Deploy already in progress (maintenance mode flag set, owner alive) — skipping')
+        if (cmdId) ackProgress(cmdId, 'COMPLETED', { step: 'skipped-deploy-in-progress', version: previousVersion })
+        return { ok: true, version: previousVersion, steps: ['deploy-in-progress — skipped'], _acked: true }
+      }
     }
 
     try {

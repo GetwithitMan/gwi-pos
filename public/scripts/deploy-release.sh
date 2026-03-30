@@ -295,13 +295,45 @@ release_lock() {
 # ---------------------------------------------------------------------------
 set_maintenance_mode() {
     mkdir -p "$(dirname "$MAINTENANCE_FLAG")"
-    printf '%s\n' "$(date -u +%FT%TZ)" > "$MAINTENANCE_FLAG"
-    log "Maintenance mode ENABLED"
+    # Write timestamp on line 1, owning PID on line 2
+    printf '%s\n%s\n' "$(date -u +%FT%TZ)" "$$" > "$MAINTENANCE_FLAG"
+    log "Maintenance mode ENABLED (PID $$)"
 }
 
 remove_maintenance_mode() {
     rm -f "$MAINTENANCE_FLAG" 2>/dev/null || true
     log "Maintenance mode DISABLED"
+}
+
+# Remove maintenance flag only if we own it (our PID wrote it) or the owner is dead.
+# This prevents a new deploy from having its flag stolen by an old trap handler.
+remove_maintenance_if_ours() {
+    if [[ ! -f "$MAINTENANCE_FLAG" ]]; then
+        return 0
+    fi
+    local flag_pid
+    flag_pid="$(sed -n '2p' "$MAINTENANCE_FLAG" 2>/dev/null || echo "")"
+    if [[ -z "$flag_pid" ]]; then
+        # Legacy flag with no PID — safe to remove
+        rm -f "$MAINTENANCE_FLAG" 2>/dev/null || true
+        log "Maintenance mode DISABLED (legacy flag, no PID)"
+        return 0
+    fi
+    if [[ "$flag_pid" == "$$" ]]; then
+        # We own it
+        rm -f "$MAINTENANCE_FLAG" 2>/dev/null || true
+        log "Maintenance mode DISABLED (our PID $$)"
+        return 0
+    fi
+    # Another PID owns it — only remove if that process is dead
+    if ! kill -0 "$flag_pid" 2>/dev/null; then
+        rm -f "$MAINTENANCE_FLAG" 2>/dev/null || true
+        log "Maintenance mode DISABLED (stale flag from dead PID $flag_pid)"
+        return 0
+    fi
+    # Another deploy is actively running — leave the flag alone
+    log "Maintenance flag owned by active PID $flag_pid — leaving in place"
+    return 1
 }
 
 is_maintenance_mode() {
@@ -2041,8 +2073,11 @@ cleanup_on_exit() {
     fi
 
     release_lock
-    # Do NOT remove maintenance mode on unexpected exit — leave it for investigation
-    # It will be cleared by the next successful deploy or --status command
+    # Always clean up maintenance flag on exit — but only if we own it.
+    # A stale flag from a crashed deploy blocks ALL future deploys indefinitely.
+    # The flag includes our PID, so remove_maintenance_if_ours() will only remove
+    # it if our PID wrote it or the owning process is dead.
+    remove_maintenance_if_ours 2>/dev/null || true
 }
 
 # ---------------------------------------------------------------------------
