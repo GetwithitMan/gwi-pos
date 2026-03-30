@@ -2,6 +2,7 @@ import { config } from '@/lib/system-config'
 import { getBootstrapResult, getSchemaRecheckCount } from '@/lib/venue-bootstrap'
 import { getWorkerHealth } from '@/lib/worker-registry'
 import { getReadinessState } from '@/lib/readiness'
+import { isInOutageMode } from '@/lib/sync/upstream-sync-worker'
 import { EXPECTED_SCHEMA_VERSION } from '@/lib/version-contract'
 import { ok, unauthorized } from '@/lib/api-response'
 
@@ -35,18 +36,34 @@ export async function GET(request: Request) {
     ? (bootstrap?.degradedReasons?.join(', ') ?? null)
     : null
 
+  // Filter stale neon warnings if sync workers are actually running
+  // (same logic as dashboard/system-overview for consistency)
+  let degradedReasons = bootstrap?.degradedReasons ?? []
+  if (!isInOutageMode() && syncRunning) {
+    degradedReasons = degradedReasons.filter(
+      (r: string) => r !== 'neon-unreachable' &&
+        r !== 'neon-schema-version-incompatible' &&
+        r !== 'neon-core-tables-missing' &&
+        r !== 'neon-required-enums-missing' &&
+        r !== 'base-seed-missing'
+    )
+  }
+
+  // Report actual readiness level (ORDERS if at ORDERS, not stale BOOT)
+  const actualLevel = readiness?.level ?? null
+
   return ok({
     // Canonical readiness level — ONE source of truth
-    readinessLevel: readiness?.level ?? null,
+    readinessLevel: actualLevel,
     syncContractReady: readiness?.syncContractReady ?? false,
     initialSyncComplete: readiness?.initialSyncComplete ?? false,
     // Schema block reporting — MC uses these to auto-remediate
-    syncBlocked,
-    syncBlockReason,
+    syncBlocked: degradedReasons.length > 0 && !readiness?.syncContractReady,
+    syncBlockReason: degradedReasons.length > 0 ? degradedReasons.join(', ') : null,
     expectedSchemaVersion: EXPECTED_SCHEMA_VERSION,
     observedNeonSchemaVersion: nr?.schemaVersion ?? 'unknown',
     schemaRecheckCount: getSchemaRecheckCount(),
-    degradedReasons: bootstrap?.degradedReasons ?? [],
+    degradedReasons,
     // Existing fields (kept for backward compat with heartbeat consumers)
     localDb: bootstrap?.localDb ?? false,
     neonReachable: bootstrap?.neonReachable ?? false,
