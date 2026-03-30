@@ -671,7 +671,12 @@ check_manifest_compatibility() {
         fi
     fi
 
-    # Gate 5: compatibleSchemaVersions
+    # Gate 5: compatibleSchemaVersions — WARN only, don't block.
+    # The new release ships migrations (in deploy-tools + pre-start.sh) that will
+    # bring the schema up to the required version. Blocking here creates a
+    # chicken-and-egg: the update contains the fix but can't deploy because
+    # the fix isn't applied yet. Let the deploy proceed; pre-start.sh runs
+    # migrations before the app starts.
     local compat_schema_file="${CACHE_DIR}/.compat-schema"
     if has_jq; then
         jq -r '.compatibleSchemaVersions[]? // empty' "$manifest" > "$compat_schema_file" 2>/dev/null || true
@@ -680,7 +685,7 @@ check_manifest_compatibility() {
         local current_schema
         current_schema="$(get_current_schema_version)"
         if [[ -n "$current_schema" ]] && ! grep -qx "$current_schema" "$compat_schema_file"; then
-            fatal "Current schema version '$current_schema' not in compatible versions: $(cat "$compat_schema_file" | tr '\n' ', ')"
+            warn "Schema version '$current_schema' not in target compatible versions ($(cat "$compat_schema_file" | tr '\n' ', ')). Migrations will run on startup."
         fi
     fi
     rm -f "$compat_schema_file" 2>/dev/null || true

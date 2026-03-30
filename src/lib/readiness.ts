@@ -128,7 +128,7 @@ export function computeReadiness(inputs: ReadinessInputs): ReadinessState {
     return state
   }
 
-  // Evaluate sync contract: all Neon checks must pass + local schema verified + seed complete
+  // Evaluate sync contract: track Neon check results
   if (!inputs.neonReachable) degradedReasons.push('neon-unreachable')
   if (!inputs.neonSchemaVersionOk) degradedReasons.push('neon-schema-version-incompatible')
   if (!inputs.neonCoreTablesExist) degradedReasons.push('neon-core-tables-missing')
@@ -142,17 +142,24 @@ export function computeReadiness(inputs: ReadinessInputs): ReadinessState {
     inputs.neonRequiredEnumsExist &&
     inputs.baseSeedPresent
 
+  // Sync contract is fully ready when all Neon checks pass
   state.syncContractReady = inputs.localDbUp &&
     inputs.localSchemaVerified &&
     inputs.seedComplete &&
     neonSchemaOk
 
-  if (!state.syncContractReady) {
-    // Some Neon check failed — stay at BOOT with degraded reasons
+  // Offline-first: if local DB is verified and seed was completed previously,
+  // allow SYNC level even when Neon is temporarily unreachable. Sync workers
+  // will retry Neon connections internally. The POS must not stay stuck in
+  // BOOT just because Neon is down — orders, payments, KDS all work locally.
+  const localReady = inputs.localDbUp && inputs.localSchemaVerified && inputs.seedComplete
+
+  if (!state.syncContractReady && !localReady) {
+    // Local DB not ready — stay at BOOT
     return state
   }
 
-  // Level 2: SYNC — sync workers can safely start
+  // Level 2: SYNC — sync workers can start (they handle Neon retries internally)
   state.level = 'SYNC'
 
   // Level 3: ORDERS — ONLY reachable through advanceToOrders() which verifies
