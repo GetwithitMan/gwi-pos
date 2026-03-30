@@ -1568,7 +1568,7 @@ swap_symlinks() {
 restart_service() {
     log "Restarting $SERVICE_NAME..."
 
-    if ! systemctl restart "$SERVICE_NAME" 2>&1; then
+    if ! sudo systemctl restart "$SERVICE_NAME" 2>&1; then
         err "systemctl restart $SERVICE_NAME failed"
         RESTART_RESULT="fail"
         return 1
@@ -1752,7 +1752,7 @@ do_rollback() {
     }
 
     # Restart service
-    if ! systemctl restart "$SERVICE_NAME" 2>&1; then
+    if ! sudo systemctl restart "$SERVICE_NAME" 2>&1; then
         err "Service restart failed during rollback"
         ROLLBACK_RESULT="fail"
         set_state "rollback_failed" "$target_release"

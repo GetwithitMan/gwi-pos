@@ -347,13 +347,13 @@ echo "[sudoers] Repairing: writing enumerated NOPASSWD rules for $POSUSER"
 cat > "\$SUDOERS_FILE" <<'SUDOFIX'
 # GWI POS -- enumerated passwordless sudo for POS service user
 # --- systemctl: service lifecycle ---
-$POSUSER ALL=(ALL) NOPASSWD: /bin/systemctl restart thepasspos, /bin/systemctl stop thepasspos, /bin/systemctl start thepasspos, /bin/systemctl enable thepasspos
-$POSUSER ALL=(ALL) NOPASSWD: /bin/systemctl restart thepasspos-sync, /bin/systemctl start thepasspos-sync
-$POSUSER ALL=(ALL) NOPASSWD: /bin/systemctl restart thepasspos-kiosk, /bin/systemctl stop thepasspos-kiosk, /bin/systemctl start thepasspos-kiosk
-$POSUSER ALL=(ALL) NOPASSWD: /bin/systemctl restart gwi-watchdog.timer, /bin/systemctl restart gwi-watchdog.service
-$POSUSER ALL=(ALL) NOPASSWD: /bin/systemctl enable gwi-watchdog.timer, /bin/systemctl enable --now gwi-watchdog.timer
-$POSUSER ALL=(ALL) NOPASSWD: /bin/systemctl daemon-reload
-$POSUSER ALL=(ALL) NOPASSWD: /bin/systemctl status *, /bin/systemctl is-active *, /bin/systemctl is-enabled *, /bin/systemctl list-unit-files *
+$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart thepasspos, /usr/bin/systemctl stop thepasspos, /usr/bin/systemctl start thepasspos, /usr/bin/systemctl enable thepasspos
+$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart thepasspos-sync, /usr/bin/systemctl start thepasspos-sync
+$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart thepasspos-kiosk, /usr/bin/systemctl stop thepasspos-kiosk, /usr/bin/systemctl start thepasspos-kiosk
+$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart gwi-watchdog.timer, /usr/bin/systemctl restart gwi-watchdog.service
+$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl enable gwi-watchdog.timer, /usr/bin/systemctl enable --now gwi-watchdog.timer
+$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl daemon-reload
+$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl status *, /usr/bin/systemctl is-active *, /usr/bin/systemctl is-enabled *, /usr/bin/systemctl list-unit-files *
 # --- Database tools ---
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/psql, /usr/lib/postgresql/*/bin/psql, /usr/bin/pg_isready, /usr/bin/pg_dump
 # --- POS scripts ---
@@ -625,13 +625,13 @@ BKEOF
 # If a new command is required, add it here -- do NOT revert to NOPASSWD: ALL.
 #
 # --- systemctl: service lifecycle (restart, stop, start, enable, daemon-reload) ---
-$POSUSER ALL=(ALL) NOPASSWD: /bin/systemctl restart thepasspos, /bin/systemctl stop thepasspos, /bin/systemctl start thepasspos, /bin/systemctl enable thepasspos
-$POSUSER ALL=(ALL) NOPASSWD: /bin/systemctl restart thepasspos-sync, /bin/systemctl start thepasspos-sync
-$POSUSER ALL=(ALL) NOPASSWD: /bin/systemctl restart thepasspos-kiosk, /bin/systemctl stop thepasspos-kiosk, /bin/systemctl start thepasspos-kiosk
-$POSUSER ALL=(ALL) NOPASSWD: /bin/systemctl restart gwi-watchdog.timer, /bin/systemctl restart gwi-watchdog.service
-$POSUSER ALL=(ALL) NOPASSWD: /bin/systemctl enable gwi-watchdog.timer, /bin/systemctl enable --now gwi-watchdog.timer
-$POSUSER ALL=(ALL) NOPASSWD: /bin/systemctl daemon-reload
-$POSUSER ALL=(ALL) NOPASSWD: /bin/systemctl status *, /bin/systemctl is-active *, /bin/systemctl is-enabled *, /bin/systemctl list-unit-files *
+$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart thepasspos, /usr/bin/systemctl stop thepasspos, /usr/bin/systemctl start thepasspos, /usr/bin/systemctl enable thepasspos
+$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart thepasspos-sync, /usr/bin/systemctl start thepasspos-sync
+$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart thepasspos-kiosk, /usr/bin/systemctl stop thepasspos-kiosk, /usr/bin/systemctl start thepasspos-kiosk
+$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart gwi-watchdog.timer, /usr/bin/systemctl restart gwi-watchdog.service
+$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl enable gwi-watchdog.timer, /usr/bin/systemctl enable --now gwi-watchdog.timer
+$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl daemon-reload
+$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl status *, /usr/bin/systemctl is-active *, /usr/bin/systemctl is-enabled *, /usr/bin/systemctl list-unit-files *
 #
 # --- Database tools ---
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/psql, /usr/lib/postgresql/*/bin/psql, /usr/bin/pg_isready, /usr/bin/pg_dump
@@ -999,9 +999,9 @@ KIOSKCTL
 
     # Sudoers for terminal -- allow service user to manage kiosk + shutdown
     cat > /etc/sudoers.d/gwi-pos << SUDEOF
-$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop thepasspos-kiosk
-$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start thepasspos-kiosk
-$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart thepasspos-kiosk
+$POSUSER ALL=(ALL) NOPASSWD: /usr/usr/bin/systemctl stop thepasspos-kiosk
+$POSUSER ALL=(ALL) NOPASSWD: /usr/usr/bin/systemctl start thepasspos-kiosk
+$POSUSER ALL=(ALL) NOPASSWD: /usr/usr/bin/systemctl restart thepasspos-kiosk
 $POSUSER ALL=(ALL) NOPASSWD: /opt/gwi-pos/kiosk-control.sh
 $POSUSER ALL=(ALL) NOPASSWD: /sbin/shutdown -h now
 $POSUSER ALL=(ALL) NOPASSWD: /usr/sbin/shutdown -h now
