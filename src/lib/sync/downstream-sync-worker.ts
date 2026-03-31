@@ -91,6 +91,12 @@ let cycleRunning = false
 const menuUpdateLocations = new Set<string>()
 /** Batched floor-plan-update locations — collected per sync cycle, emitted once after all tables complete. */
 const floorPlanUpdateLocations = new Set<string>()
+/**
+ * Layout signature cache — suppresses floor-plan:updated for Table rows where only
+ * status changed (not layout). Keyed by "locationId:tableId" for global uniqueness.
+ * Cleared naturally on worker restart. First sighting of a table always emits once.
+ */
+const tableLayoutSigCache = new Map<string, string>()
 /** Menu-related models whose socket events are batched per sync cycle instead of per-row. */
 const BATCHED_MENU_MODELS = new Set(['MenuItem', 'Category', 'ModifierGroup', 'Modifier', 'ComboTemplate', 'ComboComponent', 'ComboComponentOption', 'ModifierGroupTemplate', 'ModifierTemplate', 'PricingOptionGroup', 'PricingOption', 'ItemBarcode', 'PizzaConfig', 'PizzaSize', 'PizzaCrust', 'PizzaSauce', 'PizzaCheese', 'PizzaTopping', 'PizzaSpecialty', 'BottleProduct', 'SpiritCategory', 'SpiritModifierGroup', 'BottleServiceTier', 'MenuItemRecipe', 'RecipeIngredient'])
 /** Per-table-batch deduplication for open-orders socket dispatch (cleared in syncTableDown) */
@@ -945,7 +951,7 @@ async function handleCloudTableStatus(row: Record<string, unknown>): Promise<voi
 
   try {
     await masterClient.$executeRawUnsafe(
-      `UPDATE "Table" SET status = 'occupied', "updatedAt" = NOW() WHERE id = $1 AND status != 'occupied'`,
+      `UPDATE "Table" SET status = 'occupied' WHERE id = $1 AND status != 'occupied'`,
       tableId
     )
 
@@ -1363,13 +1369,24 @@ function initDownstreamNotifications(): void {
   })
 
   // 9. Floor plan change dispatch — batched per cycle (not per-row)
-  // Collecting into floorPlanUpdateLocations and emitting once at end of cycle
-  // prevents a socket storm that causes Android floor plan canvas flashing.
+  // For Table rows: only emit when layout fields changed (status-only handled by table:status-changed).
+  // For Section/SectionAssignment/FloorPlanElement: always emit (these are layout-affecting).
+  // All collected into floorPlanUpdateLocations and emitted once at end of cycle.
   registerDownstreamHandler({
     name: 'floorplan-change-dispatch',
     models: ['Table', 'Section', 'SectionAssignment', 'FloorPlanElement'],
-    handler: async (_tableName, _row, locationId) => {
+    handler: async (tableName, row, locationId) => {
       if (!locationId) return
+
+      if (tableName === 'Table') {
+        // Build layout signature from layout-affecting fields only (excludes status)
+        const sig = `${row.posX}|${row.posY}|${row.width}|${row.height}|${row.shape}|${row.rotation}|${row.sectionId}|${row.name}|${row.capacity}|${row.isActive}|${row.seatPattern}|${row.abbreviation}`
+        const cacheKey = `${locationId}:${row.id}`
+        const prev = tableLayoutSigCache.get(cacheKey)
+        tableLayoutSigCache.set(cacheKey, sig)
+        if (sig === prev) return // layout unchanged (status-only churn), skip
+      }
+
       floorPlanUpdateLocations.add(locationId)
     },
     errorPolicy: 'skip',
