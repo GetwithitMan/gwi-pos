@@ -327,6 +327,60 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
   /** Per-location max synced timestamp for downstream watermark updates */
   const locationWatermarks = new Map<string, Date>()
 
+  // ── Batch pre-fetch local rows for conflict detection (avoids N per-row queries) ──
+  let localRowMap = new Map<string, Record<string, unknown>>()
+  if (isBiDir) {
+    try {
+      const incomingIds = rows.map(r => r.id as string).filter(Boolean)
+      if (incomingIds.length > 0) {
+        const quotedLocalCols = columns.map((c) => `"${c}"`).join(', ')
+        const localRows = await masterClient.$queryRawUnsafe<Record<string, unknown>[]>(
+          `SELECT ${quotedLocalCols} FROM "${tableName}" WHERE id = ANY($1::text[])`,
+          incomingIds,
+        )
+        for (const lr of localRows) {
+          if (lr.id) localRowMap.set(lr.id as string, lr)
+        }
+      }
+    } catch (batchErr) {
+      // Batch pre-fetch failed — per-row fallback will be used
+      log.warn({ err: batchErr, table: tableName }, 'Batch local row pre-fetch failed, falling back to per-row')
+      localRowMap = new Map()
+    }
+  }
+
+  // ── Batch pre-fetch business-key conflicts ──
+  const bk = getBusinessKey(tableName)
+  let bkConflictMap = new Map<string, { id: string; lastMutatedBy?: string | null; updatedAt?: Date | null }>()
+  if (bk) {
+    try {
+      const hasLastMutatedBy = columns.includes('lastMutatedBy')
+      const lmbCol = hasLastMutatedBy ? ', "lastMutatedBy"' : ''
+      const hasUpdatedAtCol = columns.includes('updatedAt')
+      const updCol = hasUpdatedAtCol ? ', "updatedAt"' : ''
+      // Build composite key tuples for batch lookup
+      const bkTuples = rows
+        .filter(r => r.id)
+        .map(r => bk!.map(col => serializeValue(r[col], false)))
+      if (bkTuples.length > 0 && bk.length === 1) {
+        // Single-column business key — use ANY()
+        const vals = bkTuples.map(t => t[0])
+        const bkRows = await masterClient.$queryRawUnsafe<{ id: string; lastMutatedBy?: string | null; updatedAt?: Date | null }[]>(
+          `SELECT id${lmbCol}${updCol}, "${bk[0]}" FROM "${tableName}" WHERE "${bk[0]}" = ANY($1)`,
+          vals,
+        )
+        for (const br of bkRows) {
+          const key = String((br as any)[bk[0]])
+          bkConflictMap.set(key, br)
+        }
+      }
+      // Multi-column business keys use per-row fallback (too complex for batch)
+    } catch (bkBatchErr) {
+      log.warn({ err: bkBatchErr, table: tableName }, 'Batch business-key pre-fetch failed, falling back to per-row')
+      bkConflictMap = new Map()
+    }
+  }
+
   for (const row of rows) {
     try {
       // Bidirectional conflict detection: check if local row was modified locally
@@ -335,18 +389,20 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
 
         if (isProtected) {
           // ── Quarantine path for money-impact models ──────────────────────
-          // Fetch local row for quarantine check (reuses the same SELECT
-          // that detectBidirectionalConflict would do, but fetches all columns
-          // so we can pass localData to checkQuarantine).
+          // Use batch pre-fetched local row (falls back to per-row query if not found)
           const hasUpdatedAt = columns.includes('updatedAt')
           if (hasUpdatedAt) {
             try {
-              const quotedLocalCols = columns.map((c) => `"${c}"`).join(', ')
-              const localRows = await masterClient.$queryRawUnsafe<Record<string, unknown>[]>(
-                `SELECT ${quotedLocalCols} FROM "${tableName}" WHERE id = $1 LIMIT 1`,
-                row.id as string,
-              )
-              const localRow = localRows.length > 0 ? localRows[0] : null
+              let localRow = localRowMap.get(row.id as string) ?? null
+              if (!localRow && localRowMap.size === 0) {
+                // Batch pre-fetch failed — fall back to per-row query
+                const quotedLocalCols = columns.map((c) => `"${c}"`).join(', ')
+                const localRows = await masterClient.$queryRawUnsafe<Record<string, unknown>[]>(
+                  `SELECT ${quotedLocalCols} FROM "${tableName}" WHERE id = $1 LIMIT 1`,
+                  row.id as string,
+                )
+                localRow = localRows.length > 0 ? localRows[0] : null
+              }
               const localUpdatedAt = localRow?.updatedAt
                 ? (localRow.updatedAt instanceof Date ? localRow.updatedAt : new Date(localRow.updatedAt as string))
                 : null
@@ -402,7 +458,8 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
           }
         } else {
           // ── Standard bidirectional conflict detection for non-protected models ──
-          const conflictResult = await detectBidirectionalConflict(tableName, row, strategy, columns)
+          const prefetchedLocal = localRowMap.get(row.id as string) ?? undefined
+          const conflictResult = await detectBidirectionalConflict(tableName, row, strategy, columns, prefetchedLocal)
           if (conflictResult === 'skip') {
             // Local version is strictly newer and locally-mutated — skip Neon version
             const rowUpdatedAt = row.updatedAt instanceof Date
@@ -421,21 +478,31 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
       // but a different id. This happens when items were created locally (pre-transition)
       // and then re-created in Neon with a different CUID. Since Neon is authoritative
       // for cloud-owned models, delete the local row so the Neon version can be inserted.
-      const bk = getBusinessKey(tableName)
-      if (bk && row.id) {
-        const bkWhere = bk.map((col, i) => `"${col}" = $${i + 2}`).join(' AND ')
-        const bkValues = bk.map((col) => serializeValue(row[col], false))
-        const hasLastMutatedBy = columns.includes('lastMutatedBy')
-        const conflicting = await masterClient.$queryRawUnsafe<{ id: string; lastMutatedBy?: string | null; updatedAt?: Date | null }[]>(
-          `SELECT id${hasLastMutatedBy ? ', "lastMutatedBy"' : ''}${columns.includes('updatedAt') ? ', "updatedAt"' : ''} FROM "${tableName}" WHERE ${bkWhere} AND "id" != $1 AND "deletedAt" IS NULL LIMIT 1`,
-          row.id as string, ...bkValues
-        )
+      const rowBk = getBusinessKey(tableName)
+      if (rowBk && row.id) {
+        // Try batch pre-fetched map first (single-column keys only)
+        let conflicting: { id: string; lastMutatedBy?: string | null; updatedAt?: Date | null }[] = []
+        const bkKey = rowBk.length === 1 ? String(serializeValue(row[rowBk[0]], false)) : null
+        const bkCached = bkKey ? bkConflictMap.get(bkKey) : null
+        if (bkCached && bkCached.id !== row.id) {
+          conflicting = [bkCached]
+        } else if (!bkKey || bkConflictMap.size === 0) {
+          // Multi-column key or batch failed — per-row fallback
+          const bkWhere = rowBk.map((col, i) => `"${col}" = $${i + 2}`).join(' AND ')
+          const bkValues = rowBk.map((col) => serializeValue(row[col], false))
+          const hasLastMutatedBy = columns.includes('lastMutatedBy')
+          conflicting = await masterClient.$queryRawUnsafe<{ id: string; lastMutatedBy?: string | null; updatedAt?: Date | null }[]>(
+            `SELECT id${hasLastMutatedBy ? ', "lastMutatedBy"' : ''}${columns.includes('updatedAt') ? ', "updatedAt"' : ''} FROM "${tableName}" WHERE ${bkWhere} AND "id" != $1 AND "deletedAt" IS NULL LIMIT 1`,
+            row.id as string, ...bkValues
+          )
+        }
         if (conflicting.length > 0) {
           const local = conflicting[0]
           // Guard: if the local row was recently mutated locally (not by cloud),
           // skip the conflict resolution to avoid silently destroying local data.
           // Only resolve if local row is cloud-origin, null-origin, or older than Neon.
-          const localIsLocallyMutated = hasLastMutatedBy && local.lastMutatedBy === 'local'
+          const hasLastMutatedByCol = columns.includes('lastMutatedBy')
+          const localIsLocallyMutated = hasLastMutatedByCol && local.lastMutatedBy === 'local'
           const neonUpdatedAt = row.updatedAt ? new Date(row.updatedAt as unknown as string) : null
           const localUpdatedAt = local.updatedAt ? new Date(local.updatedAt as unknown as string) : null
           const localIsNewer = neonUpdatedAt && localUpdatedAt && localUpdatedAt > neonUpdatedAt
