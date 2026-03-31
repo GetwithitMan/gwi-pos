@@ -20,7 +20,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     return err('Invalid since timestamp')
   }
 
-  const [menuItems, categories, employees, tables, orderTypes, orders, pricingOptionGroups, sharedModifierGroups] = await Promise.all([
+  const [menuItems, categories, employees, tables, orderTypes, orders, pricingOptionGroups, sharedModifierGroups, deltaModifierGroups] = await Promise.all([
     adminDb.menuItem.findMany({
       where: { locationId, updatedAt: { gt: since } },
       include: {
@@ -63,7 +63,34 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       },
       orderBy: { sortOrder: 'asc' },
     }),
+    // All modifier groups updated since last sync (covers mid-shift price/config changes)
+    db.modifierGroup.findMany({
+      where: { locationId, deletedAt: null, updatedAt: { gt: since } },
+      include: {
+        modifiers: {
+          where: { deletedAt: null, isActive: true },
+          orderBy: { sortOrder: 'asc' },
+          include: {
+            linkedBottleProduct: {
+              select: { id: true, name: true, tier: true, pourCost: true },
+            },
+          },
+        },
+      },
+      orderBy: { sortOrder: 'asc' },
+    }),
   ])
+
+  // Map modifier group decimal fields
+  const mappedModifierGroups = deltaModifierGroups.map(group => ({
+    ...group,
+    modifiers: group.modifiers.map(mod => ({
+      ...mod,
+      price: mod.price != null ? Number(mod.price) : null,
+      extraPrice: mod.extraPrice != null ? Number(mod.extraPrice) : null,
+      cost: mod.cost != null ? Number(mod.cost) : null,
+    })),
+  }))
 
   // Convert Decimal fields to numbers for Android clients
   const mappedMenuItems = menuItems.map(item => ({
@@ -121,5 +148,5 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     })),
   }))
 
-  return ok({ menuItems: mappedMenuItems, categories, employees, tables, orderTypes, orders: mappedOrders, pricingOptionGroups: mappedPricingOptionGroups, sharedModifierGroups, syncVersion: Date.now(), hasMore: orders.length >= 100 })
+  return ok({ menuItems: mappedMenuItems, categories, employees, tables, orderTypes, orders: mappedOrders, pricingOptionGroups: mappedPricingOptionGroups, sharedModifierGroups, modifierGroups: mappedModifierGroups, syncVersion: Date.now(), hasMore: orders.length >= 100 })
 })
