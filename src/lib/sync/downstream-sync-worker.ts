@@ -89,6 +89,8 @@ let cycleRunning = false
 
 /** Batched menu-update locations — collected per sync cycle, emitted once after all tables complete. */
 const menuUpdateLocations = new Set<string>()
+/** Batched floor-plan-update locations — collected per sync cycle, emitted once after all tables complete. */
+const floorPlanUpdateLocations = new Set<string>()
 /** Menu-related models whose socket events are batched per sync cycle instead of per-row. */
 const BATCHED_MENU_MODELS = new Set(['MenuItem', 'Category', 'ModifierGroup', 'Modifier', 'ComboTemplate', 'ComboComponent', 'ComboComponentOption', 'ModifierGroupTemplate', 'ModifierTemplate', 'PricingOptionGroup', 'PricingOption', 'ItemBarcode', 'PizzaConfig', 'PizzaSize', 'PizzaCrust', 'PizzaSauce', 'PizzaCheese', 'PizzaTopping', 'PizzaSpecialty', 'BottleProduct', 'SpiritCategory', 'SpiritModifierGroup', 'BottleServiceTier', 'MenuItemRecipe', 'RecipeIngredient'])
 /** Per-table-batch deduplication for open-orders socket dispatch (cleared in syncTableDown) */
@@ -947,9 +949,8 @@ async function handleCloudTableStatus(row: Record<string, unknown>): Promise<voi
       tableId
     )
 
-    // Emit floor plan update so LAN terminals see the table status change
-    const { dispatchFloorPlanUpdate, dispatchTableStatusChanged } = await import('../socket-dispatch')
-    await dispatchFloorPlanUpdate(locationId)
+    // Emit table status change — Android handles this as a Room delta patch (no full refetch)
+    const { dispatchTableStatusChanged } = await import('../socket-dispatch')
     await dispatchTableStatusChanged(locationId, { tableId, status: 'occupied' })
   } catch (err) {
     log.error({ err, tableId, locationId }, 'Failed to update table status')
@@ -1202,6 +1203,26 @@ async function runDownstreamCycle(): Promise<void> {
       }
     }
 
+    // Emit batched floor-plan:updated — one event per location per cycle instead of per-row.
+    // This prevents the socket storm that caused Android floor plan canvas flashing
+    // (Table/Section/SectionAssignment/FloorPlanElement rows were emitting per-row).
+    if (floorPlanUpdateLocations.size > 0) {
+      const locations = [...floorPlanUpdateLocations]
+      floorPlanUpdateLocations.clear()
+      try {
+        const { dispatchFloorPlanUpdate } = await import('../socket-dispatch')
+        for (const locId of locations) {
+          try {
+            await dispatchFloorPlanUpdate(locId)
+          } catch (err) {
+            log.error({ err, locationId: locId }, 'Batched floor-plan:updated dispatch failed')
+          }
+        }
+      } catch (err) {
+        log.error({ err }, 'Failed to import socket-dispatch for batched floor plan update')
+      }
+    }
+
     // P2-5: Re-check orders that are pending fulfillment (items not yet synced)
     void processPendingFulfillments().catch((err) => {
       log.error({ err }, 'Pending fulfillment re-check failed')
@@ -1341,14 +1362,15 @@ function initDownstreamNotifications(): void {
     errorPolicy: 'skip',
   })
 
-  // 9. Floor plan change dispatch — terminals refresh floor plan display
+  // 9. Floor plan change dispatch — batched per cycle (not per-row)
+  // Collecting into floorPlanUpdateLocations and emitting once at end of cycle
+  // prevents a socket storm that causes Android floor plan canvas flashing.
   registerDownstreamHandler({
     name: 'floorplan-change-dispatch',
     models: ['Table', 'Section', 'SectionAssignment', 'FloorPlanElement'],
     handler: async (_tableName, _row, locationId) => {
       if (!locationId) return
-      const { dispatchFloorPlanUpdate } = await import('../socket-dispatch')
-      await dispatchFloorPlanUpdate(locationId)
+      floorPlanUpdateLocations.add(locationId)
     },
     errorPolicy: 'skip',
   })
