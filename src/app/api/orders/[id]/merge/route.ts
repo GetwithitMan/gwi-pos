@@ -118,12 +118,14 @@ export const POST = withVenue(async function POST(
       }
 
       // Block merging orders with existing payments (would corrupt financial totals)
-      const sourcePaymentCount = await tx.payment.count({
-        where: { orderId: sourceOrder.id, status: 'completed', deletedAt: null },
-      })
-      const targetPaymentCount = await tx.payment.count({
-        where: { orderId: targetOrder.id, status: 'completed', deletedAt: null },
-      })
+      const [sourcePaymentCount, targetPaymentCount] = await Promise.all([
+        tx.payment.count({
+          where: { orderId: sourceOrder.id, status: 'completed', deletedAt: null },
+        }),
+        tx.payment.count({
+          where: { orderId: targetOrder.id, status: 'completed', deletedAt: null },
+        }),
+      ])
       if (sourcePaymentCount > 0 || targetPaymentCount > 0) {
         throw new Error('ORDERS_HAVE_PAYMENTS')
       }

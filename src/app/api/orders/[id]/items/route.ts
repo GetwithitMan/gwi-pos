@@ -94,17 +94,22 @@ const AddItemsBodySchema = z.object({
 }).passthrough()
 
 /**
- * Calculate cost-at-sale for a single order item (fire-and-forget).
- * Sums base recipe ingredient costs + liquor recipe costs + pricing option link costs.
- * Returns null if no recipe/cost data exists.
+ * Calculate cost-at-sale for multiple order items in batch (fire-and-forget).
+ * Uses two bulk queries (menuItems + pricingOptions) instead of N+1 per-item queries.
+ * Returns a Map of orderItemId → cost for items that have recipe/cost data.
  */
-async function calculateCostAtSale(
-  menuItemId: string,
-  pricingOptionId: string | null
-): Promise<number | null> {
-  // TODO: MenuItemRepository.getMenuItemByIdWithInclude() needs locationId; cost calc is location-agnostic
-  const menuItem = await db.menuItem.findUnique({
-    where: { id: menuItemId },
+async function calculateCostAtSaleBatch(
+  items: Array<{ id: string; menuItemId: string; pricingOptionId: string | null }>
+): Promise<Map<string, number>> {
+  const results = new Map<string, number>()
+  if (items.length === 0) return results
+
+  const menuItemIds = [...new Set(items.map(i => i.menuItemId))]
+  const pricingOptionIds = [...new Set(items.filter(i => i.pricingOptionId).map(i => i.pricingOptionId!))]
+
+  // Batch fetch all menu items with recipe data (single query instead of N)
+  const menuItems = await db.menuItem.findMany({
+    where: { id: { in: menuItemIds } },
     select: {
       id: true,
       recipe: {
@@ -134,59 +139,75 @@ async function calculateCostAtSale(
       },
     },
   })
+  const menuItemMap = new Map(menuItems.map(mi => [mi.id, mi]))
 
-  if (!menuItem) return null
-
-  let baseCost = 0
-
-  // Food recipe cost
-  if (menuItem.recipe?.ingredients?.length) {
-    const { totalCost } = calculateIngredientCosts(menuItem.recipe.ingredients)
-    baseCost += totalCost
-  }
-
-  // Liquor recipe cost (from Liquor Builder)
-  if (menuItem.recipeIngredients?.length) {
-    for (const ri of menuItem.recipeIngredients) {
-      const pourCost = ri.bottleProduct?.pourCost ? Number(ri.bottleProduct.pourCost) : 0
-      const pourCount = Number(ri.pourCount) || 1
-      baseCost += pourCost * pourCount
-    }
-  }
-
-  // If no base cost and no pricing option, no cost data to snapshot
-  if (baseCost === 0 && !pricingOptionId) return null
-
-  // Pricing option inventory link costs (additive on top of base)
-  // TODO: Add PricingOptionRepository once that repository exists
-  if (pricingOptionId) {
-    const option = await db.pricingOption.findUnique({
-      where: { id: pricingOptionId },
-      select: {
-        id: true,
-        inventoryLinks: {
-          where: { deletedAt: null },
-          select: {
-            usageQuantity: true,
-            usageUnit: true,
-            inventoryItem: {
-              select: { storageUnit: true, costPerUnit: true, yieldCostPerUnit: true },
-            },
-            prepItem: {
-              select: { costPerUnit: true },
+  // Batch fetch all pricing options with inventory links (single query instead of N)
+  const pricingOptionMap = new Map<string, (typeof pricingOptions)[number]>()
+  const pricingOptions = pricingOptionIds.length > 0
+    ? await db.pricingOption.findMany({
+        where: { id: { in: pricingOptionIds } },
+        select: {
+          id: true,
+          inventoryLinks: {
+            where: { deletedAt: null },
+            select: {
+              usageQuantity: true,
+              usageUnit: true,
+              inventoryItem: {
+                select: { storageUnit: true, costPerUnit: true, yieldCostPerUnit: true },
+              },
+              prepItem: {
+                select: { costPerUnit: true },
+              },
             },
           },
         },
-      },
-    })
+      })
+    : []
+  for (const opt of pricingOptions) {
+    pricingOptionMap.set(opt.id, opt)
+  }
 
-    if (option?.inventoryLinks?.length) {
-      const { totalCost } = calculateVariantCost(baseCost, option.inventoryLinks)
-      return totalCost
+  // Calculate costs from pre-fetched data (pure computation, no DB queries)
+  for (const item of items) {
+    const menuItem = menuItemMap.get(item.menuItemId)
+    if (!menuItem) continue
+
+    let baseCost = 0
+
+    // Food recipe cost
+    if (menuItem.recipe?.ingredients?.length) {
+      const { totalCost } = calculateIngredientCosts(menuItem.recipe.ingredients)
+      baseCost += totalCost
+    }
+
+    // Liquor recipe cost (from Liquor Builder)
+    if (menuItem.recipeIngredients?.length) {
+      for (const ri of menuItem.recipeIngredients) {
+        const pourCost = ri.bottleProduct?.pourCost ? Number(ri.bottleProduct.pourCost) : 0
+        const pourCount = Number(ri.pourCount) || 1
+        baseCost += pourCost * pourCount
+      }
+    }
+
+    if (baseCost === 0 && !item.pricingOptionId) continue
+
+    // Pricing option inventory link costs (additive on top of base)
+    if (item.pricingOptionId) {
+      const option = pricingOptionMap.get(item.pricingOptionId)
+      if (option?.inventoryLinks?.length) {
+        const { totalCost } = calculateVariantCost(baseCost, option.inventoryLinks)
+        results.set(item.id, totalCost)
+        continue
+      }
+    }
+
+    if (baseCost > 0) {
+      results.set(item.id, baseCost)
     }
   }
 
-  return baseCost > 0 ? baseCost : null
+  return results
 }
 
 /**
@@ -267,6 +288,16 @@ export const POST = withVenue(async function POST(
       },
     })
 
+    // Pre-fetch pricing options once (used for both permission validation AND price enforcement in transaction)
+    const allPricableItems = items.filter((i: AddItemInput) => !i.soldByWeight && !i.pizzaConfig && !i.blockTimeMinutes)
+    const allPricingOptionIds = [...new Set(allPricableItems.filter((i: AddItemInput) => i.pricingOptionId).map((i: AddItemInput) => i.pricingOptionId!))]
+    const prefetchedPricingOptions = allPricingOptionIds.length > 0
+      ? await db.pricingOption.findMany({
+          where: { id: { in: allPricingOptionIds } },
+          select: { id: true, price: true },
+        })
+      : []
+
     // Auth checks — fetch order metadata once for all permission guards (tenant-safe)
     if (requestingEmployeeId) {
       const orderMeta = await OrderRepository.getOrderByIdWithSelect(orderId, locationId, {
@@ -284,17 +315,9 @@ export const POST = withVenue(async function POST(
       if (orderMeta) {
         const pricableItems = items.filter((i: AddItemInput) => !i.soldByWeight && !i.pizzaConfig && !i.blockTimeMinutes)
         if (pricableItems.length > 0) {
-          const pricingOptionIds = pricableItems.filter((i: AddItemInput) => i.pricingOptionId).map((i: AddItemInput) => i.pricingOptionId!)
-          // Re-use prefetched menuItems (hoisted before transaction) for price validation
-          // TODO: MenuItemRepository.getMenuItems() doesn't support batch-by-IDs; PricingOption has no repo
-          const pricingOptions = pricingOptionIds.length > 0
-            ? await db.pricingOption.findMany({
-                where: { id: { in: pricingOptionIds } },
-                select: { id: true, price: true },
-              })
-            : []
+          // Re-use prefetched menuItems + pricingOptions (hoisted before transaction)
           const menuItemPrices = new Map(prefetchedMenuItems.map(m => [m.id, Number(m.price)]))
-          const pricingOptionPrices = new Map(pricingOptions.map(p => [p.id, Number(p.price)]))
+          const pricingOptionPrices = new Map(prefetchedPricingOptions.map(p => [p.id, Number(p.price)]))
 
           if (hasOpenPricedItems(items, menuItemPrices, pricingOptionPrices)) {
             const auth = await requirePermission(requestingEmployeeId, orderMeta.locationId, PERMISSIONS.MGR_OPEN_ITEMS)
@@ -359,14 +382,11 @@ export const POST = withVenue(async function POST(
         throw new Error('TAB_CLOSING')
       }
 
-      // Get full order data with includes (row is already locked within this tx)
+      // Get order data with only the fields needed downstream (row is already locked within this tx)
       const existingOrder = await OrderRepository.getOrderByIdWithInclude(orderId, locationId, {
-        location: true,
+        location: { select: { settings: true, timezone: true } },
         items: {
-          include: {
-            modifiers: true,
-            ingredientModifications: true,
-          },
+          select: { kitchenStatus: true },
         },
         payments: {
           where: { deletedAt: null },
@@ -452,14 +472,8 @@ export const POST = withVenue(async function POST(
       {
         const pricableItems = items.filter(i => !i.soldByWeight && !i.pizzaConfig && !i.blockTimeMinutes)
         if (pricableItems.length > 0) {
-          const pricingOptionIds = pricableItems.filter(i => i.pricingOptionId).map(i => i.pricingOptionId!)
-          const pricingOptions = pricingOptionIds.length > 0
-            ? await tx.pricingOption.findMany({
-                where: { id: { in: pricingOptionIds } },
-                select: { id: true, price: true },
-              })
-            : []
-          const pricingOptionPrices = new Map(pricingOptions.map(p => [p.id, Number(p.price)]))
+          // Re-use prefetched pricing options (hoisted before transaction to eliminate duplicate DB query)
+          const pricingOptionPrices = new Map(prefetchedPricingOptions.map(p => [p.id, Number(p.price)]))
 
           for (const item of pricableItems) {
             // Determine the canonical catalog price (pricing option overrides base price)
@@ -607,23 +621,23 @@ export const POST = withVenue(async function POST(
       void queueOutageWrite('Order', orderId, 'UPDATE', result.updatedOrder as unknown as Record<string, unknown>, result.updatedOrder.locationId).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
-    // Fire-and-forget: calculate and store costAtSale for all new items in parallel (N+1 fix)
+    // Fire-and-forget: calculate and store costAtSale for all new items (batch query instead of N+1)
     void (async () => {
       try {
-        const costResults = await Promise.all(
-          result.createdItems.map(async (item: any) => {
-            const cost = await calculateCostAtSale(item.menuItemId, item.pricingOptionId)
-            return { id: item.id, cost }
-          })
+        const costMap = await calculateCostAtSaleBatch(
+          result.createdItems.map((item: any) => ({
+            id: item.id,
+            menuItemId: item.menuItemId,
+            pricingOptionId: item.pricingOptionId,
+          }))
         )
-        const updates = costResults.filter(r => r.cost !== null)
-        if (updates.length > 0) {
-          // Batch update all costAtSale values in a single SQL statement
+        if (costMap.size > 0) {
+          const updates = [...costMap.entries()]
           const caseClauses = updates.map((_, i) => `WHEN id = $${i * 2 + 1} THEN $${i * 2 + 2}`).join(' ')
-          const ids = updates.map(u => u.id)
+          const ids = updates.map(([id]) => id)
           const params: (string | number)[] = []
-          for (const u of updates) {
-            params.push(u.id, u.cost!)
+          for (const [id, cost] of updates) {
+            params.push(id, cost)
           }
           params.push(...ids)
           const idPlaceholders = ids.map((_, i) => `$${updates.length * 2 + i + 1}`).join(', ')
