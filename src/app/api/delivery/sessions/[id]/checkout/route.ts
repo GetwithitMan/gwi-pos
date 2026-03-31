@@ -59,11 +59,11 @@ export const POST = withVenue(async function POST(
     // Run entire checkout in a transaction
     const result = await db.$transaction(async (tx: any) => {
       // Fetch session
-      const sessions: any[] = await tx.$queryRawUnsafe(`
+      const sessions: any[] = await tx.$queryRaw`
         SELECT * FROM "DeliveryDriverSession"
-        WHERE id = $1 AND "locationId" = $2
+        WHERE id = ${id} AND "locationId" = ${locationId}
         LIMIT 1
-      `, id, locationId)
+      `
 
       if (!sessions.length) {
         return { error: 'Session not found', status: 404 }
@@ -76,12 +76,12 @@ export const POST = withVenue(async function POST(
       }
 
       // Check for open runs (policy: driver cannot end shift with open run)
-      const openRuns: any[] = await tx.$queryRawUnsafe(`
+      const openRuns: any[] = await tx.$queryRaw`
         SELECT id FROM "DeliveryRun"
-        WHERE "driverId" = $1 AND "locationId" = $2
+        WHERE "driverId" = ${session.driverId} AND "locationId" = ${locationId}
           AND "status" NOT IN ('completed', 'returned', 'cancelled')
         LIMIT 1
-      `, session.driverId, locationId)
+      `
 
       const shiftCheck = canEndDriverShift(policy, openRuns.length > 0)
       if (!shiftCheck.allowed) {
@@ -90,19 +90,19 @@ export const POST = withVenue(async function POST(
 
       // Calculate expected cash from completed deliveries during this session
       // session.driverId is a DeliveryDriver.id which matches DeliveryOrder.driverId
-      const expectedCashRows: any[] = await tx.$queryRawUnsafe(`
+      const expectedCashRows: any[] = await tx.$queryRaw`
         SELECT COALESCE(SUM(
           CASE WHEN dord."paymentMethod" = 'cash'
           THEN ROUND(dord."orderTotal" * 100)::int
           ELSE 0 END
         ), 0)::int as "expectedCashCents"
         FROM "DeliveryOrder" dord
-        WHERE dord."driverId" = $1
-          AND dord."locationId" = $2
+        WHERE dord."driverId" = ${session.driverId}
+          AND dord."locationId" = ${locationId}
           AND dord."status" = 'delivered'
-          AND dord."deliveredAt" >= $3
+          AND dord."deliveredAt" >= ${session.startedAt}
           AND dord."deliveredAt" <= CURRENT_TIMESTAMP
-      `, session.driverId, locationId, session.startedAt)
+      `
 
       const expectedCashCents = expectedCashRows[0]?.expectedCashCents ?? 0
 
@@ -133,25 +133,25 @@ export const POST = withVenue(async function POST(
       }
 
       // Create CashTipDeclaration
-      await tx.$executeRawUnsafe(`
+      await tx.$executeRaw`
         INSERT INTO "CashTipDeclaration" (
           "id", "locationId", "employeeId", "amountCents", "createdAt", "updatedAt"
         ) VALUES (
-          gen_random_uuid()::text, $1, $2, $3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+          gen_random_uuid()::text, ${locationId}, ${session.employeeId}, ${cashTipsDeclaredCents}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
         )
-      `, locationId, session.employeeId, cashTipsDeclaredCents)
+      `
 
       // Count deliveries in this session
       // session.driverId is a DeliveryDriver.id which matches DeliveryOrder.driverId
-      const deliveryCountRows: any[] = await tx.$queryRawUnsafe(`
+      const deliveryCountRows: any[] = await tx.$queryRaw`
         SELECT COUNT(*)::int as count
         FROM "DeliveryOrder"
-        WHERE "driverId" = $1
-          AND "locationId" = $2
+        WHERE "driverId" = ${session.driverId}
+          AND "locationId" = ${locationId}
           AND "status" = 'delivered'
-          AND "deliveredAt" >= $3
+          AND "deliveredAt" >= ${session.startedAt}
           AND "deliveredAt" <= CURRENT_TIMESTAMP
-      `, session.driverId, locationId, session.startedAt)
+      `
 
       const deliveryCount = deliveryCountRows[0]?.count ?? 0
 
@@ -171,21 +171,16 @@ export const POST = withVenue(async function POST(
       }
 
       // Update session: end it
-      const updated: any[] = await tx.$queryRawUnsafe(`
+      const updated: any[] = await tx.$queryRaw`
         UPDATE "DeliveryDriverSession"
         SET "endedAt" = CURRENT_TIMESTAMP,
             "status" = 'off_duty',
-            "checkoutJson" = $1::jsonb,
-            "cashTipsDeclaredCents" = $2,
+            "checkoutJson" = ${JSON.stringify(checkoutJson)}::jsonb,
+            "cashTipsDeclaredCents" = ${cashTipsDeclaredCents},
             "updatedAt" = CURRENT_TIMESTAMP
-        WHERE id = $3 AND "locationId" = $4
+        WHERE id = ${id} AND "locationId" = ${locationId}
         RETURNING *
-      `,
-        JSON.stringify(checkoutJson),
-        cashTipsDeclaredCents,
-        id,
-        locationId,
-      )
+      `
 
       if (!updated.length) {
         return { error: 'Failed to update session', status: 500 }

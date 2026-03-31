@@ -47,10 +47,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const slug = body.slug as string | undefined
     if (slug) {
       try {
-        await masterClient.$executeRawUnsafe(
-          `UPDATE "_cron_venue_registry" SET "is_active" = false, "updated_at" = NOW() WHERE "slug" = $1`,
-          slug,
-        )
+        await masterClient.$executeRaw`UPDATE "_cron_venue_registry" SET "is_active" = false, "updated_at" = NOW() WHERE "slug" = ${slug}`
         console.log(`[Deprovision] Marked venue ${slug} as inactive in cron registry`)
       } catch (registryErr) {
         // Non-fatal: registry table may not exist yet
@@ -59,10 +56,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Check if database exists (parameterized query against pg_database)
-    const existing = await db.$queryRawUnsafe<{ datname: string }[]>(
-      `SELECT datname FROM pg_database WHERE datname = $1`,
-      databaseName
-    )
+    const existing = await db.$queryRaw<{ datname: string }[]>`SELECT datname FROM pg_database WHERE datname = ${databaseName}`
 
     if (existing.length === 0) {
       return ok({ success: true, message: 'Database does not exist' })
@@ -77,13 +71,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Terminate active connections before dropping
-    await db.$executeRawUnsafe(
-      `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()`,
-      databaseName
-    )
+    await db.$executeRaw`SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = ${databaseName} AND pid <> pg_backend_pid()`
 
     // Drop the database
-    await db.$executeRawUnsafe(`DROP DATABASE "${databaseName}"`)
+    await db.$executeRaw`DROP DATABASE "${databaseName}"`
     if (process.env.NODE_ENV !== 'production') console.log(`[Deprovision] Dropped database: ${databaseName}`)
 
     return ok({ success: true })

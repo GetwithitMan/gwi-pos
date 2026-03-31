@@ -101,11 +101,8 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     let deliveryInfo: { customerName?: string | null; customerPhone?: string | null; deliveryAddress?: string | null; deliveryInstructions?: string | null; source?: string | null } = {}
     if (order.orderType?.startsWith('delivery')) {
       try {
-        const rows: Array<{ customerName: string | null; phone: string | null; address: string | null; addressLine2: string | null; city: string | null; state: string | null; zipCode: string | null; notes: string | null }> = await db.$queryRawUnsafe(
-          `SELECT "customerName", "phone", "address", "addressLine2", "city", "state", "zipCode", "notes"
-           FROM "DeliveryOrder" WHERE "orderId" = $1 LIMIT 1`,
-          orderId
-        )
+        const rows: Array<{ customerName: string | null; phone: string | null; address: string | null; addressLine2: string | null; city: string | null; state: string | null; zipCode: string | null; notes: string | null }> = await db.$queryRaw`SELECT "customerName", "phone", "address", "addressLine2", "city", "state", "zipCode", "notes"
+           FROM "DeliveryOrder" WHERE "orderId" = ${orderId} LIMIT 1`
         if (rows.length > 0) {
           const row = rows[0]
           const addrParts = [row.address, row.addressLine2, row.city, row.state, row.zipCode].filter(Boolean)

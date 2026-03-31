@@ -2,8 +2,7 @@ import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
-import { requirePermission } from '@/lib/api-auth'
-import { PERMISSIONS } from '@/lib/auth-utils'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { emitToLocation } from '@/lib/socket-server'
 import { err, notFound, ok } from '@/lib/api-response'
 
@@ -46,7 +45,7 @@ export const GET = withVenue(async function GET(
 })
 
 // PUT - Update a bottle service tier
-export const PUT = withVenue(async function PUT(
+export const PUT = withVenue(withAuth('SETTINGS_EDIT', async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -59,11 +58,6 @@ export const PUT = withVenue(async function PUT(
     const { id } = await params
     const body = await request.json()
     const { name, description, color, depositAmount, minimumSpend, autoGratuityPercent, sortOrder, isActive } = body
-
-    const auth = await requirePermission(body.employeeId || null, locationId, PERMISSIONS.SETTINGS_EDIT)
-    if (!auth.authorized) {
-      return err(auth.error, auth.status)
-    }
 
     const existing = await db.bottleServiceTier.findFirst({
       where: { id, locationId, deletedAt: null },
@@ -119,10 +113,10 @@ export const PUT = withVenue(async function PUT(
     console.error('Failed to update bottle service tier:', error)
     return err('Failed to update bottle service tier', 500)
   }
-})
+}))
 
 // DELETE - Soft delete a bottle service tier
-export const DELETE = withVenue(async function DELETE(
+export const DELETE = withVenue(withAuth('SETTINGS_EDIT', async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -133,11 +127,6 @@ export const DELETE = withVenue(async function DELETE(
     }
 
     const { id } = await params
-
-    const auth = await requirePermission(null, locationId, PERMISSIONS.SETTINGS_EDIT)
-    if (!auth.authorized) {
-      return err(auth.error, auth.status)
-    }
 
     const existing = await db.bottleServiceTier.findFirst({
       where: { id, locationId, deletedAt: null },
@@ -171,4 +160,4 @@ export const DELETE = withVenue(async function DELETE(
     console.error('Failed to delete bottle service tier:', error)
     return err('Failed to delete bottle service tier', 500)
   }
-})
+}))

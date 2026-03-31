@@ -48,10 +48,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const policy = deliveryConfig.dispatchPolicy
 
     // Timezone lives on Location, not LocationSettings
-    const loc = await db.$queryRawUnsafe<{ timezone: string }[]>(
-      'SELECT "timezone" FROM "Location" WHERE "id" = $1',
-      locationId,
-    )
+    const loc = await db.$queryRaw<{ timezone: string }[]>`SELECT "timezone" FROM "Location" WHERE "id" = ${locationId}`
     const timezone = loc[0]?.timezone ?? 'America/New_York'
 
     const maxPerDriver = getMaxOrdersPerDriver(
@@ -63,12 +60,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Resolve effective zoneId from orders if not provided
     let effectiveZoneId = zoneId || null
     if (!effectiveZoneId && orderIds.length > 0) {
-      const orderZones: any[] = await db.$queryRawUnsafe(
-        `SELECT DISTINCT "zoneId" FROM "DeliveryOrder"
-         WHERE id = ANY($1::text[]) AND "locationId" = $2 AND "zoneId" IS NOT NULL`,
-        orderIds,
-        locationId,
-      )
+      const orderZones: any[] = await db.$queryRaw`SELECT DISTINCT "zoneId" FROM "DeliveryOrder"
+         WHERE id = ANY(${orderIds}::text[]) AND "locationId" = ${locationId} AND "zoneId" IS NOT NULL`
       if (orderZones.length === 1) {
         effectiveZoneId = orderZones[0].zoneId
       }
@@ -78,7 +71,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // - Have an active session (not off_duty, not ended)
     // - Not on an active run
     // - Not suspended
-    const availableDrivers: any[] = await db.$queryRawUnsafe(`
+    const availableDrivers: any[] = await db.$queryRaw`
       SELECT
         dd.id as "driverId",
         e."firstName", e."lastName",
@@ -89,31 +82,31 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           SELECT COUNT(*)::int
           FROM "DeliveryOrder" dord
           WHERE dord."driverId" = dd.id
-            AND dord."locationId" = $1
+            AND dord."locationId" = ${locationId}
             AND dord.status NOT IN ('delivered', 'cancelled_before_dispatch', 'cancelled_after_dispatch', 'failed_delivery', 'returned_to_store')
         ) as "activeOrderCount",
         (
           SELECT MAX(r."completedAt")
           FROM "DeliveryRun" r
-          WHERE r."driverId" = dd.id AND r."locationId" = $1
+          WHERE r."driverId" = dd.id AND r."locationId" = ${locationId}
         ) as "lastRunCompletedAt"
       FROM "DeliveryDriver" dd
       JOIN "Employee" e ON e.id = dd."employeeId"
       JOIN "DeliveryDriverSession" ds ON ds."driverId" = dd.id
-        AND ds."locationId" = $1
+        AND ds."locationId" = ${locationId}
         AND ds."endedAt" IS NULL
         AND ds.status NOT IN ('off_duty')
-      WHERE dd."locationId" = $1
+      WHERE dd."locationId" = ${locationId}
         AND dd."isActive" = true
         AND (dd."isSuspended" IS NULL OR dd."isSuspended" = false)
         AND NOT EXISTS (
           SELECT 1 FROM "DeliveryRun" r
           WHERE r."driverId" = dd.id
-            AND r."locationId" = $1
+            AND r."locationId" = ${locationId}
             AND r.status NOT IN ('completed', 'returned', 'cancelled')
         )
       ORDER BY e."firstName" ASC
-    `, locationId)
+    `
 
     // Build candidates for scoring engine
     const now = Date.now()

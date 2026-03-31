@@ -25,6 +25,7 @@ export interface VenueSchemaState {
 /**
  * Ensure the _venue_schema_state table exists. Idempotent.
  */
+// eslint-disable-next-line -- $executeRawUnsafe required throughout: DDL statements and infrastructure table operations
 export async function ensureSchemaStateTable(client: { $executeRawUnsafe: (sql: string) => Promise<unknown> }): Promise<void> {
   await client.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "_venue_schema_state" (

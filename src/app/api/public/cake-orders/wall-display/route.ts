@@ -25,10 +25,7 @@ export async function GET(request: NextRequest) {
     }
 
     // ── Validate token against location settings ─────────────────────────
-    const locationRows = await db.$queryRawUnsafe<Array<{ settings: unknown }>>(
-      `SELECT "settings" FROM "Location" WHERE "id" = $1 AND "isActive" = true LIMIT 1`,
-      locationId,
-    )
+    const locationRows = await db.$queryRaw<Array<{ settings: unknown }>>`SELECT "settings" FROM "Location" WHERE "id" = ${locationId} AND "isActive" = true LIMIT 1`
 
     if (locationRows.length === 0) {
       return notFound('Location not found')
@@ -49,8 +46,7 @@ export async function GET(request: NextRequest) {
 
     // ── Query active cake orders ─────────────────────────────────────────
     // ONLY safe fields: no customer PII, no financial data, no notes
-    const orders = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT
+    const orders = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT
          co."id",
          co."orderNumber",
          co."eventDate",
@@ -62,12 +58,10 @@ export async function GET(request: NextRequest) {
          e."firstName" AS "assignedToFirstName"
        FROM "CakeOrder" co
        LEFT JOIN "Employee" e ON e."id" = co."assignedTo"
-       WHERE co."locationId" = $1
+       WHERE co."locationId" = ${locationId}
          AND co."status" IN ('deposit_paid', 'in_production', 'ready')
          AND co."deletedAt" IS NULL
-       ORDER BY co."eventDate" ASC, co."orderNumber" ASC`,
-      locationId,
-    )
+       ORDER BY co."eventDate" ASC, co."orderNumber" ASC`
 
     // ── Build safe response ──────────────────────────────────────────────
     const safeOrders = orders.map((order) => {

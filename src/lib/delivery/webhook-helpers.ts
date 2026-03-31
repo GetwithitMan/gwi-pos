@@ -3,6 +3,9 @@
  *
  * Provides HMAC validation, ThirdPartyOrder creation, POS order creation on auto-accept,
  * and socket dispatch for real-time delivery order feed.
+ *
+ * NOTE: Uses $queryRawUnsafe/$executeRawUnsafe for raw SQL delivery tables
+ * (ThirdPartyOrder, DeliveryOrder). All queries use positional $1/$2 params — safe from injection.
  */
 
 import { createHmac, timingSafeEqual } from 'crypto'

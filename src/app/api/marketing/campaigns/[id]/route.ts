@@ -19,11 +19,11 @@ export const GET = withVenue(async function GET(
       return err('Location ID is required')
     }
 
-    const campaigns = await db.$queryRawUnsafe(`
+    const campaigns = await db.$queryRaw`
       SELECT * FROM "MarketingCampaign"
-      WHERE id = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
+      WHERE id = ${id} AND "locationId" = ${locationId} AND "deletedAt" IS NULL
       LIMIT 1
-    `, id, locationId) as Record<string, unknown>[]
+    ` as Record<string, unknown>[]
 
     if (campaigns.length === 0) {
       return notFound('Campaign not found')
@@ -32,26 +32,26 @@ export const GET = withVenue(async function GET(
     const campaign = campaigns[0]
 
     // Get recipient breakdown
-    const recipientStats = await db.$queryRawUnsafe(`
+    const recipientStats = await db.$queryRaw`
       SELECT
         status,
         COUNT(*)::int as count
       FROM "MarketingRecipient"
-      WHERE "campaignId" = $1
+      WHERE "campaignId" = ${id}
       GROUP BY status
       ORDER BY status
-    `, id) as { status: string; count: number }[]
+    ` as { status: string; count: number }[]
 
     // Get recent recipients (limit 100)
-    const recipients = await db.$queryRawUnsafe(`
+    const recipients = await db.$queryRaw`
       SELECT
         r.id, r."customerId", r.channel, r.address, r.status,
         r."sentAt", r."deliveredAt", r."openedAt", r."errorMessage"
       FROM "MarketingRecipient" r
-      WHERE r."campaignId" = $1
+      WHERE r."campaignId" = ${id}
       ORDER BY r."createdAt" DESC
       LIMIT 100
-    `, id) as Record<string, unknown>[]
+    ` as Record<string, unknown>[]
 
     return ok({
         ...campaign,
@@ -85,11 +85,11 @@ export const PUT = withVenue(async function PUT(
     if (!auth.authorized) return err(auth.error, auth.status)
 
     // Verify campaign exists and is editable
-    const existing = await db.$queryRawUnsafe(`
+    const existing = await db.$queryRaw`
       SELECT id, status FROM "MarketingCampaign"
-      WHERE id = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
+      WHERE id = ${id} AND "locationId" = ${locationId} AND "deletedAt" IS NULL
       LIMIT 1
-    `, id, locationId) as { id: string; status: string }[]
+    ` as { id: string; status: string }[]
 
     if (existing.length === 0) {
       return notFound('Campaign not found')
@@ -135,6 +135,7 @@ export const PUT = withVenue(async function PUT(
       paramIdx++
     }
 
+    // eslint-disable-next-line -- dynamic SET clauses with spread args require $queryRawUnsafe; all values are parameterized ($1, $2, ...)
     const result = await db.$queryRawUnsafe(`
       UPDATE "MarketingCampaign"
       SET ${setClauses.join(', ')}
@@ -171,11 +172,11 @@ export const DELETE = withVenue(async function DELETE(
     if (!auth.authorized) return err(auth.error, auth.status)
 
     // Cancel: set status to cancelled and soft-delete
-    await db.$executeRawUnsafe(`
+    await db.$executeRaw`
       UPDATE "MarketingCampaign"
       SET status = 'cancelled', "deletedAt" = NOW(), "updatedAt" = NOW()
-      WHERE id = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
-    `, id, locationId)
+      WHERE id = ${id} AND "locationId" = ${locationId} AND "deletedAt" IS NULL
+    `
 
     return ok({ success: true })
   } catch (error) {

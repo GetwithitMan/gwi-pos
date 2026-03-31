@@ -24,7 +24,7 @@ import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
 async function setQueryTimeout(ms: number = 30000): Promise<void> {
   const safeMs = Math.max(1, Math.min(300000, Math.floor(Number(ms))))
   if (!Number.isFinite(safeMs)) throw new Error('Invalid timeout value')
-  await db.$executeRawUnsafe(`SET LOCAL statement_timeout = '${safeMs}'`)
+  await db.$executeRaw(Prisma.sql`SET LOCAL statement_timeout = ${String(safeMs)}`)
 }
 
 export interface TimedQueryResult<T> {

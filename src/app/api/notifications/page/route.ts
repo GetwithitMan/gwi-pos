@@ -59,32 +59,24 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       subjectId = orderId
       eventType = 'order_ready'
 
-      const orders: any[] = await db.$queryRawUnsafe(
-        `SELECT id, "orderNumber", "tabName", "pagerNumber", status, "customerName"
+      const orders: any[] = await db.$queryRaw`SELECT id, "orderNumber", "tabName", "pagerNumber", status, "customerName"
          FROM "Order"
-         WHERE id = $1 AND "locationId" = $2`,
-        orderId,
-        locationId
-      )
+         WHERE id = ${orderId} AND "locationId" = ${locationId}`
       if (orders.length === 0) {
         return notFound('Order not found')
       }
       const order = orders[0]
 
       // Look up pagerNumber from active assignment (source of truth)
-      const assignments: any[] = await db.$queryRawUnsafe(
-        `SELECT "targetValue", "targetType"
+      const assignments: any[] = await db.$queryRaw`SELECT "targetValue", "targetType"
          FROM "NotificationTargetAssignment"
-         WHERE "locationId" = $1
+         WHERE "locationId" = ${locationId}
            AND "subjectType" = 'order'
-           AND "subjectId" = $2
+           AND "subjectId" = ${orderId}
            AND status = 'active'
            AND "targetType" IN ('guest_pager', 'staff_pager')
          ORDER BY "isPrimary" DESC, "createdAt" DESC
-         LIMIT 1`,
-        locationId,
-        orderId
-      )
+         LIMIT 1`
 
       context = {
         orderNumber: order.orderNumber,
@@ -99,32 +91,24 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       subjectId = waitlistEntryId
       eventType = 'waitlist_ready'
 
-      const entries: any[] = await db.$queryRawUnsafe(
-        `SELECT id, "customerName", "partySize", phone, "pagerNumber", status
+      const entries: any[] = await db.$queryRaw`SELECT id, "customerName", "partySize", phone, "pagerNumber", status
          FROM "WaitlistEntry"
-         WHERE id = $1 AND "locationId" = $2`,
-        waitlistEntryId,
-        locationId
-      )
+         WHERE id = ${waitlistEntryId} AND "locationId" = ${locationId}`
       if (entries.length === 0) {
         return notFound('Waitlist entry not found')
       }
       const entry = entries[0]
 
       // Look up pagerNumber from active assignment
-      const assignments: any[] = await db.$queryRawUnsafe(
-        `SELECT "targetValue", "targetType"
+      const assignments: any[] = await db.$queryRaw`SELECT "targetValue", "targetType"
          FROM "NotificationTargetAssignment"
-         WHERE "locationId" = $1
+         WHERE "locationId" = ${locationId}
            AND "subjectType" = 'waitlist_entry'
-           AND "subjectId" = $2
+           AND "subjectId" = ${waitlistEntryId}
            AND status = 'active'
            AND "targetType" IN ('guest_pager', 'staff_pager')
          ORDER BY "isPrimary" DESC, "createdAt" DESC
-         LIMIT 1`,
-        locationId,
-        waitlistEntryId
-      )
+         LIMIT 1`
 
       context = {
         customerName: entry.customerName,
@@ -170,31 +154,23 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Always log the manual page event in audit trail regardless of dispatcher availability
-    void db.$executeRawUnsafe(
-      `INSERT INTO "NotificationDeviceEvent" (
+    void db.$executeRaw`INSERT INTO "NotificationDeviceEvent" (
         id, "deviceId", "locationId", "eventType",
         "subjectType", "subjectId", "employeeId", metadata, "createdAt"
       )
       SELECT gen_random_uuid()::text,
              COALESCE(
                (SELECT d.id FROM "NotificationDevice" d
-                WHERE d."locationId" = $1 AND d."deviceNumber" = $5 AND d."deletedAt" IS NULL LIMIT 1),
+                WHERE d."locationId" = ${locationId} AND d."deviceNumber" = ${(context.pagerNumber as string) || 'none'} AND d."deletedAt" IS NULL LIMIT 1),
                'manual-page-no-device'
              ),
-             $1, 'manual_page', $2, $3, $4, $6::jsonb, CURRENT_TIMESTAMP`,
-      locationId,
-      subjectType,
-      subjectId,
-      auth.employee.id,
-      (context.pagerNumber as string) || 'none',
-      JSON.stringify({
+             ${locationId}, 'manual_page', ${subjectType}, ${subjectId}, ${auth.employee.id}, ${JSON.stringify({
         sourceEventId,
         eventType,
         message: message || null,
         dispatched,
         context,
-      })
-    ).catch(err => log.warn({ err }, 'Background task failed'))
+      })}::jsonb, CURRENT_TIMESTAMP`.catch(err => log.warn({ err }, 'Background task failed'))
 
     // Audit log: notification_manual_page
     void db.auditLog.create({

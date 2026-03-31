@@ -105,7 +105,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       paramIdx++
     }
 
-    const rows: any[] = await db.$queryRawUnsafe(`
+    const rows: any[] = await db.$queryRaw`
       SELECT ex.*,
              dord."customerName" as "deliveryCustomerName",
              dord."status" as "deliveryOrderStatus",
@@ -126,7 +126,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           WHEN 'low' THEN 4
         END,
         ex."createdAt" ASC
-    `, ...params)
+    `
 
     const exceptions = rows.map(row => ({
       ...row,
@@ -186,57 +186,40 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Validate foreign keys exist if provided
     if (deliveryOrderId) {
-      const orderExists: any[] = await db.$queryRawUnsafe(
-        `SELECT id FROM "DeliveryOrder" WHERE id = $1 AND "locationId" = $2 LIMIT 1`,
-        deliveryOrderId, locationId,
-      )
+      const orderExists: any[] = await db.$queryRaw`SELECT id FROM "DeliveryOrder" WHERE id = ${deliveryOrderId} AND "locationId" = ${locationId} LIMIT 1`
       if (!orderExists.length) {
         return notFound('Delivery order not found')
       }
     }
 
     if (runId) {
-      const runExists: any[] = await db.$queryRawUnsafe(
-        `SELECT id FROM "DeliveryRun" WHERE id = $1 AND "locationId" = $2 LIMIT 1`,
-        runId, locationId,
-      )
+      const runExists: any[] = await db.$queryRaw`SELECT id FROM "DeliveryRun" WHERE id = ${runId} AND "locationId" = ${locationId} LIMIT 1`
       if (!runExists.length) {
         return notFound('Delivery run not found')
       }
     }
 
     if (driverId) {
-      const driverExists: any[] = await db.$queryRawUnsafe(
-        `SELECT id FROM "DeliveryDriver" WHERE id = $1 AND "locationId" = $2 LIMIT 1`,
-        driverId, locationId,
-      )
+      const driverExists: any[] = await db.$queryRaw`SELECT id FROM "DeliveryDriver" WHERE id = ${driverId} AND "locationId" = ${locationId} LIMIT 1`
       if (!driverExists.length) {
         return notFound('Driver not found')
       }
     }
 
     // Insert exception
-    const inserted: any[] = await db.$queryRawUnsafe(`
+    const inserted: any[] = await db.$queryRaw`
       INSERT INTO "DeliveryException" (
         "id", "locationId", "type", "severity", "status",
         "deliveryOrderId", "runId", "driverId",
         "description", "createdAt", "updatedAt"
       )
       VALUES (
-        gen_random_uuid()::text, $1, $2, $3, 'open',
-        $4, $5, $6,
-        $7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        gen_random_uuid()::text, ${locationId}, ${type}, ${severity}, 'open',
+        ${deliveryOrderId || null}, ${runId || null}, ${driverId || null},
+        ${sanitizeHtml(description)}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
       )
       RETURNING *
-    `,
-      locationId,
-      type,
-      severity,
-      deliveryOrderId || null,
-      runId || null,
-      driverId || null,
-      sanitizeHtml(description),
-    )
+    `
 
     if (!inserted.length) {
       return err('Failed to create exception', 500)

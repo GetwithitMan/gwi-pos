@@ -32,11 +32,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     if (featureGate) return featureGate
 
     // Find the DeliveryDriver record for this employee
-    const drivers: any[] = await db.$queryRawUnsafe(`
+    const drivers: any[] = await db.$queryRaw`
       SELECT id FROM "DeliveryDriver"
-      WHERE "employeeId" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
+      WHERE "employeeId" = ${actor.employeeId} AND "locationId" = ${locationId} AND "deletedAt" IS NULL
       LIMIT 1
-    `, actor.employeeId, locationId)
+    `
 
     if (!drivers.length) {
       return notFound('No driver profile found for this employee')
@@ -45,14 +45,14 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const driverId = drivers[0].id
 
     // Find active run (non-terminal states)
-    const runs: any[] = await db.$queryRawUnsafe(`
+    const runs: any[] = await db.$queryRaw`
       SELECT * FROM "DeliveryRun"
-      WHERE "driverId" = $1
-        AND "locationId" = $2
+      WHERE "driverId" = ${driverId}
+        AND "locationId" = ${locationId}
         AND "status" IN ('assigned', 'handoff_ready', 'dispatched', 'in_progress')
       ORDER BY "createdAt" DESC
       LIMIT 1
-    `, driverId, locationId)
+    `
 
     if (!runs.length) {
       return ok({ run: null })
@@ -61,16 +61,16 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const run = runs[0]
 
     // Expand: get all DeliveryOrders for this run with address, customer, and order items
-    const deliveryOrders: any[] = await db.$queryRawUnsafe(`
+    const deliveryOrders: any[] = await db.$queryRaw`
       SELECT do_.*,
              o."orderNumber", o."status" as "orderStatus", o."subtotal" as "orderSubtotal",
              o."tax" as "orderTax", o."total" as "orderTotal",
              o."specialInstructions" as "orderNotes"
       FROM "DeliveryOrder" do_
       LEFT JOIN "Order" o ON o.id = do_."orderId"
-      WHERE do_."runId" = $1 AND do_."locationId" = $2
+      WHERE do_."runId" = ${run.id} AND do_."locationId" = ${locationId}
       ORDER BY do_."sequenceInRun" ASC NULLS LAST, do_."createdAt" ASC
-    `, run.id, locationId)
+    `
 
     // Fetch order items for all linked orders in a single query
     const orderIds = deliveryOrders
@@ -80,14 +80,14 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const itemsByOrderId: Record<string, any[]> = {}
     if (orderIds.length > 0) {
       const placeholders = orderIds.map((_, i) => `$${i + 1}`).join(', ')
-      const items: any[] = await db.$queryRawUnsafe(`
+      const items: any[] = await db.$queryRaw`
         SELECT oi.id, oi."orderId", oi.name, oi.price, oi.quantity,
                oi."specialInstructions"
         FROM "OrderItem" oi
         WHERE oi."orderId" IN (${placeholders})
           AND oi."deletedAt" IS NULL AND oi."voidedAt" IS NULL
         ORDER BY oi."createdAt" ASC
-      `, ...orderIds)
+      `
 
       for (const item of items) {
         if (!itemsByOrderId[item.orderId]) {

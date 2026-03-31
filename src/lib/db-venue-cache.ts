@@ -326,6 +326,7 @@ async function createVenueClientWithRetry(
   // Only runs on first connection (not cached hits). If the DB doesn't exist,
   // fall back to MC lookup for the actual database name.
   try {
+    // eslint-disable-next-line -- $queryRawUnsafe: connectivity test (no params, no injection risk)
     await client.$queryRawUnsafe('SELECT 1')
   } catch (connErr: any) {
     // Disconnect the failed client immediately
@@ -347,6 +348,7 @@ async function createVenueClientWithRetry(
           venueUrl = masterUrl.replace(/\/[^/?]+(\?|$)/, `/${mcDbName}$1`)
           client = createPrismaClient(venueUrl)
           try {
+            // eslint-disable-next-line -- $queryRawUnsafe: connectivity test (no params, no injection risk)
             await client.$queryRawUnsafe('SELECT 1')
           } catch (retryErr: any) {
             void client.$disconnect().catch(err => log.warn({ err }, 'prisma disconnect failed'))

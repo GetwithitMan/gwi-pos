@@ -44,12 +44,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     const whereClause = conditions.join(' AND ')
 
-    const rewards = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT * FROM "LoyaltyReward"
+    const rewards = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT * FROM "LoyaltyReward"
        WHERE ${whereClause}
-       ORDER BY "sortOrder" ASC, "createdAt" ASC`,
-      ...params,
-    )
+       ORDER BY "sortOrder" ASC, "createdAt" ASC`
 
     return ok(rewards)
   } catch (error: any) {
@@ -103,42 +100,22 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // ── Insert ──────────────────────────────────────────────────────
     const id = crypto.randomUUID()
 
-    await db.$executeRawUnsafe(
-      `INSERT INTO "LoyaltyReward" (
+    await db.$executeRaw`INSERT INTO "LoyaltyReward" (
         "id", "locationId", "name", "description", "imageUrl",
         "pointCost", "rewardType", "rewardValue", "applicableTo",
         "maxRedemptionsPerCustomer", "totalAvailable", "totalRedeemed",
         "startsAt", "expiresAt", "isActive", "sortOrder",
         "createdAt", "updatedAt"
       ) VALUES (
-        $1, $2, $3, $4, $5,
-        $6, $7, $8::jsonb, $9::jsonb,
-        $10, $11, 0,
-        $12, $13, $14, $15,
+        ${id}, ${locationId}, ${name.trim()}, ${description || null}, ${imageUrl || null},
+        ${pointCost}, ${resolvedRewardType}, ${JSON.stringify(rewardValue || {})}::jsonb, ${JSON.stringify(applicableTo || ['pos', 'cake'])}::jsonb,
+        ${maxRedemptionsPerCustomer ?? 0}, ${totalAvailable ?? 0}, 0,
+        ${startsAt ? new Date(startsAt) : null}, ${expiresAt ? new Date(expiresAt) : null}, ${isActive !== false}, ${sortOrder ?? 0},
         NOW(), NOW()
-      )`,
-      id,
-      locationId,
-      name.trim(),
-      description || null,
-      imageUrl || null,
-      pointCost,
-      resolvedRewardType,
-      JSON.stringify(rewardValue || {}),
-      JSON.stringify(applicableTo || ['pos', 'cake']),
-      maxRedemptionsPerCustomer ?? 0,
-      totalAvailable ?? 0,
-      startsAt ? new Date(startsAt) : null,
-      expiresAt ? new Date(expiresAt) : null,
-      isActive !== false,
-      sortOrder ?? 0,
-    )
+      )`
 
     // ── Fetch created reward ──────────────────────────────────────────
-    const created = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT * FROM "LoyaltyReward" WHERE "id" = $1`,
-      id,
-    )
+    const created = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT * FROM "LoyaltyReward" WHERE "id" = ${id}`
 
     return ok(created[0])
   } catch (error: any) {

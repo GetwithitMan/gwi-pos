@@ -47,15 +47,15 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     }
 
     // Find driver's active session
-    const sessions: any[] = await db.$queryRawUnsafe(`
+    const sessions: any[] = await db.$queryRaw`
       SELECT ds.* FROM "DeliveryDriverSession" ds
       JOIN "DeliveryDriver" dd ON dd.id = ds."driverId"
-      WHERE dd."employeeId" = $1
-        AND ds."locationId" = $2
+      WHERE dd."employeeId" = ${actor.employeeId}
+        AND ds."locationId" = ${locationId}
         AND ds."endedAt" IS NULL
       ORDER BY ds."startedAt" DESC
       LIMIT 1
-    `, actor.employeeId, locationId)
+    `
 
     if (!sessions.length) {
       return notFound('No active driver session found')
@@ -88,15 +88,15 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
         return err('lng must be between -180 and 180')
       }
 
-      const updated: any[] = await db.$queryRawUnsafe(`
+      const updated: any[] = await db.$queryRaw`
         UPDATE "DeliveryDriverSession"
-        SET "lastLocationLat" = $1,
-            "lastLocationLng" = $2,
+        SET "lastLocationLat" = ${latNum},
+            "lastLocationLng" = ${lngNum},
             "lastLocationAt" = CURRENT_TIMESTAMP,
             "updatedAt" = CURRENT_TIMESTAMP
-        WHERE "id" = $3 AND "locationId" = $4
+        WHERE "id" = ${session.id} AND "locationId" = ${locationId}
         RETURNING *
-      `, latNum, lngNum, session.id, locationId)
+      `
 
       if (updated.length) {
         session = updated[0]

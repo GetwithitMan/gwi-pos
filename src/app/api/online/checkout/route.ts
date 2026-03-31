@@ -605,15 +605,12 @@ export async function POST(request: NextRequest) {
 
       // Query active delivery zones (raw SQL — DeliveryZone not in Prisma)
       // Include all zone-type fields so we can fall back to radius/polygon matching
-      const zones: any[] = await venueDb.$queryRawUnsafe(
-        `SELECT id, "deliveryFee", "minimumOrder", "estimatedMinutes",
+      const zones: any[] = await venueDb.$queryRaw`SELECT id, "deliveryFee", "minimumOrder", "estimatedMinutes",
                 "zipCodes", "zoneType", "centerLat", "centerLng",
                 "radiusMiles", "polygonJson"
          FROM "DeliveryZone"
-         WHERE "locationId" = $1 AND "deletedAt" IS NULL AND "isActive" = true
-         ORDER BY "sortOrder" ASC`,
-        locationId
-      )
+         WHERE "locationId" = ${locationId} AND "deletedAt" IS NULL AND "isActive" = true
+         ORDER BY "sortOrder" ASC`
 
       // Match delivery address against zones.
       // Priority: iterate in sortOrder; try ZIP first, then radius/polygon fallback.
@@ -807,10 +804,7 @@ export async function POST(request: NextRequest) {
 
     const order = await venueDb.$transaction(async (tx) => {
       // Lock latest order row to prevent duplicate order numbers
-      const lastOrderRows = await tx.$queryRawUnsafe<{ orderNumber: number }[]>(
-        `SELECT "orderNumber" FROM "Order" WHERE "locationId" = $1 AND "createdAt" >= $2 AND "createdAt" < $3 ORDER BY "orderNumber" DESC LIMIT 1 FOR UPDATE`,
-        locationId, today, tomorrow
-      )
+      const lastOrderRows = await tx.$queryRaw<{ orderNumber: number }[]>`SELECT "orderNumber" FROM "Order" WHERE "locationId" = ${locationId} AND "createdAt" >= ${today} AND "createdAt" < ${tomorrow} ORDER BY "orderNumber" DESC LIMIT 1 FOR UPDATE`
       const orderNumber = ((lastOrderRows as any[])[0]?.orderNumber ?? 0) + 1
 
       // TX-KEEP: CREATE — online checkout order with nested items/modifiers inside order-number lock; no repo create method
@@ -1092,7 +1086,7 @@ export async function POST(request: NextRequest) {
       try {
         const deliveryOrderId = crypto.randomUUID()
         deliveryTrackingToken = crypto.randomUUID()
-        await venueDb.$queryRawUnsafe(`
+        await venueDb.$queryRaw`
           INSERT INTO "DeliveryOrder" (
             id, "locationId", "orderId", status,
             "customerName", "customerPhone", "customerEmail",
@@ -1100,15 +1094,8 @@ export async function POST(request: NextRequest) {
             "deliveryInstructions", "deliveryFee", "zoneId",
             "estimatedMinutes", "trackingToken",
             "createdAt", "updatedAt"
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $17)
-        `,
-          deliveryOrderId, locationId, order.id, 'pending',
-          body.customerName, body.customerPhone || '', body.customerEmail,
-          body.deliveryAddress, body.deliveryCity || '', body.deliveryState || '', body.deliveryZip,
-          body.deliveryInstructions || '', deliveryFee, matchedZone.id,
-          matchedZone.estimatedMinutes || 30, deliveryTrackingToken,
-          new Date()
-        )
+          ) VALUES (${deliveryOrderId}, ${locationId}, ${order.id}, ${'pending'}, ${body.customerName}, ${body.customerPhone || ''}, ${body.customerEmail}, ${body.deliveryAddress}, ${body.deliveryCity || ''}, ${body.deliveryState || ''}, ${body.deliveryZip}, ${body.deliveryInstructions || ''}, ${deliveryFee}, ${matchedZone.id}, ${matchedZone.estimatedMinutes || 30}, ${deliveryTrackingToken}, ${new Date()}, ${new Date()})
+        `
       } catch (deliveryErr) {
         // CRITICAL: DeliveryOrder creation failed AFTER payment was processed.
         // The order exists and is paid, but delivery will never be dispatched.

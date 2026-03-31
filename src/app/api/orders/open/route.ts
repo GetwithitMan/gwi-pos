@@ -35,12 +35,12 @@ let _scheduledForExists: boolean | null = null
 async function hasScheduledForColumn(): Promise<boolean> {
   if (_scheduledForExists !== null) return _scheduledForExists
   try {
-    const rows = await db.$queryRawUnsafe<{ exists: boolean }[]>(`
+    const rows = await db.$queryRaw<{ exists: boolean }[]>`
       SELECT EXISTS (
         SELECT 1 FROM information_schema.columns
         WHERE table_name = 'Order' AND column_name = 'scheduledFor'
       ) AS "exists"
-    `)
+    `
     _scheduledForExists = rows[0]?.exists === true
   } catch {
     _scheduledForExists = false
@@ -263,10 +263,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
       let scheduledMap = new Map<string, string | null>()
       if (summaryOrderIds.length > 0 && await hasScheduledForColumn()) {
         try {
-          const scheduledRows = await db.$queryRawUnsafe<{ id: string; scheduledFor: Date | null }[]>(
-            `SELECT id, "scheduledFor" FROM "Order" WHERE id = ANY($1) AND "scheduledFor" IS NOT NULL`,
-            summaryOrderIds
-          )
+          const scheduledRows = await db.$queryRaw<{ id: string; scheduledFor: Date | null }[]>`SELECT id, "scheduledFor" FROM "Order" WHERE id = ANY(${summaryOrderIds}) AND "scheduledFor" IS NOT NULL`
           scheduledMap = new Map(scheduledRows.map(r => [r.id, r.scheduledFor?.toISOString?.() || null]))
         } catch (_) { /* query failed — skip */ }
       }
@@ -510,10 +507,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
     let scheduledFullMap = new Map<string, string | null>()
     if (orderIds.length > 0 && await hasScheduledForColumn()) {
       try {
-        const scheduledFullRows = await db.$queryRawUnsafe<{ id: string; scheduledFor: Date | null }[]>(
-          `SELECT id, "scheduledFor" FROM "Order" WHERE id = ANY($1) AND "scheduledFor" IS NOT NULL`,
-          orderIds
-        )
+        const scheduledFullRows = await db.$queryRaw<{ id: string; scheduledFor: Date | null }[]>`SELECT id, "scheduledFor" FROM "Order" WHERE id = ANY(${orderIds}) AND "scheduledFor" IS NOT NULL`
         scheduledFullMap = new Map(scheduledFullRows.map(r => [r.id, r.scheduledFor?.toISOString?.() || null]))
       } catch (_) { /* query failed — skip */ }
     }

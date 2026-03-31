@@ -260,10 +260,7 @@ export const POST = withVenue(withAuth(async function POST(
         const custTierId = (parentOrder.customer as any).loyaltyTierId
         if (custTierId) {
           try {
-            const tierRows = await tx.$queryRawUnsafe<Array<{ pointsMultiplier: unknown }>>(
-              `SELECT "pointsMultiplier" FROM "LoyaltyTier" WHERE "id" = $1 AND "deletedAt" IS NULL`,
-              custTierId,
-            )
+            const tierRows = await tx.$queryRaw<Array<{ pointsMultiplier: unknown }>>`SELECT "pointsMultiplier" FROM "LoyaltyTier" WHERE "id" = ${custTierId} AND "deletedAt" IS NULL`
             if (tierRows.length > 0) {
               tierMultiplier = Number(tierRows[0].pointsMultiplier) || 1.0
             }
@@ -304,10 +301,7 @@ export const POST = withVenue(withAuth(async function POST(
           let tierMultiplier = 1.0
           if (custTierId) {
             try {
-              const tierRows = await db.$queryRawUnsafe<Array<{ pointsMultiplier: unknown }>>(
-                `SELECT "pointsMultiplier" FROM "LoyaltyTier" WHERE "id" = $1 AND "deletedAt" IS NULL`,
-                custTierId,
-              )
+              const tierRows = await db.$queryRaw<Array<{ pointsMultiplier: unknown }>>`SELECT "pointsMultiplier" FROM "LoyaltyTier" WHERE "id" = ${custTierId} AND "deletedAt" IS NULL`
               if (tierRows.length > 0) {
                 tierMultiplier = Number(tierRows[0].pointsMultiplier) || 1.0
               }
@@ -315,33 +309,22 @@ export const POST = withVenue(withAuth(async function POST(
           }
 
           const txnId = crypto.randomUUID()
-          await db.$executeRawUnsafe(
-            `INSERT INTO "LoyaltyTransaction" (
+          const loyaltyDescription = `Earned ${loyaltyPointsEarned} points on split order #${parentOrder.orderNumber}${tierMultiplier > 1 ? ` (${tierMultiplier}x tier)` : ''}`
+          await db.$executeRaw`INSERT INTO "LoyaltyTransaction" (
               "id", "customerId", "locationId", "orderId", "type", "points",
               "balanceBefore", "balanceAfter", "description", "employeeId", "createdAt"
-            ) VALUES ($1, $2, $3, $4, 'earn', $5, $6, $7, $8, $9, NOW())`,
-            txnId, custId, parentOrder.locationId, parentOrderId, loyaltyPointsEarned,
-            currentPoints, currentPoints + loyaltyPointsEarned,
-            `Earned ${loyaltyPointsEarned} points on split order #${parentOrder.orderNumber}${tierMultiplier > 1 ? ` (${tierMultiplier}x tier)` : ''}`,
-            employeeId || null,
-          )
+            ) VALUES (${txnId}, ${custId}, ${parentOrder.locationId}, ${parentOrderId}, 'earn', ${loyaltyPointsEarned}, ${currentPoints}, ${currentPoints + loyaltyPointsEarned}, ${loyaltyDescription}, ${employeeId || null}, NOW())`
 
           // Check tier promotion
           const newLifetime = currentLifetime + loyaltyPointsEarned
           const custProgramId = (customer as any).loyaltyProgramId
           if (custProgramId) {
-            const tiers = await db.$queryRawUnsafe<Array<{ id: string; name: string; minimumPoints: number }>>(
-              `SELECT "id", "name", "minimumPoints" FROM "LoyaltyTier"
-               WHERE "programId" = $1 AND "deletedAt" IS NULL ORDER BY "minimumPoints" DESC`,
-              custProgramId,
-            )
+            const tiers = await db.$queryRaw<Array<{ id: string; name: string; minimumPoints: number }>>`SELECT "id", "name", "minimumPoints" FROM "LoyaltyTier"
+               WHERE "programId" = ${custProgramId} AND "deletedAt" IS NULL ORDER BY "minimumPoints" DESC`
             for (const tier of tiers) {
               if (newLifetime >= Number(tier.minimumPoints)) {
                 if (tier.id !== custTierId) {
-                  await db.$executeRawUnsafe(
-                    `UPDATE "Customer" SET "loyaltyTierId" = $2, "updatedAt" = NOW() WHERE "id" = $1`,
-                    custId, tier.id,
-                  )
+                  await db.$executeRaw`UPDATE "Customer" SET "loyaltyTierId" = ${tier.id}, "updatedAt" = NOW() WHERE "id" = ${custId}`
                 }
                 break
               }

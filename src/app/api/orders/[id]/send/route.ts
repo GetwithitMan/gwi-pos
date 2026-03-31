@@ -95,10 +95,7 @@ export const POST = withVenue(withTiming(async function POST(
     // and mark as sent all within a single transaction scope.
     const sendResult = await db.$transaction(async (tx) => {
       // Lock the order row — any concurrent send will block here until we commit
-      const [locked] = await tx.$queryRawUnsafe<Array<{ id: string; locationId: string }>>(
-        `SELECT id, "locationId" FROM "Order" WHERE id = $1 AND "deletedAt" IS NULL FOR UPDATE`,
-        id,
-      )
+      const [locked] = await tx.$queryRaw<Array<{ id: string; locationId: string }>>`SELECT id, "locationId" FROM "Order" WHERE id = ${id} AND "deletedAt" IS NULL FOR UPDATE`
       if (!locked) return { type: 'not_found' as const }
 
       const order = await OrderRepository.getOrderByIdWithInclude(id, locked.locationId, {
@@ -183,11 +180,8 @@ export const POST = withVenue(withTiming(async function POST(
       // Stamp delayStartedAt on delayed items so countdown survives page reload
       if (delayedItems.length > 0) {
         const delayedIds = delayedItems.map(i => i.id)
-        await tx.$executeRawUnsafe(
-          `UPDATE "OrderItem" SET "delayStartedAt" = NOW(), "updatedAt" = NOW()
-           WHERE id = ANY($1::text[])`,
-          delayedIds,
-        )
+        await tx.$executeRaw`UPDATE "OrderItem" SET "delayStartedAt" = NOW(), "updatedAt" = NOW()
+           WHERE id = ANY(${delayedIds}::text[])`
       }
 
       // Short-circuit: if no items to process, return early
@@ -226,26 +220,17 @@ export const POST = withVenue(withTiming(async function POST(
 
       // Update order: increment version, set sentAt = NOW(), optionally transition draft → open
       if (order.status === 'draft') {
-        await tx.$executeRawUnsafe(
-          `UPDATE "Order" SET version = version + 1, "sentAt" = NOW(), status = 'open', "lastMutatedBy" = $3, "updatedAt" = NOW()
-           WHERE id = $1 AND "locationId" = $2`,
-          id, order.locationId, mutationOrigin,
-        )
+        await tx.$executeRaw`UPDATE "Order" SET version = version + 1, "sentAt" = NOW(), status = 'open', "lastMutatedBy" = ${mutationOrigin}, "updatedAt" = NOW()
+           WHERE id = ${id} AND "locationId" = ${order.locationId}`
       } else {
-        await tx.$executeRawUnsafe(
-          `UPDATE "Order" SET version = version + 1, "sentAt" = NOW(), "lastMutatedBy" = $3, "updatedAt" = NOW()
-           WHERE id = $1 AND "locationId" = $2`,
-          id, order.locationId, mutationOrigin,
-        )
+        await tx.$executeRaw`UPDATE "Order" SET version = version + 1, "sentAt" = NOW(), "lastMutatedBy" = ${mutationOrigin}, "updatedAt" = NOW()
+           WHERE id = ${id} AND "locationId" = ${order.locationId}`
       }
 
       // Batch update regular items: kitchenStatus = 'sent', firedAt = NOW(), kitchenSentAt = NOW()
       if (regularItemIds.length > 0) {
-        await tx.$executeRawUnsafe(
-          `UPDATE "OrderItem" SET "kitchenStatus" = 'sent', "firedAt" = NOW(), "kitchenSentAt" = NOW(), "updatedAt" = NOW()
-           WHERE id = ANY($1::text[]) AND "locationId" = $2`,
-          regularItemIds, order.locationId,
-        )
+        await tx.$executeRaw`UPDATE "OrderItem" SET "kitchenStatus" = 'sent', "firedAt" = NOW(), "kitchenSentAt" = NOW(), "updatedAt" = NOW()
+           WHERE id = ANY(${regularItemIds}::text[]) AND "locationId" = ${order.locationId}`
       }
 
       // Batch update entertainment items with sessions: firedAt + blockTime timestamps = NOW()
@@ -262,6 +247,7 @@ export const POST = withVenue(withTiming(async function POST(
           order.locationId,
         ]
 
+        // eslint-disable-next-line -- dynamic CASE clauses + spread params require $executeRawUnsafe; all values are parameterized
         await tx.$executeRawUnsafe(
           `UPDATE "OrderItem"
            SET "kitchenStatus" = 'sent', "firedAt" = NOW(), "kitchenSentAt" = NOW(), "blockTimeStartedAt" = NOW(),
@@ -389,11 +375,8 @@ export const POST = withVenue(withTiming(async function POST(
     let deliveryNotes: string | null = null
     if (order.orderType?.startsWith('delivery')) {
       try {
-        const rows: Array<{ customerName: string | null; phone: string | null; address: string | null; addressLine2: string | null; city: string | null; state: string | null; zipCode: string | null; notes: string | null }> = await db.$queryRawUnsafe(
-          `SELECT "customerName", "phone", "address", "addressLine2", "city", "state", "zipCode", "notes"
-           FROM "DeliveryOrder" WHERE "orderId" = $1 LIMIT 1`,
-          id
-        )
+        const rows: Array<{ customerName: string | null; phone: string | null; address: string | null; addressLine2: string | null; city: string | null; state: string | null; zipCode: string | null; notes: string | null }> = await db.$queryRaw`SELECT "customerName", "phone", "address", "addressLine2", "city", "state", "zipCode", "notes"
+           FROM "DeliveryOrder" WHERE "orderId" = ${id} LIMIT 1`
         if (rows.length > 0) {
           const row = rows[0]
           deliveryCustomerName = row.customerName

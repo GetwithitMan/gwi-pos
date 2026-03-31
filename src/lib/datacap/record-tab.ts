@@ -12,6 +12,7 @@
  *   - record-card-auth/route.ts (after Android SDK completes card auth)
  */
 
+import { Prisma } from '@/generated/prisma/client'
 import { db } from '@/lib/db'
 import { dispatchTabUpdated, dispatchTabStatusUpdate, dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
@@ -107,15 +108,14 @@ export async function recordTab(params: RecordTabParams): Promise<RecordTabResul
   // for the same card from both succeeding (race condition → duplicate tabs).
   const orderCard = await db.$transaction(async (tx) => {
     // Lock any existing OrderCard row for this recordNo to prevent race conditions
-    const existingByRecordNo = await tx.$queryRawUnsafe<any[]>(
-      `SELECT oc.id, oc."authAmount", oc."cardType", oc."cardLast4",
+    const existingByRecordNo = await tx.$queryRaw<any[]>(
+      Prisma.sql`SELECT oc.id, oc."authAmount", oc."cardType", oc."cardLast4",
               o.id AS "orderId", o."tabName", o."orderNumber"
        FROM "OrderCard" oc
        JOIN "Order" o ON o.id = oc."orderId"
-       WHERE oc."recordNo" = $1 AND oc."deletedAt" IS NULL
-       AND o.status = 'open' AND o."orderType" = 'bar_tab' AND o."locationId" = $2
+       WHERE oc."recordNo" = ${recordNo} AND oc."deletedAt" IS NULL
+       AND o.status = 'open' AND o."orderType" = 'bar_tab' AND o."locationId" = ${locationId}
        FOR UPDATE OF oc LIMIT 1`,
-      recordNo, locationId
     )
 
     if (existingByRecordNo.length > 0) {

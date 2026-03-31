@@ -43,32 +43,22 @@ export async function GET(request: NextRequest) {
       const cutoffDate90d = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000)
 
       // Get IDs of jobs to delete (batch to avoid memory issues)
-      const jobsToDelete: any[] = await db.$queryRawUnsafe(
-        `SELECT id FROM "NotificationJob"
-         WHERE status = ANY($1::text[])
-           AND "createdAt" < $2
-         LIMIT 5000`,
-        TERMINAL_STATUSES,
-        cutoffDate90d
-      )
+      const jobsToDelete: any[] = await db.$queryRaw`SELECT id FROM "NotificationJob"
+         WHERE status = ANY(${TERMINAL_STATUSES}::text[])
+           AND "createdAt" < ${cutoffDate90d}
+         LIMIT 5000`
 
       if (jobsToDelete.length > 0) {
         const jobIds = jobsToDelete.map(j => j.id)
 
         // Delete associated NotificationAttempt rows first (FK would block otherwise)
-        const attemptsResult = await db.$executeRawUnsafe(
-          `DELETE FROM "NotificationAttempt"
-           WHERE "jobId" = ANY($1::text[])`,
-          jobIds
-        )
+        const attemptsResult = await db.$executeRaw`DELETE FROM "NotificationAttempt"
+           WHERE "jobId" = ANY(${jobIds}::text[])`
         summary.attemptsDeleted = typeof attemptsResult === 'number' ? attemptsResult : 0
 
         // Delete the jobs
-        const jobsResult = await db.$executeRawUnsafe(
-          `DELETE FROM "NotificationJob"
-           WHERE id = ANY($1::text[])`,
-          jobIds
-        )
+        const jobsResult = await db.$executeRaw`DELETE FROM "NotificationJob"
+           WHERE id = ANY(${jobIds}::text[])`
         summary.jobsDeleted = typeof jobsResult === 'number' ? jobsResult : 0
       }
     } catch (err) {
@@ -81,11 +71,8 @@ export async function GET(request: NextRequest) {
     try {
       const cutoffDate365d = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000)
 
-      const eventsResult = await db.$executeRawUnsafe(
-        `DELETE FROM "NotificationDeviceEvent"
-         WHERE "createdAt" < $1`,
-        cutoffDate365d
-      )
+      const eventsResult = await db.$executeRaw`DELETE FROM "NotificationDeviceEvent"
+         WHERE "createdAt" < ${cutoffDate365d}`
       summary.deviceEventsDeleted = typeof eventsResult === 'number' ? eventsResult : 0
     } catch (err) {
       const msg = `Device events cleanup error: ${err instanceof Error ? err.message : 'Unknown'}`
@@ -99,28 +86,22 @@ export async function GET(request: NextRequest) {
 
       // Mask phone numbers in NotificationTargetAssignment (PII retention)
       // Replace with last 4 digits only: ***-***-1234
-      const maskedResult = await db.$executeRawUnsafe(
-        `UPDATE "NotificationTargetAssignment"
+      const maskedResult = await db.$executeRaw`UPDATE "NotificationTargetAssignment"
          SET "targetValue" = '***-***-' || RIGHT("targetValue", 4),
              "updatedAt" = CURRENT_TIMESTAMP
          WHERE "targetType" IN ('phone_sms', 'phone_voice')
-           AND "createdAt" < $1
+           AND "createdAt" < ${cutoffDate180d}
            AND "targetValue" NOT LIKE '***-***-%'
-           AND status != 'active'`,
-        cutoffDate180d
-      )
+           AND status != 'active'`
       summary.phoneTargetsMasked = typeof maskedResult === 'number' ? maskedResult : 0
 
       // Also mask phone targetValue in old NotificationJob rows that haven't been deleted yet
-      await db.$executeRawUnsafe(
-        `UPDATE "NotificationJob"
+      await db.$executeRaw`UPDATE "NotificationJob"
          SET "targetValue" = '***-***-' || RIGHT("targetValue", 4),
              "updatedAt" = CURRENT_TIMESTAMP
          WHERE "targetType" IN ('phone_sms', 'phone_voice')
-           AND "createdAt" < $1
-           AND "targetValue" NOT LIKE '***-***-%'`,
-        cutoffDate180d
-      )
+           AND "createdAt" < ${cutoffDate180d}
+           AND "targetValue" NOT LIKE '***-***-%'`
     } catch (err) {
       const msg = `Phone masking error: ${err instanceof Error ? err.message : 'Unknown'}`
       console.error(`[cron:notification-archive] ${msg}`)

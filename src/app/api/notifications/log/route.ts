@@ -104,6 +104,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const whereClause = conditions.join(' AND ')
 
     // Count + fetch jobs
+    // eslint-disable-next-line -- dynamic WHERE clauses + spread params require $queryRawUnsafe; all values are parameterized
     const [countRows, jobRows] = await Promise.all([
       db.$queryRawUnsafe<[{ count: bigint }]>(
         `SELECT COUNT(*) as count FROM "NotificationJob" WHERE ${whereClause}`,
@@ -170,16 +171,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     if (jobIds.length > 0) {
       // Build IN clause with indexed params
       const inPlaceholders = jobIds.map((_, i) => `$${i + 1}`).join(', ')
-      attempts = await db.$queryRawUnsafe(
-        `SELECT id, "jobId", "providerId", "providerType",
+      attempts = await db.$queryRaw`SELECT id, "jobId", "providerId", "providerType",
                 "attemptNumber", result, "latencyMs",
                 "errorCode", "normalizedError", "startedAt",
                 "completedAt", "isRetry"
          FROM "NotificationAttempt"
          WHERE "jobId" IN (${inPlaceholders})
-         ORDER BY "attemptNumber" ASC`,
-        ...jobIds
-      )
+         ORDER BY "attemptNumber" ASC`
     }
 
     // Group attempts by jobId

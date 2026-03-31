@@ -99,10 +99,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
 
     const result = await db.$transaction(async (tx) => {
       // Pessimistic lock: prevent concurrent transfers from double-spending
-      await tx.$queryRawUnsafe(
-        'SELECT id FROM "TipLedger" WHERE "employeeId" = $1 AND "locationId" = $2 FOR UPDATE',
-        fromEmployeeId, locationId
-      )
+      await tx.$queryRaw`SELECT id FROM "TipLedger" WHERE "employeeId" = ${fromEmployeeId} AND "locationId" = ${locationId} FOR UPDATE`
 
       // Check balance under transaction lock (prevents race condition)
       const fromLedger = await tx.tipLedger.findFirst({

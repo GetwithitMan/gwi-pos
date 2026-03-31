@@ -83,6 +83,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const whereClause = conditions.join(' AND ')
 
     // Count + fetch in parallel
+    // eslint-disable-next-line -- dynamic WHERE clauses + spread params require $queryRawUnsafe; all values are parameterized
     const [countRows, jobRows] = await Promise.all([
       db.$queryRawUnsafe<[{ count: bigint }]>(
         `SELECT COUNT(*) as count FROM "NotificationJob" WHERE ${whereClause}`,
@@ -192,7 +193,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Fetch the original dead-letter job
-    const originalJobs = await db.$queryRawUnsafe<Array<{
+    const originalJobs = await db.$queryRaw<Array<{
       id: string
       locationId: string
       eventType: string
@@ -216,8 +217,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       correlationId: string
       notificationEngine: string
       status: string
-    }>>(
-      `SELECT id, "locationId", "eventType", "subjectType", "subjectId",
+    }>>`SELECT id, "locationId", "eventType", "subjectType", "subjectId",
               "maxAttempts", "businessStage", "executionStage",
               "routingRuleId", "providerId", "fallbackProviderId",
               "targetType", "targetValue", "executionZone",
@@ -225,9 +225,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
               "ruleExplainSnapshot", "subjectVersion", "sourceSystem",
               "correlationId", "notificationEngine", status
        FROM "NotificationJob"
-       WHERE id = $1 AND "locationId" = $2`,
-      jobId, locationId
-    )
+       WHERE id = ${jobId} AND "locationId" = ${locationId}`
 
     if (originalJobs.length === 0) {
       return notFound('Job not found')
@@ -251,8 +249,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Create a new job as a retry of the dead-letter job
     const newJobId = crypto.randomUUID()
 
-    await db.$executeRawUnsafe(
-      `INSERT INTO "NotificationJob" (
+    await db.$executeRaw`INSERT INTO "NotificationJob" (
         id, "locationId", "eventType", "subjectType", "subjectId",
         status, "currentAttempt", "maxAttempts", "dispatchOrigin",
         "businessStage", "executionStage", "routingRuleId",
@@ -263,41 +260,16 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         "idempotencyKey", "correlationId", "parentJobId",
         "notificationEngine", "createdAt", "updatedAt"
       ) VALUES (
-        $1, $2, $3, $4, $5,
-        'pending', 0, $6, 'admin_replay',
-        $7, 'first_attempt', $8,
-        $9, $10, $11, $12,
-        NOW(), $13, $14::jsonb,
-        $15, $16::jsonb, $17::jsonb,
-        $18, $19, $20, 1,
-        $21, $22, $23,
-        $24, NOW(), NOW()
-      )`,
-      newJobId,
-      locationId,
-      original.eventType,
-      original.subjectType,
-      original.subjectId,
-      original.maxAttempts,
-      original.businessStage,
-      original.routingRuleId,
-      original.providerId,
-      original.fallbackProviderId,
-      original.targetType,
-      original.targetValue,
-      original.executionZone,
-      JSON.stringify(original.contextSnapshot),
-      original.messageTemplate,
-      JSON.stringify(original.policySnapshot),
-      JSON.stringify(original.ruleExplainSnapshot),
-      original.subjectVersion,
-      original.sourceSystem,
-      newSourceEventId,
-      idempotencyKey,
-      original.correlationId,
-      original.id,
-      original.notificationEngine,
-    )
+        ${newJobId}, ${locationId}, ${original.eventType}, ${original.subjectType}, ${original.subjectId},
+        'pending', 0, ${original.maxAttempts}, 'admin_replay',
+        ${original.businessStage}, 'first_attempt', ${original.routingRuleId},
+        ${original.providerId}, ${original.fallbackProviderId}, ${original.targetType}, ${original.targetValue},
+        NOW(), ${original.executionZone}, ${JSON.stringify(original.contextSnapshot)}::jsonb,
+        ${original.messageTemplate}, ${JSON.stringify(original.policySnapshot)}::jsonb, ${JSON.stringify(original.ruleExplainSnapshot)}::jsonb,
+        ${original.subjectVersion}, ${original.sourceSystem}, ${newSourceEventId}, 1,
+        ${idempotencyKey}, ${original.correlationId}, ${original.id},
+        ${original.notificationEngine}, NOW(), NOW()
+      )`
 
     // Audit log: notification_dlq_replay
     void db.auditLog.create({
@@ -365,11 +337,8 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
     }
 
     // Verify job exists and is dead_letter
-    const jobs = await db.$queryRawUnsafe<Array<{ id: string; status: string }>>(
-      `SELECT id, status FROM "NotificationJob"
-       WHERE id = $1 AND "locationId" = $2`,
-      jobId, locationId
-    )
+    const jobs = await db.$queryRaw<Array<{ id: string; status: string }>>`SELECT id, status FROM "NotificationJob"
+       WHERE id = ${jobId} AND "locationId" = ${locationId}`
 
     if (jobs.length === 0) {
       return notFound('Job not found')
@@ -383,20 +352,13 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
     const terminalResult = 'suppressed'
     const newStatus = action === 'suppress' ? 'suppressed' : 'completed'
 
-    await db.$executeRawUnsafe(
-      `UPDATE "NotificationJob"
+    await db.$executeRaw`UPDATE "NotificationJob"
        SET "resolvedAt" = NOW(),
-           "resolvedByEmployeeId" = $3,
-           "terminalResult" = $4,
-           status = $5,
+           "resolvedByEmployeeId" = ${auth.employee.id},
+           "terminalResult" = ${terminalResult},
+           status = ${newStatus},
            "updatedAt" = NOW()
-       WHERE id = $1 AND "locationId" = $2`,
-      jobId,
-      locationId,
-      auth.employee.id,
-      terminalResult,
-      newStatus,
-    )
+       WHERE id = ${jobId} AND "locationId" = ${locationId}`
 
     // Audit log: notification_dlq_resolved (suppress/resolve)
     void db.auditLog.create({

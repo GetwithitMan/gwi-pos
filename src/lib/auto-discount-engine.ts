@@ -18,6 +18,7 @@
  *   - isAutomatic must be true for the engine to evaluate the rule
  */
 
+import { Prisma } from '@/generated/prisma/client'
 import { db } from '@/lib/db'
 import { calculateOrderTotals } from '@/lib/order-calculations'
 import { roundToCents } from '@/lib/pricing'
@@ -232,7 +233,7 @@ export async function evaluateAutoDiscounts(
     // 5. Execute in a transaction
     await db.$transaction(async (tx) => {
       // Lock the Order row to prevent concurrent auto-discount evaluations from doubling discounts
-      await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', orderId)
+      await tx.$queryRaw(Prisma.sql`SELECT id FROM "Order" WHERE id = ${orderId} FOR UPDATE`)
 
       // Remove auto-discounts that no longer match
       for (const discountId of toRemove) {

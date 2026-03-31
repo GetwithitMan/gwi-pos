@@ -40,7 +40,7 @@ export const GET = withVenue(async function GET(
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.POS_ACCESS)
     if (!auth.authorized) return err(auth.error, auth.status)
 
-    const rows: any[] = await db.$queryRawUnsafe(`
+    const rows: any[] = await db.$queryRaw`
       SELECT d.*,
              o."orderNumber", o."guestCount", o."status" as "orderStatus",
              e."firstName" as "driverFirstName", e."lastName" as "driverLastName",
@@ -49,8 +49,8 @@ export const GET = withVenue(async function GET(
       LEFT JOIN "Order" o ON o.id = d."orderId"
       LEFT JOIN "Employee" e ON e.id = d."driverId"
       LEFT JOIN "Employee" ce ON ce.id = d."employeeId"
-      WHERE d.id = $1 AND d."locationId" = $2
-    `, id, locationId)
+      WHERE d.id = ${id} AND d."locationId" = ${locationId}
+    `
 
     if (!rows.length) {
       return notFound('Delivery order not found')
@@ -61,13 +61,13 @@ export const GET = withVenue(async function GET(
     // Get order items if linked
     let items: any[] = []
     if (row.orderId) {
-      items = await db.$queryRawUnsafe(`
+      items = await db.$queryRaw`
         SELECT oi.id, oi.name, oi.price, oi.quantity,
                oi."specialInstructions"
         FROM "OrderItem" oi
-        WHERE oi."orderId" = $1 AND oi."deletedAt" IS NULL AND oi."voidedAt" IS NULL
+        WHERE oi."orderId" = ${row.orderId} AND oi."deletedAt" IS NULL AND oi."voidedAt" IS NULL
         ORDER BY oi."createdAt" ASC
-      `, row.orderId)
+      `
     }
 
     return ok({
@@ -160,12 +160,12 @@ export const PUT = withVenue(async function PUT(
         const locParamIdx = paramIdx + 1
         fieldParams.push(id, locationId)
 
-        const updated: any[] = await db.$queryRawUnsafe(`
+        const updated: any[] = await db.$queryRaw`
           UPDATE "DeliveryOrder"
           SET ${fieldUpdates.join(', ')}
           WHERE id = $${idParamIdx} AND "locationId" = $${locParamIdx}
           RETURNING *
-        `, ...fieldParams)
+        `
 
         if (updated.length) {
           delivery = updated[0]
@@ -199,10 +199,10 @@ export const PUT = withVenue(async function PUT(
     // ── Non-status field updates only ───────────────────────────────────
 
     // Fetch existing for audit diff
-    const existing: any[] = await db.$queryRawUnsafe(`
+    const existing: any[] = await db.$queryRaw`
       SELECT * FROM "DeliveryOrder"
-      WHERE id = $1 AND "locationId" = $2
-    `, id, locationId)
+      WHERE id = ${id} AND "locationId" = ${locationId}
+    `
 
     if (!existing.length) {
       return notFound('Delivery order not found')
@@ -217,32 +217,20 @@ export const PUT = withVenue(async function PUT(
       const deliveryConfig = settings.delivery ?? DEFAULT_DELIVERY
       const policy = deliveryConfig.dispatchPolicy
 
-      const loc = await db.$queryRawUnsafe<{ timezone: string }[]>(
-        'SELECT "timezone" FROM "Location" WHERE "id" = $1',
-        locationId,
-      )
+      const loc = await db.$queryRaw<{ timezone: string }[]>`SELECT "timezone" FROM "Location" WHERE "id" = ${locationId}`
       const timezone = loc[0]?.timezone ?? 'America/New_York'
       const maxPerDriver = getMaxOrdersPerDriver(policy, deliveryConfig.peakHours ?? [], timezone)
 
       // Lock the driver row and count active deliveries
-      const driverRows: any[] = await db.$queryRawUnsafe(
-        `SELECT * FROM "DeliveryDriver" WHERE "id" = $1 AND "locationId" = $2 FOR UPDATE`,
-        driverId,
-        locationId,
-      )
+      const driverRows: any[] = await db.$queryRaw`SELECT * FROM "DeliveryDriver" WHERE "id" = ${driverId} AND "locationId" = ${locationId} FOR UPDATE`
       if (!driverRows.length) {
         return notFound('Driver not found')
       }
 
-      const activeCount: any[] = await db.$queryRawUnsafe(
-        `SELECT COUNT(*)::int as count FROM "DeliveryOrder"
-         WHERE "driverId" = $1 AND "locationId" = $2
+      const activeCount: any[] = await db.$queryRaw`SELECT COUNT(*)::int as count FROM "DeliveryOrder"
+         WHERE "driverId" = ${driverId} AND "locationId" = ${locationId}
            AND status NOT IN ('delivered', 'cancelled_before_dispatch', 'cancelled_after_dispatch', 'failed_delivery', 'returned_to_store')
-           AND id != $3`,
-        driverId,
-        locationId,
-        id,
-      )
+           AND id != ${id}`
       const currentDriverOrders = activeCount[0]?.count ?? 0
       if (currentDriverOrders >= maxPerDriver) {
         return err(`Driver at capacity (${currentDriverOrders}/${maxPerDriver} active orders)`, 409)
@@ -288,12 +276,12 @@ export const PUT = withVenue(async function PUT(
     const locParamIdx = paramIdx + 1
     updateParams.push(id, locationId)
 
-    const updated: any[] = await db.$queryRawUnsafe(`
+    const updated: any[] = await db.$queryRaw`
       UPDATE "DeliveryOrder"
       SET ${updates.join(', ')}
       WHERE id = $${idParamIdx} AND "locationId" = $${locParamIdx}
       RETURNING *
-    `, ...updateParams)
+    `
 
     if (!updated.length) {
       return err('Failed to update delivery order', 500)

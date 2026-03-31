@@ -34,6 +34,7 @@
  *   await flushSocketOutbox(locationId)
  */
 
+import { Prisma } from '@/generated/prisma/client'
 import { emitToLocation, emitCriticalToLocation } from '@/lib/socket-server'
 import { SOCKET_EVENTS } from '@/lib/socket-events'
 import { createChildLogger } from '@/lib/logger'
@@ -80,14 +81,10 @@ export async function queueSocketEvent(
   const jsonData = JSON.stringify(data ?? {})
 
   // Use raw SQL — SocketEventLog is not in the Prisma schema (raw table from migration 060)
-  const rows: Array<{ id: bigint }> = await tx.$queryRawUnsafe(
-    `INSERT INTO "SocketEventLog" ("locationId", event, data, room, status, flushed, "createdAt")
-     VALUES ($1, $2, $3::jsonb, $4, 'pending', false, NOW())
+  const rows: Array<{ id: bigint }> = await tx.$queryRaw(
+    Prisma.sql`INSERT INTO "SocketEventLog" ("locationId", event, data, room, status, flushed, "createdAt")
+     VALUES (${locationId}, ${event}, ${jsonData}::jsonb, ${targetRoom}, 'pending', false, NOW())
      RETURNING id`,
-    locationId,
-    event,
-    jsonData,
-    targetRoom,
   )
 
   return Number(rows[0].id)
@@ -145,19 +142,17 @@ export async function flushSocketOutbox(
       event: string
       data: unknown
       room: string
-    }> = await db.$queryRawUnsafe(
-      `UPDATE "SocketEventLog"
+    }> = await db.$queryRaw(
+      Prisma.sql`UPDATE "SocketEventLog"
        SET status = 'flushing'
        WHERE id IN (
          SELECT id FROM "SocketEventLog"
-         WHERE "locationId" = $1 AND flushed = false AND status != 'flushing'
+         WHERE "locationId" = ${locationId} AND flushed = false AND status != 'flushing'
          ORDER BY id ASC
-         LIMIT $2
+         LIMIT ${maxBatch}
          FOR UPDATE SKIP LOCKED
        )
        RETURNING id, event, data, room`,
-      locationId,
-      maxBatch,
     )
 
     if (rows.length === 0) return { flushed: 0, failed: 0 }
@@ -193,21 +188,19 @@ export async function flushSocketOutbox(
 
     // Batch-mark successfully emitted events as flushed
     if (flushedIds.length > 0) {
-      await db.$executeRawUnsafe(
-        `UPDATE "SocketEventLog"
+      await db.$executeRaw(
+        Prisma.sql`UPDATE "SocketEventLog"
          SET flushed = true, status = 'sent'
-         WHERE id = ANY($1::bigint[])`,
-        flushedIds.map(Number),
+         WHERE id = ANY(${flushedIds.map(Number)}::bigint[])`,
       )
     }
 
     // Revert failed events back to pending for retry
     if (failedIds.length > 0) {
-      await db.$executeRawUnsafe(
-        `UPDATE "SocketEventLog"
+      await db.$executeRaw(
+        Prisma.sql`UPDATE "SocketEventLog"
          SET status = 'pending'
-         WHERE id = ANY($1::bigint[])`,
-        failedIds.map(Number),
+         WHERE id = ANY(${failedIds.map(Number)}::bigint[])`,
       )
     }
   } catch (err) {
@@ -253,15 +246,15 @@ export async function flushAllPendingOutbox(): Promise<{ total: number }> {
     // rows were claimed (status='flushing'), they're orphaned — no one will retry
     // them because flushSocketOutbox excludes status='flushing'. Reset any that
     // are older than 5 minutes back to 'pending' so they get picked up below.
-    await db.$executeRawUnsafe(
-      `UPDATE "SocketEventLog"
+    await db.$executeRaw(
+      Prisma.sql`UPDATE "SocketEventLog"
        SET status = 'pending'
        WHERE status = 'flushing' AND "createdAt" < NOW() - INTERVAL '5 minutes'`,
     )
 
     // Find distinct locations with unflushed events
-    const locations: Array<{ locationId: string }> = await db.$queryRawUnsafe(
-      `SELECT DISTINCT "locationId" FROM "SocketEventLog" WHERE flushed = false LIMIT 50`,
+    const locations: Array<{ locationId: string }> = await db.$queryRaw(
+      Prisma.sql`SELECT DISTINCT "locationId" FROM "SocketEventLog" WHERE flushed = false LIMIT 50`,
     )
 
     for (const loc of locations) {

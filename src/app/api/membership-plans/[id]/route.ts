@@ -20,11 +20,11 @@ export const GET = withVenue(async function GET(
     const auth = await requirePermission(employeeId, locationId, 'admin.manage_membership_plans')
     if (!auth.authorized) return err(auth.error, auth.status)
 
-    const rows: any[] = await db.$queryRawUnsafe(`
+    const rows: any[] = await db.$queryRaw`
       SELECT * FROM "MembershipPlan"
-      WHERE "id" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
+      WHERE "id" = ${id} AND "locationId" = ${locationId} AND "deletedAt" IS NULL
       LIMIT 1
-    `, id, locationId)
+    `
 
     if (rows.length === 0) return notFound('Plan not found')
     return ok(rows[0])
@@ -51,31 +51,25 @@ export const PUT = withVenue(async function PUT(
     const auth = await requirePermission(requestingEmployeeId, locationId, 'admin.manage_membership_plans')
     if (!auth.authorized) return err(auth.error, auth.status)
 
-    const rows: any[] = await db.$queryRawUnsafe(`
+    const rows: any[] = await db.$queryRaw`
       UPDATE "MembershipPlan"
-      SET "name" = COALESCE($3, "name"),
-          "description" = COALESCE($4, "description"),
-          "price" = COALESCE($5, "price"),
-          "billingCycle" = COALESCE($6, "billingCycle"),
-          "billingDayOfMonth" = COALESCE($7, "billingDayOfMonth"),
-          "billingDayOfWeek" = COALESCE($8, "billingDayOfWeek"),
-          "trialDays" = COALESCE($9, "trialDays"),
-          "setupFee" = COALESCE($10, "setupFee"),
-          "benefits" = COALESCE($11, "benefits"),
-          "maxMembers" = COALESCE($12, "maxMembers"),
-          "isActive" = COALESCE($13, "isActive"),
-          "sortOrder" = COALESCE($14, "sortOrder"),
-          "currency" = COALESCE($15, "currency"),
+      SET "name" = COALESCE(${name ?? null}, "name"),
+          "description" = COALESCE(${description ?? null}, "description"),
+          "price" = COALESCE(${price ?? null}, "price"),
+          "billingCycle" = COALESCE(${billingCycle ?? null}, "billingCycle"),
+          "billingDayOfMonth" = COALESCE(${billingDayOfMonth ?? null}, "billingDayOfMonth"),
+          "billingDayOfWeek" = COALESCE(${billingDayOfWeek ?? null}, "billingDayOfWeek"),
+          "trialDays" = COALESCE(${trialDays ?? null}, "trialDays"),
+          "setupFee" = COALESCE(${setupFee ?? null}, "setupFee"),
+          "benefits" = COALESCE(${benefits ? JSON.stringify(benefits) : null}, "benefits"),
+          "maxMembers" = COALESCE(${maxMembers ?? null}, "maxMembers"),
+          "isActive" = COALESCE(${isActive ?? null}, "isActive"),
+          "sortOrder" = COALESCE(${sortOrder ?? null}, "sortOrder"),
+          "currency" = COALESCE(${currency ?? null}, "currency"),
           "updatedAt" = NOW()
-      WHERE "id" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
+      WHERE "id" = ${id} AND "locationId" = ${locationId} AND "deletedAt" IS NULL
       RETURNING *
-    `,
-      id, locationId, name ?? null, description ?? null, price ?? null,
-      billingCycle ?? null, billingDayOfMonth ?? null, billingDayOfWeek ?? null,
-      trialDays ?? null, setupFee ?? null,
-      benefits ? JSON.stringify(benefits) : null, maxMembers ?? null,
-      isActive ?? null, sortOrder ?? null, currency ?? null
-    )
+    `
 
     if (rows.length === 0) return notFound('Plan not found')
     return ok(rows[0])
@@ -101,12 +95,12 @@ export const DELETE = withVenue(async function DELETE(
     const auth = await requirePermission(employeeId, locationId, 'admin.manage_membership_plans')
     if (!auth.authorized) return err(auth.error, auth.status)
 
-    const rows: any[] = await db.$queryRawUnsafe(`
+    const rows: any[] = await db.$queryRaw`
       UPDATE "MembershipPlan"
       SET "deletedAt" = NOW(), "updatedAt" = NOW()
-      WHERE "id" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
+      WHERE "id" = ${id} AND "locationId" = ${locationId} AND "deletedAt" IS NULL
       RETURNING "id"
-    `, id, locationId)
+    `
 
     if (rows.length === 0) return notFound('Plan not found')
     return ok({ deleted: true })

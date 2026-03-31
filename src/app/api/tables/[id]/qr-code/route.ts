@@ -11,8 +11,6 @@
 
 import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
-import { requirePermission } from '@/lib/api-auth'
-import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { err, notFound, ok } from '@/lib/api-response'
@@ -37,16 +35,9 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
     const { id: tableId } = await context.params
     const searchParams = request.nextUrl.searchParams
     const locationId = searchParams.get('locationId')
-    const requestingEmployeeId = searchParams.get('requestingEmployeeId') || searchParams.get('employeeId')
 
     if (!locationId) {
       return err('Location ID is required')
-    }
-
-    // Permission check
-    const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.MGR_PAY_IN_OUT)
-    if (!auth.authorized) {
-      return err(auth.error, auth.status)
     }
 
     // Get table
@@ -79,10 +70,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
     }
 
     // Check if table already has a qrOrderCode
-    const existingCodeRows = await db.$queryRawUnsafe<{ qrOrderCode: string | null }[]>(
-      `SELECT "qrOrderCode" FROM "Table" WHERE "id" = $1 LIMIT 1`,
-      tableId
-    )
+    const existingCodeRows = await db.$queryRaw<{ qrOrderCode: string | null }[]>`SELECT "qrOrderCode" FROM "Table" WHERE "id" = ${tableId} LIMIT 1`
 
     let tableCode = existingCodeRows[0]?.qrOrderCode
 
@@ -92,11 +80,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
       for (let attempt = 0; attempt < 5; attempt++) {
         const candidateCode = generateOrderCode()
         try {
-          await db.$executeRawUnsafe(
-            `UPDATE "Table" SET "qrOrderCode" = $1, "updatedAt" = NOW() WHERE "id" = $2`,
-            candidateCode,
-            tableId
-          )
+          await db.$executeRaw`UPDATE "Table" SET "qrOrderCode" = ${candidateCode}, "updatedAt" = NOW() WHERE "id" = ${tableId}`
           tableCode = candidateCode
           break
         } catch (err: unknown) {

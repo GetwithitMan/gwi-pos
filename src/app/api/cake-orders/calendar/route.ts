@@ -91,8 +91,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     const orderWhereClause = orderConditions.join(' AND ')
 
-    const orders = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT
+    const orders = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT
          co."id",
          co."orderNumber",
          co."status",
@@ -105,9 +104,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
        FROM "CakeOrder" co
        LEFT JOIN "Customer" c ON c."id" = co."customerId"
        WHERE ${orderWhereClause}
-       ORDER BY co."eventDate" ASC`,
-      ...orderParams,
-    )
+       ORDER BY co."eventDate" ASC`
 
     const orderEvents = orders.map(o => {
       const orderNumber = o.orderNumber ?? '?'
@@ -129,8 +126,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     })
 
     // ── Query 2: CakeCalendarBlocks ───────────────────────────────────
-    const blocks = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT
+    const blocks = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT
          b."id",
          b."title",
          b."startDate",
@@ -140,15 +136,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
          b."employeeId",
          b."notes"
        FROM "CakeCalendarBlock" b
-       WHERE b."locationId" = $1
+       WHERE b."locationId" = ${locationId}
          AND b."deletedAt" IS NULL
-         AND b."startDate" <= $3::date
-         AND b."endDate" >= $2::date
-       ORDER BY b."startDate" ASC`,
-      locationId,
-      startDate,
-      endDate,
-    )
+         AND b."startDate" <= ${endDate}::date
+         AND b."endDate" >= ${startDate}::date
+       ORDER BY b."startDate" ASC`
 
     const blockEvents = blocks.map(b => {
       const blockType = b.blockType as string
@@ -231,11 +223,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // ── Validate cakeOrderId if provided ──────────────────────────────
     if (cakeOrderId) {
-      const orderExists = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-        `SELECT "id" FROM "CakeOrder" WHERE "id" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL LIMIT 1`,
-        cakeOrderId,
-        locationId,
-      )
+      const orderExists = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT "id" FROM "CakeOrder" WHERE "id" = ${cakeOrderId} AND "locationId" = ${locationId} AND "deletedAt" IS NULL LIMIT 1`
       if (orderExists.length === 0) {
         return notFound('Referenced cake order not found')
       }
@@ -243,10 +231,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // ── Validate employeeId if provided ───────────────────────────────
     if (assignedEmployeeId) {
-      const empExists = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-        `SELECT "id" FROM "Employee" WHERE "id" = $1 LIMIT 1`,
-        assignedEmployeeId,
-      )
+      const empExists = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT "id" FROM "Employee" WHERE "id" = ${assignedEmployeeId} LIMIT 1`
       if (empExists.length === 0) {
         return notFound('Referenced employee not found')
       }
@@ -255,32 +240,18 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // ── INSERT CakeCalendarBlock ──────────────────────────────────────
     const blockId = crypto.randomUUID()
 
-    await db.$executeRawUnsafe(
-      `INSERT INTO "CakeCalendarBlock" (
+    await db.$executeRaw`INSERT INTO "CakeCalendarBlock" (
         "id", "locationId", "cakeOrderId", "title", "startDate", "endDate",
         "blockType", "employeeId", "notes", "createdAt", "updatedAt"
       ) VALUES (
-        $1, $2, $3, $4, $5::date, $6::date,
-        $7, $8, $9, NOW(), NOW()
-      )`,
-      blockId,
-      locationId,
-      cakeOrderId || null,
-      title.trim(),
-      startDate,
-      endDate,
-      resolvedBlockType,
-      assignedEmployeeId,
-      notes || null,
-    )
+        ${blockId}, ${locationId}, ${cakeOrderId || null}, ${title.trim()}, ${startDate}::date, ${endDate}::date,
+        ${resolvedBlockType}, ${assignedEmployeeId}, ${notes || null}, NOW(), NOW()
+      )`
 
     pushUpstream()
 
     // ── Fetch and return created block ────────────────────────────────
-    const created = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT * FROM "CakeCalendarBlock" WHERE "id" = $1`,
-      blockId,
-    )
+    const created = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT * FROM "CakeCalendarBlock" WHERE "id" = ${blockId}`
 
     return ok(created[0])
   } catch (error) {

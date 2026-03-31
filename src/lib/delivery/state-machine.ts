@@ -15,6 +15,10 @@
  * })
  * if (!result.success) return NextResponse.json({ error: result.error }, { status: 400 })
  * ```
+ *
+ * NOTE: Uses $queryRawUnsafe/$executeRawUnsafe because DeliveryOrder, DeliveryRun,
+ * DriverSession, and DeliveryAuditLog are raw SQL tables (not Prisma-managed).
+ * All queries use positional $1/$2 params — safe from injection.
  */
 
 import { db } from '@/lib/db'

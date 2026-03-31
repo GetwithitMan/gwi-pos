@@ -41,19 +41,15 @@ export const GET = withVenue(async function GET(
     if (gate) return gate
 
     // ── Fetch CakeOrder + Customer ────────────────────────────────────
-    const orders = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT co.*,
+    const orders = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT co.*,
               c."firstName" AS "customerFirstName",
               c."lastName" AS "customerLastName",
               c."phone" AS "customerPhone",
               c."email" AS "customerEmail"
        FROM "CakeOrder" co
        LEFT JOIN "Customer" c ON c."id" = co."customerId"
-       WHERE co."id" = $1 AND co."locationId" = $2 AND co."deletedAt" IS NULL
-       LIMIT 1`,
-      id,
-      locationId,
-    )
+       WHERE co."id" = ${id} AND co."locationId" = ${locationId} AND co."deletedAt" IS NULL
+       LIMIT 1`
 
     if (orders.length === 0) {
       return notFound('Cake order not found')
@@ -62,31 +58,22 @@ export const GET = withVenue(async function GET(
     const order = orders[0]
 
     // ── Fetch latest CakeQuote ────────────────────────────────────────
-    const quotes = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT * FROM "CakeQuote"
-       WHERE "cakeOrderId" = $1
+    const quotes = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT * FROM "CakeQuote"
+       WHERE "cakeOrderId" = ${id}
        ORDER BY "createdAt" DESC
-       LIMIT 1`,
-      id,
-    )
+       LIMIT 1`
     const latestQuote = quotes.length > 0 ? quotes[0] : null
 
     // ── Fetch CakePayments ────────────────────────────────────────────
-    const payments = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT * FROM "CakePayment"
-       WHERE "cakeOrderId" = $1
-       ORDER BY "createdAt" ASC`,
-      id,
-    )
+    const payments = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT * FROM "CakePayment"
+       WHERE "cakeOrderId" = ${id}
+       ORDER BY "createdAt" ASC`
 
     // ── Fetch recent CakeOrderChanges ─────────────────────────────────
-    const changes = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT * FROM "CakeOrderChange"
-       WHERE "cakeOrderId" = $1
+    const changes = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT * FROM "CakeOrderChange"
+       WHERE "cakeOrderId" = ${id}
        ORDER BY "createdAt" DESC
-       LIMIT 50`,
-      id,
-    )
+       LIMIT 50`
 
     return ok({
         ...order,
@@ -142,13 +129,9 @@ export const PATCH = withVenue(async function PATCH(
     const input = parsed.data
 
     // ── Fetch current order ───────────────────────────────────────────
-    const orders = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT * FROM "CakeOrder"
-       WHERE "id" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
-       LIMIT 1`,
-      id,
-      locationId,
-    )
+    const orders = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT * FROM "CakeOrder"
+       WHERE "id" = ${id} AND "locationId" = ${locationId} AND "deletedAt" IS NULL
+       LIMIT 1`
 
     if (orders.length === 0) {
       return notFound('Cake order not found')
@@ -288,6 +271,7 @@ export const PATCH = withVenue(async function PATCH(
 
     // ── Execute UPDATE ────────────────────────────────────────────────
     updateParams.push(id)
+    // eslint-disable-next-line -- dynamic SET clauses + spread params require $executeRawUnsafe; all values are parameterized
     await db.$executeRawUnsafe(
       `UPDATE "CakeOrder" SET ${setClauses.join(', ')} WHERE "id" = $${paramIdx}`,
       ...updateParams,
@@ -303,20 +287,13 @@ export const PATCH = withVenue(async function PATCH(
 
     // ── INSERT CakeOrderChange (audit trail) ──────────────────────────
     const changeId = crypto.randomUUID()
-    await db.$executeRawUnsafe(
-      `INSERT INTO "CakeOrderChange" (
+    await db.$executeRaw`INSERT INTO "CakeOrderChange" (
         "id", "cakeOrderId", "changeType", "changedBy", "source",
         "details", "createdAt"
       ) VALUES (
-        $1, $2, $3, $4, 'admin',
-        $5::jsonb, NOW()
-      )`,
-      changeId,
-      id,
-      changeType,
-      auth.employee.id,
-      JSON.stringify({ changedFields }),
-    )
+        ${changeId}, ${id}, ${changeType}, ${auth.employee.id}, 'admin',
+        ${JSON.stringify({ changedFields })}::jsonb, NOW()
+      )`
 
     pushUpstream()
 
@@ -328,18 +305,15 @@ export const PATCH = withVenue(async function PATCH(
     }).catch(err => console.error('[cake-orders] Socket dispatch failed:', err))
 
     // ── Fetch updated order for response ──────────────────────────────
-    const updated = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT co.*,
+    const updated = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT co.*,
               c."firstName" AS "customerFirstName",
               c."lastName" AS "customerLastName",
               c."phone" AS "customerPhone",
               c."email" AS "customerEmail"
        FROM "CakeOrder" co
        LEFT JOIN "Customer" c ON c."id" = co."customerId"
-       WHERE co."id" = $1
-       LIMIT 1`,
-      id,
-    )
+       WHERE co."id" = ${id}
+       LIMIT 1`
 
     return ok(updated[0])
   } catch (error) {

@@ -109,10 +109,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     // ── 1. Create database on Neon (skip for seed-only) ──────────────
     if (mode !== 'seed-only') {
-      const existing = await db.$queryRawUnsafe<{ datname: string }[]>(
-        `SELECT datname FROM pg_database WHERE datname = $1`,
-        dbName
-      )
+      const existing = await db.$queryRaw<{ datname: string }[]>`SELECT datname FROM pg_database WHERE datname = ${dbName}`
 
       if (existing.length === 0) {
         // CREATE DATABASE cannot use parameterized queries.
@@ -120,7 +117,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         // and venueDbName() only adds a safe prefix. No user-controlled characters
         // can escape the double-quoted identifier.
         try {
-          await db.$executeRawUnsafe(`CREATE DATABASE "${dbName}"`)
+          await db.$executeRaw`CREATE DATABASE "${dbName}"`
           if (process.env.NODE_ENV !== 'production') console.log(`[Provision] Created database: ${dbName}`)
         } catch (createErr: any) {
           // Race condition: another request created the DB between our SELECT and CREATE.
@@ -169,7 +166,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         console.error('[Provision] Schema push failed:', pushErr)
         // Cleanup: drop the half-provisioned database so retries start fresh
         try {
-          await db.$executeRawUnsafe(`DROP DATABASE IF EXISTS "${dbName}"`)
+          await db.$executeRaw`DROP DATABASE IF EXISTS "${dbName}"`
           console.log(`[Provision] Cleaned up failed database: ${dbName}`)
         } catch (dropErr) {
           // Don't mask the original schema push error
@@ -352,18 +349,13 @@ async function seedVenueDefaults(venueDb: PrismaClient, venueName: string): Prom
   // from concurrent provision requests (no unique constraint on name fields).
   const ownerPin = generateSecurePin()
   const pinHash = await hash(ownerPin, 10)
-  const insertResult = await venueDb.$queryRawUnsafe<{ id: string }[]>(
-    `INSERT INTO "Employee" ("id", "locationId", "roleId", "firstName", "lastName", "pin", "isActive", "createdAt", "updatedAt")
-     SELECT gen_random_uuid()::text, $1, $2, 'Owner', 'Admin', $3, true, NOW(), NOW()
+  const insertResult = await venueDb.$queryRaw<{ id: string }[]>`INSERT INTO "Employee" ("id", "locationId", "roleId", "firstName", "lastName", "pin", "isActive", "createdAt", "updatedAt")
+     SELECT gen_random_uuid()::text, ${locationId}, ${createdRoles['Super Admin']}, 'Owner', 'Admin', ${pinHash}, true, NOW(), NOW()
      WHERE NOT EXISTS (
        SELECT 1 FROM "Employee"
-       WHERE "locationId" = $1 AND "roleId" = $2 AND "deletedAt" IS NULL
+       WHERE "locationId" = ${locationId} AND "roleId" = ${createdRoles['Super Admin']} AND "deletedAt" IS NULL
      )
-     RETURNING "id"`,
-    locationId,
-    createdRoles['Super Admin'],
-    pinHash,
-  )
+     RETURNING "id"`
   let owner: { id: string }
   if (insertResult.length > 0) {
     owner = insertResult[0]
@@ -492,18 +484,13 @@ async function seedVenueDefaults(venueDb: PrismaClient, venueName: string): Prom
 
 async function upsertCronVenueRegistry(slug: string, databaseName: string, nucBaseUrl?: string): Promise<void> {
   try {
-    await masterClient.$executeRawUnsafe(
-      `INSERT INTO "_cron_venue_registry" ("slug", "database_name", "is_active", "nuc_base_url", "created_at", "updated_at")
-       VALUES ($1, $2, true, $3, NOW(), NOW())
+    await masterClient.$executeRaw`INSERT INTO "_cron_venue_registry" ("slug", "database_name", "is_active", "nuc_base_url", "created_at", "updated_at")
+       VALUES (${slug}, ${databaseName}, true, ${nucBaseUrl || null}, NOW(), NOW())
        ON CONFLICT ("slug") DO UPDATE
        SET "database_name" = EXCLUDED."database_name",
            "is_active" = true,
            "nuc_base_url" = COALESCE(EXCLUDED."nuc_base_url", "_cron_venue_registry"."nuc_base_url"),
-           "updated_at" = NOW()`,
-      slug,
-      databaseName,
-      nucBaseUrl || null,
-    )
+           "updated_at" = NOW()`
     console.log(`[Provision] Registered venue ${slug} in cron registry${nucBaseUrl ? ` (NUC: ${nucBaseUrl})` : ''}`)
   } catch (err) {
     // Non-fatal: table may not exist yet if migration hasn't run.

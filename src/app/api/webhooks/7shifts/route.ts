@@ -211,7 +211,7 @@ async function triggerSchedulePull(
 
     await db.$transaction(async (tx) => {
       // Advisory lock serializes concurrent webhook calls for the same location
-      await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock($1)`, lockKey)
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${lockKey})`
 
       for (const shift of shifts) {
         const employee = await tx.employee.findFirst({

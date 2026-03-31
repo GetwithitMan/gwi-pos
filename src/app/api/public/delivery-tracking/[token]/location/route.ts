@@ -62,13 +62,13 @@ export const GET = withVenue(async function GET(
     }
 
     // Fetch delivery order by tracking token
-    const rows: any[] = await db.$queryRawUnsafe(`
+    const rows: any[] = await db.$queryRaw`
       SELECT do_."locationId", do_."runId", do_."status",
              do_."latitude" as "customerLat", do_."longitude" as "customerLng"
       FROM "DeliveryOrder" do_
-      WHERE do_."trackingToken" = $1
+      WHERE do_."trackingToken" = ${token}
       LIMIT 1
-    `, token)
+    `
 
     if (!rows.length) {
       return notFound('Not found')
@@ -96,15 +96,15 @@ export const GET = withVenue(async function GET(
     }
 
     // Get the driver session for this run
-    const sessionRows: any[] = await db.$queryRawUnsafe(`
+    const sessionRows: any[] = await db.$queryRaw`
       SELECT ds."lastLocationLat", ds."lastLocationLng", ds."lastLocationAt"
       FROM "DeliveryRun" dr
       JOIN "DeliveryDriverSession" ds ON ds."driverId" = dr."driverId"
-        AND ds."locationId" = $2
+        AND ds."locationId" = ${locationId}
         AND ds."endedAt" IS NULL
-      WHERE dr.id = $1 AND dr."locationId" = $2
+      WHERE dr.id = ${delivery.runId} AND dr."locationId" = ${locationId}
       LIMIT 1
-    `, delivery.runId, locationId)
+    `
 
     if (!sessionRows.length || sessionRows[0].lastLocationLat == null) {
       return ok({ visible: false })
@@ -115,9 +115,9 @@ export const GET = withVenue(async function GET(
     const driverLng = Number(session.lastLocationLng)
 
     // Check hideDriverLocationUntilNearby setting
-    const settingsRows: any[] = await db.$queryRawUnsafe(`
-      SELECT settings FROM "Location" WHERE id = $1 LIMIT 1
-    `, locationId)
+    const settingsRows: any[] = await db.$queryRaw`
+      SELECT settings FROM "Location" WHERE id = ${locationId} LIMIT 1
+    `
 
     if (settingsRows.length) {
       let settings: any = settingsRows[0].settings

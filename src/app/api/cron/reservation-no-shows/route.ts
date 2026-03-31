@@ -83,10 +83,7 @@ export async function GET(request: NextRequest) {
               const depositRules = settings.depositRules
               const shouldForfeit = !depositRules || depositRules.enabled !== false
               if (shouldForfeit) {
-                await tx.$executeRawUnsafe(
-                  `UPDATE "Reservation" SET "depositStatus" = 'forfeited' WHERE id = $1`,
-                  candidate.id
-                )
+                await tx.$executeRaw`UPDATE "Reservation" SET "depositStatus" = 'forfeited' WHERE id = ${candidate.id}`
                 await tx.reservationEvent.create({
                   data: {
                     locationId: location.id,
@@ -101,20 +98,11 @@ export async function GET(request: NextRequest) {
 
             // Increment customer no-show count + blacklist check
             if (candidate.customerId) {
-              await tx.$executeRawUnsafe(
-                `UPDATE "Customer" SET "noShowCount" = COALESCE("noShowCount", 0) + 1 WHERE id = $1`,
-                candidate.customerId
-              )
+              await tx.$executeRaw`UPDATE "Customer" SET "noShowCount" = COALESCE("noShowCount", 0) + 1 WHERE id = ${candidate.customerId}`
 
-              const rows: { noShowCount: number }[] = await tx.$queryRawUnsafe(
-                `SELECT "noShowCount" FROM "Customer" WHERE id = $1`,
-                candidate.customerId
-              )
+              const rows: { noShowCount: number }[] = await tx.$queryRaw`SELECT "noShowCount" FROM "Customer" WHERE id = ${candidate.customerId}`
               if (rows[0] && rows[0].noShowCount >= blacklistThreshold) {
-                await tx.$executeRawUnsafe(
-                  `UPDATE "Customer" SET "isBlacklisted" = true WHERE id = $1`,
-                  candidate.customerId
-                )
+                await tx.$executeRaw`UPDATE "Customer" SET "isBlacklisted" = true WHERE id = ${candidate.customerId}`
                 blacklistedCount++
               }
             }

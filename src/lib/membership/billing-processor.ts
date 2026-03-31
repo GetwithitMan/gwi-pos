@@ -9,6 +9,10 @@
  *   4. Charge via PayAPI with recurring data chain
  *   5. Atomically write charge + update membership + emit event
  *   6. Release leases
+ *
+ * NOTE: Uses $queryRawUnsafe/$executeRawUnsafe because Membership, MembershipCharge,
+ * and MembershipBillingCycle are raw SQL tables (not Prisma-managed).
+ * All queries use positional $1/$2 params — safe from injection.
  */
 import { getPayApiClient, PayApiError } from '@/lib/datacap/payapi-client'
 import type { PayApiResponse } from '@/lib/datacap/payapi-client'

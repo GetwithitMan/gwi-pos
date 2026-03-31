@@ -71,17 +71,14 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       paramIndex++
     }
 
-    const rules: any[] = await db.$queryRawUnsafe(
-      `SELECT r.*,
+    const rules: any[] = await db.$queryRaw`SELECT r.*,
               p.name as "providerName", p."providerType",
               fp.name as "fallbackProviderName"
        FROM "NotificationRoutingRule" r
        LEFT JOIN "NotificationProvider" p ON p.id = r."providerId" AND p."deletedAt" IS NULL
        LEFT JOIN "NotificationProvider" fp ON fp.id = r."fallbackProviderId" AND fp."deletedAt" IS NULL
        WHERE ${conditions.join(' AND ')}
-       ORDER BY r."eventType" ASC, r.priority DESC, r."createdAt" ASC`,
-      ...params
-    )
+       ORDER BY r."eventType" ASC, r.priority DESC, r."createdAt" ASC`
 
     return ok(rules)
   } catch (error) {
@@ -154,12 +151,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Validate provider exists and check capability compatibility
-    const providers: any[] = await db.$queryRawUnsafe(
-      `SELECT id, capabilities, "providerType" FROM "NotificationProvider"
-       WHERE id = $1 AND "locationId" = $2 AND "isActive" = true AND "deletedAt" IS NULL`,
-      providerId,
-      locationId
-    )
+    const providers: any[] = await db.$queryRaw`SELECT id, capabilities, "providerType" FROM "NotificationProvider"
+       WHERE id = ${providerId} AND "locationId" = ${locationId} AND "isActive" = true AND "deletedAt" IS NULL`
     if (providers.length === 0) {
       return notFound('Provider not found or inactive')
     }
@@ -185,12 +178,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Validate fallback provider if specified
     if (fallbackProviderId) {
-      const fallback: any[] = await db.$queryRawUnsafe(
-        `SELECT id FROM "NotificationProvider"
-         WHERE id = $1 AND "locationId" = $2 AND "isActive" = true AND "deletedAt" IS NULL`,
-        fallbackProviderId,
-        locationId
-      )
+      const fallback: any[] = await db.$queryRaw`SELECT id FROM "NotificationProvider"
+         WHERE id = ${fallbackProviderId} AND "locationId" = ${locationId} AND "isActive" = true AND "deletedAt" IS NULL`
       if (fallback.length === 0) {
         return notFound('Fallback provider not found or inactive')
       }
@@ -204,8 +193,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Create the rule
-    const inserted: any[] = await db.$queryRawUnsafe(
-      `INSERT INTO "NotificationRoutingRule" (
+    const inserted: any[] = await db.$queryRaw`INSERT INTO "NotificationRoutingRule" (
         id, "locationId", "eventType", "providerId", "targetType",
         enabled, priority, "messageTemplateId",
         "condFulfillmentMode", "condHasPager", "condHasPhone", "condMinPartySize",
@@ -216,44 +204,17 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         "criticalityClass", "effectiveStartAt", "effectiveEndAt",
         "createdAt", "updatedAt"
       ) VALUES (
-        gen_random_uuid()::text, $1, $2, $3, $4,
-        $5, $6, $7,
-        $8, $9, $10, $11,
-        $12, $13,
-        $14, $15, $16, $17,
-        $18, $19, $20,
-        $21, $22, $23,
-        $24, $25, $26,
+        gen_random_uuid()::text, ${locationId}, ${eventType}, ${providerId}, ${targetType},
+        ${enabled}, ${priority}, ${messageTemplateId || null},
+        ${condFulfillmentMode || null}, ${condHasPager ?? null}, ${condHasPhone ?? null}, ${condMinPartySize ?? null},
+        ${condOrderTypes || null}, ${condDuringBusinessHours ?? null},
+        ${retryMaxAttempts}, ${retryDelayMs}, ${retryBackoffMultiplier}, ${retryOnTimeout},
+        ${fallbackProviderId || null}, ${escalateToStaff}, ${alsoEmitDisplayProjection},
+        ${stopProcessingAfterMatch}, ${cooldownSeconds}, ${allowManualOverride},
+        ${criticalityClass}, ${effectiveStartAt ? new Date(effectiveStartAt) : null}, ${effectiveEndAt ? new Date(effectiveEndAt) : null},
         CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
       )
-      RETURNING *`,
-      locationId,
-      eventType,
-      providerId,
-      targetType,
-      enabled,
-      priority,
-      messageTemplateId || null,
-      condFulfillmentMode || null,
-      condHasPager ?? null,
-      condHasPhone ?? null,
-      condMinPartySize ?? null,
-      condOrderTypes || null,
-      condDuringBusinessHours ?? null,
-      retryMaxAttempts,
-      retryDelayMs,
-      retryBackoffMultiplier,
-      retryOnTimeout,
-      fallbackProviderId || null,
-      escalateToStaff,
-      alsoEmitDisplayProjection,
-      stopProcessingAfterMatch,
-      cooldownSeconds,
-      allowManualOverride,
-      criticalityClass,
-      effectiveStartAt ? new Date(effectiveStartAt) : null,
-      effectiveEndAt ? new Date(effectiveEndAt) : null
-    )
+      RETURNING *`
 
     const rule = inserted[0]
 

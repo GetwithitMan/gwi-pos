@@ -5,7 +5,7 @@
  * Items without table assignments stay on the parent.
  */
 
-import { OrderItemStatus } from '@/generated/prisma/client'
+import { Prisma, OrderItemStatus } from '@/generated/prisma/client'
 import { calculateSplitTax } from '@/lib/order-calculations'
 import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
 import { distributeDiscountsProportionally } from './discount-distribution'
@@ -34,7 +34,7 @@ export async function createTableSplit(
   tableNameMap: Map<string, string>,
   inclusiveTaxRate?: number,
 ): Promise<TableSplitResult> {
-  await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', order.id)
+  await tx.$queryRaw(Prisma.sql`SELECT id FROM "Order" WHERE id = ${order.id} FOR UPDATE`)
 
   // Tax-exempt + donation fields from parent (available on the Prisma object even if not in SplitSourceOrder type)
   const parentAny = order as any

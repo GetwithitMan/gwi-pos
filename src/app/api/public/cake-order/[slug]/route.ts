@@ -105,13 +105,9 @@ export async function POST(
     const locationId = location.id
 
     // ── submissionToken idempotency check ──────────────────────────────
-    const existingOrder = await venueDb.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT "id", "orderNumber" FROM "CakeOrder"
-       WHERE "locationId" = $1 AND "submissionToken" = $2 AND "deletedAt" IS NULL
-       LIMIT 1`,
-      locationId,
-      input.submissionToken,
-    )
+    const existingOrder = await venueDb.$queryRaw<Array<Record<string, unknown>>>`SELECT "id", "orderNumber" FROM "CakeOrder"
+       WHERE "locationId" = ${locationId} AND "submissionToken" = ${input.submissionToken} AND "deletedAt" IS NULL
+       LIMIT 1`
 
     if (existingOrder.length > 0) {
       return ok({
@@ -138,21 +134,13 @@ export async function POST(
 
     // ── Validate daily capacity ────────────────────────────────────────
     // Advisory lock on locationId:eventDate to serialize capacity check
-    await venueDb.$executeRawUnsafe(
-      `SELECT pg_advisory_xact_lock(hashtext($1 || ':' || $2))`,
-      locationId,
-      input.eventDate,
-    )
+    await venueDb.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${locationId} || ':' || ${input.eventDate}))`
 
-    const capacityRows = await venueDb.$queryRawUnsafe<[{ count: bigint }]>(
-      `SELECT COUNT(*) AS count FROM "CakeOrder"
-       WHERE "locationId" = $1
-         AND "eventDate" = $2::date
+    const capacityRows = await venueDb.$queryRaw<[{ count: bigint }]>`SELECT COUNT(*) AS count FROM "CakeOrder"
+       WHERE "locationId" = ${locationId}
+         AND "eventDate" = ${input.eventDate}::date
          AND "status" NOT IN ('cancelled', 'draft')
-         AND "deletedAt" IS NULL`,
-      locationId,
-      input.eventDate,
-    )
+         AND "deletedAt" IS NULL`
     const currentCount = Number(capacityRows[0]?.count ?? 0)
 
     if (currentCount >= cakeSettings.maxCapacityPerDay) {
@@ -170,13 +158,9 @@ export async function POST(
     let customerId: string | null = null
 
     if (normalizedPhone) {
-      const existingCustomer = await venueDb.$queryRawUnsafe<Array<Record<string, unknown>>>(
-        `SELECT "id" FROM "Customer"
-         WHERE "locationId" = $1 AND "phone" = $2 AND "deletedAt" IS NULL
-         LIMIT 1`,
-        locationId,
-        normalizedPhone,
-      )
+      const existingCustomer = await venueDb.$queryRaw<Array<Record<string, unknown>>>`SELECT "id" FROM "Customer"
+         WHERE "locationId" = ${locationId} AND "phone" = ${normalizedPhone} AND "deletedAt" IS NULL
+         LIMIT 1`
 
       if (existingCustomer.length > 0) {
         customerId = existingCustomer[0].id as string
@@ -185,35 +169,23 @@ export async function POST(
 
     if (!customerId) {
       customerId = crypto.randomUUID()
-      await venueDb.$executeRawUnsafe(
-        `INSERT INTO "Customer" (
+      await venueDb.$executeRaw`INSERT INTO "Customer" (
           "id", "locationId", "firstName", "lastName", "phone", "email",
           "createdAt", "updatedAt"
-        ) VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())`,
-        customerId,
-        locationId,
-        input.customerFirstName,
-        input.customerLastName,
-        normalizedPhone || input.customerPhone,
-        input.customerEmail || null,
-      )
+        ) VALUES (${customerId}, ${locationId}, ${input.customerFirstName}, ${input.customerLastName}, ${normalizedPhone || input.customerPhone}, ${input.customerEmail || null}, NOW(), NOW())`
     }
 
     // ── Generate orderNumber with advisory lock ────────────────────────
-    const orderNumberRows = await venueDb.$queryRawUnsafe<[{ nextval: string | number }]>(
-      `SELECT pg_advisory_xact_lock(hashtext($1::text));
+    const orderNumberRows = await venueDb.$queryRaw<[{ nextval: string | number }]>`SELECT pg_advisory_xact_lock(hashtext(${locationId}::text));
        SELECT COALESCE(MAX("orderNumber"), 0) + 1 AS nextval
        FROM "CakeOrder"
-       WHERE "locationId" = $1`,
-      locationId,
-    )
+       WHERE "locationId" = ${locationId}`
     const orderNumber = Number(orderNumberRows[0]?.nextval ?? 1)
 
     // ── INSERT CakeOrder ───────────────────────────────────────────────
     const orderId = crypto.randomUUID()
 
-    await venueDb.$executeRawUnsafe(
-      `INSERT INTO "CakeOrder" (
+    await venueDb.$executeRaw`INSERT INTO "CakeOrder" (
         "id", "locationId", "orderNumber", "customerId", "submissionToken",
         "eventDate", "eventTimeStart", "eventTimeEnd", "eventType", "guestCount",
         "deliveryType", "deliveryAddress",
@@ -222,54 +194,32 @@ export async function POST(
         "status", "source",
         "submittedAt", "createdAt", "updatedAt"
       ) VALUES (
-        $1, $2, $3, $4, $5,
-        $6::date, $7, $8, $9, $10,
-        $11, $12,
-        $13::jsonb, $14::jsonb, $15::jsonb,
-        $16, $17,
+        ${orderId}, ${locationId}, ${orderNumber}, ${customerId}, ${input.submissionToken},
+        ${input.eventDate}::date, ${input.eventTimeStart || null}, ${input.eventTimeEnd || null}, ${input.eventType}, ${input.guestCount ?? null},
+        ${input.deliveryType}, ${input.deliveryAddress || null},
+        ${JSON.stringify(input.cakeConfig)}::jsonb, ${JSON.stringify(input.designConfig)}::jsonb, ${JSON.stringify(input.dietaryConfig)}::jsonb,
+        ${input.notes || null}, ${input.preferredContactMethod || null},
         'submitted', 'public_form',
         NOW(), NOW(), NOW()
-      )`,
-      orderId,
-      locationId,
-      orderNumber,
-      customerId,
-      input.submissionToken,
-      input.eventDate,
-      input.eventTimeStart || null,
-      input.eventTimeEnd || null,
-      input.eventType,
-      input.guestCount ?? null,
-      input.deliveryType,
-      input.deliveryAddress || null,
-      JSON.stringify(input.cakeConfig),
-      JSON.stringify(input.designConfig),
-      JSON.stringify(input.dietaryConfig),
-      input.notes || null,
-      input.preferredContactMethod || null,
-    )
+      )`
 
     // ── INSERT CakeOrderChange (audit trail) ───────────────────────────
     const changeId = crypto.randomUUID()
-    await venueDb.$executeRawUnsafe(
-      `INSERT INTO "CakeOrderChange" (
+    const changeDetails = JSON.stringify({
+      previousStatus: null,
+      newStatus: 'submitted',
+      trigger: 'public_form_submission',
+      customerName: `${input.customerFirstName} ${input.customerLastName}`,
+      eventDate: input.eventDate,
+      eventType: input.eventType,
+    })
+    await venueDb.$executeRaw`INSERT INTO "CakeOrderChange" (
         "id", "cakeOrderId", "changeType", "changedBy", "source",
         "details", "createdAt"
       ) VALUES (
-        $1, $2, 'status_change', NULL, 'public_form',
-        $3::jsonb, NOW()
-      )`,
-      changeId,
-      orderId,
-      JSON.stringify({
-        previousStatus: null,
-        newStatus: 'submitted',
-        trigger: 'public_form_submission',
-        customerName: `${input.customerFirstName} ${input.customerLastName}`,
-        eventDate: input.eventDate,
-        eventType: input.eventType,
-      }),
-    )
+        ${changeId}, ${orderId}, 'status_change', NULL, 'public_form',
+        ${changeDetails}::jsonb, NOW()
+      )`
 
     // ── Fire-and-forget SMS confirmation ───────────────────────────────
     void (async () => {

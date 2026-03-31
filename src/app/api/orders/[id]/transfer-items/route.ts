@@ -141,8 +141,8 @@ export const POST = withVenue(async function POST(
     await db.$transaction(async (tx) => {
       // Row-level lock on BOTH orders in ID-sorted order to prevent deadlocks
       const [firstId, secondId] = [fromOrderId, toOrderId].sort()
-      await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', firstId)
-      await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', secondId)
+      await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${firstId} FOR UPDATE`
+      await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${secondId} FOR UPDATE`
 
       // TX-KEEP: RELATION — move items to destination order; orderId is a relation FK not in OrderItemUpdateManyMutationInput
       await tx.orderItem.updateMany({

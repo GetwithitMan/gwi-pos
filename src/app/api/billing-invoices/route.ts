@@ -26,18 +26,14 @@ async function generateInvoiceNumber(locationId: string): Promise<string> {
 
   // Atomic increment: UPDATE ... RETURNING prevents two concurrent requests
   // from reading the same nextInvoiceNumber.
-  const rows = await db.$queryRawUnsafe<{ next: number }[]>(
-    `UPDATE "Location"
+  const rows = await db.$queryRaw<{ next: number }[]>`UPDATE "Location"
      SET settings = jsonb_set(
        COALESCE(settings, '{}'),
        '{invoicing,nextInvoiceNumber}',
-       to_jsonb(COALESCE((settings->'invoicing'->>'nextInvoiceNumber')::int, $2) + 1)
+       to_jsonb(COALESCE((settings->'invoicing'->>'nextInvoiceNumber')::int, ${defaultStart}) + 1)
      )
-     WHERE id = $1
-     RETURNING COALESCE((settings->'invoicing'->>'nextInvoiceNumber')::int, $2 + 1) - 1 AS next`,
-    locationId,
-    defaultStart
-  )
+     WHERE id = ${locationId}
+     RETURNING COALESCE((settings->'invoicing'->>'nextInvoiceNumber')::int, ${defaultStart} + 1) - 1 AS next`
 
   const nextNum = rows[0]?.next ?? defaultStart
 

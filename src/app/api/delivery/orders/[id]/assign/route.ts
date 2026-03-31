@@ -57,10 +57,7 @@ export const PATCH = withVenue(async function PATCH(
     }
 
     // Validate the delivery order exists
-    const orders: any[] = await db.$queryRawUnsafe(
-      `SELECT * FROM "DeliveryOrder" WHERE id = $1 AND "locationId" = $2`,
-      id, locationId,
-    )
+    const orders: any[] = await db.$queryRaw`SELECT * FROM "DeliveryOrder" WHERE id = ${id} AND "locationId" = ${locationId}`
 
     if (!orders.length) {
       return notFound('Delivery order not found')
@@ -69,14 +66,11 @@ export const PATCH = withVenue(async function PATCH(
     const order = orders[0]
 
     // Validate the driver exists and is not suspended
-    const driverRows: any[] = await db.$queryRawUnsafe(
-      `SELECT dd.*, e."firstName" as "driverFirstName", e."lastName" as "driverLastName"
+    const driverRows: any[] = await db.$queryRaw`SELECT dd.*, e."firstName" as "driverFirstName", e."lastName" as "driverLastName"
        FROM "DeliveryDriver" dd
        LEFT JOIN "Employee" e ON e.id = dd."employeeId"
-       WHERE dd.id = $1 AND dd."locationId" = $2 AND dd."deletedAt" IS NULL
-       FOR UPDATE`,
-      driverId, locationId,
-    )
+       WHERE dd.id = ${driverId} AND dd."locationId" = ${locationId} AND dd."deletedAt" IS NULL
+       FOR UPDATE`
 
     if (!driverRows.length) {
       return notFound('Driver not found')
@@ -94,31 +88,22 @@ export const PATCH = withVenue(async function PATCH(
     const deliveryConfig = settings.delivery ?? DEFAULT_DELIVERY
     const policy = deliveryConfig.dispatchPolicy
 
-    const loc = await db.$queryRawUnsafe<{ timezone: string }[]>(
-      'SELECT "timezone" FROM "Location" WHERE "id" = $1',
-      locationId,
-    )
+    const loc = await db.$queryRaw<{ timezone: string }[]>`SELECT "timezone" FROM "Location" WHERE "id" = ${locationId}`
     const timezone = loc[0]?.timezone ?? 'America/New_York'
     const maxPerDriver = getMaxOrdersPerDriver(policy, deliveryConfig.peakHours ?? [], timezone)
 
-    const activeCount: any[] = await db.$queryRawUnsafe(
-      `SELECT COUNT(*)::int as count FROM "DeliveryOrder"
-       WHERE "driverId" = $1 AND "locationId" = $2
+    const activeCount: any[] = await db.$queryRaw`SELECT COUNT(*)::int as count FROM "DeliveryOrder"
+       WHERE "driverId" = ${driverId} AND "locationId" = ${locationId}
          AND status NOT IN ('delivered', 'cancelled_before_dispatch', 'cancelled_after_dispatch', 'failed_delivery', 'returned_to_store')
-         AND id != $3`,
-      driverId, locationId, id,
-    )
+         AND id != ${id}`
     const currentDriverOrders = activeCount[0]?.count ?? 0
     if (currentDriverOrders >= maxPerDriver) {
       return err(`Driver at capacity (${currentDriverOrders}/${maxPerDriver} active orders)`, 409)
     }
 
     // Set driverId on the delivery order
-    await db.$queryRawUnsafe(
-      `UPDATE "DeliveryOrder" SET "driverId" = $1, "updatedAt" = CURRENT_TIMESTAMP
-       WHERE id = $2 AND "locationId" = $3`,
-      driverId, id, locationId,
-    )
+    await db.$queryRaw`UPDATE "DeliveryOrder" SET "driverId" = ${driverId}, "updatedAt" = CURRENT_TIMESTAMP
+       WHERE id = ${id} AND "locationId" = ${locationId}`
 
     // Advance status to "assigned" via state machine (validates transition, sets timestamps, audit, socket)
     const result = await advanceDeliveryStatus({

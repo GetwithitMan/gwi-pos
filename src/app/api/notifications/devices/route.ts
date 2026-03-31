@@ -84,8 +84,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     const whereClause = conditions.join(' AND ')
 
-    const devices: any[] = await db.$queryRawUnsafe(
-      `SELECT d.id, d."deviceNumber", d."humanLabel", d."deviceType", d.status,
+    const devices: any[] = await db.$queryRaw`SELECT d.id, d."deviceNumber", d."humanLabel", d."deviceType", d.status,
               d."providerId", d."assignedToSubjectType", d."assignedToSubjectId",
               d."assignedAt", d."releasedAt", d."returnedAt",
               d."batteryLevel", d."lastSeenAt", d."lastSignalState",
@@ -95,9 +94,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
        FROM "NotificationDevice" d
        LEFT JOIN "NotificationProvider" p ON p.id = d."providerId" AND p."deletedAt" IS NULL
        WHERE ${whereClause}
-       ORDER BY d."deviceNumber"::int ASC NULLS LAST, d."deviceNumber" ASC`,
-      ...params
-    )
+       ORDER BY d."deviceNumber"::int ASC NULLS LAST, d."deviceNumber" ASC`
 
     // Enrich assigned devices with subject info
     const enriched = await Promise.all(
@@ -106,11 +103,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         if (device.status === 'assigned' && device.assignedToSubjectType && device.assignedToSubjectId) {
           try {
             if (device.assignedToSubjectType === 'order') {
-              const orders: any[] = await db.$queryRawUnsafe(
-                `SELECT "orderNumber", "tabName", status FROM "Order" WHERE id = $1 AND "locationId" = $2`,
-                device.assignedToSubjectId,
-                locationId
-              )
+              const orders: any[] = await db.$queryRaw`SELECT "orderNumber", "tabName", status FROM "Order" WHERE id = ${device.assignedToSubjectId} AND "locationId" = ${locationId}`
               if (orders[0]) {
                 subjectInfo = {
                   type: 'order',
@@ -120,11 +113,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
                 }
               }
             } else if (device.assignedToSubjectType === 'waitlist_entry') {
-              const entries: any[] = await db.$queryRawUnsafe(
-                `SELECT "customerName", "partySize", status FROM "WaitlistEntry" WHERE id = $1 AND "locationId" = $2`,
-                device.assignedToSubjectId,
-                locationId
-              )
+              const entries: any[] = await db.$queryRaw`SELECT "customerName", "partySize", status FROM "WaitlistEntry" WHERE id = ${device.assignedToSubjectId} AND "locationId" = ${locationId}`
               if (entries[0]) {
                 subjectInfo = {
                   type: 'waitlist_entry',
@@ -143,13 +132,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     )
 
     // Summary counts
-    const countResult: any[] = await db.$queryRawUnsafe(
-      `SELECT status, COUNT(*)::int as count
+    const countResult: any[] = await db.$queryRaw`SELECT status, COUNT(*)::int as count
        FROM "NotificationDevice"
-       WHERE "locationId" = $1 AND "deletedAt" IS NULL
-       GROUP BY status`,
-      locationId
-    )
+       WHERE "locationId" = ${locationId} AND "deletedAt" IS NULL
+       GROUP BY status`
 
     const counts: Record<string, number> = {}
     for (const row of countResult) {
@@ -212,61 +198,38 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Validate provider exists and is active
-    const providers: any[] = await db.$queryRawUnsafe(
-      `SELECT id, "providerType", name FROM "NotificationProvider"
-       WHERE id = $1 AND "locationId" = $2 AND "isActive" = true AND "deletedAt" IS NULL`,
-      providerId,
-      locationId
-    )
+    const providers: any[] = await db.$queryRaw`SELECT id, "providerType", name FROM "NotificationProvider"
+       WHERE id = ${providerId} AND "locationId" = ${locationId} AND "isActive" = true AND "deletedAt" IS NULL`
     if (providers.length === 0) {
       return notFound('Provider not found or inactive')
     }
 
     // Check for duplicate device number (active, non-retired/disabled)
-    const existing: any[] = await db.$queryRawUnsafe(
-      `SELECT id FROM "NotificationDevice"
-       WHERE "locationId" = $1
-         AND "deviceNumber" = $2
+    const existing: any[] = await db.$queryRaw`SELECT id FROM "NotificationDevice"
+       WHERE "locationId" = ${locationId}
+         AND "deviceNumber" = ${deviceNumber.trim()}
          AND "deletedAt" IS NULL
-         AND status NOT IN ('retired', 'disabled')`,
-      locationId,
-      deviceNumber.trim()
-    )
+         AND status NOT IN ('retired', 'disabled')`
     if (existing.length > 0) {
       return err(`Device number ${deviceNumber} already exists and is active`, 409)
     }
 
     // Create the device
-    const inserted: any[] = await db.$queryRawUnsafe(
-      `INSERT INTO "NotificationDevice" (
+    const inserted: any[] = await db.$queryRaw`INSERT INTO "NotificationDevice" (
         id, "locationId", "providerId", "deviceNumber", "humanLabel", "deviceType",
         status, capcode, metadata, "createdAt", "updatedAt"
       ) VALUES (
-        gen_random_uuid()::text, $1, $2, $3, $4, $5,
-        'available', $6, $7::jsonb, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        gen_random_uuid()::text, ${locationId}, ${providerId}, ${deviceNumber.trim()}, ${humanLabel?.trim() || null}, ${deviceType},
+        'available', ${capcode?.trim() || null}, ${metadata ? JSON.stringify(metadata) : null}::jsonb, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
       )
       RETURNING id, "deviceNumber", "humanLabel", "deviceType", status, "providerId",
-                capcode, metadata, "createdAt"`,
-      locationId,
-      providerId,
-      deviceNumber.trim(),
-      humanLabel?.trim() || null,
-      deviceType,
-      capcode?.trim() || null,
-      metadata ? JSON.stringify(metadata) : null
-    )
+                capcode, metadata, "createdAt"`
 
     const device = inserted[0]
 
     // Log creation event
-    void db.$executeRawUnsafe(
-      `INSERT INTO "NotificationDeviceEvent" (id, "deviceId", "locationId", "eventType", "employeeId", metadata, "createdAt")
-       VALUES (gen_random_uuid()::text, $1, $2, 'created', $3, $4::jsonb, CURRENT_TIMESTAMP)`,
-      device.id,
-      locationId,
-      auth.employee.id,
-      JSON.stringify({ deviceNumber: device.deviceNumber, deviceType, providerId })
-    ).catch(err => log.warn({ err }, 'Background task failed'))
+    void db.$executeRaw`INSERT INTO "NotificationDeviceEvent" (id, "deviceId", "locationId", "eventType", "employeeId", metadata, "createdAt")
+       VALUES (gen_random_uuid()::text, ${device.id}, ${locationId}, 'created', ${auth.employee.id}, ${JSON.stringify({ deviceNumber: device.deviceNumber, deviceType, providerId })}::jsonb, CURRENT_TIMESTAMP)`.catch(err => log.warn({ err }, 'Background task failed'))
 
     // W13: AuditLog for device creation
     void db.auditLog.create({

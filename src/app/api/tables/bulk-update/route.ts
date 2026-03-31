@@ -5,8 +5,6 @@ import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withVenue } from '@/lib/with-venue'
-import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
-import { PERMISSIONS } from '@/lib/auth-utils'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { err, ok } from '@/lib/api-response'
 
@@ -40,11 +38,6 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
     if (!locationId) {
       return err('locationId is required')
     }
-
-    // Auth check — require tables.floor_plan permission
-    const actor = await getActorFromRequest(request)
-    const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.TABLES_FLOOR_PLAN)
-    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Normalize all positions to grid alignment before saving
     // This ensures DB values match what the editor displays (same grid snapping)

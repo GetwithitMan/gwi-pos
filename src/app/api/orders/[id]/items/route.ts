@@ -641,6 +641,7 @@ export const POST = withVenue(async function POST(
           }
           params.push(...ids)
           const idPlaceholders = ids.map((_, i) => `$${updates.length * 2 + i + 1}`).join(', ')
+          // eslint-disable-next-line -- dynamic CASE clauses + spread params require $executeRawUnsafe; all values are parameterized
           await db.$executeRawUnsafe(
             `UPDATE "OrderItem" SET "costAtSale" = CASE ${caseClauses} END, "updatedAt" = NOW() WHERE id IN (${idPlaceholders})`,
             ...params

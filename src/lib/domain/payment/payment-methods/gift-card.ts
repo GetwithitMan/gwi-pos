@@ -4,6 +4,7 @@
  * Handles balance check, row lock, deduction, and transaction record creation.
  */
 
+import { Prisma } from '@/generated/prisma/client'
 import type { TxClient, PaymentInput, PaymentRecord } from '../types'
 
 interface GiftCardPaymentResult {
@@ -54,9 +55,8 @@ export async function processGiftCardPayment(
   }
 
   // C3: Acquire row lock on gift card to prevent balance race condition.
-  await tx.$queryRawUnsafe(
-    `SELECT id FROM "GiftCard" WHERE id = $1 FOR UPDATE`,
-    giftCard.id,
+  await tx.$queryRaw(
+    Prisma.sql`SELECT id FROM "GiftCard" WHERE id = ${giftCard.id} FOR UPDATE`,
   )
   // Re-read with fresh balance after acquiring lock
   const freshGiftCard = await tx.giftCard.findUniqueOrThrow({ where: { id: giftCard.id } })

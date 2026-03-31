@@ -38,13 +38,9 @@ export const PATCH = withVenue(async function PATCH(
     if (gate) return gate
 
     // ── Verify block exists ───────────────────────────────────────────
-    const existing = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT * FROM "CakeCalendarBlock"
-       WHERE "id" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
-       LIMIT 1`,
-      blockId,
-      locationId,
-    )
+    const existing = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT * FROM "CakeCalendarBlock"
+       WHERE "id" = ${blockId} AND "locationId" = ${locationId} AND "deletedAt" IS NULL
+       LIMIT 1`
 
     if (existing.length === 0) {
       return notFound('Calendar block not found')
@@ -88,11 +84,7 @@ export const PATCH = withVenue(async function PATCH(
 
     if (body.cakeOrderId !== undefined) {
       if (body.cakeOrderId) {
-        const orderExists = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-          `SELECT "id" FROM "CakeOrder" WHERE "id" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL LIMIT 1`,
-          body.cakeOrderId,
-          locationId,
-        )
+        const orderExists = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT "id" FROM "CakeOrder" WHERE "id" = ${body.cakeOrderId} AND "locationId" = ${locationId} AND "deletedAt" IS NULL LIMIT 1`
         if (orderExists.length === 0) {
           return notFound('Referenced cake order not found')
         }
@@ -104,10 +96,7 @@ export const PATCH = withVenue(async function PATCH(
 
     if (body.employeeId !== undefined) {
       if (body.employeeId) {
-        const empExists = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-          `SELECT "id" FROM "Employee" WHERE "id" = $1 LIMIT 1`,
-          body.employeeId,
-        )
+        const empExists = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT "id" FROM "Employee" WHERE "id" = ${body.employeeId} LIMIT 1`
         if (empExists.length === 0) {
           return notFound('Referenced employee not found')
         }
@@ -138,6 +127,7 @@ export const PATCH = withVenue(async function PATCH(
     }
 
     // ── Execute UPDATE ────────────────────────────────────────────────
+    // eslint-disable-next-line -- dynamic SET clauses require $executeRawUnsafe; all values are parameterized ($1, $2, ...)
     await db.$executeRawUnsafe(
       `UPDATE "CakeCalendarBlock"
        SET ${setClauses.join(', ')}
@@ -148,10 +138,7 @@ export const PATCH = withVenue(async function PATCH(
     )
 
     // ── Fetch and return updated block ────────────────────────────────
-    const updated = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT * FROM "CakeCalendarBlock" WHERE "id" = $1`,
-      blockId,
-    )
+    const updated = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT * FROM "CakeCalendarBlock" WHERE "id" = ${blockId}`
 
     return ok(updated[0])
   } catch (error) {
@@ -191,26 +178,18 @@ export const DELETE = withVenue(async function DELETE(
     if (gateDelete) return gateDelete
 
     // ── Verify block exists ───────────────────────────────────────────
-    const existing = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT "id" FROM "CakeCalendarBlock"
-       WHERE "id" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
-       LIMIT 1`,
-      blockId,
-      locationId,
-    )
+    const existing = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT "id" FROM "CakeCalendarBlock"
+       WHERE "id" = ${blockId} AND "locationId" = ${locationId} AND "deletedAt" IS NULL
+       LIMIT 1`
 
     if (existing.length === 0) {
       return notFound('Calendar block not found')
     }
 
     // ── Soft delete ───────────────────────────────────────────────────
-    await db.$executeRawUnsafe(
-      `UPDATE "CakeCalendarBlock"
+    await db.$executeRaw`UPDATE "CakeCalendarBlock"
        SET "deletedAt" = NOW(), "updatedAt" = NOW()
-       WHERE "id" = $1 AND "locationId" = $2`,
-      blockId,
-      locationId,
-    )
+       WHERE "id" = ${blockId} AND "locationId" = ${locationId}`
 
     return ok({ id: blockId, deleted: true })
   } catch (error) {

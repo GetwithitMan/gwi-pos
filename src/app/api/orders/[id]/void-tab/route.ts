@@ -38,7 +38,7 @@ export const POST = withVenue(async function POST(
 
     // Phase 1: Read order under FOR UPDATE lock to prevent double-void races
     const lockedRead = await db.$transaction(async (tx) => {
-      await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', orderId)
+      await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${orderId} FOR UPDATE`
 
       const order = await tx.order.findFirst({
         where: { id: orderId, deletedAt: null },
@@ -112,7 +112,7 @@ export const POST = withVenue(async function POST(
 
     // Phase 2: Update order + audit log atomically under FOR UPDATE lock
     await db.$transaction(async (tx) => {
-      await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', orderId)
+      await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${orderId} FOR UPDATE`
 
       // Re-check status inside lock (may have changed since Phase 1)
       const freshOrder = await tx.order.findFirst({

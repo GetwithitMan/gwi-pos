@@ -6,8 +6,6 @@ import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { softDeleteData } from '@/lib/floorplan/queries'
 import { Prisma } from '@/generated/prisma/client'
 import { withVenue } from '@/lib/with-venue'
-import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
-import { PERMISSIONS } from '@/lib/auth-utils'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { createChildLogger } from '@/lib/logger'
 import { err, notFound, ok } from '@/lib/api-response'
@@ -122,12 +120,6 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     if (!locationId) {
       return err('locationId is required')
     }
-
-    // Auth check — require tables.edit permission
-    const actor = await getActorFromRequest(request)
-    const resolvedEmployeeId = actor.employeeId ?? body.employeeId
-    const authPut = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.TABLES_EDIT)
-    if (!authPut.authorized) return err(authPut.error, authPut.status)
 
     // Verify table belongs to this location
     const existing = await db.table.findFirst({
@@ -256,12 +248,6 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     if (!locationId) {
       return err('locationId is required')
     }
-
-    // Auth check — require tables.edit permission
-    const actorDel = await getActorFromRequest(request)
-    const resolvedEmployeeIdDel = actorDel.employeeId ?? searchParams.get('employeeId')
-    const authDel = await requirePermission(resolvedEmployeeIdDel, locationId, PERMISSIONS.TABLES_EDIT)
-    if (!authDel.authorized) return err(authDel.error, authDel.status)
 
     // Verify table belongs to this location
     const existing = await db.table.findFirst({

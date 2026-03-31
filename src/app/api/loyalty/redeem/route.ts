@@ -42,14 +42,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // concurrent earn+redeem from corrupting the balance via read-then-write race.
     const result = await db.$transaction(async (tx) => {
       // Lock the Customer row to serialize concurrent loyalty operations
-      const customers = await tx.$queryRawUnsafe<Array<Record<string, unknown>>>(
-        `SELECT "id", "loyaltyPoints", "loyaltyProgramId"
+      const customers = await tx.$queryRaw<Array<Record<string, unknown>>>`SELECT "id", "loyaltyPoints", "loyaltyProgramId"
          FROM "Customer"
-         WHERE "id" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
-         FOR UPDATE`,
-        customerId,
-        locationId,
-      )
+         WHERE "id" = ${customerId} AND "locationId" = ${locationId} AND "deletedAt" IS NULL
+         FOR UPDATE`
 
       if (customers.length === 0) {
         return { error: 'Customer not found', status: 404 } as const
@@ -63,12 +59,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }
 
       // Fetch program for minimum redeem check and point value (scoped to location)
-      const programs = await tx.$queryRawUnsafe<Array<Record<string, unknown>>>(
-        `SELECT * FROM "LoyaltyProgram"
-         WHERE "id" = $1 AND "locationId" = $2 AND "isActive" = true AND "deletedAt" IS NULL`,
-        customer.loyaltyProgramId,
-        locationId,
-      )
+      const programs = await tx.$queryRaw<Array<Record<string, unknown>>>`SELECT * FROM "LoyaltyProgram"
+         WHERE "id" = ${customer.loyaltyProgramId} AND "locationId" = ${locationId} AND "isActive" = true AND "deletedAt" IS NULL`
 
       if (programs.length === 0) {
         return { error: 'Loyalty program is not active', status: 400 } as const
@@ -98,39 +90,22 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       // Create transaction record
       const txnId = crypto.randomUUID()
 
-      await tx.$executeRawUnsafe(
-        `INSERT INTO "LoyaltyTransaction" (
+      const description = `Redeemed ${points} points for $${dollarValue.toFixed(2)} discount`
+      const metadata = JSON.stringify({ dollarValue, pointValueCents })
+      await tx.$executeRaw`INSERT INTO "LoyaltyTransaction" (
           "id", "customerId", "locationId", "orderId", "type", "points",
           "balanceBefore", "balanceAfter", "description", "employeeId",
           "metadata", "createdAt"
-        ) VALUES ($1, $2, $3, $4, 'redeem', $5, $6, $7, $8, $9, $10::jsonb, NOW())`,
-        txnId,
-        customerId,
-        locationId,
-        orderId || null,
-        -points, // Negative for redemptions
-        currentPoints,
-        currentPoints - points,
-        `Redeemed ${points} points for $${dollarValue.toFixed(2)} discount`,
-        employeeId || null,
-        JSON.stringify({ dollarValue, pointValueCents }),
-      )
+        ) VALUES (${txnId}, ${customerId}, ${locationId}, ${orderId || null}, 'redeem', ${-points}, ${currentPoints}, ${currentPoints - points}, ${description}, ${employeeId || null}, ${metadata}::jsonb, NOW())`
 
       // Atomically DECREMENT customer points (not absolute SET) to prevent race conditions.
       // GREATEST(0, ...) prevents negative balance from concurrent operations.
-      await tx.$executeRawUnsafe(
-        `UPDATE "Customer"
-         SET "loyaltyPoints" = GREATEST(0, "loyaltyPoints" - $2), "updatedAt" = NOW()
-         WHERE "id" = $1`,
-        customerId,
-        points,
-      )
+      await tx.$executeRaw`UPDATE "Customer"
+         SET "loyaltyPoints" = GREATEST(0, "loyaltyPoints" - ${points}), "updatedAt" = NOW()
+         WHERE "id" = ${customerId}`
 
       // Read back the new balance after atomic decrement
-      const updatedCustomer = await tx.$queryRawUnsafe<Array<Record<string, unknown>>>(
-        `SELECT "loyaltyPoints" FROM "Customer" WHERE "id" = $1`,
-        customerId,
-      )
+      const updatedCustomer = await tx.$queryRaw<Array<Record<string, unknown>>>`SELECT "loyaltyPoints" FROM "Customer" WHERE "id" = ${customerId}`
       const newBalance = Number(updatedCustomer[0].loyaltyPoints)
 
       return {

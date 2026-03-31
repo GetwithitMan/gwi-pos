@@ -37,7 +37,7 @@ export const GET = withVenue(async function GET(
     if (featureGate) return featureGate
 
     // Fetch driver with employee info
-    const rows: any[] = await db.$queryRawUnsafe(`
+    const rows: any[] = await db.$queryRaw`
       SELECT dd.*,
              e."firstName" as "employeeFirstName",
              e."lastName" as "employeeLastName",
@@ -46,8 +46,8 @@ export const GET = withVenue(async function GET(
              e."email" as "employeeEmail"
       FROM "DeliveryDriver" dd
       LEFT JOIN "Employee" e ON e.id = dd."employeeId"
-      WHERE dd.id = $1 AND dd."locationId" = $2 AND dd."deletedAt" IS NULL
-    `, id, locationId)
+      WHERE dd.id = ${id} AND dd."locationId" = ${locationId} AND dd."deletedAt" IS NULL
+    `
 
     if (!rows.length) {
       return notFound('Driver not found')
@@ -56,25 +56,25 @@ export const GET = withVenue(async function GET(
     const row = rows[0]
 
     // Count total deliveries completed by this driver
-    const deliveryCounts: any[] = await db.$queryRawUnsafe(`
+    const deliveryCounts: any[] = await db.$queryRaw`
       SELECT COUNT(*)::int as "totalDeliveries"
       FROM "DeliveryOrder"
-      WHERE "driverId" = $1 AND "locationId" = $2 AND "status" = 'delivered'
-    `, row.employeeId, locationId)
+      WHERE "driverId" = ${row.employeeId} AND "locationId" = ${locationId} AND "status" = 'delivered'
+    `
 
     // Get active session if any
-    const activeSessions: any[] = await db.$queryRawUnsafe(`
+    const activeSessions: any[] = await db.$queryRaw`
       SELECT * FROM "DeliveryDriverSession"
-      WHERE "driverId" = $1 AND "locationId" = $2 AND "endedAt" IS NULL
+      WHERE "driverId" = ${id} AND "locationId" = ${locationId} AND "endedAt" IS NULL
       LIMIT 1
-    `, id, locationId)
+    `
 
     // Get documents
-    const documents: any[] = await db.$queryRawUnsafe(`
+    const documents: any[] = await db.$queryRaw`
       SELECT * FROM "DeliveryDriverDocument"
-      WHERE "driverId" = $1 AND "deletedAt" IS NULL
+      WHERE "driverId" = ${id} AND "deletedAt" IS NULL
       ORDER BY "createdAt" DESC
-    `, id)
+    `
 
     const driver = {
       ...row,
@@ -144,10 +144,10 @@ export const PUT = withVenue(async function PUT(
     }
 
     // Fetch existing driver
-    const existing: any[] = await db.$queryRawUnsafe(`
+    const existing: any[] = await db.$queryRaw`
       SELECT * FROM "DeliveryDriver"
-      WHERE id = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
-    `, id, locationId)
+      WHERE id = ${id} AND "locationId" = ${locationId} AND "deletedAt" IS NULL
+    `
 
     if (!existing.length) {
       return notFound('Driver not found')
@@ -232,12 +232,12 @@ export const PUT = withVenue(async function PUT(
     const locParamIdx = paramIdx + 1
     updateParams.push(id, locationId)
 
-    const updated: any[] = await db.$queryRawUnsafe(`
+    const updated: any[] = await db.$queryRaw`
       UPDATE "DeliveryDriver"
       SET ${updates.join(', ')}
       WHERE id = $${idParamIdx} AND "locationId" = $${locParamIdx}
       RETURNING *
-    `, ...updateParams)
+    `
 
     if (!updated.length) {
       return err('Failed to update driver', 500)

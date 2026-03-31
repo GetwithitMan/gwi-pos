@@ -8,7 +8,7 @@
  * to legacy tables in one atomic flow.
  */
 
-import { PrismaClient } from '@/generated/prisma/client'
+import { Prisma, PrismaClient } from '@/generated/prisma/client'
 import { emitToLocation } from '@/lib/socket-server'
 import { createChildLogger } from '@/lib/logger'
 import {
@@ -174,31 +174,21 @@ export async function ingestAndProject(
       // TOCTOU race between findUnique and create. If the eventId already
       // exists, the INSERT is a no-op and returns zero rows.
       const inserted: Array<{ id: string; serverSequence: number }> =
-        await tx.$queryRawUnsafe(
-        `INSERT INTO "order_events" (
+        await tx.$queryRaw(
+        Prisma.sql`INSERT INTO "order_events" (
           "id", "eventId", "orderId", "locationId", "deviceId",
           "deviceCounter", "serverSequence", "type", "payloadJson",
           "schemaVersion", "correlationId", "deviceCreatedAt",
           "createdAt", "updatedAt"
         )
         VALUES (
-          gen_random_uuid(), $1, $2, $3, $4,
-          $5, nextval('order_event_server_seq'), $6, $7::jsonb,
-          $8, $9, $10,
+          gen_random_uuid(), ${eventId}, ${orderId}, ${locationId}, ${deviceId},
+          ${0}, nextval('order_event_server_seq'), ${evt.type}, ${JSON.stringify(evt.payload ?? {})}::jsonb,
+          ${1}, ${evt.correlationId ?? null}, ${new Date()},
           NOW(), NOW()
         )
         ON CONFLICT ("eventId") DO NOTHING
         RETURNING "id", "serverSequence"`,
-        eventId,
-        orderId,
-        locationId,
-        deviceId,
-        0, // deviceCounter
-        evt.type,
-        JSON.stringify(evt.payload ?? {}),
-        1, // schemaVersion
-        evt.correlationId ?? null,
-        new Date() // deviceCreatedAt
       )
 
       if (inserted.length > 0) {

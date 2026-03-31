@@ -26,11 +26,11 @@ export const POST = withVenue(async function POST(
     const auth = await requirePermission(requestingEmployeeId, locationId, 'admin.retry_membership_charge')
     if (!auth.authorized) return err(auth.error, auth.status)
 
-    const mbrs: any[] = await db.$queryRawUnsafe(`
+    const mbrs: any[] = await db.$queryRaw`
       SELECT * FROM "Membership"
-      WHERE "id" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
+      WHERE "id" = ${id} AND "locationId" = ${locationId} AND "deletedAt" IS NULL
       LIMIT 1
-    `, id, locationId)
+    `
     if (mbrs.length === 0) return notFound('Membership not found')
     const mbr = mbrs[0]
 
@@ -62,7 +62,7 @@ export const POST = withVenue(async function POST(
       const periodEnd = advancePeriod(periodStart, mbr.billingCycle || 'monthly')
 
       // Record approved charge
-      await db.$executeRawUnsafe(`
+      await db.$executeRaw`
         INSERT INTO "MembershipCharge" (
           "locationId", "membershipId", "subtotalAmount", "totalAmount",
           "status", "chargeType", "attemptNumber",
@@ -70,35 +70,26 @@ export const POST = withVenue(async function POST(
           "recurringDataSent", "recurringDataReceived",
           "invoiceNo", "idempotencyKey",
           "requestStartedAt", "responseReceivedAt", "processedAt"
-        ) VALUES ($1, $2, $3, $3, 'approved', 'manual', $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW())
-      `,
-        locationId, id, subtotal, mbr.failedAttempts + 1,
-        resp.refNo, resp.authCode || null, resp.token || null,
-        mbr.recurringData || 'Recurring', resp.recurringData || null,
-        invoiceNo, idempotencyKey, requestStartedAt
-      )
+        ) VALUES (${locationId}, ${id}, ${subtotal}, ${subtotal}, 'approved', 'manual', ${mbr.failedAttempts + 1}, ${resp.refNo}, ${resp.authCode || null}, ${resp.token || null}, ${mbr.recurringData || 'Recurring'}, ${resp.recurringData || null}, ${invoiceNo}, ${idempotencyKey}, ${requestStartedAt}, NOW(), NOW())
+      `
 
       // Update membership
-      await db.$executeRawUnsafe(`
+      await db.$executeRaw`
         UPDATE "Membership"
         SET "billingStatus" = 'current', "failedAttempts" = 0,
             "lastChargedAt" = NOW(), "nextRetryAt" = NULL,
             "lastFailedAt" = NULL, "lastFailReason" = NULL,
-            "currentPeriodStart" = $2, "currentPeriodEnd" = $3, "nextBillingDate" = $3,
-            "recurringData" = COALESCE($4, "recurringData"),
-            "lastToken" = COALESCE($5, "lastToken"),
+            "currentPeriodStart" = ${periodStart}, "currentPeriodEnd" = ${periodEnd}, "nextBillingDate" = ${periodEnd},
+            "recurringData" = COALESCE(${resp.recurringData || null}, "recurringData"),
+            "lastToken" = COALESCE(${resp.token || null}, "lastToken"),
             "version" = "version" + 1, "updatedAt" = NOW()
-        WHERE "id" = $1
-      `, id, periodStart, periodEnd, resp.recurringData || null, resp.token || null)
+        WHERE "id" = ${id}
+      `
 
-      await db.$executeRawUnsafe(`
+      await db.$executeRaw`
         INSERT INTO "MembershipEvent" ("locationId", "membershipId", "eventType", "details", "employeeId")
-        VALUES ($1, $2, $3, $4, $5)
-      `,
-        locationId, id, MembershipEventType.CHARGE_SUCCESS,
-        JSON.stringify({ chargeType: 'manual', total: subtotal, refNo: resp.refNo, requestId }),
-        requestingEmployeeId || null
-      )
+        VALUES (${locationId}, ${id}, ${MembershipEventType.CHARGE_SUCCESS}, ${JSON.stringify({ chargeType: 'manual', total: subtotal, refNo: resp.refNo, requestId })}, ${requestingEmployeeId || null})
+      `
 
       void dispatchMembershipUpdate(locationId, {
         action: 'charged', membershipId: id, customerId: mbr.customerId,
@@ -109,28 +100,20 @@ export const POST = withVenue(async function POST(
       if (err instanceof PayApiError) {
         const decline = classifyDecline(err.response?.returnCode, err.response?.message)
 
-        await db.$executeRawUnsafe(`
+        await db.$executeRaw`
           INSERT INTO "MembershipCharge" (
             "locationId", "membershipId", "subtotalAmount", "totalAmount",
             "status", "chargeType", "failureType",
             "declineReason", "returnCode", "processorResponseMessage",
             "invoiceNo", "idempotencyKey",
             "requestStartedAt", "responseReceivedAt", "processedAt"
-          ) VALUES ($1, $2, $3, $3, 'declined', 'manual', $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
-        `,
-          locationId, id, subtotal, decline.category,
-          decline.message, err.response?.returnCode || null, err.response?.message || null,
-          invoiceNo, idempotencyKey, requestStartedAt
-        )
+          ) VALUES (${locationId}, ${id}, ${subtotal}, ${subtotal}, 'declined', 'manual', ${decline.category}, ${decline.message}, ${err.response?.returnCode || null}, ${err.response?.message || null}, ${invoiceNo}, ${idempotencyKey}, ${requestStartedAt}, NOW(), NOW())
+        `
 
-        await db.$executeRawUnsafe(`
+        await db.$executeRaw`
           INSERT INTO "MembershipEvent" ("locationId", "membershipId", "eventType", "details", "employeeId")
-          VALUES ($1, $2, $3, $4, $5)
-        `,
-          locationId, id, MembershipEventType.CHARGE_FAILED,
-          JSON.stringify({ chargeType: 'manual', reason: decline.message, requestId }),
-          requestingEmployeeId || null
-        )
+          VALUES (${locationId}, ${id}, ${MembershipEventType.CHARGE_FAILED}, ${JSON.stringify({ chargeType: 'manual', reason: decline.message, requestId })}, ${requestingEmployeeId || null})
+        `
 
         void dispatchMembershipUpdate(locationId, {
           action: 'declined', membershipId: id, customerId: mbr.customerId,

@@ -1,8 +1,7 @@
 import { NextRequest } from 'next/server'
 import { db as prisma } from '@/lib/db'
-import { PERMISSIONS } from '@/lib/auth-utils'
-import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { syncTaxRateToSettings } from '@/lib/api/tax-utils'
 import { invalidateTaxCache } from '@/lib/tax-cache'
 import { notifyDataChanged } from '@/lib/cloud-notify'
@@ -48,7 +47,7 @@ export const GET = withVenue(async function GET(
 })
 
 // PUT - Update a tax rule
-export const PUT = withVenue(async function PUT(
+export const PUT = withVenue(withAuth('SETTINGS_TAX', async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -60,12 +59,6 @@ export const PUT = withVenue(async function PUT(
     if (!existing) {
       return notFound('Tax rule not found')
     }
-
-    // Require settings.tax permission — modifying tax rules is a sensitive operation
-    const actor = await getActorFromRequest(request)
-    const resolvedEmployeeId = actor.employeeId ?? body.employeeId
-    const authResult = await requirePermission(resolvedEmployeeId, existing.locationId, PERMISSIONS.SETTINGS_TAX)
-    if (!authResult.authorized) return err(authResult.error, authResult.status)
 
     const taxRule = await prisma.taxRule.update({
       where: { id },
@@ -105,10 +98,10 @@ export const PUT = withVenue(async function PUT(
     console.error('Failed to update tax rule:', error)
     return err('Failed to update tax rule', 500)
   }
-})
+}))
 
 // DELETE - Delete a tax rule
-export const DELETE = withVenue(async function DELETE(
+export const DELETE = withVenue(withAuth('SETTINGS_TAX', async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -119,12 +112,6 @@ export const DELETE = withVenue(async function DELETE(
     if (!taxRule) {
       return notFound('Tax rule not found')
     }
-
-    // Require settings.tax permission — deleting tax rules is a sensitive operation
-    const actor = await getActorFromRequest(request)
-    const resolvedEmployeeId = actor.employeeId ?? null
-    const authResult = await requirePermission(resolvedEmployeeId, taxRule.locationId, PERMISSIONS.SETTINGS_TAX)
-    if (!authResult.authorized) return err(authResult.error, authResult.status)
 
     await prisma.taxRule.update({ where: { id }, data: { deletedAt: new Date() } })
     await syncTaxRateToSettings(taxRule.locationId)
@@ -141,4 +128,4 @@ export const DELETE = withVenue(async function DELETE(
     console.error('Failed to delete tax rule:', error)
     return err('Failed to delete tax rule', 500)
   }
-})
+}))

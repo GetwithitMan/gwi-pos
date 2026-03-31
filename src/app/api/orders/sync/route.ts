@@ -79,10 +79,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       tomorrow.setDate(tomorrow.getDate() + 1)
 
       // Lock latest order row to prevent duplicate order numbers
-      const lastOrderRows = await tx.$queryRawUnsafe<{ orderNumber: number }[]>(
-        `SELECT "orderNumber" FROM "Order" WHERE "locationId" = $1 AND "createdAt" >= $2 AND "createdAt" < $3 ORDER BY "orderNumber" DESC LIMIT 1 FOR UPDATE`,
-        locationId, today, tomorrow
-      )
+      const lastOrderRows = await tx.$queryRaw<{ orderNumber: number }[]>`SELECT "orderNumber" FROM "Order" WHERE "locationId" = ${locationId} AND "createdAt" >= ${today} AND "createdAt" < ${tomorrow} ORDER BY "orderNumber" DESC LIMIT 1 FOR UPDATE`
       const orderNumber = ((lastOrderRows as any[])[0]?.orderNumber ?? 0) + 1
 
       // Batch-fetch all menu items in one query instead of N+1 findUnique calls

@@ -6,8 +6,7 @@ import { getLocationSettings } from '@/lib/location-cache'
 import { mergeWithDefaults, DEFAULT_WAITLIST_SETTINGS } from '@/lib/settings'
 import { dispatchWaitlistChanged } from '@/lib/socket-dispatch'
 import { sendSMS, isTwilioConfigured } from '@/lib/twilio'
-import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
-import { PERMISSIONS } from '@/lib/auth-utils'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 import { err, notFound, ok } from '@/lib/api-response'
@@ -18,7 +17,7 @@ export const dynamic = 'force-dynamic'
 /**
  * PUT /api/waitlist/[id] — Update waitlist entry (status change)
  */
-export const PUT = withVenue(async function PUT(
+export const PUT = withVenue(withAuth('POS_ACCESS', async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -28,11 +27,6 @@ export const PUT = withVenue(async function PUT(
     if (!locationId) {
       return err('No location found')
     }
-
-    // Auth check
-    const actor = await getActorFromRequest(request)
-    const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.POS_ACCESS)
-    if (!auth.authorized) return err(auth.error, auth.status)
 
     const rawSettings = await getLocationSettings(locationId)
     const settings = mergeWithDefaults(rawSettings as any)
@@ -47,11 +41,11 @@ export const PUT = withVenue(async function PUT(
     }
 
     // Fetch existing entry
-    const existing: any[] = await db.$queryRawUnsafe(`
+    const existing: any[] = await db.$queryRaw`
       SELECT id, "customerName", "partySize", phone, status, "locationId"
       FROM "WaitlistEntry"
-      WHERE id = $1 AND "locationId" = $2
-    `, id, locationId)
+      WHERE id = ${id} AND "locationId" = ${locationId}
+    `
 
     if (!existing.length) {
       return notFound('Waitlist entry not found')
@@ -69,13 +63,13 @@ export const PUT = withVenue(async function PUT(
 
     // W1: Wrap UPDATE + notifyEvent in a transaction so notification is not lost on crash
     const updatedEntry = await db.$transaction(async (tx) => {
-      const updated: any[] = await tx.$queryRawUnsafe(`
+      const updated: any[] = await tx.$queryRaw`
         UPDATE "WaitlistEntry"
-        SET status = $1, "updatedAt" = CURRENT_TIMESTAMP ${extraFields}
-        WHERE id = $2 AND "locationId" = $3
+        SET status = ${status}, "updatedAt" = CURRENT_TIMESTAMP ${extraFields}
+        WHERE id = ${id} AND "locationId" = ${locationId}
         RETURNING id, "customerName", "partySize", phone, notes, status, position,
                   "quotedWaitMinutes", "notifiedAt", "seatedAt", "createdAt", "updatedAt", version
-      `, status, id, locationId)
+      `
 
       const entry_ = updated[0]
       if (!entry_) throw new Error('Waitlist entry not found during update')
@@ -85,16 +79,13 @@ export const PUT = withVenue(async function PUT(
         // Look up pagerNumber from target assignment (source of truth)
         let assignedPager: string | null = null
         try {
-          const pagerAssignment: any[] = await tx.$queryRawUnsafe(
-            `SELECT "targetValue" FROM "NotificationTargetAssignment"
-             WHERE "locationId" = $1
+          const pagerAssignment: any[] = await tx.$queryRaw`SELECT "targetValue" FROM "NotificationTargetAssignment"
+             WHERE "locationId" = ${locationId}
                AND "subjectType" = 'waitlist_entry'
-               AND "subjectId" = $2
+               AND "subjectId" = ${id}
                AND status = 'active'
                AND "targetType" IN ('guest_pager', 'staff_pager')
-             ORDER BY "isPrimary" DESC LIMIT 1`,
-            locationId, id
-          )
+             ORDER BY "isPrimary" DESC LIMIT 1`
           assignedPager = pagerAssignment[0]?.targetValue || entry.pagerNumber || null
         } catch { /* non-fatal */ }
 
@@ -154,17 +145,17 @@ export const PUT = withVenue(async function PUT(
 
     // Recalculate positions for remaining active entries
     if (status === 'seated' || status === 'cancelled' || status === 'no_show') {
-      await db.$queryRawUnsafe(`
+      await db.$queryRaw`
         WITH ranked AS (
           SELECT id, ROW_NUMBER() OVER (ORDER BY position ASC, "createdAt" ASC) as new_pos
           FROM "WaitlistEntry"
-          WHERE "locationId" = $1 AND status IN ('waiting', 'notified')
+          WHERE "locationId" = ${locationId} AND status IN ('waiting', 'notified')
         )
         UPDATE "WaitlistEntry" w
         SET position = r.new_pos
         FROM ranked r
         WHERE w.id = r.id
-      `, locationId)
+      `
     }
 
     pushUpstream()
@@ -182,12 +173,12 @@ export const PUT = withVenue(async function PUT(
     console.error('[Waitlist] PUT error:', error)
     return err('Failed to update waitlist entry', 500)
   }
-})
+}))
 
 /**
  * DELETE /api/waitlist/[id] — Remove from waitlist (cancel)
  */
-export const DELETE = withVenue(async function DELETE(
+export const DELETE = withVenue(withAuth('POS_ACCESS', async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -198,17 +189,12 @@ export const DELETE = withVenue(async function DELETE(
       return err('No location found')
     }
 
-    // Auth check
-    const actor = await getActorFromRequest(request)
-    const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.POS_ACCESS)
-    if (!auth.authorized) return err(auth.error, auth.status)
-
     // Fetch before delete for socket dispatch
-    const existing: any[] = await db.$queryRawUnsafe(`
+    const existing: any[] = await db.$queryRaw`
       SELECT id, "customerName", "partySize"
       FROM "WaitlistEntry"
-      WHERE id = $1 AND "locationId" = $2
-    `, id, locationId)
+      WHERE id = ${id} AND "locationId" = ${locationId}
+    `
 
     if (!existing.length) {
       return notFound('Waitlist entry not found')
@@ -217,24 +203,24 @@ export const DELETE = withVenue(async function DELETE(
     const entry = existing[0]
 
     // Update status to cancelled instead of hard delete
-    await db.$queryRawUnsafe(`
+    await db.$queryRaw`
       UPDATE "WaitlistEntry"
       SET status = 'cancelled', "updatedAt" = CURRENT_TIMESTAMP
-      WHERE id = $1 AND "locationId" = $2
-    `, id, locationId)
+      WHERE id = ${id} AND "locationId" = ${locationId}
+    `
 
     // Recalculate positions
-    await db.$queryRawUnsafe(`
+    await db.$queryRaw`
       WITH ranked AS (
         SELECT id, ROW_NUMBER() OVER (ORDER BY position ASC, "createdAt" ASC) as new_pos
         FROM "WaitlistEntry"
-        WHERE "locationId" = $1 AND status IN ('waiting', 'notified')
+        WHERE "locationId" = ${locationId} AND status IN ('waiting', 'notified')
       )
       UPDATE "WaitlistEntry" w
       SET position = r.new_pos
       FROM ranked r
       WHERE w.id = r.id
-    `, locationId)
+    `
 
     pushUpstream()
 
@@ -251,4 +237,4 @@ export const DELETE = withVenue(async function DELETE(
     console.error('[Waitlist] DELETE error:', error)
     return err('Failed to remove from waitlist', 500)
   }
-})
+}))

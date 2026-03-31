@@ -51,13 +51,9 @@ export const GET = withVenue(async function GET(
       return err(auth.error, auth.status)
     }
 
-    const rows = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT * FROM "ThirdPartyOrder"
-       WHERE "id" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
-       LIMIT 1`,
-      id,
-      locationId,
-    )
+    const rows = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT * FROM "ThirdPartyOrder"
+       WHERE "id" = ${id} AND "locationId" = ${locationId} AND "deletedAt" IS NULL
+       LIMIT 1`
 
     if (!rows.length) {
       return notFound('Order not found')
@@ -117,13 +113,9 @@ export const PUT = withVenue(async function PUT(
     }
 
     // Fetch the order
-    const rows = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT * FROM "ThirdPartyOrder"
-       WHERE "id" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
-       LIMIT 1`,
-      id,
-      locationId,
-    )
+    const rows = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT * FROM "ThirdPartyOrder"
+       WHERE "id" = ${id} AND "locationId" = ${locationId} AND "deletedAt" IS NULL
+       LIMIT 1`
 
     if (!rows.length) {
       return notFound('Order not found')
@@ -158,11 +150,8 @@ export const PUT = withVenue(async function PUT(
 
         if (!posOrderId) {
           // Still mark as accepted even if POS order creation fails
-          await db.$executeRawUnsafe(
-            `UPDATE "ThirdPartyOrder" SET "status" = 'accepted', "updatedAt" = NOW()
-             WHERE "id" = $1`,
-            id,
-          )
+          await db.$executeRaw`UPDATE "ThirdPartyOrder" SET "status" = 'accepted', "updatedAt" = NOW()
+             WHERE "id" = ${id}`
         }
 
         // Confirm with platform (best-effort, don't block response)
@@ -188,11 +177,8 @@ export const PUT = withVenue(async function PUT(
       }
 
       case 'reject': {
-        await db.$executeRawUnsafe(
-          `UPDATE "ThirdPartyOrder" SET "status" = 'cancelled', "updatedAt" = NOW()
-           WHERE "id" = $1`,
-          id,
-        )
+        await db.$executeRaw`UPDATE "ThirdPartyOrder" SET "status" = 'cancelled', "updatedAt" = NOW()
+           WHERE "id" = ${id}`
 
         pushUpstream()
 
@@ -215,11 +201,8 @@ export const PUT = withVenue(async function PUT(
       }
 
       case 'ready': {
-        await db.$executeRawUnsafe(
-          `UPDATE "ThirdPartyOrder" SET "status" = 'ready', "updatedAt" = NOW()
-           WHERE "id" = $1`,
-          id,
-        )
+        await db.$executeRaw`UPDATE "ThirdPartyOrder" SET "status" = 'ready', "updatedAt" = NOW()
+           WHERE "id" = ${id}`
 
         pushUpstream()
 
@@ -251,12 +234,8 @@ export const PUT = withVenue(async function PUT(
           return err(`Invalid status: ${newStatus}`)
         }
 
-        await db.$executeRawUnsafe(
-          `UPDATE "ThirdPartyOrder" SET "status" = $1, "updatedAt" = NOW()
-           WHERE "id" = $2`,
-          newStatus,
-          id,
-        )
+        await db.$executeRaw`UPDATE "ThirdPartyOrder" SET "status" = ${newStatus}, "updatedAt" = NOW()
+           WHERE "id" = ${id}`
 
         pushUpstream()
 

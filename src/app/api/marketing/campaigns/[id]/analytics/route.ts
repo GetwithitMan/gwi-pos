@@ -18,13 +18,13 @@ export const GET = withVenue(async function GET(
     }
 
     // Verify campaign exists
-    const campaigns = await db.$queryRawUnsafe(`
+    const campaigns = await db.$queryRaw`
       SELECT id, name, type, status, "recipientCount", "deliveredCount",
              "openCount", "clickCount", "unsubscribeCount", "sentAt", "createdAt"
       FROM "MarketingCampaign"
-      WHERE id = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
+      WHERE id = ${id} AND "locationId" = ${locationId} AND "deletedAt" IS NULL
       LIMIT 1
-    `, id, locationId) as Record<string, unknown>[]
+    ` as Record<string, unknown>[]
 
     if (campaigns.length === 0) {
       return notFound('Campaign not found')
@@ -34,13 +34,13 @@ export const GET = withVenue(async function GET(
     const recipientCount = (campaign.recipientCount as number) || 0
 
     // Per-status breakdown
-    const statusBreakdown = await db.$queryRawUnsafe(`
+    const statusBreakdown = await db.$queryRaw`
       SELECT status, COUNT(*)::int as count
       FROM "MarketingRecipient"
-      WHERE "campaignId" = $1
+      WHERE "campaignId" = ${id}
       GROUP BY status
       ORDER BY count DESC
-    `, id) as { status: string; count: number }[]
+    ` as { status: string; count: number }[]
 
     // Build rate calculations
     const delivered = (campaign.deliveredCount as number) || 0
@@ -56,27 +56,27 @@ export const GET = withVenue(async function GET(
     }
 
     // Timeline: sends per hour for the campaign
-    const timeline = await db.$queryRawUnsafe(`
+    const timeline = await db.$queryRaw`
       SELECT
         date_trunc('hour', "sentAt") as hour,
         COUNT(*)::int as sent,
         COUNT(*) FILTER (WHERE status IN ('sent', 'delivered', 'opened', 'clicked'))::int as delivered,
         COUNT(*) FILTER (WHERE status = 'bounced')::int as bounced
       FROM "MarketingRecipient"
-      WHERE "campaignId" = $1 AND "sentAt" IS NOT NULL
+      WHERE "campaignId" = ${id} AND "sentAt" IS NOT NULL
       GROUP BY date_trunc('hour', "sentAt")
       ORDER BY hour
-    `, id) as Record<string, unknown>[]
+    ` as Record<string, unknown>[]
 
     // Error summary
-    const errors = await db.$queryRawUnsafe(`
+    const errors = await db.$queryRaw`
       SELECT "errorMessage", COUNT(*)::int as count
       FROM "MarketingRecipient"
-      WHERE "campaignId" = $1 AND "errorMessage" IS NOT NULL
+      WHERE "campaignId" = ${id} AND "errorMessage" IS NOT NULL
       GROUP BY "errorMessage"
       ORDER BY count DESC
       LIMIT 10
-    `, id) as { errorMessage: string; count: number }[]
+    ` as { errorMessage: string; count: number }[]
 
     return ok({
         campaign: {

@@ -56,11 +56,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Find driver for this employee
-    const drivers: any[] = await db.$queryRawUnsafe(`
+    const drivers: any[] = await db.$queryRaw`
       SELECT id FROM "DeliveryDriver"
-      WHERE "employeeId" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
+      WHERE "employeeId" = ${actor.employeeId} AND "locationId" = ${locationId} AND "deletedAt" IS NULL
       LIMIT 1
-    `, actor.employeeId, locationId)
+    `
 
     if (!drivers.length) {
       return notFound('No driver profile found')
@@ -69,16 +69,16 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const driverId = drivers[0].id
 
     // Validate order belongs to driver's active run
-    const orderRows: any[] = await db.$queryRawUnsafe(`
+    const orderRows: any[] = await db.$queryRaw`
       SELECT do_.id, do_."runId"
       FROM "DeliveryOrder" do_
       JOIN "DeliveryRun" dr ON dr.id = do_."runId"
-      WHERE do_.id = $1
-        AND do_."locationId" = $2
-        AND dr."driverId" = $3
+      WHERE do_.id = ${deliveryOrderId}
+        AND do_."locationId" = ${locationId}
+        AND dr."driverId" = ${driverId}
         AND dr."status" IN ('assigned', 'handoff_ready', 'dispatched', 'in_progress')
       LIMIT 1
-    `, deliveryOrderId, locationId, driverId)
+    `
 
     if (!orderRows.length) {
       return notFound('Order not found or not assigned to your active run')
@@ -86,11 +86,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Idempotency check
     if (idempotencyKey && typeof idempotencyKey === 'string') {
-      const existing: any[] = await db.$queryRawUnsafe(`
+      const existing: any[] = await db.$queryRaw`
         SELECT id FROM "DeliveryProofOfDelivery"
-        WHERE "idempotencyKey" = $1 AND "locationId" = $2
+        WHERE "idempotencyKey" = ${idempotencyKey} AND "locationId" = ${locationId}
         LIMIT 1
-      `, idempotencyKey, locationId)
+      `
 
       if (existing.length) {
         return ok({ proof: existing[0], deduplicated: true })
@@ -112,27 +112,18 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Insert proof record
-    const inserted: any[] = await db.$queryRawUnsafe(`
+    const inserted: any[] = await db.$queryRaw`
       INSERT INTO "DeliveryProofOfDelivery" (
         "id", "locationId", "deliveryOrderId", "driverId",
         "type", "storageKey", "lat", "lng",
         "idempotencyKey", "createdAt"
       ) VALUES (
-        gen_random_uuid()::text, $1, $2, $3,
-        $4, $5, $6, $7,
-        $8, CURRENT_TIMESTAMP
+        gen_random_uuid()::text, ${locationId}, ${deliveryOrderId}, ${driverId},
+        ${type}, ${storageKey.trim()}, ${latNum}, ${lngNum},
+        ${idempotencyKey || null}, CURRENT_TIMESTAMP
       )
       RETURNING *
-    `,
-      locationId,
-      deliveryOrderId,
-      driverId,
-      type,
-      storageKey.trim(),
-      latNum,
-      lngNum,
-      idempotencyKey || null,
-    )
+    `
 
     const proof = inserted[0]
 

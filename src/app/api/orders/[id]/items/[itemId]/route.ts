@@ -192,7 +192,7 @@ export const PUT = withVenue(async function PUT(
     if (quantityChanged) {
       const txResult = await db.$transaction(async (tx) => {
         // Row-level lock to prevent concurrent quantity updates from producing incorrect totals
-        await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', orderId)
+        await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${orderId} FOR UPDATE`
 
         // Fetch active modifiers for fresh modifierTotal (stale item.modifierTotal can cause penny drift)
         const liveModifierTotal = await fetchLiveModifierTotal(tx as any, itemId)
@@ -350,7 +350,7 @@ export const DELETE = withVenue(async function DELETE(
 
     const result = await db.$transaction(async (tx) => {
       // Lock the Order row to prevent concurrent deletes from producing incorrect totals
-      await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', orderId)
+      await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${orderId} FOR UPDATE`
 
       // Verify order exists and is in a deletable state (tenant-safe via OrderRepository)
       const order = await OrderRepository.getOrderByIdWithSelect(orderId, locationId, {

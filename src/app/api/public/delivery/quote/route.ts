@@ -98,14 +98,11 @@ export async function POST(request: NextRequest) {
     }
 
     // ── Query active delivery zones (raw SQL — not in Prisma schema) ──
-    const zones: DeliveryZoneRow[] = await venueDb.$queryRawUnsafe(
-      `SELECT id, name, "zoneType", "deliveryFee", "minimumOrder", "estimatedMinutes",
+    const zones: DeliveryZoneRow[] = await venueDb.$queryRaw`SELECT id, name, "zoneType", "deliveryFee", "minimumOrder", "estimatedMinutes",
               "radiusMiles", "centerLat", "centerLng", zipcodes, "isActive"
        FROM "DeliveryZone"
-       WHERE "locationId" = $1 AND "deletedAt" IS NULL AND "isActive" = true
-       ORDER BY "sortOrder" ASC`,
-      location.id
-    )
+       WHERE "locationId" = ${location.id} AND "deletedAt" IS NULL AND "isActive" = true
+       ORDER BY "sortOrder" ASC`
 
     if (zones.length === 0) {
       return ok({ serviceable: false, reason: 'Delivery is not available at this time' })

@@ -47,16 +47,16 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     let matchType: string | null = null
 
     // 1. Try zipcode-based zone lookup
-    const zipcodeZones: any[] = await db.$queryRawUnsafe(`
+    const zipcodeZones: any[] = await db.$queryRaw`
       SELECT id, "name", "deliveryFee", "estimatedMinutes", "minimumOrder", "zoneType"
       FROM "DeliveryZone"
-      WHERE "locationId" = $1
+      WHERE "locationId" = ${locationId}
         AND "deletedAt" IS NULL
         AND "isActive" = true
         AND "zoneType" = 'zipcode'
-        AND $2 = ANY("zipCodes")
+        AND ${zipCode.trim()} = ANY("zipCodes")
       LIMIT 1
-    `, locationId, zipCode.trim())
+    `
 
     if (zipcodeZones.length) {
       matchedZone = zipcodeZones[0]
@@ -72,18 +72,18 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           !isNaN(lngNum) && lngNum >= -180 && lngNum <= 180) {
         // Haversine distance check against radius zones
         // Uses great-circle distance in miles
-        const radiusZones: any[] = await db.$queryRawUnsafe(`
+        const radiusZones: any[] = await db.$queryRaw`
           SELECT id, "name", "deliveryFee", "estimatedMinutes", "minimumOrder", "zoneType",
                  "centerLat", "centerLng", "radiusMiles",
                  (
                    3959 * acos(
-                     cos(radians($2)) * cos(radians("centerLat"::float)) *
-                     cos(radians("centerLng"::float) - radians($3)) +
-                     sin(radians($2)) * sin(radians("centerLat"::float))
+                     cos(radians(${latNum})) * cos(radians("centerLat"::float)) *
+                     cos(radians("centerLng"::float) - radians(${lngNum})) +
+                     sin(radians(${latNum})) * sin(radians("centerLat"::float))
                    )
                  ) as "distanceMiles"
           FROM "DeliveryZone"
-          WHERE "locationId" = $1
+          WHERE "locationId" = ${locationId}
             AND "deletedAt" IS NULL
             AND "isActive" = true
             AND "zoneType" = 'radius'
@@ -92,14 +92,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
             AND "radiusMiles" IS NOT NULL
           HAVING (
             3959 * acos(
-              cos(radians($2)) * cos(radians("centerLat"::float)) *
-              cos(radians("centerLng"::float) - radians($3)) +
-              sin(radians($2)) * sin(radians("centerLat"::float))
+              cos(radians(${latNum})) * cos(radians("centerLat"::float)) *
+              cos(radians("centerLng"::float) - radians(${lngNum})) +
+              sin(radians(${latNum})) * sin(radians("centerLat"::float))
             )
           ) <= "radiusMiles"::float
           ORDER BY "distanceMiles" ASC
           LIMIT 1
-        `, locationId, latNum, lngNum)
+        `
 
         if (radiusZones.length) {
           matchedZone = radiusZones[0]

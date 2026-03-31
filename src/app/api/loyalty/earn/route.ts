@@ -41,11 +41,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Idempotency: reject duplicate earn for the same orderId (prevents point farming)
     if (orderId) {
       try {
-        const existing = await db.$queryRawUnsafe<Array<{ id: string }>>(
-          `SELECT "id" FROM "LoyaltyTransaction" WHERE "orderId" = $1 AND "type" = 'earn' AND "locationId" = $2 LIMIT 1`,
-          orderId,
-          locationId,
-        )
+        const existing = await db.$queryRaw<Array<{ id: string }>>`SELECT "id" FROM "LoyaltyTransaction" WHERE "orderId" = ${orderId} AND "type" = 'earn' AND "locationId" = ${locationId} LIMIT 1`
         if (existing.length > 0) {
           return NextResponse.json(
             { error: 'Points already earned for this order', alreadyEarned: true },
@@ -64,14 +60,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // concurrent earn+redeem from corrupting the balance via read-then-write race.
     const result = await db.$transaction(async (tx) => {
       // Lock the Customer row to serialize concurrent loyalty operations
-      const customers = await tx.$queryRawUnsafe<Array<Record<string, unknown>>>(
-        `SELECT c."id", c."loyaltyPoints", c."lifetimePoints", c."loyaltyProgramId", c."loyaltyTierId"
+      const customers = await tx.$queryRaw<Array<Record<string, unknown>>>`SELECT c."id", c."loyaltyPoints", c."lifetimePoints", c."loyaltyProgramId", c."loyaltyTierId"
          FROM "Customer" c
-         WHERE c."id" = $1 AND c."locationId" = $2 AND c."deletedAt" IS NULL
-         FOR UPDATE`,
-        customerId,
-        locationId,
-      )
+         WHERE c."id" = ${customerId} AND c."locationId" = ${locationId} AND c."deletedAt" IS NULL
+         FOR UPDATE`
 
       if (customers.length === 0) {
         return { error: 'Customer not found', status: 404 } as const
@@ -84,12 +76,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }
 
       // Fetch program (scoped to location)
-      const programs = await tx.$queryRawUnsafe<Array<Record<string, unknown>>>(
-        `SELECT * FROM "LoyaltyProgram"
-         WHERE "id" = $1 AND "locationId" = $2 AND "isActive" = true AND "deletedAt" IS NULL`,
-        customer.loyaltyProgramId,
-        locationId,
-      )
+      const programs = await tx.$queryRaw<Array<Record<string, unknown>>>`SELECT * FROM "LoyaltyProgram"
+         WHERE "id" = ${customer.loyaltyProgramId} AND "locationId" = ${locationId} AND "isActive" = true AND "deletedAt" IS NULL`
 
       if (programs.length === 0) {
         return { error: 'Loyalty program is not active', status: 400 } as const
@@ -101,11 +89,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       let tierMultiplier = 1.0
       let tierName: string | null = null
       if (customer.loyaltyTierId) {
-        const tiers = await tx.$queryRawUnsafe<Array<Record<string, unknown>>>(
-          `SELECT "pointsMultiplier", "name" FROM "LoyaltyTier"
-           WHERE "id" = $1 AND "deletedAt" IS NULL`,
-          customer.loyaltyTierId,
-        )
+        const tiers = await tx.$queryRaw<Array<Record<string, unknown>>>`SELECT "pointsMultiplier", "name" FROM "LoyaltyTier"
+           WHERE "id" = ${customer.loyaltyTierId} AND "deletedAt" IS NULL`
         if (tiers.length > 0) {
           tierMultiplier = Number(tiers[0].pointsMultiplier) || 1.0
           tierName = tiers[0].name as string
@@ -143,45 +128,26 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         ? `Earned ${pointsEarned} points on $${amount.toFixed(2)} order (${tierMultiplier}x ${tierName} multiplier)`
         : `Earned ${pointsEarned} points on $${amount.toFixed(2)} order`
 
-      await tx.$executeRawUnsafe(
-        `INSERT INTO "LoyaltyTransaction" (
+      await tx.$executeRaw`INSERT INTO "LoyaltyTransaction" (
           "id", "customerId", "locationId", "orderId", "type", "points",
           "balanceBefore", "balanceAfter", "description", "employeeId",
           "metadata", "createdAt"
-        ) VALUES ($1, $2, $3, $4, 'earn', $5, $6, $7, $8, $9, $10::jsonb, NOW())`,
-        txnId,
-        customerId,
-        locationId,
-        orderId || null,
-        pointsEarned,
-        currentPoints,
-        currentPoints + pointsEarned,
-        description,
-        employeeId || null,
-        JSON.stringify({
+        ) VALUES (${txnId}, ${customerId}, ${locationId}, ${orderId || null}, 'earn', ${pointsEarned}, ${currentPoints}, ${currentPoints + pointsEarned}, ${description}, ${employeeId || null}, ${JSON.stringify({
           orderAmount: amount,
           pointsPerDollar,
           tierMultiplier,
           tierName,
-        }),
-      )
+        })}::jsonb, NOW())`
 
       // Atomically INCREMENT customer points (not absolute SET) to prevent race conditions
-      await tx.$executeRawUnsafe(
-        `UPDATE "Customer"
-         SET "loyaltyPoints" = "loyaltyPoints" + $2,
-             "lifetimePoints" = "lifetimePoints" + $2,
+      await tx.$executeRaw`UPDATE "Customer"
+         SET "loyaltyPoints" = "loyaltyPoints" + ${pointsEarned},
+             "lifetimePoints" = "lifetimePoints" + ${pointsEarned},
              "updatedAt" = NOW()
-         WHERE "id" = $1`,
-        customerId,
-        pointsEarned,
-      )
+         WHERE "id" = ${customerId}`
 
       // Read back the new balances after atomic increment
-      const updatedCustomer = await tx.$queryRawUnsafe<Array<Record<string, unknown>>>(
-        `SELECT "loyaltyPoints", "lifetimePoints" FROM "Customer" WHERE "id" = $1`,
-        customerId,
-      )
+      const updatedCustomer = await tx.$queryRaw<Array<Record<string, unknown>>>`SELECT "loyaltyPoints", "lifetimePoints" FROM "Customer" WHERE "id" = ${customerId}`
       const newBalance = Number(updatedCustomer[0].loyaltyPoints)
       const newLifetime = Number(updatedCustomer[0].lifetimePoints)
 
@@ -189,37 +155,24 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       let promoted = false
       let newTierName: string | null = null
 
-      const allTiers = await tx.$queryRawUnsafe<Array<Record<string, unknown>>>(
-        `SELECT "id", "name", "minimumPoints" FROM "LoyaltyTier"
-         WHERE "programId" = $1 AND "deletedAt" IS NULL
-         ORDER BY "minimumPoints" DESC`,
-        customer.loyaltyProgramId,
-      )
+      const allTiers = await tx.$queryRaw<Array<Record<string, unknown>>>`SELECT "id", "name", "minimumPoints" FROM "LoyaltyTier"
+         WHERE "programId" = ${customer.loyaltyProgramId} AND "deletedAt" IS NULL
+         ORDER BY "minimumPoints" DESC`
 
       for (const tier of allTiers) {
         if (newLifetime >= Number(tier.minimumPoints)) {
           if (tier.id !== customer.loyaltyTierId) {
-            await tx.$executeRawUnsafe(
-              `UPDATE "Customer" SET "loyaltyTierId" = $2, "updatedAt" = NOW() WHERE "id" = $1`,
-              customerId,
-              tier.id,
-            )
+            await tx.$executeRaw`UPDATE "Customer" SET "loyaltyTierId" = ${tier.id}, "updatedAt" = NOW() WHERE "id" = ${customerId}`
             promoted = true
             newTierName = tier.name as string
 
             // Record tier bonus transaction
             const bonusTxnId = crypto.randomUUID()
-            await tx.$executeRawUnsafe(
-              `INSERT INTO "LoyaltyTransaction" (
+            const tierDescription = `Promoted to ${tier.name} tier`
+            await tx.$executeRaw`INSERT INTO "LoyaltyTransaction" (
                 "id", "customerId", "locationId", "type", "points",
                 "balanceBefore", "balanceAfter", "description", "createdAt"
-              ) VALUES ($1, $2, $3, 'tier_bonus', 0, $4, $4, $5, NOW())`,
-              bonusTxnId,
-              customerId,
-              locationId,
-              newBalance,
-              `Promoted to ${tier.name} tier`,
-            )
+              ) VALUES (${bonusTxnId}, ${customerId}, ${locationId}, 'tier_bonus', 0, ${newBalance}, ${newBalance}, ${tierDescription}, NOW())`
           }
           break // Only match the highest tier
         }

@@ -7,7 +7,7 @@
  */
 
 import crypto from 'crypto'
-import type { PrismaClient } from '@/generated/prisma/client'
+import { Prisma, type PrismaClient } from '@/generated/prisma/client'
 import type { ReservationSettings, DepositRules, ReservationMessageTemplates } from '@/lib/settings'
 import { dispatchReservationChanged } from '@/lib/socket-dispatch'
 import { createChildLogger } from '@/lib/logger'
@@ -149,9 +149,8 @@ export async function createReservationWithRules(
     // 2a. Idempotency check — acquire advisory lock on idempotency key FIRST to prevent race
     if (idempotencyKey) {
       const idempKeyLock = hashToLockKey('idem:' + idempotencyKey)
-      await tx.$executeRawUnsafe(
-        `SELECT pg_advisory_xact_lock($1::bigint)`,
-        idempKeyLock.toString()
+      await tx.$executeRaw(
+        Prisma.sql`SELECT pg_advisory_xact_lock(${BigInt(idempKeyLock)})`
       )
 
       const existing = await tx.reservationIdempotencyKey.findUnique({

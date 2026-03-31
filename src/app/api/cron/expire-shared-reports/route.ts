@@ -19,9 +19,7 @@ export async function GET(request: NextRequest) {
   const allResults: Record<string, unknown> = {}
 
   const summary = await forAllVenues(async (venueDb, slug) => {
-    const result = await venueDb.$executeRawUnsafe(
-      `DELETE FROM "SharedReport" WHERE "expiresAt" < NOW()`
-    )
+    const result = await venueDb.$executeRaw`DELETE FROM "SharedReport" WHERE "expiresAt" < NOW()`
     allResults[slug] = { deleted: result }
   }, { label: 'cron:expire-shared-reports' })
 

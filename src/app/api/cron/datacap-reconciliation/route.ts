@@ -54,14 +54,12 @@ export async function GET(request: NextRequest) {
     // Find stale pending sales older than 5 minutes
     let orphans: OrphanRow[]
     try {
-      orphans = await venueDb.$queryRawUnsafe<OrphanRow[]>(
-        `SELECT id, "orderId", "terminalId", amount, "datacapRecordNo", "datacapRefNumber", "locationId", "createdAt"
+      orphans = await venueDb.$queryRaw<OrphanRow[]>`SELECT id, "orderId", "terminalId", amount, "datacapRecordNo", "datacapRefNumber", "locationId", "createdAt"
          FROM "_pending_datacap_sales"
          WHERE "status" = 'pending'
            AND "createdAt" < NOW() - INTERVAL '5 minutes'
          ORDER BY "createdAt" ASC
          LIMIT 50`
-      )
     } catch (error) {
       // Table may not exist yet (migration not run) -- not an error
       const msg = error instanceof Error ? error.message : String(error)
@@ -96,10 +94,7 @@ export async function GET(request: NextRequest) {
           // Idempotency check: re-read current status to ensure it hasn't been
           // voided by a concurrent cron run (prevents double-void if DB update
           // failed after a successful void on the previous run).
-          const currentStatus = await venueDb.$queryRawUnsafe<Array<{ status: string }>>(
-            `SELECT "status" FROM "_pending_datacap_sales" WHERE id = $1`,
-            orphan.id
-          )
+          const currentStatus = await venueDb.$queryRaw<Array<{ status: string }>>`SELECT "status" FROM "_pending_datacap_sales" WHERE id = ${orphan.id}`
           if (currentStatus.length === 0 || currentStatus[0].status !== 'pending') {
             // Already processed (voided/orphaned) by a concurrent run — skip
             continue
@@ -109,17 +104,11 @@ export async function GET(request: NextRequest) {
           const { getDatacapClient } = await import('@/lib/datacap/helpers')
 
           // Find an active payment reader for this location to route the void through
-          const reader = await venueDb.$queryRawUnsafe<Array<{ id: string }>>(
-            `SELECT id FROM "PaymentReader" WHERE "locationId" = $1 AND "isActive" = true LIMIT 1`,
-            orphan.locationId
-          )
+          const reader = await venueDb.$queryRaw<Array<{ id: string }>>`SELECT id FROM "PaymentReader" WHERE "locationId" = ${orphan.locationId} AND "isActive" = true LIMIT 1`
 
           if (reader.length === 0) {
             // No active reader -- mark as orphaned for manual review
-            await venueDb.$executeRawUnsafe(
-              `UPDATE "_pending_datacap_sales" SET "status" = 'orphaned' WHERE id = $1`,
-              orphan.id
-            )
+            await venueDb.$executeRaw`UPDATE "_pending_datacap_sales" SET "status" = 'orphaned' WHERE id = ${orphan.id}`
             result.markedOrphaned++
             result.errors.push(`${orphan.id}: no active payment reader`)
             continue
@@ -128,10 +117,7 @@ export async function GET(request: NextRequest) {
           // Claim this orphan atomically before sending void to Datacap.
           // CAS (compare-and-swap): only update if still 'pending'. If another
           // cron run already claimed it, rowCount will be 0 and we skip.
-          const claimed = await venueDb.$executeRawUnsafe(
-            `UPDATE "_pending_datacap_sales" SET "status" = 'voiding' WHERE id = $1 AND "status" = 'pending'`,
-            orphan.id
-          )
+          const claimed = await venueDb.$executeRaw`UPDATE "_pending_datacap_sales" SET "status" = 'voiding' WHERE id = ${orphan.id} AND "status" = 'pending'`
           if (claimed === 0) {
             // Another cron run already claimed this orphan — skip
             continue
@@ -145,18 +131,12 @@ export async function GET(request: NextRequest) {
           const isSuccess = voidResponse.cmdStatus === 'Success' || voidResponse.cmdStatus === 'Approved'
 
           if (isSuccess) {
-            await venueDb.$executeRawUnsafe(
-              `UPDATE "_pending_datacap_sales" SET "status" = 'voided', "resolvedAt" = NOW() WHERE id = $1`,
-              orphan.id
-            )
+            await venueDb.$executeRaw`UPDATE "_pending_datacap_sales" SET "status" = 'voided', "resolvedAt" = NOW() WHERE id = ${orphan.id}`
             result.voided++
             console.log(`[DATACAP-RECONCILIATION] Voided orphan ${orphan.id} (recordNo: ${orphan.datacapRecordNo})`)
           } else {
             // Void failed (already settled, etc.) -- mark as orphaned for manual review
-            await venueDb.$executeRawUnsafe(
-              `UPDATE "_pending_datacap_sales" SET "status" = 'orphaned' WHERE id = $1`,
-              orphan.id
-            )
+            await venueDb.$executeRaw`UPDATE "_pending_datacap_sales" SET "status" = 'orphaned' WHERE id = ${orphan.id}`
             result.markedOrphaned++
             result.errors.push(`${orphan.id}: void declined - ${voidResponse.textResponse || voidResponse.cmdStatus || 'unknown'}`)
           }
@@ -168,10 +148,7 @@ export async function GET(request: NextRequest) {
           console.error(`[DATACAP-RECONCILIATION] Void failed for ${orphan.id}:`, msg)
 
           try {
-            await venueDb.$executeRawUnsafe(
-              `UPDATE "_pending_datacap_sales" SET "status" = 'orphaned' WHERE id = $1`,
-              orphan.id
-            )
+            await venueDb.$executeRaw`UPDATE "_pending_datacap_sales" SET "status" = 'orphaned' WHERE id = ${orphan.id}`
           } catch { /* best effort */ }
 
           result.markedOrphaned++
@@ -180,10 +157,7 @@ export async function GET(request: NextRequest) {
       } else {
         // No recordNo -- Datacap never responded. Mark as orphaned for manual review.
         try {
-          await venueDb.$executeRawUnsafe(
-            `UPDATE "_pending_datacap_sales" SET "status" = 'orphaned' WHERE id = $1`,
-            orphan.id
-          )
+          await venueDb.$executeRaw`UPDATE "_pending_datacap_sales" SET "status" = 'orphaned' WHERE id = ${orphan.id}`
         } catch { /* best effort */ }
 
         result.markedOrphaned++

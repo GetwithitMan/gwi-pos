@@ -74,7 +74,7 @@ async function refreshTokensForVenue(db: any): Promise<TokenRefreshResult> {
     locationId: string
     lastToken: string
     accountUpdaterPid: string | null
-  }> = await db.$queryRawUnsafe(`
+  }> = await db.$queryRaw`
     SELECT "id", "locationId", "lastToken", "accountUpdaterPid"
     FROM "Membership"
     WHERE "deletedAt" IS NULL
@@ -82,7 +82,7 @@ async function refreshTokensForVenue(db: any): Promise<TokenRefreshResult> {
       AND "lastToken" IS NOT NULL
       AND "accountUpdaterPid" IS NULL
     LIMIT 100
-  `)
+  `
 
   for (const mbr of memberships) {
     // Skip tokens that are already PIDs (re-enrolled shouldn't happen but guard)
@@ -104,25 +104,20 @@ async function refreshTokensForVenue(db: any): Promise<TokenRefreshResult> {
 
       // Store the PID. Future charges should use this PID instead of lastToken.
       // We also update lastToken to the PID so the billing processor uses it automatically.
-      await db.$executeRawUnsafe(`
+      await db.$executeRaw`
         UPDATE "Membership"
-        SET "accountUpdaterPid" = $2,
-            "lastToken" = $2,
+        SET "accountUpdaterPid" = ${pid},
+            "lastToken" = ${pid},
             "updatedAt" = NOW(),
             "version" = "version" + 1
-        WHERE "id" = $1
-      `, mbr.id, pid)
+        WHERE "id" = ${mbr.id}
+      `
 
       // Audit event
-      await db.$executeRawUnsafe(`
+      await db.$executeRaw`
         INSERT INTO "MembershipEvent" ("locationId", "membershipId", "eventType", "details")
-        VALUES ($1, $2, $3, $4)
-      `,
-        mbr.locationId,
-        mbr.id,
-        MembershipEventType.TOKEN_ENROLLED_UPDATER,
-        JSON.stringify({ pid, previousTokenPrefix: mbr.lastToken.slice(0, 4) })
-      )
+        VALUES (${mbr.locationId}, ${mbr.id}, ${MembershipEventType.TOKEN_ENROLLED_UPDATER}, ${JSON.stringify({ pid, previousTokenPrefix: mbr.lastToken.slice(0, 4) })})
+      `
 
       result.membershipsEnrolled++
       log.info({ membershipId: mbr.id }, 'Enrolled membership token in Account Updater')
@@ -132,15 +127,10 @@ async function refreshTokensForVenue(db: any): Promise<TokenRefreshResult> {
       log.error({ membershipId: mbr.id, err: message }, 'Failed to enroll membership in Account Updater')
 
       // Record the failure as an event for visibility
-      await db.$executeRawUnsafe(`
+      await db.$executeRaw`
         INSERT INTO "MembershipEvent" ("locationId", "membershipId", "eventType", "details")
-        VALUES ($1, $2, $3, $4)
-      `,
-        mbr.locationId,
-        mbr.id,
-        MembershipEventType.TOKEN_REFRESH_FAILED,
-        JSON.stringify({ error: message })
-      ).catch(() => { /* best effort */ })
+        VALUES (${mbr.locationId}, ${mbr.id}, ${MembershipEventType.TOKEN_REFRESH_FAILED}, ${JSON.stringify({ error: message })})
+      `.catch(() => { /* best effort */ })
     }
   }
 
@@ -151,14 +141,14 @@ async function refreshTokensForVenue(db: any): Promise<TokenRefreshResult> {
     locationId: string
     token: string
     accountUpdaterPid: string | null
-  }> = await db.$queryRawUnsafe(`
+  }> = await db.$queryRaw`
     SELECT "id", "locationId", "token", "accountUpdaterPid"
     FROM "SavedCard"
     WHERE "deletedAt" IS NULL
       AND "token" IS NOT NULL
       AND "accountUpdaterPid" IS NULL
     LIMIT 100
-  `)
+  `
 
   for (const card of savedCards) {
     // Skip tokens that are already PIDs
@@ -178,13 +168,13 @@ async function refreshTokensForVenue(db: any): Promise<TokenRefreshResult> {
       }
 
       // Store the PID and update the token so future charges use the PID
-      await db.$executeRawUnsafe(`
+      await db.$executeRaw`
         UPDATE "SavedCard"
-        SET "accountUpdaterPid" = $2,
-            "token" = $2,
+        SET "accountUpdaterPid" = ${pid},
+            "token" = ${pid},
             "updatedAt" = NOW()
-        WHERE "id" = $1
-      `, card.id, pid)
+        WHERE "id" = ${card.id}
+      `
 
       result.savedCardsEnrolled++
       log.info({ savedCardId: card.id }, 'Enrolled saved card in Account Updater')

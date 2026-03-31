@@ -36,15 +36,15 @@ export const GET = withVenue(async function GET(
     if (featureGate) return featureGate
 
     // Fetch run with driver info
-    const rows: any[] = await db.$queryRawUnsafe(`
+    const rows: any[] = await db.$queryRaw`
       SELECT r.*,
              dd."vehicleType", dd."vehicleMake", dd."vehicleModel", dd."vehicleColor", dd."licensePlate", dd."isSuspended", dd."employeeId" as "driverEmployeeId",
              e."firstName" as "driverFirstName", e."lastName" as "driverLastName", e."phone" as "driverPhone"
       FROM "DeliveryRun" r
       LEFT JOIN "DeliveryDriver" dd ON dd.id = r."driverId"
       LEFT JOIN "Employee" e ON e.id = dd."employeeId"
-      WHERE r.id = $1 AND r."locationId" = $2
-    `, id, locationId)
+      WHERE r.id = ${id} AND r."locationId" = ${locationId}
+    `
 
     if (!rows.length) {
       return notFound('Run not found')
@@ -53,15 +53,15 @@ export const GET = withVenue(async function GET(
     const run = rows[0]
 
     // Fetch orders in this run
-    const orders: any[] = await db.$queryRawUnsafe(`
+    const orders: any[] = await db.$queryRaw`
       SELECT d.*,
              o."orderNumber", o."guestCount", o."status" as "orderStatus",
              o."total" as "orderTotal"
       FROM "DeliveryOrder" d
       LEFT JOIN "Order" o ON o.id = d."orderId"
-      WHERE d."runId" = $1
+      WHERE d."runId" = ${id}
       ORDER BY d."runSequence" ASC NULLS LAST, d."createdAt" ASC
-    `, id)
+    `
 
     const enrichedOrders = orders.map(o => ({
       ...o,
@@ -126,11 +126,7 @@ export const PUT = withVenue(async function PUT(
     const { status, notes, startOdometer, endOdometer } = body
 
     // Fetch existing run
-    const existing: any[] = await db.$queryRawUnsafe(
-      `SELECT * FROM "DeliveryRun" WHERE id = $1 AND "locationId" = $2`,
-      id,
-      locationId,
-    )
+    const existing: any[] = await db.$queryRaw`SELECT * FROM "DeliveryRun" WHERE id = ${id} AND "locationId" = ${locationId}`
 
     if (!existing.length) {
       return notFound('Run not found')
@@ -174,13 +170,9 @@ export const PUT = withVenue(async function PUT(
       }
 
       // Fetch orders in this run that are not in terminal state
-      const runOrders: any[] = await db.$queryRawUnsafe(
-        `SELECT id, status FROM "DeliveryOrder"
-         WHERE "runId" = $1 AND "locationId" = $2
-           AND status NOT IN ('delivered', 'cancelled_before_dispatch', 'cancelled_after_dispatch', 'failed_delivery', 'returned_to_store')`,
-        id,
-        locationId,
-      )
+      const runOrders: any[] = await db.$queryRaw`SELECT id, status FROM "DeliveryOrder"
+         WHERE "runId" = ${id} AND "locationId" = ${locationId}
+           AND status NOT IN ('delivered', 'cancelled_before_dispatch', 'cancelled_after_dispatch', 'failed_delivery', 'returned_to_store')`
 
       for (const order of runOrders) {
         const targetStatus = getTargetOrderStatus(status, order.status)
@@ -234,6 +226,7 @@ export const PUT = withVenue(async function PUT(
       const locParamIdx = paramIdx + 1
       extraParams.push(id, locationId)
 
+      // eslint-disable-next-line -- dynamic SET clauses + spread params require $queryRawUnsafe; all values are parameterized
       await db.$queryRawUnsafe(
         `UPDATE "DeliveryRun" SET ${extraUpdates.join(', ')}
          WHERE id = $${idParamIdx} AND "locationId" = $${locParamIdx}`,
@@ -242,17 +235,13 @@ export const PUT = withVenue(async function PUT(
     }
 
     // Fetch the updated run
-    const updatedRows: any[] = await db.$queryRawUnsafe(
-      `SELECT r.*,
+    const updatedRows: any[] = await db.$queryRaw`SELECT r.*,
               dd."vehicleType", dd."vehicleMake", dd."vehicleModel", dd."vehicleColor", dd."licensePlate", dd."isSuspended",
               e."firstName" as "driverFirstName", e."lastName" as "driverLastName"
        FROM "DeliveryRun" r
        LEFT JOIN "DeliveryDriver" dd ON dd.id = r."driverId"
        LEFT JOIN "Employee" e ON e.id = dd."employeeId"
-       WHERE r.id = $1 AND r."locationId" = $2`,
-      id,
-      locationId,
-    )
+       WHERE r.id = ${id} AND r."locationId" = ${locationId}`
 
     const updatedRun = updatedRows[0]
     pushUpstream()

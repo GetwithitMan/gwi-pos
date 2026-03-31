@@ -105,10 +105,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // ── Step 1: Get notification mode ──────────────────────────────────────
     let notificationMode = 'off'
     try {
-      const locations: any[] = await db.$queryRawUnsafe(
-        `SELECT settings FROM "Location" WHERE id = $1`,
-        locationId
-      )
+      const locations: any[] = await db.$queryRaw`SELECT settings FROM "Location" WHERE id = ${locationId}`
       if (locations[0]?.settings) {
         const settings = locations[0].settings as Record<string, unknown>
         notificationMode = (settings.notificationMode as string) || 'off'
@@ -122,14 +119,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     let subjectFound = false
 
     if (subjectType === 'order') {
-      const orders: any[] = await db.$queryRawUnsafe(
-        `SELECT id, "orderNumber", "tabName", "pagerNumber", status, "customerName",
+      const orders: any[] = await db.$queryRaw`SELECT id, "orderNumber", "tabName", "pagerNumber", status, "customerName",
                 "fulfillmentMode"
          FROM "Order"
-         WHERE id = $1 AND "locationId" = $2`,
-        subjectId,
-        locationId
-      )
+         WHERE id = ${subjectId} AND "locationId" = ${locationId}`
       if (orders[0]) {
         subjectFound = true
         subjectContext = {
@@ -142,13 +135,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         }
       }
     } else if (subjectType === 'waitlist_entry') {
-      const entries: any[] = await db.$queryRawUnsafe(
-        `SELECT id, "customerName", "partySize", phone, "pagerNumber", status
+      const entries: any[] = await db.$queryRaw`SELECT id, "customerName", "partySize", phone, "pagerNumber", status
          FROM "WaitlistEntry"
-         WHERE id = $1 AND "locationId" = $2`,
-        subjectId,
-        locationId
-      )
+         WHERE id = ${subjectId} AND "locationId" = ${locationId}`
       if (entries[0]) {
         subjectFound = true
         subjectContext = {
@@ -162,17 +151,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     // ── Step 3: Get active target assignments ──────────────────────────────
-    const targets: TargetInfo[] = await db.$queryRawUnsafe(
-      `SELECT id, "targetType", "targetValue", status, "isPrimary", "providerId"
+    const targets: TargetInfo[] = await db.$queryRaw`SELECT id, "targetType", "targetValue", status, "isPrimary", "providerId"
        FROM "NotificationTargetAssignment"
-       WHERE "locationId" = $1
-         AND "subjectType" = $2
-         AND "subjectId" = $3
-       ORDER BY status ASC, "isPrimary" DESC, "createdAt" DESC`,
-      locationId,
-      subjectType,
-      subjectId
-    ) as TargetInfo[]
+       WHERE "locationId" = ${locationId}
+         AND "subjectType" = ${subjectType}
+         AND "subjectId" = ${subjectId}
+       ORDER BY status ASC, "isPrimary" DESC, "createdAt" DESC` as TargetInfo[]
 
     const activeTargets = targets.filter(t => t.status === 'active')
     const hasPager = activeTargets.some(t => ['guest_pager', 'staff_pager'].includes(t.targetType))
@@ -181,17 +165,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       || !!subjectContext.phone
 
     // ── Step 4: Get all routing rules for this event type ──────────────────
-    const allRules: any[] = await db.$queryRawUnsafe(
-      `SELECT r.*, p.name as "providerName", p."providerType"
+    const allRules: any[] = await db.$queryRaw`SELECT r.*, p.name as "providerName", p."providerType"
        FROM "NotificationRoutingRule" r
        LEFT JOIN "NotificationProvider" p ON p.id = r."providerId" AND p."deletedAt" IS NULL
-       WHERE r."locationId" = $1
-         AND r."eventType" = $2
+       WHERE r."locationId" = ${locationId}
+         AND r."eventType" = ${eventType}
          AND r."deletedAt" IS NULL
-       ORDER BY r.priority DESC, r."createdAt" ASC`,
-      locationId,
-      eventType
-    )
+       ORDER BY r.priority DESC, r."createdAt" ASC`
 
     // ── Step 5: Evaluate each rule ──────────────────────────────────────────
     const now = new Date()
@@ -331,32 +311,23 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const providerIds = [...new Set(allRules.map((r: any) => r.providerId).filter(Boolean))]
     let providerHealth: ProviderHealth[] = []
     if (providerIds.length > 0) {
-      providerHealth = await db.$queryRawUnsafe(
-        `SELECT id, name, "providerType", "isActive", "healthStatus",
+      providerHealth = await db.$queryRaw`SELECT id, name, "providerType", "isActive", "healthStatus",
                 "consecutiveFailures", "circuitBreakerOpenUntil", "lastHealthCheckAt"
          FROM "NotificationProvider"
-         WHERE id = ANY($1::text[]) AND "deletedAt" IS NULL`,
-        providerIds
-      ) as ProviderHealth[]
+         WHERE id = ANY(${providerIds}::text[]) AND "deletedAt" IS NULL` as ProviderHealth[]
     }
 
     // ── Step 7: Check for recent notification jobs ──────────────────────────
-    const recentJobs: any[] = await db.$queryRawUnsafe(
-      `SELECT id, status, "terminalResult", "createdAt", "completedAt",
+    const recentJobs: any[] = await db.$queryRaw`SELECT id, status, "terminalResult", "createdAt", "completedAt",
               "targetType", "targetValue", "providerId", "dispatchOrigin",
               "ruleExplainSnapshot"
        FROM "NotificationJob"
-       WHERE "locationId" = $1
-         AND "subjectType" = $2
-         AND "subjectId" = $3
-         AND "eventType" = $4
+       WHERE "locationId" = ${locationId}
+         AND "subjectType" = ${subjectType}
+         AND "subjectId" = ${subjectId}
+         AND "eventType" = ${eventType}
        ORDER BY "createdAt" DESC
-       LIMIT 10`,
-      locationId,
-      subjectType,
-      subjectId,
-      eventType
-    )
+       LIMIT 10`
 
     // ── Build explanation ──────────────────────────────────────────────────
     const matchedRules = ruleEvaluations.filter(r => r.matched)

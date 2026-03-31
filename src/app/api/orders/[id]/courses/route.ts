@@ -243,7 +243,7 @@ export const POST = withVenue(async function POST(
     // Wrap batch item updates in a transaction with row-level lock
     const result = await db.$transaction(async (tx) => {
       // Row-level lock to prevent concurrent course mutations
-      await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', orderId)
+      await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${orderId} FOR UPDATE`
 
       switch (action) {
         case 'fire': {

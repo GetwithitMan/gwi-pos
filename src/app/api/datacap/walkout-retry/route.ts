@@ -80,10 +80,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const cardCreatedAt = new Date(orderCard.createdAt)
     const daysSinceAuth = (Date.now() - cardCreatedAt.getTime()) / (1000 * 60 * 60 * 24)
     if (daysSinceAuth > 30) {
-      await db.$executeRawUnsafe(
-        `UPDATE "WalkoutRetry" SET status = 'exhausted', "lastRetryError" = 'Pre-auth expired (>30 days)', "updatedAt" = NOW() WHERE id = $1`,
-        walkoutRetryId
-      )
+      await db.$executeRaw`UPDATE "WalkoutRetry" SET status = 'exhausted', "lastRetryError" = 'Pre-auth expired (>30 days)', "updatedAt" = NOW() WHERE id = ${walkoutRetryId}`
       pushUpstream()
       return ok({ success: false, reason: 'Pre-auth expired', daysSinceAuth: Math.floor(daysSinceAuth) })
     }
@@ -110,45 +107,29 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
         const txResult = await db.$transaction(async (tx) => {
           // Atomically claim the walkout retry — if another request already collected, 0 rows updated
-          const updatedRows = await tx.$executeRawUnsafe(
-            `UPDATE "WalkoutRetry"
+          const updatedRows = await tx.$executeRaw`UPDATE "WalkoutRetry"
              SET status = 'collected', "collectedAt" = NOW(), "lastRetryAt" = NOW(),
-                 "retryCount" = $1, "updatedAt" = NOW()
-             WHERE id = $2 AND status = 'pending'`,
-            retry.retryCount + 1,
-            walkoutRetryId,
-          )
+                 "retryCount" = ${retry.retryCount + 1}, "updatedAt" = NOW()
+             WHERE id = ${walkoutRetryId} AND status = 'pending'`
 
           if (updatedRows === 0) {
             return { duplicate: true } as const
           }
 
           // Update OrderCard, Order status, and create Payment record in the same transaction
-          const paymentRows = await tx.$queryRawUnsafe<Array<{ id: string }>>(
-            `WITH oc AS (
+          const paymentRows = await tx.$queryRaw<Array<{ id: string }>>`WITH oc AS (
               UPDATE "OrderCard"
-              SET status = 'captured', "capturedAmount" = $1, "capturedAt" = NOW(), "updatedAt" = NOW()
-              WHERE id = $2
+              SET status = 'captured', "capturedAmount" = ${captureAmount}, "capturedAt" = NOW(), "updatedAt" = NOW()
+              WHERE id = ${orderCard.id}
             ), ord AS (
               UPDATE "Order"
               SET status = 'paid', "tabStatus" = 'closed', "paidAt" = NOW(), "closedAt" = NOW(), "updatedAt" = NOW()
-              WHERE id = $3
+              WHERE id = ${retry.orderId}
             )
             INSERT INTO "Payment" (id, "locationId", "orderId", "employeeId", amount, "tipAmount", "totalAmount",
               "paymentMethod", "cardBrand", "cardLast4", "authCode", "datacapRecordNo", status, "createdAt", "updatedAt")
-            VALUES (gen_random_uuid()::text, $4, $3, $5, $1, 0, $1, $6, $7, $8, $9, $10, 'completed', NOW(), NOW())
-            RETURNING id`,
-            captureAmount,
-            orderCard.id,
-            retry.orderId,
-            locationId,
-            employeeId || null,
-            paymentMethod,
-            cardBrand,
-            orderCard.cardLast4,
-            response.authCode || null,
-            orderCard.recordNo,
-          )
+            VALUES (gen_random_uuid()::text, ${locationId}, ${retry.orderId}, ${employeeId || null}, ${captureAmount}, 0, ${captureAmount}, ${paymentMethod}, ${cardBrand}, ${orderCard.cardLast4}, ${response.authCode || null}, ${orderCard.recordNo}, 'completed', NOW(), NOW())
+            RETURNING id`
           return { duplicate: false, paymentId: paymentRows[0]?.id } as const
         }, { timeout: 15000 })
 
@@ -201,17 +182,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         const lastRetryError = error?.text || response.textResponse || 'Declined'
 
         // Clock discipline: use DB-generated NOW() for lastRetryAt
-        await db.$executeRawUnsafe(
-          `UPDATE "WalkoutRetry"
-           SET "retryCount" = $1, "lastRetryAt" = NOW(), "lastRetryError" = $2,
-               status = $3, "nextRetryAt" = $4, "updatedAt" = NOW()
-           WHERE id = $5`,
-          retry.retryCount + 1,
-          lastRetryError,
-          exhausted ? 'exhausted' : 'pending',
-          exhausted ? retry.nextRetryAt : nextRetry,
-          walkoutRetryId,
-        )
+        await db.$executeRaw`UPDATE "WalkoutRetry"
+           SET "retryCount" = ${retry.retryCount + 1}, "lastRetryAt" = NOW(), "lastRetryError" = ${lastRetryError},
+               status = ${exhausted ? 'exhausted' : 'pending'}, "nextRetryAt" = ${exhausted ? retry.nextRetryAt : nextRetry}, "updatedAt" = NOW()
+           WHERE id = ${walkoutRetryId}`
         pushUpstream()
 
         return ok({
@@ -226,14 +200,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       const errorMsg = err instanceof Error ? err.message : 'Retry failed'
 
       // Clock discipline: use DB-generated NOW() for lastRetryAt
-      await db.$executeRawUnsafe(
-        `UPDATE "WalkoutRetry"
-         SET "retryCount" = $1, "lastRetryAt" = NOW(), "lastRetryError" = $2, "updatedAt" = NOW()
-         WHERE id = $3`,
-        retry.retryCount + 1,
-        errorMsg,
-        walkoutRetryId,
-      )
+      await db.$executeRaw`UPDATE "WalkoutRetry"
+         SET "retryCount" = ${retry.retryCount + 1}, "lastRetryAt" = NOW(), "lastRetryError" = ${errorMsg}, "updatedAt" = NOW()
+         WHERE id = ${walkoutRetryId}`
       pushUpstream()
 
       return ok({ success: false, error: errorMsg })

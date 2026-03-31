@@ -102,8 +102,8 @@ export const POST = withVenue(async function POST(
     const { movedItems, movedDiscounts } = await db.$transaction(async (tx) => {
       // Acquire row-level locks in consistent order (alphabetical by ID) to prevent deadlocks
       const [firstId, secondId] = [sourceOrderId, targetOrderId].sort()
-      await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', firstId)
-      await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', secondId)
+      await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${firstId} FOR UPDATE`
+      await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${secondId} FOR UPDATE`
 
       // Re-check both orders are still in valid states after acquiring locks
       const [lockedTarget, lockedSource] = await Promise.all([

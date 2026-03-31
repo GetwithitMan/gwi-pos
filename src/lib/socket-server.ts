@@ -20,6 +20,7 @@ import { relayCellularEvent } from './cellular-event-relay'
 import type { Server as HTTPServer } from 'http'
 import type { Server as SocketServer, Socket } from 'socket.io'
 import { MOBILE_EVENTS, PAT_EVENTS } from '@/types/multi-surface'
+import { Prisma } from '@/generated/prisma/client'
 import { db } from '@/lib/db'
 import { verifySessionToken, POS_SESSION_COOKIE } from '@/lib/auth-session'
 import { recordEvent, getEventsSince, getLatestEventId } from '@/lib/socket-event-buffer'
@@ -167,9 +168,8 @@ function setCfdMapping(cfdTerminalId: string, registerTerminalId: string): void 
     if (oldestKey) cfdToRegisterMap.delete(oldestKey)
   }
   // Persist CFD pairing to Terminal.cfdTerminalId for restart recovery
-  void db.$executeRawUnsafe(
-    `UPDATE "Terminal" SET "cfdTerminalId" = $1 WHERE id = $2`,
-    cfdTerminalId, registerTerminalId
+  void db.$executeRaw(
+    Prisma.sql`UPDATE "Terminal" SET "cfdTerminalId" = ${cfdTerminalId} WHERE id = ${registerTerminalId}`,
   ).catch((err) => log.warn({ err }, 'CFD pairing persist failed'))
 }
 
@@ -306,8 +306,8 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
     try {
       // NUCs are single-tenant (one locationId per server), so no cross-tenant risk here.
       // All terminals on this NUC belong to the same location.
-      const pairings = await db.$queryRawUnsafe<Array<{ id: string; cfdTerminalId: string }>>(
-        `SELECT id, "cfdTerminalId" FROM "Terminal" WHERE "cfdTerminalId" IS NOT NULL AND "deletedAt" IS NULL`
+      const pairings = await db.$queryRaw<Array<{ id: string; cfdTerminalId: string }>>(
+        Prisma.sql`SELECT id, "cfdTerminalId" FROM "Terminal" WHERE "cfdTerminalId" IS NOT NULL AND "deletedAt" IS NULL`
       )
       for (const t of pairings) {
         if (t.cfdTerminalId) {

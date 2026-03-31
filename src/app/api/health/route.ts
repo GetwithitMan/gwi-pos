@@ -326,22 +326,13 @@ export const GET = withVenue(async function GET(): Promise<NextResponse<{ data: 
   if (databaseCheck && locationId) {
     try {
       const [pendingRow, dlqRow, providerRows] = await Promise.all([
-        db.$queryRawUnsafe<[{ count: bigint }]>(
-          `SELECT COUNT(*) as count FROM "NotificationJob"
-           WHERE "locationId" = $1 AND status IN ('pending', 'claimed', 'processing', 'waiting_retry')`,
-          locationId
-        ),
-        db.$queryRawUnsafe<[{ count: bigint }]>(
-          `SELECT COUNT(*) as count FROM "NotificationJob"
-           WHERE "locationId" = $1 AND status = 'dead_letter'`,
-          locationId
-        ),
-        db.$queryRawUnsafe<Array<{ healthStatus: string; isActive: boolean; circuitBreakerOpenUntil: Date | null }>>(
-          `SELECT "healthStatus", "isActive", "circuitBreakerOpenUntil"
+        db.$queryRaw<[{ count: bigint }]>`SELECT COUNT(*) as count FROM "NotificationJob"
+           WHERE "locationId" = ${locationId} AND status IN ('pending', 'claimed', 'processing', 'waiting_retry')`,
+        db.$queryRaw<[{ count: bigint }]>`SELECT COUNT(*) as count FROM "NotificationJob"
+           WHERE "locationId" = ${locationId} AND status = 'dead_letter'`,
+        db.$queryRaw<Array<{ healthStatus: string; isActive: boolean; circuitBreakerOpenUntil: Date | null }>>`SELECT "healthStatus", "isActive", "circuitBreakerOpenUntil"
            FROM "NotificationProvider"
-           WHERE "locationId" = $1 AND "deletedAt" IS NULL`,
-          locationId
-        ),
+           WHERE "locationId" = ${locationId} AND "deletedAt" IS NULL`,
       ])
 
       const pendingQueueDepth = Number(pendingRow[0]?.count ?? 0)

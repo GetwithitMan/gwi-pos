@@ -45,10 +45,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Also check DB for any devices with revoked/quarantined status
     let dbRevokedTerminals: string[] = []
     try {
-      const revoked = await db.$queryRawUnsafe<Array<{ terminalId: string }>>(
-        `SELECT "terminalId" FROM "CellularDevice" WHERE "locationId" = $1 AND status IN ('REVOKED', 'QUARANTINED') AND "terminalId" IS NOT NULL`,
-        locationId
-      )
+      const revoked = await db.$queryRaw<Array<{ terminalId: string }>>`SELECT "terminalId" FROM "CellularDevice" WHERE "locationId" = ${locationId} AND status IN ('REVOKED', 'QUARANTINED') AND "terminalId" IS NOT NULL`
       dbRevokedTerminals = revoked.map(r => r.terminalId)
     } catch {
       // CellularDevice table may not exist — safe to skip

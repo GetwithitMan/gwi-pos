@@ -56,12 +56,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       const orderIds = orders.filter(o => o.tableId).map(o => o.id)
       const subtotalMap = new Map<string, number>()
       if (orderIds.length > 0) {
-        const totals: { orderId: string; subtotal: number }[] = await db.$queryRawUnsafe(`
+        const totals: { orderId: string; subtotal: number }[] = await db.$queryRaw`
           SELECT oi."orderId", COALESCE(SUM(oi.price * oi.quantity), 0)::float as subtotal
           FROM "OrderItem" oi
-          WHERE oi."orderId" = ANY($1::text[]) AND oi."deletedAt" IS NULL AND oi."voidedAt" IS NULL
+          WHERE oi."orderId" = ANY(${orderIds}::text[]) AND oi."deletedAt" IS NULL AND oi."voidedAt" IS NULL
           GROUP BY oi."orderId"
-        `, orderIds)
+        `
         for (const row of totals) {
           subtotalMap.set(row.orderId, row.subtotal)
         }
@@ -86,15 +86,15 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const sevenDaysAgo = new Date()
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
 
-    const avgTurnResult: any[] = await db.$queryRawUnsafe(`
+    const avgTurnResult: any[] = await db.$queryRaw`
       SELECT AVG(EXTRACT(EPOCH FROM ("updatedAt" - "createdAt")) / 60)::float as avg_minutes
       FROM "Order"
-      WHERE "locationId" = $1
+      WHERE "locationId" = ${locationId}
         AND "tableId" IS NOT NULL
         AND status IN ('paid', 'closed', 'completed')
-        AND "createdAt" >= $2
+        AND "createdAt" >= ${sevenDaysAgo}
         AND "deletedAt" IS NULL
-    `, locationId, sevenDaysAgo)
+    `
 
     const avgTurnMinutes = Math.round(avgTurnResult[0]?.avg_minutes ?? 45)
 
@@ -197,17 +197,17 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     // Get server rotation state for the host view
-    const serverRotation: any[] = await db.$queryRawUnsafe(`
+    const serverRotation: any[] = await db.$queryRaw`
       SELECT sr."employeeId", e."firstName", e."lastName",
              sr."sectionId", s."name" as "sectionName",
              sr."tableCount", sr."lastSeatedAt", sr."isOnFloor"
       FROM "ServerRotationState" sr
       JOIN "Employee" e ON e.id = sr."employeeId"
       LEFT JOIN "Section" s ON s.id = sr."sectionId"
-      WHERE sr."locationId" = $1 AND sr."isOnFloor" = true
+      WHERE sr."locationId" = ${locationId} AND sr."isOnFloor" = true
         AND e."isActive" = true AND e."deletedAt" IS NULL
       ORDER BY sr."tableCount" ASC, sr."lastSeatedAt" ASC NULLS FIRST
-    `, locationId)
+    `
 
     return ok({
         sections: Array.from(sectionMap.values()),
@@ -283,11 +283,11 @@ export const PUT = withVenue(withAuth(async function PUT(request: NextRequest) {
       })
 
       if (activeOrder) {
-        await db.$queryRawUnsafe(`
+        await db.$queryRaw`
           UPDATE "ServerRotationState"
           SET "tableCount" = GREATEST("tableCount" - 1, 0), "updatedAt" = CURRENT_TIMESTAMP
-          WHERE "locationId" = $1 AND "employeeId" = $2
-        `, locationId, activeOrder.employeeId)
+          WHERE "locationId" = ${locationId} AND "employeeId" = ${activeOrder.employeeId}
+        `
       }
     }
 

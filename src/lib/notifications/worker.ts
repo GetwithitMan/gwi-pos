@@ -13,6 +13,7 @@
  */
 
 import crypto from 'crypto'
+import { Prisma } from '@/generated/prisma/client'
 import { db } from '@/lib/db'
 import { createChildLogger } from '@/lib/logger'
 import {
@@ -141,9 +142,8 @@ async function revalidateSubject(
   if (subjectType === 'waitlist_entry') {
     try {
       // WaitlistEntry is a raw SQL table — query directly
-      const rows = await db.$queryRawUnsafe<{ status: string }[]>(
-        `SELECT "status" FROM "WaitlistEntry" WHERE "id" = $1 LIMIT 1`,
-        subjectId
+      const rows = await db.$queryRaw<{ status: string }[]>(
+        Prisma.sql`SELECT "status" FROM "WaitlistEntry" WHERE "id" = ${subjectId} LIMIT 1`,
       )
       if (rows.length === 0) return 'skipped_subject_closed'
 

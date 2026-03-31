@@ -39,6 +39,7 @@ export async function notifyNuc(
   }
 
   // ── Vercel mode: POST to NUC's broadcast endpoint ──────────────────
+  const { Prisma } = await import('@/generated/prisma/client')
   const { masterClient } = await import('@/lib/db')
   const internalSecret = process.env.INTERNAL_API_SECRET
   if (!internalSecret) {
@@ -48,9 +49,8 @@ export async function notifyNuc(
 
   let nucBaseUrl: string | null = null
   try {
-    const rows = await masterClient.$queryRawUnsafe<{ nuc_base_url: string | null }[]>(
-      `SELECT nuc_base_url FROM "_cron_venue_registry" WHERE slug = $1`,
-      slug,
+    const rows = await masterClient.$queryRaw<{ nuc_base_url: string | null }[]>(
+      Prisma.sql`SELECT nuc_base_url FROM "_cron_venue_registry" WHERE slug = ${slug}`,
     )
     nucBaseUrl = rows[0]?.nuc_base_url ?? null
   } catch {

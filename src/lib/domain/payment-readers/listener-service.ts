@@ -9,6 +9,9 @@
  * transport_error, stale_lease, lease_conflict, invalid_card_payload,
  * detection_expired, order_version_conflict, suppressed_duplicate,
  * pad_reset_failed, unauthorized, provider_error_unknown
+ *
+ * NOTE: Uses $queryRawUnsafe/$executeRawUnsafe for raw SQL tables (PaymentReaderLease,
+ * CardDetection) and FOR UPDATE locking. All queries use positional $1/$2 params — safe from injection.
  */
 
 import { db } from '@/lib/db'

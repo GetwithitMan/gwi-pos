@@ -31,16 +31,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     // Fetch customer with tier
-    const customers = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT c."id", c."firstName", c."lastName", c."loyaltyPoints", c."lifetimePoints",
+    const customers = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT c."id", c."firstName", c."lastName", c."loyaltyPoints", c."lifetimePoints",
               c."loyaltyProgramId", c."loyaltyTierId", c."loyaltyEnrolledAt",
               lt."name" AS "tierName", lt."color" AS "tierColor", lt."pointsMultiplier",
               lt."perks" AS "tierPerks", lt."minimumPoints" AS "tierMinPoints"
        FROM "Customer" c
        LEFT JOIN "LoyaltyTier" lt ON lt."id" = c."loyaltyTierId"
-       WHERE c."id" = $1 AND c."deletedAt" IS NULL`,
-      customerId,
-    )
+       WHERE c."id" = ${customerId} AND c."deletedAt" IS NULL`
 
     if (customers.length === 0) {
       return notFound('Customer not found')
@@ -51,17 +48,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Get next tier info
     let nextTier: Record<string, unknown> | null = null
     if (customer.loyaltyProgramId) {
-      const nextTiers = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-        `SELECT "id", "name", "minimumPoints", "color", "pointsMultiplier", "perks"
+      const nextTiers = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT "id", "name", "minimumPoints", "color", "pointsMultiplier", "perks"
          FROM "LoyaltyTier"
-         WHERE "programId" = $1
-           AND "minimumPoints" > $2
+         WHERE "programId" = ${customer.loyaltyProgramId}
+           AND "minimumPoints" > ${Number(customer.lifetimePoints)}
            AND "deletedAt" IS NULL
          ORDER BY "minimumPoints" ASC
-         LIMIT 1`,
-        customer.loyaltyProgramId,
-        Number(customer.lifetimePoints),
-      )
+         LIMIT 1`
       if (nextTiers.length > 0) {
         nextTier = nextTiers[0]
       }
@@ -70,28 +63,21 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Get program info
     let program: Record<string, unknown> | null = null
     if (customer.loyaltyProgramId) {
-      const programs = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-        `SELECT "id", "name", "pointsPerDollar", "pointValueCents", "minimumRedeemPoints"
+      const programs = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT "id", "name", "pointsPerDollar", "pointValueCents", "minimumRedeemPoints"
          FROM "LoyaltyProgram"
-         WHERE "id" = $1 AND "deletedAt" IS NULL`,
-        customer.loyaltyProgramId,
-      )
+         WHERE "id" = ${customer.loyaltyProgramId} AND "deletedAt" IS NULL`
       if (programs.length > 0) {
         program = programs[0]
       }
     }
 
     // Get recent transactions (last 20, scoped to location)
-    const transactions = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT "id", "type", "points", "balanceBefore", "balanceAfter",
+    const transactions = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT "id", "type", "points", "balanceBefore", "balanceAfter",
               "description", "orderId", "createdAt"
        FROM "LoyaltyTransaction"
-       WHERE "customerId" = $1 AND "locationId" = $2
+       WHERE "customerId" = ${customerId} AND "locationId" = ${locationId}
        ORDER BY "createdAt" DESC
-       LIMIT 20`,
-      customerId,
-      locationId,
-    )
+       LIMIT 20`
 
     return ok({
         customerId: customer.id,

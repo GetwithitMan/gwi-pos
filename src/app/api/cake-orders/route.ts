@@ -111,8 +111,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     // Fetch one extra to determine hasMore
     params.push(take + 1)
-    const orders = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT
+    const orders = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT
          co.*,
          c."firstName" AS "customerFirstName",
          c."lastName" AS "customerLastName",
@@ -122,9 +121,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
        LEFT JOIN "Customer" c ON c."id" = co."customerId"
        WHERE ${whereClause}
        ORDER BY co."createdAt" DESC, co."id" DESC
-       LIMIT $${paramIdx}`,
-      ...params,
-    )
+       LIMIT $${paramIdx}`
 
     const hasMore = orders.length > take
     const page = hasMore ? orders.slice(0, take) : orders
@@ -181,53 +178,34 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const orderId = crypto.randomUUID()
 
     // ── Advisory lock on location for orderNumber sequence ────────────
-    const orderNumberRows = await db.$queryRawUnsafe<[{ nextval: string | number }]>(
-      `SELECT pg_advisory_xact_lock(hashtext($1::text));
+    const orderNumberRows = await db.$queryRaw<[{ nextval: string | number }]>`SELECT pg_advisory_xact_lock(hashtext(${locationId}::text));
        SELECT COALESCE(MAX("orderNumber"), 0) + 1 AS nextval
        FROM "CakeOrder"
-       WHERE "locationId" = $1`,
-      locationId,
-    )
+       WHERE "locationId" = ${locationId}`
     const orderNumber = Number(orderNumberRows[0]?.nextval ?? 1)
 
     // ── Capacity check advisory lock on locationId:eventDate ──────────
     // This serializes order creation for the same date to prevent overselling
-    await db.$executeRawUnsafe(
-      `SELECT pg_advisory_xact_lock(hashtext($1 || ':' || $2))`,
-      locationId,
-      input.eventDate,
-    )
+    await db.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${locationId} || ':' || ${input.eventDate}))`
 
     // ── Resolve or create customer ────────────────────────────────────
     let resolvedCustomerId = input.customerId || null
 
     if (!resolvedCustomerId && input.customerFirstName && input.customerPhone) {
       // Try to find existing customer by phone + location
-      const existing = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-        `SELECT "id" FROM "Customer"
-         WHERE "locationId" = $1 AND "phone" = $2 AND "deletedAt" IS NULL
-         LIMIT 1`,
-        locationId,
-        input.customerPhone,
-      )
+      const existing = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT "id" FROM "Customer"
+         WHERE "locationId" = ${locationId} AND "phone" = ${input.customerPhone} AND "deletedAt" IS NULL
+         LIMIT 1`
 
       if (existing.length > 0) {
         resolvedCustomerId = existing[0].id as string
       } else {
         // Create new customer
         resolvedCustomerId = crypto.randomUUID()
-        await db.$executeRawUnsafe(
-          `INSERT INTO "Customer" (
+        await db.$executeRaw`INSERT INTO "Customer" (
             "id", "locationId", "firstName", "lastName", "phone", "email",
             "createdAt", "updatedAt"
-          ) VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())`,
-          resolvedCustomerId,
-          locationId,
-          input.customerFirstName,
-          input.customerLastName || null,
-          input.customerPhone,
-          input.customerEmail || null,
-        )
+          ) VALUES (${resolvedCustomerId}, ${locationId}, ${input.customerFirstName}, ${input.customerLastName || null}, ${input.customerPhone}, ${input.customerEmail || null}, NOW(), NOW())`
       }
     }
 
@@ -235,8 +213,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const initialStatus = input.status || 'submitted'
 
     // ── INSERT CakeOrder ──────────────────────────────────────────────
-    await db.$executeRawUnsafe(
-      `INSERT INTO "CakeOrder" (
+    await db.$executeRaw`INSERT INTO "CakeOrder" (
         "id", "locationId", "orderNumber", "customerId",
         "eventDate", "eventTimeStart", "eventTimeEnd", "eventType", "guestCount",
         "deliveryType", "deliveryAddress",
@@ -245,55 +222,28 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         "status", "source", "assignedTo",
         "createdBy", "createdAt", "updatedAt"
       ) VALUES (
-        $1, $2, $3, $4,
-        $5::date, $6, $7, $8, $9,
-        $10, $11,
-        $12::jsonb, $13::jsonb, $14::jsonb,
-        $15, $16,
-        $17, $18, $19,
-        $20, NOW(), NOW()
-      )`,
-      orderId,
-      locationId,
-      orderNumber,
-      resolvedCustomerId,
-      input.eventDate,
-      input.eventTimeStart || null,
-      input.eventTimeEnd || null,
-      input.eventType,
-      input.guestCount ?? null,
-      input.deliveryType,
-      input.deliveryAddress || null,
-      JSON.stringify(input.cakeConfig),
-      JSON.stringify(input.designConfig),
-      JSON.stringify(input.dietaryConfig),
-      input.notes || null,
-      input.internalNotes || null,
-      initialStatus,
-      input.source || 'admin',
-      null,
-      auth.employee.id,
-    )
+        ${orderId}, ${locationId}, ${orderNumber}, ${resolvedCustomerId},
+        ${input.eventDate}::date, ${input.eventTimeStart || null}, ${input.eventTimeEnd || null}, ${input.eventType}, ${input.guestCount ?? null},
+        ${input.deliveryType}, ${input.deliveryAddress || null},
+        ${JSON.stringify(input.cakeConfig)}::jsonb, ${JSON.stringify(input.designConfig)}::jsonb, ${JSON.stringify(input.dietaryConfig)}::jsonb,
+        ${input.notes || null}, ${input.internalNotes || null},
+        ${initialStatus}, ${input.source || 'admin'}, ${null},
+        ${auth.employee.id}, NOW(), NOW()
+      )`
 
     // ── INSERT CakeOrderChange (audit trail) ──────────────────────────
     const changeId = crypto.randomUUID()
-    await db.$executeRawUnsafe(
-      `INSERT INTO "CakeOrderChange" (
+    await db.$executeRaw`INSERT INTO "CakeOrderChange" (
         "id", "cakeOrderId", "changeType", "changedBy", "source",
         "details", "createdAt"
       ) VALUES (
-        $1, $2, 'status_change', $3, 'admin',
-        $4::jsonb, NOW()
-      )`,
-      changeId,
-      orderId,
-      auth.employee.id,
-      JSON.stringify({
+        ${changeId}, ${orderId}, 'status_change', ${auth.employee.id}, 'admin',
+        ${JSON.stringify({
         previousStatus: null,
         newStatus: initialStatus,
         trigger: 'admin_create',
-      }),
-    )
+      })}::jsonb, NOW()
+      )`
 
     pushUpstream()
 
@@ -306,17 +256,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }).catch(err => console.error('[cake-orders] Socket dispatch failed:', err))
 
     // ── Fetch the created order for response ──────────────────────────
-    const created = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT co.*,
+    const created = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT co.*,
               c."firstName" AS "customerFirstName",
               c."lastName" AS "customerLastName",
               c."phone" AS "customerPhone",
               c."email" AS "customerEmail"
        FROM "CakeOrder" co
        LEFT JOIN "Customer" c ON c."id" = co."customerId"
-       WHERE co."id" = $1`,
-      orderId,
-    )
+       WHERE co."id" = ${orderId}`
 
     return ok(created[0])
   } catch (error) {

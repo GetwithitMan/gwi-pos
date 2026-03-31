@@ -63,12 +63,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       deviceLostRows,
     ] = await Promise.all([
       // Overall: total processed, success count, avg latency
-      db.$queryRawUnsafe<[{
+      db.$queryRaw<[{
         total: bigint
         succeeded: bigint
         avg_latency: number | null
-      }]>(
-        `SELECT
+      }]>`SELECT
            COUNT(*) as total,
            COUNT(*) FILTER (WHERE "terminalResult" = 'delivered' OR "terminalResult" = 'fallback_delivered') as succeeded,
            AVG(a.avg_lat) as avg_latency
@@ -76,26 +75,23 @@ export const GET = withVenue(async function GET(request: NextRequest) {
          LEFT JOIN (
            SELECT "jobId", AVG("latencyMs") as avg_lat
            FROM "NotificationAttempt"
-           WHERE "startedAt" >= $2 AND "startedAt" < $3
+           WHERE "startedAt" >= ${start} AND "startedAt" < ${end}
            GROUP BY "jobId"
          ) a ON a."jobId" = j.id
-         WHERE j."locationId" = $1
-           AND j."createdAt" >= $2
-           AND j."createdAt" < $3
+         WHERE j."locationId" = ${locationId}
+           AND j."createdAt" >= ${start}
+           AND j."createdAt" < ${end}
            AND j.status IN ('completed', 'failed', 'dead_letter', 'cancelled', 'suppressed')`,
-        locationId, start, end
-      ),
 
       // Per-provider breakdown
-      db.$queryRawUnsafe<Array<{
+      db.$queryRaw<Array<{
         providerId: string
         providerType: string | null
         total_attempts: bigint
         succeeded: bigint
         avg_latency: number | null
         timed_out: bigint
-      }>>(
-        `SELECT
+      }>>`SELECT
            a."providerId",
            MAX(a."providerType") as "providerType",
            COUNT(*) as total_attempts,
@@ -104,77 +100,60 @@ export const GET = withVenue(async function GET(request: NextRequest) {
            COUNT(*) FILTER (WHERE a.result = 'timeout_unknown_delivery') as timed_out
          FROM "NotificationAttempt" a
          JOIN "NotificationJob" j ON j.id = a."jobId"
-         WHERE j."locationId" = $1
-           AND a."startedAt" >= $2
-           AND a."startedAt" < $3
+         WHERE j."locationId" = ${locationId}
+           AND a."startedAt" >= ${start}
+           AND a."startedAt" < ${end}
          GROUP BY a."providerId"`,
-        locationId, start, end
-      ),
 
       // Per-event-type breakdown
-      db.$queryRawUnsafe<Array<{
+      db.$queryRaw<Array<{
         eventType: string
         total: bigint
         succeeded: bigint
-      }>>(
-        `SELECT
+      }>>`SELECT
            "eventType",
            COUNT(*) as total,
            COUNT(*) FILTER (WHERE "terminalResult" = 'delivered' OR "terminalResult" = 'fallback_delivered') as succeeded
          FROM "NotificationJob"
-         WHERE "locationId" = $1
-           AND "createdAt" >= $2
-           AND "createdAt" < $3
+         WHERE "locationId" = ${locationId}
+           AND "createdAt" >= ${start}
+           AND "createdAt" < ${end}
            AND status IN ('completed', 'failed', 'dead_letter', 'cancelled', 'suppressed')
          GROUP BY "eventType"`,
-        locationId, start, end
-      ),
 
       // Dead-letter count in period
-      db.$queryRawUnsafe<[{ count: bigint }]>(
-        `SELECT COUNT(*) as count
+      db.$queryRaw<[{ count: bigint }]>`SELECT COUNT(*) as count
          FROM "NotificationJob"
-         WHERE "locationId" = $1
-           AND "createdAt" >= $2
-           AND "createdAt" < $3
+         WHERE "locationId" = ${locationId}
+           AND "createdAt" >= ${start}
+           AND "createdAt" < ${end}
            AND status = 'dead_letter'`,
-        locationId, start, end
-      ),
 
       // Fallback count in period
-      db.$queryRawUnsafe<[{ count: bigint }]>(
-        `SELECT COUNT(*) as count
+      db.$queryRaw<[{ count: bigint }]>`SELECT COUNT(*) as count
          FROM "NotificationJob"
-         WHERE "locationId" = $1
-           AND "createdAt" >= $2
-           AND "createdAt" < $3
+         WHERE "locationId" = ${locationId}
+           AND "createdAt" >= ${start}
+           AND "createdAt" < ${end}
            AND "terminalResult" = 'fallback_delivered'`,
-        locationId, start, end
-      ),
 
       // Device utilization
-      db.$queryRawUnsafe<[{
+      db.$queryRaw<[{
         total_devices: bigint
         assigned: bigint
         avg_duration_sec: number | null
-      }]>(
-        `SELECT
+      }]>`SELECT
            COUNT(*) as total_devices,
            COUNT(*) FILTER (WHERE status = 'assigned') as assigned,
            AVG(EXTRACT(EPOCH FROM (COALESCE("releasedAt", NOW()) - "assignedAt")))
              FILTER (WHERE "assignedAt" IS NOT NULL) as avg_duration_sec
          FROM "NotificationDevice"
-         WHERE "locationId" = $1 AND "deletedAt" IS NULL`,
-        locationId
-      ),
+         WHERE "locationId" = ${locationId} AND "deletedAt" IS NULL`,
 
       // Lost devices count
-      db.$queryRawUnsafe<[{ count: bigint }]>(
-        `SELECT COUNT(*) as count
+      db.$queryRaw<[{ count: bigint }]>`SELECT COUNT(*) as count
          FROM "NotificationDevice"
-         WHERE "locationId" = $1 AND status = 'missing' AND "deletedAt" IS NULL`,
-        locationId
-      ),
+         WHERE "locationId" = ${locationId} AND status = 'missing' AND "deletedAt" IS NULL`,
     ])
 
     const totalProcessed = Number(overallRows[0]?.total ?? 0)

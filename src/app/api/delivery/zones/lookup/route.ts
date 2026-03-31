@@ -113,11 +113,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Fetch all active, non-deleted zones ordered by sortOrder
-    const zones: any[] = await db.$queryRawUnsafe(`
+    const zones: any[] = await db.$queryRaw`
       SELECT * FROM "DeliveryZone"
-      WHERE "locationId" = $1 AND "deletedAt" IS NULL AND "isActive" = true
+      WHERE "locationId" = ${locationId} AND "deletedAt" IS NULL AND "isActive" = true
       ORDER BY "sortOrder" ASC
-    `, locationId)
+    `
 
     if (!zones.length) {
       return ok({ zone: null, matchType: null })

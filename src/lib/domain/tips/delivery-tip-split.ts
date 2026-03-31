@@ -1,3 +1,5 @@
+import { Prisma } from '@/generated/prisma/client'
+
 /**
  * Delivery Tip Split — Kitchen Tip-Out
  *
@@ -95,10 +97,9 @@ export async function processDeliveryTipSplit(
 
   try {
     // Idempotency check via DeliveryAuditLog
-    const existing = await db.$queryRawUnsafe<{ id: string }[]>(
-      `SELECT "id" FROM "DeliveryAuditLog"
-       WHERE "idempotencyKey" = $1 LIMIT 1`,
-      idempotencyKey,
+    const existing = await db.$queryRaw<{ id: string }[]>(
+      Prisma.sql`SELECT "id" FROM "DeliveryAuditLog"
+       WHERE "idempotencyKey" = ${idempotencyKey} LIMIT 1`,
     )
     if (existing.length) {
       return noopResult // Already processed
@@ -143,21 +144,19 @@ export async function processDeliveryTipSplit(
     // 3. Find clocked-in BOH employees with isTipped = true
     //    BOH = employees whose Role has isTipped = true AND who are currently clocked in
     //    We use Role.tipWeight for proportional distribution
-    const bohEmployees = await db.$queryRawUnsafe<
+    const bohEmployees = await db.$queryRaw<
       { employeeId: string; tipWeight: string }[]
     >(
-      `SELECT DISTINCT tc."employeeId", r."tipWeight"
+      Prisma.sql`SELECT DISTINCT tc."employeeId", r."tipWeight"
        FROM "TimeClockEntry" tc
        JOIN "Employee" e ON e."id" = tc."employeeId" AND e."deletedAt" IS NULL
        JOIN "Role" r ON r."id" = e."roleId" AND r."deletedAt" IS NULL
-       WHERE tc."locationId" = $1
+       WHERE tc."locationId" = ${locationId}
          AND tc."clockOutTime" IS NULL
          AND tc."deletedAt" IS NULL
          AND r."isTipped" = true
          AND r."tipWeight" > 0
-         AND tc."employeeId" != $2`,
-      locationId,
-      driverEmployeeId,
+         AND tc."employeeId" != ${driverEmployeeId}`,
     )
 
     if (!bohEmployees.length) {

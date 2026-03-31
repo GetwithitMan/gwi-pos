@@ -43,7 +43,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       statsResult,
     ] = await Promise.all([
       // 1. Active delivery orders (not terminal)
-      db.$queryRawUnsafe<any[]>(`
+      db.$queryRaw<any[]>`
         SELECT d.*,
                o."orderNumber", o."status" as "orderStatus", o."total" as "orderTotal",
                dz."name" as "zoneName", dz."color" as "zoneColor",
@@ -52,7 +52,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         LEFT JOIN "Order" o ON o.id = d."orderId"
         LEFT JOIN "DeliveryZone" dz ON dz.id = d."zoneId"
         LEFT JOIN "Employee" e ON e.id = d."driverId"
-        WHERE d."locationId" = $1
+        WHERE d."locationId" = ${locationId}
           AND d.status NOT IN ('delivered', 'cancelled_before_dispatch', 'cancelled_after_dispatch', 'failed_delivery', 'returned_to_store')
         ORDER BY
           CASE d."status"
@@ -68,10 +68,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
             WHEN 'redelivery_pending' THEN 10
           END,
           d."createdAt" ASC
-      `, locationId),
+      `,
 
       // 2. Active runs with driver info
-      db.$queryRawUnsafe<any[]>(`
+      db.$queryRaw<any[]>`
         SELECT r.*,
                dd."vehicleType", dd."vehicleMake", dd."vehicleModel", dd."vehicleColor", dd."licensePlate",
                e."firstName" as "driverFirstName", e."lastName" as "driverLastName",
@@ -83,29 +83,29 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         FROM "DeliveryRun" r
         LEFT JOIN "DeliveryDriver" dd ON dd.id = r."driverId"
         LEFT JOIN "Employee" e ON e.id = dd."employeeId"
-        WHERE r."locationId" = $1
+        WHERE r."locationId" = ${locationId}
           AND r.status NOT IN ('completed', 'returned', 'cancelled')
         ORDER BY r."createdAt" ASC
-      `, locationId),
+      `,
 
       // 3. Active driver sessions with last GPS
-      db.$queryRawUnsafe<any[]>(`
+      db.$queryRaw<any[]>`
         SELECT ds.*,
                dd."vehicleType", dd."vehicleMake", dd."vehicleModel", dd."vehicleColor", dd."licensePlate",
                e."firstName" as "driverFirstName", e."lastName" as "driverLastName"
         FROM "DeliveryDriverSession" ds
         JOIN "DeliveryDriver" dd ON dd.id = ds."driverId"
         JOIN "Employee" e ON e.id = dd."employeeId"
-        WHERE ds."locationId" = $1
+        WHERE ds."locationId" = ${locationId}
           AND ds."endedAt" IS NULL
           AND ds.status != 'off_duty'
         ORDER BY e."firstName" ASC
-      `, locationId),
+      `,
 
       // 4. Open exceptions
-      db.$queryRawUnsafe<any[]>(`
+      db.$queryRaw<any[]>`
         SELECT * FROM "DeliveryException"
-        WHERE "locationId" = $1
+        WHERE "locationId" = ${locationId}
           AND status IN ('open', 'acknowledged')
         ORDER BY
           CASE severity
@@ -115,17 +115,17 @@ export const GET = withVenue(async function GET(request: NextRequest) {
             WHEN 'low' THEN 4
           END,
           "createdAt" ASC
-      `, locationId),
+      `,
 
       // 5. Active zones
-      db.$queryRawUnsafe<any[]>(`
+      db.$queryRaw<any[]>`
         SELECT * FROM "DeliveryZone"
-        WHERE "locationId" = $1 AND "isActive" = true
+        WHERE "locationId" = ${locationId} AND "isActive" = true
         ORDER BY "name" ASC
-      `, locationId),
+      `,
 
       // 6. Today's stats
-      db.$queryRawUnsafe<any[]>(`
+      db.$queryRaw<any[]>`
         SELECT
           COUNT(*)::int as "totalToday",
           COUNT(*) FILTER (
@@ -146,9 +146,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
               AND EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - "createdAt")) / 60 > "estimatedMinutes"
           )::int as "lateCount"
         FROM "DeliveryOrder"
-        WHERE "locationId" = $1
+        WHERE "locationId" = ${locationId}
           AND "createdAt" >= CURRENT_DATE
-      `, locationId),
+      `,
     ])
 
     // Enrich results

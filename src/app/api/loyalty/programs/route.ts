@@ -29,15 +29,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       )
     }
 
-    const programs = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT lp.*,
+    const programs = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT lp.*,
               (SELECT COUNT(*) FROM "Customer" WHERE "loyaltyProgramId" = lp."id" AND "deletedAt" IS NULL)::int AS "enrolledCount",
               (SELECT COUNT(*) FROM "LoyaltyTier" WHERE "programId" = lp."id" AND "deletedAt" IS NULL)::int AS "tierCount"
        FROM "LoyaltyProgram" lp
-       WHERE lp."locationId" = $1 AND lp."deletedAt" IS NULL
-       ORDER BY lp."createdAt" ASC`,
-      locationId,
-    )
+       WHERE lp."locationId" = ${locationId} AND lp."deletedAt" IS NULL
+       ORDER BY lp."createdAt" ASC`
 
     return ok(programs)
   } catch (error: any) {
@@ -71,12 +68,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Check for existing active program
-    const existing = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT "id" FROM "LoyaltyProgram"
-       WHERE "locationId" = $1 AND "deletedAt" IS NULL
-       LIMIT 1`,
-      locationId,
-    )
+    const existing = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT "id" FROM "LoyaltyProgram"
+       WHERE "locationId" = ${locationId} AND "deletedAt" IS NULL
+       LIMIT 1`
 
     if (existing.length > 0) {
       return err('Location already has a loyalty program. Edit the existing one.', 409)
@@ -103,34 +97,19 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     const id = crypto.randomUUID()
 
-    await db.$executeRawUnsafe(
-      `INSERT INTO "LoyaltyProgram" (
+    await db.$executeRaw`INSERT INTO "LoyaltyProgram" (
         "id", "locationId", "name", "isActive",
         "pointsPerDollar", "pointValueCents", "minimumRedeemPoints",
         "roundingMode", "excludedCategoryIds", "excludedItemTypes",
         "createdAt", "updatedAt"
       ) VALUES (
-        $1, $2, $3, $4,
-        $5, $6, $7,
-        $8, $9::text[], $10::text[],
+        ${id}, ${locationId}, ${name}, ${isActive},
+        ${pointsPerDollar}, ${pointValueCents}, ${minimumRedeemPoints},
+        ${roundingMode}, ${excludedCategoryIds}::text[], ${excludedItemTypes}::text[],
         NOW(), NOW()
-      )`,
-      id,
-      locationId,
-      name,
-      isActive,
-      pointsPerDollar,
-      pointValueCents,
-      minimumRedeemPoints,
-      roundingMode,
-      excludedCategoryIds,
-      excludedItemTypes,
-    )
+      )`
 
-    const created = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT * FROM "LoyaltyProgram" WHERE "id" = $1`,
-      id,
-    )
+    const created = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT * FROM "LoyaltyProgram" WHERE "id" = ${id}`
 
     pushUpstream()
     void notifyDataChanged({ locationId, domain: 'loyalty', action: 'created', entityId: id })

@@ -17,14 +17,10 @@ async function verifyPortalSession(locationId: string): Promise<{
   const token = cookieStore.get('portal_session')?.value
   if (!token) return null
 
-  const rows = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-    `SELECT "id", "customerId" FROM "CustomerPortalSession"
-     WHERE "sessionToken" = $1
-       AND "locationId" = $2
-       AND "sessionExpiresAt" > NOW()`,
-    token,
-    locationId,
-  )
+  const rows = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT "id", "customerId" FROM "CustomerPortalSession"
+     WHERE "sessionToken" = ${token}
+       AND "locationId" = ${locationId}
+       AND "sessionExpiresAt" > NOW()`
 
   if (rows.length === 0) return null
   return { customerId: rows[0].customerId as string, sessionId: rows[0].id as string }
@@ -39,10 +35,7 @@ export const GET = withVenue(async function GET(
     const { slug } = await params
 
     // Resolve slug
-    const locations = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT "id" FROM "Location" WHERE "slug" = $1 LIMIT 1`,
-      slug,
-    )
+    const locations = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT "id" FROM "Location" WHERE "slug" = ${slug} LIMIT 1`
 
     if (locations.length === 0) {
       return notFound('Location not found')
@@ -59,17 +52,14 @@ export const GET = withVenue(async function GET(
     const customerId = session.customerId
 
     // Fetch customer with tier info
-    const customers = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT c."loyaltyPoints", c."lifetimePoints", c."loyaltyProgramId",
+    const customers = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT c."loyaltyPoints", c."lifetimePoints", c."loyaltyProgramId",
               c."loyaltyTierId", c."loyaltyEnrolledAt",
               lt."name" AS "tierName", lt."color" AS "tierColor",
               lt."pointsMultiplier" AS "tierMultiplier",
               lt."perks" AS "tierPerks"
        FROM "Customer" c
        LEFT JOIN "LoyaltyTier" lt ON lt."id" = c."loyaltyTierId"
-       WHERE c."id" = $1`,
-      customerId,
-    )
+       WHERE c."id" = ${customerId}`
 
     if (customers.length === 0) {
       return notFound('Customer not found')
@@ -81,17 +71,13 @@ export const GET = withVenue(async function GET(
     // Next tier
     let nextTier: Record<string, unknown> | null = null
     if (customer.loyaltyProgramId) {
-      const nextTiers = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-        `SELECT "name", "minimumPoints", "color"
+      const nextTiers = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT "name", "minimumPoints", "color"
          FROM "LoyaltyTier"
-         WHERE "programId" = $1
-           AND "minimumPoints" > $2
+         WHERE "programId" = ${customer.loyaltyProgramId}
+           AND "minimumPoints" > ${lifetimePoints}
            AND "deletedAt" IS NULL
          ORDER BY "minimumPoints" ASC
-         LIMIT 1`,
-        customer.loyaltyProgramId,
-        lifetimePoints,
-      )
+         LIMIT 1`
       if (nextTiers.length > 0) {
         nextTier = {
           name: nextTiers[0].name,
@@ -103,15 +89,11 @@ export const GET = withVenue(async function GET(
     }
 
     // Recent transactions (last 20, scoped to location)
-    const transactions = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT "id", "type", "points", "description", "createdAt"
+    const transactions = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT "id", "type", "points", "description", "createdAt"
        FROM "LoyaltyTransaction"
-       WHERE "customerId" = $1 AND "locationId" = $2
+       WHERE "customerId" = ${customerId} AND "locationId" = ${locationId}
        ORDER BY "createdAt" DESC
-       LIMIT 20`,
-      customerId,
-      locationId,
-    )
+       LIMIT 20`
 
     return ok({
       points: Number(customer.loyaltyPoints),

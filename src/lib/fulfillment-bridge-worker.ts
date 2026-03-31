@@ -15,6 +15,7 @@
  * Only runs when SYNC_ENABLED=true (NUC mode).
  */
 
+import { Prisma } from '@/generated/prisma/client'
 import { masterClient } from './db'
 import { emitToLocation, emitToTags } from './socket-server'
 import { shouldClaimBridge, isLeaseActive } from '@/lib/bridge-checkpoint'
@@ -64,18 +65,16 @@ async function pollAndProcess(): Promise<void> {
 
   try {
     // Reclaim stale claimed events (processing took too long)
-    await masterClient.$executeRawUnsafe(
-      `UPDATE "FulfillmentEvent"
+    await masterClient.$executeRaw(
+      Prisma.sql`UPDATE "FulfillmentEvent"
        SET status = 'pending', "claimedBy" = NULL, "claimedAt" = NULL
        WHERE status = 'claimed'
-         AND "claimedAt" < $1::timestamptz
-         AND "locationId" = $2`,
-      new Date(Date.now() - CLAIM_TIMEOUT).toISOString(),
-      LOCATION_ID,
+         AND "claimedAt" < ${new Date(Date.now() - CLAIM_TIMEOUT)}::timestamptz
+         AND "locationId" = ${LOCATION_ID}`,
     )
 
     // Atomic claim: SELECT FOR UPDATE SKIP LOCKED + UPDATE in one round-trip
-    const events = await masterClient.$queryRawUnsafe<Array<{
+    const events = await masterClient.$queryRaw<Array<{
       id: string
       type: string
       payload: unknown
@@ -84,19 +83,16 @@ async function pollAndProcess(): Promise<void> {
       orderId: string | null
       stationId: string | null
     }>>(
-      `UPDATE "FulfillmentEvent"
-       SET "claimedBy" = $1, "claimedAt" = NOW(), status = 'claimed'
+      Prisma.sql`UPDATE "FulfillmentEvent"
+       SET "claimedBy" = ${NODE_ID}, "claimedAt" = NOW(), status = 'claimed'
        WHERE id IN (
          SELECT id FROM "FulfillmentEvent"
-         WHERE "locationId" = $2 AND status = 'pending' AND "retryCount" < $3
+         WHERE "locationId" = ${LOCATION_ID} AND status = 'pending' AND "retryCount" < ${MAX_RETRIES}
          ORDER BY "createdAt" ASC
          LIMIT 10
          FOR UPDATE SKIP LOCKED
        )
        RETURNING id, type, payload, "locationId", "retryCount", "orderId", "stationId"`,
-      NODE_ID,
-      LOCATION_ID,
-      MAX_RETRIES,
     )
 
     if (events.length === 0) return
@@ -105,11 +101,10 @@ async function pollAndProcess(): Promise<void> {
       try {
         await executeHardwareAction(event)
 
-        await masterClient.$executeRawUnsafe(
-          `UPDATE "FulfillmentEvent"
+        await masterClient.$executeRaw(
+          Prisma.sql`UPDATE "FulfillmentEvent"
            SET status = 'completed', "completedAt" = NOW()
-           WHERE id = $1`,
-          event.id,
+           WHERE id = ${event.id}`,
         )
         metrics.eventsProcessed++
       } catch (err) {
@@ -124,17 +119,14 @@ async function pollAndProcess(): Promise<void> {
 
         log.error({ err, eventId: event.id, retryCount: newRetryCount, maxRetries: MAX_RETRIES }, 'Failed to process fulfillment event')
 
-        await masterClient.$executeRawUnsafe(
-          `UPDATE "FulfillmentEvent"
-           SET status = $1,
-               "retryCount" = $2,
+        await masterClient.$executeRaw(
+          Prisma.sql`UPDATE "FulfillmentEvent"
+           SET status = ${newStatus},
+               "retryCount" = ${newRetryCount},
                "failedAt" = NOW(),
                "claimedBy" = NULL,
                "claimedAt" = NULL
-           WHERE id = $3`,
-          newStatus,
-          newRetryCount,
-          event.id,
+           WHERE id = ${event.id}`,
         )
       }
     }

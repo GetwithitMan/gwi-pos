@@ -96,10 +96,7 @@ export async function GET(request: NextRequest) {
         await venueDb.$transaction(async (tx: any) => {
           // Lock the event row — SKIP LOCKED means if another cron run already
           // holds the lock, we silently skip this event (no blocking, no duplicate).
-          const locked = await tx.$queryRawUnsafe(
-            `SELECT id FROM "BergDispenseEvent" WHERE id = $1 AND "postProcessStatus" IN ('PENDING', 'FAILED') FOR UPDATE SKIP LOCKED`,
-            event.id
-          )
+          const locked = await tx.$queryRaw`SELECT id FROM "BergDispenseEvent" WHERE id = ${event.id} AND "postProcessStatus" IN ('PENDING', 'FAILED') FOR UPDATE SKIP LOCKED`
           if (locked.length === 0) {
             // Already being processed by another cron run or status changed — skip
             return

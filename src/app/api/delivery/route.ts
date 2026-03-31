@@ -71,7 +71,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       paramIdx++
     }
 
-    const rows: any[] = await db.$queryRawUnsafe(`
+    const rows: any[] = await db.$queryRaw`
       SELECT d.*,
              o."orderNumber", o."guestCount", o."status" as "orderStatus",
              e."firstName" as "driverFirstName", e."lastName" as "driverLastName",
@@ -91,7 +91,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           WHEN 'cancelled' THEN 6
         END,
         d."createdAt" DESC
-    `, ...params)
+    `
 
     const enriched = rows.map(row => ({
       ...row,
@@ -167,12 +167,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Check max active deliveries
-    const activeCount: any[] = await db.$queryRawUnsafe(`
+    const activeCount: any[] = await db.$queryRaw`
       SELECT COUNT(*)::int as count
       FROM "DeliveryOrder"
-      WHERE "locationId" = $1
+      WHERE "locationId" = ${locationId}
         AND status IN ('pending', 'preparing', 'ready_for_pickup', 'out_for_delivery')
-    `, locationId)
+    `
 
     if ((activeCount[0]?.count ?? 0) >= deliveryConfig.maxActiveDeliveries) {
       return err(`Maximum active deliveries reached (${deliveryConfig.maxActiveDeliveries})`, 409)
@@ -184,13 +184,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     if (resolvedZoneId) {
       // Look up zone-specific delivery fee
-      const zoneRows: any[] = await db.$queryRawUnsafe(
-        `SELECT "deliveryFee", "estimatedMinutes" FROM "DeliveryZone"
-         WHERE "id" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL AND "isActive" = true
-         LIMIT 1`,
-        resolvedZoneId,
-        locationId,
-      )
+      const zoneRows: any[] = await db.$queryRaw`SELECT "deliveryFee", "estimatedMinutes" FROM "DeliveryZone"
+         WHERE "id" = ${resolvedZoneId} AND "locationId" = ${locationId} AND "deletedAt" IS NULL AND "isActive" = true
+         LIMIT 1`
       if (zoneRows.length) {
         const zoneFee = Number(zoneRows[0].deliveryFee)
         if (!isNaN(zoneFee)) {
@@ -201,11 +197,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // If there's an associated order, check if it qualifies for free delivery
     if (orderId && deliveryConfig.freeDeliveryMinimum > 0) {
-      const orderTotal: any[] = await db.$queryRawUnsafe(`
+      const orderTotal: any[] = await db.$queryRaw`
         SELECT COALESCE(SUM(oi.price * oi.quantity), 0)::float as subtotal
         FROM "OrderItem" oi
-        WHERE oi."orderId" = $1 AND oi."deletedAt" IS NULL AND oi."voidedAt" IS NULL
-      `, orderId)
+        WHERE oi."orderId" = ${orderId} AND oi."deletedAt" IS NULL AND oi."voidedAt" IS NULL
+      `
 
       if ((orderTotal[0]?.subtotal ?? 0) >= deliveryConfig.freeDeliveryMinimum) {
         deliveryFee = 0
@@ -213,35 +209,18 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Create delivery order
-    const inserted: any[] = await db.$queryRawUnsafe(`
+    const inserted: any[] = await db.$queryRaw`
       INSERT INTO "DeliveryOrder" (
         "locationId", "orderId", "employeeId", "driverId", "zoneId",
         "customerName", "phone", "address", "addressLine2", "city", "state", "zipCode",
         "notes", "status", "deliveryFee", "estimatedMinutes", "scheduledFor",
         "trackingToken"
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-        $13, 'pending', $14, $15, $16,
+      VALUES (${locationId}, ${orderId || null}, ${employeeId || null}, ${driverId || null}, ${resolvedZoneId}, ${customerName.trim()}, ${phone?.trim() || null}, ${address?.trim() || null}, ${addressLine2?.trim() || null}, ${city?.trim() || null}, ${state?.trim() || null}, ${zipCode?.trim() || null},
+        ${notes?.trim() || null}, 'pending', ${deliveryFee}, ${deliveryConfig.estimatedDeliveryMinutes}, ${scheduledFor ? new Date(scheduledFor) : null},
         gen_random_uuid()::text)
       RETURNING *
-    `,
-      locationId,
-      orderId || null,
-      employeeId || null,
-      driverId || null,
-      resolvedZoneId,
-      customerName.trim(),
-      phone?.trim() || null,
-      address?.trim() || null,
-      addressLine2?.trim() || null,
-      city?.trim() || null,
-      state?.trim() || null,
-      zipCode?.trim() || null,
-      notes?.trim() || null,
-      deliveryFee,
-      deliveryConfig.estimatedDeliveryMinutes,
-      scheduledFor ? new Date(scheduledFor) : null,
-    )
+    `
 
     const delivery = inserted[0]
 

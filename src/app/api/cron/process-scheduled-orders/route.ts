@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
 
     // Find orders where scheduledFor <= now and status is 'draft' or 'open'
     // Uses raw query because scheduledFor is a raw column (not in Prisma schema)
-    const scheduledOrders = await venueDb.$queryRawUnsafe<{
+    const scheduledOrders = await venueDb.$queryRaw<{
       id: string
       locationId: string
       employeeId: string
@@ -35,16 +35,16 @@ export async function GET(request: NextRequest) {
       orderType: string
       status: string
       scheduledFor: Date
-    }[]>(`
+    }[]>`
       SELECT id, "locationId", "employeeId", "orderNumber", "orderType", status, "scheduledFor"
       FROM "Order"
       WHERE "scheduledFor" IS NOT NULL
-        AND "scheduledFor" <= $1
+        AND "scheduledFor" <= ${now}
         AND status IN ('draft', 'open')
         AND "deletedAt" IS NULL
       ORDER BY "scheduledFor" ASC
       LIMIT 50
-    `, now)
+    `
 
     if (scheduledOrders.length === 0) {
       allResults[slug] = { processed: 0 }
@@ -59,18 +59,18 @@ export async function GET(request: NextRequest) {
         // Update order: set status to 'open' if draft, mark as fired
         // Clear scheduledFor so it won't be re-processed
         if (order.status === 'draft') {
-          await venueDb.$executeRawUnsafe(`
+          await venueDb.$executeRaw`
             UPDATE "Order"
             SET status = 'open', "scheduledFor" = NULL, "updatedAt" = NOW()
-            WHERE id = $1 AND "deletedAt" IS NULL
-          `, order.id)
+            WHERE id = ${order.id} AND "deletedAt" IS NULL
+          `
         } else {
           // Already 'open' — just clear scheduledFor to mark as processed
-          await venueDb.$executeRawUnsafe(`
+          await venueDb.$executeRaw`
             UPDATE "Order"
             SET "scheduledFor" = NULL, "updatedAt" = NOW()
-            WHERE id = $1 AND "deletedAt" IS NULL
-          `, order.id)
+            WHERE id = ${order.id} AND "deletedAt" IS NULL
+          `
         }
 
         // Emit order event (fire-and-forget)

@@ -67,12 +67,8 @@ export const POST = withVenue(async function POST(
     if (gate) return gate
 
     // ── Fetch the cake order ────────────────────────────────────────────
-    const orderRows = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT * FROM "CakeOrder"
-       WHERE "id" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL`,
-      cakeOrderId,
-      locationId,
-    )
+    const orderRows = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT * FROM "CakeOrder"
+       WHERE "id" = ${cakeOrderId} AND "locationId" = ${locationId} AND "deletedAt" IS NULL`
 
     if (!orderRows || orderRows.length === 0) {
       return NextResponse.json(
@@ -160,19 +156,13 @@ export const POST = withVenue(async function POST(
     const lineItems = generateQuoteLineItems(pricingInputs, cakeConfig, designConfig)
 
     // ── Auto-void existing active quotes ────────────────────────────────
-    await db.$executeRawUnsafe(
-      `UPDATE "CakeQuote"
+    await db.$executeRaw`UPDATE "CakeQuote"
        SET "status" = 'voided', "voidedAt" = NOW(), "updatedAt" = NOW()
-       WHERE "cakeOrderId" = $1
-         AND "status" NOT IN ('voided', 'expired')`,
-      cakeOrderId,
-    )
+       WHERE "cakeOrderId" = ${cakeOrderId}
+         AND "status" NOT IN ('voided', 'expired')`
 
     // ── Determine next version ──────────────────────────────────────────
-    const versionRows = await db.$queryRawUnsafe<[{ max_version: number | null }]>(
-      `SELECT MAX("version") as max_version FROM "CakeQuote" WHERE "cakeOrderId" = $1`,
-      cakeOrderId,
-    )
+    const versionRows = await db.$queryRaw<[{ max_version: number | null }]>`SELECT MAX("version") as max_version FROM "CakeQuote" WHERE "cakeOrderId" = ${cakeOrderId}`
     const nextVersion = (versionRows[0]?.max_version ?? 0) + 1
 
     // ── Cancellation policy snapshot ────────────────────────────────────
@@ -185,8 +175,7 @@ export const POST = withVenue(async function POST(
     // ── Insert CakeQuote ────────────────────────────────────────────────
     const quoteId = crypto.randomUUID()
 
-    await db.$executeRawUnsafe(
-      `INSERT INTO "CakeQuote" (
+    await db.$executeRaw`INSERT INTO "CakeQuote" (
         "id", "cakeOrderId", "version", "status",
         "lineItems", "pricingInputsSnapshot",
         "subtotal", "taxTotal", "totalBeforeTax", "totalAfterTax",
@@ -194,70 +183,40 @@ export const POST = withVenue(async function POST(
         "validUntilDate", "cancellationPolicySnapshot",
         "createdBy", "createdAt", "updatedAt"
       ) VALUES (
-        $1, $2, $3, 'sent',
-        $4::jsonb, $5::jsonb,
-        $6, $7, $8, $9,
-        $10, $11, $12,
-        $13::date, $14::jsonb,
-        $15, NOW(), NOW()
-      )`,
-      quoteId,
-      cakeOrderId,
-      nextVersion,
-      JSON.stringify(lineItems),
-      JSON.stringify(pricingInputs),
-      pricingInputs.subtotal,
-      pricingInputs.taxTotal,
-      pricingInputs.totalBeforeTax,
-      pricingInputs.totalAfterTax,
-      pricingInputs.depositRequired,
-      pricingInputs.discountAmount,
-      pricingInputs.discountReason || null,
-      input.validUntilDate,
-      cancellationPolicySnapshot,
-      auth.employee.id,
-    )
+        ${quoteId}, ${cakeOrderId}, ${nextVersion}, 'sent',
+        ${JSON.stringify(lineItems)}::jsonb, ${JSON.stringify(pricingInputs)}::jsonb,
+        ${pricingInputs.subtotal}, ${pricingInputs.taxTotal}, ${pricingInputs.totalBeforeTax}, ${pricingInputs.totalAfterTax},
+        ${pricingInputs.depositRequired}, ${pricingInputs.discountAmount}, ${pricingInputs.discountReason || null},
+        ${input.validUntilDate}::date, ${cancellationPolicySnapshot}::jsonb,
+        ${auth.employee.id}, NOW(), NOW()
+      )`
 
     // ── Update CakeOrder pricing + status ───────────────────────────────
     const shouldTransition = ['submitted', 'under_review'].includes(currentStatus)
 
     if (shouldTransition) {
-      await db.$executeRawUnsafe(
-        `UPDATE "CakeOrder"
-         SET "pricingInputs" = $1::jsonb,
+      await db.$executeRaw`UPDATE "CakeOrder"
+         SET "pricingInputs" = ${JSON.stringify(pricingInputs)}::jsonb,
              "status" = 'quoted',
              "quotedAt" = NOW(),
              "updatedAt" = NOW()
-         WHERE "id" = $2`,
-        JSON.stringify(pricingInputs),
-        cakeOrderId,
-      )
+         WHERE "id" = ${cakeOrderId}`
     } else {
       // Re-quoting: update pricing but status is already 'quoted'
-      await db.$executeRawUnsafe(
-        `UPDATE "CakeOrder"
-         SET "pricingInputs" = $1::jsonb,
+      await db.$executeRaw`UPDATE "CakeOrder"
+         SET "pricingInputs" = ${JSON.stringify(pricingInputs)}::jsonb,
              "updatedAt" = NOW()
-         WHERE "id" = $2`,
-        JSON.stringify(pricingInputs),
-        cakeOrderId,
-      )
+         WHERE "id" = ${cakeOrderId}`
     }
 
     // ── Audit trail ─────────────────────────────────────────────────────
     const changeId = crypto.randomUUID()
-    await db.$executeRawUnsafe(
-      `INSERT INTO "CakeOrderChange" (
+    await db.$executeRaw`INSERT INTO "CakeOrderChange" (
         "id", "cakeOrderId", "changeType", "changedBy", "source",
         "details", "createdAt"
       ) VALUES (
-        $1, $2, 'quote_created', $3, 'admin',
-        $4::jsonb, NOW()
-      )`,
-      changeId,
-      cakeOrderId,
-      auth.employee.id,
-      JSON.stringify({
+        ${changeId}, ${cakeOrderId}, 'quote_created', ${auth.employee.id}, 'admin',
+        ${JSON.stringify({
         quoteId,
         version: nextVersion,
         totalAfterTax: pricingInputs.totalAfterTax,
@@ -265,8 +224,8 @@ export const POST = withVenue(async function POST(
         validUntilDate: input.validUntilDate,
         previousStatus: currentStatus,
         newStatus: shouldTransition ? 'quoted' : currentStatus,
-      }),
-    )
+      })}::jsonb, NOW()
+      )`
 
     pushUpstream()
 

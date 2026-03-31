@@ -65,27 +65,21 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const whereClause = conditions.join(' AND ')
 
     // Count total
-    const countRows = await db.$queryRawUnsafe<Array<{ count: bigint }>>(
-      `SELECT COUNT(*) AS "count"
+    const countRows = await db.$queryRaw<Array<{ count: bigint }>>`SELECT COUNT(*) AS "count"
        FROM "LoyaltyTransaction" lt
-       WHERE ${whereClause}`,
-      ...params,
-    )
+       WHERE ${whereClause}`
     const total = Number(countRows[0]?.count ?? 0)
 
     // Fetch transactions (parameterized LIMIT/OFFSET)
     params.push(limit, offset)
-    const transactions = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT lt.*,
+    const transactions = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT lt.*,
               c."firstName" AS "customerFirstName",
               c."lastName" AS "customerLastName"
        FROM "LoyaltyTransaction" lt
        LEFT JOIN "Customer" c ON c."id" = lt."customerId"
        WHERE ${whereClause}
        ORDER BY lt."createdAt" DESC
-       LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`,
-      ...params,
-    )
+       LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`
 
     return NextResponse.json({
       data: transactions,

@@ -63,18 +63,13 @@ export async function PATCH(
     const locationId = location.id
 
     // ── Fetch CakeQuote ────────────────────────────────────────────
-    const quotes = await venueDb.$queryRawUnsafe<
-      Array<{ id: string; cakeOrderId: string; status: string; validUntilDate: Date | null }>
-    >(
-      `SELECT q."id", q."cakeOrderId", q."status", q."validUntilDate"
+    const quotes = await venueDb.$queryRaw<
+      Array<{ id: string; cakeOrderId: string; status: string; validUntilDate: Date | null }>>`SELECT q."id", q."cakeOrderId", q."status", q."validUntilDate"
        FROM "CakeQuote" q
        JOIN "CakeOrder" o ON o."id" = q."cakeOrderId"
-       WHERE q."id" = $1
-         AND o."customerId" = $2
-         AND o."deletedAt" IS NULL`,
-      qid,
-      tokenResult.customerId,
-    )
+       WHERE q."id" = ${qid}
+         AND o."customerId" = ${tokenResult.customerId}
+         AND o."deletedAt" IS NULL`
 
     if (quotes.length === 0) {
       return notFound('Quote not found')
@@ -110,40 +105,29 @@ export async function PATCH(
     }
 
     // ── Update quote → approved ────────────────────────────────────
-    await venueDb.$executeRawUnsafe(
-      `UPDATE "CakeQuote"
+    await venueDb.$executeRaw`UPDATE "CakeQuote"
        SET "status" = 'approved', "approvedAt" = NOW(), "updatedAt" = NOW()
-       WHERE "id" = $1`,
-      qid,
-    )
+       WHERE "id" = ${qid}`
 
     // ── Update order → approved ────────────────────────────────────
-    await venueDb.$executeRawUnsafe(
-      `UPDATE "CakeOrder"
+    await venueDb.$executeRaw`UPDATE "CakeOrder"
        SET "status" = 'approved', "approvedAt" = NOW(), "updatedAt" = NOW()
-       WHERE "id" = $1`,
-      quote.cakeOrderId,
-    )
+       WHERE "id" = ${quote.cakeOrderId}`
 
     // ── Insert CakeOrderChange (audit trail) ───────────────────────
     const changeId = crypto.randomUUID()
-    await venueDb.$executeRawUnsafe(
-      `INSERT INTO "CakeOrderChange" (
+    await venueDb.$executeRaw`INSERT INTO "CakeOrderChange" (
         "id", "cakeOrderId", "changeType", "changedBy", "source",
         "details", "createdAt"
       ) VALUES (
-        $1, $2, 'quote_approved', NULL, 'customer_portal',
-        $3::jsonb, NOW()
-      )`,
-      changeId,
-      quote.cakeOrderId,
-      JSON.stringify({
+        ${changeId}, ${quote.cakeOrderId}, 'quote_approved', NULL, 'customer_portal',
+        ${JSON.stringify({
         quoteId: qid,
         previousStatus: quote.status,
         newStatus: 'approved',
         trigger: 'customer_portal_acceptance',
-      }),
-    )
+      })}::jsonb, NOW()
+      )`
 
     // ── Socket event (fire-and-forget) ─────────────────────────────
     void dispatchCakeOrderUpdated(locationId, {

@@ -31,7 +31,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       return err('Waitlist is not enabled')
     }
 
-    const entries: any[] = await db.$queryRawUnsafe(`
+    const entries: any[] = await db.$queryRaw`
       SELECT w.id, w."customerName", w."partySize", w.phone, w.notes, w.status, w.position,
              w."quotedWaitMinutes", w."notifiedAt", w."seatedAt", w."createdAt", w."updatedAt",
              w."pagerNumber",
@@ -43,10 +43,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         AND nta.status = 'active'
         AND nta."targetType" IN ('guest_pager', 'staff_pager')
         AND nta."isPrimary" = true
-      WHERE w."locationId" = $1
+      WHERE w."locationId" = ${locationId}
         AND w.status IN ('waiting', 'notified')
       ORDER BY w.position ASC, w."createdAt" ASC
-    `, locationId)
+    `
 
     // Calculate live wait estimates
     const now = new Date()
@@ -103,12 +103,12 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     }
 
     // Check waitlist capacity
-    const countResult: any[] = await db.$queryRawUnsafe(`
+    const countResult: any[] = await db.$queryRaw`
       SELECT COUNT(*)::int as count
       FROM "WaitlistEntry"
-      WHERE "locationId" = $1
+      WHERE "locationId" = ${locationId}
         AND status IN ('waiting', 'notified')
-    `, locationId)
+    `
 
     const currentCount = countResult[0]?.count ?? 0
     if (currentCount >= waitlistConfig.maxWaitlistSize) {
@@ -119,11 +119,11 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     const position = currentCount + 1
     const quotedWaitMinutes = (position - 1) * waitlistConfig.estimateMinutesPerTurn
 
-    const inserted: any[] = await db.$queryRawUnsafe(`
+    const inserted: any[] = await db.$queryRaw`
       INSERT INTO "WaitlistEntry" ("locationId", "customerName", "partySize", phone, notes, status, position, "quotedWaitMinutes")
-      VALUES ($1, $2, $3, $4, $5, 'waiting', $6, $7)
+      VALUES (${locationId}, ${customerName.trim()}, ${size}, ${phone?.trim() || null}, ${notes?.trim() || null}, 'waiting', ${position}, ${quotedWaitMinutes})
       RETURNING id, "customerName", "partySize", phone, notes, status, position, "quotedWaitMinutes", "createdAt"
-    `, locationId, customerName.trim(), size, phone?.trim() || null, notes?.trim() || null, position, quotedWaitMinutes)
+    `
 
     const entry = inserted[0]
 
@@ -131,11 +131,10 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     let pagerNumber: string | null = null
     if (assignPager) {
       try {
-        const assignResult: any[] = await db.$queryRawUnsafe(
-          `WITH device AS (
+        const assignResult: any[] = await db.$queryRaw`WITH device AS (
             SELECT id, "deviceNumber", "providerId"
             FROM "NotificationDevice"
-            WHERE "locationId" = $1
+            WHERE "locationId" = ${locationId}
               AND "deviceType" = 'pager'
               AND status = 'available'
               AND "deletedAt" IS NULL
@@ -146,47 +145,35 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
             UPDATE "NotificationDevice" d
             SET status = 'assigned',
                 "assignedToSubjectType" = 'waitlist_entry',
-                "assignedToSubjectId" = $2,
+                "assignedToSubjectId" = ${entry.id},
                 "assignedAt" = CURRENT_TIMESTAMP,
                 "updatedAt" = CURRENT_TIMESTAMP
             FROM device
             WHERE d.id = device.id
             RETURNING d.id, d."deviceNumber", d."providerId"
           )
-          SELECT * FROM updated_device`,
-          locationId,
-          entry.id
-        )
+          SELECT * FROM updated_device`
 
         if (assignResult.length > 0) {
           pagerNumber = assignResult[0].deviceNumber
 
           // Create target assignment
-          void db.$executeRawUnsafe(
-            `INSERT INTO "NotificationTargetAssignment" (
+          void db.$executeRaw`INSERT INTO "NotificationTargetAssignment" (
               id, "locationId", "subjectType", "subjectId", "targetType", "targetValue",
               "providerId", "isPrimary", source, status,
               "assignedAt", "createdAt", "updatedAt"
             ) VALUES (
-              gen_random_uuid()::text, $1, 'waitlist_entry', $2, 'guest_pager', $3,
-              $4, true, 'auto_assign', 'active',
+              gen_random_uuid()::text, ${locationId}, 'waitlist_entry', ${entry.id}, 'guest_pager', ${pagerNumber},
+              ${assignResult[0].providerId}, true, 'auto_assign', 'active',
               CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-            )`,
-            locationId, entry.id, pagerNumber, assignResult[0].providerId
-          ).catch(err => log.warn({ err }, 'Background task failed'))
+            )`.catch(err => log.warn({ err }, 'Background task failed'))
 
           // Sync pagerNumber cache
-          void db.$executeRawUnsafe(
-            `UPDATE "WaitlistEntry" SET "pagerNumber" = $2 WHERE id = $1 AND "locationId" = $3`,
-            entry.id, pagerNumber, locationId
-          ).catch(err => log.warn({ err }, 'Background task failed'))
+          void db.$executeRaw`UPDATE "WaitlistEntry" SET "pagerNumber" = ${pagerNumber} WHERE id = ${entry.id} AND "locationId" = ${locationId}`.catch(err => log.warn({ err }, 'Background task failed'))
 
           // Log device event
-          void db.$executeRawUnsafe(
-            `INSERT INTO "NotificationDeviceEvent" (id, "deviceId", "locationId", "eventType", "subjectType", "subjectId", metadata, "createdAt")
-             VALUES (gen_random_uuid()::text, $1, $2, 'assigned', 'waitlist_entry', $3, '{"autoAssign":true}'::jsonb, CURRENT_TIMESTAMP)`,
-            assignResult[0].id, locationId, entry.id
-          ).catch(err => log.warn({ err }, 'Background task failed'))
+          void db.$executeRaw`INSERT INTO "NotificationDeviceEvent" (id, "deviceId", "locationId", "eventType", "subjectType", "subjectId", metadata, "createdAt")
+             VALUES (gen_random_uuid()::text, ${assignResult[0].id}, ${locationId}, 'assigned', 'waitlist_entry', ${entry.id}, '{"autoAssign":true}'::jsonb, CURRENT_TIMESTAMP)`.catch(err => log.warn({ err }, 'Background task failed'))
         }
       } catch (pagerErr) {
         // Non-fatal: pager assignment is best-effort

@@ -31,16 +31,13 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     // Use a transaction with FOR UPDATE to prevent race conditions
     const result = await db.$transaction(async (tx) => {
       // Lock the order row
-      await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', orderId)
+      await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${orderId} FOR UPDATE`
 
       // Read current claim state via raw query (columns may not be in Prisma schema)
-      const rows: any[] = await tx.$queryRawUnsafe(
-        `SELECT id, "locationId", "employeeId", "status", "deletedAt",
+      const rows: any[] = await tx.$queryRaw`SELECT id, "locationId", "employeeId", "status", "deletedAt",
                 "claimedByEmployeeId", "claimedByTerminalId", "claimedAt"
          FROM "Order"
-         WHERE id = $1`,
-        orderId
-      )
+         WHERE id = ${orderId}`
 
       if (rows.length === 0) {
         return { error: 'Order not found', status: 404 }
@@ -81,17 +78,11 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       }
 
       // Claim the order (new claim, expired claim, or same employee refreshing)
-      await tx.$executeRawUnsafe(
-        `UPDATE "Order"
-         SET "claimedByEmployeeId" = $1,
-             "claimedByTerminalId" = $2,
-             "claimedAt" = $3
-         WHERE id = $4`,
-        employeeId,
-        terminalId || null,
-        now,
-        orderId
-      )
+      await tx.$executeRaw`UPDATE "Order"
+         SET "claimedByEmployeeId" = ${employeeId},
+             "claimedByTerminalId" = ${terminalId || null},
+             "claimedAt" = ${now}
+         WHERE id = ${orderId}`
 
       return {
         claimed: true,
@@ -169,14 +160,11 @@ export const DELETE = withVenue(withAuth({ allowCellular: true }, async function
 
     const result = await db.$transaction(async (tx) => {
       // Lock the order row
-      await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', orderId)
+      await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${orderId} FOR UPDATE`
 
-      const rows: any[] = await tx.$queryRawUnsafe(
-        `SELECT id, "locationId", "claimedByEmployeeId", "claimedByTerminalId", "claimedAt", "deletedAt"
+      const rows: any[] = await tx.$queryRaw`SELECT id, "locationId", "claimedByEmployeeId", "claimedByTerminalId", "claimedAt", "deletedAt"
          FROM "Order"
-         WHERE id = $1`,
-        orderId
-      )
+         WHERE id = ${orderId}`
 
       if (rows.length === 0) {
         return { error: 'Order not found', status: 404 }
@@ -200,14 +188,11 @@ export const DELETE = withVenue(withAuth({ allowCellular: true }, async function
       }
 
       // Clear the claim
-      await tx.$executeRawUnsafe(
-        `UPDATE "Order"
+      await tx.$executeRaw`UPDATE "Order"
          SET "claimedByEmployeeId" = NULL,
              "claimedByTerminalId" = NULL,
              "claimedAt" = NULL
-         WHERE id = $1`,
-        orderId
-      )
+         WHERE id = ${orderId}`
 
       return { released: true, locationId: order.locationId }
     })

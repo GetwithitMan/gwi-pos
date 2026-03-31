@@ -2,11 +2,10 @@ import { z } from 'zod'
 import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
-import { PERMISSIONS } from '@/lib/auth-utils'
-import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
-import { err, notFound, ok, unauthorized } from '@/lib/api-response'
+import { err, notFound, ok } from '@/lib/api-response'
 
 // GET - List all coupons for a location
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -110,7 +109,10 @@ const CreateCouponSchema = z.object({
 })
 
 // POST - Create a new coupon
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth('MGR_DISCOUNTS', async function POST(
+  request: NextRequest,
+  ctx: { auth: { employeeId: string | null } }
+) {
   try {
     const rawBody = await request.json()
     const parseResult = CreateCouponSchema.safeParse(rawBody)
@@ -136,14 +138,6 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       validFrom,
       validUntil,
     } = parseResult.data
-
-    // Auth check — require manager.discounts permission for coupon management
-    const actor = await getActorFromRequest(request)
-    if (!actor.employeeId) {
-      return unauthorized('Authentication required')
-    }
-    const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.MGR_DISCOUNTS)
-    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Check if code already exists
     const existing = await db.coupon.findFirst({
@@ -176,7 +170,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         singleUse: singleUse || false,
         validFrom: validFrom ? new Date(validFrom) : null,
         validUntil: validUntil ? new Date(validUntil) : null,
-        createdBy: actor.employeeId,
+        createdBy: ctx.auth.employeeId,
       },
     })
 
@@ -193,4 +187,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     console.error('Failed to create coupon:', error)
     return err('Failed to create coupon', 500)
   }
-})
+}))

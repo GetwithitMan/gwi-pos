@@ -94,13 +94,9 @@ export async function POST(
       }
 
       // ── Find customer by phone + locationId ──────────────────────
-      const customers = await venueDb.$queryRawUnsafe<Array<{ id: string }>>(
-        `SELECT "id" FROM "Customer"
-         WHERE "locationId" = $1 AND "phone" = $2 AND "deletedAt" IS NULL
-         LIMIT 1`,
-        locationId,
-        normalizedPhone,
-      )
+      const customers = await venueDb.$queryRaw<Array<{ id: string }>>`SELECT "id" FROM "Customer"
+         WHERE "locationId" = ${locationId} AND "phone" = ${normalizedPhone} AND "deletedAt" IS NULL
+         LIMIT 1`
 
       if (customers.length === 0) {
         // Generic response — do not reveal whether account exists
@@ -114,18 +110,10 @@ export async function POST(
 
       // ── Insert CustomerPortalSession ─────────────────────────────
       const sessionId = crypto.randomUUID()
-      await venueDb.$executeRawUnsafe(
-        `INSERT INTO "CustomerPortalSession" (
+      await venueDb.$executeRaw`INSERT INTO "CustomerPortalSession" (
           "id", "locationId", "customerId", "phone",
           "otpHash", "otpExpiresAt", "createdAt"
-        ) VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-        sessionId,
-        locationId,
-        customerId,
-        normalizedPhone,
-        hash,
-        expiresAt,
-      )
+        ) VALUES (${sessionId}, ${locationId}, ${customerId}, ${normalizedPhone}, ${hash}, ${expiresAt}, NOW())`
 
       // ── Send SMS (fire-and-forget) ───────────────────────────────
       void (async () => {
@@ -170,20 +158,15 @@ export async function POST(
       }
 
       // ── Find latest session with valid OTP window ────────────────
-      const sessions = await venueDb.$queryRawUnsafe<
-        Array<{ id: string; customerId: string; otpHash: string; otpExpiresAt: Date }>
-      >(
-        `SELECT "id", "customerId", "otpHash", "otpExpiresAt"
+      const sessions = await venueDb.$queryRaw<
+        Array<{ id: string; customerId: string; otpHash: string; otpExpiresAt: Date }>>`SELECT "id", "customerId", "otpHash", "otpExpiresAt"
          FROM "CustomerPortalSession"
-         WHERE "locationId" = $1
-           AND "phone" = $2
+         WHERE "locationId" = ${locationId}
+           AND "phone" = ${normalizedPhone}
            AND "otpExpiresAt" > NOW()
            AND "sessionToken" IS NULL
          ORDER BY "createdAt" DESC
-         LIMIT 1`,
-        locationId,
-        normalizedPhone,
-      )
+         LIMIT 1`
 
       if (sessions.length === 0) {
         return unauthorized('Invalid or expired verification code')
@@ -201,12 +184,8 @@ export async function POST(
       otpVerifyLimiter.reset(`portal-verify:${normalizedPhone}`)
 
       // ── Fetch customer name ────────────────────────────────────
-      const customerRows = await venueDb.$queryRawUnsafe<
-        Array<{ firstName: string; lastName: string }>
-      >(
-        `SELECT "firstName", "lastName" FROM "Customer" WHERE "id" = $1`,
-        session.customerId,
-      )
+      const customerRows = await venueDb.$queryRaw<
+        Array<{ firstName: string; lastName: string }>>`SELECT "firstName", "lastName" FROM "Customer" WHERE "id" = ${session.customerId}`
       const customerName = customerRows.length > 0
         ? `${customerRows[0].firstName} ${customerRows[0].lastName}`.trim()
         : ''
@@ -216,14 +195,9 @@ export async function POST(
       const sessionExpiresAt = getSessionExpiry()
 
       // ── Update session with token ────────────────────────────────
-      await venueDb.$executeRawUnsafe(
-        `UPDATE "CustomerPortalSession"
-         SET "sessionToken" = $1, "sessionExpiresAt" = $2
-         WHERE "id" = $3`,
-        sessionToken,
-        sessionExpiresAt,
-        session.id,
-      )
+      await venueDb.$executeRaw`UPDATE "CustomerPortalSession"
+         SET "sessionToken" = ${sessionToken}, "sessionExpiresAt" = ${sessionExpiresAt}
+         WHERE "id" = ${session.id}`
 
       // ── Set httpOnly cookie ──────────────────────────────────────
       const response = NextResponse.json({
@@ -258,15 +232,10 @@ export async function POST(
       }
 
       // ── Find customer by email + locationId ────────────────────
-      const customers = await venueDb.$queryRawUnsafe<
-        Array<{ id: string; firstName: string; lastName: string }>
-      >(
-        `SELECT "id", "firstName", "lastName" FROM "Customer"
-         WHERE "locationId" = $1 AND LOWER("email") = $2 AND "deletedAt" IS NULL
-         LIMIT 1`,
-        locationId,
-        normalizedEmail,
-      )
+      const customers = await venueDb.$queryRaw<
+        Array<{ id: string; firstName: string; lastName: string }>>`SELECT "id", "firstName", "lastName" FROM "Customer"
+         WHERE "locationId" = ${locationId} AND LOWER("email") = ${normalizedEmail} AND "deletedAt" IS NULL
+         LIMIT 1`
 
       // Always return success — don't reveal whether account exists
       if (customers.length === 0) {
@@ -281,18 +250,10 @@ export async function POST(
 
       // ── Store nonce in session (otpHash field) ─────────────────
       const sessionId = crypto.randomUUID()
-      await venueDb.$executeRawUnsafe(
-        `INSERT INTO "CustomerPortalSession" (
+      await venueDb.$executeRaw`INSERT INTO "CustomerPortalSession" (
           "id", "locationId", "customerId", "email",
           "otpHash", "otpExpiresAt", "createdAt"
-        ) VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-        sessionId,
-        locationId,
-        customer.id,
-        normalizedEmail,
-        nonce,
-        new Date(Date.now() + 15 * 60 * 1000),
-      )
+        ) VALUES (${sessionId}, ${locationId}, ${customer.id}, ${normalizedEmail}, ${nonce}, ${new Date(Date.now() + 15 * 60 * 1000)}, NOW())`
 
       // ── Generate HMAC-signed token ─────────────────────────────
       const signedToken = generateMagicLinkToken(nonce, slug, customer.id)
@@ -353,19 +314,14 @@ export async function POST(
       }
 
       // ── Find session by nonce ──────────────────────────────────
-      const sessions = await venueDb.$queryRawUnsafe<
-        Array<{ id: string; customerId: string }>
-      >(
-        `SELECT "id", "customerId"
+      const sessions = await venueDb.$queryRaw<
+        Array<{ id: string; customerId: string }>>`SELECT "id", "customerId"
          FROM "CustomerPortalSession"
-         WHERE "locationId" = $1
-           AND "otpHash" = $2
+         WHERE "locationId" = ${locationId}
+           AND "otpHash" = ${result.nonce}
            AND "otpExpiresAt" > NOW()
            AND "sessionToken" IS NULL
-         LIMIT 1`,
-        locationId,
-        result.nonce,
-      )
+         LIMIT 1`
 
       if (sessions.length === 0) {
         return unauthorized('This login link has already been used or expired.')
@@ -374,12 +330,8 @@ export async function POST(
       const magicSession = sessions[0]
 
       // ── Fetch customer data ────────────────────────────────────
-      const customerRows = await venueDb.$queryRawUnsafe<
-        Array<{ firstName: string; lastName: string; email: string | null; phone: string | null }>
-      >(
-        `SELECT "firstName", "lastName", "email", "phone" FROM "Customer" WHERE "id" = $1`,
-        magicSession.customerId,
-      )
+      const customerRows = await venueDb.$queryRaw<
+        Array<{ firstName: string; lastName: string; email: string | null; phone: string | null }>>`SELECT "firstName", "lastName", "email", "phone" FROM "Customer" WHERE "id" = ${magicSession.customerId}`
 
       const customerName = customerRows.length > 0
         ? `${customerRows[0].firstName} ${customerRows[0].lastName}`.trim()
@@ -390,14 +342,9 @@ export async function POST(
       const sessionExpiresAt = getSessionExpiry()
 
       // ── Update session with token (consumes the nonce) ─────────
-      await venueDb.$executeRawUnsafe(
-        `UPDATE "CustomerPortalSession"
-         SET "sessionToken" = $1, "sessionExpiresAt" = $2, "otpHash" = NULL
-         WHERE "id" = $3`,
-        sessionToken,
-        sessionExpiresAt,
-        magicSession.id,
-      )
+      await venueDb.$executeRaw`UPDATE "CustomerPortalSession"
+         SET "sessionToken" = ${sessionToken}, "sessionExpiresAt" = ${sessionExpiresAt}, "otpHash" = NULL
+         WHERE "id" = ${magicSession.id}`
 
       // ── Set httpOnly cookie ────────────────────────────────────
       const response = NextResponse.json({
@@ -426,18 +373,13 @@ export async function POST(
         return ok({ authenticated: false })
       }
 
-      const sessions = await venueDb.$queryRawUnsafe<
-        Array<{ id: string; customerId: string }>
-      >(
-        `SELECT "id", "customerId"
+      const sessions = await venueDb.$queryRaw<
+        Array<{ id: string; customerId: string }>>`SELECT "id", "customerId"
          FROM "CustomerPortalSession"
-         WHERE "locationId" = $1
-           AND "sessionToken" = $2
+         WHERE "locationId" = ${locationId}
+           AND "sessionToken" = ${sessionToken}
            AND "sessionExpiresAt" > NOW()
-         LIMIT 1`,
-        locationId,
-        sessionToken,
-      )
+         LIMIT 1`
 
       if (sessions.length === 0) {
         return ok({ authenticated: false })
@@ -445,7 +387,7 @@ export async function POST(
 
       const { customerId } = sessions[0]
 
-      const customerRows = await venueDb.$queryRawUnsafe<
+      const customerRows = await venueDb.$queryRaw<
         Array<{
           id: string
           firstName: string
@@ -453,12 +395,8 @@ export async function POST(
           email: string | null
           phone: string | null
           loyaltyPoints: number
-        }>
-      >(
-        `SELECT "id", "firstName", "lastName", "email", "phone", "loyaltyPoints"
-         FROM "Customer" WHERE "id" = $1`,
-        customerId,
-      )
+        }>>`SELECT "id", "firstName", "lastName", "email", "phone", "loyaltyPoints"
+         FROM "Customer" WHERE "id" = ${customerId}`
 
       if (customerRows.length === 0) {
         return ok({ authenticated: false })
@@ -484,13 +422,9 @@ export async function POST(
       const sessionToken = request.cookies.get('portal_session')?.value
       if (sessionToken) {
         // Invalidate session in DB
-        await venueDb.$executeRawUnsafe(
-          `UPDATE "CustomerPortalSession"
+        await venueDb.$executeRaw`UPDATE "CustomerPortalSession"
            SET "sessionExpiresAt" = NOW()
-           WHERE "locationId" = $1 AND "sessionToken" = $2`,
-          locationId,
-          sessionToken,
-        )
+           WHERE "locationId" = ${locationId} AND "sessionToken" = ${sessionToken}`
       }
 
       const response = NextResponse.json({ success: true })

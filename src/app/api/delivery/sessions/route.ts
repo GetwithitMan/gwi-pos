@@ -33,7 +33,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const featureGate = await requireDeliveryFeature(locationId)
     if (featureGate) return featureGate
 
-    const rows: any[] = await db.$queryRawUnsafe(`
+    const rows: any[] = await db.$queryRaw`
       SELECT ds.*,
              e."firstName" as "employeeFirstName",
              e."lastName" as "employeeLastName",
@@ -46,10 +46,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       FROM "DeliveryDriverSession" ds
       LEFT JOIN "Employee" e ON e.id = ds."employeeId"
       LEFT JOIN "DeliveryDriver" dd ON dd.id = ds."driverId"
-      WHERE ds."locationId" = $1
+      WHERE ds."locationId" = ${locationId}
         AND ds."endedAt" IS NULL
       ORDER BY ds."startedAt" ASC
-    `, locationId)
+    `
 
     const sessions = rows.map(row => ({
       ...row,
@@ -108,22 +108,22 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Use transaction for atomicity
     const result = await db.$transaction(async (tx: any) => {
       // 1. Validate employee exists and belongs to location
-      const employee: any[] = await tx.$queryRawUnsafe(`
+      const employee: any[] = await tx.$queryRaw`
         SELECT id, "firstName", "lastName" FROM "Employee"
-        WHERE id = $1 AND "locationId" = $2 AND "isActive" = true AND "deletedAt" IS NULL
+        WHERE id = ${employeeId} AND "locationId" = ${locationId} AND "isActive" = true AND "deletedAt" IS NULL
         LIMIT 1
-      `, employeeId, locationId)
+      `
 
       if (!employee.length) {
         return { error: 'Employee not found or inactive at this location', status: 404 }
       }
 
       // 2. Validate DeliveryDriver record exists for this employee
-      const driverRows: any[] = await tx.$queryRawUnsafe(`
+      const driverRows: any[] = await tx.$queryRaw`
         SELECT id, "isActive", "isSuspended" FROM "DeliveryDriver"
-        WHERE "employeeId" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
+        WHERE "employeeId" = ${employeeId} AND "locationId" = ${locationId} AND "deletedAt" IS NULL
         LIMIT 1
-      `, employeeId, locationId)
+      `
 
       if (!driverRows.length) {
         return { error: 'No driver profile found for this employee. Create a driver profile first.', status: 400 }
@@ -141,11 +141,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }
 
       // 3. Check for existing active session
-      const activeSessions: any[] = await tx.$queryRawUnsafe(`
+      const activeSessions: any[] = await tx.$queryRaw`
         SELECT id FROM "DeliveryDriverSession"
-        WHERE "driverId" = $1 AND "locationId" = $2 AND "endedAt" IS NULL
+        WHERE "driverId" = ${driver.id} AND "locationId" = ${locationId} AND "endedAt" IS NULL
         LIMIT 1
-      `, driver.id, locationId)
+      `
 
       if (activeSessions.length) {
         return { error: 'Driver already has an active session', status: 409 }
@@ -157,23 +157,18 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }
 
       // Insert session
-      const inserted: any[] = await tx.$queryRawUnsafe(`
+      const inserted: any[] = await tx.$queryRaw`
         INSERT INTO "DeliveryDriverSession" (
           "id", "locationId", "driverId", "employeeId", "status",
           "startedAt", "startingBankCents", "cashCollectedCents", "cashDroppedCents",
           "createdAt", "updatedAt"
         ) VALUES (
-          gen_random_uuid()::text, $1, $2, $3, 'available',
-          CURRENT_TIMESTAMP, $4, 0, 0,
+          gen_random_uuid()::text, ${locationId}, ${driver.id}, ${employeeId}, 'available',
+          CURRENT_TIMESTAMP, ${startingBankCents || 0}, 0, 0,
           CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
         )
         RETURNING *
-      `,
-        locationId,
-        driver.id,
-        employeeId,
-        startingBankCents || 0,
-      )
+      `
 
       return { session: inserted[0] }
     })

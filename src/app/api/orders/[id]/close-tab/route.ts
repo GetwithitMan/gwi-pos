@@ -228,19 +228,9 @@ export const POST = withVenue(async function POST(
     const pendingCaptureId = crypto.randomUUID()
     const primaryCard = cardsToTry[0]
     try {
-      await db.$executeRawUnsafe(
-        `INSERT INTO "_pending_captures" ("id", "orderId", "locationId", "cardRecordNo", "cardLast4", "purchaseAmount", "tipAmount", "totalAmount", "status", "createdAt")
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending', NOW())
-         ON CONFLICT ("id") DO NOTHING`,
-        pendingCaptureId,
-        orderId,
-        locationId,
-        primaryCard.recordNo,
-        primaryCard.cardLast4 || '',
-        purchaseAmount,
-        gratuityAmount || 0,
-        purchaseAmount + (gratuityAmount || 0)
-      )
+      await db.$executeRaw`INSERT INTO "_pending_captures" ("id", "orderId", "locationId", "cardRecordNo", "cardLast4", "purchaseAmount", "tipAmount", "totalAmount", "status", "createdAt")
+         VALUES (${pendingCaptureId}, ${orderId}, ${locationId}, ${primaryCard.recordNo}, ${primaryCard.cardLast4 || ''}, ${purchaseAmount}, ${gratuityAmount || 0}, ${purchaseAmount + (gratuityAmount || 0)}, 'pending', NOW())
+         ON CONFLICT ("id") DO NOTHING`
     } catch (pcErr) {
       // Non-fatal: if the safety-net table doesn't exist yet or insert fails,
       // proceed with capture anyway — this is a safety net, not a gate.
@@ -440,13 +430,7 @@ export const POST = withVenue(async function POST(
     // PAYMENT-SAFETY: Phase 3 DB write succeeded — mark the pending capture as completed.
     // Fire-and-forget: if this update fails, the record stays 'pending' which is safe
     // (ops can see it was captured via authCode + Datacap settlement report).
-    void db.$executeRawUnsafe(
-      `UPDATE "_pending_captures" SET "status" = 'completed', "completedAt" = NOW(), "authCode" = $2, "tipAmount" = $3, "totalAmount" = $4 WHERE "id" = $1`,
-      pendingCaptureId,
-      response.authCode || '',
-      finalTipAmount,
-      totalCaptured
-    ).catch((pcErr) => {
+    void db.$executeRaw`UPDATE "_pending_captures" SET "status" = 'completed', "completedAt" = NOW(), "authCode" = ${response.authCode || ''}, "tipAmount" = ${finalTipAmount}, "totalAmount" = ${totalCaptured} WHERE "id" = ${pendingCaptureId}`.catch((pcErr) => {
       console.warn('[PAYMENT-SAFETY] Failed to mark pending capture as completed', {
         pendingCaptureId, orderId, error: pcErr instanceof Error ? pcErr.message : String(pcErr),
       })
@@ -478,10 +462,7 @@ export const POST = withVenue(async function POST(
     // ═══════════════════════════════════════════════════════════════════════════
 
     // Release order claim after successful close (fire-and-forget)
-    void db.$executeRawUnsafe(
-      `UPDATE "Order" SET "claimedByEmployeeId" = NULL, "claimedByTerminalId" = NULL, "claimedAt" = NULL WHERE id = $1`,
-      orderId
-    ).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.close-tab'))
+    void db.$executeRaw`UPDATE "Order" SET "claimedByEmployeeId" = NULL, "claimedByTerminalId" = NULL, "claimedAt" = NULL WHERE id = ${orderId}`.catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.close-tab'))
     void emitOrderEvent(locationId, orderId, 'TAB_CLOSED', {
       employeeId,
       tipCents: Math.round(finalTipAmount * 100),
@@ -676,10 +657,7 @@ export const POST = withVenue(async function POST(
         let tierMultiplier = 1.0
         if (customer.loyaltyTierId) {
           try {
-            const tierRows = await db.$queryRawUnsafe<Array<{ pointsMultiplier: unknown }>>(
-              `SELECT "pointsMultiplier" FROM "LoyaltyTier" WHERE "id" = $1 AND "deletedAt" IS NULL`,
-              customer.loyaltyTierId,
-            )
+            const tierRows = await db.$queryRaw<Array<{ pointsMultiplier: unknown }>>`SELECT "pointsMultiplier" FROM "LoyaltyTier" WHERE "id" = ${customer.loyaltyTierId} AND "deletedAt" IS NULL`
             if (tierRows.length > 0) {
               tierMultiplier = Number(tierRows[0].pointsMultiplier) || 1.0
             }
@@ -715,32 +693,21 @@ export const POST = withVenue(async function POST(
         const currentPoints = Number(customer.loyaltyPoints ?? 0)
         const currentLifetime = Number(customer.lifetimePoints ?? 0)
         const txnId = crypto.randomUUID()
-        await db.$executeRawUnsafe(
-          `INSERT INTO "LoyaltyTransaction" (
+        const loyaltyDescription = `Earned ${pointsEarned} points on tab #${orderForLoyalty.orderNumber}${tierMultiplier > 1 ? ` (${tierMultiplier}x tier)` : ''}`
+        await db.$executeRaw`INSERT INTO "LoyaltyTransaction" (
             "id", "customerId", "locationId", "orderId", "type", "points",
             "balanceBefore", "balanceAfter", "description", "employeeId", "createdAt"
-          ) VALUES ($1, $2, $3, $4, 'earn', $5, $6, $7, $8, $9, NOW())`,
-          txnId, customer.id, locationId, orderId, pointsEarned,
-          currentPoints, currentPoints + pointsEarned,
-          `Earned ${pointsEarned} points on tab #${orderForLoyalty.orderNumber}${tierMultiplier > 1 ? ` (${tierMultiplier}x tier)` : ''}`,
-          employeeId || null,
-        )
+          ) VALUES (${txnId}, ${customer.id}, ${locationId}, ${orderId}, 'earn', ${pointsEarned}, ${currentPoints}, ${currentPoints + pointsEarned}, ${loyaltyDescription}, ${employeeId || null}, NOW())`
 
         // Check tier promotion
         const newLifetime = currentLifetime + pointsEarned
         if (customer.loyaltyProgramId) {
-          const tiers = await db.$queryRawUnsafe<Array<{ id: string; name: string; minimumPoints: number }>>(
-            `SELECT "id", "name", "minimumPoints" FROM "LoyaltyTier"
-             WHERE "programId" = $1 AND "deletedAt" IS NULL ORDER BY "minimumPoints" DESC`,
-            customer.loyaltyProgramId,
-          )
+          const tiers = await db.$queryRaw<Array<{ id: string; name: string; minimumPoints: number }>>`SELECT "id", "name", "minimumPoints" FROM "LoyaltyTier"
+             WHERE "programId" = ${customer.loyaltyProgramId} AND "deletedAt" IS NULL ORDER BY "minimumPoints" DESC`
           for (const tier of tiers) {
             if (newLifetime >= Number(tier.minimumPoints)) {
               if (tier.id !== customer.loyaltyTierId) {
-                await db.$executeRawUnsafe(
-                  `UPDATE "Customer" SET "loyaltyTierId" = $2, "updatedAt" = NOW() WHERE "id" = $1`,
-                  customer.id, tier.id,
-                )
+                await db.$executeRaw`UPDATE "Customer" SET "loyaltyTierId" = ${tier.id}, "updatedAt" = NOW() WHERE "id" = ${customer.id}`
               }
               break
             }

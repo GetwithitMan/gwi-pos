@@ -32,24 +32,17 @@ export const GET = withVenue(async function GET(
       )
     }
 
-    const rows = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT * FROM "LoyaltyProgram"
-       WHERE "id" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL`,
-      id,
-      locationId,
-    )
+    const rows = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT * FROM "LoyaltyProgram"
+       WHERE "id" = ${id} AND "locationId" = ${locationId} AND "deletedAt" IS NULL`
 
     if (rows.length === 0) {
       return notFound('Program not found')
     }
 
     // Also fetch tiers
-    const tiers = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT * FROM "LoyaltyTier"
-       WHERE "programId" = $1 AND "deletedAt" IS NULL
-       ORDER BY "sortOrder" ASC`,
-      id,
-    )
+    const tiers = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT * FROM "LoyaltyTier"
+       WHERE "programId" = ${id} AND "deletedAt" IS NULL
+       ORDER BY "sortOrder" ASC`
 
     return ok({ ...rows[0], tiers })
   } catch (error: any) {
@@ -87,12 +80,8 @@ export const PUT = withVenue(async function PUT(
     }
 
     // Verify exists
-    const existing = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT "id" FROM "LoyaltyProgram"
-       WHERE "id" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL`,
-      id,
-      locationId,
-    )
+    const existing = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT "id" FROM "LoyaltyProgram"
+       WHERE "id" = ${id} AND "locationId" = ${locationId} AND "deletedAt" IS NULL`
 
     if (existing.length === 0) {
       return notFound('Program not found')
@@ -136,17 +125,11 @@ export const PUT = withVenue(async function PUT(
 
     setParams.push(id, locationId)
 
-    await db.$executeRawUnsafe(
-      `UPDATE "LoyaltyProgram"
+    await db.$executeRaw`UPDATE "LoyaltyProgram"
        SET ${setClauses.join(', ')}
-       WHERE "id" = $${paramIdx} AND "locationId" = $${paramIdx + 1} AND "deletedAt" IS NULL`,
-      ...setParams,
-    )
+       WHERE "id" = $${paramIdx} AND "locationId" = $${paramIdx + 1} AND "deletedAt" IS NULL`
 
-    const updated = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT * FROM "LoyaltyProgram" WHERE "id" = $1`,
-      id,
-    )
+    const updated = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT * FROM "LoyaltyProgram" WHERE "id" = ${id}`
 
     pushUpstream()
     void notifyDataChanged({ locationId, domain: 'loyalty', action: 'updated', entityId: id })
@@ -186,13 +169,9 @@ export const DELETE = withVenue(async function DELETE(
       )
     }
 
-    const result = await db.$executeRawUnsafe(
-      `UPDATE "LoyaltyProgram"
+    const result = await db.$executeRaw`UPDATE "LoyaltyProgram"
        SET "deletedAt" = NOW(), "updatedAt" = NOW(), "isActive" = false
-       WHERE "id" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL`,
-      id,
-      locationId,
-    )
+       WHERE "id" = ${id} AND "locationId" = ${locationId} AND "deletedAt" IS NULL`
 
     if (result === 0) {
       return notFound('Program not found')

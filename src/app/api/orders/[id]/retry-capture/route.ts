@@ -131,7 +131,7 @@ export const POST = withVenue(withAuth(async function POST(
       const paymentMethod = capturedCard.cardType?.toLowerCase() === 'debit' ? 'debit' : 'credit'
       await db.$transaction(async (tx) => {
         // Row-level lock to prevent concurrent retry captures
-        await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', orderId)
+        await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${orderId} FOR UPDATE`
 
         await tx.orderCard.update({
           where: { id: capturedCard!.id },
@@ -246,7 +246,7 @@ export const POST = withVenue(withAuth(async function POST(
       const paymentAmount = Number(order.total) - tipAmount
       await db.$transaction(async (tx) => {
         // Row-level lock to prevent concurrent retry captures
-        await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', orderId)
+        await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${orderId} FOR UPDATE`
 
         // TX-KEEP: CREATE — cash fallback payment record for retry capture; no repo create method that accepts tx
         await tx.payment.create({
@@ -347,7 +347,7 @@ export const POST = withVenue(withAuth(async function POST(
       // Void all cards, close order, audit log, and queue socket events atomically
       await db.$transaction(async (tx) => {
         // Row-level lock to prevent concurrent retry captures
-        await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', orderId)
+        await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${orderId} FOR UPDATE`
 
         await tx.orderCard.updateMany({
           where: { orderId, status: 'authorized' },

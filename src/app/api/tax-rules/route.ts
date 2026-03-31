@@ -1,8 +1,7 @@
 import { NextRequest } from 'next/server'
 import { db as prisma } from '@/lib/db'
-import { requirePermission } from '@/lib/api-auth'
-import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { syncTaxRateToSettings } from '@/lib/api/tax-utils'
 import { invalidateTaxCache } from '@/lib/tax-cache'
 import { notifyDataChanged } from '@/lib/cloud-notify'
@@ -13,19 +12,14 @@ import { err, ok } from '@/lib/api-response'
 const log = createChildLogger('tax-rules')
 
 // GET - List tax rules
-export const GET = withVenue(async function GET(request: NextRequest) {
+export const GET = withVenue(withAuth('SETTINGS_TAX', async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
-    const requestingEmployeeId = searchParams.get('requestingEmployeeId')
 
     if (!locationId) {
       return err('Location ID required')
     }
-
-    // Auth check — require settings.tax permission
-    const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.SETTINGS_TAX)
-    if (!auth.authorized) return err(auth.error, auth.status)
 
     const taxRules = await prisma.taxRule.findMany({
       where: { locationId },
@@ -51,10 +45,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     console.error('Tax rules error:', error)
     return err('Failed to fetch tax rules', 500)
   }
-})
+}))
 
 // POST - Create tax rule
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth('SETTINGS_TAX', async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const {
@@ -67,12 +61,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       isInclusive,
       priority,
       isCompounded,
-      requestingEmployeeId,
     } = body
-
-    // Auth check — require settings.tax permission
-    const authCheck = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.SETTINGS_TAX)
-    if (!authCheck.authorized) return err(authCheck.error, authCheck.status)
 
     if (!locationId || !name || rate === undefined) {
       return err('Location ID, name, and rate required')
@@ -115,4 +104,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     console.error('Create tax rule error:', error)
     return err('Failed to create tax rule', 500)
   }
-})
+}))

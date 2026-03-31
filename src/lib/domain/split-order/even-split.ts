@@ -5,6 +5,7 @@
  * Items stay on the parent; children carry proportional totals.
  */
 
+import { Prisma } from '@/generated/prisma/client'
 import { roundToCents } from '@/lib/pricing'
 import { createChildLogger } from '@/lib/logger'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
@@ -23,7 +24,7 @@ export async function createEvenSplit(
   order: SplitSourceOrder,
   numWays: number,
 ): Promise<EvenSplitResult> {
-  await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', order.id)
+  await tx.$queryRaw(Prisma.sql`SELECT id FROM "Order" WHERE id = ${order.id} FOR UPDATE`)
 
   // Re-check status inside FOR UPDATE lock to prevent race with concurrent payment/close
   const lockedParent = await tx.order.findUnique({ where: { id: order.id }, select: { status: true } })

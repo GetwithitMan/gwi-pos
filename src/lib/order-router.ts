@@ -15,6 +15,7 @@
  * TODO: Migrate db.station.* calls once a StationRepository is created.
  */
 
+import { Prisma } from '@/generated/prisma/client'
 import { db } from '@/lib/db'
 import { emitToLocation } from '@/lib/socket-server'
 import type {
@@ -215,10 +216,9 @@ export class OrderRouter {
       let deliveryNotes: string | null = null
       if (order.orderType?.startsWith('delivery')) {
         try {
-          const rows: Array<{ customerName: string | null; phone: string | null; address: string | null; addressLine2: string | null; city: string | null; state: string | null; zipCode: string | null; notes: string | null }> = await db.$queryRawUnsafe(
-            `SELECT "customerName", "phone", "address", "addressLine2", "city", "state", "zipCode", "notes"
-             FROM "DeliveryOrder" WHERE "orderId" = $1 LIMIT 1`,
-            orderId
+          const rows: Array<{ customerName: string | null; phone: string | null; address: string | null; addressLine2: string | null; city: string | null; state: string | null; zipCode: string | null; notes: string | null }> = await db.$queryRaw(
+            Prisma.sql`SELECT "customerName", "phone", "address", "addressLine2", "city", "state", "zipCode", "notes"
+             FROM "DeliveryOrder" WHERE "orderId" = ${orderId} LIMIT 1`,
           )
           if (rows.length > 0) {
             const row = rows[0]

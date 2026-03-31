@@ -32,12 +32,8 @@ export const GET = withVenue(async function GET(
     }
 
     // ── Fetch ─────────────────────────────────────────────────────────
-    const rows = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT * FROM "LoyaltyReward"
-       WHERE "id" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL`,
-      id,
-      locationId,
-    )
+    const rows = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT * FROM "LoyaltyReward"
+       WHERE "id" = ${id} AND "locationId" = ${locationId} AND "deletedAt" IS NULL`
 
     if (rows.length === 0) {
       return notFound('Reward not found')
@@ -81,12 +77,8 @@ export const PATCH = withVenue(async function PATCH(
     }
 
     // ── Verify exists ─────────────────────────────────────────────────
-    const existing = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT "id" FROM "LoyaltyReward"
-       WHERE "id" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL`,
-      id,
-      locationId,
-    )
+    const existing = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT "id" FROM "LoyaltyReward"
+       WHERE "id" = ${id} AND "locationId" = ${locationId} AND "deletedAt" IS NULL`
 
     if (existing.length === 0) {
       return notFound('Reward not found')
@@ -146,18 +138,12 @@ export const PATCH = withVenue(async function PATCH(
     // Add WHERE params
     setParams.push(id, locationId)
 
-    await db.$executeRawUnsafe(
-      `UPDATE "LoyaltyReward"
+    await db.$executeRaw`UPDATE "LoyaltyReward"
        SET ${setClauses.join(', ')}
-       WHERE "id" = $${paramIdx} AND "locationId" = $${paramIdx + 1} AND "deletedAt" IS NULL`,
-      ...setParams,
-    )
+       WHERE "id" = $${paramIdx} AND "locationId" = $${paramIdx + 1} AND "deletedAt" IS NULL`
 
     // ── Fetch updated ─────────────────────────────────────────────────
-    const updated = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT * FROM "LoyaltyReward" WHERE "id" = $1`,
-      id,
-    )
+    const updated = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT * FROM "LoyaltyReward" WHERE "id" = ${id}`
 
     return ok(updated[0])
   } catch (error: any) {
@@ -196,13 +182,9 @@ export const DELETE = withVenue(async function DELETE(
     }
 
     // ── Soft delete ───────────────────────────────────────────────────
-    const result = await db.$executeRawUnsafe(
-      `UPDATE "LoyaltyReward"
+    const result = await db.$executeRaw`UPDATE "LoyaltyReward"
        SET "deletedAt" = NOW(), "updatedAt" = NOW()
-       WHERE "id" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL`,
-      id,
-      locationId,
-    )
+       WHERE "id" = ${id} AND "locationId" = ${locationId} AND "deletedAt" IS NULL`
 
     if (result === 0) {
       return notFound('Reward not found')

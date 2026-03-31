@@ -68,7 +68,7 @@ export const PATCH = withVenue(withAuth({ allowCellular: true }, async function 
     // Interactive transaction: FOR UPDATE on Payment row prevents concurrent tip adjustments
     const txResult = await db.$transaction(async (tx) => {
       // Acquire row lock on Payment
-      await tx.$queryRawUnsafe('SELECT id FROM "Payment" WHERE id = $1 FOR UPDATE', paymentId)
+      await tx.$queryRaw`SELECT id FROM "Payment" WHERE id = ${paymentId} FOR UPDATE`
 
       // Re-read order with payment inside lock
       const order = await OrderRepository.getOrderByIdWithInclude(orderId, locationId, {

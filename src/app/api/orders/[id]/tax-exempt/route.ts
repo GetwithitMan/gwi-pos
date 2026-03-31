@@ -46,7 +46,7 @@ export const POST = withVenue(async function POST(
     // Wrap read-calculate-update in a transaction with FOR UPDATE to prevent lost updates
     const updated = await db.$transaction(async (tx) => {
       // Lock the Order row to prevent concurrent tax-exempt toggles from producing incorrect totals
-      await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', orderId)
+      await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${orderId} FOR UPDATE`
 
       // Fetch order with items for recalculation
       const order = await tx.order.findUnique({
@@ -236,7 +236,7 @@ export const DELETE = withVenue(async function DELETE(
     // Wrap read-calculate-update in a transaction with FOR UPDATE to prevent lost updates
     const deleteResult = await db.$transaction(async (tx) => {
       // Lock the Order row to prevent concurrent tax-exempt toggles from producing incorrect totals
-      await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', orderId)
+      await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${orderId} FOR UPDATE`
 
       // Fetch order with items for recalculation
       const order = await tx.order.findUnique({

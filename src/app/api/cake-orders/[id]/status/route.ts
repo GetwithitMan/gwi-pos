@@ -61,12 +61,8 @@ export const PATCH = withVenue(async function PATCH(
     if (gate) return gate
 
     // ── Fetch the cake order ───────────────────────────────────────────
-    const orderRows = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT * FROM "CakeOrder"
-       WHERE "id" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL`,
-      cakeOrderId,
-      locationId,
-    )
+    const orderRows = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT * FROM "CakeOrder"
+       WHERE "id" = ${cakeOrderId} AND "locationId" = ${locationId} AND "deletedAt" IS NULL`
 
     if (!orderRows || orderRows.length === 0) {
       return NextResponse.json(
@@ -119,11 +115,8 @@ export const PATCH = withVenue(async function PATCH(
 
     // ── Build transition context ───────────────────────────────────────
     // Fetch deposit/balance payment info
-    const paymentRows = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT "type", "appliedTo" FROM "CakePayment"
-       WHERE "cakeOrderId" = $1`,
-      cakeOrderId,
-    )
+    const paymentRows = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT "type", "appliedTo" FROM "CakePayment"
+       WHERE "cakeOrderId" = ${cakeOrderId}`
 
     const hasDepositPayment = paymentRows.some(
       (p) => p.type === 'payment' && p.appliedTo === 'deposit',
@@ -133,13 +126,10 @@ export const PATCH = withVenue(async function PATCH(
     )
 
     // Fetch latest approved quote if needed
-    const quoteRows = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT "status", "version", "updatedAt" FROM "CakeQuote"
-       WHERE "cakeOrderId" = $1 AND "deletedAt" IS NULL
+    const quoteRows = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT "status", "version", "updatedAt" FROM "CakeQuote"
+       WHERE "cakeOrderId" = ${cakeOrderId} AND "deletedAt" IS NULL
        ORDER BY "version" DESC
-       LIMIT 1`,
-      cakeOrderId,
-    )
+       LIMIT 1`
     const latestQuote = quoteRows.length > 0
       ? {
           status: quoteRows[0].status as string,
@@ -207,6 +197,7 @@ export const PATCH = withVenue(async function PATCH(
     }
 
     // ── UPDATE CakeOrder ───────────────────────────────────────────────
+    // eslint-disable-next-line -- dynamic SET clauses + spread params require $executeRawUnsafe; all values are parameterized
     await db.$executeRawUnsafe(
       `UPDATE "CakeOrder"
        SET ${setClauses.join(', ')}
@@ -216,23 +207,18 @@ export const PATCH = withVenue(async function PATCH(
 
     // ── INSERT CakeOrderChange (audit trail) ───────────────────────────
     const changeId = crypto.randomUUID()
-    await db.$executeRawUnsafe(
-      `INSERT INTO "CakeOrderChange" (
+    const changeDetails = JSON.stringify({
+      previousStatus: currentStatus,
+      newStatus: targetStatus,
+      reason: reason || null,
+    })
+    await db.$executeRaw`INSERT INTO "CakeOrderChange" (
         "id", "cakeOrderId", "changeType", "changedBy", "source",
         "details", "createdAt"
       ) VALUES (
-        $1, $2, 'status_change', $3, 'admin',
-        $4::jsonb, NOW()
-      )`,
-      changeId,
-      cakeOrderId,
-      auth.employee.id,
-      JSON.stringify({
-        previousStatus: currentStatus,
-        newStatus: targetStatus,
-        reason: reason || null,
-      }),
-    )
+        ${changeId}, ${cakeOrderId}, 'status_change', ${auth.employee.id}, 'admin',
+        ${changeDetails}::jsonb, NOW()
+      )`
 
     pushUpstream()
 
@@ -255,17 +241,14 @@ export const PATCH = withVenue(async function PATCH(
     }
 
     // ── Fetch updated order for response ───────────────────────────────
-    const updatedRows = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT co.*,
+    const updatedRows = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT co.*,
               c."firstName" AS "customerFirstName",
               c."lastName" AS "customerLastName",
               c."phone" AS "customerPhone",
               c."email" AS "customerEmail"
        FROM "CakeOrder" co
        LEFT JOIN "Customer" c ON c."id" = co."customerId"
-       WHERE co."id" = $1`,
-      cakeOrderId,
-    )
+       WHERE co."id" = ${cakeOrderId}`
 
     return ok(updatedRows[0])
   } catch (error) {

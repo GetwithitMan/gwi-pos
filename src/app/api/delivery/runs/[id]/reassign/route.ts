@@ -59,11 +59,7 @@ export const POST = withVenue(async function POST(
 
     const result = await db.$transaction(async (tx) => {
       // Fetch the run
-      const runs: any[] = await tx.$queryRawUnsafe(
-        `SELECT * FROM "DeliveryRun" WHERE id = $1 AND "locationId" = $2 FOR UPDATE`,
-        id,
-        locationId,
-      )
+      const runs: any[] = await tx.$queryRaw`SELECT * FROM "DeliveryRun" WHERE id = ${id} AND "locationId" = ${locationId} FOR UPDATE`
 
       if (!runs.length) {
         throw new Error('Run not found')
@@ -82,14 +78,10 @@ export const POST = withVenue(async function POST(
       }
 
       // Validate new driver exists and is eligible
-      const newDrivers: any[] = await tx.$queryRawUnsafe(
-        `SELECT dd.*, e."firstName", e."lastName"
+      const newDrivers: any[] = await tx.$queryRaw`SELECT dd.*, e."firstName", e."lastName"
          FROM "DeliveryDriver" dd
          JOIN "Employee" e ON e.id = dd."employeeId"
-         WHERE dd.id = $1 AND dd."locationId" = $2`,
-        newDriverId,
-        locationId,
-      )
+         WHERE dd.id = ${newDriverId} AND dd."locationId" = ${locationId}`
 
       if (!newDrivers.length) {
         throw new Error('New driver not found')
@@ -105,67 +97,44 @@ export const POST = withVenue(async function POST(
       }
 
       // Check new driver has no active run
-      const newDriverActiveRuns: any[] = await tx.$queryRawUnsafe(
-        `SELECT id FROM "DeliveryRun"
-         WHERE "driverId" = $1 AND "locationId" = $2
+      const newDriverActiveRuns: any[] = await tx.$queryRaw`SELECT id FROM "DeliveryRun"
+         WHERE "driverId" = ${newDriverId} AND "locationId" = ${locationId}
            AND status NOT IN ('completed', 'returned', 'cancelled')
-           AND id != $3
-         LIMIT 1`,
-        newDriverId,
-        locationId,
-        id,
-      )
+           AND id != ${id}
+         LIMIT 1`
       if (newDriverActiveRuns.length > 0) {
         throw new Error('New driver already has an active run')
       }
 
       // 1. Update DeliveryRun
-      const updatedRun: any[] = await tx.$queryRawUnsafe(
-        `UPDATE "DeliveryRun"
-         SET "driverId" = $1, "updatedAt" = CURRENT_TIMESTAMP
-         WHERE id = $2 AND "locationId" = $3
-         RETURNING *`,
-        newDriverId,
-        id,
-        locationId,
-      )
+      const updatedRun: any[] = await tx.$queryRaw`UPDATE "DeliveryRun"
+         SET "driverId" = ${newDriverId}, "updatedAt" = CURRENT_TIMESTAMP
+         WHERE id = ${id} AND "locationId" = ${locationId}
+         RETURNING *`
 
       // 2. Update all DeliveryOrders in run
-      await tx.$queryRawUnsafe(
-        `UPDATE "DeliveryOrder"
-         SET "driverId" = $1, "updatedAt" = CURRENT_TIMESTAMP
-         WHERE "runId" = $2 AND "locationId" = $3`,
-        newDriverId,
-        id,
-        locationId,
-      )
+      await tx.$queryRaw`UPDATE "DeliveryOrder"
+         SET "driverId" = ${newDriverId}, "updatedAt" = CURRENT_TIMESTAMP
+         WHERE "runId" = ${id} AND "locationId" = ${locationId}`
 
       // 3. Update old driver session → available
       if (oldDriverId) {
-        const oldSessions: any[] = await tx.$queryRawUnsafe(
-          `UPDATE "DeliveryDriverSession"
+        const oldSessions: any[] = await tx.$queryRaw`UPDATE "DeliveryDriverSession"
            SET "status" = 'available', "updatedAt" = CURRENT_TIMESTAMP
-           WHERE "driverId" = $1 AND "locationId" = $2
+           WHERE "driverId" = ${oldDriverId} AND "locationId" = ${locationId}
              AND "endedAt" IS NULL AND status = 'on_delivery'
-           RETURNING *`,
-          oldDriverId,
-          locationId,
-        )
+           RETURNING *`
         if (oldSessions.length > 0) {
           void dispatchDriverStatusChanged(locationId, oldSessions[0]).catch(err => log.warn({ err }, 'Background task failed'))
         }
       }
 
       // 4. Update new driver session → on_delivery
-      const newSessions: any[] = await tx.$queryRawUnsafe(
-        `UPDATE "DeliveryDriverSession"
+      const newSessions: any[] = await tx.$queryRaw`UPDATE "DeliveryDriverSession"
          SET "status" = 'on_delivery', "updatedAt" = CURRENT_TIMESTAMP
-         WHERE "driverId" = $1 AND "locationId" = $2
+         WHERE "driverId" = ${newDriverId} AND "locationId" = ${locationId}
            AND "endedAt" IS NULL AND status != 'off_duty'
-         RETURNING *`,
-        newDriverId,
-        locationId,
-      )
+         RETURNING *`
       if (newSessions.length > 0) {
         void dispatchDriverStatusChanged(locationId, newSessions[0]).catch(err => log.warn({ err }, 'Background task failed'))
       }
@@ -173,13 +142,10 @@ export const POST = withVenue(async function POST(
       // Get old driver name for audit
       let oldDriverName = 'unknown'
       if (oldDriverId) {
-        const oldDrivers: any[] = await tx.$queryRawUnsafe(
-          `SELECT e."firstName", e."lastName"
+        const oldDrivers: any[] = await tx.$queryRaw`SELECT e."firstName", e."lastName"
            FROM "DeliveryDriver" dd
            JOIN "Employee" e ON e.id = dd."employeeId"
-           WHERE dd.id = $1`,
-          oldDriverId,
-        )
+           WHERE dd.id = ${oldDriverId}`
         if (oldDrivers.length > 0) {
           oldDriverName = `${oldDrivers[0].firstName} ${oldDrivers[0].lastName}`.trim()
         }

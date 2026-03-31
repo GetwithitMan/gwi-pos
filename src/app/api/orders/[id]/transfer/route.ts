@@ -121,7 +121,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     // ── Transfer the order (FOR UPDATE lock to prevent concurrent mutations) ──
     const previousEmployeeId = order.employeeId
     await db.$transaction(async (tx) => {
-      await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', orderId)
+      await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${orderId} FOR UPDATE`
       await OrderRepository.updateOrder(orderId, order.locationId, {
         employeeId: toEmployeeId,
         lastMutatedBy: mutationOrigin,

@@ -74,10 +74,7 @@ export const POST = withVenue(async function POST(
 
     const result = await db.$transaction(async (tx) => {
       // Lock the order row
-      await tx.$queryRawUnsafe(
-        'SELECT id FROM "Order" WHERE id = $1 FOR UPDATE',
-        orderId
-      )
+      await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${orderId} FOR UPDATE`
 
       // Get full order with items and discounts
       const order = await tx.order.findUnique({
@@ -97,7 +94,7 @@ export const POST = withVenue(async function POST(
       }
 
       // Validate reservation exists, matches this location, and is linked to this order
-      const reservation = await tx.$queryRawUnsafe<Array<{
+      const reservation = await tx.$queryRaw<Array<{
         id: string
         locationId: string
         guestName: string
@@ -105,13 +102,10 @@ export const POST = withVenue(async function POST(
         tableId: string | null
         customerId: string | null
         depositStatus: string | null
-      }>>(
-        `SELECT id, "locationId", "guestName", "orderId", "tableId", "customerId", "depositStatus"
+      }>>`SELECT id, "locationId", "guestName", "orderId", "tableId", "customerId", "depositStatus"
          FROM "Reservation"
-         WHERE id = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
-         LIMIT 1`,
-        reservationId, order.locationId
-      )
+         WHERE id = ${reservationId} AND "locationId" = ${order.locationId} AND "deletedAt" IS NULL
+         LIMIT 1`
 
       if (!reservation.length) {
         throw Object.assign(new Error('Reservation not found at this location'), { statusCode: 404 })
@@ -136,17 +130,14 @@ export const POST = withVenue(async function POST(
       }
 
       // Get total paid deposit amount (completed, not yet fully refunded)
-      const depositRows = await tx.$queryRawUnsafe<Array<{
+      const depositRows = await tx.$queryRaw<Array<{
         id: string
         amount: string
         refundedAmount: string
         status: string
-      }>>(
-        `SELECT id, amount, COALESCE("refundedAmount", 0) as "refundedAmount", status
+      }>>`SELECT id, amount, COALESCE("refundedAmount", 0) as "refundedAmount", status
          FROM "ReservationDeposit"
-         WHERE "reservationId" = $1 AND status = 'completed' AND "deletedAt" IS NULL`,
-        reservationId
-      )
+         WHERE "reservationId" = ${reservationId} AND status = 'completed' AND "deletedAt" IS NULL`
 
       const totalDepositPaid = depositRows.reduce(
         (sum, d) => sum + Number(d.amount) - Number(d.refundedAmount), 0
@@ -249,17 +240,11 @@ export const POST = withVenue(async function POST(
       })
 
       // Mark deposit as applied on the reservation
-      await tx.$executeRawUnsafe(
-        `UPDATE "Reservation" SET "depositStatus" = 'applied', "updatedAt" = NOW() WHERE id = $1`,
-        reservationId
-      )
+      await tx.$executeRaw`UPDATE "Reservation" SET "depositStatus" = 'applied', "updatedAt" = NOW() WHERE id = ${reservationId}`
 
       // Link reservation to order if not already linked
       if (!res.orderId) {
-        await tx.$executeRawUnsafe(
-          `UPDATE "Reservation" SET "orderId" = $1, "updatedAt" = NOW() WHERE id = $2`,
-          orderId, reservationId
-        )
+        await tx.$executeRaw`UPDATE "Reservation" SET "orderId" = ${orderId}, "updatedAt" = NOW() WHERE id = ${reservationId}`
       }
 
       outboxLocationId = order.locationId

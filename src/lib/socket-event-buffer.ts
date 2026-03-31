@@ -1,3 +1,4 @@
+import { Prisma } from '@/generated/prisma/client'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('socket-event-buffer')
 
@@ -91,9 +92,8 @@ export function recordEvent(locationId: string, event: string, data: unknown, ro
   void (async () => {
     try {
       const db = await getDb()
-      await db.$executeRawUnsafe(
-        `INSERT INTO "SocketEventLog" ("locationId", event, data, room, status, "createdAt") VALUES ($1, $2, $3::jsonb, $4, 'sent', NOW())`,
-        locationId, event, JSON.stringify(data), room
+      await db.$executeRaw(
+        Prisma.sql`INSERT INTO "SocketEventLog" ("locationId", event, data, room, status, "createdAt") VALUES (${locationId}, ${event}, ${JSON.stringify(data)}::jsonb, ${room}, 'sent', NOW())`
       )
     } catch (err) {
       // PG down or table doesn't exist — in-memory buffer still works
@@ -137,9 +137,8 @@ export async function getEventsSince(
       data: unknown
       room: string
       createdAt: Date
-    }> = await db.$queryRawUnsafe(
-      `SELECT id, event, data, room, "createdAt" FROM "SocketEventLog" WHERE "locationId" = $1 AND id > $2 ORDER BY id ASC LIMIT 1000`,
-      locationId, afterEventId
+    }> = await db.$queryRaw(
+      Prisma.sql`SELECT id, event, data, room, "createdAt" FROM "SocketEventLog" WHERE "locationId" = ${locationId} AND id > ${afterEventId} ORDER BY id ASC LIMIT 1000`
     )
 
     const pgEvents: BufferedEvent[] = rows
@@ -199,9 +198,8 @@ export async function getLatestEventId(locationId: string): Promise<number> {
   // Post-restart: check PG
   try {
     const db = await getDb()
-    const rows: Array<{ max_id: bigint | null }> = await db.$queryRawUnsafe(
-      `SELECT MAX(id) as max_id FROM "SocketEventLog" WHERE "locationId" = $1`,
-      locationId
+    const rows: Array<{ max_id: bigint | null }> = await db.$queryRaw(
+      Prisma.sql`SELECT MAX(id) as max_id FROM "SocketEventLog" WHERE "locationId" = ${locationId}`
     )
     const maxId = rows[0]?.max_id
     if (maxId !== null && maxId !== undefined) {
@@ -248,11 +246,10 @@ async function cleanupAll(): Promise<void> {
   // Clean PG (DELETE with LIMIT to avoid locking)
   try {
     const db = await getDb()
-    await db.$executeRawUnsafe(
-      `DELETE FROM "SocketEventLog" WHERE id IN (
-        SELECT id FROM "SocketEventLog" WHERE "createdAt" < NOW() - ($1 || ' minutes')::INTERVAL LIMIT 5000
+    await db.$executeRaw(
+      Prisma.sql`DELETE FROM "SocketEventLog" WHERE id IN (
+        SELECT id FROM "SocketEventLog" WHERE "createdAt" < NOW() - ${String(SOCKET_EVENT_TTL_MINUTES) + ' minutes'}::INTERVAL LIMIT 5000
       )`,
-      String(SOCKET_EVENT_TTL_MINUTES),
     )
   } catch {
     // PG cleanup failed — non-critical

@@ -8,6 +8,9 @@
  *   - Order close/void/cancel auto-release
  *   - Waitlist seated/cancelled/expired auto-release
  *   - Manual device return
+ *
+ * NOTE: Uses $queryRawUnsafe/$executeRawUnsafe for raw SQL notification tables
+ * (NotificationTargetAssignment, NotificationDevice). All queries use positional $1/$2 params — safe from injection.
  */
 
 import { db } from '@/lib/db'

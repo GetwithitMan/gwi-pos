@@ -5,6 +5,7 @@
  * recalculate totals. Called inside db.$transaction().
  */
 
+import { Prisma } from '@/generated/prisma/client'
 import { recalculatePercentDiscounts, getLocationTaxRate, calculateSplitTax } from '@/lib/order-calculations'
 import { roundToCents } from '@/lib/pricing'
 import {
@@ -60,10 +61,8 @@ export async function applyCompVoid(
   }
 
   // Re-check item status inside the lock to prevent double comp/void.
-  const [freshItem] = await (tx as any).$queryRawUnsafe(
-    `SELECT "id", "status" FROM "OrderItem" WHERE "id" = $1 AND "orderId" = $2 FOR UPDATE`,
-    itemId,
-    orderId,
+  const [freshItem] = await (tx as any).$queryRaw(
+    Prisma.sql`SELECT "id", "status" FROM "OrderItem" WHERE "id" = ${itemId} AND "orderId" = ${orderId} FOR UPDATE`,
   ) as Array<{ id: string; status: string }>
   if (!freshItem || freshItem.status !== 'active') {
     throw new Error('ITEM_ALREADY_SETTLED')

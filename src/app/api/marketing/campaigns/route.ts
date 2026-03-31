@@ -34,6 +34,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }
     }
 
+    // eslint-disable-next-line -- conditional WHERE clauses with dynamic positional params require $queryRawUnsafe; all values are parameterized
     const campaigns = await db.$queryRawUnsafe(`
       SELECT
         c.id, c."locationId", c.name, c.type, c.subject, c.segment,
@@ -111,22 +112,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Create campaign
-    const result = await db.$queryRawUnsafe(`
+    const result = await db.$queryRaw`
       INSERT INTO "MarketingCampaign"
         ("locationId", "name", "type", "subject", "body", "segment", "status", "scheduledFor", "createdBy")
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      VALUES (${locationId}, ${name}, ${type}, ${subject || null}, ${bodyContent || ''}, ${segment || 'all'}, ${scheduledFor ? 'scheduled' : 'draft'}, ${scheduledFor ? new Date(scheduledFor) : null}, ${resolvedEmployeeId || null})
       RETURNING *
-    `,
-      locationId,
-      name,
-      type,
-      subject || null,
-      bodyContent || '',
-      segment || 'all',
-      scheduledFor ? 'scheduled' : 'draft',
-      scheduledFor ? new Date(scheduledFor) : null,
-      resolvedEmployeeId || null
-    ) as unknown[]
+    ` as unknown[]
 
     return ok((result as Record<string, unknown>[]))
   } catch (error) {

@@ -51,12 +51,10 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
 
     const result = await db.$transaction(async (tx) => {
       // Lock the Order row to prevent concurrent discount applications from producing incorrect totals
-      await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', orderId)
+      await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${orderId} FOR UPDATE`
 
       // Fetch order with items for split-aware tax (tenant-safe via OrderRepository)
-      const [lockedDisc] = await tx.$queryRawUnsafe<Array<{ locationId: string }>>(
-        'SELECT "locationId" FROM "Order" WHERE id = $1', orderId
-      )
+      const [lockedDisc] = await tx.$queryRaw<Array<{ locationId: string }>>`SELECT "locationId" FROM "Order" WHERE id = ${orderId}`
       if (!lockedDisc) {
         return notFound('Order not found')
       }
@@ -297,7 +295,7 @@ export const DELETE = withVenue(withAuth({ allowCellular: true }, async function
 
     const result = await db.$transaction(async (tx) => {
       // Lock the Order row to prevent concurrent discount removals from producing incorrect totals
-      await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', orderId)
+      await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${orderId} FOR UPDATE`
 
       // Fetch the discount and verify it belongs to this order/item
       const existingDiscount = await tx.orderItemDiscount.findFirst({
@@ -314,9 +312,7 @@ export const DELETE = withVenue(withAuth({ allowCellular: true }, async function
       }
 
       // Fetch order with items for split-aware tax recalculation (tenant-safe via OrderRepository)
-      const [lockedDiscDel] = await tx.$queryRawUnsafe<Array<{ locationId: string }>>(
-        'SELECT "locationId" FROM "Order" WHERE id = $1', orderId
-      )
+      const [lockedDiscDel] = await tx.$queryRaw<Array<{ locationId: string }>>`SELECT "locationId" FROM "Order" WHERE id = ${orderId}`
       if (!lockedDiscDel) {
         return notFound('Order not found')
       }

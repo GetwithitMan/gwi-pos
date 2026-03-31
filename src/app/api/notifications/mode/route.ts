@@ -37,10 +37,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.NOTIFICATIONS_MANAGE_PROVIDERS)
     if (!auth.authorized) return err(auth.error, auth.status)
 
-    const rows: any[] = await db.$queryRawUnsafe(
-      `SELECT settings FROM "Location" WHERE id = $1`,
-      locationId
-    )
+    const rows: any[] = await db.$queryRaw`SELECT settings FROM "Location" WHERE id = ${locationId}`
 
     const settings = (rows[0]?.settings as Record<string, unknown>) || {}
     const mode = (settings.notificationMode as NotificationMode) || 'off'
@@ -73,14 +70,10 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     }
 
     // Merge into existing Location.settings JSONB (preserve other keys)
-    await db.$executeRawUnsafe(
-      `UPDATE "Location"
-       SET settings = COALESCE(settings, '{}'::jsonb) || $2::jsonb,
+    await db.$executeRaw`UPDATE "Location"
+       SET settings = COALESCE(settings, '{}'::jsonb) || ${JSON.stringify({ notificationMode: mode })}::jsonb,
            "updatedAt" = CURRENT_TIMESTAMP
-       WHERE id = $1`,
-      locationId,
-      JSON.stringify({ notificationMode: mode })
-    )
+       WHERE id = ${locationId}`
 
     // Clear routing rules cache so the dispatcher picks up the new mode
     clearRoutingRulesCache()

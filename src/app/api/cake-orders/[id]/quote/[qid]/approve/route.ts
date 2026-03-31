@@ -63,15 +63,10 @@ export const PATCH = withVenue(async function PATCH(
     if (gate) return gate
 
     // ── Fetch the quote ─────────────────────────────────────────────────
-    const quoteRows = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT q.*, co."locationId" AS "orderLocationId", co."status" AS "orderStatus"
+    const quoteRows = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT q.*, co."locationId" AS "orderLocationId", co."status" AS "orderStatus"
        FROM "CakeQuote" q
        JOIN "CakeOrder" co ON co."id" = q."cakeOrderId"
-       WHERE q."id" = $1 AND q."cakeOrderId" = $2 AND co."locationId" = $3`,
-      quoteId,
-      cakeOrderId,
-      locationId,
-    )
+       WHERE q."id" = ${quoteId} AND q."cakeOrderId" = ${cakeOrderId} AND co."locationId" = ${locationId}`
 
     if (!quoteRows || quoteRows.length === 0) {
       return NextResponse.json(
@@ -120,12 +115,9 @@ export const PATCH = withVenue(async function PATCH(
       today.setHours(0, 0, 0, 0)
       if (validUntilDate < today) {
         // Auto-expire the quote
-        await db.$executeRawUnsafe(
-          `UPDATE "CakeQuote"
+        await db.$executeRaw`UPDATE "CakeQuote"
            SET "status" = 'expired', "updatedAt" = NOW()
-           WHERE "id" = $1`,
-          quoteId,
-        )
+           WHERE "id" = ${quoteId}`
         return NextResponse.json(
           {
             code: 'QUOTE_EXPIRED',
@@ -147,55 +139,38 @@ export const PATCH = withVenue(async function PATCH(
     const subtotal = Number(quote.subtotal ?? pricingSnapshot?.subtotal ?? 0)
 
     // ── Approve the quote ───────────────────────────────────────────────
-    await db.$executeRawUnsafe(
-      `UPDATE "CakeQuote"
+    await db.$executeRaw`UPDATE "CakeQuote"
        SET "status" = 'approved', "approvedAt" = NOW(), "updatedAt" = NOW()
-       WHERE "id" = $1`,
-      quoteId,
-    )
+       WHERE "id" = ${quoteId}`
 
     // ── Transition CakeOrder to approved ────────────────────────────────
-    await db.$executeRawUnsafe(
-      `UPDATE "CakeOrder"
+    await db.$executeRaw`UPDATE "CakeOrder"
        SET "status" = 'approved',
            "approvedAt" = NOW(),
-           "totalAfterTax" = $1,
-           "depositRequired" = $2,
-           "taxTotal" = $3,
-           "subtotal" = $4,
-           "pricingInputs" = COALESCE($5::jsonb, "pricingInputs"),
+           "totalAfterTax" = ${totalAfterTax},
+           "depositRequired" = ${depositRequired},
+           "taxTotal" = ${taxTotal},
+           "subtotal" = ${subtotal},
+           "pricingInputs" = COALESCE(${pricingSnapshot ? JSON.stringify(pricingSnapshot) : null}::jsonb, "pricingInputs"),
            "updatedAt" = NOW()
-       WHERE "id" = $6`,
-      totalAfterTax,
-      depositRequired,
-      taxTotal,
-      subtotal,
-      pricingSnapshot ? JSON.stringify(pricingSnapshot) : null,
-      cakeOrderId,
-    )
+       WHERE "id" = ${cakeOrderId}`
 
     // ── Audit trail ─────────────────────────────────────────────────────
     const changeId = crypto.randomUUID()
-    await db.$executeRawUnsafe(
-      `INSERT INTO "CakeOrderChange" (
+    await db.$executeRaw`INSERT INTO "CakeOrderChange" (
         "id", "cakeOrderId", "changeType", "changedBy", "source",
         "details", "createdAt"
       ) VALUES (
-        $1, $2, 'quote_approved', $3, 'admin',
-        $4::jsonb, NOW()
-      )`,
-      changeId,
-      cakeOrderId,
-      auth.employee.id,
-      JSON.stringify({
+        ${changeId}, ${cakeOrderId}, 'quote_approved', ${auth.employee.id}, 'admin',
+        ${JSON.stringify({
         quoteId,
         version: Number(quote.version),
         totalAfterTax,
         depositRequired,
         taxTotal,
         previousOrderStatus: quote.orderStatus,
-      }),
-    )
+      })}::jsonb, NOW()
+      )`
 
     pushUpstream()
 

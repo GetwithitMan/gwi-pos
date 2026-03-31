@@ -42,10 +42,10 @@ export const PUT = withVenue(async function PUT(
     if (featureGate) return featureGate
 
     // Fetch existing zone
-    const existing: any[] = await db.$queryRawUnsafe(`
+    const existing: any[] = await db.$queryRaw`
       SELECT * FROM "DeliveryZone"
-      WHERE id = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
-    `, id, locationId)
+      WHERE id = ${id} AND "locationId" = ${locationId} AND "deletedAt" IS NULL
+    `
 
     if (!existing.length) {
       return notFound('Delivery zone not found')
@@ -244,12 +244,12 @@ export const PUT = withVenue(async function PUT(
     const locParamIdx = paramIdx + 1
     updateParams.push(id, locationId)
 
-    const updated: any[] = await db.$queryRawUnsafe(`
+    const updated: any[] = await db.$queryRaw`
       UPDATE "DeliveryZone"
       SET ${updates.join(', ')}
       WHERE id = $${idParamIdx} AND "locationId" = $${locParamIdx} AND "deletedAt" IS NULL
       RETURNING *
-    `, ...updateParams)
+    `
 
     if (!updated.length) {
       return err('Failed to update delivery zone', 500)
@@ -307,12 +307,12 @@ export const DELETE = withVenue(async function DELETE(
     const featureGate = await requireDeliveryFeature(locationId)
     if (featureGate) return featureGate
 
-    const deleted: any[] = await db.$queryRawUnsafe(`
+    const deleted: any[] = await db.$queryRaw`
       UPDATE "DeliveryZone"
       SET "deletedAt" = CURRENT_TIMESTAMP, "updatedAt" = CURRENT_TIMESTAMP
-      WHERE id = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
+      WHERE id = ${id} AND "locationId" = ${locationId} AND "deletedAt" IS NULL
       RETURNING *
-    `, id, locationId)
+    `
 
     if (!deleted.length) {
       return notFound('Delivery zone not found')

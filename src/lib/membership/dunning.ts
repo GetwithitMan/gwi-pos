@@ -8,6 +8,9 @@
  *   - lastFailedAt + gracePeriodDays has passed
  *
  * Transitions them to expired + uncollectible.
+ *
+ * NOTE: Uses $queryRawUnsafe/$executeRawUnsafe for raw SQL membership tables.
+ * All queries use positional $1/$2 params — safe from injection.
  */
 import { MembershipEventType } from './types'
 

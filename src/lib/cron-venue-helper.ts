@@ -8,7 +8,7 @@
  * resolve to the correct venue database within each callback invocation.
  */
 
-import type { PrismaClient } from '@/generated/prisma/client'
+import { Prisma, type PrismaClient } from '@/generated/prisma/client'
 
 export interface ForAllVenuesResult {
   total: number
@@ -57,8 +57,8 @@ export async function forAllVenues(
   // Query the registry for all active venue slugs
   let slugs: { slug: string }[]
   try {
-    slugs = await masterClient.$queryRawUnsafe<{ slug: string }[]>(
-      `SELECT slug FROM "_cron_venue_registry" WHERE is_active = true ORDER BY slug`
+    slugs = await masterClient.$queryRaw<{ slug: string }[]>(
+      Prisma.sql`SELECT slug FROM "_cron_venue_registry" WHERE is_active = true ORDER BY slug`
     )
   } catch (err) {
     // Table might not exist yet (migration not run)

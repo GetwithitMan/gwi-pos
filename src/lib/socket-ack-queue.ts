@@ -1,3 +1,4 @@
+import { Prisma } from '@/generated/prisma/client'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('socket-ack')
 
@@ -151,10 +152,9 @@ export function getRetryableEvents(): Array<PendingAck & { retrySocketIds: strin
       void (async () => {
         try {
           const db = await getDb()
-          await db.$executeRawUnsafe(
-            `INSERT INTO "SocketEventLog" ("locationId", "event", "data", "room", "status", "createdAt")
-             VALUES ($1, $2, $3::jsonb, $4, 'ack_expired', NOW())`,
-            pending.locationId, pending.event, JSON.stringify(pending.data), pending.room
+          await db.$executeRaw(
+            Prisma.sql`INSERT INTO "SocketEventLog" ("locationId", "event", "data", "room", "status", "createdAt")
+             VALUES (${pending.locationId}, ${pending.event}, ${JSON.stringify(pending.data)}::jsonb, ${pending.room}, 'ack_expired', NOW())`,
           )
         } catch { /* best effort — PG may be down */ }
       })().catch(() => {})

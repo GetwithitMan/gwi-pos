@@ -46,10 +46,10 @@ export const PUT = withVenue(async function PUT(
     if (featureGate) return featureGate
 
     // Fetch existing
-    const existing: any[] = await db.$queryRawUnsafe(`
+    const existing: any[] = await db.$queryRaw`
       SELECT * FROM "DeliveryAddress"
-      WHERE id = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
-    `, id, locationId)
+      WHERE id = ${id} AND "locationId" = ${locationId} AND "deletedAt" IS NULL
+    `
 
     if (!existing.length) {
       return notFound('Address not found')
@@ -146,11 +146,11 @@ export const PUT = withVenue(async function PUT(
 
       // Clear other defaults for this customer
       if (isDefault && current.customerId) {
-        await db.$executeRawUnsafe(`
+        await db.$executeRaw`
           UPDATE "DeliveryAddress"
           SET "isDefault" = false, "updatedAt" = CURRENT_TIMESTAMP
-          WHERE "locationId" = $1 AND "customerId" = $2 AND id != $3 AND "isDefault" = true AND "deletedAt" IS NULL
-        `, locationId, current.customerId, id)
+          WHERE "locationId" = ${locationId} AND "customerId" = ${current.customerId} AND id != ${id} AND "isDefault" = true AND "deletedAt" IS NULL
+        `
       }
     }
 
@@ -177,15 +177,15 @@ export const PUT = withVenue(async function PUT(
     if (addressChanged) {
       const effectiveZip = (zipCode?.trim() || current.zipCode || '').trim()
       if (effectiveZip) {
-        const zones: any[] = await db.$queryRawUnsafe(`
+        const zones: any[] = await db.$queryRaw`
           SELECT id FROM "DeliveryZone"
-          WHERE "locationId" = $1
+          WHERE "locationId" = ${locationId}
             AND "deletedAt" IS NULL
             AND "isActive" = true
             AND "zoneType" = 'zipcode'
-            AND $2 = ANY("zipCodes")
+            AND ${effectiveZip} = ANY("zipCodes")
           LIMIT 1
-        `, locationId, effectiveZip)
+        `
 
         updates.push(`"zoneId" = $${paramIdx}`)
         updateParams.push(zones.length ? zones[0].id : null)
@@ -198,12 +198,12 @@ export const PUT = withVenue(async function PUT(
     const locIdx = paramIdx + 1
     updateParams.push(id, locationId)
 
-    const updated: any[] = await db.$queryRawUnsafe(`
+    const updated: any[] = await db.$queryRaw`
       UPDATE "DeliveryAddress"
       SET ${updates.join(', ')}
       WHERE id = $${idIdx} AND "locationId" = $${locIdx} AND "deletedAt" IS NULL
       RETURNING *
-    `, ...updateParams)
+    `
 
     if (!updated.length) {
       return err('Failed to update address', 500)
@@ -268,11 +268,11 @@ export const DELETE = withVenue(async function DELETE(
     const featureGate = await requireDeliveryFeature(locationId)
     if (featureGate) return featureGate
 
-    const result = await db.$executeRawUnsafe(`
+    const result = await db.$executeRaw`
       UPDATE "DeliveryAddress"
       SET "deletedAt" = CURRENT_TIMESTAMP, "updatedAt" = CURRENT_TIMESTAMP
-      WHERE id = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
-    `, id, locationId)
+      WHERE id = ${id} AND "locationId" = ${locationId} AND "deletedAt" IS NULL
+    `
 
     if (result === 0) {
       return notFound('Address not found')

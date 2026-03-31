@@ -10,6 +10,7 @@ export interface BaseSeedResult {
   missing: string[]
 }
 
+// eslint-disable-next-line -- $queryRawUnsafe required: dynamic table names from hardcoded list (not user input)
 export async function checkBaseSeedPresent(
   client: { $queryRawUnsafe: (sql: string) => Promise<unknown[]> }
 ): Promise<BaseSeedResult> {
