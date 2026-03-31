@@ -1,14 +1,14 @@
 /**
  * Connection Pool Budget — single source of truth for all DB pool sizing.
  *
- * Total PG connections per NUC: 30 (local PG default max_connections=100, budget=30%)
+ * Total PG connections per NUC: 40 (local PG default max_connections=100, budget=40%)
  *
  * Budget allocation:
- * - App pool (masterClient):         20 connections  — API handlers, route queries (env: DB_POOL_SIZE)
+ * - App pool (masterClient):         30 connections  — API handlers, route queries (env: DB_POOL_SIZE)
  * - Admin pool (adminDb):             3 connections  — cross-tenant ops, MC sync, cron
  * - Neon sync pool (neonClient):      5 connections  — upstream+downstream sync workers
  * - Reserved (health, emergency):     2 connections  — headroom for pg_stat_activity etc.
- *   Total:                           30 connections
+ *   Total:                           40 connections
  *
  * High-volume venues (concerts, large bars) can increase the app pool via
  * DB_POOL_SIZE env var. The total budget adjusts automatically.
@@ -16,12 +16,12 @@
  * Env vars for pool sizing (all optional):
  *   DB_POOL_SIZE     — Explicit app pool size. ALWAYS takes priority over auto-calculation.
  *   VENUE_CAPACITY   — Number of terminals/seats. Used for auto-scaling when DB_POOL_SIZE is unset.
- *                       >50 = concert venue (40 conns), >20 = large restaurant (30 conns), else 20.
+ *                       >50 = concert venue (40 conns), >20 = large restaurant (30 conns), else 30.
  *   HIGH_VOLUME      — Set to "true" for high-volume venues (concerts, festivals). Forces 40 conns
  *                       when DB_POOL_SIZE is unset, regardless of VENUE_CAPACITY.
  *
  * Auto-scaling tiers (when DB_POOL_SIZE is NOT set):
- *   Standard restaurant (default):       20 connections
+ *   Standard restaurant (default):       30 connections (supports 10+ concurrent terminals + sync workers)
  *   Large restaurant (capacity > 20):    30 connections
  *   Concert venue (capacity > 50):       40 connections
  *   HIGH_VOLUME override:                40 connections
@@ -57,7 +57,9 @@ function calculateAutoPoolSize(): number {
   if (capacity > 50) return 40  // Concert venue / large event space
   if (capacity > 20) return 30  // Large restaurant / busy bar
 
-  return 20 // Standard restaurant
+  // Default 30 supports 10+ concurrent terminals + sync workers.
+  // Override via DB_POOL_SIZE env var for high-volume venues.
+  return 30 // Standard restaurant
 }
 
 const envPoolSize = parseInt(process.env.DB_POOL_SIZE || '0', 10)

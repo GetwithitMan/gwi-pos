@@ -173,6 +173,9 @@ function KDSContent() {
   // Phase 10: Bump bar / keyboard navigation
   const [selectedOrderIndex, setSelectedOrderIndex] = useState(0)
 
+  // Debounce protection: track in-flight bump requests to prevent double-bumps
+  const inFlightBumps = useRef(new Set<string>())
+
   // Authenticate device on mount (after hydration so employee fallback works)
   useEffect(() => {
     if (hydrated) authenticateDevice()
@@ -701,7 +704,31 @@ function KDSContent() {
   }, [screenConfig, stationParam, showCompleted, deviceToken, expoMode])
 
   const handleBumpItem = useCallback(async (itemId: string) => {
+    // Debounce: skip if this item is already being bumped
+    if (inFlightBumps.current.has(itemId)) return
+    inFlightBumps.current.add(itemId)
+
     try {
+      // OPTIMISTIC: Update local state immediately for instant UI feedback
+      setOrders(prev => {
+        const updated = prev.map(order => ({
+          ...order,
+          items: order.items.map(item =>
+            item.id === itemId
+              ? { ...item, isCompleted: true, completedAt: new Date().toISOString() }
+              : item
+          ),
+        }))
+        // Remove orders where all items are now completed (unless showCompleted is on)
+        if (!showCompleted) {
+          return updated.filter(order =>
+            order.items.some(item => !item.isCompleted)
+          )
+        }
+        return updated
+      })
+
+      // ASYNC: Persist to server
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       if (deviceToken) headers['x-device-token'] = deviceToken
 
@@ -710,16 +737,31 @@ function KDSContent() {
         ? { itemIds: [itemId], action: 'serve' }
         : { itemIds: [itemId], action: 'complete', screenId: screenConfig?.id }
 
-      await fetch(endpoint, {
+      const res = await fetch(endpoint, {
         method: 'PUT',
         headers,
         body: JSON.stringify(body),
       })
-      loadOrders()
+
+      if (!res.ok) throw new Error(`Bump failed: ${res.status}`)
+      // Server will emit socket event; other KDS screens update via socket
     } catch (error) {
-      console.error('Failed to bump item:', error)
+      console.error('Bump failed, reverting:', error)
+      // ROLLBACK: Revert optimistic update
+      setOrders(prev => prev.map(order => ({
+        ...order,
+        items: order.items.map(item =>
+          item.id === itemId
+            ? { ...item, isCompleted: false, completedAt: null }
+            : item
+        ),
+      })))
+      // Full reload as safety fallback
+      loadOrders()
+    } finally {
+      inFlightBumps.current.delete(itemId)
     }
-  }, [deviceToken, loadOrders, expoMode])
+  }, [deviceToken, loadOrders, expoMode, showCompleted, screenConfig?.id])
 
   const handleBumpOrder = useCallback(async (order: KDSOrder) => {
     const incompleteItemIds = order.items
@@ -728,13 +770,42 @@ function KDSContent() {
 
     if (incompleteItemIds.length === 0) return
 
+    // Debounce: skip if any of these items are already in-flight
+    const alreadyInFlight = incompleteItemIds.some(id => inFlightBumps.current.has(id))
+    if (alreadyInFlight) return
+    incompleteItemIds.forEach(id => inFlightBumps.current.add(id))
+
     try {
+      // OPTIMISTIC: Mark all items in this order as completed immediately
+      const now = new Date().toISOString()
+      setOrders(prev => {
+        const updated = prev.map(o => {
+          if (o.id !== order.id) return o
+          return {
+            ...o,
+            items: o.items.map(item =>
+              incompleteItemIds.includes(item.id)
+                ? { ...item, isCompleted: true, completedAt: now }
+                : item
+            ),
+          }
+        })
+        // Remove the order from display if all items completed (unless showCompleted)
+        if (!showCompleted) {
+          return updated.filter(o =>
+            o.items.some(item => !item.isCompleted)
+          )
+        }
+        return updated
+      })
+
+      // ASYNC: Persist to server
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       if (deviceToken) headers['x-device-token'] = deviceToken
 
       const endpoint = expoMode ? '/api/kds/expo' : '/api/kds'
 
-      await fetch(endpoint, {
+      const res = await fetch(endpoint, {
         method: 'PUT',
         headers,
         body: JSON.stringify({
@@ -744,11 +815,27 @@ function KDSContent() {
           screenId: screenConfig?.id,
         }),
       })
-      loadOrders()
+
+      if (!res.ok) throw new Error(`Bump order failed: ${res.status}`)
     } catch (error) {
-      console.error('Failed to bump order:', error)
+      console.error('Bump order failed, reverting:', error)
+      // ROLLBACK: Revert all items in this order
+      setOrders(prev => prev.map(o => {
+        if (o.id !== order.id) return o
+        return {
+          ...o,
+          items: o.items.map(item =>
+            incompleteItemIds.includes(item.id)
+              ? { ...item, isCompleted: false, completedAt: null }
+              : item
+          ),
+        }
+      }))
+      loadOrders()
+    } finally {
+      incompleteItemIds.forEach(id => inFlightBumps.current.delete(id))
     }
-  }, [deviceToken, loadOrders, expoMode])
+  }, [deviceToken, loadOrders, expoMode, showCompleted, screenConfig?.id])
 
   const handleUncompleteItem = useCallback(async (itemId: string) => {
     try {

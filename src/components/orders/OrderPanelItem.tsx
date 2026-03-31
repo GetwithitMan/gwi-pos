@@ -274,7 +274,10 @@ export const OrderPanelItem = memo(function OrderPanelItem({
           }`,
       borderRadius: '10px',
       cursor: (onClick && !isSent) || onSelect ? 'pointer' : 'default' as const,
-      transition: 'all 0.3s ease',
+      // Only apply transitions for interactive states (newest highlight,
+      // selection glow). Sent/last-sent items skip transitions to avoid
+      // janky staggered animations during batch send operations.
+      transition: (isNewest || isSelected) ? 'all 0.3s ease' : 'none',
       boxShadow: isNewest
         ? '0 0 12px rgba(34, 197, 94, 0.2)'
         : isSelected

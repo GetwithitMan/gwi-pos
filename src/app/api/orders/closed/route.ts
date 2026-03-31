@@ -106,8 +106,26 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         },
         items: {
           where: { deletedAt: null },
-          include: {
-            modifiers: { where: { deletedAt: null } },
+          select: {
+            id: true,
+            menuItemId: true,
+            name: true,
+            price: true,
+            quantity: true,
+            itemTotal: true,
+            specialNotes: true,
+            isCompleted: true,
+            completedAt: true,
+            modifiers: {
+              where: { deletedAt: null },
+              select: {
+                id: true,
+                modifierId: true,
+                name: true,
+                price: true,
+                preModifier: true,
+              },
+            },
           },
         },
         payments: {

@@ -188,13 +188,34 @@ let timer: ReturnType<typeof setInterval> | null = null
 /** Guard against overlapping sync cycles */
 let cycleRunning = false
 
+// ── Connectivity check cache ─────────────────────────────────────────────────
+let lastConnectivityCheck = 0
+let lastConnectivityResult = false
+const CONNECTIVITY_CACHE_TTL = 10_000 // 10 seconds
+
+async function checkConnectivity(): Promise<boolean> {
+  const now = Date.now()
+  if (now - lastConnectivityCheck < CONNECTIVITY_CACHE_TTL) {
+    return lastConnectivityResult
+  }
+  try {
+    await neonClient!.$queryRawUnsafe<unknown[]>(`SELECT 1`)
+    lastConnectivityResult = true
+  } catch {
+    lastConnectivityResult = false
+  }
+  lastConnectivityCheck = now
+  return lastConnectivityResult
+}
+
 /**
- * FK violation retry tracker: "tableName:recordId" → consecutive FK failure count.
+ * FK violation retry tracker: "tableName:recordId" → { count, firstSeen }.
  * After FK_MAX_RETRIES failures, the row is stamped as synced to prevent infinite loops.
- * The counter resets if the row syncs successfully or hasn't been seen recently.
+ * Entries older than 5 minutes are pruned at the end of each sync cycle.
  */
-const fkRetryMap = new Map<string, number>()
+const fkRetryMap = new Map<string, { count: number; firstSeen: number }>()
 const FK_MAX_RETRIES = 5
+const FK_RETRY_PRUNE_AGE = 5 * 60 * 1000 // 5 minutes
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -395,8 +416,9 @@ async function syncTable(tableName: string, batchSize: number): Promise<number> 
             // the row will retry next cycle when the parent may have been synced.
             // Track retries to prevent infinite loops if parent is genuinely missing.
             const fkKey = `${tableName}:${row.id as string}`
-            const fkCount = (fkRetryMap.get(fkKey) || 0) + 1
-            fkRetryMap.set(fkKey, fkCount)
+            const existing = fkRetryMap.get(fkKey)
+            const fkCount = (existing?.count || 0) + 1
+            fkRetryMap.set(fkKey, { count: fkCount, firstSeen: existing?.firstSeen || Date.now() })
 
             if (fkCount >= FK_MAX_RETRIES) {
               log.error({ table: tableName, recordId: row.id, fkRetries: fkCount, errMsg: rowErrMsg },
@@ -442,9 +464,9 @@ async function runSyncCycle(): Promise<void> {
     }
 
     // Quick connectivity check — if Neon is unreachable, bail early
-    try {
-      await neonClient!.$queryRawUnsafe<unknown[]>(`SELECT 1`)
-    } catch (connErr) {
+    // Cached for 10s to avoid hammering Neon with SELECT 1 on every cycle
+    const isConnected = await checkConnectivity()
+    if (!isConnected) {
       outageState.consecutiveFailures++
       metrics.errorCount++
       if (outageState.consecutiveFailures >= OUTAGE_THRESHOLD && !outageState.isInOutage) {
@@ -460,6 +482,8 @@ async function runSyncCycle(): Promise<void> {
     if (outageState.isInOutage) {
       log.info({ consecutiveFailures: outageState.consecutiveFailures }, 'Connectivity restored — exiting outage mode')
       outageState.isInOutage = false
+      // Reset connectivity cache so next cycle gets a fresh check
+      lastConnectivityCheck = 0
       const locId = process.env.POS_LOCATION_ID || process.env.LOCATION_ID
       if (locId) void dispatchOutageStatus(locId, false).catch((err) => log.error({ err }, 'Failed to dispatch outage-cleared status'))
     }
@@ -571,6 +595,18 @@ async function runSyncCycle(): Promise<void> {
     }
   } finally {
     cycleRunning = false
+    // Reset pending mutation counter so the next mutation fires immediately
+    pendingMutationCount = 0
+
+    // Prune FK retry entries older than 5 minutes to prevent unbounded map growth
+    const now = Date.now()
+    const fkKeys = Array.from(fkRetryMap.keys())
+    for (const key of fkKeys) {
+      const entry = fkRetryMap.get(key)
+      if (entry && now - entry.firstSeen > FK_RETRY_PRUNE_AGE) {
+        fkRetryMap.delete(key)
+      }
+    }
   }
 }
 
@@ -627,20 +663,21 @@ export function getUpstreamSyncMetrics(): SyncMetrics {
  * Call after local mutations (orders, payments, tips) to push to Neon
  * instantly instead of waiting for the 5s timer.
  *
- * Debounced: if called multiple times within 100ms, only one cycle runs.
+ * Smart batching: first mutation after a cycle fires near-instantly (5ms yield).
+ * Subsequent mutations within the same window are batched by the existing timer.
  */
-let immediateUpstreamPending = false
+let pendingMutationCount = 0
 let immediateUpstreamTimer: ReturnType<typeof setTimeout> | null = null
 
 export function triggerImmediateUpstreamSync(): void {
-  if (immediateUpstreamPending) return
-  immediateUpstreamPending = true
-
-  // Debounce 100ms — batch rapid-fire mutations into one cycle
-  if (immediateUpstreamTimer) clearTimeout(immediateUpstreamTimer)
-  immediateUpstreamTimer = setTimeout(() => {
-    immediateUpstreamPending = false
-    immediateUpstreamTimer = null
-    void runSyncCycle()
-  }, 100)
+  pendingMutationCount++
+  if (pendingMutationCount === 1) {
+    // First mutation since last cycle — sync near-instantly (yield event loop)
+    if (immediateUpstreamTimer) clearTimeout(immediateUpstreamTimer)
+    immediateUpstreamTimer = setTimeout(() => {
+      immediateUpstreamTimer = null
+      void runSyncCycle()
+    }, 5)
+  }
+  // else: already have a pending timer from the first mutation, let it batch
 }

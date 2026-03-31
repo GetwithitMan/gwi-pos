@@ -51,11 +51,14 @@ async function calculateCostAtSale(
   // TODO: MenuItemRepository.getMenuItemByIdWithInclude() needs locationId; cost calc is location-agnostic
   const menuItem = await db.menuItem.findUnique({
     where: { id: menuItemId },
-    include: {
+    select: {
+      id: true,
       recipe: {
-        include: {
+        select: {
           ingredients: {
-            include: {
+            select: {
+              quantity: true,
+              unit: true,
               inventoryItem: {
                 select: { storageUnit: true, costPerUnit: true, yieldCostPerUnit: true },
               },
@@ -105,10 +108,13 @@ async function calculateCostAtSale(
   if (pricingOptionId) {
     const option = await db.pricingOption.findUnique({
       where: { id: pricingOptionId },
-      include: {
+      select: {
+        id: true,
         inventoryLinks: {
           where: { deletedAt: null },
-          include: {
+          select: {
+            usageQuantity: true,
+            usageUnit: true,
             inventoryItem: {
               select: { storageUnit: true, costPerUnit: true, yieldCostPerUnit: true },
             },
@@ -177,6 +183,28 @@ export const POST = withVenue(async function POST(
       }
     }
 
+    // Pre-fetch all needed menu item fields in a single query (used for both price validation AND inside the transaction).
+    // This merges the two separate menuItem queries that previously ran: one for price check (id, price) and
+    // one inside the transaction for commission/availability (id, price, commissionType, commissionValue, ...).
+    const allMenuItemIds = items.map((i: AddItemInput) => i.menuItemId)
+    const prefetchedMenuItems = await db.menuItem.findMany({
+      where: { id: { in: allMenuItemIds } },
+      select: {
+        id: true,
+        price: true,
+        commissionType: true,
+        commissionValue: true,
+        itemType: true,
+        isAvailable: true,
+        isActive: true,
+        deletedAt: true,
+        name: true,
+        categoryId: true,
+        category: { select: { categoryType: true } },
+        tipExempt: true,
+      },
+    })
+
     // Auth checks — fetch order metadata once for all permission guards (tenant-safe)
     if (requestingEmployeeId) {
       const orderMeta = await OrderRepository.getOrderByIdWithSelect(orderId, locationId, {
@@ -195,21 +223,15 @@ export const POST = withVenue(async function POST(
         const pricableItems = items.filter((i: AddItemInput) => !i.soldByWeight && !i.pizzaConfig && !i.blockTimeMinutes)
         if (pricableItems.length > 0) {
           const pricingOptionIds = pricableItems.filter((i: AddItemInput) => i.pricingOptionId).map((i: AddItemInput) => i.pricingOptionId!)
-          // Parallelize independent DB lookups
+          // Re-use prefetched menuItems (hoisted before transaction) for price validation
           // TODO: MenuItemRepository.getMenuItems() doesn't support batch-by-IDs; PricingOption has no repo
-          const [menuItemsForPrice, pricingOptions] = await Promise.all([
-            db.menuItem.findMany({
-              where: { id: { in: pricableItems.map((i: AddItemInput) => i.menuItemId) } },
-              select: { id: true, price: true },
-            }),
-            pricingOptionIds.length > 0
-              ? db.pricingOption.findMany({
-                  where: { id: { in: pricingOptionIds } },
-                  select: { id: true, price: true },
-                })
-              : Promise.resolve([]),
-          ])
-          const menuItemPrices = new Map(menuItemsForPrice.map(m => [m.id, Number(m.price)]))
+          const pricingOptions = pricingOptionIds.length > 0
+            ? await db.pricingOption.findMany({
+                where: { id: { in: pricingOptionIds } },
+                select: { id: true, price: true },
+              })
+            : []
+          const menuItemPrices = new Map(prefetchedMenuItems.map(m => [m.id, Number(m.price)]))
           const pricingOptionPrices = new Map(pricingOptions.map(p => [p.id, Number(p.price)]))
 
           if (hasOpenPricedItems(items, menuItemPrices, pricingOptionPrices)) {
@@ -313,12 +335,9 @@ export const POST = withVenue(async function POST(
         console.warn('[BusinessDay] Failed to promote businessDayDate on item add:', promoErr)
       }
 
-      // Fetch menu items to get commission settings + availability
+      // Use pre-fetched menu items (hoisted before transaction to eliminate duplicate DB query)
       const menuItemIds = items.map(item => item.menuItemId)
-      const menuItemsWithCommission = await tx.menuItem.findMany({
-        where: { id: { in: menuItemIds } },
-        select: { id: true, price: true, commissionType: true, commissionValue: true, itemType: true, isAvailable: true, isActive: true, deletedAt: true, name: true, categoryId: true, category: { select: { categoryType: true } }, tipExempt: true },
-      })
+      const menuItemsWithCommission = prefetchedMenuItems
       const menuItemMap = new Map(menuItemsWithCommission.map(mi => [mi.id, mi]))
 
       // B6: Guard against deleted/missing MenuItems — populate fallback entries so downstream

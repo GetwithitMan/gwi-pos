@@ -828,13 +828,17 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
     }
   }, [currentOrder?.id])
 
-  // Change quantity
+  // Change quantity (optimistic with rollback)
   const handleQuantityChange = useCallback(async (itemId: string, delta: number) => {
     const item = items.find(i => i.id === itemId)
     if (!item) return
 
     const newQty = Math.max(1, item.quantity + delta)
+    const prevQty = item.quantity
     const orderId = currentOrder?.id
+
+    // Optimistic update
+    useOrderStore.getState().updateQuantity(itemId, newQty)
 
     try {
       // If order is saved, update via API
@@ -845,26 +849,43 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
           body: JSON.stringify({ quantity: newQty }),
         })
         if (!res.ok) {
+          // Rollback on failure
+          useOrderStore.getState().updateQuantity(itemId, prevQty)
           toast.error('Failed to update quantity')
           return
         }
       }
-
-      // Update store
-      useOrderStore.getState().updateQuantity(itemId, newQty)
     } catch (error) {
+      // Rollback on network error
+      useOrderStore.getState().updateQuantity(itemId, prevQty)
       console.error('[useActiveOrder] Failed to update quantity:', error)
       toast.error('Failed to update quantity')
     }
   }, [items, currentOrder?.id])
 
-  // Toggle hold
+  // Toggle hold (optimistic with rollback)
   const handleHoldToggle = useCallback(async (itemId: string) => {
     const item = items.find(i => i.id === itemId)
     if (!item) return
 
     const newHeldState = !item.isHeld
+    const prevHeldState = item.isHeld
     const orderId = currentOrder?.id
+
+    // Snapshot previous delay state for rollback
+    const prevDelayMinutes = item.delayMinutes
+    const prevDelayStartedAt = item.delayStartedAt
+    const prevDelayFiredAt = item.delayFiredAt
+
+    // Optimistic update — hold and delay are mutually exclusive
+    const updates: Record<string, any> = { isHeld: newHeldState }
+    if (newHeldState) {
+      updates.delayMinutes = null
+      updates.delayStartedAt = null
+      updates.delayFiredAt = null
+    }
+    useOrderStore.getState().updateItem(itemId, updates)
+    toast.success(newHeldState ? 'Item held' : 'Hold removed')
 
     try {
       // If order is saved, update via API
@@ -875,22 +896,28 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
           body: JSON.stringify({ isHeld: newHeldState }),
         })
         if (!res.ok) {
+          // Rollback on failure
+          const rollback: Record<string, any> = { isHeld: prevHeldState }
+          if (newHeldState) {
+            // Restore cleared delay state
+            rollback.delayMinutes = prevDelayMinutes
+            rollback.delayStartedAt = prevDelayStartedAt
+            rollback.delayFiredAt = prevDelayFiredAt
+          }
+          useOrderStore.getState().updateItem(itemId, rollback)
           toast.error('Failed to toggle hold')
           return
         }
       }
-
-      // Update store — hold and delay are mutually exclusive
-      const updates: Record<string, any> = { isHeld: newHeldState }
-      if (newHeldState) {
-        // Setting hold ON → clear any per-item delay
-        updates.delayMinutes = null
-        updates.delayStartedAt = null
-        updates.delayFiredAt = null
-      }
-      useOrderStore.getState().updateItem(itemId, updates)
-      toast.success(newHeldState ? 'Item held' : 'Hold removed')
     } catch (error) {
+      // Rollback on network error
+      const rollback: Record<string, any> = { isHeld: prevHeldState }
+      if (newHeldState) {
+        rollback.delayMinutes = prevDelayMinutes
+        rollback.delayStartedAt = prevDelayStartedAt
+        rollback.delayFiredAt = prevDelayFiredAt
+      }
+      useOrderStore.getState().updateItem(itemId, rollback)
       console.error('[useActiveOrder] Failed to toggle hold:', error)
       toast.error('Failed to toggle hold')
     }
@@ -939,9 +966,17 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
     openNoteEditor(itemId, currentNote)
   }, [openNoteEditor])
 
-  // Change course
+  // Change course (optimistic with rollback)
   const handleCourseChange = useCallback(async (itemId: string, course: number | null) => {
     const orderId = currentOrder?.id
+
+    // Snapshot previous course for rollback
+    const item = currentOrder?.items.find(i => i.id === itemId)
+    const prevCourse = item?.courseNumber
+
+    // Optimistic update
+    useOrderStore.getState().updateItem(itemId, { courseNumber: course ?? undefined })
+    toast.success('Course updated')
 
     try {
       // If order is saved, update via API
@@ -952,23 +987,31 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
           body: JSON.stringify({ courseNumber: course }),
         })
         if (!res.ok) {
+          // Rollback on failure
+          useOrderStore.getState().updateItem(itemId, { courseNumber: prevCourse ?? undefined })
           toast.error('Failed to update course')
           return
         }
       }
-
-      // Update store
-      useOrderStore.getState().updateItem(itemId, { courseNumber: course ?? undefined })
-      toast.success('Course updated')
     } catch (error) {
+      // Rollback on network error
+      useOrderStore.getState().updateItem(itemId, { courseNumber: prevCourse ?? undefined })
       console.error('[useActiveOrder] Failed to update course:', error)
       toast.error('Failed to update course')
     }
-  }, [currentOrder?.id])
+  }, [currentOrder?.id, currentOrder?.items])
 
-  // Change seat
+  // Change seat (optimistic with rollback)
   const handleSeatChange = useCallback(async (itemId: string, seat: number | null) => {
     const orderId = currentOrder?.id
+
+    // Snapshot previous seat for rollback
+    const item = currentOrder?.items.find(i => i.id === itemId)
+    const prevSeat = item?.seatNumber
+
+    // Optimistic update
+    useOrderStore.getState().updateItem(itemId, { seatNumber: seat ?? undefined })
+    toast.success('Seat updated')
 
     try {
       // If order is saved, update via API
@@ -979,19 +1022,19 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
           body: JSON.stringify({ seatNumber: seat }),
         })
         if (!res.ok) {
+          // Rollback on failure
+          useOrderStore.getState().updateItem(itemId, { seatNumber: prevSeat ?? undefined })
           toast.error('Failed to update seat')
           return
         }
       }
-
-      // Update store
-      useOrderStore.getState().updateItem(itemId, { seatNumber: seat ?? undefined })
-      toast.success('Seat updated')
     } catch (error) {
+      // Rollback on network error
+      useOrderStore.getState().updateItem(itemId, { seatNumber: prevSeat ?? undefined })
       console.error('[useActiveOrder] Failed to update seat:', error)
       toast.error('Failed to update seat')
     }
-  }, [currentOrder?.id])
+  }, [currentOrder?.id, currentOrder?.items])
 
   // Edit modifiers (delegate to page)
   const handleEditModifiers = useCallback((itemId: string) => {
@@ -1118,27 +1161,31 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
         // We need to temporarily hold delayed course items so /send skips them
         // Instead, use fire-course API for precise control
 
-        // Fire each immediate course
+        // Fire all immediate courses in parallel
         let totalSent = 0
-        for (const cn of coursesToFireNow) {
-          try {
-            const res = await fetch(`/api/orders/${resolvedOrderId}/fire-course`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                courseNumber: cn,
-                employeeId: employeeId || options.employeeId,
-              }),
-            })
-            if (res.ok) {
-              const rawResult = await res.json()
-              const result = rawResult.data ?? rawResult
-              totalSent += result.sentItemCount || 0
+        const courseResults = await Promise.all(
+          coursesToFireNow.map(async (cn) => {
+            try {
+              const res = await fetch(`/api/orders/${resolvedOrderId}/fire-course`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  courseNumber: cn,
+                  employeeId: employeeId || options.employeeId,
+                }),
+              })
+              if (res.ok) {
+                const rawResult = await res.json()
+                const result = rawResult.data ?? rawResult
+                return result.sentItemCount || 0
+              }
+            } catch (err) {
+              console.error(`[useActiveOrder] Failed to fire course ${cn}:`, err)
             }
-          } catch (err) {
-            console.error(`[useActiveOrder] Failed to fire course ${cn}:`, err)
-          }
-        }
+            return 0
+          })
+        )
+        totalSent = courseResults.reduce((sum, count) => sum + count, 0)
 
         // Start delay timers for delayed courses by setting startedAt = now
         const store = useOrderStore.getState()
@@ -1193,70 +1240,105 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
         toast.info(`Order delayed — fires in ${currentOrder.pendingDelay}m`)
         options.onOrderSent?.(resolvedOrderId)
       } else {
-        // ═══ STANDARD SEND — FIRE-AND-FORGET (INSTANT UI) ═══
-        // (sendInProgressRef already set at top of handleSendToKitchen)
+        // ═══ STANDARD SEND — OPTIMISTIC INSTANT UI ═══
+        // Key insight: mark items sent + show toast + fire onOrderSent IMMEDIATELY.
+        // All network I/O (ensureOrderInDB, append items, /send) runs in background.
         const timing = startPaymentTiming('send', currentOrder?.id)
 
-        // Wait for all in-flight saves in parallel (autosave, event saves, draft)
-        {
-          const waits: Promise<unknown>[] = []
-          if (autosavePromiseRef.current) waits.push(autosavePromiseRef.current)
-          if (pendingSavesRef.current.size > 0) waits.push(Promise.all(pendingSavesRef.current.values()))
-          if (draftPromiseRef.current) waits.push(draftPromiseRef.current)
-          if (waits.length > 0) await Promise.all(waits)
-          draftPromiseRef.current = null
-        }
-
-        // Get fresh state after draft/autosave resolution
+        // Snapshot current order state for optimistic update (before any async work)
         const store = useOrderStore.getState()
-        const freshOrder = store.currentOrder
-        if (!freshOrder) { sendInProgressRef.current = false; return }
+        const snapshotOrder = store.currentOrder
+        if (!snapshotOrder) { sendInProgressRef.current = false; return }
 
-        // Get DB order ID — create in DB now (this is the first time we persist the order)
-        // Orders are local-only until Send is pressed; ensureOrderInDB creates the DB record
-        // and assigns the orderNumber here, then appends all unsaved items atomically
-        let resolvedOrderId = freshOrder.id && !isTempId(freshOrder.id) ? freshOrder.id : null
-        const orderJustCreated = !resolvedOrderId  // true when ensureOrderInDB will be called
-        if (!resolvedOrderId) {
-          resolvedOrderId = await ensureOrderInDB(employeeId)
-          if (!resolvedOrderId) { sendInProgressRef.current = false; return }
-        }
-
-        // Re-read from store after ensureOrderInDB — item IDs may have been mapped (temp → real)
-        // Using freshOrder snapshot here would double-append items that ensureOrderInDB already saved
-        const latestOrder = useOrderStore.getState().currentOrder || freshOrder
-        const pendingItems = latestOrder.items.filter(i => !i.sentToKitchen && !i.isHeld)
+        const pendingItems = snapshotOrder.items.filter(i => !i.sentToKitchen && !i.isHeld)
         const delayedItems = pendingItems.filter(i => i.delayMinutes && i.delayMinutes > 0 && !i.delayStartedAt)
         const immediateItems = pendingItems.filter(i => !i.delayMinutes || i.delayMinutes <= 0)
-        // If the order was just created (ensureOrderInDB ran), all items are already in the DB
-        // — set unsavedItems to [] so bgChain skips the append step (avoids duplicate POSTs)
-        const unsavedItems = orderJustCreated ? [] : latestOrder.items.filter(item => isTempId(item.id))
 
-        if (immediateItems.length > 0 || delayedItems.length > 0) {
-          // Optimistically mark immediate items as sent — UI clears instantly
-          if (immediateItems.length > 0) {
-            const sentAt = Date.now()
-            for (const item of immediateItems) {
-              store.updateItem(item.id, { sentToKitchen: true, sentToKitchenAt: sentAt })
-            }
+        if (immediateItems.length === 0 && delayedItems.length === 0) {
+          toast.info('No items to send — all items are already sent or held')
+          sendInProgressRef.current = false
+          return
+        }
+
+        // 1. OPTIMISTIC: Mark immediate items as sent in store — UI updates instantly
+        if (immediateItems.length > 0) {
+          const sentAt = Date.now()
+          for (const item of immediateItems) {
+            store.updateItem(item.id, { sentToKitchen: true, sentToKitchenAt: sentAt })
           }
+        }
 
-          // Fire-and-forget: append unsaved items → send to kitchen
-          // Both API calls run in background — user sees instant response
-          // Block autosave while bgChain runs to prevent duplicate item creation
-          autosaveInFlightRef.current = true
-          markRequestSent(timing)
-          const orderId = resolvedOrderId
-          const bgChain = async () => {
+        // 2. Delay timers (synchronous — no DB call)
+        if (delayedItems.length > 0) {
+          store.startItemDelayTimers(delayedItems.map(i => i.id))
+          const delayDesc = delayedItems.map(i => `${i.name} (${i.delayMinutes}m)`).join(', ')
+          toast.info(`Delayed: ${delayDesc}`)
+        }
+
+        const storeAfter = useOrderStore.getState()
+        if (storeAfter.currentOrder?.pendingDelay) {
+          storeAfter.markDelayFired()
+        }
+
+        // 3. Show success toast and fire onOrderSent IMMEDIATELY (before network)
+        if (immediateItems.length > 0) {
+          toast.success(`${immediateItems.length} item${immediateItems.length !== 1 ? 's' : ''} sent to kitchen`)
+        }
+        // Use snapshot order ID for onOrderSent — it may be a temp ID but the caller
+        // (useOrderHandlers) reads from store which will get the real ID after bgChain
+        const snapshotOrderId = snapshotOrder.id
+        if (snapshotOrderId) {
+          options.onOrderSent?.(snapshotOrderId)
+        }
+
+        // 4. BACKGROUND: persist to DB + dispatch send (fire-and-forget with rollback)
+        autosaveInFlightRef.current = true
+        markRequestSent(timing)
+
+        // Capture item snapshots for the background chain (closures over current state)
+        const bgImmediateItems = [...immediateItems]
+        const bgDelayedItems = [...delayedItems]
+        const bgEmployeeId = employeeId || options.employeeId
+
+        void (async () => {
+          try {
+            // Wait for all in-flight saves in parallel (autosave, event saves, draft)
+            {
+              const waits: Promise<unknown>[] = []
+              if (autosavePromiseRef.current) waits.push(autosavePromiseRef.current)
+              if (pendingSavesRef.current.size > 0) waits.push(Promise.all(pendingSavesRef.current.values()))
+              if (draftPromiseRef.current) waits.push(draftPromiseRef.current)
+              if (waits.length > 0) await Promise.all(waits)
+              draftPromiseRef.current = null
+            }
+
+            // Get fresh state after draft/autosave resolution
+            const freshStore = useOrderStore.getState()
+            const freshOrder = freshStore.currentOrder
+
+            // Resolve DB order ID — create in DB if needed
+            let resolvedOrderId = freshOrder?.id && !isTempId(freshOrder.id) ? freshOrder.id : null
+            const orderJustCreated = !resolvedOrderId
+            if (!resolvedOrderId) {
+              resolvedOrderId = await ensureOrderInDB(bgEmployeeId)
+              if (!resolvedOrderId) {
+                throw new Error('Failed to persist order to database')
+              }
+            }
+
+            // Re-read from store after ensureOrderInDB — item IDs may have been mapped (temp -> real)
+            const latestOrder = useOrderStore.getState().currentOrder || freshOrder
+            // If the order was just created, all items are already in the DB
+            const unsavedItems = orderJustCreated ? [] : (latestOrder?.items.filter(item => isTempId(item.id)) || [])
+
             let itemIdMap: Map<string, string> | null = null
 
             // Bug 7 fix: Filter out items that have an active save in pendingSavesRef
-            // to prevent both saveItemToDb() and bgChain() from POSTing the same item
             const safeUnsavedItems = unsavedItems.filter(item => !pendingSavesRef.current.has(item.id))
 
             // Step 1: Append unsaved items to DB (if any have temp IDs)
             if (safeUnsavedItems.length > 0) {
-              const appendRes = await fetch(`/api/orders/${orderId}/items`, {
+              const appendRes = await fetch(`/api/orders/${resolvedOrderId}/items`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -1294,17 +1376,17 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
 
             // Step 2: Send to kitchen (items now in DB)
             const sendBody: Record<string, unknown> = {
-              employeeId: employeeId || options.employeeId,
+              employeeId: bgEmployeeId,
               version: getOrderVersion(),
             }
-            if (delayedItems.length > 0 && immediateItems.length > 0) {
-              sendBody.itemIds = immediateItems.map(i => {
+            if (bgDelayedItems.length > 0 && bgImmediateItems.length > 0) {
+              sendBody.itemIds = bgImmediateItems.map(i => {
                 if (isTempId(i.id) && itemIdMap?.has(i.id)) return itemIdMap.get(i.id)!
                 return i.id
               })
             }
 
-            const sendRes = await fetch(`/api/orders/${orderId}/send`, {
+            const sendRes = await fetch(`/api/orders/${resolvedOrderId}/send`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(sendBody),
@@ -1313,43 +1395,23 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
               const err = await sendRes.json().catch(() => ({}))
               throw new Error(err.error || 'Kitchen routing failed')
             }
+
+            completePaymentTiming(timing, 'success')
+          } catch (err) {
+            completePaymentTiming(timing, 'error')
+            console.error('[useActiveOrder] Background send failed:', err)
+            const msg = err instanceof Error ? err.message : 'Send failed'
+            toast.error(msg.length > 100 ? 'Send failed — tap Send again to retry' : msg)
+            // Rollback optimistic marks on failure so items appear unsent again
+            const s = useOrderStore.getState()
+            for (const item of bgImmediateItems) {
+              s.updateItem(item.id, { sentToKitchen: false })
+            }
+          } finally {
+            autosaveInFlightRef.current = false
+            sendInProgressRef.current = false
           }
-
-          bgChain()
-            .then(() => { completePaymentTiming(timing, 'success') })
-            .catch(err => {
-              completePaymentTiming(timing, 'error')
-              console.error('[useActiveOrder] Background send failed:', err)
-              const msg = err instanceof Error ? err.message : 'Send failed'
-              toast.error(msg.length > 100 ? 'Send failed — tap Send again to retry' : msg)
-              // Revert optimistic marks on failure so items appear unsent again
-              const s = useOrderStore.getState()
-              for (const item of immediateItems) {
-                s.updateItem(item.id, { sentToKitchen: false })
-              }
-            })
-            .finally(() => {
-              autosaveInFlightRef.current = false
-              sendInProgressRef.current = false
-            })
-        }
-
-        // Delay timers (synchronous — no DB call)
-        if (delayedItems.length > 0) {
-          store.startItemDelayTimers(delayedItems.map(i => i.id))
-          const delayDesc = delayedItems.map(i => `${i.name} (${i.delayMinutes}m)`).join(', ')
-          toast.info(`Delayed: ${delayDesc}`)
-        }
-
-        const storeAfter = useOrderStore.getState()
-        if (storeAfter.currentOrder?.pendingDelay) {
-          storeAfter.markDelayFired()
-        }
-
-        if (immediateItems.length > 0) {
-          toast.success(`${immediateItems.length} item${immediateItems.length !== 1 ? 's' : ''} sent to kitchen`)
-        }
-        options.onOrderSent?.(resolvedOrderId)
+        })()
       }
     } catch (error) {
       console.error('[useActiveOrder] Failed to send order:', error)
