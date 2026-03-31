@@ -522,7 +522,7 @@ preflight_check_ram() {
 
 preflight_check_db() {
     if command -v pg_isready &>/dev/null; then
-        if ! pg_isready -q 2>/dev/null; then
+        if ! pg_isready -q -U thepasspos 2>/dev/null; then
             err "PostgreSQL is not ready — cannot deploy"
             return 1
         fi

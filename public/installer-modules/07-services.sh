@@ -481,7 +481,7 @@ SVCEOF
         echo "--- Disk ---"
         df -h /opt/gwi-pos 2>/dev/null || true
         echo "--- PostgreSQL ---"
-        pg_isready 2>/dev/null || echo "PostgreSQL not reachable"
+        pg_isready -U thepasspos 2>/dev/null || echo "PostgreSQL not reachable"
         return 1
       fi
       log "Services configured and started (no kiosk -- web UI for settings/admin only)."
@@ -999,9 +999,9 @@ KIOSKCTL
 
     # Sudoers for terminal -- allow service user to manage kiosk + shutdown
     cat > /etc/sudoers.d/gwi-pos << SUDEOF
-$POSUSER ALL=(ALL) NOPASSWD: /usr/usr/bin/systemctl stop thepasspos-kiosk
-$POSUSER ALL=(ALL) NOPASSWD: /usr/usr/bin/systemctl start thepasspos-kiosk
-$POSUSER ALL=(ALL) NOPASSWD: /usr/usr/bin/systemctl restart thepasspos-kiosk
+$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop thepasspos-kiosk
+$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start thepasspos-kiosk
+$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart thepasspos-kiosk
 $POSUSER ALL=(ALL) NOPASSWD: /opt/gwi-pos/kiosk-control.sh
 $POSUSER ALL=(ALL) NOPASSWD: /sbin/shutdown -h now
 $POSUSER ALL=(ALL) NOPASSWD: /usr/sbin/shutdown -h now

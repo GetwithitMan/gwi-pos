@@ -9344,6 +9344,7 @@ model SyncConflict {
 model GwiSyncState {
   tableName     String   @id @map("table_name")
   highWaterMark DateTime @map("high_water_mark")
+  updatedAt     DateTime @default(now()) @map("updated_at")
 
   @@map("_gwi_sync_state")
 }

@@ -750,12 +750,13 @@ else
   cat > "$PHASE2_SERVICE" << 'P2SVCEOF'
 [Unit]
 Description=GWI POS Installer Phase 2 (hardening + dashboard)
-After=network-online.target thepasspos.service graphical.target
-Wants=network-online.target graphical.target
-ConditionPathExists=/opt/gwi-pos/shared/state/.phase2-pending
+After=network-online.target local-fs.target thepasspos.service
+Wants=network-online.target
+RequiresMountsFor=/opt/gwi-pos
 
 [Service]
 Type=oneshot
+ExecStartPre=/usr/bin/test -f /opt/gwi-pos/shared/state/.phase2-pending
 ExecStart=/opt/gwi-pos/installer-phase2.run --skip-self-update
 RemainAfterExit=no
 TimeoutStartSec=600
