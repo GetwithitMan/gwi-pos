@@ -191,7 +191,7 @@ let cycleRunning = false
 // ── Connectivity check cache ─────────────────────────────────────────────────
 let lastConnectivityCheck = 0
 let lastConnectivityResult = false
-const CONNECTIVITY_CACHE_TTL = 10_000 // 10 seconds
+const CONNECTIVITY_CACHE_TTL = 5_000 // 5 seconds
 
 async function checkConnectivity(): Promise<boolean> {
   const now = Date.now()
