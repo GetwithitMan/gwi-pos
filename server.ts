@@ -200,12 +200,18 @@ async function main() {
 
   const socketPath = process.env.SOCKET_PATH || '/api/socket'
 
+  let socketInitialized = false
+
   const httpServer = createServer((req: IncomingMessage, res: ServerResponse) => {
-    // Let Socket.io handle its own HTTP polling requests — the [orderCode]/[slug]
-    // catch-all route would otherwise intercept /api/socket as a page route.
+    // When Socket.IO is initialized, engine.io intercepts socket requests via its
+    // own request listener BEFORE this callback runs — this code only executes if
+    // Socket.IO failed to init or isn't running. Respond with 503 so clients get a
+    // proper HTTP error instead of hanging with zero bytes indefinitely.
     const pathname = req.url?.split('?')[0] || ''
     if (pathname === socketPath || pathname.startsWith(socketPath + '/')) {
-      return // Socket.io's own request listener handles this
+      res.writeHead(503, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'Socket.IO not available' }))
+      return
     }
 
     // Multi-tenant: wrap request in AsyncLocalStorage with the correct
@@ -233,10 +239,10 @@ async function main() {
   } else {
     try {
       await initializeSocketServer(httpServer)
+      socketInitialized = true
       logger.info({ socketPath: process.env.SOCKET_PATH || '/api/socket' }, 'Socket.io initialized')
     } catch (err) {
-      logger.error({ err }, 'Failed to initialize Socket.io')
-      // Continue without sockets — POS will fall back to polling
+      logger.error({ err }, 'Failed to initialize Socket.io — socket requests will return 503')
     }
   }
 
