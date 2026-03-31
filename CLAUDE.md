@@ -379,6 +379,7 @@ Tech: Kotlin, Jetpack Compose, Hilt DI, Retrofit 2, Socket.IO, Room DB, Moshi. M
 | Socket / cloud relay | `docs/guides/SOCKET-REALTIME.md` | `src/lib/cloud-relay-client.ts`, `socket-event-buffer.ts` |
 | Android interop | `docs/guides/ANDROID-INTEGRATION.md` | `src/app/api/sync/` |
 | NUC deployment / installer | `docs/guides/NUC-OPERATIONS.md`, `docs/deployment/INSTALLER-SPEC.md` | `public/installer.run` (thin orchestrator) + `public/installer-modules/` (11 stage modules) + `installer/` (Ansible baseline enforcement) — MC proxies installer from POS deployment, no copy needed |
+| Release pipeline (full) | `docs/deployment/RELEASE-PIPELINE.md` — canonical end-to-end: commit -> Vercel -> MC -> NUC | `scripts/vercel-build.js`, `scripts/bump-version.sh`, `scripts/build-nuc-artifact.sh`, `scripts/ci/` |
 | Node baseline / Ansible | `installer/site.yml`, `docs/schemas/` | `installer/roles/`, `bin/`, `public/installer-modules/11-system-hardening.sh` |
 | Database / schema | `docs/guides/ARCHITECTURE-RULES.md` | `prisma/schema.prisma` |
 | UI / components | `docs/guides/CODING-STANDARDS.md` | `src/stores/` |
