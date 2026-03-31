@@ -50,7 +50,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const endDate = endDateParam ? new Date(endDateParam) : new Date()
 
     // ── Summary Metrics ────────────────────────────────────────────────────────
-    const summaryRows: any[] = await db.$queryRawUnsafe(`
+    const summaryRows: any[] = await db.$queryRaw`
       SELECT
         COUNT(*)::int as "totalDeliveries",
         COUNT(*) FILTER (WHERE status = 'delivered')::int as "completedDeliveries",
@@ -78,10 +78,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           )
         )::int as "onTimeCount"
       FROM "DeliveryOrder"
-      WHERE "locationId" = $1
-        AND "createdAt" >= $2
-        AND "createdAt" <= $3
-    `, locationId, startDate, endDate)
+      WHERE "locationId" = ${locationId}
+        AND "createdAt" >= ${startDate}
+        AND "createdAt" <= ${endDate}
+    `
 
     const summary = summaryRows[0] || {}
     const completedCount = summary.completedDeliveries || 0
@@ -91,18 +91,18 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     // ── Cash Variance Total ─────────────────────────────────────────────────────
     // Variance = cashCollected - cashDropped - startingBank (net cash the driver still holds)
-    const varianceRows: any[] = await db.$queryRawUnsafe(`
+    const varianceRows: any[] = await db.$queryRaw`
       SELECT COALESCE(SUM("cashCollectedCents" - "cashDroppedCents" - "startingBankCents"), 0)::int as "totalVarianceCents"
       FROM "DeliveryDriverSession"
-      WHERE "locationId" = $1
-        AND "startedAt" >= $2
-        AND "startedAt" <= $3
+      WHERE "locationId" = ${locationId}
+        AND "startedAt" >= ${startDate}
+        AND "startedAt" <= ${endDate}
         AND "endedAt" IS NOT NULL
-    `, locationId, startDate, endDate)
+    `
     const totalVarianceCents = varianceRows[0]?.totalVarianceCents || 0
 
     // ── Per-Zone Breakdown ──────────────────────────────────────────────────────
-    const byZone: any[] = await db.$queryRawUnsafe(`
+    const byZone: any[] = await db.$queryRaw`
       SELECT
         dz.id as "zoneId",
         dz."name" as "zoneName",
@@ -116,12 +116,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         COALESCE(SUM(do_."deliveryFee"), 0)::float as "feeRevenue"
       FROM "DeliveryOrder" do_
       LEFT JOIN "DeliveryZone" dz ON dz.id = do_."zoneId"
-      WHERE do_."locationId" = $1
-        AND do_."createdAt" >= $2
-        AND do_."createdAt" <= $3
+      WHERE do_."locationId" = ${locationId}
+        AND do_."createdAt" >= ${startDate}
+        AND do_."createdAt" <= ${endDate}
       GROUP BY dz.id, dz."name"
       ORDER BY "completedDeliveries" DESC
-    `, locationId, startDate, endDate)
+    `
 
     const byZoneEnriched = byZone.map(z => ({
       zoneId: z.zoneId,
@@ -133,7 +133,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }))
 
     // ── Per-Driver Breakdown ────────────────────────────────────────────────────
-    const byDriver: any[] = await db.$queryRawUnsafe(`
+    const byDriver: any[] = await db.$queryRaw`
       SELECT
         dd.id as "driverId",
         e."firstName", e."lastName",
@@ -156,13 +156,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       FROM "DeliveryOrder" do_
       JOIN "DeliveryDriver" dd ON dd.id = do_."driverId"
       JOIN "Employee" e ON e.id = dd."employeeId"
-      WHERE do_."locationId" = $1
-        AND do_."createdAt" >= $2
-        AND do_."createdAt" <= $3
+      WHERE do_."locationId" = ${locationId}
+        AND do_."createdAt" >= ${startDate}
+        AND do_."createdAt" <= ${endDate}
         AND do_."driverId" IS NOT NULL
       GROUP BY dd.id, e."firstName", e."lastName"
       ORDER BY "completedDeliveries" DESC
-    `, locationId, startDate, endDate)
+    `
 
     const byDriverEnriched = byDriver.map(d => ({
       driverId: d.driverId,
@@ -176,7 +176,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }))
 
     // ── Per-Day Breakdown ───────────────────────────────────────────────────────
-    const byDay: any[] = await db.$queryRawUnsafe(`
+    const byDay: any[] = await db.$queryRaw`
       SELECT
         DATE("createdAt") as "date",
         COUNT(*)::int as "totalDeliveries",
@@ -190,12 +190,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         )::float as "avgDoorToDoorMinutes",
         COALESCE(SUM("deliveryFee"), 0)::float as "feeRevenue"
       FROM "DeliveryOrder"
-      WHERE "locationId" = $1
-        AND "createdAt" >= $2
-        AND "createdAt" <= $3
+      WHERE "locationId" = ${locationId}
+        AND "createdAt" >= ${startDate}
+        AND "createdAt" <= ${endDate}
       GROUP BY DATE("createdAt")
       ORDER BY "date" ASC
-    `, locationId, startDate, endDate)
+    `
 
     const byDayEnriched = byDay.map(d => ({
       date: d.date,
@@ -210,16 +210,16 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // ── Cost Per Delivery ───────────────────────────────────────────────────────
     // Computed from shiftMileage * mileageReimbursementRate + deliveryCount * perDeliveryPayAmount
     // These rates come from location settings (not stored on the session row).
-    const costRows: any[] = await db.$queryRawUnsafe(`
+    const costRows: any[] = await db.$queryRaw`
       SELECT
         COALESCE(SUM(ds."shiftMileage"), 0)::float as "totalMileage",
         COALESCE(SUM(ds."deliveryCount"), 0)::int as "totalSessionDeliveries"
       FROM "DeliveryDriverSession" ds
-      WHERE ds."locationId" = $1
-        AND ds."startedAt" >= $2
-        AND ds."startedAt" <= $3
+      WHERE ds."locationId" = ${locationId}
+        AND ds."startedAt" >= ${startDate}
+        AND ds."startedAt" <= ${endDate}
         AND ds."endedAt" IS NOT NULL
-    `, locationId, startDate, endDate)
+    `
 
     const rawSettings = await getLocationSettings(locationId)
     const settings = mergeWithDefaults(rawSettings as any)

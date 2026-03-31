@@ -505,16 +505,14 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
             // Look up pagerNumber from target assignment (source of truth)
             let pagerNumber: string | null = order.pagerNumber || null
             try {
-              const pagerResult: any[] = await db.$queryRawUnsafe(
-                `SELECT "targetValue" FROM "NotificationTargetAssignment"
-                 WHERE "locationId" = $1
+              const pagerResult: any[] = await db.$queryRaw`
+                SELECT "targetValue" FROM "NotificationTargetAssignment"
+                 WHERE "locationId" = ${locationId}
                    AND "subjectType" = 'order'
-                   AND "subjectId" = $2
+                   AND "subjectId" = ${targetOrderId}
                    AND status = 'active'
                    AND "targetType" IN ('guest_pager', 'staff_pager')
-                 ORDER BY "isPrimary" DESC LIMIT 1`,
-                locationId, targetOrderId
-              )
+                 ORDER BY "isPrimary" DESC LIMIT 1`
               if (pagerResult[0]?.targetValue) {
                 pagerNumber = pagerResult[0].targetValue
               }
@@ -523,16 +521,14 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
             // If split child with no pager, inherit from parent order's assignment
             if (!pagerNumber && order.parentOrderId) {
               try {
-                const parentPagerResult: any[] = await db.$queryRawUnsafe(
-                  `SELECT "targetValue" FROM "NotificationTargetAssignment"
-                   WHERE "locationId" = $1
+                const parentPagerResult: any[] = await db.$queryRaw`
+                  SELECT "targetValue" FROM "NotificationTargetAssignment"
+                   WHERE "locationId" = ${locationId}
                      AND "subjectType" = 'order'
-                     AND "subjectId" = $2
+                     AND "subjectId" = ${order.parentOrderId}
                      AND status = 'active'
                      AND "targetType" IN ('guest_pager', 'staff_pager')
-                   ORDER BY "isPrimary" DESC LIMIT 1`,
-                  locationId, order.parentOrderId
-                )
+                   ORDER BY "isPrimary" DESC LIMIT 1`
                 if (parentPagerResult[0]?.targetValue) {
                   pagerNumber = parentPagerResult[0].targetValue
                 }

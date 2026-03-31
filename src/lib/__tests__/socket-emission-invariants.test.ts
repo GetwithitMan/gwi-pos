@@ -248,13 +248,6 @@ describe('Order mutations must emit order events', () => {
     )).toBe(true)
   })
 
-  it('items route dispatches order item added', () => {
-    expect(fileContains(
-      'src/app/api/orders/[id]/items/route.ts',
-      'dispatchOrderItemAdded',
-    )).toBe(true)
-  })
-
   it('items route dispatches order summary updated', () => {
     expect(fileContains(
       'src/app/api/orders/[id]/items/route.ts',

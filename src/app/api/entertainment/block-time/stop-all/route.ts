@@ -112,42 +112,49 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     pushUpstream()
 
     // Fire-and-forget: recalculate full order totals (subtotal, tax, total) for each affected order
+    // Batch-fetch all affected orders in one query to avoid N+1
     const affectedOrderIds = [...new Set(txResult.results.map(r => r.orderId))]
-    for (const orderId of affectedOrderIds) {
-      void (async () => {
-        try {
-          const order = await OrderRepository.getOrderByIdWithInclude(
-            orderId,
-            locationId,
-            { location: { select: { settings: true } } },
-          )
-          if (!order) return
-          const totals = await recalculateOrderTotals(
-            db, orderId, (order as any).location.settings,
-            Number(order.tipTotal) || 0, order.isTaxExempt
-          )
-          await OrderRepository.updateOrder(orderId, locationId, {
-            subtotal: totals.subtotal,
-            taxTotal: totals.taxTotal,
-            taxFromInclusive: totals.taxFromInclusive,
-            taxFromExclusive: totals.taxFromExclusive,
-            total: totals.total,
-            commissionTotal: totals.commissionTotal,
-            itemCount: totals.itemCount,
-          })
-          void dispatchOrderTotalsUpdate(locationId, orderId, {
-            subtotal: totals.subtotal,
-            taxTotal: totals.taxTotal,
-            tipTotal: Number(order.tipTotal) || 0,
-            discountTotal: 0,
-            total: totals.total,
-            commissionTotal: totals.commissionTotal,
-          }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
-        } catch (err) {
-          console.error(`[stop-all] Failed to recalculate order totals for order ${orderId}:`, err)
-        }
-      })()
-    }
+    void (async () => {
+      try {
+        const orders = await db.order.findMany({
+          where: { id: { in: affectedOrderIds }, locationId },
+          include: { location: { select: { settings: true } } },
+        })
+        const orderMap = new Map(orders.map(o => [o.id, o]))
+
+        await Promise.all(affectedOrderIds.map(async (orderId) => {
+          try {
+            const order = orderMap.get(orderId)
+            if (!order) return
+            const totals = await recalculateOrderTotals(
+              db, orderId, (order as any).location.settings,
+              Number(order.tipTotal) || 0, order.isTaxExempt
+            )
+            await OrderRepository.updateOrder(orderId, locationId, {
+              subtotal: totals.subtotal,
+              taxTotal: totals.taxTotal,
+              taxFromInclusive: totals.taxFromInclusive,
+              taxFromExclusive: totals.taxFromExclusive,
+              total: totals.total,
+              commissionTotal: totals.commissionTotal,
+              itemCount: totals.itemCount,
+            })
+            void dispatchOrderTotalsUpdate(locationId, orderId, {
+              subtotal: totals.subtotal,
+              taxTotal: totals.taxTotal,
+              tipTotal: Number(order.tipTotal) || 0,
+              discountTotal: 0,
+              total: totals.total,
+              commissionTotal: totals.commissionTotal,
+            }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
+          } catch (err) {
+            console.error(`[stop-all] Failed to recalculate order totals for order ${orderId}:`, err)
+          }
+        }))
+      } catch (err) {
+        console.error('[stop-all] Failed to batch-fetch orders for recalculation:', err)
+      }
+    })()
 
     // Fire-and-forget: emit order events for each stopped session
     for (const r of txResult.results) {

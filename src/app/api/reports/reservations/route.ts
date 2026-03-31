@@ -4,6 +4,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { err, ok } from '@/lib/api-response'
+// Prisma imported via prisma instance for $queryRaw tagged template
 
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
@@ -159,76 +160,64 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       depositRevenueRows,
     ] = await Promise.all([
       // (a) No-show rate by source
-      prisma.$queryRawUnsafe<Array<{ source: string | null; total: bigint; no_shows: bigint; no_show_rate: number | null }>>(
-        `SELECT source, COUNT(*) as total,
+      prisma.$queryRaw<Array<{ source: string | null; total: bigint; no_shows: bigint; no_show_rate: number | null }>>`
+        SELECT source, COUNT(*) as total,
           SUM(CASE WHEN status = 'no_show' THEN 1 ELSE 0 END) as no_shows,
           ROUND(SUM(CASE WHEN status = 'no_show' THEN 1 ELSE 0 END)::decimal / NULLIF(COUNT(*), 0) * 100, 1) as no_show_rate
         FROM "Reservation"
-        WHERE "locationId" = $1 AND "reservationDate" BETWEEN $2 AND $3 AND "deletedAt" IS NULL
+        WHERE "locationId" = ${locationId} AND "reservationDate" BETWEEN ${sqlStartDate} AND ${sqlEndDate} AND "deletedAt" IS NULL
         GROUP BY source ORDER BY total DESC`,
-        locationId, sqlStartDate, sqlEndDate
-      ),
 
       // (b) Table utilization
-      prisma.$queryRawUnsafe<Array<{ id: string; name: string; capacity: number; reservation_count: bigint; total_minutes_booked: bigint | null }>>(
-        `SELECT t.id, t.name, t.capacity, COUNT(r.id) as reservation_count,
+      prisma.$queryRaw<Array<{ id: string; name: string; capacity: number; reservation_count: bigint; total_minutes_booked: bigint | null }>>`
+        SELECT t.id, t.name, t.capacity, COUNT(r.id) as reservation_count,
           SUM(r.duration) as total_minutes_booked
         FROM "Table" t
         LEFT JOIN "Reservation" r ON r."tableId" = t.id
-          AND r."reservationDate" BETWEEN $2 AND $3
+          AND r."reservationDate" BETWEEN ${sqlStartDate} AND ${sqlEndDate}
           AND r.status NOT IN ('cancelled') AND r."deletedAt" IS NULL
-        WHERE t."locationId" = $1 AND t."isReservable" = true AND t."deletedAt" IS NULL
+        WHERE t."locationId" = ${locationId} AND t."isReservable" = true AND t."deletedAt" IS NULL
         GROUP BY t.id, t.name, t.capacity
         ORDER BY reservation_count DESC`,
-        locationId, sqlStartDate, sqlEndDate
-      ),
 
       // (c) Repeat customers (top 10)
-      prisma.$queryRawUnsafe<Array<{ id: string; firstName: string; lastName: string; phone: string | null; reservation_count: bigint; last_reservation: Date; noShowCount: number }>>(
-        `SELECT c.id, c."firstName", c."lastName", c.phone, COUNT(r.id) as reservation_count,
+      prisma.$queryRaw<Array<{ id: string; firstName: string; lastName: string; phone: string | null; reservation_count: bigint; last_reservation: Date; noShowCount: number }>>`
+        SELECT c.id, c."firstName", c."lastName", c.phone, COUNT(r.id) as reservation_count,
           MAX(r."reservationDate") as last_reservation, c."noShowCount"
         FROM "Customer" c
         JOIN "Reservation" r ON r."customerId" = c.id
-        WHERE r."locationId" = $1 AND r."reservationDate" BETWEEN $2 AND $3 AND r."deletedAt" IS NULL
+        WHERE r."locationId" = ${locationId} AND r."reservationDate" BETWEEN ${sqlStartDate} AND ${sqlEndDate} AND r."deletedAt" IS NULL
         GROUP BY c.id, c."firstName", c."lastName", c.phone, c."noShowCount"
         HAVING COUNT(r.id) >= 2
         ORDER BY reservation_count DESC
         LIMIT 10`,
-        locationId, sqlStartDate, sqlEndDate
-      ),
 
       // (d) Cancellation reasons
-      prisma.$queryRawUnsafe<Array<{ cancelReason: string; count: bigint }>>(
-        `SELECT "cancelReason", COUNT(*) as count
+      prisma.$queryRaw<Array<{ cancelReason: string; count: bigint }>>`
+        SELECT "cancelReason", COUNT(*) as count
         FROM "Reservation"
-        WHERE "locationId" = $1 AND status = 'cancelled'
-          AND "reservationDate" BETWEEN $2 AND $3 AND "deletedAt" IS NULL AND "cancelReason" IS NOT NULL
+        WHERE "locationId" = ${locationId} AND status = 'cancelled'
+          AND "reservationDate" BETWEEN ${sqlStartDate} AND ${sqlEndDate} AND "deletedAt" IS NULL AND "cancelReason" IS NOT NULL
         GROUP BY "cancelReason" ORDER BY count DESC LIMIT 20`,
-        locationId, sqlStartDate, sqlEndDate
-      ),
 
       // (e) Peak time heatmap data (day-of-week x hour)
-      prisma.$queryRawUnsafe<Array<{ day_of_week: number; hour: number; count: bigint }>>(
-        `SELECT EXTRACT(DOW FROM "reservationDate")::int as day_of_week,
+      prisma.$queryRaw<Array<{ day_of_week: number; hour: number; count: bigint }>>`
+        SELECT EXTRACT(DOW FROM "reservationDate")::int as day_of_week,
           SUBSTRING("reservationTime" FROM 1 FOR 2)::int as hour,
           COUNT(*) as count
         FROM "Reservation"
-        WHERE "locationId" = $1 AND "reservationDate" BETWEEN $2 AND $3
+        WHERE "locationId" = ${locationId} AND "reservationDate" BETWEEN ${sqlStartDate} AND ${sqlEndDate}
           AND "deletedAt" IS NULL AND status NOT IN ('cancelled')
         GROUP BY day_of_week, hour ORDER BY day_of_week, hour`,
-        locationId, sqlStartDate, sqlEndDate
-      ),
 
       // (f) Deposit revenue summary
-      prisma.$queryRawUnsafe<Array<{ total_collected: number | null; total_refunded: number | null; reservations_with_deposits: bigint }>>(
-        `SELECT
+      prisma.$queryRaw<Array<{ total_collected: number | null; total_refunded: number | null; reservations_with_deposits: bigint }>>`
+        SELECT
           SUM(CASE WHEN status = 'completed' THEN amount ELSE 0 END) as total_collected,
           SUM(CASE WHEN "refundedAmount" > 0 THEN "refundedAmount" ELSE 0 END) as total_refunded,
           COUNT(DISTINCT "reservationId") as reservations_with_deposits
         FROM "ReservationDeposit"
-        WHERE "locationId" = $1 AND "createdAt" BETWEEN $2 AND $3 AND "deletedAt" IS NULL`,
-        locationId, sqlStartDate, sqlEndDate
-      ),
+        WHERE "locationId" = ${locationId} AND "createdAt" BETWEEN ${sqlStartDate} AND ${sqlEndDate} AND "deletedAt" IS NULL`,
     ])
 
     // Format enhanced data

@@ -29,43 +29,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     if (!auth.authorized) return err(auth.error, auth.status)
 
     // Strategy 1: Check SavedCard table (explicit card-on-file)
-    let query: string
-    let params: unknown[]
-
-    if (cardBrand) {
-      query = `
-        SELECT c.id AS "customerId", c."firstName", c."lastName",
-               c."loyaltyPoints", c."totalSpent", c."totalOrders", c.tags,
-               'saved_card' AS "matchSource"
-        FROM "SavedCard" sc
-        JOIN "Customer" c ON c.id = sc."customerId"
-        WHERE sc.last4 = $1
-          AND sc."locationId" = $2
-          AND sc."cardBrand" = $3
-          AND sc."deletedAt" IS NULL
-          AND c."deletedAt" IS NULL
-        ORDER BY sc."createdAt" DESC
-        LIMIT 1
-      `
-      params = [last4, locationId, cardBrand]
-    } else {
-      query = `
-        SELECT c.id AS "customerId", c."firstName", c."lastName",
-               c."loyaltyPoints", c."totalSpent", c."totalOrders", c.tags,
-               'saved_card' AS "matchSource"
-        FROM "SavedCard" sc
-        JOIN "Customer" c ON c.id = sc."customerId"
-        WHERE sc.last4 = $1
-          AND sc."locationId" = $2
-          AND sc."deletedAt" IS NULL
-          AND c."deletedAt" IS NULL
-        ORDER BY sc."createdAt" DESC
-        LIMIT 1
-      `
-      params = [last4, locationId]
-    }
-
-    const savedCardRows = await db.$queryRawUnsafe<Array<{
+    const savedCardRows = await db.$queryRaw<Array<{
       customerId: string
       firstName: string
       lastName: string
@@ -74,7 +38,20 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       totalOrders: number
       tags: unknown
       matchSource: string
-    }>>(query, ...params)
+    }>>`
+      SELECT c.id AS "customerId", c."firstName", c."lastName",
+             c."loyaltyPoints", c."totalSpent", c."totalOrders", c.tags,
+             'saved_card' AS "matchSource"
+      FROM "SavedCard" sc
+      JOIN "Customer" c ON c.id = sc."customerId"
+      WHERE sc.last4 = ${last4}
+        AND sc."locationId" = ${locationId}
+        AND (${cardBrand}::text IS NULL OR sc."cardBrand" = ${cardBrand})
+        AND sc."deletedAt" IS NULL
+        AND c."deletedAt" IS NULL
+      ORDER BY sc."createdAt" DESC
+      LIMIT 1
+    `
 
     if (savedCardRows.length) {
       const row = savedCardRows[0]

@@ -29,7 +29,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     // Try exact match first, then normalized match
     const normalized = normalizePhone(phone)
-    const rows = await db.$queryRawUnsafe<Array<{
+    const phoneTrimmed = phone.trim()
+    const rows = await db.$queryRaw<Array<{
       customerId: string
       firstName: string
       lastName: string
@@ -37,19 +38,15 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       totalSpent: unknown
       totalOrders: number
       tags: unknown
-    }>>(
-      `SELECT id AS "customerId", "firstName", "lastName",
+    }>>`
+      SELECT id AS "customerId", "firstName", "lastName",
               "loyaltyPoints", "totalSpent", "totalOrders", tags
        FROM "Customer"
-       WHERE (phone = $1 OR ($3::text IS NOT NULL AND phone = $3))
-         AND "locationId" = $2
+       WHERE (phone = ${phoneTrimmed} OR (${normalized}::text IS NOT NULL AND phone = ${normalized}))
+         AND "locationId" = ${locationId}
          AND "deletedAt" IS NULL
        ORDER BY "createdAt" DESC
-       LIMIT 1`,
-      phone.trim(),
-      locationId,
-      normalized
-    )
+       LIMIT 1`
 
     if (!rows.length) {
       return notFound('No matching customer found')

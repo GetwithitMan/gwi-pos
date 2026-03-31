@@ -119,11 +119,9 @@ export const GET = withVenue(async function GET(
     })
 
     // Saved cards count (SavedCard table is raw SQL only — not in Prisma schema)
-    const savedCardsResult = await db.$queryRawUnsafe<Array<{ count: string }>>(
-      `SELECT COUNT(*) as count FROM "SavedCard"
-       WHERE "customerId" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL`,
-      id, locationId
-    )
+    const savedCardsResult = await db.$queryRaw<Array<{ count: string }>>`
+      SELECT COUNT(*) as count FROM "SavedCard"
+       WHERE "customerId" = ${id} AND "locationId" = ${locationId} AND "deletedAt" IS NULL`
     const savedCardsCount = Number(savedCardsResult[0]?.count ?? 0)
 
     // Recognized card profiles (auto-linked from payment card recognition)
@@ -144,7 +142,7 @@ export const GET = withVenue(async function GET(
     })
 
     // Fetch memberships with plan info (raw SQL — not in Prisma schema)
-    const memberships = await db.$queryRawUnsafe<any[]>(`
+    const memberships = await db.$queryRaw<any[]>`
       SELECT
         m."id",
         m."status",
@@ -165,11 +163,11 @@ export const GET = withVenue(async function GET(
         mp."benefits" as "planBenefits"
       FROM "Membership" m
       JOIN "MembershipPlan" mp ON mp."id" = m."planId"
-      WHERE m."customerId" = $1
-        AND m."locationId" = $2
+      WHERE m."customerId" = ${id}
+        AND m."locationId" = ${locationId}
         AND m."deletedAt" IS NULL
       ORDER BY m."createdAt" DESC
-    `, id, locationId)
+    `
 
     const tags = (customer.tags ?? []) as string[]
 

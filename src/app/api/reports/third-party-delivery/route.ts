@@ -68,16 +68,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       : startRange
 
     // Fetch all third-party orders in range
-    const rows = await db.$queryRawUnsafe<OrderRow[]>(
-      `SELECT "id", "platform", "status", "subtotal", "tax", "deliveryFee", "tip", "total", "createdAt"
+    const rows = await db.$queryRaw<OrderRow[]>`
+      SELECT "id", "platform", "status", "subtotal", "tax", "deliveryFee", "tip", "total", "createdAt"
        FROM "ThirdPartyOrder"
-       WHERE "locationId" = $1 AND "deletedAt" IS NULL
-         AND "createdAt" >= $2 AND "createdAt" <= $3
-       ORDER BY "createdAt" ASC`,
-      locationId,
-      startRange.start,
-      endRange.end,
-    )
+       WHERE "locationId" = ${locationId} AND "deletedAt" IS NULL
+         AND "createdAt" >= ${startRange.start} AND "createdAt" <= ${endRange.end}
+       ORDER BY "createdAt" ASC`
 
     // ── Per-platform aggregation ────────────────────────────────────────────
 
@@ -174,15 +170,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Get total POS sales for percentage calculation
     let totalPosSales = 0
     try {
-      const salesResult = await db.$queryRawUnsafe<Array<{ total: unknown }>>(
-        `SELECT COALESCE(SUM("total"), 0) as total FROM "Order"
-         WHERE "locationId" = $1 AND "deletedAt" IS NULL
-           AND "createdAt" >= $2 AND "createdAt" <= $3
-           AND "status" NOT IN ('voided', 'cancelled')`,
-        locationId,
-        startRange.start,
-        endRange.end,
-      )
+      const salesResult = await db.$queryRaw<Array<{ total: unknown }>>`
+        SELECT COALESCE(SUM("total"), 0) as total FROM "Order"
+         WHERE "locationId" = ${locationId} AND "deletedAt" IS NULL
+           AND "createdAt" >= ${startRange.start} AND "createdAt" <= ${endRange.end}
+           AND "status" NOT IN ('voided', 'cancelled')`
       totalPosSales = toNum(salesResult[0]?.total || 0)
     } catch {
       // If Order table query fails, just skip percentage

@@ -7,6 +7,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
+import { Prisma } from '@/generated/prisma/client'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
@@ -56,43 +57,35 @@ export const GET = withVenue(async function GET(req: NextRequest) {
     const dateFrom = startDate ? new Date(startDate) : defaultStart
     const dateTo = endDate ? new Date(endDate) : now
 
-    // Build WHERE conditions
-    const conditions: string[] = ['"locationId" = $1', '"createdAt" >= $2', '"createdAt" <= $3']
-    const values: unknown[] = [locationId, dateFrom, dateTo]
-    let paramIdx = 4
+    // Build WHERE conditions using Prisma.sql for safe parameterization
+    const conditions: Prisma.Sql[] = [
+      Prisma.sql`"locationId" = ${locationId}`,
+      Prisma.sql`"createdAt" >= ${dateFrom}`,
+      Prisma.sql`"createdAt" <= ${dateTo}`,
+    ]
 
     if (level && VALID_LEVELS.includes(level)) {
-      conditions.push(`"level" = $${paramIdx}`)
-      values.push(level)
-      paramIdx++
+      conditions.push(Prisma.sql`"level" = ${level}`)
     }
     if (source && VALID_SOURCES.includes(source)) {
-      conditions.push(`"source" = $${paramIdx}`)
-      values.push(source)
-      paramIdx++
+      conditions.push(Prisma.sql`"source" = ${source}`)
     }
     if (category && VALID_CATEGORIES.includes(category)) {
-      conditions.push(`"category" = $${paramIdx}`)
-      values.push(category)
-      paramIdx++
+      conditions.push(Prisma.sql`"category" = ${category}`)
     }
     if (search && search.length > 0 && search.length <= 200) {
-      conditions.push(`"message" ILIKE $${paramIdx}`)
-      values.push(`%${search}%`)
-      paramIdx++
+      conditions.push(Prisma.sql`"message" ILIKE ${'%' + search + '%'}`)
     }
 
-    const whereClause = conditions.join(' AND ')
+    const whereClause = Prisma.join(conditions, ' AND ')
 
     // Count total for pagination
-    const countResult = await db.$queryRawUnsafe<{ count: bigint }[]>(
-      `SELECT COUNT(*) as count FROM "VenueLog" WHERE ${whereClause}`,
-      ...values
-    )
+    const countResult = await db.$queryRaw<{ count: bigint }[]>`
+      SELECT COUNT(*) as count FROM "VenueLog" WHERE ${whereClause}`
     const total = Number(countResult[0]?.count ?? 0)
 
     // Fetch logs
-    const logs = await db.$queryRawUnsafe<Array<{
+    const logs = await db.$queryRaw<Array<{
       id: string
       locationId: string
       level: string
@@ -105,17 +98,13 @@ export const GET = withVenue(async function GET(req: NextRequest) {
       stackTrace: string | null
       createdAt: Date
       expiresAt: Date
-    }>>(
-      `SELECT "id", "locationId", "level", "source", "category", "message", "details",
+    }>>`
+      SELECT "id", "locationId", "level", "source", "category", "message", "details",
               "employeeId", "deviceId", "stackTrace", "createdAt", "expiresAt"
        FROM "VenueLog"
        WHERE ${whereClause}
        ORDER BY "createdAt" DESC
-       LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`,
-      ...values,
-      limit,
-      offset
-    )
+       LIMIT ${limit} OFFSET ${offset}`
 
     return NextResponse.json({
       data: logs,
