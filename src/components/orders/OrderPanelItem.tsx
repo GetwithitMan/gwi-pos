@@ -9,6 +9,7 @@ import { getSeatBgColor, getSeatTextColor, getSeatBorderColor } from '@/lib/seat
 import { parsePreModifiers, PRE_MODIFIER_CONFIG } from '@/components/modifiers/useModifierSelections'
 import { useAuthStore } from '@/stores/auth-store'
 import { hasPermission, PERMISSIONS } from '@/lib/auth-utils'
+import { humanizeSections, TOTAL_SECTIONS } from '@/lib/pizza-section-utils'
 
 export interface OrderPanelItemData {
   id: string
@@ -63,6 +64,8 @@ export interface OrderPanelItemData {
   pricingOptionLabel?: string | null
   // Allergen tracking
   allergens?: string[]
+  // Pizza builder configuration (for grouped modifier display)
+  pizzaConfig?: any
 }
 
 interface OrderPanelItemProps {
@@ -106,6 +109,46 @@ interface OrderPanelItemProps {
   onItemDiscountRemove?: (itemId: string, discountId: string) => void
   // Last-sent-batch highlight
   isLastSent?: boolean
+}
+
+/**
+ * Derive the section mode from all items in a pizza config.
+ * Finds the smallest section coverage to determine if pizza uses halves, quarters, etc.
+ */
+function deriveSectionMode(config: any): number {
+  if (!config) return 1
+  const allItems = [
+    ...(config.sauces || []),
+    ...(config.cheeses || []),
+    ...(config.toppings || []),
+  ]
+  let mode = 1
+  for (const item of allItems) {
+    const len = item.sections?.length ?? TOTAL_SECTIONS
+    if (len < TOTAL_SECTIONS) {
+      if (len <= 3) mode = Math.max(mode, 8)
+      else if (len <= 4) mode = Math.max(mode, 6)
+      else if (len <= 6) mode = Math.max(mode, 4)
+      else if (len <= 12) mode = Math.max(mode, 2)
+    }
+  }
+  return mode
+}
+
+/**
+ * Get a compact section label for pizza display.
+ * Returns '' for whole pizza coverage, otherwise a short label like "Left", "Right", "Q1", etc.
+ */
+function getPizzaSectionLabel(sections: number[], sectionMode: number): string {
+  if (!sections?.length || sections.length >= TOTAL_SECTIONS) return ''
+  const label = humanizeSections(sections, sectionMode)
+  if (label === 'Whole') return ''
+  // Shorten labels for compact display
+  return label
+    .replace('Right Half', 'Right')
+    .replace('Left Half', 'Left')
+    .replace('Quarter ', 'Q')
+    .replace('Third ', 'T')
 }
 
 export const OrderPanelItem = memo(function OrderPanelItem({
@@ -216,6 +259,37 @@ export const OrderPanelItem = memo(function OrderPanelItem({
   }
 
   const statusConfig = item.kitchenStatus ? STATUS_CONFIG[item.kitchenStatus] : null
+
+  // Pizza toppings grouped by section coverage
+  const renderPizzaToppings = useCallback((config: any) => {
+    if (!config?.toppings?.length) return null
+    const sectionMode = deriveSectionMode(config)
+
+    // Group toppings by their section coverage
+    const groups = new Map<string, { label: string; toppings: any[] }>()
+    for (const t of config.toppings) {
+      const secs = t.sections || []
+      const key = JSON.stringify([...secs].sort((a: number, b: number) => a - b))
+      if (!groups.has(key)) {
+        const label = getPizzaSectionLabel(secs, sectionMode)
+        groups.set(key, { label, toppings: [] })
+      }
+      groups.get(key)!.toppings.push(t)
+    }
+
+    return Array.from(groups.values()).map((group, gi) => (
+      <div key={gi}>
+        <div className="text-[10px] font-semibold text-amber-400 pl-2 pt-0.5">
+          {group.label || 'Toppings'}
+        </div>
+        {group.toppings.map((t: any, ti: number) => (
+          <div key={ti} className="text-xs text-slate-400 pl-4">
+            - {t.amount !== 'regular' ? `${t.amount} ` : ''}{t.name}
+          </div>
+        ))}
+      </div>
+    ))
+  }, [])
 
   // Memoize the large inline style object to avoid recomputing on every render
   const rootStyle = useMemo(() => {
@@ -745,8 +819,73 @@ export const OrderPanelItem = memo(function OrderPanelItem({
             </div>
           )}
 
-          {/* Modifiers — indented by depth with connector arrows */}
-          {item.modifiers && item.modifiers.length > 0 && (
+          {/* Modifiers — pizza grouped display or flat list */}
+          {item.pizzaConfig ? (
+            // Pizza items: grouped section display (Sauce, Cheese, Toppings by section)
+            <div className="mt-1 space-y-0.5">
+              {/* Size + Crust on one line (first two flat modifiers that aren't section-tagged) */}
+              {(() => {
+                const sizeCrust = (item.modifiers || [])
+                  .filter(m => !m.name.includes(':') && !m.name.includes('HALF') && !m.name.includes('WHOLE') && !m.name.includes('QUARTER'))
+                  .slice(0, 2)
+                if (sizeCrust.length > 0) {
+                  return (
+                    <div className="text-xs text-slate-400 pl-2">
+                      {'• '}{sizeCrust.map(m => m.name).join(' \u00b7 ')}
+                    </div>
+                  )
+                }
+                return null
+              })()}
+
+              {/* Sauces section */}
+              {item.pizzaConfig.sauces?.length > 0 && (() => {
+                const sectionMode = deriveSectionMode(item.pizzaConfig)
+                return (
+                  <>
+                    <div className="text-[10px] font-semibold text-amber-400 pl-2 pt-0.5">Sauce</div>
+                    {item.pizzaConfig.sauces.map((s: any, i: number) => {
+                      const label = getPizzaSectionLabel(s.sections, sectionMode)
+                      return (
+                        <div key={i} className="text-xs text-slate-400 pl-4">
+                          - {label ? `${label} - ` : ''}{s.amount !== 'regular' ? `${s.amount} ` : ''}{s.name}
+                        </div>
+                      )
+                    })}
+                  </>
+                )
+              })()}
+
+              {/* Cheeses section */}
+              {item.pizzaConfig.cheeses?.length > 0 && (() => {
+                const sectionMode = deriveSectionMode(item.pizzaConfig)
+                return (
+                  <>
+                    <div className="text-[10px] font-semibold text-amber-400 pl-2 pt-0.5">Cheese</div>
+                    {item.pizzaConfig.cheeses.map((c: any, i: number) => {
+                      const label = getPizzaSectionLabel(c.sections, sectionMode)
+                      return (
+                        <div key={i} className="text-xs text-slate-400 pl-4">
+                          - {label ? `${label} - ` : ''}{c.amount !== 'regular' ? `${c.amount} ` : ''}{c.name}
+                        </div>
+                      )
+                    })}
+                  </>
+                )
+              })()}
+
+              {/* Toppings grouped by section coverage */}
+              {renderPizzaToppings(item.pizzaConfig)}
+
+              {/* Cooking instructions */}
+              {item.pizzaConfig.cookingInstructions && (
+                <div className="text-[11px] text-amber-400 italic pl-2 pt-0.5">
+                  {item.pizzaConfig.cookingInstructions}
+                </div>
+              )}
+            </div>
+          ) : item.modifiers && item.modifiers.length > 0 ? (
+            // Non-pizza items: flat modifier list with depth indentation
             <div className="mt-1">
               {item.modifiers.map((mod, idx) => {
                 const depth = mod.depth || 0
@@ -800,7 +939,7 @@ export const OrderPanelItem = memo(function OrderPanelItem({
                 )
               })}
             </div>
-          )}
+          ) : null}
 
           {/* Special notes */}
           {item.specialNotes && (

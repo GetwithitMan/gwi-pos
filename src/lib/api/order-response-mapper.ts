@@ -184,9 +184,19 @@ export function mapOrderItemForResponse(item: any, correlationId?: string): Mapp
       cheeseId: item.pizzaData.cheeseId,
       sauceAmount: item.pizzaData.sauceAmount,
       cheeseAmount: item.pizzaData.cheeseAmount,
-      toppings: (item.pizzaData.toppingsData as { toppings?: unknown[] })?.toppings || [],
-      sauces: (item.pizzaData.toppingsData as { sauces?: unknown[] })?.sauces,
-      cheeses: (item.pizzaData.toppingsData as { cheeses?: unknown[] })?.cheeses,
+      toppings: ((item.pizzaData.toppingsData as any)?.toppings || []).map((t: any) => ({
+        ...t,
+        sections: t.sections || [],
+        basePrice: t.basePrice ?? t.price ?? 0,
+      })),
+      sauces: ((item.pizzaData.toppingsData as any)?.sauces || []).map((s: any) => ({
+        ...s,
+        sections: s.sections || [],
+      })),
+      cheeses: ((item.pizzaData.toppingsData as any)?.cheeses || []).map((c: any) => ({
+        ...c,
+        sections: c.sections || [],
+      })),
       cookingInstructions: item.pizzaData.cookingInstructions,
       cutStyle: item.pizzaData.cutStyle,
       totalPrice: Number(item.pizzaData.totalPrice),

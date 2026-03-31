@@ -89,6 +89,8 @@ export function useOrderPanelItems(menuItems?: { id: string; itemType?: string; 
         unitPrice: item.unitPrice,
         // Allergen tracking (from menu item metadata)
         allergens: menuItemInfo && 'allergens' in menuItemInfo ? (menuItemInfo as { allergens?: string[] }).allergens : undefined,
+        // Pizza builder configuration (for grouped modifier display)
+        pizzaConfig: (item as any).pizzaConfig,
       }
     })
   }, [items, menuItemMap])
