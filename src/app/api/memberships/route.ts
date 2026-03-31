@@ -7,6 +7,7 @@ import { buildIdempotencyKey } from '@/lib/membership/idempotency'
 import { calculateSignupProration } from '@/lib/membership/proration'
 import { ChargeType, MembershipEventType } from '@/lib/membership/types'
 import { dispatchMembershipUpdate } from '@/lib/socket-dispatch'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 import { created, err, notFound } from '@/lib/api-response'
 const log = createChildLogger('memberships')
@@ -59,7 +60,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     return NextResponse.json({ data: rows, total: countResult[0]?.total ?? 0 })
   } catch (caughtErr) {
-    console.error('[memberships] GET error:', err)
+    console.error('[memberships] GET error:', caughtErr)
     return err('Internal error', 500)
   }
 })
@@ -169,10 +170,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         recurringData = resp.recurringData || null
         if (resp.token) token = resp.token
       } catch (caughtErr) {
-        if (err instanceof PayApiError) {
-          return err(`Setup fee charge failed: ${err.message}`, 402)
+        if (caughtErr instanceof PayApiError) {
+          return err(`Setup fee charge failed: ${(caughtErr as PayApiError).message}`, 402)
         }
-        throw err
+        throw caughtErr
       }
     }
 
@@ -207,11 +208,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     void dispatchMembershipUpdate(locationId, {
       action: 'enrolled', membershipId: membership.id, customerId,
-    }).catch(err => log.warn({ err }, 'Background task failed'))
+    }).catch(e => log.warn({ err: e }, 'Background task failed'))
+
+    void pushUpstream()
 
     return created(membership)
   } catch (caughtErr) {
-    console.error('[memberships] POST error:', err)
+    console.error('[memberships] POST error:', caughtErr)
     return err('Internal error', 500)
   }
 })
