@@ -111,3 +111,4 @@ async function up(prisma) {
 }
 
 module.exports = { up }
+
