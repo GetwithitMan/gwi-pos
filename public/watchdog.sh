@@ -39,7 +39,7 @@ capture_diagnostics() {
     top -b -n1 | head -20 2>/dev/null || true
     echo ""
     echo "=== PostgreSQL ==="
-    pg_isready 2>/dev/null && echo "PostgreSQL: READY" || echo "PostgreSQL: NOT READY"
+    pg_isready -U thepasspos 2>/dev/null && echo "PostgreSQL: READY" || echo "PostgreSQL: NOT READY"
     echo ""
     echo "=== POS Service Status ==="
     systemctl status thepasspos --no-pager 2>/dev/null || true
@@ -88,7 +88,7 @@ check_health() {
 
 # Check PostgreSQL
 check_database() {
-  pg_isready -q 2>/dev/null
+  pg_isready -q -U thepasspos 2>/dev/null
 }
 
 # Escalate to MC via heartbeat modification

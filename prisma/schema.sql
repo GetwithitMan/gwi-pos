@@ -4962,6 +4962,7 @@ CREATE TABLE "SyncConflict" (
 CREATE TABLE "_gwi_sync_state" (
     "table_name" TEXT NOT NULL,
     "high_water_mark" TIMESTAMP(3) NOT NULL,
+    "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "_gwi_sync_state_pkey" PRIMARY KEY ("table_name")
 );

@@ -376,7 +376,7 @@ _run_verification() {
       _record "PostgreSQL" "15+" "$pg_ver" "MISSING"
     else
       local pg_connected="no"
-      pg_isready -q 2>/dev/null && pg_connected="yes"
+      pg_isready -q -U thepasspos 2>/dev/null && pg_connected="yes"
       local pg_major
       pg_major=$(echo "$pg_ver" | cut -d. -f1 | tr -dc '0-9')
       if [[ -n "$pg_major" ]] && [[ "$pg_connected" == "yes" ]] && [[ "$pg_major" -ge 15 ]]; then
