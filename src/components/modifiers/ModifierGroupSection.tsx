@@ -29,6 +29,8 @@ interface ModifierGroupSectionProps {
   getSelectedCustomPreMod?: (groupId: string, modifierId: string) => CustomPreMod | undefined
   isNoneSelected?: boolean
   onToggleNone?: (groupId: string) => void
+  /** When true, applies shake animation to highlight unsatisfied required group */
+  shaking?: boolean
 }
 
 export function ModifierGroupSection({
@@ -53,6 +55,7 @@ export function ModifierGroupSection({
   getSelectedCustomPreMod,
   isNoneSelected,
   onToggleNone,
+  shaking,
 }: ModifierGroupSectionProps) {
   const cpm = cardPriceMultiplier || 1
   const selectedCount = selections.length
@@ -66,11 +69,12 @@ export function ModifierGroupSection({
     : new Set<string>()
 
   // Determine box border class
-  const boxClass = isComplete
+  let boxClass = isComplete
     ? 'mm-group-box mm-group-box-complete'
     : group.isRequired
     ? 'mm-group-box mm-group-box-required'
     : 'mm-group-box'
+  if (shaking) boxClass += ' mm-shake-invalid'
 
   const headerClass = isComplete
     ? 'mm-group-box-header mm-group-box-header-complete'

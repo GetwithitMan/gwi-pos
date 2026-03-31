@@ -791,6 +791,35 @@ export function useModifierSelections(
     return topLevelOk && childrenOk
   }
 
+  /** Returns group IDs of required groups that are not yet satisfied */
+  const getUnsatisfiedGroupIds = (): string[] => {
+    const unsatisfied: string[] = []
+
+    // Check top-level groups
+    modifierGroups.forEach(group => {
+      if (!group.isRequired) return
+      if (noneGroups.has(group.id)) return
+      const selected = selections[group.id] || []
+      const customCount = customEntries.filter(e => e.groupId === group.id).length
+      if ((selected.length + customCount) < group.minSelections) {
+        unsatisfied.push(group.id)
+      }
+    })
+
+    // Check active child groups
+    const activeChildren = getActiveChildGroups()
+    activeChildren.forEach(({ group }) => {
+      if (!group.isRequired) return
+      const selected = selections[group.id] || []
+      const customCount = customEntries.filter(e => e.groupId === group.id).length
+      if ((selected.length + customCount) < group.minSelections) {
+        unsatisfied.push(group.id)
+      }
+    })
+
+    return unsatisfied
+  }
+
   const getAllSelectedModifiers = (): SelectedModifier[] => {
     // Recalculate tiered prices at confirm time to ensure correctness
     const result: SelectedModifier[] = []
@@ -1048,6 +1077,7 @@ export function useModifierSelections(
     getModifiersByTier,
     // Validation
     canConfirm,
+    getUnsatisfiedGroupIds,
     getAllSelectedModifiers,
     // Price
     basePrice,

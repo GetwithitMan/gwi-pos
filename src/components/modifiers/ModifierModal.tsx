@@ -90,6 +90,7 @@ export function ModifierModal({
     handleSpiritSelection,
     getModifiersByTier,
     canConfirm,
+    getUnsatisfiedGroupIds,
     getAllSelectedModifiers,
     totalPrice,
     specialNotes,
@@ -125,13 +126,21 @@ export function ModifierModal({
     setLocalNotes(specialNotes)
   }, [specialNotes])
 
-  // Cleanup debounce timer on unmount
+  // Cleanup debounce timer and shake timer on unmount
   useEffect(() => {
-    return () => clearTimeout(debouncedNotesRef.current)
+    return () => {
+      clearTimeout(debouncedNotesRef.current)
+      clearTimeout(shakeTimerRef.current)
+    }
   }, [])
 
   // Quick pre-modifier: when set, the next modifier tapped gets this prefix
   const [pendingQuickPreMod, setPendingQuickPreMod] = useState<string | null>(null)
+
+  // Shake animation state for unsatisfied required groups
+  const [shakingGroupIds, setShakingGroupIds] = useState<Set<string>>(new Set())
+  const shakeTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const contentScrollRef = useRef<HTMLDivElement>(null)
 
   // Custom entry form state
   const [customEntryGroupId, setCustomEntryGroupId] = useState<string | null>(null)
@@ -422,6 +431,7 @@ export function ModifierModal({
           } else if (group.isRequired) {
             boxClass += ' mm-step-box-required'
           }
+          if (shakingGroupIds.has(group.id)) boxClass += ' mm-shake-invalid'
 
           return (
             <button
@@ -451,7 +461,7 @@ export function ModifierModal({
     const inlineChildren = getChildGroupsForGroup(group.id)
 
     return (
-      <div key={group.id} className="mm-stepped-group">
+      <div key={group.id} className="mm-stepped-group" data-group-id={group.id}>
         <ModifierGroupSection
           group={group}
           selections={selections[group.id] || []}
@@ -473,12 +483,13 @@ export function ModifierModal({
           getSelectedCustomPreMod={getSelectedCustomPreMod}
           isNoneSelected={noneGroups.has(group.id)}
           onToggleNone={toggleNone}
+          shaking={shakingGroupIds.has(group.id)}
         />
         {renderCustomEntrySection(group.id)}
 
         {/* Inline child groups — appear right below their parent */}
         {inlineChildren.map(({ group: childGroup, parentModifierName }) => (
-          <div key={childGroup.id} className="mm-child-group-inline">
+          <div key={childGroup.id} className="mm-child-group-inline" data-group-id={childGroup.id}>
             <div className="mm-child-group-label">
               <span className="text-indigo-400">↳</span>
               {parentModifierName} → {childGroup.displayName || childGroup.name}
@@ -505,12 +516,13 @@ export function ModifierModal({
               getSelectedCustomPreMod={getSelectedCustomPreMod}
               isNoneSelected={noneGroups.has(childGroup.id)}
               onToggleNone={toggleNone}
+              shaking={shakingGroupIds.has(childGroup.id)}
             />
             {renderCustomEntrySection(childGroup.id)}
 
             {/* Recursively render grandchildren */}
             {getChildGroupsForGroup(childGroup.id).map(({ group: grandChild, parentModifierName: grandParentName }) => (
-              <div key={grandChild.id} className="mm-child-group-inline">
+              <div key={grandChild.id} className="mm-child-group-inline" data-group-id={grandChild.id}>
                 <div className="mm-child-group-label">
                   <span className="text-indigo-400">↳</span>
                   {grandParentName} → {grandChild.displayName || grandChild.name}
@@ -536,6 +548,7 @@ export function ModifierModal({
                   getSelectedCustomPreMod={getSelectedCustomPreMod}
                   isNoneSelected={noneGroups.has(grandChild.id)}
                   onToggleNone={toggleNone}
+                  shaking={shakingGroupIds.has(grandChild.id)}
                 />
                 {renderCustomEntrySection(grandChild.id)}
               </div>
@@ -670,7 +683,7 @@ export function ModifierModal({
         {viewMode === 'steps' && topLevelGroups.length > 1 && renderStepBoxes()}
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-3" style={{ background: 'var(--mm-bg-primary)' }}>
+        <div ref={contentScrollRef} className="flex-1 overflow-y-auto p-3" style={{ background: 'var(--mm-bg-primary)' }}>
           {loading ? (
             <div className="text-center py-8 text-gray-700">Loading...</div>
           ) : (
@@ -717,7 +730,7 @@ export function ModifierModal({
                   ) : (
                     <div className="mm-groups-grid">
                       {topLevelGroups.map(group => (
-                        <div key={group.id}>
+                        <div key={group.id} data-group-id={group.id}>
                           <ModifierGroupSection
                             group={group}
                             selections={selections[group.id] || []}
@@ -739,6 +752,7 @@ export function ModifierModal({
                             getSelectedCustomPreMod={getSelectedCustomPreMod}
                             isNoneSelected={noneGroups.has(group.id)}
                             onToggleNone={toggleNone}
+                            shaking={shakingGroupIds.has(group.id)}
                           />
                           {renderCustomEntrySection(group.id)}
                         </div>
@@ -750,7 +764,7 @@ export function ModifierModal({
                   {activeChildGroups.length > 0 && (
                     <div className="mt-3 space-y-2">
                       {activeChildGroups.map(({ group: childGroup, parentModifierName }) => (
-                        <div key={childGroup.id} className="mm-child-group-inline">
+                        <div key={childGroup.id} className="mm-child-group-inline" data-group-id={childGroup.id}>
                           <div className="mm-child-group-label">
                             <span className="text-indigo-400">↳</span>
                             {parentModifierName} → {childGroup.displayName || childGroup.name}
@@ -777,6 +791,7 @@ export function ModifierModal({
                             getSelectedCustomPreMod={getSelectedCustomPreMod}
                             isNoneSelected={noneGroups.has(childGroup.id)}
                             onToggleNone={toggleNone}
+                            shaking={shakingGroupIds.has(childGroup.id)}
                           />
                           {renderCustomEntrySection(childGroup.id)}
                         </div>
@@ -819,9 +834,33 @@ export function ModifierModal({
             </Button>
             <Button
               variant="primary"
-              className="flex-1 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white border-0"
-              disabled={!canConfirm()}
+              className={`flex-1 border-0 text-white ${
+                canConfirm()
+                  ? 'bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500'
+                  : 'bg-gradient-to-r from-indigo-600/50 to-purple-600/50 opacity-70 cursor-pointer'
+              }`}
               onClick={() => {
+                if (!canConfirm()) {
+                  // Trigger shake on unsatisfied groups
+                  const ids = getUnsatisfiedGroupIds()
+                  const newSet = new Set(ids)
+                  setShakingGroupIds(newSet)
+                  clearTimeout(shakeTimerRef.current)
+                  shakeTimerRef.current = setTimeout(() => setShakingGroupIds(new Set()), 550)
+
+                  // In stepped mode, jump to the first unsatisfied group
+                  if (viewMode === 'steps' && ids.length > 0) {
+                    const firstIdx = topLevelGroups.findIndex(g => ids.includes(g.id))
+                    if (firstIdx !== -1) setActiveGroupIndex(firstIdx)
+                  }
+
+                  // Scroll to the first unsatisfied group in the content area
+                  if (contentScrollRef.current && ids.length > 0) {
+                    const el = contentScrollRef.current.querySelector(`[data-group-id="${ids[0]}"]`)
+                    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                  }
+                  return
+                }
                 // Flush any pending debounced notes before confirming
                 clearTimeout(debouncedNotesRef.current)
                 onConfirm(
