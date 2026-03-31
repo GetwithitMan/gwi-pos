@@ -127,10 +127,18 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 })
 
 // POST create new modifier group
+// DEPRECATED: Only spirit groups (isSpiritGroup: true) may be created via this route.
+// All other modifier groups should use templates (/api/menu/modifier-templates) and
+// be applied to items via POST /api/menu/items/[id]/modifier-groups with templateId.
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { name, displayName, modifierTypes, minSelections, maxSelections, isRequired, allowStacking, hasOnlineOverride, isSpiritGroup, modifiers } = body
+
+    // Block creation of regular shared groups — only spirit groups allowed
+    if (!isSpiritGroup) {
+      return err('Creating shared modifier groups is no longer supported. Use /api/menu/modifier-templates instead.', 410)
+    }
 
     if (!name?.trim()) {
       return err('Name is required')

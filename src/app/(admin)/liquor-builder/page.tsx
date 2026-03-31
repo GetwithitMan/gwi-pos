@@ -199,18 +199,37 @@ function LiquorBuilderContent() {
   }
 
   const loadModifierGroups = async () => {
-    const res = await fetch('/api/menu/modifiers')
+    const res = await fetch('/api/menu/modifier-templates?type=liquor')
     if (res.ok) {
       const data = await res.json()
-      // Filter to only shared liquor templates (not item-owned copies, not spirit groups)
-      // Shared templates have no linkedItems (menuItemId is null)
-      const liquorGroups = data.data.modifierGroups.filter((g: any) =>
-        g.modifierTypes && g.modifierTypes.includes('liquor') &&
-        !g.isSpiritGroup &&
-        (!g.linkedItems || g.linkedItems.length === 0)
-      )
-      setModifierGroups(liquorGroups)
-      return liquorGroups
+      // Templates API returns data directly as array, not nested under data.modifierGroups
+      const templates = data.data || []
+      // Map template shape to match what the UI expects
+      const mappedGroups = templates.map((t: any) => ({
+        id: t.id,
+        name: t.name,
+        displayName: null,
+        modifierTypes: t.modifierTypes || ['liquor'],
+        minSelections: t.minSelections,
+        maxSelections: t.maxSelections,
+        isRequired: t.isRequired,
+        allowStacking: t.allowStacking ?? false,
+        isSpiritGroup: false, // templates are never spirit groups
+        modifiers: (t.modifiers || []).map((m: any) => ({
+          id: m.id,
+          name: m.name,
+          price: m.price,
+          allowNo: m.allowNo,
+          allowLite: m.allowLite,
+          allowOnSide: m.allowOnSide,
+          allowExtra: m.allowExtra,
+          extraPrice: m.extraPrice,
+          sortOrder: m.sortOrder,
+          isDefault: m.isDefault,
+        })),
+      }))
+      setModifierGroups(mappedGroups)
+      return mappedGroups
     }
     return []
   }
@@ -2032,7 +2051,7 @@ function LiquorBuilderContent() {
                               const res = await fetch(`/api/menu/items/${selectedDrink.id}/modifier-groups`, {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ duplicateFromGroupId: group.id, copyFromShared: true, name: group.name }),
+                                body: JSON.stringify({ templateId: group.id, name: group.name }),
                               })
                               if (res.ok) {
                                 const data = await res.json()

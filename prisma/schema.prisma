@@ -909,8 +909,8 @@ model Location {
   employeePermissionOverrides EmployeePermissionOverride[]
 
   // Loyalty System (Migration 098)
-  loyaltyPrograms      LoyaltyProgram[]
-  loyaltyTransactions  LoyaltyTransaction[]
+  loyaltyPrograms     LoyaltyProgram[]
+  loyaltyTransactions LoyaltyTransaction[]
 
   // Sync Infrastructure
   syncWatermark SyncWatermark?
@@ -945,17 +945,17 @@ model Customer {
   tags          Json? // VIP, Regular, etc.
 
   // Loyalty (Skill 52 foundation + 098 Loyalty System)
-  loyaltyPoints    Int       @default(0)
-  lifetimePoints   Int       @default(0) // Total ever earned, for tier calculation
+  loyaltyPoints     Int             @default(0)
+  lifetimePoints    Int             @default(0) // Total ever earned, for tier calculation
   loyaltyEnrolledAt DateTime?
-  loyaltyProgramId String?
-  loyaltyProgram   LoyaltyProgram? @relation(fields: [loyaltyProgramId], references: [id])
-  loyaltyTierId    String?
-  loyaltyTier      LoyaltyTier? @relation(fields: [loyaltyTierId], references: [id])
-  totalSpent    Decimal   @default(0) @db.Decimal(10, 2)
-  totalOrders   Int       @default(0)
-  averageTicket Decimal   @default(0) @db.Decimal(10, 2)
-  lastVisit     DateTime?
+  loyaltyProgramId  String?
+  loyaltyProgram    LoyaltyProgram? @relation(fields: [loyaltyProgramId], references: [id])
+  loyaltyTierId     String?
+  loyaltyTier       LoyaltyTier?    @relation(fields: [loyaltyTierId], references: [id])
+  totalSpent        Decimal         @default(0) @db.Decimal(10, 2)
+  totalOrders       Int             @default(0)
+  averageTicket     Decimal         @default(0) @db.Decimal(10, 2)
+  lastVisit         DateTime?
 
   // Marketing
   marketingOptIn Boolean   @default(false)
@@ -1762,7 +1762,7 @@ model MenuItem {
   // This enables bottles to be the source of truth for liquor menu items
   linkedBottleProductId String?
   linkedBottleProduct   BottleProduct? @relation("LinkedBottleMenuItems", fields: [linkedBottleProductId], references: [id])
-  linkedPourSizeOz      Decimal? @db.Decimal(6, 3) // Custom pour size override for linked bottle (oz)
+  linkedPourSizeOz      Decimal?       @db.Decimal(6, 3) // Custom pour size override for linked bottle (oz)
 
   // Modifiers that link to this item (for spirit upgrades, etc.)
   linkedModifiers Modifier[] @relation("LinkedModifierItem")
@@ -1865,6 +1865,10 @@ model ModifierGroup {
   // Liquor Builder - Spirit Group Configuration
   isSpiritGroup Boolean @default(false)
 
+  // Template origin metadata (audit only — NOT a live link)
+  sourceTemplateId   String? // which template this was cloned from
+  sourceTemplateName String? // human-readable name at time of apply
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
@@ -1945,7 +1949,7 @@ model Modifier {
   spiritTier            String? // 'well', 'call', 'premium', 'top_shelf'
   linkedBottleProductId String? // Links to bottle inventory
   linkedBottleProduct   BottleProduct? @relation(fields: [linkedBottleProductId], references: [id])
-  pourSizeOz            Decimal? @db.Decimal(6, 3) // Override default pour size
+  pourSizeOz            Decimal?       @db.Decimal(6, 3) // Override default pour size
 
   // Display
   sortOrder Int     @default(0)
@@ -2451,17 +2455,17 @@ model Order {
   splitIndex    Int? // 1, 2, 3... for display as "31-1", "31-2"
 
   // Split semantics (Unified Split Checks — Phase 1)
-  splitClass         String?   @map("splitClass")   // 'structural' | 'allocation' | null (not a split child)
-  splitMode          String?   @map("splitMode")    // 'by_item' | 'by_seat' | 'by_table' | 'even' | 'custom_amount' | null
-  splitFamilyRootId  String?   @map("splitFamilyRootId")  // Authoritative family root for balance/closure
-  splitFamilyTotal   Decimal?  @map("splitFamilyTotal")   // Immutable family ceiling; authoritative on family root ONLY
-  splitResolution    String?   @map("splitResolution")    // null | 'superseded' | 'merged_back' | 'merged_into_other'
-  supersededBy       String?   @map("supersededBy")       // Order ID that absorbed this child's remaining balance
-  supersededAt       DateTime? @map("supersededAt")
+  splitClass        String?   @map("splitClass") // 'structural' | 'allocation' | null (not a split child)
+  splitMode         String?   @map("splitMode") // 'by_item' | 'by_seat' | 'by_table' | 'even' | 'custom_amount' | null
+  splitFamilyRootId String?   @map("splitFamilyRootId") // Authoritative family root for balance/closure
+  splitFamilyTotal  Decimal?  @map("splitFamilyTotal") // Immutable family ceiling; authoritative on family root ONLY
+  splitResolution   String?   @map("splitResolution") // null | 'superseded' | 'merged_back' | 'merged_into_other'
+  supersededBy      String?   @map("supersededBy") // Order ID that absorbed this child's remaining balance
+  supersededAt      DateTime? @map("supersededAt")
 
   // Split family self-relation
-  splitFamilyRoot    Order?    @relation("SplitFamilyRoot", fields: [splitFamilyRootId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  splitFamilyMembers Order[]   @relation("SplitFamilyRoot")
+  splitFamilyRoot    Order?  @relation("SplitFamilyRoot", fields: [splitFamilyRootId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  splitFamilyMembers Order[] @relation("SplitFamilyRoot")
 
   // Type & Context
   orderType    String     @default("dine_in") // Legacy: dine_in, takeout, delivery, bar_tab
@@ -2505,15 +2509,15 @@ model Order {
   itemCount Int @default(0)
 
   // Totals
-  subtotal         Decimal @default(0) @db.Decimal(10, 2)
-  discountTotal    Decimal @default(0) @db.Decimal(10, 2)
-  taxTotal         Decimal @default(0) @db.Decimal(10, 2)
-  taxFromInclusive Decimal @default(0) @db.Decimal(10, 2) // Tax backed out of inclusive items
-  taxFromExclusive Decimal @default(0) @db.Decimal(10, 2) // Tax added on top of exclusive items
-  inclusiveTaxRate Decimal @default(0) @db.Decimal(10, 4) // Inclusive tax rate snapshot at order creation (survives setting changes)
-  tipTotal         Decimal @default(0) @db.Decimal(10, 2)
+  subtotal         Decimal  @default(0) @db.Decimal(10, 2)
+  discountTotal    Decimal  @default(0) @db.Decimal(10, 2)
+  taxTotal         Decimal  @default(0) @db.Decimal(10, 2)
+  taxFromInclusive Decimal  @default(0) @db.Decimal(10, 2) // Tax backed out of inclusive items
+  taxFromExclusive Decimal  @default(0) @db.Decimal(10, 2) // Tax added on top of exclusive items
+  inclusiveTaxRate Decimal  @default(0) @db.Decimal(10, 4) // Inclusive tax rate snapshot at order creation (survives setting changes)
+  tipTotal         Decimal  @default(0) @db.Decimal(10, 2)
   donationAmount   Decimal? @db.Decimal(10, 2) // Optional donation added to order
-  total            Decimal @default(0) @db.Decimal(10, 2)
+  total            Decimal  @default(0) @db.Decimal(10, 2)
 
   // Dual Pricing (Skill 31)
   primaryPaymentMethod String? // 'cash' | 'card' - determines which price applies
@@ -2576,9 +2580,9 @@ model Order {
 
   // Tax exemption (manager.tax_exempt permission required to set)
   isTaxExempt          Boolean  @default(false)
-  taxExemptReason      String?  // Why order is tax-exempt (e.g., "Government purchase", "Resale")
-  taxExemptId          String?  // Customer's tax-exempt certificate / tax ID number
-  taxExemptApprovedBy  String?  // Employee ID who approved the exemption
+  taxExemptReason      String? // Why order is tax-exempt (e.g., "Government purchase", "Resale")
+  taxExemptId          String? // Customer's tax-exempt certificate / tax ID number
+  taxExemptApprovedBy  String? // Employee ID who approved the exemption
   taxExemptSavedAmount Decimal? @db.Decimal(10, 2) // Pre-exempt tax amount preserved for audit
 
   // Order claiming — soft lock to prevent concurrent editing
@@ -3005,10 +3009,10 @@ model Payment {
   pricingMode         String? // "cash" or "card" — which price was used
 
   // Pricing Tier Detection (Payment & Pricing Redesign)
-  detectedCardType    String?           // 'credit' | 'debit' | null — from Datacap CardLookup
-  appliedPricingTier  String  @default("cash") // 'cash' | 'debit' | 'credit' — which tier was applied
-  walletType          String?           // 'apple_pay' | 'google_pay' | 'samsung_pay' | null
-  pricingProgramSnapshot Json?          // Snapshot of pricing config at transaction time
+  detectedCardType       String? // 'credit' | 'debit' | null — from Datacap CardLookup
+  appliedPricingTier     String  @default("cash") // 'cash' | 'debit' | 'credit' — which tier was applied
+  walletType             String? // 'apple_pay' | 'google_pay' | 'samsung_pay' | null
+  pricingProgramSnapshot Json? // Snapshot of pricing config at transaction time
 
   // Reconciliation (for EOD reports)
   needsReconciliation Boolean   @default(false) // Flag for accountant review
@@ -4026,11 +4030,11 @@ model GiftCard {
   order   Order?  @relation("GiftCardOrder", fields: [orderId], references: [id])
 
   // Pool / import tracking
-  source         String? // 'manual' | 'import' | 'range' | 'online' | 'datacap_virtual'
-  batchId        String? // Groups imported/range-generated cards
-  activatedAt    DateTime? // When an unactivated card was activated
-  activatedById  String? // Employee who activated
-  activatedBy    Employee? @relation("GiftCardActivatedBy", fields: [activatedById], references: [id])
+  source        String? // 'manual' | 'import' | 'range' | 'online' | 'datacap_virtual'
+  batchId       String? // Groups imported/range-generated cards
+  activatedAt   DateTime? // When an unactivated card was activated
+  activatedById String? // Employee who activated
+  activatedBy   Employee? @relation("GiftCardActivatedBy", fields: [activatedById], references: [id])
 
   // External system tracking (Datacap Virtual Gift)
   externalProvider      String? // 'datacap_virtual_gift'
@@ -4038,10 +4042,10 @@ model GiftCard {
   externalPageId        String? // Datacap giftCardPageId (links to source storefront)
 
   // Delivery tracking
-  deliveryStatus          DeliveryStatus?
-  deliveryAttempts        Int       @default(0)
-  lastDeliveryAttemptAt   DateTime?
-  deliveryFailureReason   String?
+  deliveryStatus        DeliveryStatus?
+  deliveryAttempts      Int             @default(0)
+  lastDeliveryAttemptAt DateTime?
+  deliveryFailureReason String?
 
   lastMutatedBy String? // 'cloud' | 'local' | null
   createdAt     DateTime  @default(now())
@@ -4790,8 +4794,8 @@ model InventoryItem {
   // For liquor items
   spiritCategoryId String?
   spiritCategory   SpiritCategory? @relation("InventoryItemSpirit", fields: [spiritCategoryId], references: [id])
-  pourSizeOz       Decimal? @db.Decimal(6, 3) // Standard pour size (overrides location default)
-  proofPercent     Decimal? @db.Decimal(6, 2) // Alcohol proof
+  pourSizeOz       Decimal?        @db.Decimal(6, 3) // Standard pour size (overrides location default)
+  proofPercent     Decimal?        @db.Decimal(6, 2) // Alcohol proof
 
   // Inventory levels (aggregate across all storage locations)
   currentStock Decimal  @default(0) @db.Decimal(10, 4) // Total in storage units
@@ -4900,7 +4904,7 @@ model PrepItem {
 
   // Output specifications
   outputUnit  String // "oz", "each", "qt"
-  batchYield  Decimal @db.Decimal(10, 4) // How much one batch makes
+  batchYield  Decimal  @db.Decimal(10, 4) // How much one batch makes
   batchUnit   String // Unit for batch (may differ from output)
   costPerUnit Decimal? @db.Decimal(10, 4) // Auto-calculated from ingredients
 
@@ -5006,7 +5010,7 @@ model MenuItemRecipeIngredient {
   prepItemId      String?
   prepItem        PrepItem?      @relation(fields: [prepItemId], references: [id])
 
-  quantity Decimal @db.Decimal(10, 4) // Amount used
+  quantity Decimal  @db.Decimal(10, 4) // Amount used
   unit     String // Unit
   cost     Decimal? @db.Decimal(10, 2) // Calculated cost for this ingredient
 
@@ -5213,7 +5217,7 @@ model InventoryCountItem {
   inventoryItemId  String
   inventoryItem    InventoryItem  @relation(fields: [inventoryItemId], references: [id])
 
-  expectedQty   Decimal @db.Decimal(10, 4) // What system says
+  expectedQty   Decimal  @db.Decimal(10, 4) // What system says
   countedQty    Decimal? @db.Decimal(10, 4) // What was counted
   variance      Decimal? @db.Decimal(10, 4) // countedQty - expectedQty
   varianceValue Decimal? @db.Decimal(10, 2) // variance * costPerUnit
@@ -5576,7 +5580,7 @@ model BottleProduct {
   // Bottle specs
   bottleSizeMl Int // 1750, 750, 1000
   bottleSizeOz Decimal? @db.Decimal(10, 4) // Auto-calculated from mL
-  unitCost     Decimal @db.Decimal(10, 2) // Cost per bottle ($25.99)
+  unitCost     Decimal  @db.Decimal(10, 2) // Cost per bottle ($25.99)
 
   // Pour calculation (uses location default or override)
   pourSizeOz     Decimal? @db.Decimal(6, 3) // Override location default
@@ -6134,6 +6138,10 @@ model ModifierGroupTemplate {
   minSelections Int     @default(0)
   maxSelections Int     @default(1)
   isRequired    Boolean @default(false)
+  allowStacking Boolean @default(false)
+
+  // Template type: food, liquor, universal — stored as sorted JSON array
+  modifierTypes Json @default("[\"food\"]")
 
   sortOrder Int     @default(0)
   isActive  Boolean @default(true)
@@ -6156,8 +6164,9 @@ model ModifierTemplate {
   templateId String
   template   ModifierGroupTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
 
-  name  String
-  price Decimal @default(0) @db.Decimal(10, 2)
+  name        String
+  displayName String?
+  price       Decimal @default(0) @db.Decimal(10, 2)
 
   // Pre-modifier options
   allowNo     Boolean @default(true)
@@ -6165,6 +6174,16 @@ model ModifierTemplate {
   allowOnSide Boolean @default(false)
   allowExtra  Boolean @default(false)
   extraPrice  Decimal @default(0) @db.Decimal(10, 2)
+
+  // Soft ingredient link — awareness only, not enforced until applied to item
+  ingredientId             String?
+  ingredientName           String? // cached display name for template UI
+  inventoryDeductionAmount Decimal? @db.Decimal(10, 4)
+  inventoryDeductionUnit   String? // oz, ml, unit, g
+
+  // Channel visibility
+  showOnPOS  Boolean @default(true)
+  showOnline Boolean @default(true)
 
   // Display
   sortOrder Int     @default(0)
@@ -6997,7 +7016,7 @@ model PizzaSize {
   // Direct inventory linkage (e.g., dough ball per size)
   inventoryItemId String?
   inventoryItem   InventoryItem? @relation("PizzaSizeInventory", fields: [inventoryItemId], references: [id])
-  usageQuantity   Decimal? @db.Decimal(10, 4)
+  usageQuantity   Decimal?       @db.Decimal(10, 4)
   usageUnit       String?
 
   sortOrder Int     @default(0)
@@ -7038,7 +7057,7 @@ model PizzaCrust {
   // Links to dough inventory - usage is for MEDIUM size, scaled by size multiplier
   inventoryItemId String?
   inventoryItem   InventoryItem? @relation("PizzaCrustInventory", fields: [inventoryItemId], references: [id])
-  usageQuantity   Decimal? @db.Decimal(10, 4) // Base usage for medium pizza (e.g., 12 oz dough)
+  usageQuantity   Decimal?       @db.Decimal(10, 4) // Base usage for medium pizza (e.g., 12 oz dough)
   usageUnit       String? // "oz", "each"
 
   sortOrder Int     @default(0)
@@ -7084,7 +7103,7 @@ model PizzaSauce {
   // Inventory tracking (Skill 115)
   inventoryItemId String?
   inventoryItem   InventoryItem? @relation("PizzaSauceInventory", fields: [inventoryItemId], references: [id])
-  usageQuantity   Decimal? @db.Decimal(10, 4) // Base usage for medium pizza (e.g., 4 oz sauce)
+  usageQuantity   Decimal?       @db.Decimal(10, 4) // Base usage for medium pizza (e.g., 4 oz sauce)
   usageUnit       String? // "oz"
 
   sortOrder Int     @default(0)
@@ -7130,7 +7149,7 @@ model PizzaCheese {
   // Inventory tracking (Skill 115)
   inventoryItemId String?
   inventoryItem   InventoryItem? @relation("PizzaCheeseInventory", fields: [inventoryItemId], references: [id])
-  usageQuantity   Decimal? @db.Decimal(10, 4) // Base usage for medium pizza (e.g., 8 oz cheese)
+  usageQuantity   Decimal?       @db.Decimal(10, 4) // Base usage for medium pizza (e.g., 8 oz cheese)
   usageUnit       String? // "oz"
 
   sortOrder Int     @default(0)
@@ -7166,7 +7185,7 @@ model PizzaTopping {
   category String @default("standard") // "meat", "veggie", "premium", "cheese", "seafood", "specialty", "standard"
 
   // Pricing
-  price      Decimal @db.Decimal(10, 2) // Base price for whole pizza
+  price      Decimal  @db.Decimal(10, 2) // Base price for whole pizza
   extraPrice Decimal? @db.Decimal(10, 2) // Price for "extra" (2x amount)
 
   // Visual (for visual pizza builder)
@@ -7181,7 +7200,7 @@ model PizzaTopping {
   // Inventory tracking (Skill 115) — resolved from ingredient chain when available
   inventoryItemId String?
   inventoryItem   InventoryItem? @relation("PizzaToppingInventory", fields: [inventoryItemId], references: [id])
-  usageQuantity   Decimal? @db.Decimal(10, 4) // Base usage for medium whole pizza (e.g., 2 oz pepperoni)
+  usageQuantity   Decimal?       @db.Decimal(10, 4) // Base usage for medium whole pizza (e.g., 2 oz pepperoni)
   usageUnit       String? // "oz", "each"
 
   sortOrder Int     @default(0)
@@ -7504,7 +7523,7 @@ model ScheduledShift {
   // Actual vs scheduled (filled after shift)
   actualStartTime DateTime?
   actualEndTime   DateTime?
-  actualHours     Decimal? @db.Decimal(6, 2)
+  actualHours     Decimal?  @db.Decimal(6, 2)
 
   // Trade/swap tracking
   originalEmployeeId String? // If swapped, who was originally scheduled
@@ -7716,7 +7735,7 @@ model DailyPrepCountItem {
   trayBreakdown Json?
 
   // Calculated values
-  totalCounted     Decimal @db.Decimal(10, 4) // Sum of all trays: (Large * 6) + (Small * 12) + loose
+  totalCounted     Decimal  @db.Decimal(10, 4) // Sum of all trays: (Large * 6) + (Small * 12) + loose
   expectedQuantity Decimal? @db.Decimal(10, 4) // Previous closing stock (for variance)
   variance         Decimal? @db.Decimal(10, 4) // totalCounted - expectedQuantity
   variancePercent  Decimal? @db.Decimal(8, 4) // (variance / expectedQuantity) * 100
@@ -9400,20 +9419,20 @@ model LoyaltyProgram {
   locationId String
   location   Location @relation(fields: [locationId], references: [id])
 
-  name               String   @default("Loyalty Program")
-  isActive           Boolean  @default(true)
-  pointsPerDollar    Int      @default(1)
-  pointValueCents    Int      @default(1) // 1 point = $0.01
-  minimumRedeemPoints Int     @default(100)
-  roundingMode       String   @default("floor") // 'floor' | 'round' | 'ceil'
+  name                String   @default("Loyalty Program")
+  isActive            Boolean  @default(true)
+  pointsPerDollar     Int      @default(1)
+  pointValueCents     Int      @default(1) // 1 point = $0.01
+  minimumRedeemPoints Int      @default(100)
+  roundingMode        String   @default("floor") // 'floor' | 'round' | 'ceil'
   excludedCategoryIds String[] @default([])
   excludedItemTypes   String[] @default([]) // e.g., ['entertainment']
 
   lastMutatedBy String? // 'cloud' | 'local' | null
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
-  syncedAt  DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+  syncedAt      DateTime?
 
   // Relations
   tiers     LoyaltyTier[]
@@ -9424,22 +9443,22 @@ model LoyaltyProgram {
 }
 
 model LoyaltyTier {
-  id        String   @id @default(cuid())
+  id        String         @id @default(cuid())
   programId String
   program   LoyaltyProgram @relation(fields: [programId], references: [id], onDelete: Cascade)
 
   name             String
-  minimumPoints    Int      @default(0) // Lifetime points to reach tier
-  pointsMultiplier Decimal  @default(1.0) @db.Decimal(6, 2) // e.g., 1.5 = 1.5x points
-  perks            Json     @default("{}") // { freeItems: [], discountPercent: 0, birthdayReward: false }
-  color            String   @default("#6366f1") // For UI badge
-  sortOrder        Int      @default(0)
+  minimumPoints    Int     @default(0) // Lifetime points to reach tier
+  pointsMultiplier Decimal @default(1.0) @db.Decimal(6, 2) // e.g., 1.5 = 1.5x points
+  perks            Json    @default("{}") // { freeItems: [], discountPercent: 0, birthdayReward: false }
+  color            String  @default("#6366f1") // For UI badge
+  sortOrder        Int     @default(0)
 
   lastMutatedBy String? // 'cloud' | 'local' | null
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
-  syncedAt  DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+  syncedAt      DateTime?
 
   // Relations
   customers Customer[]
@@ -9458,15 +9477,15 @@ model LoyaltyTransaction {
   order      Order?   @relation(fields: [orderId], references: [id])
 
   type          String // 'earn' | 'redeem' | 'adjust' | 'expire' | 'tier_bonus' | 'welcome'
-  points        Int    // Positive for earn, negative for redeem
-  balanceBefore Int    @default(0)
-  balanceAfter  Int    @default(0)
-  description   String @default("")
+  points        Int // Positive for earn, negative for redeem
+  balanceBefore Int     @default(0)
+  balanceAfter  Int     @default(0)
+  description   String  @default("")
   employeeId    String?
   metadata      Json?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   syncedAt  DateTime?
 
   @@index([customerId])
@@ -9524,49 +9543,49 @@ model CardDetection {
 
 /// One row per logical notification workflow. Never modified after terminal state.
 model NotificationJob {
-  id                  String   @id @default(cuid())
-  locationId          String
-  eventType           String
-  subjectType         String
-  subjectId           String
-  status              String   @default("pending")
-  currentAttempt      Int      @default(0)
-  maxAttempts         Int      @default(3)
-  terminalResult      String?
-  dispatchOrigin      String
-  businessStage       String
-  executionStage      String
-  routingRuleId       String?
-  providerId          String
-  fallbackProviderId  String?
-  targetType          String
-  targetValue         String
-  scheduledFor        DateTime?
-  availableAt         DateTime @default(now())
-  executionZone       String   @default("any")
-  claimedByWorkerId   String?
-  claimedAt           DateTime?
-  processingTimeoutAt DateTime?
-  contextSnapshot     Json
-  messageTemplate     String?
-  messageRendered     String?
-  policySnapshot      Json
-  ruleExplainSnapshot Json?
-  subjectVersion      Int
-  isProbe             Boolean  @default(false)
-  sourceSystem        String
-  sourceEventId       String
-  sourceEventVersion  Int      @default(1)
-  idempotencyKey      String
-  correlationId       String
-  parentJobId         String?
-  notificationEngine  String
-  lastAttemptAt       DateTime?
-  resolvedAt          DateTime?
+  id                   String    @id @default(cuid())
+  locationId           String
+  eventType            String
+  subjectType          String
+  subjectId            String
+  status               String    @default("pending")
+  currentAttempt       Int       @default(0)
+  maxAttempts          Int       @default(3)
+  terminalResult       String?
+  dispatchOrigin       String
+  businessStage        String
+  executionStage       String
+  routingRuleId        String?
+  providerId           String
+  fallbackProviderId   String?
+  targetType           String
+  targetValue          String
+  scheduledFor         DateTime?
+  availableAt          DateTime  @default(now())
+  executionZone        String    @default("any")
+  claimedByWorkerId    String?
+  claimedAt            DateTime?
+  processingTimeoutAt  DateTime?
+  contextSnapshot      Json
+  messageTemplate      String?
+  messageRendered      String?
+  policySnapshot       Json
+  ruleExplainSnapshot  Json?
+  subjectVersion       Int
+  isProbe              Boolean   @default(false)
+  sourceSystem         String
+  sourceEventId        String
+  sourceEventVersion   Int       @default(1)
+  idempotencyKey       String
+  correlationId        String
+  parentJobId          String?
+  notificationEngine   String
+  lastAttemptAt        DateTime?
+  resolvedAt           DateTime?
   resolvedByEmployeeId String?
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
-  completedAt         DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  completedAt          DateTime?
 
   @@unique([locationId, sourceSystem, sourceEventId, sourceEventVersion])
   @@index([correlationId])
@@ -9575,7 +9594,7 @@ model NotificationJob {
 
 /// Immutable delivery execution log. One row per send attempt.
 model NotificationAttempt {
-  id                 String   @id @default(cuid())
+  id                 String    @id @default(cuid())
   jobId              String
   providerId         String
   providerType       String
@@ -9593,8 +9612,8 @@ model NotificationAttempt {
   deliveryConfidence String?
   errorCode          String?
   normalizedError    String?
-  isManual           Boolean  @default(false)
-  isRetry            Boolean  @default(false)
+  isManual           Boolean   @default(false)
+  isRetry            Boolean   @default(false)
 
   @@index([jobId])
   @@index([providerId, startedAt])
@@ -9732,74 +9751,74 @@ model NotificationRoutingRule {
 
 /// Message templates per event/channel.
 model NotificationTemplate {
-  id                String   @id @default(cuid())
+  id                String    @id @default(cuid())
   locationId        String
   name              String
   eventType         String
   channelType       String
   body              String
-  locale            String   @default("en")
+  locale            String    @default("en")
   maxLength         Int?
-  version           Int      @default(1)
-  isDefault         Boolean  @default(false)
+  version           Int       @default(1)
+  isDefault         Boolean   @default(false)
   requiredVariables String[]
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
   deletedAt         DateTime?
 }
 
 // ── Delivery tables (raw SQL — must be in schema so prisma db push doesn't drop them) ──
 
 model DeliveryOrder {
-  id                  String    @id @default(cuid())
-  locationId          String
-  orderId             String?
-  employeeId          String?
-  driverId            String?
-  customerName        String
-  phone               String?
-  address             String?
-  addressLine2        String?
-  city                String?
-  state               String?
-  zipCode             String?
-  notes               String?
-  status              String    @default("pending")
-  deliveryFee         Decimal   @default(0) @db.Decimal(10, 2)
-  estimatedMinutes    Int       @default(45)
-  scheduledFor        DateTime?
-  preparedAt          DateTime?
-  readyAt             DateTime?
-  dispatchedAt        DateTime?
-  deliveredAt         DateTime?
-  cancelledAt         DateTime?
-  cancelReason        String?
+  id                    String    @id @default(cuid())
+  locationId            String
+  orderId               String?
+  employeeId            String?
+  driverId              String?
+  customerName          String
+  phone                 String?
+  address               String?
+  addressLine2          String?
+  city                  String?
+  state                 String?
+  zipCode               String?
+  notes                 String?
+  status                String    @default("pending")
+  deliveryFee           Decimal   @default(0) @db.Decimal(10, 2)
+  estimatedMinutes      Int       @default(45)
+  scheduledFor          DateTime?
+  preparedAt            DateTime?
+  readyAt               DateTime?
+  dispatchedAt          DateTime?
+  deliveredAt           DateTime?
+  cancelledAt           DateTime?
+  cancelReason          String?
   // Columns added by migration 066
-  zoneId              String?
-  runId               String?
-  runSequence         Int?
-  trackingToken       String?   @unique
-  addressId           String?
-  latitude            Decimal?  @db.Decimal(10, 7)
-  longitude           Decimal?  @db.Decimal(10, 7)
-  geocodePrecision    String?
-  geocodeConfidence   Decimal?  @db.Decimal(3, 2)
-  smsNotificationsSent Json?    @default("[]")
-  confirmedAt         DateTime?
-  assignedAt          DateTime?
-  enRouteAt           DateTime?
-  arrivedAt           DateTime?
-  attemptedAt         DateTime?
-  failedAt            DateTime?
-  returnedAt          DateTime?
-  promisedAt          DateTime?
-  quotedMinutes       Int?
+  zoneId                String?
+  runId                 String?
+  runSequence           Int?
+  trackingToken         String?   @unique
+  addressId             String?
+  latitude              Decimal?  @db.Decimal(10, 7)
+  longitude             Decimal?  @db.Decimal(10, 7)
+  geocodePrecision      String?
+  geocodeConfidence     Decimal?  @db.Decimal(3, 2)
+  smsNotificationsSent  Json?     @default("[]")
+  confirmedAt           DateTime?
+  assignedAt            DateTime?
+  enRouteAt             DateTime?
+  arrivedAt             DateTime?
+  attemptedAt           DateTime?
+  failedAt              DateTime?
+  returnedAt            DateTime?
+  promisedAt            DateTime?
+  quotedMinutes         Int?
   serviceRecoveryReason String?
-  exceptionId         String?
-  addressSnapshotJson Json?
-  proofMode           String?
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @default(now())
+  exceptionId           String?
+  addressSnapshotJson   Json?
+  proofMode             String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @default(now())
 
   @@index([locationId, status])
   @@index([driverId])
@@ -9814,19 +9833,19 @@ model DeliveryOrder {
 // ============================================
 
 model ExternalWebhookEvent {
-  id                    String   @id @default(cuid())
-  provider              String   // 'datacap_virtual_gift'
-  externalTransactionId String   // e.g. Datacap transactionId
-  eventType             String   // e.g. 'payment.completed', 'payment.failed'
+  id                    String                  @id @default(cuid())
+  provider              String // 'datacap_virtual_gift'
+  externalTransactionId String // e.g. Datacap transactionId
+  eventType             String // e.g. 'payment.completed', 'payment.failed'
   signatureValid        Boolean
-  payload               Json     // Raw webhook body (CVV stripped, contains PII — 90-day retention)
+  payload               Json // Raw webhook body (CVV stripped, contains PII — 90-day retention)
   processingStatus      WebhookProcessingStatus @default(received)
-  ignoredReason         String?  // Why event was ignored (unknown type, etc.)
-  relatedGiftCardId     String?  // GiftCard created/affected by this event
-  providerPageId        String?  // e.g. Datacap giftCardPageId
-  providerMerchantId    String?  // e.g. Datacap merchantId
-  attemptCount          Int      @default(1)
-  receivedAt            DateTime @default(now())
+  ignoredReason         String? // Why event was ignored (unknown type, etc.)
+  relatedGiftCardId     String? // GiftCard created/affected by this event
+  providerPageId        String? // e.g. Datacap giftCardPageId
+  providerMerchantId    String? // e.g. Datacap merchantId
+  attemptCount          Int                     @default(1)
+  receivedAt            DateTime                @default(now())
   processedAt           DateTime?
   errorMessage          String?
 
@@ -9846,17 +9865,17 @@ model ExternalWebhookEvent {
 model ItemShare {
   id                  String    @id @default(cuid())
   locationId          String
-  sourceItemId        String    // The canonical OrderItem being shared
-  sourceOrderId       String    // Order that owns the canonical item
-  targetOrderId       String    // Check that owes this share
-  shareIndex          Int       // 1-based (1 of 3, 2 of 3, etc.)
-  totalShares         Int       // N in "split N ways"
+  sourceItemId        String // The canonical OrderItem being shared
+  sourceOrderId       String // Order that owns the canonical item
+  targetOrderId       String // Check that owes this share
+  shareIndex          Int // 1-based (1 of 3, 2 of 3, etc.)
+  totalShares         Int // N in "split N ways"
   allocatedAmount     Decimal   @db.Decimal(10, 2) // This share's dollar amount (after penny distribution)
   allocatedTax        Decimal   @default(0) @db.Decimal(10, 2)
   allocatedDiscount   Decimal   @default(0) @db.Decimal(10, 2)
   resolvedAt          DateTime? // When this share was paid/superseded
-  resolvedByPaymentId String?   // Payment that resolved this share
-  splitResolution     String?   // null | 'paid' | 'superseded' | 'merged_back'
+  resolvedByPaymentId String? // Payment that resolved this share
+  splitResolution     String? // null | 'paid' | 'superseded' | 'merged_back'
   createdAt           DateTime  @default(now())
   deletedAt           DateTime?
 

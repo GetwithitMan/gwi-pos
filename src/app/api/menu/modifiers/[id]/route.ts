@@ -120,6 +120,8 @@ export const GET = withVenue(async function GET(
 })
 
 // PUT update modifier group
+// DEPRECATED: Only spirit groups (isSpiritGroup: true) may be edited via this route.
+// Item-owned modifier groups should be edited via /api/menu/items/[id]/modifier-groups/[groupId].
 export const PUT = withVenue(async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -130,9 +132,14 @@ export const PUT = withVenue(async function PUT(
     const { name, displayName, modifierTypes, minSelections, maxSelections, isRequired, allowStacking, hasOnlineOverride, isSpiritGroup, modifiers } = body
 
     // Auth check — require menu.edit_items permission
-    const existingGroup = await db.modifierGroup.findUnique({ where: { id }, select: { locationId: true } })
+    const existingGroup = await db.modifierGroup.findUnique({ where: { id }, select: { locationId: true, isSpiritGroup: true } })
     if (!existingGroup) {
       return notFound('Modifier group not found')
+    }
+
+    // Block editing non-spirit global groups — use templates system instead
+    if (!existingGroup.isSpiritGroup) {
+      return err('Editing shared modifier groups is no longer supported. Use the templates system or edit item-owned groups directly.', 410)
     }
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, existingGroup.locationId, PERMISSIONS.MENU_EDIT_ITEMS)
@@ -346,6 +353,7 @@ export const PUT = withVenue(async function PUT(
 })
 
 // DELETE modifier group
+// DEPRECATED: Only spirit groups (isSpiritGroup: true) may be deleted via this route.
 export const DELETE = withVenue(async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -356,11 +364,16 @@ export const DELETE = withVenue(async function DELETE(
     // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
     const deleteLocationId = getRequestLocationId()
     const group = deleteLocationId
-      ? { locationId: deleteLocationId }
-      : await db.modifierGroup.findUnique({ where: { id }, select: { locationId: true } })
+      ? await db.modifierGroup.findUnique({ where: { id }, select: { locationId: true, isSpiritGroup: true } })
+      : await db.modifierGroup.findUnique({ where: { id }, select: { locationId: true, isSpiritGroup: true } })
 
     if (!group) {
       return notFound('Modifier group not found')
+    }
+
+    // Block deleting non-spirit global groups via this route
+    if (!group.isSpiritGroup) {
+      return err('Deleting shared modifier groups via this route is no longer supported.', 410)
     }
 
     // Auth check — require menu.edit_items permission

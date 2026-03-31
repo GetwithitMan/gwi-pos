@@ -5,7 +5,7 @@ import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { toast } from '@/stores/toast-store'
-import { Search, Plus, Trash2, Copy, GripVertical } from 'lucide-react'
+import { Search, Plus, Trash2, Copy, GripVertical, ArchiveRestore } from 'lucide-react'
 
 interface TemplateModifier {
   id?: string
@@ -18,6 +18,13 @@ interface TemplateModifier {
   extraPrice: number
   sortOrder: number
   isDefault: boolean
+  displayName: string | null
+  ingredientId: string | null
+  ingredientName: string | null
+  inventoryDeductionAmount: number | null
+  inventoryDeductionUnit: string | null
+  showOnPOS: boolean
+  showOnline: boolean
 }
 
 interface Template {
@@ -27,8 +34,12 @@ interface Template {
   minSelections: number
   maxSelections: number
   isRequired: boolean
+  allowStacking: boolean
+  modifierTypes: string[]
   sortOrder: number
   isActive: boolean
+  deletedAt: string | null
+  sourceTemplateName?: string | null
   createdAt: string
   updatedAt: string
   modifiers: TemplateModifier[]
@@ -43,6 +54,8 @@ export default function ModifierTemplatesPage() {
   const [search, setSearch] = useState('')
   const [saving, setSaving] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [typeFilter, setTypeFilter] = useState<string>('all')
+  const [showArchived, setShowArchived] = useState(false)
 
   // Editable state for selected template
   const [editName, setEditName] = useState('')
@@ -51,13 +64,17 @@ export default function ModifierTemplatesPage() {
   const [editMaxSelections, setEditMaxSelections] = useState(1)
   const [editIsRequired, setEditIsRequired] = useState(false)
   const [editAllowStacking, setEditAllowStacking] = useState(false)
+  const [editModifierTypes, setEditModifierTypes] = useState<string[]>(['food'])
   const [editModifiers, setEditModifiers] = useState<TemplateModifier[]>([])
 
   const selectedTemplate = templates.find(t => t.id === selectedId) || null
 
-  const fetchTemplates = useCallback(async () => {
+  const fetchTemplates = useCallback(async (includeArchived = false) => {
     try {
-      const res = await fetch('/api/menu/modifier-templates')
+      const url = includeArchived
+        ? '/api/menu/modifier-templates?includeArchived=true'
+        : '/api/menu/modifier-templates'
+      const res = await fetch(url)
       if (!res.ok) throw new Error('Failed to fetch')
       const json = await res.json()
       setTemplates(json.data || [])
@@ -69,8 +86,8 @@ export default function ModifierTemplatesPage() {
   }, [])
 
   useEffect(() => {
-    if (hydrated) fetchTemplates()
-  }, [hydrated, fetchTemplates])
+    if (hydrated) fetchTemplates(showArchived)
+  }, [hydrated, fetchTemplates, showArchived])
 
   // Sync editable state when selection changes
   useEffect(() => {
@@ -80,21 +97,32 @@ export default function ModifierTemplatesPage() {
       setEditMinSelections(selectedTemplate.minSelections)
       setEditMaxSelections(selectedTemplate.maxSelections)
       setEditIsRequired(selectedTemplate.isRequired)
-      setEditAllowStacking(false)
+      setEditAllowStacking(selectedTemplate.allowStacking ?? false)
+      setEditModifierTypes(selectedTemplate.modifierTypes?.length ? selectedTemplate.modifierTypes : ['food'])
       setEditModifiers(selectedTemplate.modifiers.map(m => ({ ...m })))
     }
-  }, [selectedId])  
+  }, [selectedId])
 
-  const filteredTemplates = templates.filter(t =>
-    t.name.toLowerCase().includes(search.toLowerCase())
-  )
+  const filteredTemplates = templates.filter(t => {
+    // Search filter
+    if (search && !t.name.toLowerCase().includes(search.toLowerCase())) return false
+    // Type filter
+    if (typeFilter !== 'all' && !(t.modifierTypes || []).includes(typeFilter)) return false
+    // Archived filter
+    if (showArchived) return !!t.deletedAt
+    return !t.deletedAt
+  })
 
   const handleCreate = async () => {
     try {
       const res = await fetch('/api/menu/modifier-templates', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: 'New Template' }),
+        body: JSON.stringify({
+          name: 'New Template',
+          allowStacking: false,
+          modifierTypes: ['food'],
+        }),
       })
       if (!res.ok) {
         const err = await res.json()
@@ -123,6 +151,8 @@ export default function ModifierTemplatesPage() {
           minSelections: editMinSelections,
           maxSelections: editMaxSelections,
           isRequired: editIsRequired,
+          allowStacking: editAllowStacking,
+          modifierTypes: editModifierTypes,
           modifiers: editModifiers.map((m, i) => ({
             name: m.name,
             price: m.price,
@@ -133,6 +163,13 @@ export default function ModifierTemplatesPage() {
             extraPrice: m.extraPrice,
             sortOrder: i,
             isDefault: m.isDefault,
+            displayName: m.displayName,
+            ingredientId: m.ingredientId,
+            ingredientName: m.ingredientName,
+            inventoryDeductionAmount: m.inventoryDeductionAmount,
+            inventoryDeductionUnit: m.inventoryDeductionUnit,
+            showOnPOS: m.showOnPOS,
+            showOnline: m.showOnline,
           })),
         }),
       })
@@ -161,25 +198,44 @@ export default function ModifierTemplatesPage() {
       setTemplates(prev => prev.filter(t => t.id !== selectedId))
       setSelectedId(null)
       setConfirmDelete(false)
-      toast.success('Template deleted')
+      toast.success('Template archived')
     } catch {
-      toast.error('Failed to delete template')
+      toast.error('Failed to archive template')
     }
   }
 
-  const handleDuplicate = async () => {
-    if (!selectedTemplate) return
+  const handleRestore = async (templateId: string) => {
+    try {
+      const res = await fetch(`/api/menu/modifier-templates/${templateId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ restore: true }),
+      })
+      if (!res.ok) throw new Error('Failed to restore')
+      const json = await res.json()
+      setTemplates(prev => prev.map(t => t.id === templateId ? json.data : t))
+      toast.success('Template restored')
+    } catch {
+      toast.error('Failed to restore template')
+    }
+  }
+
+  const handleDuplicate = async (template?: Template) => {
+    const tpl = template || selectedTemplate
+    if (!tpl) return
     try {
       const res = await fetch('/api/menu/modifier-templates', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: `${selectedTemplate.name} (Copy)`,
-          description: selectedTemplate.description,
-          minSelections: selectedTemplate.minSelections,
-          maxSelections: selectedTemplate.maxSelections,
-          isRequired: selectedTemplate.isRequired,
-          modifiers: selectedTemplate.modifiers.map((m, i) => ({
+          name: `${tpl.name} (Copy)`,
+          description: tpl.description,
+          minSelections: tpl.minSelections,
+          maxSelections: tpl.maxSelections,
+          isRequired: tpl.isRequired,
+          allowStacking: tpl.allowStacking,
+          modifierTypes: tpl.modifierTypes,
+          modifiers: tpl.modifiers.map((m, i) => ({
             name: m.name,
             price: m.price,
             allowNo: m.allowNo,
@@ -189,6 +245,13 @@ export default function ModifierTemplatesPage() {
             extraPrice: m.extraPrice,
             sortOrder: i,
             isDefault: m.isDefault,
+            displayName: m.displayName,
+            ingredientId: m.ingredientId,
+            ingredientName: m.ingredientName,
+            inventoryDeductionAmount: m.inventoryDeductionAmount,
+            inventoryDeductionUnit: m.inventoryDeductionUnit,
+            showOnPOS: m.showOnPOS,
+            showOnline: m.showOnline,
           })),
         }),
       })
@@ -219,6 +282,13 @@ export default function ModifierTemplatesPage() {
         extraPrice: 0,
         sortOrder: prev.length,
         isDefault: false,
+        displayName: null,
+        ingredientId: null,
+        ingredientName: null,
+        inventoryDeductionAmount: null,
+        inventoryDeductionUnit: null,
+        showOnPOS: true,
+        showOnline: true,
       },
     ])
   }
@@ -262,6 +332,37 @@ export default function ModifierTemplatesPage() {
                 className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
+
+            {/* Type filter tabs */}
+            <div className="flex gap-1">
+              {(['all', 'food', 'liquor', 'universal'] as const).map(filter => (
+                <button
+                  key={filter}
+                  onClick={() => setTypeFilter(filter)}
+                  className={`flex-1 px-2 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                    typeFilter === filter
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  {filter.charAt(0).toUpperCase() + filter.slice(1)}
+                </button>
+              ))}
+            </div>
+
+            {/* Show Archived toggle */}
+            <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={showArchived}
+                onChange={e => {
+                  setShowArchived(e.target.checked)
+                  setSelectedId(null)
+                }}
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 w-3.5 h-3.5"
+              />
+              Show Archived
+            </label>
           </div>
 
           <div className="flex-1 overflow-y-auto">
@@ -269,25 +370,58 @@ export default function ModifierTemplatesPage() {
               <div className="p-4 text-sm text-gray-500 text-center">Loading...</div>
             ) : filteredTemplates.length === 0 ? (
               <div className="p-4 text-sm text-gray-500 text-center">
-                {search ? 'No templates match your search' : 'No templates yet'}
+                {search || typeFilter !== 'all'
+                  ? 'No templates match your filters'
+                  : showArchived
+                    ? 'No archived templates'
+                    : 'No templates yet'}
               </div>
             ) : (
               filteredTemplates.map(t => (
-                <button
+                <div
                   key={t.id}
-                  onClick={() => setSelectedId(t.id)}
-                  className={`w-full text-left px-4 py-3 border-b border-gray-100 transition-colors ${
+                  className={`flex items-center border-b border-gray-100 transition-colors ${
                     selectedId === t.id
                       ? 'bg-blue-50 border-l-2 border-l-blue-600'
                       : 'hover:bg-gray-50'
                   }`}
                 >
-                  <div className="font-medium text-sm text-gray-900">{t.name}</div>
-                  <div className="text-xs text-gray-500 mt-0.5">
-                    {t.modifiers.length} modifier{t.modifiers.length !== 1 ? 's' : ''}
-                    {t.isRequired && <span className="ml-2 text-orange-600 font-medium">Required</span>}
+                  <button
+                    onClick={() => setSelectedId(t.id)}
+                    className="flex-1 text-left px-4 py-3 min-w-0"
+                  >
+                    <div className="font-medium text-sm text-gray-900 truncate">{t.name}</div>
+                    <div className="text-xs text-gray-500 mt-0.5 flex items-center gap-1 flex-wrap">
+                      <span>{t.modifiers.length} modifier{t.modifiers.length !== 1 ? 's' : ''}</span>
+                      {t.isRequired && <span className="text-orange-600 font-medium">Required</span>}
+                      {(t.modifierTypes || []).map(mt => (
+                        <span key={mt} className="px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded text-[10px] font-medium uppercase">
+                          {mt}
+                        </span>
+                      ))}
+                      {t.deletedAt && <span className="text-red-500 font-medium">Archived</span>}
+                    </div>
+                  </button>
+                  <div className="flex items-center gap-1 pr-2 flex-shrink-0">
+                    {t.deletedAt ? (
+                      <button
+                        onClick={e => { e.stopPropagation(); handleRestore(t.id) }}
+                        className="p-1.5 text-gray-400 hover:text-green-600 transition-colors"
+                        title="Restore template"
+                      >
+                        <ArchiveRestore className="w-4 h-4" />
+                      </button>
+                    ) : (
+                      <button
+                        onClick={e => { e.stopPropagation(); handleDuplicate(t) }}
+                        className="p-1.5 text-gray-400 hover:text-blue-600 transition-colors"
+                        title="Duplicate template"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
-                </button>
+                </div>
               ))
             )}
           </div>
@@ -301,6 +435,13 @@ export default function ModifierTemplatesPage() {
             </div>
           ) : (
             <div className="p-6 space-y-6">
+              {/* Source template badge */}
+              {selectedTemplate.sourceTemplateName && (
+                <div className="text-xs text-gray-500 bg-gray-50 px-3 py-1.5 rounded-lg inline-block">
+                  (from: {selectedTemplate.sourceTemplateName})
+                </div>
+              )}
+
               {/* Template name */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Template Name</label>
@@ -348,7 +489,7 @@ export default function ModifierTemplatesPage() {
                 </div>
               </div>
 
-              <div className="flex gap-6">
+              <div className="flex gap-6 flex-wrap">
                 <label className="flex items-center gap-2 text-sm">
                   <input
                     type="checkbox"
@@ -367,6 +508,30 @@ export default function ModifierTemplatesPage() {
                   />
                   <span className="text-gray-700">Allow Stacking</span>
                 </label>
+              </div>
+
+              {/* Modifier Types */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Modifier Types</label>
+                <div className="flex gap-4">
+                  {(['food', 'liquor', 'universal'] as const).map(mt => (
+                    <label key={mt} className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={editModifierTypes.includes(mt)}
+                        onChange={e => {
+                          if (e.target.checked) {
+                            setEditModifierTypes(prev => [...prev, mt])
+                          } else {
+                            setEditModifierTypes(prev => prev.filter(v => v !== mt))
+                          }
+                        }}
+                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="text-gray-700">{mt.charAt(0).toUpperCase() + mt.slice(1)}</span>
+                    </label>
+                  ))}
+                </div>
               </div>
 
               {/* Modifiers */}
@@ -393,59 +558,96 @@ export default function ModifierTemplatesPage() {
                     {editModifiers.map((mod, idx) => (
                       <div
                         key={idx}
-                        className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200"
+                        className="p-3 bg-gray-50 rounded-lg border border-gray-200 space-y-2"
                       >
-                        <GripVertical className="w-4 h-4 text-gray-300 flex-shrink-0" />
+                        <div className="flex items-center gap-3">
+                          <GripVertical className="w-4 h-4 text-gray-300 flex-shrink-0" />
 
-                        {/* Name */}
-                        <input
-                          type="text"
-                          value={mod.name}
-                          onChange={e => updateModifier(idx, { name: e.target.value })}
-                          placeholder="Modifier name"
-                          className="flex-1 min-w-0 px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                        />
-
-                        {/* Price */}
-                        <div className="flex items-center gap-1 flex-shrink-0">
-                          <span className="text-xs text-gray-500">$</span>
+                          {/* Name */}
                           <input
-                            type="number"
-                            step="0.01"
-                            min={0}
-                            value={mod.price}
-                            onChange={e => updateModifier(idx, { price: parseFloat(e.target.value) || 0 })}
-                            className="w-20 px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            type="text"
+                            value={mod.name}
+                            onChange={e => updateModifier(idx, { name: e.target.value })}
+                            placeholder="Modifier name"
+                            className="flex-1 min-w-0 px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                           />
-                        </div>
 
-                        {/* Pre-mod flags */}
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                          {(['allowNo', 'allowLite', 'allowOnSide', 'allowExtra'] as const).map(flag => (
-                            <label
-                              key={flag}
-                              className="flex items-center gap-1 text-xs text-gray-600"
-                              title={flag.replace('allow', '')}
-                            >
+                          {/* Price */}
+                          <div className="flex items-center gap-1 flex-shrink-0">
+                            <span className="text-xs text-gray-500">$</span>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min={0}
+                              value={mod.price}
+                              onChange={e => updateModifier(idx, { price: parseFloat(e.target.value) || 0 })}
+                              className="w-20 px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            />
+                          </div>
+
+                          {/* Pre-mod flags */}
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            {(['allowNo', 'allowLite', 'allowOnSide', 'allowExtra'] as const).map(flag => (
+                              <label
+                                key={flag}
+                                className="flex items-center gap-1 text-xs text-gray-600"
+                                title={flag.replace('allow', '')}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={mod[flag]}
+                                  onChange={e => updateModifier(idx, { [flag]: e.target.checked })}
+                                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 w-3.5 h-3.5"
+                                />
+                                {flag.replace('allow', '')}
+                              </label>
+                            ))}
+                          </div>
+
+                          {/* Visibility flags */}
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <label className="flex items-center gap-1 text-xs text-gray-600" title="Show on POS">
                               <input
                                 type="checkbox"
-                                checked={mod[flag]}
-                                onChange={e => updateModifier(idx, { [flag]: e.target.checked })}
+                                checked={mod.showOnPOS ?? true}
+                                onChange={e => updateModifier(idx, { showOnPOS: e.target.checked })}
                                 className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 w-3.5 h-3.5"
                               />
-                              {flag.replace('allow', '')}
+                              POS
                             </label>
-                          ))}
+                            <label className="flex items-center gap-1 text-xs text-gray-600" title="Show Online">
+                              <input
+                                type="checkbox"
+                                checked={mod.showOnline ?? true}
+                                onChange={e => updateModifier(idx, { showOnline: e.target.checked })}
+                                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 w-3.5 h-3.5"
+                              />
+                              Online
+                            </label>
+                          </div>
+
+                          {/* Delete */}
+                          <button
+                            onClick={() => removeModifier(idx)}
+                            className="p-1 text-gray-400 hover:text-red-500 transition-colors flex-shrink-0"
+                            title="Remove modifier"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
                         </div>
 
-                        {/* Delete */}
-                        <button
-                          onClick={() => removeModifier(idx)}
-                          className="p-1 text-gray-400 hover:text-red-500 transition-colors flex-shrink-0"
-                          title="Remove modifier"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        {/* Ingredient link display (read-only) */}
+                        {mod.ingredientName && (
+                          <div className="ml-7 text-xs text-gray-500">
+                            <span className="font-medium text-gray-600">{mod.ingredientName}</span>
+                            <span className="ml-1 text-gray-400">(linked on apply)</span>
+                            {mod.inventoryDeductionAmount != null && mod.inventoryDeductionUnit && (
+                              <span className="ml-2 text-gray-400">
+                                {mod.inventoryDeductionAmount} {mod.inventoryDeductionUnit}
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -456,7 +658,7 @@ export default function ModifierTemplatesPage() {
               <div className="flex items-center justify-between pt-4 border-t border-gray-200">
                 <div className="flex gap-2">
                   <button
-                    onClick={handleDuplicate}
+                    onClick={() => handleDuplicate()}
                     className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
                   >
                     <Copy className="w-4 h-4" />
@@ -485,9 +687,9 @@ export default function ModifierTemplatesPage() {
 
       <ConfirmDialog
         open={confirmDelete}
-        title="Delete Template"
-        description={`Are you sure you want to delete "${selectedTemplate?.name}"? This cannot be undone.`}
-        confirmLabel="Delete"
+        title="Archive Template"
+        description={`Are you sure you want to archive "${selectedTemplate?.name}"? You can restore it later from the archived view.`}
+        confirmLabel="Archive"
         destructive
         onConfirm={handleDelete}
         onCancel={() => setConfirmDelete(false)}
