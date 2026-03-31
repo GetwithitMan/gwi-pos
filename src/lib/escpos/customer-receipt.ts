@@ -53,7 +53,7 @@ export interface ReceiptItem {
   name: string
   quantity: number
   price: number
-  modifiers: { name: string; price: number; preModifier?: string | null; isCustomEntry?: boolean; isNoneSelection?: boolean; noneShowOnReceipt?: boolean; customEntryName?: string | null; swapTargetName?: string | null }[]
+  modifiers: { name: string; price: number; depth?: number; preModifier?: string | null; isCustomEntry?: boolean; isNoneSelection?: boolean; noneShowOnReceipt?: boolean; customEntryName?: string | null; swapTargetName?: string | null }[]
   specialNotes?: string | null
 }
 
@@ -212,10 +212,11 @@ export function buildCustomerReceipt(
       if (mod.swapTargetName) {
         modDisplayName = `${mod.name} → ${mod.swapTargetName}`
       }
+      const indent = mod.depth && mod.depth > 0 ? '  '.repeat(mod.depth + 1) : '  '
       if (mod.price > 0) {
-        content.push(twoColumnLine(`  ${modDisplayName}`, `$${mod.price.toFixed(2)}`, width))
+        content.push(twoColumnLine(`${indent}${modDisplayName}`, `$${mod.price.toFixed(2)}`, width))
       } else {
-        content.push(line(`  ${modDisplayName}`))
+        content.push(line(`${indent}${modDisplayName}`))
       }
     }
 

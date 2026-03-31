@@ -91,7 +91,9 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
         ? item.modifiers.map(mod => {
             const preModText = mod.preModifier ? `${mod.preModifier} ` : ''
             const priceText = Number(mod.price) > 0 ? ` +${formatCurrency(Number(mod.price))}` : ''
-            return `<div style="color:#6b7280;font-size:13px;padding-left:16px;">${escapeHtml(preModText)}${escapeHtml(mod.name)}${priceText}</div>`
+            const depth = (mod as any).depth || 0
+            const paddingLeft = 16 + depth * 12
+            return `<div style="color:#6b7280;font-size:13px;padding-left:${paddingLeft}px;">${escapeHtml(preModText)}${escapeHtml(mod.name)}${priceText}</div>`
           }).join('')
         : ''
 
