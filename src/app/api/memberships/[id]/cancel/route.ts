@@ -23,11 +23,11 @@ export const POST = withVenue(async function POST(
     const auth = await requirePermission(requestingEmployeeId, locationId, 'admin.manage_memberships')
     if (!auth.authorized) return err(auth.error, auth.status)
 
-    const rows: any[] = await db.$queryRawUnsafe(`
+    const rows: any[] = await db.$queryRaw`
       SELECT "id", "status", "currentPeriodEnd", "customerId" FROM "Membership"
-      WHERE "id" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
+      WHERE "id" = ${id} AND "locationId" = ${locationId} AND "deletedAt" IS NULL
       LIMIT 1
-    `, id, locationId)
+    `
     if (rows.length === 0) return notFound('Membership not found')
 
     const mbr = rows[0]
@@ -39,32 +39,28 @@ export const POST = withVenue(async function POST(
     }
 
     if (immediate) {
-      await db.$executeRawUnsafe(`
+      await db.$executeRaw`
         UPDATE "Membership"
         SET "status" = 'cancelled', "cancelledAt" = NOW(), "endedAt" = NOW(),
-            "cancellationReason" = $2, "version" = "version" + 1, "updatedAt" = NOW()
-        WHERE "id" = $1
-      `, id, reason || null)
+            "cancellationReason" = ${reason || null}, "version" = "version" + 1, "updatedAt" = NOW()
+        WHERE "id" = ${id}
+      `
     } else {
       // Cancel at end of current period
-      await db.$executeRawUnsafe(`
+      await db.$executeRaw`
         UPDATE "Membership"
         SET "cancelAtPeriodEnd" = true,
             "cancelEffectiveAt" = "currentPeriodEnd",
-            "cancellationReason" = $2,
+            "cancellationReason" = ${reason || null},
             "version" = "version" + 1, "updatedAt" = NOW()
-        WHERE "id" = $1
-      `, id, reason || null)
+        WHERE "id" = ${id}
+      `
     }
 
-    await db.$executeRawUnsafe(`
+    await db.$executeRaw`
       INSERT INTO "MembershipEvent" ("locationId", "membershipId", "eventType", "details", "employeeId")
-      VALUES ($1, $2, $3, $4, $5)
-    `,
-      locationId, id, MembershipEventType.CANCELLED,
-      JSON.stringify({ immediate: !!immediate, reason: reason || null }),
-      requestingEmployeeId || null
-    )
+      VALUES (${locationId}, ${id}, ${MembershipEventType.CANCELLED}, ${JSON.stringify({ immediate: !!immediate, reason: reason || null })}, ${requestingEmployeeId || null})
+    `
 
     void dispatchMembershipUpdate(locationId, {
       action: 'cancelled', membershipId: id, customerId: mbr.customerId,

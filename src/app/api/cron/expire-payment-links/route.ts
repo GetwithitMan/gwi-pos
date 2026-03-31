@@ -22,12 +22,12 @@ export async function GET(request: NextRequest) {
   const allResults: Record<string, unknown> = {}
 
   const summary = await forAllVenues(async (venueDb, slug) => {
-    const result = await venueDb.$executeRawUnsafe(`
+    const result = await venueDb.$executeRaw`
       UPDATE "PaymentLink"
       SET "status" = 'expired', "updatedAt" = NOW()
       WHERE "status" = 'pending'
         AND "expiresAt" < NOW()
-    `)
+    `
 
     const expiredCount = typeof result === 'number' ? result : 0
     allResults[slug] = { expired: expiredCount }

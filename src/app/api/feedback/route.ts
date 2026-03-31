@@ -1,8 +1,7 @@
 import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
-import { requirePermission } from '@/lib/api-auth'
-import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { createChildLogger } from '@/lib/logger'
 import { err, ok } from '@/lib/api-response'
 const log = createChildLogger('feedback')
@@ -50,7 +49,7 @@ function buildWhereClause(
 }
 
 // GET: List feedback with aggregates
-export const GET = withVenue(async function GET(request: NextRequest) {
+export const GET = withVenue(withAuth('REPORTS_VIEW', async function GET(request: NextRequest) {
   try {
     const params = request.nextUrl.searchParams
     const locationId = params.get('locationId')
@@ -59,21 +58,15 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const rating = params.get('rating') ? parseInt(params.get('rating')!) : null
     const source = params.get('source')
     const tag = params.get('tag')
-    const requestingEmployeeId = params.get('requestingEmployeeId') || params.get('employeeId')
 
     if (!locationId) {
       return err('Location ID is required')
     }
 
-    const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_VIEW)
-    if (!auth.authorized) {
-      return err(auth.error, auth.status)
-    }
-
     const { clause, values } = buildWhereClause(locationId, startDate, endDate, rating, source, tag)
 
     // Fetch feedback entries
-    const entries = await db.$queryRawUnsafe<Array<{
+    const entries = await db.$queryRaw<Array<{
       id: string
       locationId: string
       orderId: string | null
@@ -84,15 +77,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       source: string
       tags: string[]
       createdAt: Date
-    }>>(
-      `SELECT * FROM "CustomerFeedback" WHERE ${clause} ORDER BY "createdAt" DESC LIMIT 500`,
-      ...values,
-    )
+    }>>`SELECT * FROM "CustomerFeedback" WHERE ${clause} ORDER BY "createdAt" DESC LIMIT 500`
 
     // Aggregates (date-filtered only, ignoring rating/source/tag filters for global view)
     const { clause: aggClause, values: aggValues } = buildWhereClause(locationId, startDate, endDate, null, null, null)
 
-    const aggs = await db.$queryRawUnsafe<Array<{
+    const aggs = await db.$queryRaw<Array<{
       count: bigint
       avg_rating: number | null
       rating_1: bigint
@@ -102,8 +92,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       rating_5: bigint
       promoters: bigint
       detractors: bigint
-    }>>(
-      `SELECT
+    }>>`SELECT
         COUNT(*) as count,
         AVG(rating::float) as avg_rating,
         COUNT(*) FILTER (WHERE rating = 1) as rating_1,
@@ -113,9 +102,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         COUNT(*) FILTER (WHERE rating = 5) as rating_5,
         COUNT(*) FILTER (WHERE rating >= 4) as promoters,
         COUNT(*) FILTER (WHERE rating <= 2) as detractors
-       FROM "CustomerFeedback" WHERE ${aggClause}`,
-      ...aggValues,
-    )
+       FROM "CustomerFeedback" WHERE ${aggClause}`
 
     const agg = aggs[0]
     const totalCount = Number(agg?.count ?? 0)
@@ -127,12 +114,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       : 0
 
     // Top tags
-    const topTags = await db.$queryRawUnsafe<Array<{ tag: string; count: bigint }>>(
-      `SELECT unnest(tags) as tag, COUNT(*) as count
+    const topTags = await db.$queryRaw<Array<{ tag: string; count: bigint }>>`SELECT unnest(tags) as tag, COUNT(*) as count
        FROM "CustomerFeedback" WHERE ${aggClause}
-       GROUP BY tag ORDER BY count DESC LIMIT 20`,
-      ...aggValues,
-    )
+       GROUP BY tag ORDER BY count DESC LIMIT 20`
 
     return ok({
         entries,
@@ -154,7 +138,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     console.error('[feedback/GET] Error:', error)
     return err('Failed to load feedback', 500)
   }
-})
+}))
 
 // POST: Submit feedback
 export const POST = withVenue(async function POST(request: NextRequest) {
@@ -178,19 +162,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       ? tags.filter((t: string) => allowedTags.includes(t))
       : []
 
-    const result = await db.$queryRawUnsafe<Array<{ id: string }>>(
-      `INSERT INTO "CustomerFeedback" ("locationId", "orderId", "customerId", "employeeId", "rating", "comment", "source", "tags")
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8::text[])
-       RETURNING "id"`,
-      locationId,
-      orderId || null,
-      customerId || null,
-      employeeId || null,
-      rating,
-      comment || null,
-      source,
-      validTags,
-    )
+    const result = await db.$queryRaw<Array<{ id: string }>>`INSERT INTO "CustomerFeedback" ("locationId", "orderId", "customerId", "employeeId", "rating", "comment", "source", "tags")
+       VALUES (${locationId}, ${orderId || null}, ${customerId || null}, ${employeeId || null}, ${rating}, ${comment || null}, ${source}, ${validTags}::text[])
+       RETURNING "id"`
 
     // Fire-and-forget: alert on low ratings
     if (rating <= 2) {

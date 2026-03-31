@@ -3,8 +3,6 @@ import { PrinterRole } from '@/generated/prisma/client'
 import { db } from '@/lib/db'
 import { DEFAULT_KITCHEN_TEMPLATE, DEFAULT_RECEIPT_TEMPLATE } from '@/types/print'
 import { withVenue } from '@/lib/with-venue'
-import { PERMISSIONS } from '@/lib/auth-utils'
-import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { emitToLocation } from '@/lib/socket-server'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
@@ -71,12 +69,6 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     if (!name || !printerType || !ipAddress) {
       return err('Name, printer type, and IP address are required')
     }
-
-    // Auth check — require settings.hardware permission
-    const actor = await getActorFromRequest(request)
-    const resolvedEmployeeId = actor.employeeId ?? bodyEmployeeId
-    const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.SETTINGS_HARDWARE)
-    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Printer count limit check (subscription-gated)
     const { checkDeviceLimit } = await import('@/lib/device-limits')

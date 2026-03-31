@@ -28,20 +28,20 @@ export const POST = withVenue(async function POST(
     if (!auth.authorized) return err(auth.error, auth.status)
 
     // Fetch membership
-    const mbrs: any[] = await db.$queryRawUnsafe(`
+    const mbrs: any[] = await db.$queryRaw`
       SELECT * FROM "Membership"
-      WHERE "id" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL AND "status" IN ('active', 'trial')
+      WHERE "id" = ${id} AND "locationId" = ${locationId} AND "deletedAt" IS NULL AND "status" IN ('active', 'trial')
       LIMIT 1
-    `, id, locationId)
+    `
     if (mbrs.length === 0) return notFound('Active membership not found')
     const mbr = mbrs[0]
 
     // Fetch new plan
-    const plans: any[] = await db.$queryRawUnsafe(`
+    const plans: any[] = await db.$queryRaw`
       SELECT * FROM "MembershipPlan"
-      WHERE "id" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL AND "isActive" = true
+      WHERE "id" = ${newPlanId} AND "locationId" = ${locationId} AND "deletedAt" IS NULL AND "isActive" = true
       LIMIT 1
-    `, newPlanId, locationId)
+    `
     if (plans.length === 0) return notFound('New plan not found or inactive')
     const newPlan = plans[0]
 
@@ -75,26 +75,21 @@ export const POST = withVenue(async function POST(
           })
 
           // Record charge
-          await db.$executeRawUnsafe(`
+          await db.$executeRaw`
             INSERT INTO "MembershipCharge" (
               "locationId", "membershipId", "subtotalAmount", "totalAmount",
               "status", "chargeType", "isProrated", "proratedFromAmount",
               "datacapRefNo", "datacapAuthCode", "datacapToken",
               "recurringDataSent", "recurringDataReceived",
               "invoiceNo", "idempotencyKey", "processedAt"
-            ) VALUES ($1, $2, $3, $3, 'approved', 'proration', true, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
-          `,
-            locationId, id, proration.netAmount, parseFloat(mbr.priceAtSignup),
-            resp.refNo, resp.authCode || null, resp.token || null,
-            mbr.recurringData || 'Recurring', resp.recurringData || null,
-            invoiceNo, idempotencyKey
-          )
+            ) VALUES (${locationId}, ${id}, ${proration.netAmount}, ${proration.netAmount}, 'approved', 'proration', true, ${parseFloat(mbr.priceAtSignup)}, ${resp.refNo}, ${resp.authCode || null}, ${resp.token || null}, ${mbr.recurringData || 'Recurring'}, ${resp.recurringData || null}, ${invoiceNo}, ${idempotencyKey}, NOW())
+          `
 
           // Update recurring data chain
           if (resp.recurringData) {
-            await db.$executeRawUnsafe(`
-              UPDATE "Membership" SET "recurringData" = $2 WHERE "id" = $1
-            `, id, resp.recurringData)
+            await db.$executeRaw`
+              UPDATE "Membership" SET "recurringData" = ${resp.recurringData} WHERE "id" = ${id}
+            `
           }
         } catch (caughtErr) {
           if (err instanceof PayApiError) {
@@ -105,30 +100,26 @@ export const POST = withVenue(async function POST(
       }
 
       // Update plan
-      await db.$executeRawUnsafe(`
+      await db.$executeRaw`
         UPDATE "Membership"
-        SET "planId" = $2, "priceAtSignup" = $3, "billingCycle" = $4,
+        SET "planId" = ${newPlanId}, "priceAtSignup" = ${parseFloat(newPlan.price)}, "billingCycle" = ${newPlan.billingCycle},
             "version" = "version" + 1, "updatedAt" = NOW()
-        WHERE "id" = $1
-      `, id, newPlanId, parseFloat(newPlan.price), newPlan.billingCycle)
+        WHERE "id" = ${id}
+      `
     } else {
       // Next period — just update planId, price takes effect at renewal
-      await db.$executeRawUnsafe(`
+      await db.$executeRaw`
         UPDATE "Membership"
-        SET "planId" = $2, "priceAtSignup" = $3, "billingCycle" = $4,
+        SET "planId" = ${newPlanId}, "priceAtSignup" = ${parseFloat(newPlan.price)}, "billingCycle" = ${newPlan.billingCycle},
             "version" = "version" + 1, "updatedAt" = NOW()
-        WHERE "id" = $1
-      `, id, newPlanId, parseFloat(newPlan.price), newPlan.billingCycle)
+        WHERE "id" = ${id}
+      `
     }
 
-    await db.$executeRawUnsafe(`
+    await db.$executeRaw`
       INSERT INTO "MembershipEvent" ("locationId", "membershipId", "eventType", "details", "employeeId")
-      VALUES ($1, $2, $3, $4, $5)
-    `,
-      locationId, id, MembershipEventType.PLAN_CHANGED,
-      JSON.stringify({ newPlanId, effective: effectiveMode, newPrice: parseFloat(newPlan.price) }),
-      requestingEmployeeId || null
-    )
+      VALUES (${locationId}, ${id}, ${MembershipEventType.PLAN_CHANGED}, ${JSON.stringify({ newPlanId, effective: effectiveMode, newPrice: parseFloat(newPlan.price) })}, ${requestingEmployeeId || null})
+    `
 
     void dispatchMembershipUpdate(locationId, {
       action: 'enrolled', membershipId: id, customerId: mbr.customerId,

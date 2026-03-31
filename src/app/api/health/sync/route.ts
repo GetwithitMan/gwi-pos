@@ -177,21 +177,15 @@ export async function GET(req: NextRequest) {
   let deadLetterCount = 0
 
   try {
-    const [depthResult] = await masterClient.$queryRawUnsafe<[{ count: bigint }]>(
-      `SELECT COUNT(*) as count FROM "OutageQueueEntry" WHERE status = 'PENDING'`
-    )
+    const [depthResult] = await masterClient.$queryRaw<[{ count: bigint }]>`SELECT COUNT(*) as count FROM "OutageQueueEntry" WHERE status = 'PENDING'`
     queueDepth = Number(depthResult.count)
 
     if (queueDepth > 0) {
-      const [oldestResult] = await masterClient.$queryRawUnsafe<[{ age_seconds: number }]>(
-        `SELECT EXTRACT(EPOCH FROM (NOW() - MIN("createdAt")))::int as age_seconds FROM "OutageQueueEntry" WHERE status = 'PENDING'`
-      )
+      const [oldestResult] = await masterClient.$queryRaw<[{ age_seconds: number }]>`SELECT EXTRACT(EPOCH FROM (NOW() - MIN("createdAt")))::int as age_seconds FROM "OutageQueueEntry" WHERE status = 'PENDING'`
       oldestEntryAge = oldestResult.age_seconds
     }
 
-    const [dlResult] = await masterClient.$queryRawUnsafe<[{ count: bigint }]>(
-      `SELECT COUNT(*) as count FROM "OutageQueueEntry" WHERE status = 'DEAD_LETTER'`
-    )
+    const [dlResult] = await masterClient.$queryRaw<[{ count: bigint }]>`SELECT COUNT(*) as count FROM "OutageQueueEntry" WHERE status = 'DEAD_LETTER'`
     deadLetterCount = Number(dlResult.count)
   } catch {
     // OutageQueueEntry table may not exist

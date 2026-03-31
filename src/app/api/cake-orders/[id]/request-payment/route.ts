@@ -61,13 +61,9 @@ export const POST = withVenue(async function POST(
     if (gate) return gate
 
     // ── Fetch the cake order ────────────────────────────────────────────
-    const orderRows = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT "id", "status", "customerId", "customerPhone", "orderNumber", "locationId"
+    const orderRows = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT "id", "status", "customerId", "customerPhone", "orderNumber", "locationId"
        FROM "CakeOrder"
-       WHERE "id" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL`,
-      cakeOrderId,
-      locationId,
-    )
+       WHERE "id" = ${cakeOrderId} AND "locationId" = ${locationId} AND "deletedAt" IS NULL`
 
     if (!orderRows || orderRows.length === 0) {
       return NextResponse.json(
@@ -111,19 +107,15 @@ export const POST = withVenue(async function POST(
 
     // ── Idempotency check ───────────────────────────────────────────────
     // Check for existing pending PaymentLink for same (cakeOrderId, appliedTo)
-    const existingLinks = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT pl."token", pl."amount", pl."status"
+    const existingLinks = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT pl."token", pl."amount", pl."status"
        FROM "PaymentLink" pl
        JOIN "Order" o ON o."id" = pl."orderId"
-       WHERE o."metadata"->>'cakeOrderId' = $1
-         AND o."metadata"->>'appliedTo' = $2
+       WHERE o."metadata"->>'cakeOrderId' = ${cakeOrderId}
+         AND o."metadata"->>'appliedTo' = ${input.appliedTo}
          AND pl."status" = 'pending'
          AND pl."expiresAt" > NOW()
        ORDER BY pl."createdAt" DESC
-       LIMIT 1`,
-      cakeOrderId,
-      input.appliedTo,
-    )
+       LIMIT 1`
 
     if (existingLinks && existingLinks.length > 0) {
       const existingLink = existingLinks[0]

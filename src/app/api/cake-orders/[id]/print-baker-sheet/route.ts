@@ -46,8 +46,7 @@ export const POST = withVenue(async function POST(
     if (gate) return gate
 
     // ── Fetch CakeOrder + Customer ────────────────────────────────────
-    const orders = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT co.*,
+    const orders = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT co.*,
               c."firstName" AS "customerFirstName",
               c."lastName" AS "customerLastName",
               c."phone" AS "customerPhone",
@@ -55,11 +54,8 @@ export const POST = withVenue(async function POST(
               c."allergies" AS "customerAllergies"
        FROM "CakeOrder" co
        LEFT JOIN "Customer" c ON c."id" = co."customerId"
-       WHERE co."id" = $1 AND co."locationId" = $2 AND co."deletedAt" IS NULL
-       LIMIT 1`,
-      id,
-      locationId,
-    )
+       WHERE co."id" = ${id} AND co."locationId" = ${locationId} AND co."deletedAt" IS NULL
+       LIMIT 1`
 
     if (orders.length === 0) {
       return notFound('Cake order not found')
@@ -137,23 +133,16 @@ export const POST = withVenue(async function POST(
     let printer: { id: string; ipAddress: string; port: number } | null = null
 
     if (body.printerId) {
-      const rows: any[] = await db.$queryRawUnsafe(
-        `SELECT id, "ipAddress", port FROM "Printer"
-         WHERE id = $1 AND "locationId" = $2 AND "isActive" = true LIMIT 1`,
-        body.printerId,
-        locationId,
-      )
+      const rows: any[] = await db.$queryRaw`SELECT id, "ipAddress", port FROM "Printer"
+         WHERE id = ${body.printerId} AND "locationId" = ${locationId} AND "isActive" = true LIMIT 1`
       if (rows.length > 0) printer = rows[0]
     }
 
     // Fallback: first active receipt printer
     if (!printer) {
-      const rows: any[] = await db.$queryRawUnsafe(
-        `SELECT id, "ipAddress", port FROM "Printer"
-         WHERE "locationId" = $1 AND "isActive" = true AND "printerRole" = 'receipt'
-         ORDER BY "createdAt" ASC LIMIT 1`,
-        locationId,
-      )
+      const rows: any[] = await db.$queryRaw`SELECT id, "ipAddress", port FROM "Printer"
+         WHERE "locationId" = ${locationId} AND "isActive" = true AND "printerRole" = 'receipt'
+         ORDER BY "createdAt" ASC LIMIT 1`
       if (rows.length > 0) printer = rows[0]
     }
 
@@ -171,12 +160,8 @@ export const POST = withVenue(async function POST(
 
     // ── Log print job ─────────────────────────────────────────────────
     try {
-      await db.$queryRawUnsafe(
-        `INSERT INTO "PrintJob" (id, "locationId", "printerId", "jobType", "status", "createdAt", "updatedAt")
-         VALUES (gen_random_uuid()::text, $1, $2, 'cake_baker_sheet', 'completed', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-        locationId,
-        printer.id,
-      )
+      await db.$queryRaw`INSERT INTO "PrintJob" (id, "locationId", "printerId", "jobType", "status", "createdAt", "updatedAt")
+         VALUES (gen_random_uuid()::text, ${locationId}, ${printer.id}, 'cake_baker_sheet', 'completed', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
     } catch {
       // Non-critical — log but don't fail
     }

@@ -4,8 +4,6 @@ import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withVenue } from '@/lib/with-venue'
-import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
-import { PERMISSIONS } from '@/lib/auth-utils'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { err, ok } from '@/lib/api-response'
 
@@ -177,12 +175,6 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     if (!locationId || !name) {
       return err('Location ID and name are required')
     }
-
-    // Auth check — require tables.edit permission
-    const actor = await getActorFromRequest(request)
-    const resolvedEmployeeId = actor.employeeId ?? body.employeeId
-    const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.TABLES_EDIT)
-    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Check for duplicate table name across ALL rooms/sections in this location
     const duplicate = await db.table.findFirst({

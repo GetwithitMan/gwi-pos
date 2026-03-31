@@ -16,6 +16,7 @@
  *   }).catch((err) => log.error({ err }, 'logVenueEvent failed'))
  */
 
+import { Prisma } from '@/generated/prisma/client'
 import { db } from './db'
 import { getLocationId } from './location-cache'
 import { createChildLogger } from '@/lib/logger'
@@ -57,18 +58,9 @@ export async function logVenueEvent(entry: VenueLogEntry): Promise<void> {
     // Sanitize: strip any sensitive-looking keys from details
     const sanitizedDetails = entry.details ? sanitizeDetails(entry.details) : undefined
 
-    await db.$executeRawUnsafe(
-      `INSERT INTO "VenueLog" ("id", "locationId", "level", "source", "category", "message", "details", "employeeId", "deviceId", "stackTrace", "createdAt", "expiresAt")
-       VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, NOW(), NOW() + INTERVAL '30 days')`,
-      locationId,
-      entry.level,
-      entry.source,
-      entry.category,
-      entry.message.slice(0, 2000), // Cap message length
-      sanitizedDetails ? JSON.stringify(sanitizedDetails) : null,
-      entry.employeeId || null,
-      entry.deviceId || null,
-      entry.stackTrace?.slice(0, 10000) || null
+    await db.$executeRaw(
+      Prisma.sql`INSERT INTO "VenueLog" ("id", "locationId", "level", "source", "category", "message", "details", "employeeId", "deviceId", "stackTrace", "createdAt", "expiresAt")
+       VALUES (gen_random_uuid()::text, ${locationId}, ${entry.level}, ${entry.source}, ${entry.category}, ${entry.message.slice(0, 2000)}, ${sanitizedDetails ? JSON.stringify(sanitizedDetails) : null}::jsonb, ${entry.employeeId || null}, ${entry.deviceId || null}, ${entry.stackTrace?.slice(0, 10000) || null}, NOW(), NOW() + INTERVAL '30 days')`,
     )
 
     // Notify diagnostics UI via socket (fire-and-forget, dynamic import to avoid circular deps)
@@ -130,6 +122,7 @@ export async function logVenueEventsBatch(
         paramIdx += 9
       }
 
+      // eslint-disable-next-line -- $executeRawUnsafe required: dynamic batch placeholder count with numbered params
       await db.$executeRawUnsafe(
         `INSERT INTO "VenueLog" ("id", "locationId", "level", "source", "category", "message", "details", "employeeId", "deviceId", "stackTrace", "createdAt", "expiresAt")
          VALUES ${placeholders.join(', ')}`,
@@ -151,8 +144,8 @@ export async function logVenueEventsBatch(
  */
 export async function cleanupExpiredLogs(): Promise<number> {
   try {
-    const result = await db.$executeRawUnsafe(
-      `DELETE FROM "VenueLog" WHERE "expiresAt" < NOW()`
+    const result = await db.$executeRaw(
+      Prisma.sql`DELETE FROM "VenueLog" WHERE "expiresAt" < NOW()`
     )
     return typeof result === 'number' ? result : 0
   } catch (err) {

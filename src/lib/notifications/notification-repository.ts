@@ -2,8 +2,9 @@
  * Notification Repository
  *
  * Raw SQL helpers for the worker hot path.
- * Uses $queryRawUnsafe / $executeRawUnsafe for performance-critical operations.
- * All returns are typed.
+ * Uses $queryRawUnsafe / $executeRawUnsafe for performance-critical operations
+ * on NotificationJob table (raw SQL, not Prisma-managed).
+ * All queries use positional $1/$2 params — safe from injection.
  */
 
 import type { PrismaClient } from '@/generated/prisma/client'

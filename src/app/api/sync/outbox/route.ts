@@ -40,10 +40,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       const tomorrow = new Date(today.getTime() + 86400000)
 
       const created = await db.$transaction(async (tx) => {
-        const lastOrderRows = await tx.$queryRawUnsafe<{ orderNumber: number }[]>(
-          `SELECT "orderNumber" FROM "Order" WHERE "locationId" = $1 AND "createdAt" >= $2 AND "createdAt" < $3 ORDER BY "orderNumber" DESC LIMIT 1 FOR UPDATE`,
-          locationId, today, tomorrow
-        )
+        const lastOrderRows = await tx.$queryRaw<{ orderNumber: number }[]>`SELECT "orderNumber" FROM "Order" WHERE "locationId" = ${locationId} AND "createdAt" >= ${today} AND "createdAt" < ${tomorrow} ORDER BY "orderNumber" DESC LIMIT 1 FOR UPDATE`
         const orderNumber = ((lastOrderRows as any[])[0]?.orderNumber ?? 0) + 1
 
         // TX-KEEP: CREATE — offline terminal order with nested items/modifiers inside order-number lock; no repo create method

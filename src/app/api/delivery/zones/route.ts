@@ -36,11 +36,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const featureGate = await requireDeliveryFeature(locationId)
     if (featureGate) return featureGate
 
-    const zones: any[] = await db.$queryRawUnsafe(`
+    const zones: any[] = await db.$queryRaw`
       SELECT * FROM "DeliveryZone"
-      WHERE "locationId" = $1 AND "deletedAt" IS NULL
+      WHERE "locationId" = ${locationId} AND "deletedAt" IS NULL
       ORDER BY "sortOrder" ASC
-    `, locationId)
+    `
 
     // Convert Decimal fields to numbers
     const enriched = zones.map(z => ({
@@ -172,7 +172,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // --- Insert ---
 
-    const inserted: any[] = await db.$queryRawUnsafe(`
+    const inserted: any[] = await db.$queryRaw`
       INSERT INTO "DeliveryZone" (
         "id", "locationId", "name", "zoneType", "deliveryFee", "minimumOrder",
         "estimatedMinutes", "sortOrder", "isActive",
@@ -181,28 +181,15 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         "createdAt", "updatedAt"
       )
       VALUES (
-        gen_random_uuid()::text, $1, $2, $3, $4, $5,
-        $6, $7, $8,
-        $9, $10, $11,
-        $12::jsonb, $13::text[],
+        gen_random_uuid()::text, ${locationId}, ${sanitizedName}, ${zoneType}, ${fee}, ${minOrder},
+        ${estMinutes}, ${sortOrder ?? 0}, ${isActive !== false},
+        ${// default true
+      zoneType === 'radius' ? Number(centerLat) : null}, ${zoneType === 'radius' ? Number(centerLng) : null}, ${zoneType === 'radius' ? Number(radiusMiles) : null},
+        ${zoneType === 'polygon' ? JSON.stringify(polygonJson) : null}::jsonb, ${zoneType === 'zipcode' ? zipCodes : null}::text[],
         CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
       )
       RETURNING *
-    `,
-      locationId,
-      sanitizedName,
-      zoneType,
-      fee,
-      minOrder,
-      estMinutes,
-      sortOrder ?? 0,
-      isActive !== false, // default true
-      zoneType === 'radius' ? Number(centerLat) : null,
-      zoneType === 'radius' ? Number(centerLng) : null,
-      zoneType === 'radius' ? Number(radiusMiles) : null,
-      zoneType === 'polygon' ? JSON.stringify(polygonJson) : null,
-      zoneType === 'zipcode' ? zipCodes : null,
-    )
+    `
 
     const zone = inserted[0]
 

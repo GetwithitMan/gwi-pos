@@ -86,11 +86,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     // Get total count for pagination
-    const countResult: any[] = await db.$queryRawUnsafe(`
+    const countResult: any[] = await db.$queryRaw`
       SELECT COUNT(*)::int as total
       FROM "DeliveryAuditLog" al
       ${whereClause}
-    `, ...params)
+    `
 
     const total = countResult[0]?.total ?? 0
 
@@ -99,7 +99,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const offsetParamIdx = paramIdx + 1
     params.push(limit, offset)
 
-    const rows: any[] = await db.$queryRawUnsafe(`
+    const rows: any[] = await db.$queryRaw`
       SELECT al.*,
              e."firstName" as "employeeFirstName",
              e."lastName" as "employeeLastName"
@@ -108,7 +108,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       ${whereClause}
       ORDER BY al."createdAt" DESC
       LIMIT $${limitParamIdx} OFFSET $${offsetParamIdx}
-    `, ...params)
+    `
 
     const entries = rows.map(row => ({
       ...row,

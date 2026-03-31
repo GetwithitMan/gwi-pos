@@ -42,7 +42,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       return err('Location ID is required')
     }
 
-    const rows = await db.$queryRawUnsafe<UpsellRuleRow[]>(`
+    const rows = await db.$queryRaw<UpsellRuleRow[]>`
       SELECT r.*,
         ti."name" as "triggerItemName",
         si."name" as "suggestItemName",
@@ -54,9 +54,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       LEFT JOIN "MenuItem" si ON r."suggestItemId" = si."id"
       LEFT JOIN "Category" tc ON r."triggerCategoryId" = tc."id"
       LEFT JOIN "Category" sc ON r."suggestCategoryId" = sc."id"
-      WHERE r."locationId" = $1 AND r."deletedAt" IS NULL
+      WHERE r."locationId" = ${locationId} AND r."deletedAt" IS NULL
       ORDER BY r."priority" DESC, r."name" ASC
-    `, locationId)
+    `
 
     return ok(rows.map(serializeRule))
   } catch (error) {
@@ -100,31 +100,16 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       return err(`Invalid triggerType. Must be one of: ${validTriggerTypes.join(', ')}`)
     }
 
-    const rows = await db.$queryRawUnsafe<UpsellRuleRow[]>(`
+    const rows = await db.$queryRaw<UpsellRuleRow[]>`
       INSERT INTO "UpsellRule" (
         "locationId", "name", "triggerType",
         "triggerItemId", "triggerCategoryId", "triggerMinTotal",
         "triggerTimeStart", "triggerTimeEnd", "triggerDaysOfWeek",
         "suggestItemId", "suggestCategoryId",
         "message", "priority", "isActive"
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::int[], $10, $11, $12, $13, $14)
+      ) VALUES (${locationId}, ${name}, ${triggerType}, ${triggerItemId || null}, ${triggerCategoryId || null}, ${triggerMinTotal != null ? triggerMinTotal : null}, ${triggerTimeStart || null}, ${triggerTimeEnd || null}, ${triggerDaysOfWeek && triggerDaysOfWeek.length > 0 ? triggerDaysOfWeek : null}::int[], ${suggestItemId || null}, ${suggestCategoryId || null}, ${message || ''}, ${priority ?? 0}, ${isActive !== false})
       RETURNING *
-    `,
-      locationId,
-      name,
-      triggerType,
-      triggerItemId || null,
-      triggerCategoryId || null,
-      triggerMinTotal != null ? triggerMinTotal : null,
-      triggerTimeStart || null,
-      triggerTimeEnd || null,
-      triggerDaysOfWeek && triggerDaysOfWeek.length > 0 ? triggerDaysOfWeek : null,
-      suggestItemId || null,
-      suggestCategoryId || null,
-      message || '',
-      priority ?? 0,
-      isActive !== false,
-    )
+    `
 
     return ok(serializeRule(rows[0]))
   } catch (error) {

@@ -1,6 +1,7 @@
 // Server-side API authentication and permission checking
 // Uses the same hasPermission() logic as client-side, but validates against DB
 
+import { Prisma } from '@/generated/prisma/client'
 import { cookies } from 'next/headers'
 import { db } from './db'
 import { getRequestPrisma } from './request-context'
@@ -144,8 +145,8 @@ async function getCloudSessionEmployee(): Promise<{ employeeId: string | null; l
       // The db proxy triggers tenant scope extension which can deadlock.
       const prisma = getRequestPrisma() || db
       if (prisma) {
-        const rows = await (prisma as any).$queryRawUnsafe(
-          'SELECT id FROM "Location" WHERE "deletedAt" IS NULL ORDER BY "createdAt" ASC LIMIT 1'
+        const rows = await (prisma as any).$queryRaw(
+          Prisma.sql`SELECT id FROM "Location" WHERE "deletedAt" IS NULL ORDER BY "createdAt" ASC LIMIT 1`
         ) as Array<{ id: string }>
         locationId = rows[0]?.id
       }

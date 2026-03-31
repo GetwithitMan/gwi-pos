@@ -19,12 +19,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       return err('No location found')
     }
 
-    const snapshots: any[] = await db.$queryRawUnsafe(`
+    const snapshots: any[] = await db.$queryRaw`
       SELECT id, label, "createdByName", "itemCount", "categoryCount", "createdAt"
       FROM "MenuSnapshot"
-      WHERE "locationId" = $1
+      WHERE "locationId" = ${locationId}
       ORDER BY "createdAt" DESC
-    `, locationId)
+    `
 
     return ok(snapshots)
   } catch (error) {
@@ -73,37 +73,29 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const snapshotData = await captureMenuSnapshot(locationId)
 
     // Enforce max snapshots — delete oldest when exceeded
-    const countResult: any[] = await db.$queryRawUnsafe(`
-      SELECT COUNT(*)::int as count FROM "MenuSnapshot" WHERE "locationId" = $1
-    `, locationId)
+    const countResult: any[] = await db.$queryRaw`
+      SELECT COUNT(*)::int as count FROM "MenuSnapshot" WHERE "locationId" = ${locationId}
+    `
     const existingCount = countResult[0]?.count ?? 0
 
     if (existingCount >= restoreConfig.maxSnapshots) {
       const deleteCount = existingCount - restoreConfig.maxSnapshots + 1
-      await db.$queryRawUnsafe(`
+      await db.$queryRaw`
         DELETE FROM "MenuSnapshot"
         WHERE id IN (
           SELECT id FROM "MenuSnapshot"
-          WHERE "locationId" = $1
+          WHERE "locationId" = ${locationId}
           ORDER BY "createdAt" ASC
-          LIMIT $2
+          LIMIT ${deleteCount}
         )
-      `, locationId, deleteCount)
+      `
     }
 
-    const inserted: any[] = await db.$queryRawUnsafe(`
+    const inserted: any[] = await db.$queryRaw`
       INSERT INTO "MenuSnapshot" ("locationId", label, "createdById", "createdByName", "itemCount", "categoryCount", data)
-      VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
+      VALUES (${locationId}, ${label}, ${employeeId}, ${employeeName}, ${snapshotData.items.length}, ${snapshotData.categories.length}, ${JSON.stringify(snapshotData)}::jsonb)
       RETURNING id, label, "createdByName", "itemCount", "categoryCount", "createdAt"
-    `,
-      locationId,
-      label,
-      employeeId,
-      employeeName,
-      snapshotData.items.length,
-      snapshotData.categories.length,
-      JSON.stringify(snapshotData)
-    )
+    `
 
     return created(inserted[0])
   } catch (error) {

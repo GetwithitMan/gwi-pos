@@ -168,6 +168,7 @@ export const NO_SOFT_DELETE_MODELS = new Set([
  * @param options.failOnStale — When true (production/staging), throws if any
  *   stale entries are found. When false (dev), logs a warning only.
  */
+// eslint-disable-next-line -- $queryRawUnsafe required: interface contract for generic DB client
 export async function validateTenantModelSets(
   db: { $queryRawUnsafe: <T = unknown>(query: string, ...values: unknown[]) => Promise<T> },
   options: { failOnStale?: boolean } = {}

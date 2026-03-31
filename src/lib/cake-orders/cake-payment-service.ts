@@ -6,6 +6,10 @@
  *
  * All cake tables are raw SQL (not Prisma-managed).
  * All amounts are in dollars (matching POS convention).
+ *
+ * NOTE: Uses $queryRawUnsafe/$executeRawUnsafe because cake tables (CakeOrder,
+ * CakePayment, CakeOrderChange) are not in the Prisma schema. DbClient interface
+ * requires the Unsafe API. All queries use positional $1/$2 params — safe from injection.
  */
 
 import crypto from 'crypto'

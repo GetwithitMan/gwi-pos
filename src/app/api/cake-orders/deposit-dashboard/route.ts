@@ -70,8 +70,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     // Fetch one extra to determine hasMore
     params.push(take + 1)
-    const orders = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT
+    const orders = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT
          co."id",
          co."orderNumber",
          co."status",
@@ -95,9 +94,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
        LEFT JOIN "Customer" c ON c."id" = co."customerId"
        WHERE ${whereClause}
        ORDER BY co."eventDate" ASC, co."id" ASC
-       LIMIT $${paramIdx}`,
-      ...params,
-    )
+       LIMIT $${paramIdx}`
 
     const hasMore = orders.length > take
     const page = hasMore ? orders.slice(0, take) : orders

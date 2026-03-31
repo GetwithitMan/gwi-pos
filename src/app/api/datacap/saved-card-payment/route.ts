@@ -49,18 +49,15 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Look up the saved card — retrieve token for processing
-    const savedCards = await db.$queryRawUnsafe<Array<{
+    const savedCards = await db.$queryRaw<Array<{
       id: string
       token: string
       last4: string
       cardBrand: string
       customerId: string
-    }>>(
-      `SELECT id, token, last4, "cardBrand", "customerId"
+    }>>`SELECT id, token, last4, "cardBrand", "customerId"
        FROM "SavedCard"
-       WHERE id = $1 AND "locationId" = $2 AND "deletedAt" IS NULL LIMIT 1`,
-      savedCardId, locationId
-    )
+       WHERE id = ${savedCardId} AND "locationId" = ${locationId} AND "deletedAt" IS NULL LIMIT 1`
 
     if (!savedCards.length) {
       return notFound('Saved card not found')
@@ -94,12 +91,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     if (!readerId) {
       // Try to find any active reader for this location
-      const reader = await db.$queryRawUnsafe<Array<{ id: string }>>(
-        `SELECT id FROM "PaymentReader"
-         WHERE "locationId" = $1 AND "isActive" = true AND "deletedAt" IS NULL
-         LIMIT 1`,
-        locationId
-      )
+      const reader = await db.$queryRaw<Array<{ id: string }>>`SELECT id FROM "PaymentReader"
+         WHERE "locationId" = ${locationId} AND "isActive" = true AND "deletedAt" IS NULL
+         LIMIT 1`
       readerId = reader[0]?.id ?? null
     }
 

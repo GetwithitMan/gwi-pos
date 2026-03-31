@@ -21,17 +21,17 @@ export const GET = withVenue(async function GET(
     const auth = await requirePermission(employeeId, locationId, 'admin.manage_memberships')
     if (!auth.authorized) return err(auth.error, auth.status)
 
-    const rows: any[] = await db.$queryRawUnsafe(`
+    const rows: any[] = await db.$queryRaw`
       SELECT * FROM "MembershipEvent"
-      WHERE "membershipId" = $1 AND "locationId" = $2
+      WHERE "membershipId" = ${id} AND "locationId" = ${locationId}
       ORDER BY "createdAt" DESC
-      LIMIT $3 OFFSET $4
-    `, id, locationId, limit, offset)
+      LIMIT ${limit} OFFSET ${offset}
+    `
 
-    const countResult: any[] = await db.$queryRawUnsafe(`
+    const countResult: any[] = await db.$queryRaw`
       SELECT COUNT(*)::int AS "total" FROM "MembershipEvent"
-      WHERE "membershipId" = $1 AND "locationId" = $2
-    `, id, locationId)
+      WHERE "membershipId" = ${id} AND "locationId" = ${locationId}
+    `
 
     return NextResponse.json({ data: rows, total: countResult[0]?.total ?? 0 })
   } catch (caughtErr) {

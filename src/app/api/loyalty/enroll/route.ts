@@ -39,12 +39,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Find program — if programId not given, use the location's active program
     let resolvedProgramId = programId
     if (!resolvedProgramId) {
-      const programs = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-        `SELECT "id" FROM "LoyaltyProgram"
-         WHERE "locationId" = $1 AND "isActive" = true AND "deletedAt" IS NULL
-         LIMIT 1`,
-        locationId,
-      )
+      const programs = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT "id" FROM "LoyaltyProgram"
+         WHERE "locationId" = ${locationId} AND "isActive" = true AND "deletedAt" IS NULL
+         LIMIT 1`
       if (programs.length === 0) {
         return notFound('No active loyalty program found')
       }
@@ -52,13 +49,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Check customer exists and is not already enrolled
-    const customers = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT "id", "loyaltyProgramId", "loyaltyPoints", "locationId"
+    const customers = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT "id", "loyaltyProgramId", "loyaltyPoints", "locationId"
        FROM "Customer"
-       WHERE "id" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL`,
-      customerId,
-      locationId,
-    )
+       WHERE "id" = ${customerId} AND "locationId" = ${locationId} AND "deletedAt" IS NULL`
 
     if (customers.length === 0) {
       return notFound('Customer not found')
@@ -71,21 +64,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Enroll the customer
-    await db.$executeRawUnsafe(
-      `UPDATE "Customer"
-       SET "loyaltyProgramId" = $2,
+    await db.$executeRaw`UPDATE "Customer"
+       SET "loyaltyProgramId" = ${resolvedProgramId},
            "loyaltyEnrolledAt" = NOW(),
            "updatedAt" = NOW()
-       WHERE "id" = $1`,
-      customerId,
-      resolvedProgramId,
-    )
+       WHERE "id" = ${customerId}`
 
     // Award welcome bonus if configured
-    const locationRows = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT "settings" FROM "Location" WHERE "id" = $1`,
-      locationId,
-    )
+    const locationRows = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT "settings" FROM "Location" WHERE "id" = ${locationId}`
     const settings = parseSettings(locationRows[0]?.settings)
     const welcomeBonus = settings.loyalty.welcomeBonus || 0
 
@@ -93,30 +79,17 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       const currentPoints = Number(customer.loyaltyPoints ?? 0)
       const txnId = crypto.randomUUID()
 
-      await db.$executeRawUnsafe(
-        `INSERT INTO "LoyaltyTransaction" (
+      const description = `Welcome bonus: ${welcomeBonus} points`
+      await db.$executeRaw`INSERT INTO "LoyaltyTransaction" (
           "id", "customerId", "locationId", "type", "points",
           "balanceBefore", "balanceAfter", "description", "employeeId", "createdAt"
-        ) VALUES ($1, $2, $3, 'welcome', $4, $5, $6, $7, $8, NOW())`,
-        txnId,
-        customerId,
-        locationId,
-        welcomeBonus,
-        currentPoints,
-        currentPoints + welcomeBonus,
-        `Welcome bonus: ${welcomeBonus} points`,
-        employeeId || null,
-      )
+        ) VALUES (${txnId}, ${customerId}, ${locationId}, 'welcome', ${welcomeBonus}, ${currentPoints}, ${currentPoints + welcomeBonus}, ${description}, ${employeeId || null}, NOW())`
 
-      await db.$executeRawUnsafe(
-        `UPDATE "Customer"
-         SET "loyaltyPoints" = "loyaltyPoints" + $2,
-             "lifetimePoints" = "lifetimePoints" + $2,
+      await db.$executeRaw`UPDATE "Customer"
+         SET "loyaltyPoints" = "loyaltyPoints" + ${welcomeBonus},
+             "lifetimePoints" = "lifetimePoints" + ${welcomeBonus},
              "updatedAt" = NOW()
-         WHERE "id" = $1`,
-        customerId,
-        welcomeBonus,
-      )
+         WHERE "id" = ${customerId}`
     }
 
     pushUpstream()

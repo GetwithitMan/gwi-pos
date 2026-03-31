@@ -83,54 +83,42 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Load categories
-    const categories = await db.$queryRawUnsafe<Array<{ id: string; name: string }>>(
-      `SELECT id, name FROM "Category"
-       WHERE "locationId" = $1 AND "deletedAt" IS NULL`,
-      locationId,
-    )
+    const categories = await db.$queryRaw<Array<{ id: string; name: string }>>`SELECT id, name FROM "Category"
+       WHERE "locationId" = ${locationId} AND "deletedAt" IS NULL`
     const categoryMap = new Map(categories.map(c => [c.id, c.name]))
 
     // Load active menu items
-    const menuItems = await db.$queryRawUnsafe<Array<{
+    const menuItems = await db.$queryRaw<Array<{
       id: string
       name: string
       description: string | null
       price: number | string
       categoryId: string
-    }>>(
-      `SELECT id, name, description, price, "categoryId"
+    }>>`SELECT id, name, description, price, "categoryId"
        FROM "MenuItem"
-       WHERE "locationId" = $1 AND "deletedAt" IS NULL AND "isActive" = true`,
-      locationId,
-    )
+       WHERE "locationId" = ${locationId} AND "deletedAt" IS NULL AND "isActive" = true`
 
     // Load modifier groups + modifiers for all items in one query
-    const modifierGroups = await db.$queryRawUnsafe<Array<{
+    const modifierGroups = await db.$queryRaw<Array<{
       id: string
       name: string
       menuItemId: string | null
       minSelections: number
       maxSelections: number
-    }>>(
-      `SELECT mg.id, mg.name, mg."menuItemId", mg."minSelections", mg."maxSelections"
+    }>>`SELECT mg.id, mg.name, mg."menuItemId", mg."minSelections", mg."maxSelections"
        FROM "ModifierGroup" mg
-       WHERE mg."locationId" = $1 AND mg."deletedAt" IS NULL`,
-      locationId,
-    )
+       WHERE mg."locationId" = ${locationId} AND mg."deletedAt" IS NULL`
 
-    const modifiers = await db.$queryRawUnsafe<Array<{
+    const modifiers = await db.$queryRaw<Array<{
       id: string
       name: string
       price: number | string
       modifierGroupId: string
       isActive: boolean
-    }>>(
-      `SELECT m.id, m.name, m.price, m."modifierGroupId", m."isActive"
+    }>>`SELECT m.id, m.name, m.price, m."modifierGroupId", m."isActive"
        FROM "Modifier" m
        JOIN "ModifierGroup" mg ON mg.id = m."modifierGroupId"
-       WHERE mg."locationId" = $1 AND m."deletedAt" IS NULL`,
-      locationId,
-    )
+       WHERE mg."locationId" = ${locationId} AND m."deletedAt" IS NULL`
 
     // Build modifier group map keyed by menuItemId
     const modsByGroup = new Map<string, typeof modifiers>()

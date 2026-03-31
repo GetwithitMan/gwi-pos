@@ -64,18 +64,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Transactional auto-assign with FOR UPDATE SKIP LOCKED
     const result = await db.$transaction(async (tx) => {
       // Check if subject already has an active assignment of this target family (inside tx)
-      const existingAssignment: any[] = await tx.$queryRawUnsafe(
-        `SELECT nta.id, nta."targetValue", nta."targetType"
+      const existingAssignment: any[] = await tx.$queryRaw`SELECT nta.id, nta."targetValue", nta."targetType"
          FROM "NotificationTargetAssignment" nta
-         WHERE nta."locationId" = $1
-           AND nta."subjectType" = $2
-           AND nta."subjectId" = $3
+         WHERE nta."locationId" = ${locationId}
+           AND nta."subjectType" = ${subjectType}
+           AND nta."subjectId" = ${subjectId}
            AND nta.status = 'active'
-           AND nta."targetType" IN ('guest_pager', 'staff_pager')`,
-        locationId,
-        subjectType,
-        subjectId
-      )
+           AND nta."targetType" IN ('guest_pager', 'staff_pager')`
 
       if (existingAssignment.length > 0) {
         if (!replaceExisting) {
@@ -90,73 +85,46 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         const oldDeviceNumber = existingAssignment[0].targetValue
 
         // 1. Release the target assignment
-        await tx.$executeRawUnsafe(
-          `UPDATE "NotificationTargetAssignment"
+        await tx.$executeRaw`UPDATE "NotificationTargetAssignment"
            SET status = 'released',
                "releasedAt" = CURRENT_TIMESTAMP,
                "releaseReason" = 'replaced',
                "updatedAt" = CURRENT_TIMESTAMP
-           WHERE "locationId" = $1
-             AND "subjectType" = $2
-             AND "subjectId" = $3
+           WHERE "locationId" = ${locationId}
+             AND "subjectType" = ${subjectType}
+             AND "subjectId" = ${subjectId}
              AND status = 'active'
-             AND "targetType" IN ('guest_pager', 'staff_pager')`,
-          locationId,
-          subjectType,
-          subjectId
-        )
+             AND "targetType" IN ('guest_pager', 'staff_pager')`
 
         // 2. Mark the old device as released
-        const oldDevices: any[] = await tx.$queryRawUnsafe(
-          `UPDATE "NotificationDevice"
+        const oldDevices: any[] = await tx.$queryRaw`UPDATE "NotificationDevice"
            SET status = 'released',
                "releasedAt" = CURRENT_TIMESTAMP,
                "updatedAt" = CURRENT_TIMESTAMP
-           WHERE "locationId" = $1
-             AND "deviceNumber" = $2
+           WHERE "locationId" = ${locationId}
+             AND "deviceNumber" = ${oldDeviceNumber}
              AND status = 'assigned'
-             AND "assignedToSubjectType" = $3
-             AND "assignedToSubjectId" = $4
+             AND "assignedToSubjectType" = ${subjectType}
+             AND "assignedToSubjectId" = ${subjectId}
              AND "deletedAt" IS NULL
-           RETURNING id`,
-          locationId,
-          oldDeviceNumber,
-          subjectType,
-          subjectId
-        )
+           RETURNING id`
 
         // 3. Clear pagerNumber cache on the subject
         if (subjectType === 'order') {
-          await tx.$executeRawUnsafe(
-            `UPDATE "Order" SET "pagerNumber" = NULL WHERE id = $1 AND "locationId" = $2`,
-            subjectId,
-            locationId
-          )
+          await tx.$executeRaw`UPDATE "Order" SET "pagerNumber" = NULL WHERE id = ${subjectId} AND "locationId" = ${locationId}`
         } else if (subjectType === 'waitlist_entry') {
-          await tx.$executeRawUnsafe(
-            `UPDATE "WaitlistEntry" SET "pagerNumber" = NULL WHERE id = $1 AND "locationId" = $2`,
-            subjectId,
-            locationId
-          )
+          await tx.$executeRaw`UPDATE "WaitlistEntry" SET "pagerNumber" = NULL WHERE id = ${subjectId} AND "locationId" = ${locationId}`
         }
 
         // 4. Log the release event
         if (oldDevices.length > 0) {
-          await tx.$executeRawUnsafe(
-            `INSERT INTO "NotificationDeviceEvent" (
+          await tx.$executeRaw`INSERT INTO "NotificationDeviceEvent" (
               id, "deviceId", "locationId", "eventType",
               "subjectType", "subjectId", "employeeId", metadata, "createdAt"
             ) VALUES (
-              gen_random_uuid()::text, $1, $2, 'released',
-              $3, $4, $5, $6::jsonb, CURRENT_TIMESTAMP
-            )`,
-            oldDevices[0].id,
-            locationId,
-            subjectType,
-            subjectId,
-            auth.employee.id,
-            JSON.stringify({ reason: 'replaced', oldDeviceNumber, replaceExisting: true })
-          )
+              gen_random_uuid()::text, ${oldDevices[0].id}, ${locationId}, 'released',
+              ${subjectType}, ${subjectId}, ${auth.employee.id}, ${JSON.stringify({ reason: 'replaced', oldDeviceNumber, replaceExisting: true })}::jsonb, CURRENT_TIMESTAMP
+            )`
         }
       }
 
@@ -164,20 +132,15 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
       if (deviceNumber) {
         // Specific device requested
-        const devices: any[] = await tx.$queryRawUnsafe(
-          `SELECT id, "deviceNumber", "providerId", "deviceType"
+        const devices: any[] = await tx.$queryRaw`SELECT id, "deviceNumber", "providerId", "deviceType"
            FROM "NotificationDevice"
-           WHERE "locationId" = $1
-             AND "deviceNumber" = $2
-             AND "deviceType" = $3
+           WHERE "locationId" = ${locationId}
+             AND "deviceNumber" = ${deviceNumber}
+             AND "deviceType" = ${deviceType}
              AND status = 'available'
              AND "deletedAt" IS NULL
            FOR UPDATE SKIP LOCKED
-           LIMIT 1`,
-          locationId,
-          deviceNumber,
-          deviceType
-        )
+           LIMIT 1`
         device = devices[0]
         if (!device) {
           throw { code: 'DEVICE_UNAVAILABLE', message: `Device ${deviceNumber} is not available` }
@@ -186,34 +149,25 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         // Auto-select lowest-numbered available device
         // Use parameterized query to prevent SQL injection on providerId
         const devices: any[] = providerId
-          ? await tx.$queryRawUnsafe(
-              `SELECT id, "deviceNumber", "providerId", "deviceType"
+          ? await tx.$queryRaw`SELECT id, "deviceNumber", "providerId", "deviceType"
                FROM "NotificationDevice" d
-               WHERE d."locationId" = $1
-                 AND d."deviceType" = $2
+               WHERE d."locationId" = ${locationId}
+                 AND d."deviceType" = ${deviceType}
                  AND d.status = 'available'
                  AND d."deletedAt" IS NULL
-                 AND d."providerId" = $3
+                 AND d."providerId" = ${providerId}
                ORDER BY d."deviceNumber"::int ASC NULLS LAST, d."deviceNumber" ASC
                FOR UPDATE SKIP LOCKED
-               LIMIT 1`,
-              locationId,
-              deviceType,
-              providerId
-            )
-          : await tx.$queryRawUnsafe(
-              `SELECT id, "deviceNumber", "providerId", "deviceType"
+               LIMIT 1`
+          : await tx.$queryRaw`SELECT id, "deviceNumber", "providerId", "deviceType"
                FROM "NotificationDevice" d
-               WHERE d."locationId" = $1
-                 AND d."deviceType" = $2
+               WHERE d."locationId" = ${locationId}
+                 AND d."deviceType" = ${deviceType}
                  AND d.status = 'available'
                  AND d."deletedAt" IS NULL
                ORDER BY d."deviceNumber"::int ASC NULLS LAST, d."deviceNumber" ASC
                FOR UPDATE SKIP LOCKED
-               LIMIT 1`,
-              locationId,
-              deviceType
-            )
+               LIMIT 1`
         device = devices[0]
         if (!device) {
           throw { code: 'NO_DEVICES_AVAILABLE', message: `No ${deviceType} devices available` }
@@ -221,20 +175,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }
 
       // Update device to assigned
-      await tx.$executeRawUnsafe(
-        `UPDATE "NotificationDevice"
+      await tx.$executeRaw`UPDATE "NotificationDevice"
          SET status = 'assigned',
-             "assignedToSubjectType" = $3,
-             "assignedToSubjectId" = $4,
+             "assignedToSubjectType" = ${subjectType},
+             "assignedToSubjectId" = ${subjectId},
              "assignedAt" = CURRENT_TIMESTAMP,
              "releasedAt" = NULL,
              "updatedAt" = CURRENT_TIMESTAMP
-         WHERE id = $1 AND "locationId" = $2`,
-        device.id,
-        locationId,
-        subjectType,
-        subjectId
-      )
+         WHERE id = ${device.id} AND "locationId" = ${locationId}`
 
       // Determine target type based on subject type
       const targetType = subjectType === 'staff_task' ? 'staff_pager' : 'guest_pager'
@@ -248,76 +196,43 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         .map(([t]) => t)
 
       if (familyTypes.length > 0) {
-        await tx.$executeRawUnsafe(
-          `UPDATE "NotificationTargetAssignment"
+        await tx.$executeRaw`UPDATE "NotificationTargetAssignment"
            SET "isPrimary" = false, "updatedAt" = CURRENT_TIMESTAMP
-           WHERE "locationId" = $1
-             AND "subjectType" = $2
-             AND "subjectId" = $3
-             AND "targetType" = ANY($4::text[])
+           WHERE "locationId" = ${locationId}
+             AND "subjectType" = ${subjectType}
+             AND "subjectId" = ${subjectId}
+             AND "targetType" = ANY(${familyTypes}::text[])
              AND status = 'active'
-             AND "isPrimary" = true`,
-          locationId,
-          subjectType,
-          subjectId,
-          familyTypes
-        )
+             AND "isPrimary" = true`
       }
 
       // Create the target assignment
-      const assignments: any[] = await tx.$queryRawUnsafe(
-        `INSERT INTO "NotificationTargetAssignment" (
+      const assignments: any[] = await tx.$queryRaw`INSERT INTO "NotificationTargetAssignment" (
           id, "locationId", "subjectType", "subjectId", "targetType", "targetValue",
           "providerId", priority, "isPrimary", source, status,
           "assignedAt", "createdByEmployeeId", "createdAt", "updatedAt"
         ) VALUES (
-          gen_random_uuid()::text, $1, $2, $3, $4, $5,
-          $6, 0, true, 'auto_assign', 'active',
-          CURRENT_TIMESTAMP, $7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+          gen_random_uuid()::text, ${locationId}, ${subjectType}, ${subjectId}, ${targetType}, ${device.deviceNumber},
+          ${device.providerId}, 0, true, 'auto_assign', 'active',
+          CURRENT_TIMESTAMP, ${auth.employee.id}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
         )
-        RETURNING id, "targetType", "targetValue", "isPrimary"`,
-        locationId,
-        subjectType,
-        subjectId,
-        targetType,
-        device.deviceNumber,
-        device.providerId,
-        auth.employee.id
-      )
+        RETURNING id, "targetType", "targetValue", "isPrimary"`
 
       // Sync pagerNumber cache on the subject
       if (subjectType === 'order') {
-        await tx.$executeRawUnsafe(
-          `UPDATE "Order" SET "pagerNumber" = $2 WHERE id = $1 AND "locationId" = $3`,
-          subjectId,
-          device.deviceNumber,
-          locationId
-        )
+        await tx.$executeRaw`UPDATE "Order" SET "pagerNumber" = ${device.deviceNumber} WHERE id = ${subjectId} AND "locationId" = ${locationId}`
       } else if (subjectType === 'waitlist_entry') {
-        await tx.$executeRawUnsafe(
-          `UPDATE "WaitlistEntry" SET "pagerNumber" = $2 WHERE id = $1 AND "locationId" = $3`,
-          subjectId,
-          device.deviceNumber,
-          locationId
-        )
+        await tx.$executeRaw`UPDATE "WaitlistEntry" SET "pagerNumber" = ${device.deviceNumber} WHERE id = ${subjectId} AND "locationId" = ${locationId}`
       }
 
       // Log device event
-      await tx.$executeRawUnsafe(
-        `INSERT INTO "NotificationDeviceEvent" (
+      await tx.$executeRaw`INSERT INTO "NotificationDeviceEvent" (
           id, "deviceId", "locationId", "eventType",
           "subjectType", "subjectId", "employeeId", metadata, "createdAt"
         ) VALUES (
-          gen_random_uuid()::text, $1, $2, 'assigned',
-          $3, $4, $5, $6::jsonb, CURRENT_TIMESTAMP
-        )`,
-        device.id,
-        locationId,
-        subjectType,
-        subjectId,
-        auth.employee.id,
-        JSON.stringify({ autoAssign: true, deviceNumber: device.deviceNumber, replaceExisting: !!replaceExisting })
-      )
+          gen_random_uuid()::text, ${device.id}, ${locationId}, 'assigned',
+          ${subjectType}, ${subjectId}, ${auth.employee.id}, ${JSON.stringify({ autoAssign: true, deviceNumber: device.deviceNumber, replaceExisting: !!replaceExisting })}::jsonb, CURRENT_TIMESTAMP
+        )`
 
       return {
         assignmentId: assignments[0].id,

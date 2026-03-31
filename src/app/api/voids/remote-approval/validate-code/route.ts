@@ -29,17 +29,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Atomically find + lock + mark-as-used to prevent double-use race condition
     const result = await db.$transaction(async (tx) => {
       // Lock the approval row with FOR UPDATE to prevent concurrent validation
-      const [lockedRow] = await tx.$queryRawUnsafe<any[]>(
-        `SELECT * FROM "RemoteVoidApproval" WHERE "orderId" = $1 AND "approvalCode" = $2 FOR UPDATE`,
-        orderId, code
-      )
+      const [lockedRow] = await tx.$queryRaw<any[]>`SELECT * FROM "RemoteVoidApproval" WHERE "orderId" = ${orderId} AND "approvalCode" = ${code} FOR UPDATE`
 
       if (!lockedRow || (lockedRow.orderItemId !== (orderItemId || null) && orderItemId)) {
         // Check if code was already used (for better error message)
-        const [usedRow] = await tx.$queryRawUnsafe<any[]>(
-          `SELECT id FROM "RemoteVoidApproval" WHERE "orderId" = $1 AND "approvalCode" = $2 AND status = 'used'`,
-          orderId, code
-        )
+        const [usedRow] = await tx.$queryRaw<any[]>`SELECT id FROM "RemoteVoidApproval" WHERE "orderId" = ${orderId} AND "approvalCode" = ${code} AND status = 'used'`
         if (usedRow) {
           return { error: 'This approval code has already been used', status: 400 }
         }

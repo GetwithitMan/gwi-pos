@@ -49,18 +49,13 @@ export async function GET(
     const locationId = location.id
 
     // ── Validate session token ─────────────────────────────────────
-    const sessions = await venueDb.$queryRawUnsafe<
-      Array<{ id: string; customerId: string }>
-    >(
-      `SELECT "id", "customerId"
+    const sessions = await venueDb.$queryRaw<
+      Array<{ id: string; customerId: string }>>`SELECT "id", "customerId"
        FROM "CustomerPortalSession"
-       WHERE "locationId" = $1
-         AND "sessionToken" = $2
+       WHERE "locationId" = ${locationId}
+         AND "sessionToken" = ${sessionToken}
          AND "sessionExpiresAt" > NOW()
-       LIMIT 1`,
-      locationId,
-      sessionToken,
-    )
+       LIMIT 1`
 
     if (sessions.length === 0) {
       return unauthorized('Session expired. Please log in again.')
@@ -69,18 +64,14 @@ export async function GET(
     const { customerId } = sessions[0]
 
     // ── Fetch customer's cake orders ───────────────────────────────
-    const orders = await venueDb.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT
+    const orders = await venueDb.$queryRaw<Array<Record<string, unknown>>>`SELECT
         "id", "orderNumber", "status", "eventDate", "eventType",
         "total", "depositPaid", "balanceDue", "createdAt"
       FROM "CakeOrder"
-      WHERE "customerId" = $1
-        AND "locationId" = $2
+      WHERE "customerId" = ${customerId}
+        AND "locationId" = ${locationId}
         AND "deletedAt" IS NULL
-      ORDER BY "createdAt" DESC`,
-      customerId,
-      locationId,
-    )
+      ORDER BY "createdAt" DESC`
 
     const safeOrders = orders.map((o) => ({
       id: o.id,

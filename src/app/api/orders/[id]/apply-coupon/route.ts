@@ -48,10 +48,7 @@ export const POST = withVenue(async function POST(
     // --- All validation + application in a single transaction with FOR UPDATE lock ---
     const result = await db.$transaction(async (tx) => {
       // Pessimistic lock: prevent concurrent coupon applications from racing
-      await tx.$queryRawUnsafe(
-        'SELECT id FROM "Order" WHERE "id" = $1 FOR UPDATE',
-        orderId
-      )
+      await tx.$queryRaw`SELECT id FROM "Order" WHERE "id" = ${orderId} FOR UPDATE`
 
       // Get the order with current totals and discounts (under lock)
       const order = await tx.order.findUnique({
@@ -92,7 +89,7 @@ export const POST = withVenue(async function POST(
 
       // Lock the Coupon row to prevent cross-order double-use of single-use/limited coupons.
       // Two terminals applying the same coupon on different orders will serialize here.
-      await tx.$queryRawUnsafe('SELECT id FROM "Coupon" WHERE "id" = $1 FOR UPDATE', coupon.id)
+      await tx.$queryRaw`SELECT id FROM "Coupon" WHERE "id" = ${coupon.id} FOR UPDATE`
 
       // Re-read mutable fields under lock (may have been changed by a concurrent request)
       const freshCoupon = await tx.coupon.findUnique({

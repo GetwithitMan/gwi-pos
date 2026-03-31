@@ -61,13 +61,13 @@ async function findPaymentLink(token: string): Promise<{
   // Try direct DB first (NUC has only one DB)
   try {
     const { masterClient } = await import('@/lib/db')
-    const rows: PaymentLinkRow[] = await masterClient.$queryRawUnsafe(`
+    const rows: PaymentLinkRow[] = await masterClient.$queryRaw`
       SELECT "id", "locationId", "orderId", "token", "amount", "tipAmount",
              "status", "expiresAt", "phoneNumber", "email", "completedAt", "paymentId"
       FROM "PaymentLink"
-      WHERE "token" = $1
+      WHERE "token" = ${token}
       LIMIT 1
-    `, token)
+    `
 
     if (rows.length > 0) {
       const row = rows[0]
@@ -76,9 +76,9 @@ async function findPaymentLink(token: string): Promise<{
       let slug = ''
 
       try {
-        const slugRows = await masterClient.$queryRawUnsafe(`
-          SELECT "slug" FROM "Location" WHERE "id" = $1 LIMIT 1
-        `, row.locationId) as { slug: string }[]
+        const slugRows = await masterClient.$queryRaw`
+          SELECT "slug" FROM "Location" WHERE "id" = ${row.locationId} LIMIT 1
+        ` as { slug: string }[]
 
         slug = slugRows[0]?.slug || ''
         if (slug) venueDb = await getDbForVenue(slug)
@@ -129,10 +129,10 @@ export async function GET(
     if (link.status === 'expired' || new Date(link.expiresAt) < new Date()) {
       // Auto-expire if not already marked
       if (link.status !== 'expired') {
-        await venueDb.$executeRawUnsafe(`
+        await venueDb.$executeRaw`
           UPDATE "PaymentLink" SET "status" = 'expired', "updatedAt" = NOW()
-          WHERE "id" = $1
-        `, link.id)
+          WHERE "id" = ${link.id}
+        `
       }
       return NextResponse.json({ error: 'This payment link has expired', status: 'expired' }, { status: 410 })
     }
@@ -335,62 +335,44 @@ export async function POST(
     const cardLast4 = datacapResponse.cardLast4 || cardNumber.slice(-4)
     const cardBrand = datacapResponse.cardType || 'unknown'
 
-    await venueDb.$executeRawUnsafe(`
+    await venueDb.$executeRaw`
       INSERT INTO "Payment" (
         "id", "locationId", "orderId", "paymentMethod", "amount", "tipAmount",
         "totalAmount", "status", "cardLast4", "cardBrand", "authCode",
         "datacapRecordNo", "datacapRefNumber", "entryMethod",
         "processedAt", "createdAt", "updatedAt"
       ) VALUES (
-        $1, $2, $3, 'credit'::"PaymentMethod", $4, $5,
-        $6, 'completed'::"PaymentStatus", $7, $8, $9,
-        $10, $11, 'Manual',
-        $12, $12, $12
+        ${paymentId}, ${link.locationId}, ${link.orderId}, 'credit'::"PaymentMethod", ${amount}, ${tip},
+        ${totalCharge}, 'completed'::"PaymentStatus", ${cardLast4}, ${cardBrand}, ${datacapResponse.authCode || null},
+        ${datacapResponse.recordNo || null}, ${datacapResponse.refNo || null}, 'Manual',
+        ${now}, ${now}, ${now}
       )
-    `,
-      paymentId,
-      link.locationId,
-      link.orderId,
-      amount,
-      tip,
-      totalCharge,
-      cardLast4,
-      cardBrand,
-      datacapResponse.authCode || null,
-      datacapResponse.recordNo || null,
-      datacapResponse.refNo || null,
-      now
-    )
+    `
 
     // Update order paidTotal and status
     const newPaidTotal = Number(order.paidTotal ?? 0) + totalCharge
     const effectiveTotal = Number(order.total ?? 0)
     const orderIsPaid = newPaidTotal >= effectiveTotal - 0.01 // penny tolerance
 
-    await venueDb.$executeRawUnsafe(`
+    await venueDb.$executeRaw`
       UPDATE "Order"
-      SET "paidTotal" = $1,
-          "status" = $2,
-          "tipTotal" = COALESCE("tipTotal", 0) + $3,
+      SET "paidTotal" = ${newPaidTotal},
+          "status" = ${orderIsPaid ? 'paid' : 'partial'},
+          "tipTotal" = COALESCE("tipTotal", 0) + ${tip},
           "updatedAt" = NOW()
-      WHERE "id" = $4
-    `,
-      newPaidTotal,
-      orderIsPaid ? 'paid' : 'partial',
-      tip,
-      link.orderId
-    )
+      WHERE "id" = ${link.orderId}
+    `
 
     // Mark PaymentLink as completed
-    await venueDb.$executeRawUnsafe(`
+    await venueDb.$executeRaw`
       UPDATE "PaymentLink"
       SET "status" = 'completed',
           "completedAt" = NOW(),
-          "tipAmount" = $1,
-          "paymentId" = $2,
+          "tipAmount" = ${tip},
+          "paymentId" = ${paymentId},
           "updatedAt" = NOW()
-      WHERE "id" = $3
-    `, tip, paymentId, link.id)
+      WHERE "id" = ${link.id}
+    `
 
     // Emit order event (fire-and-forget)
     void emitOrderEvent(

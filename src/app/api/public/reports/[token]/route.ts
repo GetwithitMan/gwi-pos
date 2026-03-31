@@ -30,20 +30,17 @@ export const GET = withVenue(async function GET(
     }
 
     // Look up the shared report
-    const results = await db.$queryRawUnsafe<{
+    const results = await db.$queryRaw<{
       id: string
       reportType: string
       parameters: unknown
       generatedData: unknown
       expiresAt: Date
       createdAt: Date
-    }[]>(
-      `SELECT "id", "reportType", "parameters", "generatedData", "expiresAt", "createdAt"
+    }[]>`SELECT "id", "reportType", "parameters", "generatedData", "expiresAt", "createdAt"
        FROM "SharedReport"
-       WHERE "token" = $1
-       LIMIT 1`,
-      token
-    )
+       WHERE "token" = ${token}
+       LIMIT 1`
 
     if (results.length === 0) {
       return notFound('Report not found')

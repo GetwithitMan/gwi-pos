@@ -130,7 +130,7 @@ export const POST = withVenue(async function POST(
     // Wrap all reopen mutations in a transaction with row-level lock
     const reopenedOrder = await db.$transaction(async (tx) => {
       // Row-level lock to prevent concurrent reopens
-      await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', orderId)
+      await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${orderId} FOR UPDATE`
 
       // W1-P4: Mark all existing completed payments as voided so the pay route's
       // alreadyPaid calculation starts fresh (old payments were for the previous close).

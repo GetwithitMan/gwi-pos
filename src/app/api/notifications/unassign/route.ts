@@ -53,71 +53,48 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Wrap all DB operations in a transaction to prevent orphaned state
     const result = await db.$transaction(async (tx) => {
       // Find all active pager assignments for this subject
-      const activeAssignments: any[] = await tx.$queryRawUnsafe(
-        `SELECT id, "targetValue", "targetType"
+      const activeAssignments: any[] = await tx.$queryRaw`SELECT id, "targetValue", "targetType"
          FROM "NotificationTargetAssignment"
-         WHERE "locationId" = $1
-           AND "subjectType" = $2
-           AND "subjectId" = $3
+         WHERE "locationId" = ${locationId}
+           AND "subjectType" = ${subjectType}
+           AND "subjectId" = ${subjectId}
            AND status = 'active'
-           AND "targetType" IN ('guest_pager', 'staff_pager')`,
-        locationId,
-        subjectType,
-        subjectId
-      )
+           AND "targetType" IN ('guest_pager', 'staff_pager')`
 
       if (activeAssignments.length === 0) {
         return { released: 0, deviceNumbers: [] as string[], releasedDevices: [] as any[], assignmentCount: 0 }
       }
 
       // Release all active target assignments
-      await tx.$executeRawUnsafe(
-        `UPDATE "NotificationTargetAssignment"
+      await tx.$executeRaw`UPDATE "NotificationTargetAssignment"
          SET status = 'released',
              "releasedAt" = CURRENT_TIMESTAMP,
              "releaseReason" = 'manual_unassign',
              "updatedAt" = CURRENT_TIMESTAMP
-         WHERE "locationId" = $1
-           AND "subjectType" = $2
-           AND "subjectId" = $3
+         WHERE "locationId" = ${locationId}
+           AND "subjectType" = ${subjectType}
+           AND "subjectId" = ${subjectId}
            AND status = 'active'
-           AND "targetType" IN ('guest_pager', 'staff_pager')`,
-        locationId,
-        subjectType,
-        subjectId
-      )
+           AND "targetType" IN ('guest_pager', 'staff_pager')`
 
       // Release all devices assigned to this subject
       const deviceNumbers = activeAssignments.map((a: any) => a.targetValue)
-      const releasedDevices: any[] = await tx.$queryRawUnsafe(
-        `UPDATE "NotificationDevice"
+      const releasedDevices: any[] = await tx.$queryRaw`UPDATE "NotificationDevice"
          SET status = 'released',
              "releasedAt" = CURRENT_TIMESTAMP,
              "updatedAt" = CURRENT_TIMESTAMP
-         WHERE "locationId" = $1
-           AND "assignedToSubjectType" = $2
-           AND "assignedToSubjectId" = $3
+         WHERE "locationId" = ${locationId}
+           AND "assignedToSubjectType" = ${subjectType}
+           AND "assignedToSubjectId" = ${subjectId}
            AND status = 'assigned'
            AND "deletedAt" IS NULL
-         RETURNING id, "deviceNumber"`,
-        locationId,
-        subjectType,
-        subjectId
-      )
+         RETURNING id, "deviceNumber"`
 
       // Clear pagerNumber cache on the subject
       if (subjectType === 'order') {
-        await tx.$executeRawUnsafe(
-          `UPDATE "Order" SET "pagerNumber" = NULL WHERE id = $1 AND "locationId" = $2`,
-          subjectId,
-          locationId
-        )
+        await tx.$executeRaw`UPDATE "Order" SET "pagerNumber" = NULL WHERE id = ${subjectId} AND "locationId" = ${locationId}`
       } else if (subjectType === 'waitlist_entry') {
-        await tx.$executeRawUnsafe(
-          `UPDATE "WaitlistEntry" SET "pagerNumber" = NULL WHERE id = $1 AND "locationId" = $2`,
-          subjectId,
-          locationId
-        )
+        await tx.$executeRaw`UPDATE "WaitlistEntry" SET "pagerNumber" = NULL WHERE id = ${subjectId} AND "locationId" = ${locationId}`
       }
 
       return {
@@ -134,21 +111,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Log device events for each released device (fire-and-forget, outside tx)
     for (const device of result.releasedDevices) {
-      void db.$executeRawUnsafe(
-        `INSERT INTO "NotificationDeviceEvent" (
+      void db.$executeRaw`INSERT INTO "NotificationDeviceEvent" (
           id, "deviceId", "locationId", "eventType",
           "subjectType", "subjectId", "employeeId", metadata, "createdAt"
         ) VALUES (
-          gen_random_uuid()::text, $1, $2, 'released',
-          $3, $4, $5, $6::jsonb, CURRENT_TIMESTAMP
-        )`,
-        device.id,
-        locationId,
-        subjectType,
-        subjectId,
-        auth.employee.id,
-        JSON.stringify({ reason: 'manual_unassign', deviceNumber: device.deviceNumber })
-      ).catch(err => log.warn({ err }, 'Background task failed'))
+          gen_random_uuid()::text, ${device.id}, ${locationId}, 'released',
+          ${subjectType}, ${subjectId}, ${auth.employee.id}, ${JSON.stringify({ reason: 'manual_unassign', deviceNumber: device.deviceNumber })}::jsonb, CURRENT_TIMESTAMP
+        )`.catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     // Audit log (fire-and-forget, outside tx)

@@ -62,15 +62,15 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
 
     if (!assignedServerId && hostConfig.autoRotateServers) {
       // Fetch rotation state for eligible servers
-      const rotationRows: any[] = await db.$queryRawUnsafe(`
+      const rotationRows: any[] = await db.$queryRaw`
         SELECT sr."employeeId", e."firstName", e."lastName",
                sr."sectionId", sr."tableCount", sr."lastSeatedAt", sr."isOnFloor"
         FROM "ServerRotationState" sr
         JOIN "Employee" e ON e.id = sr."employeeId"
-        WHERE sr."locationId" = $1 AND sr."isOnFloor" = true
+        WHERE sr."locationId" = ${locationId} AND sr."isOnFloor" = true
           AND e."isActive" = true AND e."deletedAt" IS NULL
         ORDER BY sr."tableCount" ASC, sr."lastSeatedAt" ASC NULLS FIRST
-      `, locationId)
+      `
 
       if (rotationRows.length > 0) {
         const serverInfos = buildServerInfoList(rotationRows)
@@ -106,24 +106,24 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
 
     // Update waitlist entry if provided
     if (waitlistEntryId) {
-      await db.$queryRawUnsafe(`
+      await db.$queryRaw`
         UPDATE "WaitlistEntry"
         SET status = 'seated', "seatedAt" = CURRENT_TIMESTAMP, "updatedAt" = CURRENT_TIMESTAMP
-        WHERE id = $1 AND "locationId" = $2 AND status IN ('waiting', 'notified')
-      `, waitlistEntryId, locationId)
+        WHERE id = ${waitlistEntryId} AND "locationId" = ${locationId} AND status IN ('waiting', 'notified')
+      `
 
       // Recalculate positions
-      await db.$queryRawUnsafe(`
+      await db.$queryRaw`
         WITH ranked AS (
           SELECT id, ROW_NUMBER() OVER (ORDER BY position ASC, "createdAt" ASC) as new_pos
           FROM "WaitlistEntry"
-          WHERE "locationId" = $1 AND status IN ('waiting', 'notified')
+          WHERE "locationId" = ${locationId} AND status IN ('waiting', 'notified')
         )
         UPDATE "WaitlistEntry" w
         SET position = r.new_pos
         FROM ranked r
         WHERE w.id = r.id
-      `, locationId)
+      `
 
       void dispatchWaitlistChanged(locationId, {
         action: 'seated',
@@ -177,11 +177,11 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
       // Get next order number
       const todayStart = new Date()
       todayStart.setHours(0, 0, 0, 0)
-      const maxOrder: any[] = await db.$queryRawUnsafe(`
+      const maxOrder: any[] = await db.$queryRaw`
         SELECT COALESCE(MAX("orderNumber"), 0) + 1 as next_num
         FROM "Order"
-        WHERE "locationId" = $1 AND "createdAt" >= $2
-      `, locationId, todayStart)
+        WHERE "locationId" = ${locationId} AND "createdAt" >= ${todayStart}
+      `
       const nextNum = maxOrder[0]?.next_num ?? 1
 
       order = await db.order.create({
@@ -212,15 +212,15 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
 
     // Update server rotation state (increment table count, update lastSeatedAt)
     if (assignedServerId) {
-      await db.$queryRawUnsafe(`
+      await db.$queryRaw`
         INSERT INTO "ServerRotationState" ("locationId", "employeeId", "sectionId", "tableCount", "lastSeatedAt", "isOnFloor")
-        VALUES ($1, $2, $3, 1, CURRENT_TIMESTAMP, true)
+        VALUES (${locationId}, ${assignedServerId}, ${table.sectionId}, 1, CURRENT_TIMESTAMP, true)
         ON CONFLICT ("locationId", "employeeId")
         DO UPDATE SET
           "tableCount" = "ServerRotationState"."tableCount" + 1,
           "lastSeatedAt" = CURRENT_TIMESTAMP,
           "updatedAt" = CURRENT_TIMESTAMP
-      `, locationId, assignedServerId, table.sectionId)
+      `
     }
 
     pushUpstream()

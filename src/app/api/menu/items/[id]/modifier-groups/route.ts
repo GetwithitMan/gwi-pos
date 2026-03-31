@@ -667,25 +667,15 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
     async function dropStaleConstraintIfNeeded() {
       try {
         // Check if the partial unique index from migration 043 exists
-        const rows = await db.$queryRawUnsafe<Array<{ indexname: string }>>(
-          `SELECT indexname FROM pg_indexes WHERE indexname = $1 LIMIT 1`,
-          'ModifierGroup_locationId_name_active_key'
-        )
+        const rows = await db.$queryRaw<Array<{ indexname: string }>>`SELECT indexname FROM pg_indexes WHERE indexname = ${'ModifierGroup_locationId_name_active_key'} LIMIT 1`
         if (rows.length > 0) {
-          await db.$executeRawUnsafe(
-            `DROP INDEX IF EXISTS "ModifierGroup_locationId_name_active_key"`
-          )
+          await db.$executeRaw`DROP INDEX IF EXISTS "ModifierGroup_locationId_name_active_key"`
           console.log('[modifier-groups] Dropped stale unique index ModifierGroup_locationId_name_active_key')
         }
         // Also check for the non-partial variant
-        const rows2 = await db.$queryRawUnsafe<Array<{ indexname: string }>>(
-          `SELECT indexname FROM pg_indexes WHERE indexname = $1 LIMIT 1`,
-          'ModifierGroup_locationId_name_key'
-        )
+        const rows2 = await db.$queryRaw<Array<{ indexname: string }>>`SELECT indexname FROM pg_indexes WHERE indexname = ${'ModifierGroup_locationId_name_key'} LIMIT 1`
         if (rows2.length > 0) {
-          await db.$executeRawUnsafe(
-            `ALTER TABLE "ModifierGroup" DROP CONSTRAINT IF EXISTS "ModifierGroup_locationId_name_key"`
-          )
+          await db.$executeRaw`ALTER TABLE "ModifierGroup" DROP CONSTRAINT IF EXISTS "ModifierGroup_locationId_name_key"`
           console.log('[modifier-groups] Dropped stale unique constraint ModifierGroup_locationId_name_key')
         }
       } catch (e) {

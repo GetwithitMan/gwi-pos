@@ -10,9 +10,8 @@
 
 import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
-import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
-import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { getCurrentBusinessDay, getBusinessDayRange } from '@/lib/business-day'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings, getLocationTimezone } from '@/lib/location-cache'
@@ -36,22 +35,15 @@ interface CoverChargeRow {
 }
 
 // GET /api/cover-charges — list cover charges for a date range (default: today)
-export const GET = withVenue(async function GET(request: NextRequest) {
+export const GET = withVenue(withAuth('MGR_PAY_IN_OUT', async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const locationId = searchParams.get('locationId')
-    const requestingEmployeeId = searchParams.get('requestingEmployeeId') || searchParams.get('employeeId')
     const startDate = searchParams.get('startDate')
     const endDate = searchParams.get('endDate')
 
     if (!locationId) {
       return err('Location ID is required')
-    }
-
-    // Permission check — use MGR_PAY_IN_OUT as closest existing permission for cash ops
-    const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.MGR_PAY_IN_OUT)
-    if (!auth.authorized) {
-      return err(auth.error, auth.status)
     }
 
     // Build date range using business day boundaries
@@ -79,16 +71,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       rangeEnd = current.end
     }
 
-    const rows = await db.$queryRawUnsafe<CoverChargeRow[]>(
-      `SELECT * FROM "CoverCharge"
-       WHERE "locationId" = $1 AND "deletedAt" IS NULL
-         AND "createdAt" >= $2 AND "createdAt" <= $3
+    const rows = await db.$queryRaw<CoverChargeRow[]>`SELECT * FROM "CoverCharge"
+       WHERE "locationId" = ${locationId} AND "deletedAt" IS NULL
+         AND "createdAt" >= ${rangeStart} AND "createdAt" <= ${rangeEnd}
        ORDER BY "createdAt" DESC
-       LIMIT 5000`,
-      locationId,
-      rangeStart,
-      rangeEnd
-    )
+       LIMIT 5000`
 
     // Compute aggregates
     let totalCollected = 0
@@ -142,10 +129,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     console.error('[GET /api/cover-charges] Error:', error)
     return err('Failed to fetch cover charges', 500)
   }
-})
+}))
 
 // POST /api/cover-charges — record a cover charge entry
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth('MGR_PAY_IN_OUT', async function POST(
+  request: NextRequest,
+  ctx: { auth: { employeeId: string | null } }
+) {
   try {
     const body = await request.json()
     const {
@@ -163,20 +153,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       return err('Location ID is required')
     }
 
-    // Resolve employeeId from authenticated session, fall back to body for Android clients
-    const actor = await getActorFromRequest(request)
-    const employeeId = actor.employeeId || body.employeeId
+    const employeeId = ctx.auth.employeeId || body.employeeId
     if (!employeeId) {
       return err('Employee ID is required')
     }
     if (paymentMethod && !['cash', 'card'].includes(paymentMethod)) {
       return err('Payment method must be "cash" or "card"')
-    }
-
-    // Permission check
-    const auth = await requirePermission(employeeId, locationId, PERMISSIONS.MGR_PAY_IN_OUT)
-    if (!auth.authorized) {
-      return err(auth.error, auth.status)
     }
 
     // Load settings
@@ -204,14 +186,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       const capTz = await getLocationTimezone(locationId)
       const current = getCurrentBusinessDay(dayStartTime, capTz)
 
-      const countRows = await db.$queryRawUnsafe<[{ count: bigint }]>(
-        `SELECT COALESCE(SUM("guestCount"), 0) AS count FROM "CoverCharge"
-         WHERE "locationId" = $1 AND "deletedAt" IS NULL
-           AND "createdAt" >= $2 AND "createdAt" <= $3`,
-        locationId,
-        current.start,
-        current.end
-      )
+      const countRows = await db.$queryRaw<[{ count: bigint }]>`SELECT COALESCE(SUM("guestCount"), 0) AS count FROM "CoverCharge"
+         WHERE "locationId" = ${locationId} AND "deletedAt" IS NULL
+           AND "createdAt" >= ${current.start} AND "createdAt" <= ${current.end}`
       const currentCount = Number(countRows[0]?.count ?? 0)
       const incomingGuests = Number(guestCount) || 1
 
@@ -221,20 +198,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Insert cover charge
-    const rows = await db.$queryRawUnsafe<CoverChargeRow[]>(
-      `INSERT INTO "CoverCharge" ("locationId", "employeeId", "amount", "paymentMethod", "guestCount", "notes", "isVip", "isComped", "compReason")
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-       RETURNING *`,
-      locationId,
-      employeeId,
-      finalAmount,
-      paymentMethod || 'cash',
-      Number(guestCount) || 1,
-      notes?.trim() || null,
-      isVipEntry,
-      isCompedEntry,
-      isCompedEntry ? (compReason?.trim() || null) : null
-    )
+    const rows = await db.$queryRaw<CoverChargeRow[]>`INSERT INTO "CoverCharge" ("locationId", "employeeId", "amount", "paymentMethod", "guestCount", "notes", "isVip", "isComped", "compReason")
+       VALUES (${locationId}, ${employeeId}, ${finalAmount}, ${paymentMethod || 'cash'}, ${Number(guestCount) || 1}, ${notes?.trim() || null}, ${isVipEntry}, ${isCompedEntry}, ${isCompedEntry ? (compReason?.trim() || null) : null})
+       RETURNING *`
 
     const record = rows[0]
 
@@ -270,4 +236,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     console.error('[POST /api/cover-charges] Error:', error)
     return err('Failed to record cover charge', 500)
   }
-})
+}))

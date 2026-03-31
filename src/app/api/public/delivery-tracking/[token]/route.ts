@@ -44,7 +44,7 @@ export const GET = withVenue(async function GET(
     }
 
     // Fetch delivery order by tracking token
-    const rows: any[] = await db.$queryRawUnsafe(`
+    const rows: any[] = await db.$queryRaw`
       SELECT do_.*,
              o."orderNumber",
              l."name" as "restaurantName", l."phone" as "restaurantPhone",
@@ -52,9 +52,9 @@ export const GET = withVenue(async function GET(
       FROM "DeliveryOrder" do_
       LEFT JOIN "Order" o ON o.id = do_."orderId"
       LEFT JOIN "Location" l ON l.id = do_."locationId"
-      WHERE do_."trackingToken" = $1
+      WHERE do_."trackingToken" = ${token}
       LIMIT 1
-    `, token)
+    `
 
     if (!rows.length) {
       return notFound('Not found')
@@ -132,14 +132,14 @@ export const GET = withVenue(async function GET(
 
     if (shareDriverInfo && delivery.driverId) {
       // Only fetch if order has been assigned to a driver
-      const driverRows: any[] = await db.$queryRawUnsafe(`
+      const driverRows: any[] = await db.$queryRaw`
         SELECT e."firstName",
                dd."vehicleColor", dd."vehicleMake", dd."vehicleModel"
         FROM "DeliveryDriver" dd
         JOIN "Employee" e ON e.id = dd."employeeId"
-        WHERE dd.id = $1 AND dd."locationId" = $2
+        WHERE dd.id = ${delivery.driverId} AND dd."locationId" = ${locationId}
         LIMIT 1
-      `, delivery.driverId, locationId)
+      `
 
       if (driverRows.length) {
         const d = driverRows[0]

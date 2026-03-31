@@ -8,7 +8,7 @@
  * Key design: lock per 15-minute bucket, sorted ascending to prevent deadlocks.
  */
 
-import type { PrismaClient } from '@/generated/prisma/client'
+import { Prisma, type PrismaClient } from '@/generated/prisma/client'
 import { createChildLogger } from '@/lib/logger'
 
 const log = createChildLogger('reservations')
@@ -83,9 +83,8 @@ export async function acquireReservationLocks(
     const lockKey = hashToLockKey(`${locationId}:${serviceDate}:${bucket}`)
     // Pass lock key as string and cast in SQL — Prisma's parameterized queries
     // may not handle BigInt natively across all adapters
-    await tx.$executeRawUnsafe(
-      `SELECT pg_advisory_xact_lock($1::bigint)`,
-      lockKey.toString()
+    await tx.$executeRaw(
+      Prisma.sql`SELECT pg_advisory_xact_lock(${BigInt(lockKey)})`
     )
   }
 

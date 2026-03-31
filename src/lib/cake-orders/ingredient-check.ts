@@ -9,6 +9,9 @@
  *
  * Ingredient requirements come from Modifier.metadata.requiredIngredients
  * (JSONB array). Falls back to ModifierInventoryLink if metadata is absent.
+ *
+ * NOTE: Uses $queryRawUnsafe because db parameter is untyped (any) and queries
+ * use dynamic IN clause placeholder counts. All values are positional params — safe from injection.
  */
 
 import { parseCakeConfig } from '@/lib/cake-orders/schemas'

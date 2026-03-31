@@ -74,7 +74,7 @@ export const POST = withVenue(async function POST(
     // from drifting the total (read-then-increment race on stale donationAmount).
     const updated = await db.$transaction(async (tx) => {
       // Lock the Order row to serialize concurrent total mutations
-      await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE "id" = $1 FOR UPDATE', orderId)
+      await tx.$queryRaw`SELECT id FROM "Order" WHERE "id" = ${orderId} FOR UPDATE`
 
       // Re-read locked values for accurate delta calculation
       const locked = await tx.order.findUnique({
@@ -206,7 +206,7 @@ export const DELETE = withVenue(async function DELETE(
     // from drifting the total (read-then-decrement race on stale donationAmount).
     const txResult = await db.$transaction(async (tx) => {
       // Lock the Order row to serialize concurrent total mutations
-      await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE "id" = $1 FOR UPDATE', orderId)
+      await tx.$queryRaw`SELECT id FROM "Order" WHERE "id" = ${orderId} FOR UPDATE`
 
       // Re-read locked values for accurate delta calculation
       const locked = await tx.order.findUnique({

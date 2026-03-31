@@ -17,6 +17,9 @@
  *   channel: 'sms', recipient: '+15551234567', messageBody: msg,
  * })
  * ```
+ *
+ * NOTE: Uses $queryRawUnsafe/$executeRawUnsafe for raw SQL delivery tables
+ * (DeliveryNotification, DeliveryOrder). All queries use positional $1/$2 params — safe from injection.
  */
 
 import { db } from '@/lib/db'

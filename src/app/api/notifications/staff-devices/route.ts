@@ -37,8 +37,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     if (!auth.authorized) return err(auth.error, auth.status)
 
     // Get all staff pager assignments with device + employee info
-    const assignments: any[] = await db.$queryRawUnsafe(
-      `SELECT
+    const assignments: any[] = await db.$queryRaw`SELECT
         ta.id as "assignmentId",
         ta."subjectId" as "employeeId",
         ta."targetValue" as "deviceNumber",
@@ -64,24 +63,19 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         ON e.id = ta."subjectId"
         AND e."locationId" = ta."locationId"
         AND e."deletedAt" IS NULL
-      WHERE ta."locationId" = $1
+      WHERE ta."locationId" = ${locationId}
         AND ta."subjectType" = 'staff_task'
         AND ta."targetType" = 'staff_pager'
-      ORDER BY ta.status ASC, ta."assignedAt" DESC`,
-      locationId
-    )
+      ORDER BY ta.status ASC, ta."assignedAt" DESC`
 
     // Also get available staff pager devices (not currently assigned)
-    const availableDevices: any[] = await db.$queryRawUnsafe(
-      `SELECT d.id, d."deviceNumber", d."humanLabel", d.status, d."batteryLevel", d."lastSeenAt"
+    const availableDevices: any[] = await db.$queryRaw`SELECT d.id, d."deviceNumber", d."humanLabel", d.status, d."batteryLevel", d."lastSeenAt"
        FROM "NotificationDevice" d
-       WHERE d."locationId" = $1
+       WHERE d."locationId" = ${locationId}
          AND d."deviceType" = 'staff_pager'
          AND d.status = 'available'
          AND d."deletedAt" IS NULL
-       ORDER BY d."deviceNumber"::int ASC NULLS LAST, d."deviceNumber" ASC`,
-      locationId
-    )
+       ORDER BY d."deviceNumber"::int ASC NULLS LAST, d."deviceNumber" ASC`
 
     return ok({
         assignments: assignments.map(a => ({
@@ -138,31 +132,23 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Validate employee exists at this location
-    const employees: any[] = await db.$queryRawUnsafe(
-      `SELECT id, "firstName", "lastName", role
+    const employees: any[] = await db.$queryRaw`SELECT id, "firstName", "lastName", role
        FROM "Employee"
-       WHERE id = $1 AND "locationId" = $2 AND "deletedAt" IS NULL`,
-      employeeId,
-      locationId
-    )
+       WHERE id = ${employeeId} AND "locationId" = ${locationId} AND "deletedAt" IS NULL`
     if (employees.length === 0) {
       return notFound('Employee not found')
     }
     const employee = employees[0]
 
     // Check if employee already has an active staff pager assignment
-    const existingAssignment: any[] = await db.$queryRawUnsafe(
-      `SELECT id, "targetValue"
+    const existingAssignment: any[] = await db.$queryRaw`SELECT id, "targetValue"
        FROM "NotificationTargetAssignment"
-       WHERE "locationId" = $1
+       WHERE "locationId" = ${locationId}
          AND "subjectType" = 'staff_task'
-         AND "subjectId" = $2
+         AND "subjectId" = ${employeeId}
          AND "targetType" = 'staff_pager'
          AND status = 'active'
-       LIMIT 1`,
-      locationId,
-      employeeId
-    )
+       LIMIT 1`
     if (existingAssignment.length > 0) {
       return err(`Employee already has pager ${existingAssignment[0].targetValue} assigned. Unbind first.`, 409)
     }
@@ -170,17 +156,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // W4: Wrap device update, assignment creation, and event logging in a transaction
     const txResult = await db.$transaction(async (tx) => {
       // Check the device exists and is available
-      const devices: any[] = await tx.$queryRawUnsafe(
-        `SELECT id, status, "deviceType"
+      const devices: any[] = await tx.$queryRaw`SELECT id, status, "deviceType"
          FROM "NotificationDevice"
-         WHERE "locationId" = $1
-           AND "deviceNumber" = $2
+         WHERE "locationId" = ${locationId}
+           AND "deviceNumber" = ${deviceNumber.trim()}
            AND "deletedAt" IS NULL
            AND status NOT IN ('retired', 'disabled')
-         LIMIT 1`,
-        locationId,
-        deviceNumber.trim()
-      )
+         LIMIT 1`
 
       let deviceId: string | null = null
 
@@ -192,91 +174,65 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         deviceId = device.id
 
         // Mark device as assigned
-        await tx.$executeRawUnsafe(
-          `UPDATE "NotificationDevice"
+        await tx.$executeRaw`UPDATE "NotificationDevice"
            SET status = 'assigned',
                "assignedToSubjectType" = 'staff_task',
-               "assignedToSubjectId" = $3,
+               "assignedToSubjectId" = ${employeeId},
                "assignedAt" = CURRENT_TIMESTAMP,
                "deviceType" = 'staff_pager',
                "updatedAt" = CURRENT_TIMESTAMP
-           WHERE id = $1 AND "locationId" = $2`,
-          device.id,
-          locationId,
-          employeeId
-        )
+           WHERE id = ${device.id} AND "locationId" = ${locationId}`
       } else {
         // Auto-create the device as a staff_pager if it doesn't exist
-        const providers: any[] = await tx.$queryRawUnsafe(
-          `SELECT id FROM "NotificationProvider"
-           WHERE "locationId" = $1 AND "isActive" = true AND "deletedAt" IS NULL
+        const providers: any[] = await tx.$queryRaw`SELECT id FROM "NotificationProvider"
+           WHERE "locationId" = ${locationId} AND "isActive" = true AND "deletedAt" IS NULL
            ORDER BY "isDefault" DESC, priority DESC
-           LIMIT 1`,
-          locationId
-        )
+           LIMIT 1`
 
         const providerId = providers[0]?.id || 'unlinked'
 
-        const inserted: any[] = await tx.$queryRawUnsafe(
-          `INSERT INTO "NotificationDevice" (
+        const inserted: any[] = await tx.$queryRaw`INSERT INTO "NotificationDevice" (
             id, "locationId", "providerId", "deviceNumber", "deviceType",
             status, "assignedToSubjectType", "assignedToSubjectId", "assignedAt",
             "createdAt", "updatedAt"
           ) VALUES (
-            gen_random_uuid()::text, $1, $2, $3, 'staff_pager',
-            'assigned', 'staff_task', $4, CURRENT_TIMESTAMP,
+            gen_random_uuid()::text, ${locationId}, ${providerId}, ${deviceNumber.trim()}, 'staff_pager',
+            'assigned', 'staff_task', ${employeeId}, CURRENT_TIMESTAMP,
             CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-          ) RETURNING id`,
-          locationId,
-          providerId,
-          deviceNumber.trim(),
-          employeeId
-        )
+          ) RETURNING id`
         deviceId = inserted[0]?.id || null
       }
 
       // Create the NotificationTargetAssignment
-      const assignmentResult: any[] = await tx.$queryRawUnsafe(
-        `INSERT INTO "NotificationTargetAssignment" (
+      const assignmentResult: any[] = await tx.$queryRaw`INSERT INTO "NotificationTargetAssignment" (
           id, "locationId", "subjectType", "subjectId",
           "targetType", "targetValue", "providerId",
           priority, "isPrimary", source, status,
           "assignedAt", "createdByEmployeeId",
           "createdAt", "updatedAt"
         ) VALUES (
-          gen_random_uuid()::text, $1, 'staff_task', $2,
-          'staff_pager', $3, NULL,
+          gen_random_uuid()::text, ${locationId}, 'staff_task', ${employeeId},
+          'staff_pager', ${deviceNumber.trim()}, NULL,
           0, true, 'manual', 'active',
-          CURRENT_TIMESTAMP, $4,
+          CURRENT_TIMESTAMP, ${auth.employee.id},
           CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-        ) RETURNING id, "assignedAt"`,
-        locationId,
-        employeeId,
-        deviceNumber.trim(),
-        auth.employee.id
-      )
+        ) RETURNING id, "assignedAt"`
 
       // Log device event
       if (deviceId) {
-        await tx.$executeRawUnsafe(
-          `INSERT INTO "NotificationDeviceEvent" (
+        const eventMetadata = JSON.stringify({
+          action: 'staff_pager_bind',
+          deviceNumber: deviceNumber.trim(),
+          employeeName: `${employee.firstName} ${employee.lastName}`,
+          employeeRole: employee.role,
+        })
+        await tx.$executeRaw`INSERT INTO "NotificationDeviceEvent" (
             id, "deviceId", "locationId", "eventType",
             "subjectType", "subjectId", "employeeId", metadata, "createdAt"
           ) VALUES (
-            gen_random_uuid()::text, $1, $2, 'assigned',
-            'staff_task', $3, $4, $5::jsonb, CURRENT_TIMESTAMP
-          )`,
-          deviceId,
-          locationId,
-          employeeId,
-          auth.employee.id,
-          JSON.stringify({
-            action: 'staff_pager_bind',
-            deviceNumber: deviceNumber.trim(),
-            employeeName: `${employee.firstName} ${employee.lastName}`,
-            employeeRole: employee.role,
-          })
-        )
+            gen_random_uuid()::text, ${deviceId}, ${locationId}, 'assigned',
+            'staff_task', ${employeeId}, ${auth.employee.id}, ${eventMetadata}::jsonb, CURRENT_TIMESTAMP
+          )`
       }
 
       return { assignmentId: assignmentResult[0]?.id, assignedAt: assignmentResult[0]?.assignedAt, deviceId }
@@ -362,13 +318,10 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
     }
 
     // Find the assignment
-    const assignments: any[] = await db.$queryRawUnsafe(
-      `SELECT id, "subjectId", "targetValue"
+    const assignments: any[] = await db.$queryRaw`SELECT id, "subjectId", "targetValue"
        FROM "NotificationTargetAssignment"
        WHERE ${conditions.join(' AND ')}
-       LIMIT 1`,
-      ...params
-    )
+       LIMIT 1`
 
     if (assignments.length === 0) {
       return notFound('No active staff pager assignment found')
@@ -379,51 +332,37 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
     const unboundEmployeeId = assignment.subjectId
 
     // Release the assignment
-    await db.$executeRawUnsafe(
-      `UPDATE "NotificationTargetAssignment"
+    await db.$executeRaw`UPDATE "NotificationTargetAssignment"
        SET status = 'released',
            "releasedAt" = CURRENT_TIMESTAMP,
            "releaseReason" = 'manual_unbind',
            "updatedAt" = CURRENT_TIMESTAMP
-       WHERE id = $1`,
-      assignment.id
-    )
+       WHERE id = ${assignment.id}`
 
     // W5: Set to 'released' instead of 'available' — staff can confirm return via PATCH
-    const deviceRows: any[] = await db.$queryRawUnsafe(
-      `UPDATE "NotificationDevice"
+    const deviceRows: any[] = await db.$queryRaw`UPDATE "NotificationDevice"
        SET status = 'released',
            "releasedAt" = CURRENT_TIMESTAMP,
            "updatedAt" = CURRENT_TIMESTAMP
-       WHERE "locationId" = $1
-         AND "deviceNumber" = $2
+       WHERE "locationId" = ${locationId}
+         AND "deviceNumber" = ${unboundDeviceNumber}
          AND "deviceType" = 'staff_pager'
          AND "deletedAt" IS NULL
          AND status = 'assigned'
-       RETURNING id`,
-      locationId,
-      unboundDeviceNumber
-    )
+       RETURNING id`
 
     // Log device event
     if (deviceRows.length > 0) {
-      void db.$executeRawUnsafe(
-        `INSERT INTO "NotificationDeviceEvent" (
+      void db.$executeRaw`INSERT INTO "NotificationDeviceEvent" (
           id, "deviceId", "locationId", "eventType",
           "subjectType", "subjectId", "employeeId", metadata, "createdAt"
         ) VALUES (
-          gen_random_uuid()::text, $1, $2, 'released',
-          'staff_task', $3, $4, $5::jsonb, CURRENT_TIMESTAMP
-        )`,
-        deviceRows[0].id,
-        locationId,
-        unboundEmployeeId,
-        auth.employee.id,
-        JSON.stringify({
+          gen_random_uuid()::text, ${deviceRows[0].id}, ${locationId}, 'released',
+          'staff_task', ${unboundEmployeeId}, ${auth.employee.id}, ${JSON.stringify({
           action: 'staff_pager_unbind',
           deviceNumber: unboundDeviceNumber,
-        })
-      ).catch(err => log.warn({ err }, 'Background task failed'))
+        })}::jsonb, CURRENT_TIMESTAMP
+        )`.catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     // W16: AuditLog for staff device unbind

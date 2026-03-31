@@ -20,7 +20,7 @@ export const GET = withVenue(async function GET(
     const auth = await requirePermission(employeeId, locationId, 'admin.manage_memberships')
     if (!auth.authorized) return err(auth.error, auth.status)
 
-    const rows: any[] = await db.$queryRawUnsafe(`
+    const rows: any[] = await db.$queryRaw`
       SELECT "m".*,
              "p"."name" AS "planName", "p"."price" AS "planPrice", "p"."billingCycle" AS "planBillingCycle",
              "p"."benefits" AS "planBenefits", "p"."trialDays" AS "planTrialDays",
@@ -31,9 +31,9 @@ export const GET = withVenue(async function GET(
       LEFT JOIN "MembershipPlan" "p" ON "m"."planId" = "p"."id"
       LEFT JOIN "Customer" "c" ON "m"."customerId" = "c"."id"
       LEFT JOIN "SavedCard" "sc" ON "m"."savedCardId" = "sc"."id"
-      WHERE "m"."id" = $1 AND "m"."locationId" = $2 AND "m"."deletedAt" IS NULL
+      WHERE "m"."id" = ${id} AND "m"."locationId" = ${locationId} AND "m"."deletedAt" IS NULL
       LIMIT 1
-    `, id, locationId)
+    `
 
     if (rows.length === 0) return notFound('Membership not found')
     return ok(rows[0])
@@ -58,12 +58,12 @@ export const DELETE = withVenue(async function DELETE(
     const auth = await requirePermission(sp.get('requestingEmployeeId'), locationId, 'admin.manage_memberships')
     if (!auth.authorized) return err(auth.error, auth.status)
 
-    const rows: any[] = await db.$queryRawUnsafe(`
+    const rows: any[] = await db.$queryRaw`
       UPDATE "Membership"
       SET "deletedAt" = NOW(), "updatedAt" = NOW()
-      WHERE "id" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
+      WHERE "id" = ${id} AND "locationId" = ${locationId} AND "deletedAt" IS NULL
       RETURNING "id"
-    `, id, locationId)
+    `
 
     if (rows.length === 0) return notFound('Membership not found')
     return ok({ success: true })
@@ -88,13 +88,13 @@ export const PUT = withVenue(async function PUT(
     const auth = await requirePermission(requestingEmployeeId, locationId, 'admin.manage_memberships')
     if (!auth.authorized) return err(auth.error, auth.status)
 
-    const rows: any[] = await db.$queryRawUnsafe(`
+    const rows: any[] = await db.$queryRaw`
       UPDATE "Membership"
-      SET "statusReason" = COALESCE($3, "statusReason"),
+      SET "statusReason" = COALESCE(${statusReason ?? null}, "statusReason"),
           "updatedAt" = NOW()
-      WHERE "id" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
+      WHERE "id" = ${id} AND "locationId" = ${locationId} AND "deletedAt" IS NULL
       RETURNING *
-    `, id, locationId, statusReason ?? null)
+    `
 
     if (rows.length === 0) return notFound('Membership not found')
     return ok(rows[0])

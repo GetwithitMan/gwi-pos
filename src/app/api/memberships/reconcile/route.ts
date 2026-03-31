@@ -31,7 +31,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       params.push(datacapRefNo)
     }
 
-    const rows: any[] = await db.$queryRawUnsafe(`
+    const rows: any[] = await db.$queryRaw`
       SELECT "mc".*,
              "m"."customerId", "m"."planId", "m"."status" AS "membershipStatus",
              "p"."name" AS "planName",
@@ -43,7 +43,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       WHERE ${where}
       ORDER BY "mc"."createdAt" DESC
       LIMIT 10
-    `, ...params)
+    `
 
     return ok(rows)
   } catch (caughtErr) {

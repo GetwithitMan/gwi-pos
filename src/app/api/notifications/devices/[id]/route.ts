@@ -57,14 +57,10 @@ export const PATCH = withVenue(async function PATCH(
     }
 
     // Fetch existing device
-    const existing: any[] = await db.$queryRawUnsafe(
-      `SELECT id, "deviceNumber", "deviceType", status, "providerId",
+    const existing: any[] = await db.$queryRaw`SELECT id, "deviceNumber", "deviceType", status, "providerId",
               "assignedToSubjectType", "assignedToSubjectId", "humanLabel", metadata
        FROM "NotificationDevice"
-       WHERE id = $1 AND "locationId" = $2 AND "deletedAt" IS NULL`,
-      id,
-      locationId
-    )
+       WHERE id = ${id} AND "locationId" = ${locationId} AND "deletedAt" IS NULL`
 
     if (existing.length === 0) {
       return notFound('Device not found')
@@ -135,7 +131,7 @@ export const PATCH = withVenue(async function PATCH(
       return NextResponse.json({ data: device, message: 'No changes' })
     }
 
-    // Execute update
+    // eslint-disable-next-line -- dynamic SET clauses require $queryRawUnsafe; all values are parameterized ($1, $2, ...)
     const updated: any[] = await db.$queryRawUnsafe(
       `UPDATE "NotificationDevice"
        SET ${updateFields.join(', ')}
@@ -159,26 +155,17 @@ export const PATCH = withVenue(async function PATCH(
         ? 'force_override'
         : statusChangeToEventType(device.status as DeviceStatus, newStatus as DeviceStatus)
 
-      void db.$executeRawUnsafe(
-        `INSERT INTO "NotificationDeviceEvent" (
+      void db.$executeRaw`INSERT INTO "NotificationDeviceEvent" (
           id, "deviceId", "locationId", "eventType",
           "subjectType", "subjectId", "employeeId", metadata, "createdAt"
         ) VALUES (
-          gen_random_uuid()::text, $1, $2, $3,
-          $4, $5, $6, $7::jsonb, CURRENT_TIMESTAMP
-        )`,
-        id,
-        locationId,
-        eventType,
-        device.assignedToSubjectType || null,
-        device.assignedToSubjectId || null,
-        auth.employee.id,
-        JSON.stringify({
+          gen_random_uuid()::text, ${id}, ${locationId}, ${eventType},
+          ${device.assignedToSubjectType || null}, ${device.assignedToSubjectId || null}, ${auth.employee.id}, ${JSON.stringify({
           previousStatus: device.status,
           newStatus,
           force: force || false,
-        })
-      ).catch(err => log.warn({ err }, 'Background task failed'))
+        })}::jsonb, CURRENT_TIMESTAMP
+        )`.catch(err => log.warn({ err }, 'Background task failed'))
 
       // Audit log: notification_device_override
       void db.auditLog.create({
@@ -204,37 +191,22 @@ export const PATCH = withVenue(async function PATCH(
       if ((newStatus === 'released' || newStatus === 'disabled') && device.assignedToSubjectId) {
         const releaseReason = newStatus === 'disabled' ? 'device_disabled' : 'device_returned'
 
-        void db.$executeRawUnsafe(
-          `UPDATE "NotificationTargetAssignment"
+        void db.$executeRaw`UPDATE "NotificationTargetAssignment"
            SET status = 'released',
                "releasedAt" = CURRENT_TIMESTAMP,
-               "releaseReason" = $5,
+               "releaseReason" = ${releaseReason},
                "updatedAt" = CURRENT_TIMESTAMP
-           WHERE "locationId" = $1
-             AND "subjectType" = $2
-             AND "subjectId" = $3
-             AND "targetValue" = $4
-             AND status = 'active'`,
-          locationId,
-          device.assignedToSubjectType,
-          device.assignedToSubjectId,
-          device.deviceNumber,
-          releaseReason
-        ).catch(err => log.warn({ err }, 'Background task failed'))
+           WHERE "locationId" = ${locationId}
+             AND "subjectType" = ${device.assignedToSubjectType}
+             AND "subjectId" = ${device.assignedToSubjectId}
+             AND "targetValue" = ${device.deviceNumber}
+             AND status = 'active'`.catch(err => log.warn({ err }, 'Background task failed'))
 
         // Clear pagerNumber cache on the subject
         if (device.assignedToSubjectType === 'order') {
-          void db.$executeRawUnsafe(
-            `UPDATE "Order" SET "pagerNumber" = NULL WHERE id = $1 AND "locationId" = $2`,
-            device.assignedToSubjectId,
-            locationId
-          ).catch(err => log.warn({ err }, 'Background task failed'))
+          void db.$executeRaw`UPDATE "Order" SET "pagerNumber" = NULL WHERE id = ${device.assignedToSubjectId} AND "locationId" = ${locationId}`.catch(err => log.warn({ err }, 'Background task failed'))
         } else if (device.assignedToSubjectType === 'waitlist_entry') {
-          void db.$executeRawUnsafe(
-            `UPDATE "WaitlistEntry" SET "pagerNumber" = NULL WHERE id = $1 AND "locationId" = $2`,
-            device.assignedToSubjectId,
-            locationId
-          ).catch(err => log.warn({ err }, 'Background task failed'))
+          void db.$executeRaw`UPDATE "WaitlistEntry" SET "pagerNumber" = NULL WHERE id = ${device.assignedToSubjectId} AND "locationId" = ${locationId}`.catch(err => log.warn({ err }, 'Background task failed'))
         }
       }
     }
@@ -265,12 +237,8 @@ export const DELETE = withVenue(async function DELETE(
     if (!auth.authorized) return err(auth.error, auth.status)
 
     // Check device exists and is not currently assigned
-    const existing: any[] = await db.$queryRawUnsafe(
-      `SELECT id, status, "deviceNumber" FROM "NotificationDevice"
-       WHERE id = $1 AND "locationId" = $2 AND "deletedAt" IS NULL`,
-      id,
-      locationId
-    )
+    const existing: any[] = await db.$queryRaw`SELECT id, status, "deviceNumber" FROM "NotificationDevice"
+       WHERE id = ${id} AND "locationId" = ${locationId} AND "deletedAt" IS NULL`
 
     if (existing.length === 0) {
       return notFound('Device not found')
@@ -281,23 +249,13 @@ export const DELETE = withVenue(async function DELETE(
     }
 
     // Soft delete + set status to retired
-    await db.$executeRawUnsafe(
-      `UPDATE "NotificationDevice"
+    await db.$executeRaw`UPDATE "NotificationDevice"
        SET "deletedAt" = CURRENT_TIMESTAMP, status = 'retired', "updatedAt" = CURRENT_TIMESTAMP
-       WHERE id = $1 AND "locationId" = $2`,
-      id,
-      locationId
-    )
+       WHERE id = ${id} AND "locationId" = ${locationId}`
 
     // Log event
-    void db.$executeRawUnsafe(
-      `INSERT INTO "NotificationDeviceEvent" (id, "deviceId", "locationId", "eventType", "employeeId", metadata, "createdAt")
-       VALUES (gen_random_uuid()::text, $1, $2, 'retired', $3, $4::jsonb, CURRENT_TIMESTAMP)`,
-      id,
-      locationId,
-      auth.employee.id,
-      JSON.stringify({ action: 'soft_delete', deviceNumber: existing[0].deviceNumber })
-    ).catch(err => log.warn({ err }, 'Background task failed'))
+    void db.$executeRaw`INSERT INTO "NotificationDeviceEvent" (id, "deviceId", "locationId", "eventType", "employeeId", metadata, "createdAt")
+       VALUES (gen_random_uuid()::text, ${id}, ${locationId}, 'retired', ${auth.employee.id}, ${JSON.stringify({ action: 'soft_delete', deviceNumber: existing[0].deviceNumber })}::jsonb, CURRENT_TIMESTAMP)`.catch(err => log.warn({ err }, 'Background task failed'))
 
     // W14: AuditLog for device deletion
     void db.auditLog.create({

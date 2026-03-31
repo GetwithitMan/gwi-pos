@@ -43,17 +43,13 @@ export const GET = withVenue(async function GET(
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.NOTIFICATIONS_VIEW_LOG)
     if (!auth.authorized) return err(auth.error, auth.status)
 
-    const rules: any[] = await db.$queryRawUnsafe(
-      `SELECT r.*,
+    const rules: any[] = await db.$queryRaw`SELECT r.*,
               p.name as "providerName", p."providerType",
               fp.name as "fallbackProviderName"
        FROM "NotificationRoutingRule" r
        LEFT JOIN "NotificationProvider" p ON p.id = r."providerId" AND p."deletedAt" IS NULL
        LEFT JOIN "NotificationProvider" fp ON fp.id = r."fallbackProviderId" AND fp."deletedAt" IS NULL
-       WHERE r.id = $1 AND r."locationId" = $2 AND r."deletedAt" IS NULL`,
-      id,
-      locationId
-    )
+       WHERE r.id = ${id} AND r."locationId" = ${locationId} AND r."deletedAt" IS NULL`
 
     if (rules.length === 0) {
       return notFound('Rule not found')
@@ -87,13 +83,9 @@ export const PUT = withVenue(async function PUT(
     if (!auth.authorized) return err(auth.error, auth.status)
 
     // Verify rule exists
-    const existing: any[] = await db.$queryRawUnsafe(
-      `SELECT id, "providerId", "targetType", "eventType", priority, "criticalityClass"
+    const existing: any[] = await db.$queryRaw`SELECT id, "providerId", "targetType", "eventType", priority, "criticalityClass"
        FROM "NotificationRoutingRule"
-       WHERE id = $1 AND "locationId" = $2 AND "deletedAt" IS NULL`,
-      id,
-      locationId
-    )
+       WHERE id = ${id} AND "locationId" = ${locationId} AND "deletedAt" IS NULL`
     if (existing.length === 0) {
       return notFound('Rule not found')
     }
@@ -141,12 +133,8 @@ export const PUT = withVenue(async function PUT(
     const effectiveTargetType = targetType || existing[0].targetType
 
     if (providerId || targetType) {
-      const providers: any[] = await db.$queryRawUnsafe(
-        `SELECT id, capabilities, "providerType" FROM "NotificationProvider"
-         WHERE id = $1 AND "locationId" = $2 AND "isActive" = true AND "deletedAt" IS NULL`,
-        effectiveProviderId,
-        locationId
-      )
+      const providers: any[] = await db.$queryRaw`SELECT id, capabilities, "providerType" FROM "NotificationProvider"
+         WHERE id = ${effectiveProviderId} AND "locationId" = ${locationId} AND "isActive" = true AND "deletedAt" IS NULL`
       if (providers.length === 0) {
         return notFound('Provider not found or inactive')
       }
@@ -216,6 +204,7 @@ export const PUT = withVenue(async function PUT(
       paramIdx++
     }
 
+    // eslint-disable-next-line -- dynamic SET clauses require $queryRawUnsafe; all values are parameterized ($1, $2, ...)
     const updated: any[] = await db.$queryRawUnsafe(
       `UPDATE "NotificationRoutingRule"
        SET ${setClauses.join(', ')}
@@ -276,21 +265,13 @@ export const DELETE = withVenue(async function DELETE(
     if (!auth.authorized) return err(auth.error, auth.status)
 
     // Fetch rule details before deletion for audit
-    const existing: any[] = await db.$queryRawUnsafe(
-      `SELECT id, "eventType", "providerId", "targetType", priority
+    const existing: any[] = await db.$queryRaw`SELECT id, "eventType", "providerId", "targetType", priority
        FROM "NotificationRoutingRule"
-       WHERE id = $1 AND "locationId" = $2 AND "deletedAt" IS NULL`,
-      id,
-      locationId
-    )
+       WHERE id = ${id} AND "locationId" = ${locationId} AND "deletedAt" IS NULL`
 
-    const deleted = await db.$executeRawUnsafe(
-      `UPDATE "NotificationRoutingRule"
+    const deleted = await db.$executeRaw`UPDATE "NotificationRoutingRule"
        SET "deletedAt" = CURRENT_TIMESTAMP, "updatedAt" = CURRENT_TIMESTAMP
-       WHERE id = $1 AND "locationId" = $2 AND "deletedAt" IS NULL`,
-      id,
-      locationId
-    )
+       WHERE id = ${id} AND "locationId" = ${locationId} AND "deletedAt" IS NULL`
 
     if (deleted === 0) {
       return notFound('Rule not found')

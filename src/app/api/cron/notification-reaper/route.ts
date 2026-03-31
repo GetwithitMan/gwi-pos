@@ -31,9 +31,7 @@ export async function GET(request: NextRequest) {
 
   try {
     // Get all locations with their notification settings
-    const locations: any[] = await db.$queryRawUnsafe(
-      `SELECT id, name, settings FROM "Location" WHERE "deletedAt" IS NULL`
-    )
+    const locations: any[] = await db.$queryRaw`SELECT id, name, settings FROM "Location" WHERE "deletedAt" IS NULL`
 
     for (const location of locations) {
       const locationId = location.id
@@ -43,17 +41,13 @@ export async function GET(request: NextRequest) {
 
       try {
         // Find ghost pagers: assigned but not seen for longer than the configured timeout
-        const ghostDevices: any[] = await db.$queryRawUnsafe(
-          `SELECT id, "deviceNumber", "humanLabel", "assignedToSubjectType", "assignedToSubjectId",
+        const ghostDevices: any[] = await db.$queryRaw`SELECT id, "deviceNumber", "humanLabel", "assignedToSubjectType", "assignedToSubjectId",
                   "assignedAt", "lastSeenAt"
            FROM "NotificationDevice"
-           WHERE "locationId" = $1
+           WHERE "locationId" = ${locationId}
              AND status = 'assigned'
-             AND "assignedAt" < NOW() - ($2 || ' hours')::interval
-             AND "deletedAt" IS NULL`,
-          locationId,
-          String(timeoutHours)
-        )
+             AND "assignedAt" < NOW() - (${String(timeoutHours)} || ' hours')::interval
+             AND "deletedAt" IS NULL`
 
         if (ghostDevices.length === 0) {
           results.push({ locationId, locationName: location.name, ghostDevices: 0, skipped: true })
@@ -65,31 +59,20 @@ export async function GET(request: NextRequest) {
         for (const device of ghostDevices) {
           try {
             // Mark device as missing
-            await db.$executeRawUnsafe(
-              `UPDATE "NotificationDevice"
+            await db.$executeRaw`UPDATE "NotificationDevice"
                SET status = 'missing',
                    "assignedToSubjectType" = NULL,
                    "assignedToSubjectId" = NULL,
                    "updatedAt" = CURRENT_TIMESTAMP
-               WHERE id = $1 AND "locationId" = $2 AND status = 'assigned'`,
-              device.id,
-              locationId
-            )
+               WHERE id = ${device.id} AND "locationId" = ${locationId} AND status = 'assigned'`
 
             // Log device event
-            await db.$executeRawUnsafe(
-              `INSERT INTO "NotificationDeviceEvent" (
+            await db.$executeRaw`INSERT INTO "NotificationDeviceEvent" (
                 id, "deviceId", "locationId", "eventType",
                 "subjectType", "subjectId", metadata, "createdAt"
               ) VALUES (
-                gen_random_uuid()::text, $1, $2, 'marked_lost',
-                $3, $4, $5::jsonb, CURRENT_TIMESTAMP
-              )`,
-              device.id,
-              locationId,
-              device.assignedToSubjectType || null,
-              device.assignedToSubjectId || null,
-              JSON.stringify({
+                gen_random_uuid()::text, ${device.id}, ${locationId}, 'marked_lost',
+                ${device.assignedToSubjectType || null}, ${device.assignedToSubjectId || null}, ${JSON.stringify({
                 reason: 'ghost_pager_reaper',
                 assignedAt: device.assignedAt,
                 lastSeenAt: device.lastSeenAt,
@@ -97,37 +80,25 @@ export async function GET(request: NextRequest) {
                 elapsedHours: device.assignedAt
                   ? Math.round((now.getTime() - new Date(device.assignedAt).getTime()) / (1000 * 60 * 60) * 10) / 10
                   : null,
-              })
-            )
+              })}::jsonb, CURRENT_TIMESTAMP
+              )`
 
             // Release any active target assignments for this device
-            await db.$executeRawUnsafe(
-              `UPDATE "NotificationTargetAssignment"
+            await db.$executeRaw`UPDATE "NotificationTargetAssignment"
                SET status = 'released',
                    "releasedAt" = CURRENT_TIMESTAMP,
                    "releaseReason" = 'ghost_pager_timeout',
                    "updatedAt" = CURRENT_TIMESTAMP
-               WHERE "locationId" = $1
-                 AND "targetValue" = $2
+               WHERE "locationId" = ${locationId}
+                 AND "targetValue" = ${device.deviceNumber}
                  AND status = 'active'
-                 AND "targetType" IN ('guest_pager', 'staff_pager')`,
-              locationId,
-              device.deviceNumber
-            )
+                 AND "targetType" IN ('guest_pager', 'staff_pager')`
 
             // Clear pagerNumber cache on the subject if it was an order or waitlist entry
             if (device.assignedToSubjectType === 'order' && device.assignedToSubjectId) {
-              void db.$executeRawUnsafe(
-                `UPDATE "Order" SET "pagerNumber" = NULL WHERE id = $1 AND "locationId" = $2`,
-                device.assignedToSubjectId,
-                locationId
-              ).catch(err => log.warn({ err }, 'Background task failed'))
+              void db.$executeRaw`UPDATE "Order" SET "pagerNumber" = NULL WHERE id = ${device.assignedToSubjectId} AND "locationId" = ${locationId}`.catch(err => log.warn({ err }, 'Background task failed'))
             } else if (device.assignedToSubjectType === 'waitlist_entry' && device.assignedToSubjectId) {
-              void db.$executeRawUnsafe(
-                `UPDATE "WaitlistEntry" SET "pagerNumber" = NULL WHERE id = $1 AND "locationId" = $2`,
-                device.assignedToSubjectId,
-                locationId
-              ).catch(err => log.warn({ err }, 'Background task failed'))
+              void db.$executeRaw`UPDATE "WaitlistEntry" SET "pagerNumber" = NULL WHERE id = ${device.assignedToSubjectId} AND "locationId" = ${locationId}`.catch(err => log.warn({ err }, 'Background task failed'))
             }
 
             markedMissing++

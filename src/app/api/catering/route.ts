@@ -64,6 +64,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     const whereClause = conditions.join(' AND ')
 
+    // eslint-disable-next-line -- dynamic WHERE clauses + spread params require $queryRawUnsafe; all values are parameterized
     const countResult = await db.$queryRawUnsafe<[{ count: bigint }]>(
       `SELECT COUNT(*) as count FROM "CateringOrder" WHERE ${whereClause}`,
       ...params,
@@ -71,6 +72,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const totalCount = Number(countResult[0]?.count ?? 0)
 
     params.push(limit, offset)
+    // eslint-disable-next-line -- dynamic WHERE clauses + spread params require $queryRawUnsafe; all values are parameterized
     const orders = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
       `SELECT * FROM "CateringOrder" WHERE ${whereClause}
        ORDER BY "eventDate" ASC, "createdAt" DESC
@@ -81,12 +83,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // For each order, fetch items
     const ordersWithItems = await Promise.all(
       orders.map(async (order) => {
-        const items = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-          `SELECT * FROM "CateringOrderItem"
-           WHERE "cateringOrderId" = $1 AND "deletedAt" IS NULL
-           ORDER BY "createdAt" ASC`,
-          order.id,
-        )
+        const items = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT * FROM "CateringOrderItem"
+           WHERE "cateringOrderId" = ${order.id} AND "deletedAt" IS NULL
+           ORDER BY "createdAt" ASC`
         return { ...order, items }
       }),
     )
@@ -228,39 +227,29 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Create catering order via raw SQL
     const orderId = `cat_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
 
-    await db.$executeRawUnsafe(
-      `INSERT INTO "CateringOrder" (
+    await db.$executeRaw`INSERT INTO "CateringOrder" (
         "id", "locationId", "customerName", "customerPhone", "customerEmail", "customerId",
         "eventDate", "eventTime", "guestCount", "deliveryAddress", "notes", "status",
         "subtotal", "volumeDiscount", "serviceFee", "deliveryFee", "taxTotal", "total",
         "depositRequired", "createdBy", "createdAt", "updatedAt"
       ) VALUES (
-        $1, $2, $3, $4, $5, $6,
-        $7::date, $8, $9, $10, $11, 'inquiry',
-        $12, $13, $14, $15, $16, $17,
-        $18, $19, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-      )`,
-      orderId, locationId, customerName, customerPhone || null, customerEmail || null, customerId || null,
-      eventDate, eventTime || null, guestCount, deliveryAddress || null, notes || null,
-      discountedSubtotal, totalVolumeDiscount, serviceFee, deliveryFee, taxTotal, total,
-      depositRequired, employeeId || null,
-    )
+        ${orderId}, ${locationId}, ${customerName}, ${customerPhone || null}, ${customerEmail || null}, ${customerId || null},
+        ${eventDate}::date, ${eventTime || null}, ${guestCount}, ${deliveryAddress || null}, ${notes || null}, 'inquiry',
+        ${discountedSubtotal}, ${totalVolumeDiscount}, ${serviceFee}, ${deliveryFee}, ${taxTotal}, ${total},
+        ${depositRequired}, ${employeeId || null}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+      )`
 
     // Insert items
     for (const item of resolvedItems) {
-      await db.$executeRawUnsafe(
-        `INSERT INTO "CateringOrderItem" (
+      await db.$executeRaw`INSERT INTO "CateringOrderItem" (
           "id", "cateringOrderId", "menuItemId", "name", "quantity", "unitPrice",
           "lineTotal", "volumeDiscountPct", "discountedLineTotal", "specialInstructions",
           "createdAt", "updatedAt"
         ) VALUES (
-          gen_random_uuid()::text, $1, $2, $3, $4, $5,
-          $6, $7, $8, $9,
+          gen_random_uuid()::text, ${orderId}, ${item.menuItemId}, ${item.name}, ${item.quantity}, ${item.unitPrice},
+          ${item.lineTotal}, ${item.volumeDiscountPct}, ${item.discountedLineTotal}, ${item.specialInstructions},
           CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-        )`,
-        orderId, item.menuItemId, item.name, item.quantity, item.unitPrice,
-        item.lineTotal, item.volumeDiscountPct, item.discountedLineTotal, item.specialInstructions,
-      )
+        )`
     }
 
     // Audit log (fire-and-forget)

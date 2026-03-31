@@ -65,28 +65,28 @@ export const GET = withVenue(async function GET(
     }
 
     // Load active rules for this location
-    const ruleRows = await db.$queryRawUnsafe<RuleRow[]>(`
+    const ruleRows = await db.$queryRaw<RuleRow[]>`
       SELECT "id", "name", "triggerType", "triggerItemId", "triggerCategoryId",
              "triggerMinTotal", "triggerTimeStart", "triggerTimeEnd", "triggerDaysOfWeek",
              "suggestItemId", "suggestCategoryId", "message", "priority", "isActive"
       FROM "UpsellRule"
-      WHERE "locationId" = $1 AND "isActive" = true AND "deletedAt" IS NULL
+      WHERE "locationId" = ${locationId} AND "isActive" = true AND "deletedAt" IS NULL
       ORDER BY "priority" DESC
-    `, locationId)
+    `
 
     if (ruleRows.length === 0) {
       return ok({ suggestions: [] })
     }
 
     // Load order items with category info
-    const orderItemRows = await db.$queryRawUnsafe<OrderItemRow[]>(`
+    const orderItemRows = await db.$queryRaw<OrderItemRow[]>`
       SELECT oi."menuItemId", mi."categoryId", c."categoryType",
              mi."name" as "itemName", oi."price", oi."quantity"
       FROM "OrderItem" oi
       JOIN "MenuItem" mi ON oi."menuItemId" = mi."id"
       JOIN "Category" c ON mi."categoryId" = c."id"
-      WHERE oi."orderId" = $1 AND oi."voidedAt" IS NULL
-    `, orderId)
+      WHERE oi."orderId" = ${orderId} AND oi."voidedAt" IS NULL
+    `
 
     if (orderItemRows.length === 0) {
       return ok({ suggestions: [] })
@@ -118,11 +118,11 @@ export const GET = withVenue(async function GET(
     // Load suggested items
     const suggestableItems = new Map<string, SuggestableItem>()
     if (suggestItemIds.length > 0) {
-      const itemRows = await db.$queryRawUnsafe<MenuItemRow[]>(`
+      const itemRows = await db.$queryRaw<MenuItemRow[]>`
         SELECT "id", "name", "basePrice", "categoryId"
         FROM "MenuItem"
-        WHERE "id" = ANY($1::text[]) AND "deletedAt" IS NULL AND "isActive" = true
-      `, suggestItemIds)
+        WHERE "id" = ANY(${suggestItemIds}::text[]) AND "deletedAt" IS NULL AND "isActive" = true
+      `
       for (const row of itemRows) {
         suggestableItems.set(row.id, {
           id: row.id,
@@ -136,13 +136,13 @@ export const GET = withVenue(async function GET(
     // Load category items for category-based suggestions
     const categoryItems = new Map<string, SuggestableItem[]>()
     if (suggestCategoryIds.length > 0) {
-      const catItemRows = await db.$queryRawUnsafe<MenuItemRow[]>(`
+      const catItemRows = await db.$queryRaw<MenuItemRow[]>`
         SELECT "id", "name", "basePrice", "categoryId"
         FROM "MenuItem"
-        WHERE "categoryId" = ANY($1::text[]) AND "deletedAt" IS NULL AND "isActive" = true
+        WHERE "categoryId" = ANY(${suggestCategoryIds}::text[]) AND "deletedAt" IS NULL AND "isActive" = true
         ORDER BY "sortOrder" ASC, "name" ASC
         LIMIT 20
-      `, suggestCategoryIds)
+      `
       for (const row of catItemRows) {
         const item: SuggestableItem = {
           id: row.id,
@@ -167,33 +167,33 @@ export const GET = withVenue(async function GET(
     // Check for recently dismissed rules (within cooldown)
     const dismissedRuleIds = new Set<string>()
     if (upsellSettings.dismissCooldownMinutes > 0) {
-      const cooldownRows = await db.$queryRawUnsafe<{ upsellRuleId: string }[]>(`
+      const cooldownRows = await db.$queryRaw<{ upsellRuleId: string }[]>`
         SELECT DISTINCT "upsellRuleId"
         FROM "UpsellEvent"
-        WHERE "orderId" = $1 AND "action" = 'dismissed'
-          AND "createdAt" > NOW() - INTERVAL '1 minute' * $2
-      `, orderId, upsellSettings.dismissCooldownMinutes)
+        WHERE "orderId" = ${orderId} AND "action" = 'dismissed'
+          AND "createdAt" > NOW() - INTERVAL '1 minute' * ${upsellSettings.dismissCooldownMinutes}
+      `
       for (const row of cooldownRows) {
         dismissedRuleIds.add(row.upsellRuleId)
       }
     } else {
       // Even without cooldown, skip rules already shown-and-dismissed for this order
-      const dismissedRows = await db.$queryRawUnsafe<{ upsellRuleId: string }[]>(`
+      const dismissedRows = await db.$queryRaw<{ upsellRuleId: string }[]>`
         SELECT DISTINCT "upsellRuleId"
         FROM "UpsellEvent"
-        WHERE "orderId" = $1 AND "action" = 'dismissed'
-      `, orderId)
+        WHERE "orderId" = ${orderId} AND "action" = 'dismissed'
+      `
       for (const row of dismissedRows) {
         dismissedRuleIds.add(row.upsellRuleId)
       }
     }
 
     // Also skip rules already accepted for this order
-    const acceptedRows = await db.$queryRawUnsafe<{ upsellRuleId: string }[]>(`
+    const acceptedRows = await db.$queryRaw<{ upsellRuleId: string }[]>`
       SELECT DISTINCT "upsellRuleId"
       FROM "UpsellEvent"
-      WHERE "orderId" = $1 AND "action" = 'accepted'
-    `, orderId)
+      WHERE "orderId" = ${orderId} AND "action" = 'accepted'
+    `
     for (const row of acceptedRows) {
       dismissedRuleIds.add(row.upsellRuleId)
     }

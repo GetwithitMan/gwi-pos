@@ -4,6 +4,7 @@
  * Handles credit limit validation, balance update, and transaction record creation.
  */
 
+import { Prisma } from '@/generated/prisma/client'
 import type { TxClient, PaymentInput, PaymentRecord } from '../types'
 
 interface HouseAccountPaymentResult {
@@ -37,9 +38,8 @@ export async function processHouseAccountPayment(
   const haPaymentAmount = payment.amount + (payment.tipAmount || 0)
 
   // C3: Acquire row lock on house account to prevent balance race condition.
-  await tx.$queryRawUnsafe(
-    `SELECT id FROM "HouseAccount" WHERE id = $1 FOR UPDATE`,
-    payment.houseAccountId,
+  await tx.$queryRaw(
+    Prisma.sql`SELECT id FROM "HouseAccount" WHERE id = ${payment.houseAccountId} FOR UPDATE`,
   )
 
   const freshAccount = await tx.houseAccount.findUnique({

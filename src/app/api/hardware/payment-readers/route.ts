@@ -2,8 +2,6 @@ import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { parseSettings } from '@/lib/settings'
-import { PERMISSIONS } from '@/lib/auth-utils'
-import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
@@ -77,12 +75,6 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     if (!locationId || !name || !serialNumber) {
       return err('locationId, name, and serial number are required')
     }
-
-    // Auth check — require settings.hardware permission
-    const actor = await getActorFromRequest(request)
-    const resolvedEmployeeId = actor.employeeId ?? bodyEmployeeId
-    const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.SETTINGS_HARDWARE)
-    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Connection-type rules
     const isNetworkType = connectionType === 'IP' || connectionType === 'WIFI'

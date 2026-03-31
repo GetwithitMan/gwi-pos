@@ -63,11 +63,7 @@ export const POST = withVenue(async function POST(
 
     const result = await db.$transaction(async (tx) => {
       // Fetch the run
-      const runs: any[] = await tx.$queryRawUnsafe(
-        `SELECT * FROM "DeliveryRun" WHERE id = $1 AND "locationId" = $2 FOR UPDATE`,
-        id,
-        locationId,
-      )
+      const runs: any[] = await tx.$queryRaw`SELECT * FROM "DeliveryRun" WHERE id = ${id} AND "locationId" = ${locationId} FOR UPDATE`
 
       if (!runs.length) {
         throw new Error('Run not found')
@@ -81,13 +77,9 @@ export const POST = withVenue(async function POST(
       }
 
       // Fetch all orders in this run
-      const runOrders: any[] = await tx.$queryRawUnsafe(
-        `SELECT id, status, "runSequence" FROM "DeliveryOrder"
-         WHERE "runId" = $1 AND "locationId" = $2
-         FOR UPDATE`,
-        id,
-        locationId,
-      )
+      const runOrders: any[] = await tx.$queryRaw`SELECT id, status, "runSequence" FROM "DeliveryOrder"
+         WHERE "runId" = ${id} AND "locationId" = ${locationId}
+         FOR UPDATE`
 
       const runOrderIds = new Set(runOrders.map(o => o.id))
       const requestedIds = orderSequence.map((s: any) => s.orderId)
@@ -129,14 +121,11 @@ export const POST = withVenue(async function POST(
 
       // Recalculate ETAs: simple additive model (zone estimatedMinutes per remaining stop)
       // Fetch zone info for each order to get estimated delivery minutes
-      const orderZones: any[] = await tx.$queryRawUnsafe(
-        `SELECT d.id as "deliveryOrderId", d."zoneId",
+      const orderZones: any[] = await tx.$queryRaw`SELECT d.id as "deliveryOrderId", d."zoneId",
                 dz."estimatedMinutes" as "zoneMinutes"
          FROM "DeliveryOrder" d
          LEFT JOIN "DeliveryZone" dz ON dz.id = d."zoneId"
-         WHERE d."runId" = $1`,
-        id,
-      )
+         WHERE d."runId" = ${id}`
 
       const zoneMinutesMap = new Map<string, number>()
       for (const oz of orderZones) {
@@ -157,33 +146,19 @@ export const POST = withVenue(async function POST(
       }
 
       // Update run's orderSequence JSONB
-      await tx.$queryRawUnsafe(
-        `UPDATE "DeliveryRun"
-         SET "orderSequence" = $1::jsonb, "updatedAt" = CURRENT_TIMESTAMP
-         WHERE id = $2 AND "locationId" = $3`,
-        JSON.stringify(newOrderSequence),
-        id,
-        locationId,
-      )
+      await tx.$queryRaw`UPDATE "DeliveryRun"
+         SET "orderSequence" = ${JSON.stringify(newOrderSequence)}::jsonb, "updatedAt" = CURRENT_TIMESTAMP
+         WHERE id = ${id} AND "locationId" = ${locationId}`
 
       // Update each DeliveryOrder.runSequence
       for (const entry of orderSequence) {
-        await tx.$queryRawUnsafe(
-          `UPDATE "DeliveryOrder"
-           SET "runSequence" = $1, "updatedAt" = CURRENT_TIMESTAMP
-           WHERE id = $2 AND "runId" = $3`,
-          entry.sequence,
-          entry.orderId,
-          id,
-        )
+        await tx.$queryRaw`UPDATE "DeliveryOrder"
+           SET "runSequence" = ${entry.sequence}, "updatedAt" = CURRENT_TIMESTAMP
+           WHERE id = ${entry.orderId} AND "runId" = ${id}`
       }
 
       // Fetch updated run
-      const updatedRun: any[] = await tx.$queryRawUnsafe(
-        `SELECT * FROM "DeliveryRun" WHERE id = $1 AND "locationId" = $2`,
-        id,
-        locationId,
-      )
+      const updatedRun: any[] = await tx.$queryRaw`SELECT * FROM "DeliveryRun" WHERE id = ${id} AND "locationId" = ${locationId}`
 
       return { run: updatedRun[0], previousSequence: run.orderSequence, newSequence: newOrderSequence }
     })

@@ -87,22 +87,14 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     // Batch-load related orders via repository
     const orderIds = [...new Set(retries.map(r => r.orderId))]
-    const orders = await db.$queryRawUnsafe<Array<{ id: string; orderNumber: number | null; total: string; status: string; createdAt: Date }>>(
-      `SELECT id, "orderNumber", total::text, status, "createdAt" FROM "Order" WHERE id = ANY($1) AND "locationId" = $2 AND "deletedAt" IS NULL`,
-      orderIds,
-      locationId,
-    )
+    const orders = await db.$queryRaw<Array<{ id: string; orderNumber: number | null; total: string; status: string; createdAt: Date }>>`SELECT id, "orderNumber", total::text, status, "createdAt" FROM "Order" WHERE id = ANY(${orderIds}) AND "locationId" = ${locationId} AND "deletedAt" IS NULL`
     const orderMap = new Map(orders.map(o => [o.id, o]))
 
     // Batch-load employee names for writtenOffBy via repository
     const writerIds = retries.map(r => r.writtenOffBy).filter(Boolean) as string[]
     const uniqueWriterIds = [...new Set(writerIds)]
     const writers = uniqueWriterIds.length > 0
-      ? await db.$queryRawUnsafe<Array<{ id: string; firstName: string; lastName: string; displayName: string | null }>>(
-          `SELECT id, "firstName", "lastName", "displayName" FROM "Employee" WHERE id = ANY($1) AND "locationId" = $2 AND "deletedAt" IS NULL`,
-          uniqueWriterIds,
-          locationId,
-        )
+      ? await db.$queryRaw<Array<{ id: string; firstName: string; lastName: string; displayName: string | null }>>`SELECT id, "firstName", "lastName", "displayName" FROM "Employee" WHERE id = ANY(${uniqueWriterIds}) AND "locationId" = ${locationId} AND "deletedAt" IS NULL`
       : []
     const writerMap = new Map(writers.map(w => [w.id, w]))
 

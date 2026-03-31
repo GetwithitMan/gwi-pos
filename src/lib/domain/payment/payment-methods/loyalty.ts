@@ -4,6 +4,7 @@
  * Handles points validation, balance check, and deduction.
  */
 
+import { Prisma } from '@/generated/prisma/client'
 import type { TxClient, PaymentInput, PaymentRecord } from '../types'
 
 interface LoyaltySettings {
@@ -80,9 +81,8 @@ export async function processLoyaltyPayment(
   }
 
   // Acquire row lock to prevent concurrent redemption race
-  await tx.$queryRawUnsafe(
-    `SELECT id FROM "Customer" WHERE id = $1 FOR UPDATE`,
-    customer.id,
+  await tx.$queryRaw(
+    Prisma.sql`SELECT id FROM "Customer" WHERE id = ${customer.id} FOR UPDATE`,
   )
 
   // Re-check balance inside transaction for safety

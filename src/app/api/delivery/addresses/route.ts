@@ -42,17 +42,17 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       return err('customerId query parameter is required')
     }
 
-    const addresses: any[] = await db.$queryRawUnsafe(`
+    const addresses: any[] = await db.$queryRaw`
       SELECT da.*,
              dz."name" as "zoneName", dz."deliveryFee" as "zoneDeliveryFee",
              dz."estimatedMinutes" as "zoneEstimatedMinutes"
       FROM "DeliveryAddress" da
       LEFT JOIN "DeliveryZone" dz ON dz.id = da."zoneId" AND dz."deletedAt" IS NULL
-      WHERE da."locationId" = $1
-        AND da."customerId" = $2
+      WHERE da."locationId" = ${locationId}
+        AND da."customerId" = ${customerId}
         AND da."deletedAt" IS NULL
       ORDER BY da."isDefault" DESC, da."createdAt" DESC
-    `, locationId, customerId)
+    `
 
     const enriched = addresses.map(a => ({
       ...a,
@@ -126,16 +126,16 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Auto zone lookup by zipcode
     let zone: any = null
-    const zones: any[] = await db.$queryRawUnsafe(`
+    const zones: any[] = await db.$queryRaw`
       SELECT id, "name", "deliveryFee", "estimatedMinutes", "minimumOrder"
       FROM "DeliveryZone"
-      WHERE "locationId" = $1
+      WHERE "locationId" = ${locationId}
         AND "deletedAt" IS NULL
         AND "isActive" = true
         AND "zoneType" = 'zipcode'
-        AND $2 = ANY("zipCodes")
+        AND ${zipCode.trim()} = ANY("zipCodes")
       LIMIT 1
-    `, locationId, zipCode.trim())
+    `
 
     if (zones.length) {
       zone = {
@@ -163,15 +163,15 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Clear other defaults if setting this as default (within transaction)
     if (isDefault && customerId) {
-      await db.$executeRawUnsafe(`
+      await db.$executeRaw`
         UPDATE "DeliveryAddress"
         SET "isDefault" = false, "updatedAt" = CURRENT_TIMESTAMP
-        WHERE "locationId" = $1 AND "customerId" = $2 AND "isDefault" = true AND "deletedAt" IS NULL
-      `, locationId, customerId)
+        WHERE "locationId" = ${locationId} AND "customerId" = ${customerId} AND "isDefault" = true AND "deletedAt" IS NULL
+      `
     }
 
     // Insert the address
-    const inserted: any[] = await db.$queryRawUnsafe(`
+    const inserted: any[] = await db.$queryRaw`
       INSERT INTO "DeliveryAddress" (
         "id", "locationId", "customerId", "label",
         "address", "addressLine2", "city", "state", "zipCode",
@@ -179,29 +179,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         "zoneId", "isDefault",
         "createdAt", "updatedAt"
       ) VALUES (
-        gen_random_uuid()::text, $1, $2, $3,
-        $4, $5, $6, $7, $8,
-        $9, $10, $11, $12,
-        $13, $14,
+        gen_random_uuid()::text, ${locationId}, ${customerId || null}, ${label ? sanitizeHtml(label) : null},
+        ${address.trim()}, ${addressLine2?.trim() || null}, ${city.trim()}, ${state.trim()}, ${zipCode.trim()},
+        ${phone?.trim() || null}, ${deliveryNotes ? sanitizeHtml(deliveryNotes) : null}, ${latNum}, ${lngNum},
+        ${zone?.id || null}, ${isDefault === true},
         CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
       )
       RETURNING *
-    `,
-      locationId,
-      customerId || null,
-      label ? sanitizeHtml(label) : null,
-      address.trim(),
-      addressLine2?.trim() || null,
-      city.trim(),
-      state.trim(),
-      zipCode.trim(),
-      phone?.trim() || null,
-      deliveryNotes ? sanitizeHtml(deliveryNotes) : null,
-      latNum,
-      lngNum,
-      zone?.id || null,
-      isDefault === true,
-    )
+    `
 
     const saved = inserted[0]
 

@@ -114,11 +114,11 @@ export const POST = withVenue(async (
     }
 
     // Cancel any existing pending links for this order
-    await db.$executeRawUnsafe(`
+    await db.$executeRaw`
       UPDATE "PaymentLink"
       SET "status" = 'cancelled', "updatedAt" = NOW()
-      WHERE "orderId" = $1 AND "status" = 'pending'
-    `, orderId)
+      WHERE "orderId" = ${orderId} AND "status" = 'pending'
+    `
 
     // Generate secure token
     const token = crypto.randomUUID()
@@ -128,26 +128,17 @@ export const POST = withVenue(async (
     const expiresAt = new Date(Date.now() + expMinutes * 60 * 1000)
 
     // Create PaymentLink record
-    await db.$executeRawUnsafe(`
+    await db.$executeRaw`
       INSERT INTO "PaymentLink" (
         "id", "locationId", "orderId", "token", "amount", "status",
         "expiresAt", "phoneNumber", "email", "createdByEmployeeId",
         "createdAt", "updatedAt"
       ) VALUES (
-        gen_random_uuid()::text, $1, $2, $3, $4, 'pending',
-        $5, $6, $7, $8,
+        gen_random_uuid()::text, ${locationId}, ${orderId}, ${token}, ${balance}, 'pending',
+        ${expiresAt}, ${phoneNumber || null}, ${email || null}, ${employeeId},
         NOW(), NOW()
       )
-    `,
-      locationId,
-      orderId,
-      token,
-      balance,
-      expiresAt,
-      phoneNumber || null,
-      email || null,
-      employeeId
-    )
+    `
 
     // Build payment link URL
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 3005}`

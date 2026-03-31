@@ -133,10 +133,8 @@ async function reportTopFlavors(
 
   // Use JSONB extraction to pull modifier selections from cakeConfig tiers
   // Each tier has a modifiers array; we flatten and filter by modifierGroupName ILIKE '%flavor%'
-  const rows = await db.$queryRawUnsafe<
-    Array<{ modifierName: string; orderCount: string | number; totalRevenue: string | number }>
-  >(
-    `WITH tier_modifiers AS (
+  const rows = await db.$queryRaw<
+    Array<{ modifierName: string; orderCount: string | number; totalRevenue: string | number }>>`WITH tier_modifiers AS (
        SELECT
          co."id" AS order_id,
          co."total",
@@ -165,9 +163,7 @@ async function reportTopFlavors(
        AND fm."modifierName" IS NOT NULL
      GROUP BY fm."modifierName"
      ORDER BY "orderCount" DESC, "totalRevenue" DESC
-     LIMIT 10`,
-    ...params,
-  )
+     LIMIT 10`
 
   return {
     flavors: rows.map(r => ({
@@ -185,18 +181,14 @@ async function reportTopFlavors(
  * This represents the total outstanding financial obligation.
  */
 async function reportDepositLiability(locationId: string): Promise<DepositLiabilityResult> {
-  const rows = await db.$queryRawUnsafe<
-    Array<{ totalLiability: string | number; orderCount: string | number }>
-  >(
-    `SELECT
+  const rows = await db.$queryRaw<
+    Array<{ totalLiability: string | number; orderCount: string | number }>>`SELECT
        COALESCE(SUM("balanceDue"), 0)::numeric AS "totalLiability",
        COUNT(*)::int AS "orderCount"
      FROM "CakeOrder"
-     WHERE "locationId" = $1
+     WHERE "locationId" = ${locationId}
        AND "deletedAt" IS NULL
-       AND "status" NOT IN ('cancelled', 'completed', 'draft')`,
-    locationId,
-  )
+       AND "status" NOT IN ('cancelled', 'completed', 'draft')`
 
   const row = rows[0]
   return {
@@ -212,15 +204,13 @@ async function reportDepositLiability(locationId: string): Promise<DepositLiabil
  * (deposit_paid, in_production, ready). Useful for production planning.
  */
 async function reportProductionDemand(locationId: string): Promise<{ days: ProductionDemandDay[] }> {
-  const rows = await db.$queryRawUnsafe<
+  const rows = await db.$queryRaw<
     Array<{
       event_date: Date | string
       deposit_paid: string | number
       in_production: string | number
       ready: string | number
-    }>
-  >(
-    `WITH date_series AS (
+    }>>`WITH date_series AS (
        SELECT generate_series(
          CURRENT_DATE,
          CURRENT_DATE + INTERVAL '6 days',
@@ -235,13 +225,11 @@ async function reportProductionDemand(locationId: string): Promise<{ days: Produ
      FROM date_series ds
      LEFT JOIN "CakeOrder" co
        ON co."eventDate" = ds.d
-       AND co."locationId" = $1
+       AND co."locationId" = ${locationId}
        AND co."deletedAt" IS NULL
        AND co."status" IN ('deposit_paid', 'in_production', 'ready')
      GROUP BY ds.d
-     ORDER BY ds.d ASC`,
-    locationId,
-  )
+     ORDER BY ds.d ASC`
 
   const days: ProductionDemandDay[] = rows.map(r => {
     const dateStr =

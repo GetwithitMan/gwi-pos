@@ -14,12 +14,10 @@ export const dynamic = 'force-dynamic'
 export const GET = withVenue(async () => {
   try {
     // Count entries by status
-    const counts = await masterClient.$queryRawUnsafe<Array<{
+    const counts = await masterClient.$queryRaw<Array<{
       status: string
       count: bigint
-    }>>(
-      `SELECT status, COUNT(*) as count FROM "OutageQueueEntry" GROUP BY status`
-    )
+    }>>`SELECT status, COUNT(*) as count FROM "OutageQueueEntry" GROUP BY status`
 
     const statusCounts: Record<string, number> = {}
     let total = 0
@@ -29,7 +27,7 @@ export const GET = withVenue(async () => {
     }
 
     // Fetch recent entries (last 50)
-    const recent = await masterClient.$queryRawUnsafe<Array<{
+    const recent = await masterClient.$queryRaw<Array<{
       id: string
       tableName: string
       recordId: string
@@ -38,12 +36,10 @@ export const GET = withVenue(async () => {
       createdAt: Date
       replayedAt: Date | null
       metadata: unknown
-    }>>(
-      `SELECT id, "tableName", "recordId", operation, status, "createdAt", "replayedAt", metadata
+    }>>`SELECT id, "tableName", "recordId", operation, status, "createdAt", "replayedAt", metadata
        FROM "OutageQueueEntry"
        ORDER BY "createdAt" DESC
        LIMIT 50`
-    )
 
     return NextResponse.json({
       success: true,

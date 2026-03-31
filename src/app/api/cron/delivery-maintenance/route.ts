@@ -45,20 +45,16 @@ export async function GET(request: NextRequest) {
 
       try {
         // 1. Prune GPS breadcrumbs older than 7 days
-        const gpsPruned = await venueDb.$executeRawUnsafe(
-          `DELETE FROM "DeliveryTracking"
-           WHERE "locationId" = $1
-             AND "recordedAt" < NOW() - INTERVAL '7 days'`,
-          loc.id,
-        )
+        const gpsPruned = await venueDb.$executeRaw`DELETE FROM "DeliveryTracking"
+           WHERE "locationId" = ${loc.id}
+             AND "recordedAt" < NOW() - INTERVAL '7 days'`
         locationResult.gpsBreadcrumbsPruned = gpsPruned
         if (gpsPruned > 0) {
           console.log(`[cron:delivery-maintenance] Venue ${slug} location ${loc.id}: pruned ${gpsPruned} GPS breadcrumbs`)
         }
 
         // 2. Flag expiring driver documents (within 14 days)
-        const expiringDocs = await venueDb.$queryRawUnsafe<any[]>(
-          `SELECT dd."id", dd."driverId", dd."documentType", dd."expiresAt"
+        const expiringDocs = await venueDb.$queryRaw<any[]>`SELECT dd."id", dd."driverId", dd."documentType", dd."expiresAt"
            FROM "DeliveryDriverDocument" dd
            WHERE dd."expiresAt" < NOW() + INTERVAL '14 days'
              AND dd."expiresAt" > NOW()
@@ -66,41 +62,30 @@ export async function GET(request: NextRequest) {
              AND EXISTS (
                SELECT 1 FROM "DeliveryDriver" d
                WHERE d."id" = dd."driverId"
-                 AND d."locationId" = $1
+                 AND d."locationId" = ${loc.id}
                  AND d."deletedAt" IS NULL
-             )`,
-          loc.id,
-        )
+             )`
 
         let exceptionsCreated = 0
         for (const doc of expiringDocs) {
-          const existing = await venueDb.$queryRawUnsafe<{ count: number }[]>(
-            `SELECT COUNT(*)::int as count
+          const existing = await venueDb.$queryRaw<{ count: number }[]>`SELECT COUNT(*)::int as count
              FROM "DeliveryException"
-             WHERE "locationId" = $1
+             WHERE "locationId" = ${loc.id}
                AND "type" = 'expiring_document'
-               AND "driverId" = $2
+               AND "driverId" = ${doc.driverId}
                AND "status" != 'resolved'
                AND "deletedAt" IS NULL
-               AND "description" LIKE $3`,
-            loc.id,
-            doc.driverId,
-            `%${doc.id}%`,
-          )
+               AND "description" LIKE ${`%${doc.id}%`}`
 
           if ((existing[0]?.count ?? 0) === 0) {
-            await venueDb.$executeRawUnsafe(
-              `INSERT INTO "DeliveryException" (
+            const exceptionDescription = `Driver document ${doc.documentType} (${doc.id}) expires ${new Date(doc.expiresAt).toISOString().split('T')[0]}`
+            await venueDb.$executeRaw`INSERT INTO "DeliveryException" (
                 "id", "locationId", "driverId", "type", "severity", "status",
                 "description", "createdAt", "updatedAt"
               ) VALUES (
-                gen_random_uuid()::text, $1, $2, 'expiring_document', 'low', 'open',
-                $3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-              )`,
-              loc.id,
-              doc.driverId,
-              `Driver document ${doc.documentType} (${doc.id}) expires ${new Date(doc.expiresAt).toISOString().split('T')[0]}`,
-            )
+                gen_random_uuid()::text, ${loc.id}, ${doc.driverId}, 'expiring_document', 'low', 'open',
+                ${exceptionDescription}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              )`
             exceptionsCreated++
           }
         }
@@ -111,29 +96,23 @@ export async function GET(request: NextRequest) {
         }
 
         // 3. Prune old notification attempts (> 30 days)
-        const attemptsPruned = await venueDb.$executeRawUnsafe(
-          `DELETE FROM "DeliveryNotificationAttempt"
+        const attemptsPruned = await venueDb.$executeRaw`DELETE FROM "DeliveryNotificationAttempt"
            WHERE "attemptedAt" < NOW() - INTERVAL '30 days'
              AND "notificationId" IN (
                SELECT "id" FROM "DeliveryNotification"
-               WHERE "locationId" = $1
-             )`,
-          loc.id,
-        )
+               WHERE "locationId" = ${loc.id}
+             )`
         locationResult.notificationAttemptsPruned = attemptsPruned
         if (attemptsPruned > 0) {
           console.log(`[cron:delivery-maintenance] Venue ${slug} location ${loc.id}: pruned ${attemptsPruned} notification attempts`)
         }
 
         // 4. Clean up expired proof media references (> 90 days)
-        const proofsCleared = await venueDb.$executeRawUnsafe(
-          `UPDATE "DeliveryProofOfDelivery"
+        const proofsCleared = await venueDb.$executeRaw`UPDATE "DeliveryProofOfDelivery"
            SET "storageKey" = NULL
-           WHERE "locationId" = $1
+           WHERE "locationId" = ${loc.id}
              AND "capturedAt" < NOW() - INTERVAL '90 days'
-             AND "storageKey" IS NOT NULL`,
-          loc.id,
-        )
+             AND "storageKey" IS NOT NULL`
         locationResult.proofMediaRefsCleared = proofsCleared
         if (proofsCleared > 0) {
           console.log(`[cron:delivery-maintenance] Venue ${slug} location ${loc.id}: cleared ${proofsCleared} expired proof media refs`)

@@ -25,11 +25,11 @@ export const GET = withVenue(async function GET(
       return err('No location found')
     }
 
-    const rows: any[] = await db.$queryRawUnsafe(`
+    const rows: any[] = await db.$queryRaw`
       SELECT id, label, "createdByName", "itemCount", "categoryCount", data, "createdAt"
       FROM "MenuSnapshot"
-      WHERE id = $1 AND "locationId" = $2
-    `, id, locationId)
+      WHERE id = ${id} AND "locationId" = ${locationId}
+    `
 
     if (!rows.length) {
       return notFound('Snapshot not found')
@@ -112,10 +112,10 @@ export const POST = withVenue(async function POST(
     }
 
     // Fetch snapshot
-    const rows: any[] = await db.$queryRawUnsafe(`
+    const rows: any[] = await db.$queryRaw`
       SELECT data FROM "MenuSnapshot"
-      WHERE id = $1 AND "locationId" = $2
-    `, id, locationId)
+      WHERE id = ${id} AND "locationId" = ${locationId}
+    `
 
     if (!rows.length) {
       return notFound('Snapshot not found')
@@ -374,11 +374,11 @@ export const DELETE = withVenue(async function DELETE(
       }
     }
 
-    const result = await db.$queryRawUnsafe(`
+    const result = await db.$queryRaw`
       DELETE FROM "MenuSnapshot"
-      WHERE id = $1 AND "locationId" = $2
+      WHERE id = ${id} AND "locationId" = ${locationId}
       RETURNING id
-    `, id, locationId)
+    `
 
     if (!Array.isArray(result) || result.length === 0) {
       return notFound('Snapshot not found')

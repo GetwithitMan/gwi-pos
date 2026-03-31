@@ -50,11 +50,11 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     }
 
     // Find the driver for this employee
-    const drivers: any[] = await db.$queryRawUnsafe(`
+    const drivers: any[] = await db.$queryRaw`
       SELECT id FROM "DeliveryDriver"
-      WHERE "employeeId" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
+      WHERE "employeeId" = ${actor.employeeId} AND "locationId" = ${locationId} AND "deletedAt" IS NULL
       LIMIT 1
-    `, actor.employeeId, locationId)
+    `
 
     if (!drivers.length) {
       return notFound('No driver profile found')
@@ -63,16 +63,16 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     const driverId = drivers[0].id
 
     // Validate the order belongs to the driver's active run
-    const orderRows: any[] = await db.$queryRawUnsafe(`
+    const orderRows: any[] = await db.$queryRaw`
       SELECT do_.*, dr."driverId" as "runDriverId", dr."status" as "runStatus"
       FROM "DeliveryOrder" do_
       JOIN "DeliveryRun" dr ON dr.id = do_."runId"
-      WHERE do_.id = $1
-        AND do_."locationId" = $2
-        AND dr."driverId" = $3
+      WHERE do_.id = ${deliveryOrderId}
+        AND do_."locationId" = ${locationId}
+        AND dr."driverId" = ${driverId}
         AND dr."status" IN ('assigned', 'handoff_ready', 'dispatched', 'in_progress')
       LIMIT 1
-    `, deliveryOrderId, locationId, driverId)
+    `
 
     if (!orderRows.length) {
       return notFound('Order not found or not assigned to your active run')
@@ -87,10 +87,10 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
 
       if (dispatchPolicy) {
         // Check uploaded proofs
-        const proofs: any[] = await db.$queryRawUnsafe(`
+        const proofs: any[] = await db.$queryRaw`
           SELECT "type" FROM "DeliveryProofOfDelivery"
-          WHERE "deliveryOrderId" = $1
-        `, deliveryOrderId)
+          WHERE "deliveryOrderId" = ${deliveryOrderId}
+        `
 
         const policyCheck = await canMarkDelivered(
           dispatchPolicy,

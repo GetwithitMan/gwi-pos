@@ -19,6 +19,9 @@
  * out — it should always net to zero). If the FK is enforced at the DB level,
  * a seed row must be created. This will surface as an FK constraint error on
  * first use and is easy to fix with a migration that inserts the system employee.
+ *
+ * NOTE: Uses $queryRawUnsafe for raw SQL delivery tables (DeliveryOrder, DeliveryAuditLog).
+ * All queries use positional $1/$2 params — safe from injection.
  */
 
 import { db } from '@/lib/db'

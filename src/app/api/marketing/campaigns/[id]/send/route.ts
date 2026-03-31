@@ -34,11 +34,11 @@ export const POST = withVenue(async function POST(
     if (!auth.authorized) return err(auth.error, auth.status)
 
     // Load campaign
-    const campaigns = await db.$queryRawUnsafe(`
+    const campaigns = await db.$queryRaw`
       SELECT * FROM "MarketingCampaign"
-      WHERE id = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
+      WHERE id = ${id} AND "locationId" = ${locationId} AND "deletedAt" IS NULL
       LIMIT 1
-    `, id, locationId) as Record<string, unknown>[]
+    ` as Record<string, unknown>[]
 
     if (campaigns.length === 0) {
       return notFound('Campaign not found')
@@ -73,14 +73,14 @@ export const POST = withVenue(async function POST(
     const todayStart = new Date()
     todayStart.setHours(0, 0, 0, 0)
 
-    const sentToday = await db.$queryRawUnsafe(`
+    const sentToday = await db.$queryRaw`
       SELECT COUNT(*)::int as count
       FROM "MarketingRecipient" r
       JOIN "MarketingCampaign" c ON c.id = r."campaignId"
-      WHERE c."locationId" = $1
-        AND r.channel = $2
-        AND r."sentAt" >= $3
-    `, locationId, campaignType, todayStart) as { count: number }[]
+      WHERE c."locationId" = ${locationId}
+        AND r.channel = ${campaignType}
+        AND r."sentAt" >= ${todayStart}
+    ` as { count: number }[]
 
     const sentTodayCount = sentToday[0]?.count ?? 0
     const maxPerDay = campaignType === 'sms' ? marketing.maxSmsPerDay : marketing.maxEmailsPerDay
@@ -109,22 +109,19 @@ export const POST = withVenue(async function POST(
     // Create recipient records (parameterized inserts to prevent SQL injection)
     for (const c of eligibleCustomers) {
       const address = campaignType === 'email' ? (c.email || '') : (c.phone || '')
-      await db.$executeRawUnsafe(
-        `INSERT INTO "MarketingRecipient" ("campaignId", "customerId", "channel", "address")
-         VALUES ($1, $2, $3, $4)
-         ON CONFLICT DO NOTHING`,
-        id, c.id, campaignType, address
-      )
+      await db.$executeRaw`INSERT INTO "MarketingRecipient" ("campaignId", "customerId", "channel", "address")
+         VALUES (${id}, ${c.id}, ${campaignType}, ${address})
+         ON CONFLICT DO NOTHING`
     }
 
     // Update campaign to 'sending' with recipient count
-    await db.$executeRawUnsafe(`
+    await db.$executeRaw`
       UPDATE "MarketingCampaign"
       SET status = 'sending',
-          "recipientCount" = $2,
+          "recipientCount" = ${eligibleCustomers.length},
           "updatedAt" = NOW()
-      WHERE id = $1
-    `, id, eligibleCustomers.length)
+      WHERE id = ${id}
+    `
 
     // Fire-and-forget: process sends in background
     const locationName = location.name || 'Our Restaurant'
@@ -213,11 +210,11 @@ async function processCampaignSend(
         const { customerId, success, error } = result.value
         const newStatus = success ? 'sent' : 'bounced'
 
-        await db.$executeRawUnsafe(`
+        await db.$executeRaw`
           UPDATE "MarketingRecipient"
-          SET status = $1, "sentAt" = NOW(), "errorMessage" = $2, "updatedAt" = NOW()
-          WHERE "campaignId" = $3 AND "customerId" = $4
-        `, newStatus, error || null, campaignId, customerId)
+          SET status = ${newStatus}, "sentAt" = NOW(), "errorMessage" = ${error || null}, "updatedAt" = NOW()
+          WHERE "campaignId" = ${campaignId} AND "customerId" = ${customerId}
+        `
 
         if (success) deliveredCount++
       }
@@ -230,14 +227,14 @@ async function processCampaignSend(
   }
 
   // Mark campaign as sent with final stats
-  await db.$executeRawUnsafe(`
+  await db.$executeRaw`
     UPDATE "MarketingCampaign"
     SET status = 'sent',
         "sentAt" = NOW(),
-        "deliveredCount" = $2,
+        "deliveredCount" = ${deliveredCount},
         "updatedAt" = NOW()
-    WHERE id = $1
-  `, campaignId, deliveredCount)
+    WHERE id = ${campaignId}
+  `
 
   // Campaign stats returned in response
 }

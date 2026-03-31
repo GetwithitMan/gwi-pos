@@ -62,8 +62,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     const whereClause = conditions.join(' AND ')
 
-    const redemptions = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT
+    const redemptions = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT
          lr.*,
          c."firstName" AS "customerFirstName",
          c."lastName" AS "customerLastName",
@@ -73,9 +72,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
        LEFT JOIN "Customer" c ON c."id" = lr."customerId"
        LEFT JOIN "LoyaltyReward" rw ON rw."id" = lr."rewardId"
        WHERE ${whereClause}
-       ORDER BY lr."createdAt" DESC`,
-      ...params,
-    )
+       ORDER BY lr."createdAt" DESC`
 
     return ok(redemptions)
   } catch (error: any) {

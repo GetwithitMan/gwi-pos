@@ -71,12 +71,8 @@ export const POST = withVenue(async function POST(
     if (gate) return gate
 
     // ── Fetch the cake order ────────────────────────────────────────────
-    const orderRows = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT * FROM "CakeOrder"
-       WHERE "id" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL`,
-      cakeOrderId,
-      locationId,
-    )
+    const orderRows = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT * FROM "CakeOrder"
+       WHERE "id" = ${cakeOrderId} AND "locationId" = ${locationId} AND "deletedAt" IS NULL`
 
     if (!orderRows || orderRows.length === 0) {
       return NextResponse.json(
@@ -111,16 +107,13 @@ export const POST = withVenue(async function POST(
 
       if (input.amount >= threshold) {
         // Check cumulative daily external payments for this location
-        const dailySumRows = await db.$queryRawUnsafe<[{ total: string | number | null }]>(
-          `SELECT COALESCE(SUM("amount"), 0) AS total
+        const dailySumRows = await db.$queryRaw<[{ total: string | number | null }]>`SELECT COALESCE(SUM("amount"), 0) AS total
            FROM "CakePayment" cp
            JOIN "CakeOrder" co ON co."id" = cp."cakeOrderId"
-           WHERE co."locationId" = $1
+           WHERE co."locationId" = ${locationId}
              AND cp."paymentSource" = 'external'
              AND cp."type" = 'payment'
-             AND cp."createdAt" >= CURRENT_DATE`,
-          locationId,
-        )
+             AND cp."createdAt" >= CURRENT_DATE`
         const dailyTotal = Number(dailySumRows[0]?.total ?? 0) + input.amount
 
         // Require owner-level permission for high external payment volume
@@ -204,35 +197,26 @@ export const POST = withVenue(async function POST(
       input.type === 'payment' &&
       input.appliedTo === 'deposit'
     ) {
-      await db.$executeRawUnsafe(
-        `UPDATE "CakeOrder"
+      await db.$executeRaw`UPDATE "CakeOrder"
          SET "status" = 'deposit_paid',
              "depositPaidAt" = NOW(),
              "updatedAt" = NOW()
-         WHERE "id" = $1 AND "status" = 'approved'`,
-        cakeOrderId,
-      )
+         WHERE "id" = ${cakeOrderId} AND "status" = 'approved'`
 
       // Additional change log for status transition
       const statusChangeId = crypto.randomUUID()
-      await db.$executeRawUnsafe(
-        `INSERT INTO "CakeOrderChange" (
+      await db.$executeRaw`INSERT INTO "CakeOrderChange" (
           "id", "cakeOrderId", "changeType", "changedBy", "source",
           "details", "createdAt"
         ) VALUES (
-          $1, $2, 'status_change', $3, 'system',
-          $4::jsonb, NOW()
-        )`,
-        statusChangeId,
-        cakeOrderId,
-        auth.employee.id,
-        JSON.stringify({
+          ${statusChangeId}, ${cakeOrderId}, 'status_change', ${auth.employee.id}, 'system',
+          ${JSON.stringify({
           previousStatus: 'approved',
           newStatus: 'deposit_paid',
           trigger: 'first_deposit_payment',
           cakePaymentId,
-        }),
-      )
+        })}::jsonb, NOW()
+        )`
     }
 
     pushUpstream()

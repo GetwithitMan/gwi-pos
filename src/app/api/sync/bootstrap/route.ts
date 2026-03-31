@@ -657,13 +657,10 @@ async function fetchOpenOrders(locationId: string, opts: BootstrapOptions) {
       }
     } catch {
       try {
-        const rows = await adminDb.$queryRawUnsafe<Array<{ orderId: string; maxSeq: number }>>(
-          `SELECT "orderId", MAX("serverSequence") as "maxSeq"
+        const rows = await adminDb.$queryRaw<Array<{ orderId: string; maxSeq: number }>>`SELECT "orderId", MAX("serverSequence") as "maxSeq"
            FROM "order_events"
-           WHERE "orderId" = ANY($1::text[])
-           GROUP BY "orderId"`,
-          orderIds
-        )
+           WHERE "orderId" = ANY(${orderIds}::text[])
+           GROUP BY "orderId"`
         for (const row of rows) {
           lastEventSeqMap.set(row.orderId, Number(row.maxSeq))
         }

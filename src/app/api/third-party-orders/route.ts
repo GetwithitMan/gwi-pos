@@ -97,6 +97,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const whereClause = conditions.join(' AND ')
 
     // Count total
+    // eslint-disable-next-line -- dynamic WHERE clauses + spread params require $queryRawUnsafe; all values are parameterized
     const countResult = await db.$queryRawUnsafe<Array<{ count: bigint }>>(
       `SELECT COUNT(*) as count FROM "ThirdPartyOrder" WHERE ${whereClause}`,
       ...params,
@@ -104,6 +105,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const totalCount = Number(countResult[0]?.count || 0)
 
     // Fetch orders
+    // eslint-disable-next-line -- dynamic WHERE clauses + spread params require $queryRawUnsafe; all values are parameterized
     const rows = await db.$queryRawUnsafe<ThirdPartyOrderRow[]>(
       `SELECT "id", "locationId", "platform", "externalOrderId",
               "externalCustomerName", "externalCustomerPhone",

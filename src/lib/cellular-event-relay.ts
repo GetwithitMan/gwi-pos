@@ -8,6 +8,7 @@
  * - Uses neonClient (PrismaPg to Neon) — same connection pool as upstream sync
  */
 
+import { Prisma } from '@/generated/prisma/client'
 import { neonClient, hasNeonConnection } from './neon-client'
 import { createChildLogger } from './logger'
 
@@ -84,6 +85,7 @@ async function flushBuffer(): Promise<void> {
       params.push(buffer[i].locationId, buffer[i].event, JSON.stringify(buffer[i].data ?? {}))
     }
 
+    // eslint-disable-next-line -- $executeRawUnsafe required: dynamic batch VALUES count with numbered params
     await neonClient.$executeRawUnsafe(
       `INSERT INTO "CellularEvent" ("locationId", "event", "data") VALUES ${values.join(', ')}`,
       ...params
@@ -126,8 +128,8 @@ export function stopCellularRelayCleanup(): void {
 async function cleanupOldEvents(): Promise<void> {
   if (!neonClient) return
   try {
-    const result = await neonClient.$executeRawUnsafe(
-      `DELETE FROM "CellularEvent" WHERE "createdAt" < NOW() - INTERVAL '${MAX_EVENT_AGE_MINUTES} minutes'`
+    const result = await neonClient.$executeRaw(
+      Prisma.sql`DELETE FROM "CellularEvent" WHERE "createdAt" < NOW() - INTERVAL '60 minutes'`
     )
     // $executeRawUnsafe returns the count on DELETE
     if (typeof result === 'number' && result > 0) {

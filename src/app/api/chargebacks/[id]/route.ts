@@ -1,8 +1,7 @@
 import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
-import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
-import { PERMISSIONS } from '@/lib/auth-utils'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { emitToLocation } from '@/lib/socket-server'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
@@ -11,27 +10,20 @@ const log = createChildLogger('chargebacks')
 
 const VALID_STATUSES = ['open', 'responded', 'won', 'lost'] as const
 
-export const PUT = withVenue(async function PUT(
+export const PUT = withVenue(withAuth('MGR_VOID_PAYMENTS', async function PUT(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  ctx: { auth: { employeeId: string | null }; params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = await params
+    const { id } = await ctx.params
     const body = await request.json()
-    const { status, notes, resolution, respondedBy, employeeId } = body
+    const { status, notes, resolution, respondedBy } = body
+    const authEmployeeId = ctx.auth.employeeId
 
     // Find the case first to get locationId
     const existing = await db.chargebackCase.findUnique({ where: { id } })
     if (!existing || existing.deletedAt) {
       return notFound('Chargeback case not found')
-    }
-
-    // Auth: resolve employee from cookie or body, require manager.void_payments permission
-    const actor = await getActorFromRequest(request)
-    const resolvedEmployeeId = actor.employeeId ?? employeeId
-    const auth = await requirePermission(resolvedEmployeeId, existing.locationId, PERMISSIONS.MGR_VOID_PAYMENTS)
-    if (!auth.authorized) {
-      return err(auth.error, auth.status)
     }
 
     // Validate status if provided
@@ -53,7 +45,7 @@ export const PUT = withVenue(async function PUT(
     // If status is 'responded', set respondedAt and respondedBy
     if (status === 'responded') {
       data.respondedAt = new Date()
-      data.respondedBy = respondedBy || resolvedEmployeeId || null
+      data.respondedBy = respondedBy || authEmployeeId || null
     }
 
     // Atomic transaction: update chargeback + create audit log
@@ -65,7 +57,7 @@ export const PUT = withVenue(async function PUT(
       db.auditLog.create({
         data: {
           locationId: existing.locationId,
-          employeeId: resolvedEmployeeId || null,
+          employeeId: authEmployeeId || null,
           action: 'chargeback_updated',
           entityType: 'chargeback',
           entityId: id,
@@ -113,4 +105,4 @@ export const PUT = withVenue(async function PUT(
     console.error('Failed to update chargeback case:', error)
     return err('Failed to update chargeback case', 500)
   }
-})
+}))

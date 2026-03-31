@@ -33,25 +33,19 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     let tiers: Array<Record<string, unknown>>
 
     if (programId) {
-      tiers = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-        `SELECT lt.*,
+      tiers = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT lt.*,
                 (SELECT COUNT(*) FROM "Customer" WHERE "loyaltyTierId" = lt."id" AND "deletedAt" IS NULL)::int AS "customerCount"
          FROM "LoyaltyTier" lt
-         WHERE lt."programId" = $1 AND lt."deletedAt" IS NULL
-         ORDER BY lt."sortOrder" ASC`,
-        programId,
-      )
+         WHERE lt."programId" = ${programId} AND lt."deletedAt" IS NULL
+         ORDER BY lt."sortOrder" ASC`
     } else {
       // Find all tiers for programs at this location
-      tiers = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-        `SELECT lt.*,
+      tiers = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT lt.*,
                 (SELECT COUNT(*) FROM "Customer" WHERE "loyaltyTierId" = lt."id" AND "deletedAt" IS NULL)::int AS "customerCount"
          FROM "LoyaltyTier" lt
          JOIN "LoyaltyProgram" lp ON lp."id" = lt."programId"
-         WHERE lp."locationId" = $1 AND lt."deletedAt" IS NULL AND lp."deletedAt" IS NULL
-         ORDER BY lt."sortOrder" ASC`,
-        locationId,
-      )
+         WHERE lp."locationId" = ${locationId} AND lt."deletedAt" IS NULL AND lp."deletedAt" IS NULL
+         ORDER BY lt."sortOrder" ASC`
     }
 
     return ok(tiers)
@@ -95,42 +89,25 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Verify program belongs to location
-    const program = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT "id" FROM "LoyaltyProgram"
-       WHERE "id" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL`,
-      programId,
-      locationId,
-    )
+    const program = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT "id" FROM "LoyaltyProgram"
+       WHERE "id" = ${programId} AND "locationId" = ${locationId} AND "deletedAt" IS NULL`
     if (program.length === 0) {
       return notFound('Program not found at this location')
     }
 
     const id = crypto.randomUUID()
 
-    await db.$executeRawUnsafe(
-      `INSERT INTO "LoyaltyTier" (
+    await db.$executeRaw`INSERT INTO "LoyaltyTier" (
         "id", "programId", "name", "minimumPoints",
         "pointsMultiplier", "perks", "color", "sortOrder",
         "createdAt", "updatedAt"
       ) VALUES (
-        $1, $2, $3, $4,
-        $5, $6::jsonb, $7, $8,
+        ${id}, ${programId}, ${name.trim()}, ${minimumPoints},
+        ${pointsMultiplier}, ${JSON.stringify(perks)}::jsonb, ${color}, ${sortOrder},
         NOW(), NOW()
-      )`,
-      id,
-      programId,
-      name.trim(),
-      minimumPoints,
-      pointsMultiplier,
-      JSON.stringify(perks),
-      color,
-      sortOrder,
-    )
+      )`
 
-    const created = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT * FROM "LoyaltyTier" WHERE "id" = $1`,
-      id,
-    )
+    const created = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT * FROM "LoyaltyTier" WHERE "id" = ${id}`
 
     pushUpstream()
     void notifyDataChanged({ locationId, domain: 'loyalty', action: 'created', entityId: id })

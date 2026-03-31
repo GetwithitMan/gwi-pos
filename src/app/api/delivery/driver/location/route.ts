@@ -53,20 +53,20 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Find driver + active session + active run
-    const sessionRows: any[] = await db.$queryRawUnsafe(`
+    const sessionRows: any[] = await db.$queryRaw`
       SELECT ds.id as "sessionId", dd.id as "driverId", dr.id as "runId"
       FROM "DeliveryDriverSession" ds
       JOIN "DeliveryDriver" dd ON dd.id = ds."driverId"
       LEFT JOIN "DeliveryRun" dr
         ON dr."driverId" = dd.id
-        AND dr."locationId" = $2
+        AND dr."locationId" = ${locationId}
         AND dr."status" IN ('assigned', 'handoff_ready', 'dispatched', 'in_progress')
-      WHERE dd."employeeId" = $1
-        AND ds."locationId" = $2
+      WHERE dd."employeeId" = ${actor.employeeId}
+        AND ds."locationId" = ${locationId}
         AND ds."endedAt" IS NULL
       ORDER BY ds."startedAt" DESC
       LIMIT 1
-    `, actor.employeeId, locationId)
+    `
 
     if (!sessionRows.length) {
       return notFound('No active driver session found')
@@ -75,12 +75,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const { sessionId, driverId, runId } = sessionRows[0]
 
     // Get the last recorded point to enforce minimum interval
-    const lastPoints: any[] = await db.$queryRawUnsafe(`
+    const lastPoints: any[] = await db.$queryRaw`
       SELECT "recordedAt" FROM "DeliveryTracking"
-      WHERE "driverId" = $1 AND "locationId" = $2
+      WHERE "driverId" = ${driverId} AND "locationId" = ${locationId}
       ORDER BY "recordedAt" DESC
       LIMIT 1
-    `, driverId, locationId)
+    `
 
     let lastRecordedAt = lastPoints.length
       ? new Date(lastPoints[0].recordedAt).getTime()
@@ -150,23 +150,23 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       paramIdx += 8
     }
 
-    await db.$executeRawUnsafe(`
+    await db.$executeRaw`
       INSERT INTO "DeliveryTracking" (
         "id", "locationId", "driverId", "runId",
         "lat", "lng", "accuracy", "speed", "recordedAt"
       ) VALUES ${valueClauses.join(', ')}
-    `, ...insertParams)
+    `
 
     // Update session last location with the most recent point
     const latest = validPoints[validPoints.length - 1]
-    await db.$executeRawUnsafe(`
+    await db.$executeRaw`
       UPDATE "DeliveryDriverSession"
-      SET "lastLocationLat" = $1,
-          "lastLocationLng" = $2,
-          "lastLocationAt" = $3,
+      SET "lastLocationLat" = ${latest.lat},
+          "lastLocationLng" = ${latest.lng},
+          "lastLocationAt" = ${latest.recordedAt},
           "updatedAt" = CURRENT_TIMESTAMP
-      WHERE "id" = $4 AND "locationId" = $5
-    `, latest.lat, latest.lng, latest.recordedAt, sessionId, locationId)
+      WHERE "id" = ${sessionId} AND "locationId" = ${locationId}
+    `
 
     pushUpstream()
 

@@ -7,7 +7,7 @@
  * Returns the card ID so the caller can then activate it.
  */
 
-import type { PrismaClient } from '@/generated/prisma/client'
+import { Prisma, type PrismaClient } from '@/generated/prisma/client'
 
 interface AllocateResult {
   success: boolean
@@ -20,9 +20,8 @@ export async function allocatePooledGiftCard(
   locationId: string
 ): Promise<AllocateResult> {
   // Use raw SQL with FOR UPDATE SKIP LOCKED for atomic claim
-  const rows = await tx.$queryRawUnsafe<{ id: string }[]>(
-    `SELECT id FROM "GiftCard" WHERE "locationId" = $1 AND status = 'unactivated' AND "deletedAt" IS NULL ORDER BY "createdAt" ASC LIMIT 1 FOR UPDATE SKIP LOCKED`,
-    locationId
+  const rows = await tx.$queryRaw<{ id: string }[]>(
+    Prisma.sql`SELECT id FROM "GiftCard" WHERE "locationId" = ${locationId} AND status = 'unactivated' AND "deletedAt" IS NULL ORDER BY "createdAt" ASC LIMIT 1 FOR UPDATE SKIP LOCKED`,
   )
 
   if (!rows || rows.length === 0) {

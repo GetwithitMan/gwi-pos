@@ -110,10 +110,7 @@ export const POST = withVenue(withAuth('manager.keyed_entry', async function POS
 
     // ─── Validate amount against order total ────────────────────────────
     if (orderId && locationId) {
-      const orderRows = await db.$queryRawUnsafe<Array<{ total: string }>>(
-        `SELECT total::numeric::text as total FROM "Order" WHERE id = $1 AND "locationId" = $2 AND "deletedAt" IS NULL FOR UPDATE`,
-        orderId, locationId
-      )
+      const orderRows = await db.$queryRaw<Array<{ total: string }>>`SELECT total::numeric::text as total FROM "Order" WHERE id = ${orderId} AND "locationId" = ${locationId} AND "deletedAt" IS NULL FOR UPDATE`
       if (orderRows[0] && amount > Number(orderRows[0].total)) {
         return err(`Amount $${amount} exceeds order total $${orderRows[0].total}`, 400)
       }
@@ -132,11 +129,8 @@ export const POST = withVenue(withAuth('manager.keyed_entry', async function POS
 
     // ─── HA Failover Protection: Track pending sale ────────────────────
     const pendingId = crypto.randomUUID()
-    await db.$executeRawUnsafe(
-      `INSERT INTO "_pending_datacap_sales" (id, "orderId", "terminalId", "invoiceNo", "amount", "status", "locationId")
-       VALUES ($1, $2, $3, $4, $5, 'pending', $6)`,
-      pendingId, orderId, resolvedReaderId, invoiceNo, amount, locationId
-    )
+    await db.$executeRaw`INSERT INTO "_pending_datacap_sales" (id, "orderId", "terminalId", "invoiceNo", "amount", "status", "locationId")
+       VALUES (${pendingId}, ${orderId}, ${resolvedReaderId}, ${invoiceNo}, ${amount}, 'pending', ${locationId})`
 
     // ─── Process keyed sale via Datacap cloud ──────────────────────────
     let response
@@ -157,10 +151,7 @@ export const POST = withVenue(withAuth('manager.keyed_entry', async function POS
       })
     } catch (saleError) {
       // Mark pending as failed
-      void db.$executeRawUnsafe(
-        `UPDATE "_pending_datacap_sales" SET "status" = 'failed', "resolvedAt" = NOW() WHERE id = $1`,
-        pendingId
-      ).catch(e => console.error('[Keyed Entry] Failed to mark pending sale as failed:', e))
+      void db.$executeRaw`UPDATE "_pending_datacap_sales" SET "status" = 'failed', "resolvedAt" = NOW() WHERE id = ${pendingId}`.catch(e => console.error('[Keyed Entry] Failed to mark pending sale as failed:', e))
       throw saleError
     }
 
@@ -169,15 +160,9 @@ export const POST = withVenue(withAuth('manager.keyed_entry', async function POS
 
     // ─── Update pending sale record with outcome ───────────────────────
     if (response.cmdStatus === 'Approved') {
-      void db.$executeRawUnsafe(
-        `UPDATE "_pending_datacap_sales" SET "status" = 'completed', "datacapRecordNo" = $2, "datacapRefNumber" = $3, "resolvedAt" = NOW() WHERE id = $1`,
-        pendingId, response.recordNo || null, response.refNo || null
-      ).catch(e => console.error('[Keyed Entry] Failed to mark pending sale as completed:', e))
+      void db.$executeRaw`UPDATE "_pending_datacap_sales" SET "status" = 'completed', "datacapRecordNo" = ${response.recordNo || null}, "datacapRefNumber" = ${response.refNo || null}, "resolvedAt" = NOW() WHERE id = ${pendingId}`.catch(e => console.error('[Keyed Entry] Failed to mark pending sale as completed:', e))
     } else {
-      void db.$executeRawUnsafe(
-        `UPDATE "_pending_datacap_sales" SET "status" = 'declined', "resolvedAt" = NOW() WHERE id = $1`,
-        pendingId
-      ).catch(e => console.error('[Keyed Entry] Failed to mark pending sale as declined:', e))
+      void db.$executeRaw`UPDATE "_pending_datacap_sales" SET "status" = 'declined', "resolvedAt" = NOW() WHERE id = ${pendingId}`.catch(e => console.error('[Keyed Entry] Failed to mark pending sale as declined:', e))
     }
 
     pushUpstream()

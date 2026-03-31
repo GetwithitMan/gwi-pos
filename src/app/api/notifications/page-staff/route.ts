@@ -44,32 +44,24 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Validate employee exists
-    const employees: any[] = await db.$queryRawUnsafe(
-      `SELECT id, "firstName", "lastName", role, phone
+    const employees: any[] = await db.$queryRaw`SELECT id, "firstName", "lastName", role, phone
        FROM "Employee"
-       WHERE id = $1 AND "locationId" = $2 AND "deletedAt" IS NULL`,
-      employeeId,
-      locationId
-    )
+       WHERE id = ${employeeId} AND "locationId" = ${locationId} AND "deletedAt" IS NULL`
     if (employees.length === 0) {
       return notFound('Employee not found')
     }
     const employee = employees[0]
 
     // Look up the employee's bound staff pager
-    const pagerAssignments: any[] = await db.$queryRawUnsafe(
-      `SELECT ta.id, ta."targetValue" as "deviceNumber", ta."providerId"
+    const pagerAssignments: any[] = await db.$queryRaw`SELECT ta.id, ta."targetValue" as "deviceNumber", ta."providerId"
        FROM "NotificationTargetAssignment" ta
-       WHERE ta."locationId" = $1
+       WHERE ta."locationId" = ${locationId}
          AND ta."subjectType" = 'staff_task'
-         AND ta."subjectId" = $2
+         AND ta."subjectId" = ${employeeId}
          AND ta."targetType" = 'staff_pager'
          AND ta.status = 'active'
        ORDER BY ta."isPrimary" DESC, ta."createdAt" DESC
-       LIMIT 1`,
-      locationId,
-      employeeId
-    )
+       LIMIT 1`
 
     const hasPager = pagerAssignments.length > 0
     const pagerNumber = hasPager ? pagerAssignments[0].deviceNumber : null
@@ -98,10 +90,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Get location name for the message
-    const locations: any[] = await db.$queryRawUnsafe(
-      `SELECT name FROM "Location" WHERE id = $1`,
-      locationId
-    )
+    const locations: any[] = await db.$queryRaw`SELECT name FROM "Location" WHERE id = ${locationId}`
     if (locations[0]) {
       context.locationName = locations[0].name
     }
@@ -157,36 +146,25 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Log device event if we have a pager
     if (hasPager) {
-      const deviceRows: any[] = await db.$queryRawUnsafe(
-        `SELECT d.id FROM "NotificationDevice" d
-         WHERE d."locationId" = $1
-           AND d."deviceNumber" = $2
+      const deviceRows: any[] = await db.$queryRaw`SELECT d.id FROM "NotificationDevice" d
+         WHERE d."locationId" = ${locationId}
+           AND d."deviceNumber" = ${pagerNumber}
            AND d."deviceType" = 'staff_pager'
            AND d."deletedAt" IS NULL
-         LIMIT 1`,
-        locationId,
-        pagerNumber
-      )
+         LIMIT 1`
       if (deviceRows.length > 0) {
-        void db.$executeRawUnsafe(
-          `INSERT INTO "NotificationDeviceEvent" (
+        void db.$executeRaw`INSERT INTO "NotificationDeviceEvent" (
             id, "deviceId", "locationId", "eventType",
             "subjectType", "subjectId", "employeeId", metadata, "createdAt"
           ) VALUES (
-            gen_random_uuid()::text, $1, $2, 'manual_page',
-            'staff_task', $3, $4, $5::jsonb, CURRENT_TIMESTAMP
-          )`,
-          deviceRows[0].id,
-          locationId,
-          employeeId,
-          auth.employee.id,
-          JSON.stringify({
+            gen_random_uuid()::text, ${deviceRows[0].id}, ${locationId}, 'manual_page',
+            'staff_task', ${employeeId}, ${auth.employee.id}, ${JSON.stringify({
             sourceEventId,
             eventType: resolvedEventType,
             message: message || null,
             dispatched,
-          })
-        ).catch(err => log.warn({ err }, 'Background task failed'))
+          })}::jsonb, CURRENT_TIMESTAMP
+          )`.catch(err => log.warn({ err }, 'Background task failed'))
       }
     }
 

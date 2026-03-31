@@ -70,12 +70,12 @@ let dedupTableReady = false
 
 async function ensureDedupTable(): Promise<void> {
   if (dedupTableReady) return
-  await db.$executeRawUnsafe(`
+  await db.$executeRaw`
     CREATE TABLE IF NOT EXISTS "_processed_cart_events" (
       "eventId" TEXT PRIMARY KEY,
       "processedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
-  `)
+  `
   dedupTableReady = true
 }
 
@@ -216,13 +216,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
             }
             // Idempotency L2: atomic claim via INSERT ... ON CONFLICT DO NOTHING RETURNING
             // This is race-safe — if two requests race, only one gets the RETURNING row.
-            const [claimed] = await tx.$queryRawUnsafe<{eventId: string}[]>(
-              `INSERT INTO "_processed_cart_events" ("eventId", "processedAt")
-               VALUES ($1, NOW())
+            const [claimed] = await tx.$queryRaw<{eventId: string}[]>`INSERT INTO "_processed_cart_events" ("eventId", "processedAt")
+               VALUES (${evt.eventId}, NOW())
                ON CONFLICT ("eventId") DO NOTHING
-               RETURNING "eventId"`,
-              evt.eventId
-            )
+               RETURNING "eventId"`
             if (!claimed) {
               // Already processed by another request
               markProcessedLocal(evt.eventId)
@@ -260,10 +257,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
                 }
 
                 // Get next order number atomically (per business day)
-                const lastOrderRows = await tx.$queryRawUnsafe<{ orderNumber: number }[]>(
-                  `SELECT "orderNumber" FROM "Order" WHERE "locationId" = $1 AND "parentOrderId" IS NULL AND "createdAt" >= $2 AND "createdAt" < $3 ORDER BY "orderNumber" DESC LIMIT 1 FOR UPDATE`,
-                  locationId, businessDay.start, businessDay.end
-                )
+                const lastOrderRows = await tx.$queryRaw<{ orderNumber: number }[]>`SELECT "orderNumber" FROM "Order" WHERE "locationId" = ${locationId} AND "parentOrderId" IS NULL AND "createdAt" >= ${businessDay.start} AND "createdAt" < ${businessDay.end} ORDER BY "orderNumber" DESC LIMIT 1 FOR UPDATE`
                 const orderNumber = ((lastOrderRows as any[])[0]?.orderNumber ?? 0) + 1
 
                 const initialSeatCount = payload.guestCount || 1
@@ -553,12 +547,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
                     // Persist FulfillmentEvents so bridge worker dispatches to hardware (printers, KDS)
                     for (const action of actions) {
                       try {
-                        await db.$executeRawUnsafe(
-                          `INSERT INTO "FulfillmentEvent" (id, "locationId", "orderId", "stationId", type, status, payload, "retryCount", "createdAt", "updatedAt")
-                           VALUES (gen_random_uuid(), $1, $2, $3, $4, 'pending', $5::jsonb, 0, NOW(), NOW())`,
-                          locationId, targetOrderId, action.stationId || null, action.type,
-                          JSON.stringify({ items: action.items, stationName: action.stationName, idempotencyKey: action.idempotencyKey })
-                        )
+                        await db.$executeRaw`INSERT INTO "FulfillmentEvent" (id, "locationId", "orderId", "stationId", type, status, payload, "retryCount", "createdAt", "updatedAt")
+                           VALUES (gen_random_uuid(), ${locationId}, ${targetOrderId}, ${action.stationId || null}, ${action.type}, 'pending', ${JSON.stringify({ items: action.items, stationName: action.stationName, idempotencyKey: action.idempotencyKey })}::jsonb, 0, NOW(), NOW())`
                       } catch (feErr) {
                         console.error(`[replay-cart-events] Failed to persist FulfillmentEvent:`, feErr)
                       }

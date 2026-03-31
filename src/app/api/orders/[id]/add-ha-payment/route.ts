@@ -60,15 +60,12 @@ export const POST = withVenue(async function POST(
       return notFound('Order not found')
     }
 
-    const lockedOrderRows = await db.$queryRawUnsafe<Array<{
+    const lockedOrderRows = await db.$queryRaw<Array<{
       id: string; locationId: string; status: string;
       taxTotal: string; discountTotal: string; tipTotal: string;
-    }>>(
-      `SELECT id, "locationId", status, "taxTotal"::numeric::text as "taxTotal",
+    }>>`SELECT id, "locationId", status, "taxTotal"::numeric::text as "taxTotal",
               "discountTotal"::numeric::text as "discountTotal", "tipTotal"::numeric::text as "tipTotal"
-       FROM "Order" WHERE id = $1 AND "locationId" = $2 AND "deletedAt" IS NULL FOR UPDATE`,
-      orderId, locationId
-    )
+       FROM "Order" WHERE id = ${orderId} AND "locationId" = ${locationId} AND "deletedAt" IS NULL FOR UPDATE`
     const order = lockedOrderRows[0]
       ? {
           id: lockedOrderRows[0].id,

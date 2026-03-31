@@ -40,6 +40,7 @@ type TransactionClient = Parameters<Parameters<PrismaClient['$transaction']>[0]>
  */
 export async function enableSyncReplication(tx: TransactionClient): Promise<void> {
   try {
+    // eslint-disable-next-line -- $executeRawUnsafe required: SET LOCAL with string literal value
     await (tx as any).$executeRawUnsafe("SET LOCAL synchronous_commit = 'remote_apply'")
   } catch (err) {
     // Non-fatal: sync replication is a durability enhancement, not a correctness requirement.

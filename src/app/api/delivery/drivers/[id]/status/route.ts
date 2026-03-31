@@ -64,13 +64,10 @@ export const PATCH = withVenue(async function PATCH(
     }
 
     // Verify driver exists
-    const driverRows: any[] = await db.$queryRawUnsafe(
-      `SELECT dd.*, e."firstName" as "driverFirstName", e."lastName" as "driverLastName"
+    const driverRows: any[] = await db.$queryRaw`SELECT dd.*, e."firstName" as "driverFirstName", e."lastName" as "driverLastName"
        FROM "DeliveryDriver" dd
        LEFT JOIN "Employee" e ON e.id = dd."employeeId"
-       WHERE dd.id = $1 AND dd."locationId" = $2 AND dd."deletedAt" IS NULL`,
-      driverId, locationId,
-    )
+       WHERE dd.id = ${driverId} AND dd."locationId" = ${locationId} AND dd."deletedAt" IS NULL`
 
     if (!driverRows.length) {
       return notFound('Driver not found')
@@ -79,13 +76,10 @@ export const PATCH = withVenue(async function PATCH(
     const driver = driverRows[0]
 
     // Find the driver's active session
-    const sessions: any[] = await db.$queryRawUnsafe(
-      `SELECT * FROM "DeliveryDriverSession"
-       WHERE "driverId" = $1 AND "locationId" = $2 AND "endedAt" IS NULL
+    const sessions: any[] = await db.$queryRaw`SELECT * FROM "DeliveryDriverSession"
+       WHERE "driverId" = ${driverId} AND "locationId" = ${locationId} AND "endedAt" IS NULL
        ORDER BY "startedAt" DESC
-       LIMIT 1`,
-      driverId, locationId,
-    )
+       LIMIT 1`
 
     if (!sessions.length) {
       // If transitioning to available/on_delivery/break, we could auto-create a session

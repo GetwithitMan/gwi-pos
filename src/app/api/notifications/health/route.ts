@@ -66,37 +66,25 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       workerHeartbeatRows,
     ] = await Promise.all([
       // Pending jobs by provider
-      db.$queryRawUnsafe<Array<{ providerId: string; count: bigint }>>(
-        `SELECT "providerId", COUNT(*) as count
+      db.$queryRaw<Array<{ providerId: string; count: bigint }>>`SELECT "providerId", COUNT(*) as count
          FROM "NotificationJob"
-         WHERE "locationId" = $1 AND status IN ('pending', 'claimed', 'processing', 'waiting_retry')
+         WHERE "locationId" = ${locationId} AND status IN ('pending', 'claimed', 'processing', 'waiting_retry')
          GROUP BY "providerId"`,
-        locationId
-      ),
       // Pending jobs by event type
-      db.$queryRawUnsafe<Array<{ eventType: string; count: bigint }>>(
-        `SELECT "eventType", COUNT(*) as count
+      db.$queryRaw<Array<{ eventType: string; count: bigint }>>`SELECT "eventType", COUNT(*) as count
          FROM "NotificationJob"
-         WHERE "locationId" = $1 AND status IN ('pending', 'claimed', 'processing', 'waiting_retry')
+         WHERE "locationId" = ${locationId} AND status IN ('pending', 'claimed', 'processing', 'waiting_retry')
          GROUP BY "eventType"`,
-        locationId
-      ),
       // Dead-letter count
-      db.$queryRawUnsafe<[{ count: bigint }]>(
-        `SELECT COUNT(*) as count
+      db.$queryRaw<[{ count: bigint }]>`SELECT COUNT(*) as count
          FROM "NotificationJob"
-         WHERE "locationId" = $1 AND status = 'dead_letter'`,
-        locationId
-      ),
+         WHERE "locationId" = ${locationId} AND status = 'dead_letter'`,
       // Total pending
-      db.$queryRawUnsafe<[{ count: bigint }]>(
-        `SELECT COUNT(*) as count
+      db.$queryRaw<[{ count: bigint }]>`SELECT COUNT(*) as count
          FROM "NotificationJob"
-         WHERE "locationId" = $1 AND status IN ('pending', 'claimed', 'processing', 'waiting_retry')`,
-        locationId
-      ),
+         WHERE "locationId" = ${locationId} AND status IN ('pending', 'claimed', 'processing', 'waiting_retry')`,
       // Provider health
-      db.$queryRawUnsafe<Array<{
+      db.$queryRaw<Array<{
         id: string
         name: string
         providerType: string
@@ -105,23 +93,17 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         circuitBreakerOpenUntil: Date | null
         lastHealthCheckAt: Date | null
         isActive: boolean
-      }>>(
-        `SELECT id, name, "providerType", "healthStatus", "consecutiveFailures",
+      }>>`SELECT id, name, "providerType", "healthStatus", "consecutiveFailures",
                 "circuitBreakerOpenUntil", "lastHealthCheckAt", "isActive"
          FROM "NotificationProvider"
-         WHERE "locationId" = $1 AND "deletedAt" IS NULL`,
-        locationId
-      ),
+         WHERE "locationId" = ${locationId} AND "deletedAt" IS NULL`,
       // Worker last heartbeat — approximate via most recent job claim
-      db.$queryRawUnsafe<Array<{ claimedByWorkerId: string; lastClaim: Date }>>(
-        `SELECT "claimedByWorkerId", MAX("claimedAt") as "lastClaim"
+      db.$queryRaw<Array<{ claimedByWorkerId: string; lastClaim: Date }>>`SELECT "claimedByWorkerId", MAX("claimedAt") as "lastClaim"
          FROM "NotificationJob"
-         WHERE "locationId" = $1 AND "claimedByWorkerId" IS NOT NULL AND "claimedAt" IS NOT NULL
+         WHERE "locationId" = ${locationId} AND "claimedByWorkerId" IS NOT NULL AND "claimedAt" IS NOT NULL
          GROUP BY "claimedByWorkerId"
          ORDER BY "lastClaim" DESC
          LIMIT 5`,
-        locationId
-      ),
     ])
 
     const totalPending = Number(totalPendingRows[0]?.count ?? 0)

@@ -48,9 +48,7 @@ export const POST = withVenue(async function POST(
     // Lock the order row inside a short transaction to prevent status changes
     // between the read and the split operation (race condition fix).
     const lockResult = await db.$transaction(async (tx) => {
-      const [lockedRow] = await tx.$queryRawUnsafe<any[]>(
-        `SELECT id, status FROM "Order" WHERE id = $1 FOR UPDATE`, id
-      )
+      const [lockedRow] = await tx.$queryRaw<any[]>`SELECT id, status FROM "Order" WHERE id = ${id} FOR UPDATE`
       if (!lockedRow) return { error: 'Order not found' as const, status: 404 as const }
       if (!SPLITTABLE_STATUSES.includes(lockedRow.status)) {
         return { error: `Cannot split order in '${lockedRow.status}' status` as const, status: 400 as const }

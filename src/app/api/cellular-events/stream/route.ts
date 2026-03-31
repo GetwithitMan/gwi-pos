@@ -63,10 +63,7 @@ export async function GET(request: NextRequest) {
   // If no cursor, start from the latest event (don't replay entire history)
   if (cursor === 0) {
     try {
-      const latest = await db.$queryRawUnsafe<[{ id: bigint }]>(
-        `SELECT COALESCE(MAX("id"), 0) as id FROM "CellularEvent" WHERE "locationId" = $1`,
-        locationId
-      )
+      const latest = await db.$queryRaw<[{ id: bigint }]>`SELECT COALESCE(MAX("id"), 0) as id FROM "CellularEvent" WHERE "locationId" = ${locationId}`
       cursor = Number(latest[0]?.id ?? 0)
     } catch {
       // Start from 0 if query fails
@@ -96,11 +93,7 @@ export async function GET(request: NextRequest) {
         while (!aborted && (Date.now() - startTime) < MAX_CONNECTION_MS) {
           // Poll for new events
           try {
-            const events = await db.$queryRawUnsafe<Array<{ id: bigint; event: string; data: unknown }>>(
-              `SELECT "id", "event", "data" FROM "CellularEvent" WHERE "locationId" = $1 AND "id" > $2 ORDER BY "id" ASC LIMIT 50`,
-              locationId,
-              cursor
-            )
+            const events = await db.$queryRaw<Array<{ id: bigint; event: string; data: unknown }>>`SELECT "id", "event", "data" FROM "CellularEvent" WHERE "locationId" = ${locationId} AND "id" > ${cursor} ORDER BY "id" ASC LIMIT 50`
 
             for (const evt of events) {
               const eventId = Number(evt.id)

@@ -10,7 +10,7 @@
  */
 
 import crypto from 'crypto'
-import type { PrismaClient } from '@/generated/prisma/client'
+import { Prisma, type PrismaClient } from '@/generated/prisma/client'
 import { parseTimeToMinutes } from './service-date'
 import { transition } from './state-machine'
 import { findOrCreateCustomer } from './customer-matcher'
@@ -80,15 +80,15 @@ export async function offerSlotToWaitlist(
 
   // Find first-in-queue waitlist entry matching party size
   // Party size match: waitlist partySize must be <= cancelled reservation partySize
-  const waitlistMatch: any[] = await db.$queryRawUnsafe(`
+  const waitlistMatch: any[] = await db.$queryRaw(Prisma.sql`
     SELECT id, "customerName", "partySize", phone, notes
     FROM "WaitlistEntry"
-    WHERE "locationId" = $1
+    WHERE "locationId" = ${rez.locationId}
       AND status IN ('waiting', 'notified')
-      AND "partySize" <= $2
+      AND "partySize" <= ${rez.partySize}
     ORDER BY position ASC, "createdAt" ASC
     LIMIT 1
-  `, rez.locationId, rez.partySize)
+  `)
 
   if (waitlistMatch.length === 0) {
     return { offered: false, reason: 'No matching waitlist entries' }
@@ -155,11 +155,11 @@ export async function offerSlotToWaitlist(
     })
 
     // Update waitlist entry status to 'notified'
-    await tx.$queryRawUnsafe(`
+    await tx.$executeRaw(Prisma.sql`
       UPDATE "WaitlistEntry"
       SET status = 'notified', "notifiedAt" = CURRENT_TIMESTAMP, "updatedAt" = CURRENT_TIMESTAMP
-      WHERE id = $1 AND "locationId" = $2
-    `, entry.id, rez.locationId)
+      WHERE id = ${entry.id} AND "locationId" = ${rez.locationId}
+    `)
 
     return reservation
   })
@@ -269,24 +269,24 @@ export async function claimOfferedSlot(params: {
 
     // Remove from waitlist (find by phone match)
     if (reservation.guestPhone) {
-      await tx.$queryRawUnsafe(`
+      await tx.$executeRaw(Prisma.sql`
         UPDATE "WaitlistEntry"
         SET status = 'seated', "seatedAt" = CURRENT_TIMESTAMP, "updatedAt" = CURRENT_TIMESTAMP
-        WHERE "locationId" = $1 AND phone = $2 AND status IN ('waiting', 'notified')
-      `, locationId, reservation.guestPhone)
+        WHERE "locationId" = ${locationId} AND phone = ${reservation.guestPhone} AND status IN ('waiting', 'notified')
+      `)
 
       // Recalculate positions
-      await tx.$queryRawUnsafe(`
+      await tx.$executeRaw(Prisma.sql`
         WITH ranked AS (
           SELECT id, ROW_NUMBER() OVER (ORDER BY position ASC, "createdAt" ASC) as new_pos
           FROM "WaitlistEntry"
-          WHERE "locationId" = $1 AND status IN ('waiting', 'notified')
+          WHERE "locationId" = ${locationId} AND status IN ('waiting', 'notified')
         )
         UPDATE "WaitlistEntry" w
         SET position = r.new_pos
         FROM ranked r
         WHERE w.id = r.id
-      `, locationId)
+      `)
     }
 
     // Re-fetch with table include for return value

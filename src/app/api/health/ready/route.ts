@@ -66,7 +66,7 @@ function checkEnv(): CheckResult {
 async function checkDb(): Promise<CheckResult> {
   const start = performance.now()
   try {
-    await withTimeout(db.$queryRawUnsafe('SELECT 1'), 5000)
+    await withTimeout(db.$queryRaw`SELECT 1`, 5000)
     return { pass: true, latencyMs: Math.round(performance.now() - start) }
   } catch (err) {
     return {
@@ -80,7 +80,7 @@ async function checkDb(): Promise<CheckResult> {
 async function checkTables(): Promise<CheckResult> {
   try {
     await withTimeout(
-      db.$queryRawUnsafe('SELECT count(*) FROM "Location" LIMIT 1'),
+      db.$queryRaw`SELECT count(*) FROM "Location" LIMIT 1`,
       5000,
     )
     return { pass: true }

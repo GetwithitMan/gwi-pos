@@ -13,11 +13,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     if (!locationId) return err('locationId required')
 
-    const plans: any[] = await db.$queryRawUnsafe(`
+    const plans: any[] = await db.$queryRaw`
       SELECT * FROM "MembershipPlan"
-      WHERE "locationId" = $1 AND "deletedAt" IS NULL
+      WHERE "locationId" = ${locationId} AND "deletedAt" IS NULL
       ORDER BY "sortOrder" ASC, "name" ASC
-    `, locationId)
+    `
 
     return ok(plans)
   } catch (caughtErr) {
@@ -43,19 +43,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const auth = await requirePermission(requestingEmployeeId, locationId, 'admin.manage_membership_plans')
     if (!auth.authorized) return err(auth.error, auth.status)
 
-    const rows: any[] = await db.$queryRawUnsafe(`
+    const rows: any[] = await db.$queryRaw`
       INSERT INTO "MembershipPlan" (
         "locationId", "name", "description", "price", "billingCycle",
         "billingDayOfMonth", "billingDayOfWeek", "trialDays", "setupFee",
         "benefits", "maxMembers", "isActive", "sortOrder", "currency"
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      ) VALUES (${locationId}, ${name}, ${description || null}, ${price}, ${billingCycle || 'monthly'}, ${billingDayOfMonth ?? null}, ${billingDayOfWeek ?? null}, ${trialDays ?? 0}, ${setupFee ?? 0}, ${benefits ? JSON.stringify(benefits) : null}, ${maxMembers ?? null}, ${isActive !== false}, ${sortOrder ?? 0}, ${currency || 'USD'})
       RETURNING *
-    `,
-      locationId, name, description || null, price, billingCycle || 'monthly',
-      billingDayOfMonth ?? null, billingDayOfWeek ?? null, trialDays ?? 0, setupFee ?? 0,
-      benefits ? JSON.stringify(benefits) : null, maxMembers ?? null,
-      isActive !== false, sortOrder ?? 0, currency || 'USD'
-    )
+    `
 
     return created(rows[0])
   } catch (caughtErr) {

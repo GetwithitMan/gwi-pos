@@ -60,10 +60,7 @@ export const PUT = withVenue(async function PUT(
     }
 
     // Fetch existing exception
-    const existing: any[] = await db.$queryRawUnsafe(
-      `SELECT * FROM "DeliveryException" WHERE id = $1 AND "locationId" = $2`,
-      id, locationId,
-    )
+    const existing: any[] = await db.$queryRaw`SELECT * FROM "DeliveryException" WHERE id = ${id} AND "locationId" = ${locationId}`
 
     if (!existing.length) {
       return notFound('Exception not found')
@@ -115,12 +112,12 @@ export const PUT = withVenue(async function PUT(
     const locParamIdx = paramIdx + 1
     updateParams.push(id, locationId)
 
-    const updated: any[] = await db.$queryRawUnsafe(`
+    const updated: any[] = await db.$queryRaw`
       UPDATE "DeliveryException"
       SET ${updates.join(', ')}
       WHERE id = $${idParamIdx} AND "locationId" = $${locParamIdx}
       RETURNING *
-    `, ...updateParams)
+    `
 
     if (!updated.length) {
       return err('Failed to update exception', 500)

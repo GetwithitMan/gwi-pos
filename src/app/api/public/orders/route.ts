@@ -98,13 +98,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Resolve table via qrOrderCode
-    const tableRows = await venueDb.$queryRawUnsafe<{ id: string; name: string; sectionId: string | null }[]>(
-      `SELECT "id", "name", "sectionId" FROM "Table"
-       WHERE "qrOrderCode" = $1 AND "locationId" = $2 AND "isActive" = true AND "deletedAt" IS NULL
-       LIMIT 1`,
-      orderCode,
-      location.id
-    )
+    const tableRows = await venueDb.$queryRaw<{ id: string; name: string; sectionId: string | null }[]>`SELECT "id", "name", "sectionId" FROM "Table"
+       WHERE "qrOrderCode" = ${orderCode} AND "locationId" = ${location.id} AND "isActive" = true AND "deletedAt" IS NULL
+       LIMIT 1`
 
     if (tableRows.length === 0) {
       return err('Invalid order code')
@@ -150,10 +146,7 @@ export async function POST(request: NextRequest) {
     // TZ-FIX: Pass venue timezone so Vercel (UTC) computes correct business day
     const { start: businessDayStart } = getCurrentBusinessDay(dayStartTime, location.timezone || 'America/New_York')
 
-    const lastOrderRows = await venueDb.$queryRawUnsafe<{ orderNumber: number }[]>(
-      `SELECT "orderNumber" FROM "Order" WHERE "locationId" = $1 AND "parentOrderId" IS NULL ORDER BY "orderNumber" DESC LIMIT 1 FOR UPDATE`,
-      locationId
-    )
+    const lastOrderRows = await venueDb.$queryRaw<{ orderNumber: number }[]>`SELECT "orderNumber" FROM "Order" WHERE "locationId" = ${locationId} AND "parentOrderId" IS NULL ORDER BY "orderNumber" DESC LIMIT 1 FOR UPDATE`
     const orderNumber = ((lastOrderRows as { orderNumber: number }[])[0]?.orderNumber ?? 0) + 1
 
     // Calculate totals
@@ -299,10 +292,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Update table status to occupied
-      await tx.$executeRawUnsafe(
-        `UPDATE "Table" SET "status" = 'occupied', "updatedAt" = NOW() WHERE "id" = $1`,
-        table.id
-      )
+      await tx.$executeRaw`UPDATE "Table" SET "status" = 'occupied', "updatedAt" = NOW() WHERE "id" = ${table.id}`
 
       return newOrder
     })

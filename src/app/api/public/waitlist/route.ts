@@ -42,15 +42,15 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     // Look up active entry by phone
-    const entries: any[] = await db.$queryRawUnsafe(`
+    const entries: any[] = await db.$queryRaw`
       SELECT id, "customerName", "partySize", status, position, "quotedWaitMinutes", "createdAt"
       FROM "WaitlistEntry"
-      WHERE "locationId" = $1
-        AND phone = $2
+      WHERE "locationId" = ${locationId}
+        AND phone = ${phone}
         AND status IN ('waiting', 'notified')
       ORDER BY "createdAt" DESC
       LIMIT 1
-    `, locationId, phone)
+    `
 
     if (!entries.length) {
       return ok({
@@ -62,13 +62,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const entry = entries[0]
 
     // Calculate live position among active entries
-    const positionResult: any[] = await db.$queryRawUnsafe(`
+    const positionResult: any[] = await db.$queryRaw`
       SELECT COUNT(*)::int + 1 as position
       FROM "WaitlistEntry"
-      WHERE "locationId" = $1
+      WHERE "locationId" = ${locationId}
         AND status IN ('waiting', 'notified')
-        AND position < $2
-    `, locationId, entry.position)
+        AND position < ${entry.position}
+    `
 
     const livePosition = positionResult[0]?.position ?? entry.position
     const estimatedWaitMinutes = Math.max(0, (livePosition - 1) * waitlistConfig.estimateMinutesPerTurn)
@@ -130,12 +130,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Check waitlist capacity
-    const countResult: any[] = await db.$queryRawUnsafe(`
+    const countResult: any[] = await db.$queryRaw`
       SELECT COUNT(*)::int as count
       FROM "WaitlistEntry"
-      WHERE "locationId" = $1
+      WHERE "locationId" = ${locationId}
         AND status IN ('waiting', 'notified')
-    `, locationId)
+    `
 
     const currentCount = countResult[0]?.count ?? 0
     if (currentCount >= waitlistConfig.maxWaitlistSize) {
@@ -145,11 +145,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const position = currentCount + 1
     const quotedWaitMinutes = (position - 1) * waitlistConfig.estimateMinutesPerTurn
 
-    const inserted: any[] = await db.$queryRawUnsafe(`
+    const inserted: any[] = await db.$queryRaw`
       INSERT INTO "WaitlistEntry" ("locationId", "customerName", "partySize", phone, notes, status, position, "quotedWaitMinutes")
-      VALUES ($1, $2, $3, $4, $5, 'waiting', $6, $7)
+      VALUES (${locationId}, ${customerName.trim()}, ${size}, ${phone?.trim() || null}, ${notes?.trim() || null}, 'waiting', ${position}, ${quotedWaitMinutes})
       RETURNING id, "customerName", "partySize", phone, status, position, "quotedWaitMinutes", "createdAt"
-    `, locationId, customerName.trim(), size, phone?.trim() || null, notes?.trim() || null, position, quotedWaitMinutes)
+    `
 
     const entry = inserted[0]
 

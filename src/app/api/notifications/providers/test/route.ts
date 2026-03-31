@@ -42,14 +42,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Fetch provider with full config (not masked)
-    const providers: any[] = await db.$queryRawUnsafe(
-      `SELECT id, "providerType", name, config, capabilities, "executionZone",
+    const providers: any[] = await db.$queryRaw`SELECT id, "providerType", name, config, capabilities, "executionZone",
               "healthStatus", "consecutiveFailures", "circuitBreakerOpenUntil"
        FROM "NotificationProvider"
-       WHERE id = $1 AND "locationId" = $2 AND "deletedAt" IS NULL`,
-      providerId,
-      locationId
-    )
+       WHERE id = ${providerId} AND "locationId" = ${locationId} AND "deletedAt" IS NULL`
 
     if (providers.length === 0) {
       return notFound('Provider not found')
@@ -106,19 +102,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Update provider health status based on test result
     const healthStatus = testResult.success ? 'healthy' : 'degraded'
-    void db.$executeRawUnsafe(
-      `UPDATE "NotificationProvider"
+    void db.$executeRaw`UPDATE "NotificationProvider"
        SET "lastValidatedAt" = CURRENT_TIMESTAMP,
-           "lastValidationResult" = $3,
-           "healthStatus" = $4,
+           "lastValidationResult" = ${testResult.success ? 'pass' : 'fail'},
+           "healthStatus" = ${healthStatus},
            "lastHealthCheckAt" = CURRENT_TIMESTAMP,
            "updatedAt" = CURRENT_TIMESTAMP
-       WHERE id = $1 AND "locationId" = $2`,
-      providerId,
-      locationId,
-      testResult.success ? 'pass' : 'fail',
-      healthStatus
-    ).catch(err => log.warn({ err }, 'Background task failed'))
+       WHERE id = ${providerId} AND "locationId" = ${locationId}`.catch(err => log.warn({ err }, 'Background task failed'))
 
     return ok({
         providerId,

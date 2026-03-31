@@ -36,12 +36,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Fetch customer
-    const customers = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT "id", "loyaltyPoints", "lifetimePoints", "loyaltyProgramId", "loyaltyTierId"
+    const customers = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT "id", "loyaltyPoints", "lifetimePoints", "loyaltyProgramId", "loyaltyTierId"
        FROM "Customer"
-       WHERE "id" = $1 AND "deletedAt" IS NULL`,
-      customerId,
-    )
+       WHERE "id" = ${customerId} AND "deletedAt" IS NULL`
 
     if (customers.length === 0) {
       return notFound('Customer not found')
@@ -56,13 +53,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const lifetimePoints = Number(customer.lifetimePoints)
 
     // Find the highest tier they qualify for
-    const tiers = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT "id", "name", "minimumPoints"
+    const tiers = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT "id", "name", "minimumPoints"
        FROM "LoyaltyTier"
-       WHERE "programId" = $1 AND "deletedAt" IS NULL
-       ORDER BY "minimumPoints" DESC`,
-      customer.loyaltyProgramId,
-    )
+       WHERE "programId" = ${customer.loyaltyProgramId} AND "deletedAt" IS NULL
+       ORDER BY "minimumPoints" DESC`
 
     let newTierId: string | null = null
     let newTierName: string | null = null
@@ -78,11 +72,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const changed = newTierId !== previousTierId
 
     if (changed) {
-      await db.$executeRawUnsafe(
-        `UPDATE "Customer" SET "loyaltyTierId" = $2, "updatedAt" = NOW() WHERE "id" = $1`,
-        customerId,
-        newTierId,
-      )
+      await db.$executeRaw`UPDATE "Customer" SET "loyaltyTierId" = ${newTierId}, "updatedAt" = NOW() WHERE "id" = ${customerId}`
 
       // Record tier change transaction
       const txnId = crypto.randomUUID()
@@ -90,18 +80,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         ? `Tier recalculated: promoted to ${newTierName}`
         : 'Tier recalculated: tier removed'
 
-      await db.$executeRawUnsafe(
-        `INSERT INTO "LoyaltyTransaction" (
+      await db.$executeRaw`INSERT INTO "LoyaltyTransaction" (
           "id", "customerId", "locationId", "type", "points",
           "balanceBefore", "balanceAfter", "description", "employeeId", "createdAt"
-        ) VALUES ($1, $2, $3, 'tier_bonus', 0, $4, $4, $5, $6, NOW())`,
-        txnId,
-        customerId,
-        locationId,
-        Number(customer.loyaltyPoints),
-        description,
-        employeeId || null,
-      )
+        ) VALUES (${txnId}, ${customerId}, ${locationId}, 'tier_bonus', 0, ${Number(customer.loyaltyPoints)}, ${Number(customer.loyaltyPoints)}, ${description}, ${employeeId || null}, NOW())`
 
       pushUpstream()
       void notifyDataChanged({ locationId, domain: 'loyalty', action: 'updated' })

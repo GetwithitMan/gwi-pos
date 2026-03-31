@@ -39,14 +39,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // ── Find pending redemption ───────────────────────────────────────
-    const rows = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT lr.*, rw."name" AS "rewardName", rw."rewardType", rw."rewardValue", rw."pointCost"
+    const rows = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT lr.*, rw."name" AS "rewardName", rw."rewardType", rw."rewardValue", rw."pointCost"
        FROM "LoyaltyRedemption" lr
        JOIN "LoyaltyReward" rw ON rw."id" = lr."rewardId"
-       WHERE lr."redemptionCode" = $1 AND lr."status" = 'pending' AND lr."locationId" = $2`,
-      redemptionCode.trim().toUpperCase(),
-      locationId,
-    )
+       WHERE lr."redemptionCode" = ${redemptionCode.trim().toUpperCase()} AND lr."status" = 'pending' AND lr."locationId" = ${locationId}`
 
     if (rows.length === 0) {
       return notFound('Redemption code not found or already used')
@@ -57,34 +53,23 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // ── Check expiry ──────────────────────────────────────────────────
     if (redemption.expiresAt && new Date(redemption.expiresAt as string) < new Date()) {
       // Mark as expired
-      await db.$executeRawUnsafe(
-        `UPDATE "LoyaltyRedemption" SET "status" = 'expired', "updatedAt" = NOW() WHERE "id" = $1`,
-        redemption.id,
-      )
+      await db.$executeRaw`UPDATE "LoyaltyRedemption" SET "status" = 'expired', "updatedAt" = NOW() WHERE "id" = ${redemption.id}`
       return err('Redemption code has expired', 410)
     }
 
     // ── Apply redemption ──────────────────────────────────────────────
-    await db.$executeRawUnsafe(
-      `UPDATE "LoyaltyRedemption"
+    await db.$executeRaw`UPDATE "LoyaltyRedemption"
        SET "status" = 'applied',
-           "orderId" = $2,
-           "cakeOrderId" = $3,
+           "orderId" = ${orderId || null},
+           "cakeOrderId" = ${cakeOrderId || null},
            "appliedAt" = NOW(),
            "updatedAt" = NOW()
-       WHERE "id" = $1`,
-      redemption.id,
-      orderId || null,
-      cakeOrderId || null,
-    )
+       WHERE "id" = ${redemption.id}`
 
     // ── Increment totalRedeemed on reward ─────────────────────────────
-    await db.$executeRawUnsafe(
-      `UPDATE "LoyaltyReward"
+    await db.$executeRaw`UPDATE "LoyaltyReward"
        SET "totalRedeemed" = "totalRedeemed" + 1, "updatedAt" = NOW()
-       WHERE "id" = $1`,
-      redemption.rewardId,
-    )
+       WHERE "id" = ${redemption.rewardId}`
 
     return ok({
       success: true,

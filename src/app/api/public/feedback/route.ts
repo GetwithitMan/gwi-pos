@@ -28,10 +28,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Resolve locationId from slug
-    const locations = await db.$queryRawUnsafe<Array<{ id: string }>>(
-      `SELECT "id" FROM "Location" WHERE "slug" = $1 LIMIT 1`,
-      locationSlug,
-    )
+    const locations = await db.$queryRaw<Array<{ id: string }>>`SELECT "id" FROM "Location" WHERE "slug" = ${locationSlug} LIMIT 1`
 
     if (locations.length === 0) {
       return notFound('Location not found')
@@ -41,11 +38,7 @@ export async function POST(request: NextRequest) {
     // Optionally resolve orderId from orderNumber
     let orderId: string | null = null
     if (orderNumber) {
-      const orders = await db.$queryRawUnsafe<Array<{ id: string }>>(
-        `SELECT "id" FROM "Order" WHERE "locationId" = $1 AND "orderNumber" = $2 LIMIT 1`,
-        locationId,
-        parseInt(orderNumber),
-      )
+      const orders = await db.$queryRaw<Array<{ id: string }>>`SELECT "id" FROM "Order" WHERE "locationId" = ${locationId} AND "orderNumber" = ${parseInt(orderNumber)} LIMIT 1`
       orderId = orders[0]?.id || null
     }
 
@@ -56,14 +49,8 @@ export async function POST(request: NextRequest) {
       customerEmail ? `(${customerEmail})` : null,
     ].filter(Boolean).join(' ')
 
-    await db.$executeRawUnsafe(
-      `INSERT INTO "CustomerFeedback" ("locationId", "orderId", "rating", "comment", "source", "tags")
-       VALUES ($1, $2, $3, $4, 'web', '{}'::text[])`,
-      locationId,
-      orderId,
-      rating,
-      fullComment || null,
-    )
+    await db.$executeRaw`INSERT INTO "CustomerFeedback" ("locationId", "orderId", "rating", "comment", "source", "tags")
+       VALUES (${locationId}, ${orderId}, ${rating}, ${fullComment || null}, 'web', '{}'::text[])`
 
     return ok({ success: true })
   } catch (error) {

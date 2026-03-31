@@ -9,6 +9,7 @@
  * (e.g., after a rollback that somehow skipped migrations).
  */
 
+import { Prisma } from '@/generated/prisma/client'
 import { masterClient } from './db'
 import { createChildLogger } from '@/lib/logger'
 
@@ -87,8 +88,8 @@ export async function verifySchema(): Promise<SchemaCheckResult> {
 
   try {
     // Get all tables in public schema
-    const tables = await masterClient.$queryRawUnsafe<Array<{ table_name: string }>>(
-      `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'`
+    const tables = await masterClient.$queryRaw<Array<{ table_name: string }>>(
+      Prisma.sql`SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'`
     )
     const tableSet = new Set(tables.map(t => t.table_name))
 
@@ -101,9 +102,8 @@ export async function verifySchema(): Promise<SchemaCheckResult> {
       }
 
       // Check required columns
-      const columns = await masterClient.$queryRawUnsafe<Array<{ column_name: string }>>(
-        `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = $1`,
-        tableName
+      const columns = await masterClient.$queryRaw<Array<{ column_name: string }>>(
+        Prisma.sql`SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = ${tableName}`,
       )
       const columnSet = new Set(columns.map(c => c.column_name))
 
@@ -121,9 +121,8 @@ export async function verifySchema(): Promise<SchemaCheckResult> {
         log.warn(`[SchemaVerify] Advisory: table "${tableName}" missing (created by migration, not Prisma). Sync will proceed; migration runner will create it.`)
         continue
       }
-      const columns = await masterClient.$queryRawUnsafe<Array<{ column_name: string }>>(
-        `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = $1`,
-        tableName
+      const columns = await masterClient.$queryRaw<Array<{ column_name: string }>>(
+        Prisma.sql`SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = ${tableName}`,
       )
       const columnSet = new Set(columns.map(c => c.column_name))
       for (const col of requiredColumns) {

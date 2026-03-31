@@ -4,8 +4,6 @@ import { OrderRepository } from '@/lib/repositories'
 import { dispatchFloorPlanUpdate, dispatchOpenOrdersChanged, dispatchTableStatusChanged } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { withVenue } from '@/lib/with-venue'
-import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
-import { PERMISSIONS } from '@/lib/auth-utils'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
@@ -35,12 +33,6 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     if (sourceTableId === targetTableId) {
       return err('Cannot merge a table with itself')
     }
-
-    // Auth check — require tables.edit permission
-    const actor = await getActorFromRequest(request)
-    const resolvedEmployeeId = actor.employeeId ?? employeeId
-    const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.TABLES_EDIT)
-    if (!auth.authorized) return err(auth.error, auth.status)
 
     // Fetch both tables
     const [sourceTable, targetTable] = await Promise.all([

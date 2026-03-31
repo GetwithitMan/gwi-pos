@@ -35,11 +35,11 @@ export const GET = withVenue(async function GET(
     if (featureGate) return featureGate
 
     // Verify driver exists at this location
-    const driverRows: any[] = await db.$queryRawUnsafe(`
+    const driverRows: any[] = await db.$queryRaw`
       SELECT id, "employeeId" FROM "DeliveryDriver"
-      WHERE id = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
+      WHERE id = ${driverId} AND "locationId" = ${locationId} AND "deletedAt" IS NULL
       LIMIT 1
-    `, driverId, locationId)
+    `
 
     if (!driverRows.length) {
       return notFound('Driver not found')
@@ -57,7 +57,7 @@ export const GET = withVenue(async function GET(
       : new Date()
 
     // Total deliveries and on-time % from DeliveryOrder
-    const deliveryStats: any[] = await db.$queryRawUnsafe(`
+    const deliveryStats: any[] = await db.$queryRaw`
       SELECT
         COUNT(*)::int as "totalDeliveries",
         COUNT(*) FILTER (WHERE dord."status" = 'delivered')::int as "completedDeliveries",
@@ -73,11 +73,11 @@ export const GET = withVenue(async function GET(
           END
         )::numeric, 1) as "avgDoorToDoorMinutes"
       FROM "DeliveryOrder" dord
-      WHERE dord."driverId" = $1
-        AND dord."locationId" = $2
-        AND dord."createdAt" >= $3
-        AND dord."createdAt" <= $4
-    `, driver.employeeId, locationId, dateFrom, dateTo)
+      WHERE dord."driverId" = ${driver.employeeId}
+        AND dord."locationId" = ${locationId}
+        AND dord."createdAt" >= ${dateFrom}
+        AND dord."createdAt" <= ${dateTo}
+    `
 
     const stats = deliveryStats[0] || {}
     const completedDeliveries = stats.completedDeliveries ?? 0
@@ -87,17 +87,17 @@ export const GET = withVenue(async function GET(
       : 0
 
     // Cash variance from sessions (sum of cashCollected - cashDropped - expected)
-    const cashStats: any[] = await db.$queryRawUnsafe(`
+    const cashStats: any[] = await db.$queryRaw`
       SELECT
         COALESCE(SUM(ds."cashCollectedCents"), 0)::int as "totalCashCollectedCents",
         COALESCE(SUM(ds."cashDroppedCents"), 0)::int as "totalCashDroppedCents"
       FROM "DeliveryDriverSession" ds
-      WHERE ds."driverId" = $1
-        AND ds."locationId" = $2
-        AND ds."startedAt" >= $3
-        AND ds."startedAt" <= $4
+      WHERE ds."driverId" = ${driverId}
+        AND ds."locationId" = ${locationId}
+        AND ds."startedAt" >= ${dateFrom}
+        AND ds."startedAt" <= ${dateTo}
         AND ds."endedAt" IS NOT NULL
-    `, driverId, locationId, dateFrom, dateTo)
+    `
 
     const cashData = cashStats[0] || {}
     const cashVarianceTotalCents =
@@ -105,18 +105,18 @@ export const GET = withVenue(async function GET(
 
     // Proof compliance % — orders requiring proof vs orders with proof uploaded
     // Proof data lives in DeliveryProofOfDelivery table, not on DeliveryOrder columns
-    const proofStats: any[] = await db.$queryRawUnsafe(`
+    const proofStats: any[] = await db.$queryRaw`
       SELECT
         COUNT(*) FILTER (WHERE dord."proofMode" IS NOT NULL AND dord."proofMode" != 'none')::int as "totalRequiringProof",
         COUNT(DISTINCT pod."deliveryOrderId") FILTER (WHERE pod."id" IS NOT NULL)::int as "proofProvided"
       FROM "DeliveryOrder" dord
       LEFT JOIN "DeliveryProofOfDelivery" pod ON pod."deliveryOrderId" = dord."id" AND pod."deletedAt" IS NULL
-      WHERE dord."driverId" = $1
-        AND dord."locationId" = $2
+      WHERE dord."driverId" = ${driver.employeeId}
+        AND dord."locationId" = ${locationId}
         AND dord."status" = 'delivered'
-        AND dord."createdAt" >= $3
-        AND dord."createdAt" <= $4
-    `, driver.employeeId, locationId, dateFrom, dateTo)
+        AND dord."createdAt" >= ${dateFrom}
+        AND dord."createdAt" <= ${dateTo}
+    `
 
     const proofData = proofStats[0] || {}
     const proofCompliancePercent = (proofData.totalRequiringProof ?? 0) > 0
@@ -124,16 +124,16 @@ export const GET = withVenue(async function GET(
       : 100
 
     // Deliveries per hour from sessions
-    const sessionHours: any[] = await db.$queryRawUnsafe(`
+    const sessionHours: any[] = await db.$queryRaw`
       SELECT
         COALESCE(SUM(EXTRACT(EPOCH FROM (ds."endedAt" - ds."startedAt")) / 3600), 0)::float as "totalHours"
       FROM "DeliveryDriverSession" ds
-      WHERE ds."driverId" = $1
-        AND ds."locationId" = $2
-        AND ds."startedAt" >= $3
-        AND ds."startedAt" <= $4
+      WHERE ds."driverId" = ${driverId}
+        AND ds."locationId" = ${locationId}
+        AND ds."startedAt" >= ${dateFrom}
+        AND ds."startedAt" <= ${dateTo}
         AND ds."endedAt" IS NOT NULL
-    `, driverId, locationId, dateFrom, dateTo)
+    `
 
     const totalHours = sessionHours[0]?.totalHours ?? 0
     const deliveriesPerHour = totalHours > 0

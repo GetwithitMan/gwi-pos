@@ -102,18 +102,14 @@ export const GET = withVenue(async function GET(
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.NOTIFICATIONS_VIEW_LOG)
     if (!auth.authorized) return err(auth.error, auth.status)
 
-    const providers: any[] = await db.$queryRawUnsafe(
-      `SELECT id, "locationId", "providerType", name, "isActive", "isDefault",
+    const providers: any[] = await db.$queryRaw`SELECT id, "locationId", "providerType", name, "isActive", "isDefault",
               priority, "executionZone", config, "configVersion",
               "lastValidatedAt", "lastValidationResult",
               capabilities, "healthStatus", "lastHealthCheckAt",
               "consecutiveFailures", "circuitBreakerOpenUntil",
               "createdAt", "updatedAt"
        FROM "NotificationProvider"
-       WHERE id = $1 AND "locationId" = $2 AND "deletedAt" IS NULL`,
-      id,
-      locationId
-    )
+       WHERE id = ${id} AND "locationId" = ${locationId} AND "deletedAt" IS NULL`
 
     if (providers.length === 0) {
       return notFound('Provider not found')
@@ -149,14 +145,10 @@ export const PUT = withVenue(async function PUT(
     if (!auth.authorized) return err(auth.error, auth.status)
 
     // Fetch existing provider
-    const existing: any[] = await db.$queryRawUnsafe(
-      `SELECT id, "providerType", name, config, "isActive", "isDefault",
+    const existing: any[] = await db.$queryRaw`SELECT id, "providerType", name, config, "isActive", "isDefault",
               priority, "executionZone", "configVersion"
        FROM "NotificationProvider"
-       WHERE id = $1 AND "locationId" = $2 AND "deletedAt" IS NULL`,
-      id,
-      locationId
-    )
+       WHERE id = ${id} AND "locationId" = ${locationId} AND "deletedAt" IS NULL`
 
     if (existing.length === 0) {
       return notFound('Provider not found')
@@ -209,13 +201,9 @@ export const PUT = withVenue(async function PUT(
 
     // If setting as default, unset any existing default for this location
     if (isDefault === true) {
-      await db.$executeRawUnsafe(
-        `UPDATE "NotificationProvider"
+      await db.$executeRaw`UPDATE "NotificationProvider"
          SET "isDefault" = false, "updatedAt" = CURRENT_TIMESTAMP
-         WHERE "locationId" = $1 AND "isDefault" = true AND id != $2 AND "deletedAt" IS NULL`,
-        locationId,
-        id
-      )
+         WHERE "locationId" = ${locationId} AND "isDefault" = true AND id != ${id} AND "deletedAt" IS NULL`
     }
 
     // Build SET clause dynamically
@@ -274,17 +262,12 @@ export const PUT = withVenue(async function PUT(
       setClauses.push(`"lastValidationResult" = NULL`)
     }
 
-    const updated: any[] = await db.$queryRawUnsafe(
-      `UPDATE "NotificationProvider"
+    const updated: any[] = await db.$queryRaw`UPDATE "NotificationProvider"
        SET ${setClauses.join(', ')}
        WHERE id = $${paramIndex} AND "locationId" = $${paramIndex + 1} AND "deletedAt" IS NULL
        RETURNING id, "locationId", "providerType", name, "isActive", "isDefault",
                  priority, "executionZone", config, "configVersion",
-                 capabilities, "healthStatus", "createdAt", "updatedAt"`,
-      ...values,
-      id,
-      locationId
-    )
+                 capabilities, "healthStatus", "createdAt", "updatedAt"`
 
     if (updated.length === 0) {
       return notFound('Provider not found or already deleted')
@@ -341,13 +324,9 @@ export const DELETE = withVenue(async function DELETE(
     if (!auth.authorized) return err(auth.error, auth.status)
 
     // Check provider exists
-    const existing: any[] = await db.$queryRawUnsafe(
-      `SELECT id, "providerType", name
+    const existing: any[] = await db.$queryRaw`SELECT id, "providerType", name
        FROM "NotificationProvider"
-       WHERE id = $1 AND "locationId" = $2 AND "deletedAt" IS NULL`,
-      id,
-      locationId
-    )
+       WHERE id = ${id} AND "locationId" = ${locationId} AND "deletedAt" IS NULL`
 
     if (existing.length === 0) {
       return notFound('Provider not found')
@@ -356,17 +335,13 @@ export const DELETE = withVenue(async function DELETE(
     const provider = existing[0]
 
     // Check for active routing rules referencing this provider
-    const activeRules: any[] = await db.$queryRawUnsafe(
-      `SELECT id, "eventType"
+    const activeRules: any[] = await db.$queryRaw`SELECT id, "eventType"
        FROM "NotificationRoutingRule"
-       WHERE ("providerId" = $1 OR "fallbackProviderId" = $1)
-         AND "locationId" = $2
+       WHERE ("providerId" = ${id} OR "fallbackProviderId" = ${id})
+         AND "locationId" = ${locationId}
          AND "enabled" = true
          AND "deletedAt" IS NULL
-       LIMIT 5`,
-      id,
-      locationId
-    )
+       LIMIT 5`
 
     if (activeRules.length > 0) {
       const ruleNames = activeRules.map((r: any) => r.eventType || r.id).join(', ')
@@ -374,13 +349,9 @@ export const DELETE = withVenue(async function DELETE(
     }
 
     // Soft-delete
-    await db.$executeRawUnsafe(
-      `UPDATE "NotificationProvider"
+    await db.$executeRaw`UPDATE "NotificationProvider"
        SET "deletedAt" = CURRENT_TIMESTAMP, "isActive" = false, "updatedAt" = CURRENT_TIMESTAMP
-       WHERE id = $1 AND "locationId" = $2 AND "deletedAt" IS NULL`,
-      id,
-      locationId
-    )
+       WHERE id = ${id} AND "locationId" = ${locationId} AND "deletedAt" IS NULL`
 
     // Clear routing rules cache
     clearRoutingRulesCache()

@@ -55,10 +55,7 @@ export const POST = withVenue(async function POST(
     }
 
     // Fetch existing exception
-    const existing: any[] = await db.$queryRawUnsafe(
-      `SELECT * FROM "DeliveryException" WHERE id = $1 AND "locationId" = $2`,
-      id, locationId,
-    )
+    const existing: any[] = await db.$queryRaw`SELECT * FROM "DeliveryException" WHERE id = ${id} AND "locationId" = ${locationId}`
 
     if (!existing.length) {
       return notFound('Exception not found')
@@ -77,16 +74,16 @@ export const POST = withVenue(async function POST(
 
     // Update exception to resolved
     const sanitizedResolution = sanitizeHtml(resolution)
-    const updated: any[] = await db.$queryRawUnsafe(`
+    const updated: any[] = await db.$queryRaw`
       UPDATE "DeliveryException"
       SET "status" = 'resolved',
-          "resolution" = $1,
+          "resolution" = ${sanitizedResolution},
           "resolvedAt" = CURRENT_TIMESTAMP,
-          "resolvedBy" = $2,
+          "resolvedBy" = ${auth.employee.id},
           "updatedAt" = CURRENT_TIMESTAMP
-      WHERE id = $3 AND "locationId" = $4
+      WHERE id = ${id} AND "locationId" = ${locationId}
       RETURNING *
-    `, sanitizedResolution, auth.employee.id, id, locationId)
+    `
 
     if (!updated.length) {
       return err('Failed to resolve exception', 500)

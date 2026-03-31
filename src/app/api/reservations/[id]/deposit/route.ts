@@ -22,7 +22,7 @@ export const GET = withVenue(async function GET(
       return err('No location found')
     }
 
-    const reservation = await db.$queryRawUnsafe<Array<{
+    const reservation = await db.$queryRaw<Array<{
       id: string
       locationId: string
       guestName: string
@@ -32,12 +32,9 @@ export const GET = withVenue(async function GET(
       depositRequired: boolean
       depositAmount: string
       status: string
-    }>>(
-      `SELECT id, "locationId", "guestName", "partySize", "reservationDate",
+    }>>`SELECT id, "locationId", "guestName", "partySize", "reservationDate",
               "reservationTime", "depositRequired", "depositAmount", status
-       FROM "Reservation" WHERE id = $1 AND "locationId" = $2 AND "deletedAt" IS NULL LIMIT 1`,
-      id, callerLocationId
-    )
+       FROM "Reservation" WHERE id = ${id} AND "locationId" = ${callerLocationId} AND "deletedAt" IS NULL LIMIT 1`
 
     if (!reservation.length) {
       return notFound('Reservation not found')
@@ -46,7 +43,7 @@ export const GET = withVenue(async function GET(
     const res = reservation[0]
 
     // Fetch all deposits for this reservation
-    const deposits = await db.$queryRawUnsafe<Array<{
+    const deposits = await db.$queryRaw<Array<{
       id: string
       type: string
       amount: string
@@ -58,14 +55,11 @@ export const GET = withVenue(async function GET(
       refundedAt: Date | null
       refundReason: string | null
       createdAt: Date
-    }>>(
-      `SELECT id, type, amount, "paymentMethod", "cardLast4", "cardBrand",
+    }>>`SELECT id, type, amount, "paymentMethod", "cardLast4", "cardBrand",
               status, "refundedAmount", "refundedAt", "refundReason", "createdAt"
        FROM "ReservationDeposit"
-       WHERE "reservationId" = $1 AND "deletedAt" IS NULL
-       ORDER BY "createdAt" ASC`,
-      id
-    )
+       WHERE "reservationId" = ${id} AND "deletedAt" IS NULL
+       ORDER BY "createdAt" ASC`
 
     const paidAmount = deposits.reduce((sum, d) =>
       d.status === 'completed' ? sum + Number(d.amount) - Number(d.refundedAmount) : sum, 0
@@ -152,19 +146,16 @@ export const POST = withVenue(async function POST(
 
     // Idempotency guard — prevent double-deposit from rapid clicks
     if (idempotencyKey) {
-      const existing = await db.$queryRawUnsafe<Array<{
+      const existing = await db.$queryRaw<Array<{
         id: string
         amount: string
         paymentMethod: string
         status: string
         createdAt: Date
-      }>>(
-        `SELECT id, amount, "paymentMethod", status, "createdAt"
+      }>>`SELECT id, amount, "paymentMethod", status, "createdAt"
          FROM "ReservationDeposit"
-         WHERE "reservationId" = $1 AND metadata->>'idempotencyKey' = $2 AND "deletedAt" IS NULL
-         LIMIT 1`,
-        id, idempotencyKey
-      )
+         WHERE "reservationId" = ${id} AND metadata->>'idempotencyKey' = ${idempotencyKey} AND "deletedAt" IS NULL
+         LIMIT 1`
       if (existing.length > 0) {
         return NextResponse.json({ data: existing[0], duplicate: true })
       }
@@ -175,16 +166,13 @@ export const POST = withVenue(async function POST(
     }
 
     // Validate reservation exists and is not cancelled
-    const reservation = await db.$queryRawUnsafe<Array<{
+    const reservation = await db.$queryRaw<Array<{
       id: string
       locationId: string
       depositAmount: string
       status: string
-    }>>(
-      `SELECT id, "locationId", "depositAmount", status
-       FROM "Reservation" WHERE id = $1 AND "locationId" = $2 AND "deletedAt" IS NULL LIMIT 1`,
-      id, callerLocationId
-    )
+    }>>`SELECT id, "locationId", "depositAmount", status
+       FROM "Reservation" WHERE id = ${id} AND "locationId" = ${callerLocationId} AND "deletedAt" IS NULL LIMIT 1`
 
     if (!reservation.length) {
       return notFound('Reservation not found')
@@ -196,12 +184,9 @@ export const POST = withVenue(async function POST(
     }
 
     // Check existing deposits
-    const existingDeposits = await db.$queryRawUnsafe<Array<{ total: string }>>(
-      `SELECT COALESCE(SUM(amount - "refundedAmount"), 0) as total
+    const existingDeposits = await db.$queryRaw<Array<{ total: string }>>`SELECT COALESCE(SUM(amount - "refundedAmount"), 0) as total
        FROM "ReservationDeposit"
-       WHERE "reservationId" = $1 AND status = 'completed' AND "deletedAt" IS NULL`,
-      id
-    )
+       WHERE "reservationId" = ${id} AND status = 'completed' AND "deletedAt" IS NULL`
     const currentPaid = Number(existingDeposits[0]?.total ?? 0)
     const depositTarget = Number(res.depositAmount)
 
@@ -213,17 +198,9 @@ export const POST = withVenue(async function POST(
     const { randomUUID } = await import('crypto')
     const depositId = randomUUID()
     const metadata = idempotencyKey ? JSON.stringify({ idempotencyKey }) : null
-    await db.$executeRawUnsafe(
-      `INSERT INTO "ReservationDeposit" (id, "locationId", "reservationId", type, amount, "paymentMethod",
+    await db.$executeRaw`INSERT INTO "ReservationDeposit" (id, "locationId", "reservationId", type, amount, "paymentMethod",
         "cardLast4", "cardBrand", "datacapRecordNo", "datacapRefNumber", status, "employeeId", notes, metadata)
-       VALUES ($1, $2, $3, 'deposit', $4, $5, $6, $7, $8, $9, 'completed', $10, $11, $12::jsonb)`,
-      depositId, res.locationId, id,
-      amount, paymentMethod,
-      cardLast4 || null, cardBrand || null,
-      datacapRecordNo || null, datacapRefNumber || null,
-      employeeId || null, notes || null,
-      metadata
-    )
+       VALUES (${depositId}, ${res.locationId}, ${id}, 'deposit', ${amount}, ${paymentMethod}, ${cardLast4 || null}, ${cardBrand || null}, ${datacapRecordNo || null}, ${datacapRefNumber || null}, 'completed', ${employeeId || null}, ${notes || null}, ${metadata}::jsonb)`
 
     pushUpstream()
 
@@ -301,16 +278,13 @@ export const DELETE = withVenue(async function DELETE(
     const reason = searchParams.get('reason') || 'Customer requested refund'
 
     // Load reservation (scoped to caller's location)
-    const reservation = await db.$queryRawUnsafe<Array<{
+    const reservation = await db.$queryRaw<Array<{
       id: string
       locationId: string
       reservationDate: Date
       reservationTime: string
-    }>>(
-      `SELECT id, "locationId", "reservationDate", "reservationTime"
-       FROM "Reservation" WHERE id = $1 AND "locationId" = $2 AND "deletedAt" IS NULL LIMIT 1`,
-      id, callerLocationId
-    )
+    }>>`SELECT id, "locationId", "reservationDate", "reservationTime"
+       FROM "Reservation" WHERE id = ${id} AND "locationId" = ${callerLocationId} AND "deletedAt" IS NULL LIMIT 1`
 
     if (!reservation.length) {
       return notFound('Reservation not found')
@@ -338,20 +312,14 @@ export const DELETE = withVenue(async function DELETE(
     // If a specific deposit ID is provided, refund that one; otherwise refund all
     let depositsToRefund: Array<{ id: string; amount: string; refundedAmount: string }>
     if (depositId) {
-      depositsToRefund = await db.$queryRawUnsafe<Array<{ id: string; amount: string; refundedAmount: string }>>(
-        `SELECT id, amount, "refundedAmount" FROM "ReservationDeposit"
-         WHERE id = $1 AND "reservationId" = $2 AND status = 'completed' AND "deletedAt" IS NULL`,
-        depositId, id
-      )
+      depositsToRefund = await db.$queryRaw<Array<{ id: string; amount: string; refundedAmount: string }>>`SELECT id, amount, "refundedAmount" FROM "ReservationDeposit"
+         WHERE id = ${depositId} AND "reservationId" = ${id} AND status = 'completed' AND "deletedAt" IS NULL`
       if (!depositsToRefund.length) {
         return notFound('Deposit not found')
       }
     } else {
-      depositsToRefund = await db.$queryRawUnsafe<Array<{ id: string; amount: string; refundedAmount: string }>>(
-        `SELECT id, amount, "refundedAmount" FROM "ReservationDeposit"
-         WHERE "reservationId" = $1 AND status = 'completed' AND "refundedAmount" < amount AND "deletedAt" IS NULL`,
-        id
-      )
+      depositsToRefund = await db.$queryRaw<Array<{ id: string; amount: string; refundedAmount: string }>>`SELECT id, amount, "refundedAmount" FROM "ReservationDeposit"
+         WHERE "reservationId" = ${id} AND status = 'completed' AND "refundedAmount" < amount AND "deletedAt" IS NULL`
     }
 
     if (!depositsToRefund.length) {
@@ -377,15 +345,12 @@ export const DELETE = withVenue(async function DELETE(
 
       if (refundAmount <= 0) continue
 
-      await db.$executeRawUnsafe(
-        `UPDATE "ReservationDeposit"
-         SET "refundedAmount" = "refundedAmount" + $1,
+      await db.$executeRaw`UPDATE "ReservationDeposit"
+         SET "refundedAmount" = "refundedAmount" + ${refundAmount},
              "refundedAt" = CURRENT_TIMESTAMP,
-             "refundReason" = $2,
+             "refundReason" = ${reason},
              "updatedAt" = CURRENT_TIMESTAMP
-         WHERE id = $3`,
-        refundAmount, reason, deposit.id
-      )
+         WHERE id = ${deposit.id}`
 
       totalRefunded += refundAmount
     }

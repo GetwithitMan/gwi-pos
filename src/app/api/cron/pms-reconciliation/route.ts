@@ -57,8 +57,7 @@ export async function GET(request: NextRequest) {
     //   - No Payment exists with pmsTransactionId = attempt.operaTransactionId
     let orphans: OrphanedCharge[]
     try {
-      orphans = await venueDb.$queryRawUnsafe<OrphanedCharge[]>(
-        `SELECT pca.id, pca."orderId", pca."locationId", pca."reservationId",
+      orphans = await venueDb.$queryRaw<OrphanedCharge[]>`SELECT pca.id, pca."orderId", pca."locationId", pca."reservationId",
                 pca."amountCents", pca."chargeCode", pca."operaTransactionId",
                 pca."createdAt"
          FROM "PmsChargeAttempt" pca
@@ -71,7 +70,6 @@ export async function GET(request: NextRequest) {
            )
          ORDER BY pca."createdAt" ASC
          LIMIT 100`
-      )
     } catch (error) {
       // Table may not exist yet (migration not run) -- not an error
       const msg = error instanceof Error ? error.message : String(error)
@@ -103,10 +101,7 @@ export async function GET(request: NextRequest) {
     for (const orphan of orphans) {
       try {
         // Check if the order still exists and is not already fully paid
-        const orderCheck = await venueDb.$queryRawUnsafe<Array<{ id: string; status: string; total: unknown }>>(
-          `SELECT id, status, total FROM "Order" WHERE id = $1 AND "deletedAt" IS NULL`,
-          orphan.orderId
-        )
+        const orderCheck = await venueDb.$queryRaw<Array<{ id: string; status: string; total: unknown }>>`SELECT id, status, total FROM "Order" WHERE id = ${orphan.orderId} AND "deletedAt" IS NULL`
 
         const orderExists = orderCheck.length > 0
         const orderStatus = orderCheck[0]?.status ?? 'unknown'
@@ -114,12 +109,9 @@ export async function GET(request: NextRequest) {
 
         // Check if a payment was already created (race condition guard — another
         // process may have reconciled it between our initial query and now)
-        const existingPayment = await venueDb.$queryRawUnsafe<Array<{ id: string }>>(
-          `SELECT id FROM "Payment"
-           WHERE "pmsTransactionId" = $1 AND "deletedAt" IS NULL
-           LIMIT 1`,
-          orphan.operaTransactionId
-        )
+        const existingPayment = await venueDb.$queryRaw<Array<{ id: string }>>`SELECT id FROM "Payment"
+           WHERE "pmsTransactionId" = ${orphan.operaTransactionId} AND "deletedAt" IS NULL
+           LIMIT 1`
 
         if (existingPayment.length > 0) {
           // Payment was created since our initial query — no longer orphaned
@@ -127,21 +119,14 @@ export async function GET(request: NextRequest) {
         }
 
         // Create an AuditLog entry for human review
-        await venueDb.$executeRawUnsafe(
-          `INSERT INTO "AuditLog" (id, "locationId", action, "entityType", "entityId", details, "createdAt", "updatedAt")
+        await venueDb.$executeRaw`INSERT INTO "AuditLog" (id, "locationId", action, "entityType", "entityId", details, "createdAt", "updatedAt")
            VALUES (
              gen_random_uuid()::text,
-             $1,
+             ${orphan.locationId},
              'pms_charge_orphaned',
              'PmsChargeAttempt',
-             $2,
-             $3::jsonb,
-             NOW(),
-             NOW()
-           )`,
-          orphan.locationId,
-          orphan.id,
-          JSON.stringify({
+             ${orphan.id},
+             ${JSON.stringify({
             message: 'OPERA room charge completed but no Payment record exists. Requires manual reconciliation.',
             pmsChargeAttemptId: orphan.id,
             orderId: orphan.orderId,
@@ -154,8 +139,10 @@ export async function GET(request: NextRequest) {
             orderStatus,
             orderTotal,
             detectedAt: new Date().toISOString(),
-          }),
-        )
+          })}::jsonb,
+             NOW(),
+             NOW()
+           )`
 
         result.auditLogsCreated++
 

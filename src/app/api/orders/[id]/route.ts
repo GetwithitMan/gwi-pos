@@ -277,10 +277,7 @@ export const PUT = withVenue(async function PUT(
     if (employeeId !== undefined) updateData.employeeId = employeeId
     // Notification Platform: fulfillmentMode (PUT)
     if (putFulfillmentMode !== undefined) {
-      void db.$executeRawUnsafe(
-        `UPDATE "Order" SET "fulfillmentMode" = $1 WHERE id = $2 AND "locationId" = $3`,
-        putFulfillmentMode, id, existingOrder.locationId
-      ).catch(err => log.warn({ err }, 'Background task failed'))
+      void db.$executeRaw`UPDATE "Order" SET "fulfillmentMode" = ${putFulfillmentMode} WHERE id = ${id} AND "locationId" = ${existingOrder.locationId}`.catch(err => log.warn({ err }, 'Background task failed'))
     }
     if (status !== undefined) {
       // Status transition validation — single source of truth in domain module
@@ -684,10 +681,7 @@ export const PATCH = withVenue(async function PATCH(
     // Notification Platform: fulfillmentMode (dine_in, takeout, curbside, delivery, etc.)
     if (fulfillmentMode !== undefined) {
       // fulfillmentMode is stored via raw SQL since it may not be in Prisma schema yet
-      void db.$executeRawUnsafe(
-        `UPDATE "Order" SET "fulfillmentMode" = $1 WHERE id = $2 AND "locationId" = $3`,
-        fulfillmentMode, id, existing.locationId
-      ).catch(err => log.warn({ err }, 'Background task failed'))
+      void db.$executeRaw`UPDATE "Order" SET "fulfillmentMode" = ${fulfillmentMode} WHERE id = ${id} AND "locationId" = ${existing.locationId}`.catch(err => log.warn({ err }, 'Background task failed'))
     }
     if (isTaxExempt !== undefined) {
       updateData.isTaxExempt = isTaxExempt

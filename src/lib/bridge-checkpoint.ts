@@ -16,6 +16,7 @@
  * Only runs when SYNC_ENABLED=true (NUC mode).
  */
 
+import { Prisma } from '@/generated/prisma/client'
 import { masterClient } from './db'
 import { createChildLogger } from '@/lib/logger'
 
@@ -48,8 +49,8 @@ async function renewLease(): Promise<void> {
   // every 30s on NUCs where migration 045 hasn't run yet.
   if (_bridgeTableExists === null) {
     try {
-      const result = await masterClient.$queryRawUnsafe<Array<{ exists: boolean }>>(
-        `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'BridgeCheckpoint') as exists`
+      const result = await masterClient.$queryRaw<Array<{ exists: boolean }>>(
+        Prisma.sql`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'BridgeCheckpoint') as exists`
       )
       _bridgeTableExists = result[0]?.exists ?? false
       if (!_bridgeTableExists) {
@@ -66,26 +67,21 @@ async function renewLease(): Promise<void> {
   const now = new Date().toISOString()
 
   try {
-    await masterClient.$executeRawUnsafe(
-      `INSERT INTO "BridgeCheckpoint" ("id", "locationId", "nodeId", role, "leaseExpiresAt", "lastHeartbeat", "updatedAt")
-       VALUES (gen_random_uuid()::text, $1, $2, $3, $4::timestamptz, $5::timestamptz, $5::timestamptz)
+    await masterClient.$executeRaw(
+      Prisma.sql`INSERT INTO "BridgeCheckpoint" ("id", "locationId", "nodeId", role, "leaseExpiresAt", "lastHeartbeat", "updatedAt")
+       VALUES (gen_random_uuid()::text, ${LOCATION_ID}, ${NODE_ID}, ${role}, ${leaseExpiresAt}::timestamptz, ${now}::timestamptz, ${now}::timestamptz)
        ON CONFLICT ("locationId", "nodeId")
        DO UPDATE SET
-         "leaseExpiresAt" = $4::timestamptz,
-         "lastHeartbeat" = $5::timestamptz,
-         "updatedAt" = $5::timestamptz,
-         role = $3`,
-      LOCATION_ID,
-      NODE_ID,
-      role,
-      leaseExpiresAt,
-      now,
+         "leaseExpiresAt" = ${leaseExpiresAt}::timestamptz,
+         "lastHeartbeat" = ${now}::timestamptz,
+         "updatedAt" = ${now}::timestamptz,
+         role = ${role}`,
     )
 
     // NTP drift detection: compare Node.js Date.now() against DB NOW()
     // If drift exceeds 5s, lease expiry calculations and sync HWMs are unreliable
-    const [dbTimeRow] = await masterClient.$queryRawUnsafe<[{ now: Date }]>(
-      `SELECT NOW() as now`
+    const [dbTimeRow] = await masterClient.$queryRaw<[{ now: Date }]>(
+      Prisma.sql`SELECT NOW() as now`
     )
     if (dbTimeRow) {
       const dbNow = dbTimeRow.now instanceof Date ? dbTimeRow.now.getTime() : new Date(dbTimeRow.now as unknown as string).getTime()
@@ -107,12 +103,10 @@ export async function isLeaseActive(): Promise<boolean> {
   if (_bridgeTableExists === false) return false
 
   try {
-    const rows = await masterClient.$queryRawUnsafe<Array<{ leaseExpiresAt: Date }>>(
-      `SELECT "leaseExpiresAt" FROM "BridgeCheckpoint"
-       WHERE "locationId" = $1 AND "nodeId" = $2
+    const rows = await masterClient.$queryRaw<Array<{ leaseExpiresAt: Date }>>(
+      Prisma.sql`SELECT "leaseExpiresAt" FROM "BridgeCheckpoint"
+       WHERE "locationId" = ${LOCATION_ID} AND "nodeId" = ${NODE_ID}
        LIMIT 1`,
-      LOCATION_ID,
-      NODE_ID,
     )
 
     if (rows.length === 0) return false
@@ -136,13 +130,11 @@ export async function shouldClaimBridge(): Promise<boolean> {
   if (_bridgeTableExists === false) return false
 
   try {
-    const activeLeases = await masterClient.$queryRawUnsafe<Array<{ nodeId: string }>>(
-      `SELECT "nodeId" FROM "BridgeCheckpoint"
-       WHERE "locationId" = $1
-         AND "nodeId" != $2
+    const activeLeases = await masterClient.$queryRaw<Array<{ nodeId: string }>>(
+      Prisma.sql`SELECT "nodeId" FROM "BridgeCheckpoint"
+       WHERE "locationId" = ${LOCATION_ID}
+         AND "nodeId" != ${NODE_ID}
          AND "leaseExpiresAt" > NOW()`,
-      LOCATION_ID,
-      NODE_ID,
     )
 
     // If no other node has an active lease, this node should claim
@@ -183,12 +175,10 @@ export async function stopBridgeCheckpoint(): Promise<void> {
   // instead of waiting 90s for the lease to expire
   if (LOCATION_ID) {
     try {
-      await masterClient.$executeRawUnsafe(
-        `UPDATE "BridgeCheckpoint"
+      await masterClient.$executeRaw(
+        Prisma.sql`UPDATE "BridgeCheckpoint"
          SET "leaseExpiresAt" = NOW()
-         WHERE "locationId" = $1 AND "nodeId" = $2`,
-        LOCATION_ID,
-        NODE_ID,
+         WHERE "locationId" = ${LOCATION_ID} AND "nodeId" = ${NODE_ID}`,
       )
       log.info('Stopped (lease released)')
     } catch (err) {

@@ -44,21 +44,21 @@ export const GET = withVenue(async function GET(
     if (featureGate) return featureGate
 
     // Verify driver exists at this location
-    const driver: any[] = await db.$queryRawUnsafe(`
+    const driver: any[] = await db.$queryRaw`
       SELECT id FROM "DeliveryDriver"
-      WHERE id = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
+      WHERE id = ${driverId} AND "locationId" = ${locationId} AND "deletedAt" IS NULL
       LIMIT 1
-    `, driverId, locationId)
+    `
 
     if (!driver.length) {
       return notFound('Driver not found')
     }
 
-    const documents: any[] = await db.$queryRawUnsafe(`
+    const documents: any[] = await db.$queryRaw`
       SELECT * FROM "DeliveryDriverDocument"
-      WHERE "driverId" = $1 AND "deletedAt" IS NULL
+      WHERE "driverId" = ${driverId} AND "deletedAt" IS NULL
       ORDER BY "createdAt" DESC
-    `, driverId)
+    `
 
     return ok({ documents })
   } catch (error) {
@@ -105,35 +105,27 @@ export const POST = withVenue(async function POST(
     }
 
     // Verify driver exists at this location
-    const driver: any[] = await db.$queryRawUnsafe(`
+    const driver: any[] = await db.$queryRaw`
       SELECT id, "employeeId" FROM "DeliveryDriver"
-      WHERE id = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
+      WHERE id = ${driverId} AND "locationId" = ${locationId} AND "deletedAt" IS NULL
       LIMIT 1
-    `, driverId, locationId)
+    `
 
     if (!driver.length) {
       return notFound('Driver not found')
     }
 
     // Insert document
-    const inserted: any[] = await db.$queryRawUnsafe(`
+    const inserted: any[] = await db.$queryRaw`
       INSERT INTO "DeliveryDriverDocument" (
         "id", "locationId", "driverId", "documentType", "documentNumber",
         "expiresAt", "storageKey", "notes", "createdAt", "updatedAt"
       ) VALUES (
-        gen_random_uuid()::text, $1, $2, $3, $4, $5, $6, $7,
+        gen_random_uuid()::text, ${locationId}, ${driverId}, ${documentType}, ${documentNumber?.trim() || null}, ${expiresAt ? new Date(expiresAt) : null}, ${storageKey.trim()}, ${notes?.trim() || null},
         CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
       )
       RETURNING *
-    `,
-      locationId,
-      driverId,
-      documentType,
-      documentNumber?.trim() || null,
-      expiresAt ? new Date(expiresAt) : null,
-      storageKey.trim(),
-      notes?.trim() || null,
-    )
+    `
 
     // Write audit log
     void writeDeliveryAuditLog({

@@ -114,19 +114,19 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     void pushUpstream()
 
     // Update any pending MarketingRecipient records to 'unsubscribed'
-    await db.$executeRawUnsafe(`
+    await db.$executeRaw`
       UPDATE "MarketingRecipient"
       SET status = 'unsubscribed', "updatedAt" = NOW()
-      WHERE "customerId" = $1 AND status IN ('pending', 'sent', 'delivered')
-    `, parsed.customerId)
+      WHERE "customerId" = ${parsed.customerId} AND status IN ('pending', 'sent', 'delivered')
+    `
 
     // Update unsubscribe count on the campaign
     if (parsed.campaignId) {
-      await db.$executeRawUnsafe(`
+      await db.$executeRaw`
         UPDATE "MarketingCampaign"
         SET "unsubscribeCount" = "unsubscribeCount" + 1, "updatedAt" = NOW()
-        WHERE id = $1
-      `, parsed.campaignId)
+        WHERE id = ${parsed.campaignId}
+      `
     }
 
     return htmlResponse(

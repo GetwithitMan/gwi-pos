@@ -20,6 +20,7 @@
  */
 
 import crypto from 'crypto'
+import { Prisma } from '@/generated/prisma/client'
 import { db } from '@/lib/db'
 import { createChildLogger } from '@/lib/logger'
 import { renderMessage } from './template-engine'
@@ -489,7 +490,7 @@ export async function notifyEvent(input: NotificationInput): Promise<Notificatio
 
           // ── Emit Postgres NOTIFY for worker ──────────────────────────
           try {
-            await db.$executeRawUnsafe(`SELECT pg_notify('notification_jobs', $1)`, jobId)
+            await db.$executeRaw(Prisma.sql`SELECT pg_notify('notification_jobs', ${jobId})`)
           } catch (notifyErr) {
             // NOTIFY failure is non-fatal — worker poll will catch it
             log.warn({ err: notifyErr, jobId }, 'Failed to emit NOTIFY for notification job')

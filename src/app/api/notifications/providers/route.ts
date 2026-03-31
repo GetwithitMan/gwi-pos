@@ -25,11 +25,11 @@ let tablesBootstrapped = false
 async function ensureNotificationTables() {
   if (tablesBootstrapped) return
   try {
-    await db.$executeRawUnsafe(`SELECT 1 FROM "NotificationProvider" LIMIT 0`)
+    await db.$executeRaw`SELECT 1 FROM "NotificationProvider" LIMIT 0`
     tablesBootstrapped = true
   } catch {
     // Table doesn't exist — create all notification tables
-    await db.$executeRawUnsafe(`
+    await db.$executeRaw`
       CREATE TABLE IF NOT EXISTS "NotificationProvider" (
         "id" TEXT NOT NULL,
         "locationId" TEXT NOT NULL,
@@ -53,10 +53,10 @@ async function ensureNotificationTables() {
         "deletedAt" TIMESTAMP(3),
         CONSTRAINT "NotificationProvider_pkey" PRIMARY KEY ("id")
       )
-    `)
-    await db.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "NotificationProvider_locationId_isActive_idx" ON "NotificationProvider" ("locationId", "isActive")`)
+    `
+    await db.$executeRaw`CREATE INDEX IF NOT EXISTS "NotificationProvider_locationId_isActive_idx" ON "NotificationProvider" ("locationId", "isActive")`
 
-    await db.$executeRawUnsafe(`
+    await db.$executeRaw`
       CREATE TABLE IF NOT EXISTS "NotificationRoutingRule" (
         "id" TEXT NOT NULL,
         "locationId" TEXT NOT NULL,
@@ -90,10 +90,10 @@ async function ensureNotificationTables() {
         "deletedAt" TIMESTAMP(3),
         CONSTRAINT "NotificationRoutingRule_pkey" PRIMARY KEY ("id")
       )
-    `)
-    await db.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "NotificationRoutingRule_locationId_eventType_enabled_idx" ON "NotificationRoutingRule" ("locationId", "eventType", "enabled")`)
+    `
+    await db.$executeRaw`CREATE INDEX IF NOT EXISTS "NotificationRoutingRule_locationId_eventType_enabled_idx" ON "NotificationRoutingRule" ("locationId", "eventType", "enabled")`
 
-    await db.$executeRawUnsafe(`
+    await db.$executeRaw`
       CREATE TABLE IF NOT EXISTS "NotificationDevice" (
         "id" TEXT NOT NULL,
         "locationId" TEXT NOT NULL,
@@ -120,7 +120,7 @@ async function ensureNotificationTables() {
         "deletedAt" TIMESTAMP(3),
         CONSTRAINT "NotificationDevice_pkey" PRIMARY KEY ("id")
       )
-    `)
+    `
 
     tablesBootstrapped = true
     log.info('Self-bootstrapped notification tables')
@@ -318,18 +318,15 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     await ensureNotificationTables()
 
-    const providers: any[] = await db.$queryRawUnsafe(
-      `SELECT id, "locationId", "providerType", name, "isActive", "isDefault",
+    const providers: any[] = await db.$queryRaw`SELECT id, "locationId", "providerType", name, "isActive", "isDefault",
               priority, "executionZone", config, "configVersion",
               "lastValidatedAt", "lastValidationResult",
               capabilities, "healthStatus", "lastHealthCheckAt",
               "consecutiveFailures", "circuitBreakerOpenUntil",
               "createdAt", "updatedAt"
        FROM "NotificationProvider"
-       WHERE "locationId" = $1 AND "deletedAt" IS NULL
-       ORDER BY priority DESC, name ASC`,
-      locationId
-    )
+       WHERE "locationId" = ${locationId} AND "deletedAt" IS NULL
+       ORDER BY priority DESC, name ASC`
 
     // Mask sensitive config fields — never return raw secrets
     const masked = providers.map(p => ({
@@ -414,37 +411,24 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // If setting as default, unset any existing default for this location
     if (isDefault) {
-      await db.$executeRawUnsafe(
-        `UPDATE "NotificationProvider"
+      await db.$executeRaw`UPDATE "NotificationProvider"
          SET "isDefault" = false, "updatedAt" = CURRENT_TIMESTAMP
-         WHERE "locationId" = $1 AND "isDefault" = true AND "deletedAt" IS NULL`,
-        locationId
-      )
+         WHERE "locationId" = ${locationId} AND "isDefault" = true AND "deletedAt" IS NULL`
     }
 
-    const inserted: any[] = await db.$queryRawUnsafe(
-      `INSERT INTO "NotificationProvider" (
+    const inserted: any[] = await db.$queryRaw`INSERT INTO "NotificationProvider" (
         id, "locationId", "providerType", name, "isActive", "isDefault",
         priority, "executionZone", config, "configVersion",
         capabilities, "healthStatus",
         "createdAt", "updatedAt"
       ) VALUES (
-        gen_random_uuid()::text, $1, $2, $3, true, $4,
-        $5, $6, $7::jsonb, 1,
-        $8::jsonb, 'unknown',
+        gen_random_uuid()::text, ${locationId}, ${providerType}, ${name.trim()}, true, ${isDefault},
+        ${priority}, ${executionZone}, ${JSON.stringify(config)}::jsonb, 1,
+        ${JSON.stringify(capabilities)}::jsonb, 'unknown',
         CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
       )
       RETURNING id, "locationId", "providerType", name, "isActive", "isDefault",
-                priority, "executionZone", capabilities, "healthStatus", "createdAt"`,
-      locationId,
-      providerType,
-      name.trim(),
-      isDefault,
-      priority,
-      executionZone,
-      JSON.stringify(config),
-      JSON.stringify(capabilities)
-    )
+                priority, "executionZone", capabilities, "healthStatus", "createdAt"`
 
     const provider = inserted[0]
 

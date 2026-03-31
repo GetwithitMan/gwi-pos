@@ -23,6 +23,7 @@
  * In cloud/Vercel mode, this worker does not start.
  */
 
+import { Prisma } from '@/generated/prisma/client'
 import { neonClient, hasNeonConnection } from './neon-client'
 import { masterClient } from './db'
 import { createChildLogger } from '@/lib/logger'
@@ -109,9 +110,8 @@ const columnNameCache = new Map<string, string>()
 
 async function getColumnNames(tableName: string): Promise<string> {
   if (columnNameCache.has(tableName)) return columnNameCache.get(tableName)!
-  const cols = await masterClient.$queryRawUnsafe<{ column_name: string }[]>(
-    `SELECT column_name FROM information_schema.columns WHERE table_name = $1 AND table_schema = 'public' ORDER BY ordinal_position`,
-    tableName
+  const cols = await masterClient.$queryRaw<{ column_name: string }[]>(
+    Prisma.sql`SELECT column_name FROM information_schema.columns WHERE table_name = ${tableName} AND table_schema = 'public' ORDER BY ordinal_position`,
   )
   const quoted = cols.map((c) => `"${c.column_name}"`).join(', ')
   columnNameCache.set(tableName, quoted)
@@ -123,9 +123,8 @@ const upsertTypeCache = new Map<string, Map<string, string>>()
 
 async function getColumnCasts(tableName: string): Promise<Map<string, string>> {
   if (upsertTypeCache.has(tableName)) return upsertTypeCache.get(tableName)!
-  const cols = await masterClient.$queryRawUnsafe<{ column_name: string; data_type: string; udt_name: string }[]>(
-    `SELECT column_name, data_type, udt_name FROM information_schema.columns WHERE table_name = $1 AND table_schema = 'public'`,
-    tableName
+  const cols = await masterClient.$queryRaw<{ column_name: string; data_type: string; udt_name: string }[]>(
+    Prisma.sql`SELECT column_name, data_type, udt_name FROM information_schema.columns WHERE table_name = ${tableName} AND table_schema = 'public'`,
   )
   const castMap = new Map<string, string>()
   cols.forEach((c) => castMap.set(c.column_name, buildCast(c.data_type, c.udt_name)))
@@ -176,6 +175,7 @@ async function upsertRow(tableName: string, row: Record<string, unknown>): Promi
     .map((c) => `"${c}" = EXCLUDED."${c}"`)
     .join(', ')
 
+  // eslint-disable-next-line -- $executeRawUnsafe required: dynamic column names + placeholders from information_schema (not user input)
   await masterClient.$executeRawUnsafe(
     `INSERT INTO "${tableName}" (${quotedCols}) VALUES (${placeholders}) ON CONFLICT (id) DO UPDATE SET ${updateSet}`,
     ...values
@@ -185,9 +185,8 @@ async function upsertRow(tableName: string, row: Record<string, unknown>): Promi
 async function pullOnlineOrdersFromNeon(locationId: string): Promise<void> {
   try {
     // Find received online orders in Neon
-    const orders = await neonClient!.$queryRawUnsafe<{ id: string }[]>(
-      `SELECT id FROM "Order" WHERE "locationId" = $1 AND status = 'received' AND "deletedAt" IS NULL LIMIT 20`,
-      locationId
+    const orders = await neonClient!.$queryRaw<{ id: string }[]>(
+      Prisma.sql`SELECT id FROM "Order" WHERE "locationId" = ${locationId} AND status = 'received' AND "deletedAt" IS NULL LIMIT 20`,
     )
 
     if (orders.length === 0) return
@@ -197,15 +196,15 @@ async function pullOnlineOrdersFromNeon(locationId: string): Promise<void> {
     for (const { id: orderId } of orders) {
       try {
         // Claim the order in Neon (prevent double-pickup)
-        const claimed = await neonClient!.$executeRawUnsafe(
-          `UPDATE "Order" SET status = 'processing', "updatedAt" = NOW(), "lastMutatedBy" = 'cloud' WHERE id = $1 AND status = 'received'`,
-          orderId
+        const claimed = await neonClient!.$executeRaw(
+          Prisma.sql`UPDATE "Order" SET status = 'processing', "updatedAt" = NOW(), "lastMutatedBy" = 'cloud' WHERE id = ${orderId} AND status = 'received'`,
         )
         if (claimed === 0) continue // Already claimed
 
         // Get full order row from Neon (use explicit columns to avoid
         // PgBouncer "cached plan must not change result type" errors)
         const orderCols = await getColumnNames('Order')
+        // eslint-disable-next-line -- $queryRawUnsafe required: dynamic column list from information_schema
         const [orderRow] = await neonClient!.$queryRawUnsafe<Record<string, unknown>[]>(
           `SELECT ${orderCols} FROM "Order" WHERE id = $1`,
           orderId
@@ -214,6 +213,7 @@ async function pullOnlineOrdersFromNeon(locationId: string): Promise<void> {
 
         // Get order items
         const itemCols = await getColumnNames('OrderItem')
+        // eslint-disable-next-line -- $queryRawUnsafe required: dynamic column list from information_schema
         const items = await neonClient!.$queryRawUnsafe<Record<string, unknown>[]>(
           `SELECT ${itemCols} FROM "OrderItem" WHERE "orderId" = $1`,
           orderId
@@ -224,6 +224,7 @@ async function pullOnlineOrdersFromNeon(locationId: string): Promise<void> {
         let modifiers: Record<string, unknown>[] = []
         if (itemIds.length > 0) {
           const modCols = await getColumnNames('OrderItemModifier')
+          // eslint-disable-next-line -- $queryRawUnsafe required: dynamic column list from information_schema
           modifiers = await neonClient!.$queryRawUnsafe<Record<string, unknown>[]>(
             `SELECT ${modCols} FROM "OrderItemModifier" WHERE "orderItemId" = ANY($1::text[])`,
             itemIds
@@ -243,6 +244,7 @@ async function pullOnlineOrdersFromNeon(locationId: string): Promise<void> {
 
         // Pull Payment records (online orders are pre-paid via Datacap PayAPI)
         const paymentCols = await getColumnNames('Payment')
+        // eslint-disable-next-line -- $queryRawUnsafe required: dynamic column list from information_schema
         const payments = await neonClient!.$queryRawUnsafe<Record<string, unknown>[]>(
           `SELECT ${paymentCols} FROM "Payment" WHERE "orderId" = $1`,
           orderId
@@ -253,6 +255,7 @@ async function pullOnlineOrdersFromNeon(locationId: string): Promise<void> {
 
         // Pull CouponRedemption records if coupon was applied
         const couponCols = await getColumnNames('CouponRedemption')
+        // eslint-disable-next-line -- $queryRawUnsafe required: dynamic column list from information_schema
         const couponRedemptions = await neonClient!.$queryRawUnsafe<Record<string, unknown>[]>(
           `SELECT ${couponCols} FROM "CouponRedemption" WHERE "orderId" = $1`,
           orderId
@@ -263,6 +266,7 @@ async function pullOnlineOrdersFromNeon(locationId: string): Promise<void> {
 
         // Pull GiftCardTransaction records if gift card was used
         const giftCardCols = await getColumnNames('GiftCardTransaction')
+        // eslint-disable-next-line -- $queryRawUnsafe required: dynamic column list from information_schema
         const giftCardTxns = await neonClient!.$queryRawUnsafe<Record<string, unknown>[]>(
           `SELECT ${giftCardCols} FROM "GiftCardTransaction" WHERE "orderId" = $1`,
           orderId
@@ -276,9 +280,8 @@ async function pullOnlineOrdersFromNeon(locationId: string): Promise<void> {
         log.error({ err, orderId }, 'Error pulling order from Neon')
         // Revert claim in Neon on failure
         await neonClient!
-          .$executeRawUnsafe(
-            `UPDATE "Order" SET status = 'received', "updatedAt" = NOW(), "lastMutatedBy" = 'cloud' WHERE id = $1 AND status = 'processing'`,
-            orderId
+          .$executeRaw(
+            Prisma.sql`UPDATE "Order" SET status = 'received', "updatedAt" = NOW(), "lastMutatedBy" = 'cloud' WHERE id = ${orderId} AND status = 'processing'`
           )
           .catch(err => log.warn({ err }, 'fire-and-forget failed in online-order-worker'))
       }

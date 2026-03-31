@@ -23,11 +23,11 @@ export const POST = withVenue(async function POST(
     const auth = await requirePermission(requestingEmployeeId, locationId, 'admin.manage_memberships')
     if (!auth.authorized) return err(auth.error, auth.status)
 
-    const rows: any[] = await db.$queryRawUnsafe(`
+    const rows: any[] = await db.$queryRaw`
       SELECT "id", "status", "billingCycle", "customerId" FROM "Membership"
-      WHERE "id" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
+      WHERE "id" = ${id} AND "locationId" = ${locationId} AND "deletedAt" IS NULL
       LIMIT 1
-    `, id, locationId)
+    `
     if (rows.length === 0) return notFound('Membership not found')
 
     const mbr = rows[0]
@@ -43,23 +43,19 @@ export const POST = withVenue(async function POST(
     const cycle = mbr.billingCycle || 'monthly'
     const periodEnd = advancePeriod(now, cycle)
 
-    await db.$executeRawUnsafe(`
+    await db.$executeRaw`
       UPDATE "Membership"
       SET "status" = 'active', "pausedAt" = NULL, "pauseResumeDate" = NULL,
-          "currentPeriodStart" = $2, "currentPeriodEnd" = $3,
-          "nextBillingDate" = $2,
+          "currentPeriodStart" = ${now}, "currentPeriodEnd" = ${periodEnd},
+          "nextBillingDate" = ${now},
           "version" = "version" + 1, "updatedAt" = NOW()
-      WHERE "id" = $1
-    `, id, now, periodEnd)
+      WHERE "id" = ${id}
+    `
 
-    await db.$executeRawUnsafe(`
+    await db.$executeRaw`
       INSERT INTO "MembershipEvent" ("locationId", "membershipId", "eventType", "details", "employeeId")
-      VALUES ($1, $2, $3, $4, $5)
-    `,
-      locationId, id, MembershipEventType.RESUMED,
-      JSON.stringify({ resumedAt: now.toISOString() }),
-      requestingEmployeeId || null
-    )
+      VALUES (${locationId}, ${id}, ${MembershipEventType.RESUMED}, ${JSON.stringify({ resumedAt: now.toISOString() })}, ${requestingEmployeeId || null})
+    `
 
     void dispatchMembershipUpdate(locationId, {
       action: 'resumed', membershipId: id, customerId: mbr.customerId,

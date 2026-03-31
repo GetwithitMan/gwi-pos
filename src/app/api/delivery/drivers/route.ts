@@ -29,7 +29,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const featureGate = await requireDeliveryFeature(locationId)
     if (featureGate) return featureGate
 
-    const rows: any[] = await db.$queryRawUnsafe(`
+    const rows: any[] = await db.$queryRaw`
       SELECT dd.*,
              e."firstName" as "employeeFirstName",
              e."lastName" as "employeeLastName",
@@ -46,11 +46,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       LEFT JOIN "DeliveryDriverSession" ds
         ON ds."driverId" = dd.id
         AND ds."endedAt" IS NULL
-        AND ds."locationId" = $1
-      WHERE dd."locationId" = $1
+        AND ds."locationId" = ${locationId}
+      WHERE dd."locationId" = ${locationId}
         AND dd."deletedAt" IS NULL
       ORDER BY e."firstName" ASC, e."lastName" ASC
-    `, locationId)
+    `
 
     const drivers = rows.map(row => ({
       id: row.id,
@@ -147,38 +147,29 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Check for existing driver profile
-    const existing: any[] = await db.$queryRawUnsafe(`
+    const existing: any[] = await db.$queryRaw`
       SELECT id FROM "DeliveryDriver"
-      WHERE "employeeId" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
+      WHERE "employeeId" = ${employeeId} AND "locationId" = ${locationId} AND "deletedAt" IS NULL
       LIMIT 1
-    `, employeeId, locationId)
+    `
 
     if (existing.length) {
       return err('Driver profile already exists for this employee', 409)
     }
 
     // Insert driver profile
-    const inserted: any[] = await db.$queryRawUnsafe(`
+    const zoneIdsArray = preferredZoneIds?.length ? `{${preferredZoneIds.join(',')}}` : null
+    const inserted: any[] = await db.$queryRaw`
       INSERT INTO "DeliveryDriver" (
         "id", "locationId", "employeeId", "vehicleType", "vehicleMake", "vehicleModel",
         "vehicleColor", "licensePlate", "mileageRateOverride", "preferredZoneIds",
         "isActive", "isSuspended", "createdAt", "updatedAt"
       ) VALUES (
-        gen_random_uuid()::text, $1, $2, $3, $4, $5, $6, $7, $8, $9::text[],
+        gen_random_uuid()::text, ${locationId}, ${employeeId}, ${vehicleType?.trim() || null}, ${vehicleMake?.trim() || null}, ${vehicleModel?.trim() || null}, ${vehicleColor?.trim() || null}, ${licensePlate?.trim() || null}, ${mileageRateOverride != null ? Number(mileageRateOverride) : null}, ${zoneIdsArray}::text[],
         true, false, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
       )
       RETURNING *
-    `,
-      locationId,
-      employeeId,
-      vehicleType?.trim() || null,
-      vehicleMake?.trim() || null,
-      vehicleModel?.trim() || null,
-      vehicleColor?.trim() || null,
-      licensePlate?.trim() || null,
-      mileageRateOverride != null ? Number(mileageRateOverride) : null,
-      preferredZoneIds?.length ? `{${preferredZoneIds.join(',')}}` : null,
-    )
+    `
 
     pushUpstream()
 

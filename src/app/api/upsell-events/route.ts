@@ -43,24 +43,14 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       return err(`Invalid action. Must be one of: ${validActions.join(', ')}`)
     }
 
-    const rows = await db.$queryRawUnsafe<UpsellEventRow[]>(`
+    const rows = await db.$queryRaw<UpsellEventRow[]>`
       INSERT INTO "UpsellEvent" (
         "locationId", "upsellRuleId", "orderId", "employeeId",
         "suggestedItemId", "suggestedItemName", "suggestedItemPrice",
         "action", "addedAmount"
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      ) VALUES (${locationId}, ${ruleId}, ${orderId}, ${employeeId || null}, ${suggestedItemId || null}, ${suggestedItemName || null}, ${suggestedItemPrice != null ? suggestedItemPrice : null}, ${action}, ${addedAmount != null ? addedAmount : null})
       RETURNING *
-    `,
-      locationId,
-      ruleId,
-      orderId,
-      employeeId || null,
-      suggestedItemId || null,
-      suggestedItemName || null,
-      suggestedItemPrice != null ? suggestedItemPrice : null,
-      action,
-      addedAmount != null ? addedAmount : null,
-    )
+    `
 
     return ok({ success: true, id: rows[0]?.id })
   } catch (error) {

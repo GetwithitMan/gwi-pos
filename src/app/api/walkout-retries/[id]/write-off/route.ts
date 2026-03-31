@@ -90,29 +90,21 @@ export const POST = withVenue(async function POST(
     // Perform write-off in a transaction
     const result = await db.$transaction(async (tx) => {
       // 1. Update WalkoutRetry to written_off with DB-generated timestamp
-      await tx.$executeRawUnsafe(
-        `UPDATE "WalkoutRetry"
-         SET status = 'written_off', "writtenOffAt" = NOW(), "writtenOffBy" = $1, "updatedAt" = NOW()
-         WHERE id = $2 AND status = 'exhausted'`,
-        managerId,
-        walkoutRetryId,
-      )
+      await tx.$executeRaw`UPDATE "WalkoutRetry"
+         SET status = 'written_off', "writtenOffAt" = NOW(), "writtenOffBy" = ${managerId}, "updatedAt" = NOW()
+         WHERE id = ${walkoutRetryId} AND status = 'exhausted'`
 
       // 2. Add a note to the related order about the write-off
       const writeOffNote = `[WALKOUT WRITE-OFF] $${Number(retry.amount).toFixed(2)} written off as bad debt by ${auth.employee.displayName || `${auth.employee.firstName} ${auth.employee.lastName}`}. Reason: ${reason.trim()}${notes ? `. Notes: ${notes.trim()}` : ''}`
 
       // Append to order notes (preserve existing)
-      await tx.$executeRawUnsafe(
-        `UPDATE "Order"
+      await tx.$executeRaw`UPDATE "Order"
          SET notes = CASE
-           WHEN notes IS NULL OR notes = '' THEN $1
-           ELSE notes || E'\n' || $1
+           WHEN notes IS NULL OR notes = '' THEN ${writeOffNote}
+           ELSE notes || E'\n' || ${writeOffNote}
          END,
          "updatedAt" = NOW()
-         WHERE id = $2`,
-        writeOffNote,
-        retry.orderId,
-      )
+         WHERE id = ${retry.orderId}`
 
       // 3. Create audit log entry
       await tx.auditLog.create({

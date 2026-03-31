@@ -76,10 +76,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Load pickup info from the location
-    const locationRows = await db.$queryRawUnsafe<Array<{ name: string; settings: unknown }>>(
-      `SELECT name, settings FROM "Location" WHERE id = $1`,
-      locationId,
-    )
+    const locationRows = await db.$queryRaw<Array<{ name: string; settings: unknown }>>`SELECT name, settings FROM "Location" WHERE id = ${locationId}`
 
     if (!locationRows.length) {
       return notFound('Location not found')

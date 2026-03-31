@@ -212,10 +212,7 @@ export async function POST(request: NextRequest) {
       for (let i = 0; i < tables.length; i++) {
         const table = tables[i]
         try {
-          const rowCount = await tx.$executeRawUnsafe(
-            `UPDATE "${table}" SET "locationId" = $1 WHERE "locationId" = $2`,
-            newLocationId, oldLocationId
-          )
+          const rowCount = await tx.$executeRaw`UPDATE "${table}" SET "locationId" = ${newLocationId} WHERE "locationId" = ${oldLocationId}`
           counts[table] = rowCount
         } catch (err: any) {
           // Table might not exist yet (pending migration) or not have locationId — skip gracefully
@@ -229,10 +226,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Update the Location record itself last (changes the PK)
-      await tx.$executeRawUnsafe(
-        `UPDATE "Location" SET "id" = $1 WHERE "id" = $2`,
-        newLocationId, oldLocationId
-      )
+      await tx.$executeRaw`UPDATE "Location" SET "id" = ${newLocationId} WHERE "id" = ${oldLocationId}`
       counts['Location'] = 1
 
       return counts

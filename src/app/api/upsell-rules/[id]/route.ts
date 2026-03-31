@@ -40,7 +40,7 @@ export const GET = withVenue(async function GET(
   try {
     const { id } = await params
 
-    const rows = await db.$queryRawUnsafe<UpsellRuleRow[]>(`
+    const rows = await db.$queryRaw<UpsellRuleRow[]>`
       SELECT r.*,
         ti."name" as "triggerItemName",
         si."name" as "suggestItemName",
@@ -52,9 +52,9 @@ export const GET = withVenue(async function GET(
       LEFT JOIN "MenuItem" si ON r."suggestItemId" = si."id"
       LEFT JOIN "Category" tc ON r."triggerCategoryId" = tc."id"
       LEFT JOIN "Category" sc ON r."suggestCategoryId" = sc."id"
-      WHERE r."id" = $1 AND r."deletedAt" IS NULL
+      WHERE r."id" = ${id} AND r."deletedAt" IS NULL
       LIMIT 1
-    `, id)
+    `
 
     if (rows.length === 0) {
       return notFound('Upsell rule not found')
@@ -92,9 +92,9 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     } = body
 
     // Verify rule exists
-    const existing = await db.$queryRawUnsafe<UpsellRuleRow[]>(`
-      SELECT "id" FROM "UpsellRule" WHERE "id" = $1 AND "deletedAt" IS NULL LIMIT 1
-    `, id)
+    const existing = await db.$queryRaw<UpsellRuleRow[]>`
+      SELECT "id" FROM "UpsellRule" WHERE "id" = ${id} AND "deletedAt" IS NULL LIMIT 1
+    `
 
     if (existing.length === 0) {
       return notFound('Upsell rule not found')
@@ -107,40 +107,25 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
       }
     }
 
-    const rows = await db.$queryRawUnsafe<UpsellRuleRow[]>(`
+    const rows = await db.$queryRaw<UpsellRuleRow[]>`
       UPDATE "UpsellRule" SET
-        "name" = COALESCE($2, "name"),
-        "triggerType" = COALESCE($3, "triggerType"),
-        "triggerItemId" = $4,
-        "triggerCategoryId" = $5,
-        "triggerMinTotal" = $6,
-        "triggerTimeStart" = $7,
-        "triggerTimeEnd" = $8,
-        "triggerDaysOfWeek" = $9::int[],
-        "suggestItemId" = $10,
-        "suggestCategoryId" = $11,
-        "message" = COALESCE($12, "message"),
-        "priority" = COALESCE($13, "priority"),
-        "isActive" = COALESCE($14, "isActive"),
+        "name" = COALESCE(${name ?? null}, "name"),
+        "triggerType" = COALESCE(${triggerType ?? null}, "triggerType"),
+        "triggerItemId" = ${triggerItemId !== undefined ? (triggerItemId || null) : null},
+        "triggerCategoryId" = ${triggerCategoryId !== undefined ? (triggerCategoryId || null) : null},
+        "triggerMinTotal" = ${triggerMinTotal !== undefined ? triggerMinTotal : null},
+        "triggerTimeStart" = ${triggerTimeStart !== undefined ? (triggerTimeStart || null) : null},
+        "triggerTimeEnd" = ${triggerTimeEnd !== undefined ? (triggerTimeEnd || null) : null},
+        "triggerDaysOfWeek" = ${triggerDaysOfWeek && triggerDaysOfWeek.length > 0 ? triggerDaysOfWeek : null}::int[],
+        "suggestItemId" = ${suggestItemId !== undefined ? (suggestItemId || null) : null},
+        "suggestCategoryId" = ${suggestCategoryId !== undefined ? (suggestCategoryId || null) : null},
+        "message" = COALESCE(${message ?? null}, "message"),
+        "priority" = COALESCE(${priority ?? null}, "priority"),
+        "isActive" = COALESCE(${isActive ?? null}, "isActive"),
         "updatedAt" = CURRENT_TIMESTAMP
-      WHERE "id" = $1 AND "deletedAt" IS NULL
+      WHERE "id" = ${id} AND "deletedAt" IS NULL
       RETURNING *
-    `,
-      id,
-      name ?? null,
-      triggerType ?? null,
-      triggerItemId !== undefined ? (triggerItemId || null) : null,
-      triggerCategoryId !== undefined ? (triggerCategoryId || null) : null,
-      triggerMinTotal !== undefined ? triggerMinTotal : null,
-      triggerTimeStart !== undefined ? (triggerTimeStart || null) : null,
-      triggerTimeEnd !== undefined ? (triggerTimeEnd || null) : null,
-      triggerDaysOfWeek && triggerDaysOfWeek.length > 0 ? triggerDaysOfWeek : null,
-      suggestItemId !== undefined ? (suggestItemId || null) : null,
-      suggestCategoryId !== undefined ? (suggestCategoryId || null) : null,
-      message ?? null,
-      priority ?? null,
-      isActive ?? null,
-    )
+    `
 
     if (rows.length === 0) {
       return notFound('Upsell rule not found')
@@ -161,12 +146,12 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
   try {
     const { id } = await params
 
-    const rows = await db.$queryRawUnsafe<UpsellRuleRow[]>(`
+    const rows = await db.$queryRaw<UpsellRuleRow[]>`
       UPDATE "UpsellRule"
       SET "deletedAt" = CURRENT_TIMESTAMP, "updatedAt" = CURRENT_TIMESTAMP
-      WHERE "id" = $1 AND "deletedAt" IS NULL
+      WHERE "id" = ${id} AND "deletedAt" IS NULL
       RETURNING "id"
-    `, id)
+    `
 
     if (rows.length === 0) {
       return notFound('Upsell rule not found')

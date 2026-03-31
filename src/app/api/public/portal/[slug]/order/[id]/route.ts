@@ -59,20 +59,16 @@ export async function GET(
     }
 
     // ── Fetch CakeOrder ────────────────────────────────────────────
-    const orders = await venueDb.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT
+    const orders = await venueDb.$queryRaw<Array<Record<string, unknown>>>`SELECT
         "id", "orderNumber", "status", "eventDate", "eventType", "guestCount",
         "cakeConfig", "designConfig", "deliveryType", "notes",
         "total", "depositRequired", "depositPaid", "balanceDue",
         "createdAt", "cancelledAt", "cancelReason", "customerId"
       FROM "CakeOrder"
-      WHERE "id" = $1
-        AND "customerId" = $2
+      WHERE "id" = ${id}
+        AND "customerId" = ${tokenResult.customerId}
         AND "deletedAt" IS NULL
-      LIMIT 1`,
-      id,
-      tokenResult.customerId,
-    )
+      LIMIT 1`
 
     if (orders.length === 0) {
       return notFound('Order not found')
@@ -122,17 +118,14 @@ export async function GET(
     let quote: Record<string, unknown> | null = null
     const quoteStatuses = ['quoted', 'approved', 'deposit_paid', 'in_production', 'ready', 'delivered', 'completed']
     if (quoteStatuses.includes(order.status as string)) {
-      const quotes = await venueDb.$queryRawUnsafe<Array<Record<string, unknown>>>(
-        `SELECT
+      const quotes = await venueDb.$queryRaw<Array<Record<string, unknown>>>`SELECT
           "id", "version", "status", "lineItems", "total", "depositAmount",
           "validUntilDate", "sentAt", "approvedAt"
         FROM "CakeQuote"
-        WHERE "cakeOrderId" = $1
+        WHERE "cakeOrderId" = ${id}
           AND "status" IN ('sent', 'approved')
         ORDER BY "version" DESC
-        LIMIT 1`,
-        id,
-      )
+        LIMIT 1`
 
       if (quotes.length > 0) {
         const q = quotes[0]
@@ -151,14 +144,11 @@ export async function GET(
     }
 
     // ── Fetch CakePayments (safe fields only) ──────────────────────
-    const payments = await venueDb.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT
+    const payments = await venueDb.$queryRaw<Array<Record<string, unknown>>>`SELECT
         "amount", "type", "appliedTo", "processedAt"
       FROM "CakePayment"
-      WHERE "cakeOrderId" = $1
-      ORDER BY "processedAt" ASC`,
-      id,
-    )
+      WHERE "cakeOrderId" = ${id}
+      ORDER BY "processedAt" ASC`
 
     const safePayments = payments.map((p) => ({
       amount: Number(p.amount),

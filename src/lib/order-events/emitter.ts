@@ -11,6 +11,7 @@
  * to avoid blocking the request on event persistence.
  */
 
+import { Prisma } from '@/generated/prisma/client'
 import { db } from '@/lib/db'
 import { emitToLocation } from '@/lib/socket-server'
 import { createChildLogger } from '@/lib/logger'
@@ -54,9 +55,9 @@ export async function emitOrderEvent(
     const deviceCounter = opts?.deviceCounter ?? 0
 
     // Assign serverSequence atomically via Postgres SEQUENCE
-    const [seqRow] = await db.$queryRawUnsafe<
+    const [seqRow] = await db.$queryRaw<
       { nextval: bigint | number }[]
-    >(`SELECT nextval('order_event_server_seq')`)
+    >(Prisma.sql`SELECT nextval('order_event_server_seq')`)
     const serverSequence = Number(seqRow.nextval)
 
     // Insert the event

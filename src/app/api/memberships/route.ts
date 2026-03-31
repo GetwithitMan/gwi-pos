@@ -38,7 +38,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     if (billingStatus) { where += ` AND "m"."billingStatus" = $${idx}`; params.push(billingStatus); idx++ }
     if (customerId) { where += ` AND "m"."customerId" = $${idx}`; params.push(customerId); idx++ }
 
-    const rows: any[] = await db.$queryRawUnsafe(`
+    const rows: any[] = await db.$queryRaw`
       SELECT "m".*, "p"."name" AS "planName", "p"."price" AS "planPrice",
              "c"."firstName" AS "customerFirstName", "c"."lastName" AS "customerLastName",
              "c"."email" AS "customerEmail", "c"."phone" AS "customerPhone",
@@ -50,13 +50,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       WHERE ${where}
       ORDER BY "m"."createdAt" DESC
       LIMIT $${idx} OFFSET $${idx + 1}
-    `, ...params, limit, offset)
+    `
 
-    const countResult: any[] = await db.$queryRawUnsafe(`
+    const countResult: any[] = await db.$queryRaw`
       SELECT COUNT(*)::int AS "total"
       FROM "Membership" "m"
       WHERE ${where}
-    `, ...params)
+    `
 
     return NextResponse.json({ data: rows, total: countResult[0]?.total ?? 0 })
   } catch (caughtErr) {
@@ -82,40 +82,40 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     if (!auth.authorized) return err(auth.error, auth.status)
 
     // Validate plan
-    const plans: any[] = await db.$queryRawUnsafe(`
+    const plans: any[] = await db.$queryRaw`
       SELECT * FROM "MembershipPlan"
-      WHERE "id" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL AND "isActive" = true
+      WHERE "id" = ${planId} AND "locationId" = ${locationId} AND "deletedAt" IS NULL AND "isActive" = true
       LIMIT 1
-    `, planId, locationId)
+    `
     if (plans.length === 0) return notFound('Plan not found or inactive')
     const plan = plans[0]
 
     // Validate customer
-    const customers: any[] = await db.$queryRawUnsafe(`
+    const customers: any[] = await db.$queryRaw`
       SELECT "id" FROM "Customer"
-      WHERE "id" = $1 AND "locationId" = $2 AND "isActive" = true
+      WHERE "id" = ${customerId} AND "locationId" = ${locationId} AND "isActive" = true
       LIMIT 1
-    `, customerId, locationId)
+    `
     if (customers.length === 0) return notFound('Customer not found')
 
     // Validate saved card if provided
     let token: string | null = null
     if (savedCardId) {
-      const cards: any[] = await db.$queryRawUnsafe(`
+      const cards: any[] = await db.$queryRaw`
         SELECT "id", "token" FROM "SavedCard"
-        WHERE "id" = $1 AND "locationId" = $2 AND "customerId" = $3 AND "deletedAt" IS NULL
+        WHERE "id" = ${savedCardId} AND "locationId" = ${locationId} AND "customerId" = ${customerId} AND "deletedAt" IS NULL
         LIMIT 1
-      `, savedCardId, locationId, customerId)
+      `
       if (cards.length === 0) return err('Saved card not found or does not belong to customer')
       token = cards[0].token
     }
 
     // Check max members
     if (plan.maxMembers) {
-      const countResult: any[] = await db.$queryRawUnsafe(`
+      const countResult: any[] = await db.$queryRaw`
         SELECT COUNT(*)::int AS "cnt" FROM "Membership"
-        WHERE "planId" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL AND "status" IN ('trial', 'active', 'paused')
-      `, planId, locationId)
+        WHERE "planId" = ${planId} AND "locationId" = ${locationId} AND "deletedAt" IS NULL AND "status" IN ('trial', 'active', 'paused')
+      `
       if (countResult[0]?.cnt >= plan.maxMembers) {
         return err('Plan is at maximum capacity', 409)
       }
@@ -178,33 +178,24 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Create membership
-    const rows: any[] = await db.$queryRawUnsafe(`
+    const rows: any[] = await db.$queryRaw`
       INSERT INTO "Membership" (
         "locationId", "customerId", "planId", "savedCardId",
         "status", "billingStatus", "currentPeriodStart", "currentPeriodEnd",
         "nextBillingDate", "trialEndsAt", "priceAtSignup", "billingCycle",
         "currency", "recurringData", "lastToken",
         "startedAt", "enrolledByEmployeeId"
-      ) VALUES ($1, $2, $3, $4, $5, 'current', $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+      ) VALUES (${locationId}, ${customerId}, ${planId}, ${savedCardId || null}, ${initialStatus}, 'current', ${periodStart}, ${periodEnd}, ${nextBillingDate}, ${trialEndsAt}, ${price}, ${billingCycle}, ${plan.currency || 'USD'}, ${recurringData || 'Recurring'}, ${token}, ${now}, ${requestingEmployeeId || null})
       RETURNING *
-    `,
-      locationId, customerId, planId, savedCardId || null,
-      initialStatus, periodStart, periodEnd, nextBillingDate,
-      trialEndsAt, price, billingCycle, plan.currency || 'USD',
-      recurringData || 'Recurring', token, now, requestingEmployeeId || null
-    )
+    `
 
     const membership = rows[0]
 
     // Emit event
-    await db.$executeRawUnsafe(`
+    await db.$executeRaw`
       INSERT INTO "MembershipEvent" ("locationId", "membershipId", "eventType", "details", "employeeId")
-      VALUES ($1, $2, $3, $4, $5)
-    `,
-      locationId, membership.id, MembershipEventType.CREATED,
-      JSON.stringify({ planId, hasTrial, setupFeeCharged: plan.setupFee > 0 }),
-      requestingEmployeeId || null
-    )
+      VALUES (${locationId}, ${membership.id}, ${MembershipEventType.CREATED}, ${JSON.stringify({ planId, hasTrial, setupFeeCharged: plan.setupFee > 0 })}, ${requestingEmployeeId || null})
+    `
 
     void dispatchMembershipUpdate(locationId, {
       action: 'enrolled', membershipId: membership.id, customerId,

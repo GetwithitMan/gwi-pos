@@ -48,8 +48,10 @@ export async function resolveTenantLocationId(): Promise<string | undefined> {
     const { getRequestPrisma } = await import('./request-context')
     const prisma = getRequestPrisma()
     if (!prisma) return undefined
-    // Raw SQL bypasses all extensions (soft-delete, tenant scope, write guard)
-    // Uses window function COUNT(*) OVER() to detect multi-location invariant violation
+    // CRITICAL: $queryRawUnsafe is MANDATORY here — see DATABASE-CONNECTION-RULES.md.
+    // Using $queryRaw with Prisma.sql triggers Prisma extension interceptors,
+    // which call resolveTenantLocationId() again, causing a deadlock via inflight promise coalescing.
+    // eslint-disable-next-line -- $queryRawUnsafe required: deadlock prevention (see CLAUDE.md)
     const rows = await (prisma as any).$queryRawUnsafe(
       'SELECT id, COUNT(*) OVER() as total FROM "Location" WHERE "deletedAt" IS NULL ORDER BY "createdAt" ASC LIMIT 1'
     ) as Array<{ id: string; total: bigint | number }>

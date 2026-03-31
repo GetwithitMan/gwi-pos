@@ -1,19 +1,17 @@
 import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
-import { PERMISSIONS } from '@/lib/auth-utils'
-import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { PaymentRepository } from '@/lib/repositories'
 import { err, ok } from '@/lib/api-response'
 
 // POST - Create a chargeback case (manual entry for now)
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth('MGR_VOID_PAYMENTS', async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const {
       locationId,
-      employeeId,
       cardLast4,
       cardBrand,
       amount,
@@ -27,12 +25,6 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     if (!locationId || !cardLast4 || !amount || !chargebackDate) {
       return err('Missing required fields: locationId, cardLast4, amount, chargebackDate')
     }
-
-    // Require manager-level permission — creating chargebacks is a sensitive financial operation
-    const actor = await getActorFromRequest(request)
-    const resolvedEmployeeId = actor.employeeId ?? employeeId
-    const authResult = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.MGR_VOID_PAYMENTS)
-    if (!authResult.authorized) return err(authResult.error, authResult.status)
 
     // Try to auto-match against orders
     let matchedOrderId: string | null = null
@@ -114,7 +106,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     console.error('Failed to create chargeback case:', error)
     return err('Failed to create chargeback case', 500)
   }
-})
+}))
 
 // GET - List chargeback cases
 export const GET = withVenue(async function GET(request: NextRequest) {

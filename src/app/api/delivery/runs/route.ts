@@ -81,7 +81,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       paramIdx++
     }
 
-    const rows: any[] = await db.$queryRawUnsafe(`
+    const rows: any[] = await db.$queryRaw`
       SELECT r.*,
              dd."vehicleType", dd."vehicleMake", dd."vehicleModel", dd."vehicleColor", dd."licensePlate", dd."isSuspended",
              e."firstName" as "driverFirstName", e."lastName" as "driverLastName",
@@ -105,21 +105,21 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           WHEN 'cancelled' THEN 7
         END,
         r."createdAt" DESC
-    `, ...params)
+    `
 
     // Fetch orders for each run
     const runIds = rows.map(r => r.id)
     const ordersMap: Map<string, any[]> = new Map()
 
     if (runIds.length > 0) {
-      const orderRows: any[] = await db.$queryRawUnsafe(`
+      const orderRows: any[] = await db.$queryRaw`
         SELECT d.*,
                o."orderNumber", o."status" as "orderStatus"
         FROM "DeliveryOrder" d
         LEFT JOIN "Order" o ON o.id = d."orderId"
-        WHERE d."runId" = ANY($1::text[])
+        WHERE d."runId" = ANY(${runIds}::text[])
         ORDER BY d."runSequence" ASC NULLS LAST, d."createdAt" ASC
-      `, runIds)
+      `
 
       for (const ord of orderRows) {
         const list = ordersMap.get(ord.runId) || []
@@ -184,10 +184,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Timezone lives on Location, not LocationSettings
-    const loc = await db.$queryRawUnsafe<{ timezone: string }[]>(
-      'SELECT "timezone" FROM "Location" WHERE "id" = $1',
-      locationId,
-    )
+    const loc = await db.$queryRaw<{ timezone: string }[]>`SELECT "timezone" FROM "Location" WHERE "id" = ${locationId}`
     const timezone = loc[0]?.timezone ?? 'America/New_York'
 
     // Validate orders per driver limit
@@ -201,33 +198,22 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const result = await db.$transaction(async (tx) => {
       // 1. Idempotency check
       if (idempotencyKey) {
-        const existing: any[] = await tx.$queryRawUnsafe(
-          `SELECT * FROM "DeliveryRun" WHERE "idempotencyKey" = $1 AND "locationId" = $2 LIMIT 1`,
-          idempotencyKey,
-          locationId,
-        )
+        const existing: any[] = await tx.$queryRaw`SELECT * FROM "DeliveryRun" WHERE "idempotencyKey" = ${idempotencyKey} AND "locationId" = ${locationId} LIMIT 1`
         if (existing.length > 0) {
           // Return existing run (idempotent)
-          const existingOrders: any[] = await tx.$queryRawUnsafe(
-            `SELECT d.*, o."orderNumber" FROM "DeliveryOrder" d
+          const existingOrders: any[] = await tx.$queryRaw`SELECT d.*, o."orderNumber" FROM "DeliveryOrder" d
              LEFT JOIN "Order" o ON o.id = d."orderId"
-             WHERE d."runId" = $1 ORDER BY d."runSequence" ASC`,
-            existing[0].id,
-          )
+             WHERE d."runId" = ${existing[0].id} ORDER BY d."runSequence" ASC`
           return { run: existing[0], orders: existingOrders, isDuplicate: true }
         }
       }
 
       // 2. Lock delivery order rows (prevent concurrent modification)
-      const lockedOrders: any[] = await tx.$queryRawUnsafe(
-        `SELECT d.*, o."orderNumber", o."status" as "orderStatus"
+      const lockedOrders: any[] = await tx.$queryRaw`SELECT d.*, o."orderNumber", o."status" as "orderStatus"
          FROM "DeliveryOrder" d
          LEFT JOIN "Order" o ON o.id = d."orderId"
-         WHERE d.id = ANY($1::text[]) AND d."locationId" = $2
-         FOR UPDATE OF d`,
-        orderIds,
-        locationId,
-      )
+         WHERE d.id = ANY(${orderIds}::text[]) AND d."locationId" = ${locationId}
+         FOR UPDATE OF d`
 
       // 3. Validate all orders belong to this location
       if (lockedOrders.length !== orderIds.length) {
@@ -247,14 +233,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }
 
       // 5. Validate driver exists, isActive, not suspended
-      const drivers: any[] = await tx.$queryRawUnsafe(
-        `SELECT dd.*, e."firstName", e."lastName"
+      const drivers: any[] = await tx.$queryRaw`SELECT dd.*, e."firstName", e."lastName"
          FROM "DeliveryDriver" dd
          JOIN "Employee" e ON e.id = dd."employeeId"
-         WHERE dd.id = $1 AND dd."locationId" = $2`,
-        driverId,
-        locationId,
-      )
+         WHERE dd.id = ${driverId} AND dd."locationId" = ${locationId}`
       if (!drivers.length) {
         throw new Error('Driver not found')
       }
@@ -269,27 +251,19 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }
 
       // 6. Validate no active run for this driver
-      const activeRuns: any[] = await tx.$queryRawUnsafe(
-        `SELECT id FROM "DeliveryRun"
-         WHERE "driverId" = $1 AND "locationId" = $2
+      const activeRuns: any[] = await tx.$queryRaw`SELECT id FROM "DeliveryRun"
+         WHERE "driverId" = ${driverId} AND "locationId" = ${locationId}
            AND status NOT IN ('completed', 'returned', 'cancelled')
-         LIMIT 1`,
-        driverId,
-        locationId,
-      )
+         LIMIT 1`
       if (activeRuns.length > 0) {
         throw new Error('Driver already has an active run. Complete or cancel the existing run first.')
       }
 
       // 7. Validate orders per driver limit (include existing active orders)
-      const driverActiveCount: any[] = await tx.$queryRawUnsafe(
-        `SELECT COUNT(*)::int as count
+      const driverActiveCount: any[] = await tx.$queryRaw`SELECT COUNT(*)::int as count
          FROM "DeliveryOrder"
-         WHERE "driverId" = $1 AND "locationId" = $2
-           AND status NOT IN ('delivered', 'cancelled_before_dispatch', 'cancelled_after_dispatch', 'failed_delivery', 'returned_to_store')`,
-        driverId,
-        locationId,
-      )
+         WHERE "driverId" = ${driverId} AND "locationId" = ${locationId}
+           AND status NOT IN ('delivered', 'cancelled_before_dispatch', 'cancelled_after_dispatch', 'failed_delivery', 'returned_to_store')`
       const currentDriverOrders = driverActiveCount[0]?.count ?? 0
       if (currentDriverOrders + orderIds.length > maxPerDriver) {
         throw new Error(
@@ -337,20 +311,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       })
 
       // 11. INSERT DeliveryRun
-      const runInserted: any[] = await tx.$queryRawUnsafe(
-        `INSERT INTO "DeliveryRun" (
+      const runInserted: any[] = await tx.$queryRaw`INSERT INTO "DeliveryRun" (
           "id", "locationId", "driverId", "status", "orderSequence",
           "notes", "idempotencyKey", "createdAt", "updatedAt"
         ) VALUES (
-          gen_random_uuid()::text, $1, $2, 'assigned', $3::jsonb,
-          $4, $5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-        ) RETURNING *`,
-        locationId,
-        driverId,
-        JSON.stringify(orderSequence),
-        notes?.trim() || null,
-        idempotencyKey || null,
-      )
+          gen_random_uuid()::text, ${locationId}, ${driverId}, 'assigned', ${JSON.stringify(orderSequence)}::jsonb,
+          ${notes?.trim() || null}, ${idempotencyKey || null}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        ) RETURNING *`
 
       const run = runInserted[0]
 
@@ -372,26 +339,17 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           lng: order.lng,
         })
 
-        const updated: any[] = await tx.$queryRawUnsafe(
-          `UPDATE "DeliveryOrder"
-           SET "runId" = $1,
-               "runSequence" = $2,
+        const updated: any[] = await tx.$queryRaw`UPDATE "DeliveryOrder"
+           SET "runId" = ${run.id},
+               "runSequence" = ${sequence},
                "status" = 'assigned',
                "assignedAt" = CURRENT_TIMESTAMP,
-               "driverId" = COALESCE("driverId", $3),
-               "proofMode" = $4,
-               "addressSnapshotJson" = $5::jsonb,
+               "driverId" = COALESCE("driverId", ${driverId}),
+               "proofMode" = ${proofMode},
+               "addressSnapshotJson" = ${addressSnapshot}::jsonb,
                "updatedAt" = CURRENT_TIMESTAMP
-           WHERE id = $6 AND "locationId" = $7
-           RETURNING *`,
-          run.id,
-          sequence,
-          driverId,
-          proofMode,
-          addressSnapshot,
-          order.id,
-          locationId,
-        )
+           WHERE id = ${order.id} AND "locationId" = ${locationId}
+           RETURNING *`
         if (updated.length > 0) {
           updatedOrders.push({ ...updated[0], orderNumber: order.orderNumber })
         }
@@ -399,30 +357,20 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
       // 13. UPDATE DeliveryDriverSession if sessionId provided
       if (sessionId) {
-        await tx.$queryRawUnsafe(
-          `UPDATE "DeliveryDriverSession"
+        await tx.$queryRaw`UPDATE "DeliveryDriverSession"
            SET "status" = 'on_delivery',
-               "deliveryCount" = COALESCE("deliveryCount", 0) + $1,
+               "deliveryCount" = COALESCE("deliveryCount", 0) + ${orderIds.length},
                "updatedAt" = CURRENT_TIMESTAMP
-           WHERE id = $2 AND "locationId" = $3`,
-          orderIds.length,
-          sessionId,
-          locationId,
-        )
+           WHERE id = ${sessionId} AND "locationId" = ${locationId}`
       } else {
         // Find active session for this driver and update it
-        await tx.$queryRawUnsafe(
-          `UPDATE "DeliveryDriverSession"
+        await tx.$queryRaw`UPDATE "DeliveryDriverSession"
            SET "status" = 'on_delivery',
-               "deliveryCount" = COALESCE("deliveryCount", 0) + $1,
+               "deliveryCount" = COALESCE("deliveryCount", 0) + ${orderIds.length},
                "updatedAt" = CURRENT_TIMESTAMP
-           WHERE "driverId" = $2 AND "locationId" = $3
+           WHERE "driverId" = ${driverId} AND "locationId" = ${locationId}
              AND "endedAt" IS NULL
-             AND status != 'off_duty'`,
-          orderIds.length,
-          driverId,
-          locationId,
-        )
+             AND status != 'off_duty'`
       }
 
       // 14. Write audit logs

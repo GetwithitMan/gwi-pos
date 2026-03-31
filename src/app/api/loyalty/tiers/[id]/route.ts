@@ -32,13 +32,9 @@ export const GET = withVenue(async function GET(
       )
     }
 
-    const rows = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT lt.* FROM "LoyaltyTier" lt
+    const rows = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT lt.* FROM "LoyaltyTier" lt
        JOIN "LoyaltyProgram" lp ON lp."id" = lt."programId"
-       WHERE lt."id" = $1 AND lp."locationId" = $2 AND lt."deletedAt" IS NULL`,
-      id,
-      locationId,
-    )
+       WHERE lt."id" = ${id} AND lp."locationId" = ${locationId} AND lt."deletedAt" IS NULL`
 
     if (rows.length === 0) {
       return notFound('Tier not found')
@@ -80,13 +76,9 @@ export const PUT = withVenue(async function PUT(
     }
 
     // Verify tier belongs to location
-    const existing = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT lt."id" FROM "LoyaltyTier" lt
+    const existing = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT lt."id" FROM "LoyaltyTier" lt
        JOIN "LoyaltyProgram" lp ON lp."id" = lt."programId"
-       WHERE lt."id" = $1 AND lp."locationId" = $2 AND lt."deletedAt" IS NULL`,
-      id,
-      locationId,
-    )
+       WHERE lt."id" = ${id} AND lp."locationId" = ${locationId} AND lt."deletedAt" IS NULL`
 
     if (existing.length === 0) {
       return notFound('Tier not found')
@@ -124,17 +116,11 @@ export const PUT = withVenue(async function PUT(
 
     setParams.push(id)
 
-    await db.$executeRawUnsafe(
-      `UPDATE "LoyaltyTier"
+    await db.$executeRaw`UPDATE "LoyaltyTier"
        SET ${setClauses.join(', ')}
-       WHERE "id" = $${paramIdx} AND "deletedAt" IS NULL`,
-      ...setParams,
-    )
+       WHERE "id" = $${paramIdx} AND "deletedAt" IS NULL`
 
-    const updated = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT * FROM "LoyaltyTier" WHERE "id" = $1`,
-      id,
-    )
+    const updated = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT * FROM "LoyaltyTier" WHERE "id" = ${id}`
 
     pushUpstream()
     void notifyDataChanged({ locationId, domain: 'loyalty', action: 'updated', entityId: id })
@@ -175,32 +161,21 @@ export const DELETE = withVenue(async function DELETE(
     }
 
     // Verify tier belongs to location
-    const existing = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT lt."id" FROM "LoyaltyTier" lt
+    const existing = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT lt."id" FROM "LoyaltyTier" lt
        JOIN "LoyaltyProgram" lp ON lp."id" = lt."programId"
-       WHERE lt."id" = $1 AND lp."locationId" = $2 AND lt."deletedAt" IS NULL`,
-      id,
-      locationId,
-    )
+       WHERE lt."id" = ${id} AND lp."locationId" = ${locationId} AND lt."deletedAt" IS NULL`
 
     if (existing.length === 0) {
       return notFound('Tier not found')
     }
 
     // Unlink customers from this tier (scoped to location)
-    await db.$executeRawUnsafe(
-      `UPDATE "Customer" SET "loyaltyTierId" = NULL, "updatedAt" = NOW()
-       WHERE "loyaltyTierId" = $1 AND "locationId" = $2`,
-      id,
-      locationId,
-    )
+    await db.$executeRaw`UPDATE "Customer" SET "loyaltyTierId" = NULL, "updatedAt" = NOW()
+       WHERE "loyaltyTierId" = ${id} AND "locationId" = ${locationId}`
 
-    await db.$executeRawUnsafe(
-      `UPDATE "LoyaltyTier"
+    await db.$executeRaw`UPDATE "LoyaltyTier"
        SET "deletedAt" = NOW(), "updatedAt" = NOW()
-       WHERE "id" = $1`,
-      id,
-    )
+       WHERE "id" = ${id}`
 
     pushUpstream()
     void notifyDataChanged({ locationId: locationId!, domain: 'loyalty', action: 'deleted', entityId: id })

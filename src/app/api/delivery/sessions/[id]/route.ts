@@ -43,11 +43,11 @@ export const PUT = withVenue(async function PUT(
     const { status, cashDropAmount, cashCollectedCents } = body
 
     // Fetch current session
-    const sessions: any[] = await db.$queryRawUnsafe(`
+    const sessions: any[] = await db.$queryRaw`
       SELECT * FROM "DeliveryDriverSession"
-      WHERE id = $1 AND "locationId" = $2
+      WHERE id = ${id} AND "locationId" = ${locationId}
       LIMIT 1
-    `, id, locationId)
+    `
 
     if (!sessions.length) {
       return notFound('Session not found')
@@ -82,13 +82,13 @@ export const PUT = withVenue(async function PUT(
     if (cashDropAmount != null && cashDropAmount > 0) {
       const cashDropCents = Math.round(Number(cashDropAmount) * 100)
 
-      const dropResult: any[] = await db.$queryRawUnsafe(`
+      const dropResult: any[] = await db.$queryRaw`
         UPDATE "DeliveryDriverSession"
-        SET "cashDroppedCents" = "cashDroppedCents" + $1,
+        SET "cashDroppedCents" = "cashDroppedCents" + ${cashDropCents},
             "updatedAt" = CURRENT_TIMESTAMP
-        WHERE id = $2 AND "locationId" = $3
+        WHERE id = ${id} AND "locationId" = ${locationId}
         RETURNING *
-      `, cashDropCents, id, locationId)
+      `
 
       if (dropResult.length) {
         updatedSession = dropResult[0]
@@ -106,13 +106,13 @@ export const PUT = withVenue(async function PUT(
 
     // Handle cashCollectedCents update (e.g., after a cash delivery)
     if (cashCollectedCents != null) {
-      const collectResult: any[] = await db.$queryRawUnsafe(`
+      const collectResult: any[] = await db.$queryRaw`
         UPDATE "DeliveryDriverSession"
-        SET "cashCollectedCents" = $1,
+        SET "cashCollectedCents" = ${Number(cashCollectedCents)},
             "updatedAt" = CURRENT_TIMESTAMP
-        WHERE id = $2 AND "locationId" = $3
+        WHERE id = ${id} AND "locationId" = ${locationId}
         RETURNING *
-      `, Number(cashCollectedCents), id, locationId)
+      `
 
       if (collectResult.length) {
         updatedSession = collectResult[0]

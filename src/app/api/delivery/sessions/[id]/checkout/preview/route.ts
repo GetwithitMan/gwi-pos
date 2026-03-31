@@ -34,11 +34,11 @@ export const GET = withVenue(async function GET(
     if (featureGate) return featureGate
 
     // Fetch session
-    const sessions: any[] = await db.$queryRawUnsafe(`
+    const sessions: any[] = await db.$queryRaw`
       SELECT * FROM "DeliveryDriverSession"
-      WHERE id = $1 AND "locationId" = $2
+      WHERE id = ${id} AND "locationId" = ${locationId}
       LIMIT 1
-    `, id, locationId)
+    `
 
     if (!sessions.length) {
       return notFound('Session not found')
@@ -52,7 +52,7 @@ export const GET = withVenue(async function GET(
 
     // Count deliveries in this session
     // session.driverId is a DeliveryDriver.id which matches DeliveryOrder.driverId
-    const deliveryStats: any[] = await db.$queryRawUnsafe(`
+    const deliveryStats: any[] = await db.$queryRaw`
       SELECT
         COUNT(*)::int as "deliveryCount",
         COALESCE(SUM(
@@ -66,12 +66,12 @@ export const GET = withVenue(async function GET(
           ELSE 0 END
         ), 0)::int as "estimatedTipsCents"
       FROM "DeliveryOrder" dord
-      WHERE dord."driverId" = $1
-        AND dord."locationId" = $2
+      WHERE dord."driverId" = ${session.driverId}
+        AND dord."locationId" = ${locationId}
         AND dord."status" = 'delivered'
-        AND dord."deliveredAt" >= $3
+        AND dord."deliveredAt" >= ${session.startedAt}
         AND dord."deliveredAt" <= CURRENT_TIMESTAMP
-    `, session.driverId, locationId, session.startedAt)
+    `
 
     const stats = deliveryStats[0] || {}
 

@@ -23,11 +23,11 @@ export const POST = withVenue(async function POST(
     const auth = await requirePermission(requestingEmployeeId, locationId, 'admin.manage_memberships')
     if (!auth.authorized) return err(auth.error, auth.status)
 
-    const rows: any[] = await db.$queryRawUnsafe(`
+    const rows: any[] = await db.$queryRaw`
       SELECT "id", "status", "customerId" FROM "Membership"
-      WHERE "id" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
+      WHERE "id" = ${id} AND "locationId" = ${locationId} AND "deletedAt" IS NULL
       LIMIT 1
-    `, id, locationId)
+    `
     if (rows.length === 0) return notFound('Membership not found')
 
     const mbr = rows[0]
@@ -38,21 +38,17 @@ export const POST = withVenue(async function POST(
       return err(`Cannot pause from status: ${mbr.status}`, 422)
     }
 
-    await db.$executeRawUnsafe(`
+    await db.$executeRaw`
       UPDATE "Membership"
       SET "status" = 'paused', "pausedAt" = NOW(), "nextBillingDate" = NULL,
-          "pauseResumeDate" = $2, "version" = "version" + 1, "updatedAt" = NOW()
-      WHERE "id" = $1
-    `, id, resumeDate ? new Date(resumeDate) : null)
+          "pauseResumeDate" = ${resumeDate ? new Date(resumeDate) : null}, "version" = "version" + 1, "updatedAt" = NOW()
+      WHERE "id" = ${id}
+    `
 
-    await db.$executeRawUnsafe(`
+    await db.$executeRaw`
       INSERT INTO "MembershipEvent" ("locationId", "membershipId", "eventType", "details", "employeeId")
-      VALUES ($1, $2, $3, $4, $5)
-    `,
-      locationId, id, MembershipEventType.PAUSED,
-      JSON.stringify({ resumeDate: resumeDate || null }),
-      requestingEmployeeId || null
-    )
+      VALUES (${locationId}, ${id}, ${MembershipEventType.PAUSED}, ${JSON.stringify({ resumeDate: resumeDate || null })}, ${requestingEmployeeId || null})
+    `
 
     void dispatchMembershipUpdate(locationId, {
       action: 'paused', membershipId: id, customerId: mbr.customerId,

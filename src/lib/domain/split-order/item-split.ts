@@ -5,7 +5,7 @@
  * and distributes discounts proportionally.
  */
 
-import { OrderItemStatus } from '@/generated/prisma/client'
+import { Prisma, OrderItemStatus } from '@/generated/prisma/client'
 import { calculateSplitTax } from '@/lib/order-calculations'
 import { roundToCents } from '@/lib/pricing'
 import { ValidationError } from '@/lib/api-errors'
@@ -124,7 +124,7 @@ export async function createItemSplit(
   taxRate: number,
   inclusiveTaxRate?: number,
 ): Promise<ItemSplitResult> {
-  await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', order.id)
+  await tx.$queryRaw(Prisma.sql`SELECT id FROM "Order" WHERE id = ${order.id} FOR UPDATE`)
 
   // Re-check status inside FOR UPDATE lock to prevent race with concurrent payment/close
   const lockedOrder = await tx.order.findUnique({ where: { id: order.id }, select: { status: true } })

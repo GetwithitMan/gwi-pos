@@ -29,10 +29,7 @@ export const GET = withVenue(async function GET(
   try {
     const { id } = await params
 
-    const orders = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT * FROM "CateringOrder" WHERE "id" = $1 AND "deletedAt" IS NULL LIMIT 1`,
-      id,
-    )
+    const orders = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT * FROM "CateringOrder" WHERE "id" = ${id} AND "deletedAt" IS NULL LIMIT 1`
 
     if (orders.length === 0) {
       return notFound('Catering order not found')
@@ -41,12 +38,9 @@ export const GET = withVenue(async function GET(
     const order = orders[0]
 
     // Fetch items
-    const items = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT * FROM "CateringOrderItem"
-       WHERE "cateringOrderId" = $1 AND "deletedAt" IS NULL
-       ORDER BY "createdAt" ASC`,
-      id,
-    )
+    const items = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT * FROM "CateringOrderItem"
+       WHERE "cateringOrderId" = ${id} AND "deletedAt" IS NULL
+       ORDER BY "createdAt" ASC`
 
     return ok({ ...order, items })
   } catch (error) {
@@ -84,10 +78,7 @@ export const PUT = withVenue(async function PUT(
     const employeeId = actor.employeeId || body.employeeId
 
     // Fetch current order
-    const orders = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT * FROM "CateringOrder" WHERE "id" = $1 AND "deletedAt" IS NULL LIMIT 1`,
-      id,
-    )
+    const orders = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT * FROM "CateringOrder" WHERE "id" = ${id} AND "deletedAt" IS NULL LIMIT 1`
     if (orders.length === 0) {
       return notFound('Catering order not found')
     }
@@ -190,13 +181,11 @@ export const PUT = withVenue(async function PUT(
     // Wrap order update + item replacement + financial recalculation in a transaction
     await db.$transaction(async (tx) => {
       // Pessimistic lock: prevent concurrent updates from colliding
-      await tx.$queryRawUnsafe(
-        'SELECT id FROM "CateringOrder" WHERE "id" = $1 FOR UPDATE',
-        id,
-      )
+      await tx.$queryRaw`SELECT id FROM "CateringOrder" WHERE "id" = ${id} FOR UPDATE`
 
       // Update the order
       updateParams.push(id)
+      // eslint-disable-next-line -- dynamic SET clauses + spread params require $executeRawUnsafe; all values are parameterized
       await tx.$executeRawUnsafe(
         `UPDATE "CateringOrder" SET ${setClauses.join(', ')} WHERE "id" = $${paramIdx}`,
         ...updateParams,
@@ -205,10 +194,7 @@ export const PUT = withVenue(async function PUT(
       // Update items if provided (only if before confirmation)
       if (items && ['inquiry', 'quoted'].includes(currentStatus)) {
         // Soft-delete existing items
-        await tx.$executeRawUnsafe(
-          `UPDATE "CateringOrderItem" SET "deletedAt" = CURRENT_TIMESTAMP WHERE "cateringOrderId" = $1 AND "deletedAt" IS NULL`,
-          id,
-        )
+        await tx.$executeRaw`UPDATE "CateringOrderItem" SET "deletedAt" = CURRENT_TIMESTAMP WHERE "cateringOrderId" = ${id} AND "deletedAt" IS NULL`
 
         // Insert new items and recalculate totals
         let subtotal = 0
@@ -223,19 +209,15 @@ export const PUT = withVenue(async function PUT(
           subtotal += lineTotal
           totalVolumeDiscount += discountAmount
 
-          await tx.$executeRawUnsafe(
-            `INSERT INTO "CateringOrderItem" (
+          await tx.$executeRaw`INSERT INTO "CateringOrderItem" (
               "id", "cateringOrderId", "menuItemId", "name", "quantity", "unitPrice",
               "lineTotal", "volumeDiscountPct", "discountedLineTotal", "specialInstructions",
               "createdAt", "updatedAt"
             ) VALUES (
-              gen_random_uuid()::text, $1, $2, $3, $4, $5,
-              $6, $7, $8, $9,
+              gen_random_uuid()::text, ${id}, ${item.menuItemId || null}, ${item.name}, ${item.quantity}, ${item.unitPrice},
+              ${lineTotal}, ${discountPct}, ${discountedLineTotal}, ${item.specialInstructions || null},
               CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-            )`,
-            id, item.menuItemId || null, item.name, item.quantity, item.unitPrice,
-            lineTotal, discountPct, discountedLineTotal, item.specialInstructions || null,
-          )
+            )`
         }
 
         // Recalculate financials
@@ -253,13 +235,10 @@ export const PUT = withVenue(async function PUT(
         const taxTotal = Math.round(discountedSubtotal * taxRate * 100) / 100
         const total = Math.round((discountedSubtotal + serviceFee + deliveryFee + taxTotal) * 100) / 100
 
-        await tx.$executeRawUnsafe(
-          `UPDATE "CateringOrder" SET
-            "subtotal" = $1, "volumeDiscount" = $2, "serviceFee" = $3,
-            "taxTotal" = $4, "total" = $5, "updatedAt" = CURRENT_TIMESTAMP
-           WHERE "id" = $6`,
-          discountedSubtotal, totalVolumeDiscount, serviceFee, taxTotal, total, id,
-        )
+        await tx.$executeRaw`UPDATE "CateringOrder" SET
+            "subtotal" = ${discountedSubtotal}, "volumeDiscount" = ${totalVolumeDiscount}, "serviceFee" = ${serviceFee},
+            "taxTotal" = ${taxTotal}, "total" = ${total}, "updatedAt" = CURRENT_TIMESTAMP
+           WHERE "id" = ${id}`
       }
     })
 
@@ -281,14 +260,8 @@ export const PUT = withVenue(async function PUT(
     void emitToLocation(currentOrder.locationId as string, 'orders:list-changed', { trigger: 'mutation', locationId: currentOrder.locationId as string }).catch(err => log.warn({ err }, 'socket emit failed'))
 
     // Fetch updated order
-    const updatedOrders = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT * FROM "CateringOrder" WHERE "id" = $1 LIMIT 1`,
-      id,
-    )
-    const updatedItems = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT * FROM "CateringOrderItem" WHERE "cateringOrderId" = $1 AND "deletedAt" IS NULL ORDER BY "createdAt" ASC`,
-      id,
-    )
+    const updatedOrders = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT * FROM "CateringOrder" WHERE "id" = ${id} LIMIT 1`
+    const updatedItems = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT * FROM "CateringOrderItem" WHERE "cateringOrderId" = ${id} AND "deletedAt" IS NULL ORDER BY "createdAt" ASC`
 
     return ok({ ...updatedOrders[0], items: updatedItems })
   } catch (error) {
@@ -311,10 +284,7 @@ export const DELETE = withVenue(async function DELETE(
     const employeeId = actor.employeeId || body?.employeeId
 
     // Fetch current order
-    const orders = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
-      `SELECT * FROM "CateringOrder" WHERE "id" = $1 AND "deletedAt" IS NULL LIMIT 1`,
-      id,
-    )
+    const orders = await db.$queryRaw<Array<Record<string, unknown>>>`SELECT * FROM "CateringOrder" WHERE "id" = ${id} AND "deletedAt" IS NULL LIMIT 1`
     if (orders.length === 0) {
       return notFound('Catering order not found')
     }
@@ -339,16 +309,12 @@ export const DELETE = withVenue(async function DELETE(
       }
     }
 
-    await db.$executeRawUnsafe(
-      `UPDATE "CateringOrder" SET
+    await db.$executeRaw`UPDATE "CateringOrder" SET
         "status" = 'cancelled',
         "cancelledAt" = CURRENT_TIMESTAMP,
-        "cancelReason" = $1,
+        "cancelReason" = ${cancelReason || 'Cancelled by staff'},
         "updatedAt" = CURRENT_TIMESTAMP
-       WHERE "id" = $2`,
-      cancelReason || 'Cancelled by staff',
-      id,
-    )
+       WHERE "id" = ${id}`
 
     // Audit log (fire-and-forget)
     void db.auditLog.create({

@@ -93,18 +93,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     if (gate) return gate
 
     // ── Step 1: Fetch orders with cakeConfig in date range ────────────
-    const orders = await db.$queryRawUnsafe<Array<{ id: string; cakeConfig: unknown }>>(
-      `SELECT "id", "cakeConfig"
+    const orders = await db.$queryRaw<Array<{ id: string; cakeConfig: unknown }>>`SELECT "id", "cakeConfig"
        FROM "CakeOrder"
-       WHERE "locationId" = $1
-         AND "eventDate" >= $2::date
-         AND "eventDate" <= $3::date
+       WHERE "locationId" = ${locationId}
+         AND "eventDate" >= ${dateFrom}::date
+         AND "eventDate" <= ${dateTo}::date
          AND "status" IN ('deposit_paid', 'in_production')
-         AND "deletedAt" IS NULL`,
-      locationId,
-      dateFrom,
-      dateTo,
-    )
+         AND "deletedAt" IS NULL`
 
     if (orders.length === 0) {
       return ok({ ingredients: [] })
@@ -132,13 +127,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const idArray = Array.from(modifierIds)
     const placeholders = idArray.map((_, i) => `$${i + 1}`).join(', ')
 
-    const modifiers = await db.$queryRawUnsafe<Array<{ id: string; metadata: unknown }>>(
-      `SELECT "id", "metadata"
+    const modifiers = await db.$queryRaw<Array<{ id: string; metadata: unknown }>>`SELECT "id", "metadata"
        FROM "Modifier"
        WHERE "id" IN (${placeholders})
-         AND "metadata" IS NOT NULL`,
-      ...idArray,
-    )
+         AND "metadata" IS NOT NULL`
 
     // Build lookup: modifierId -> requiredIngredients[]
     const modIngredientMap = new Map<string, RequiredIngredient[]>()
@@ -181,14 +173,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const invIds = Array.from(aggregated.keys())
     const invPlaceholders = invIds.map((_, i) => `$${i + 1}`).join(', ')
 
-    const inventoryItems = await db.$queryRawUnsafe<
-      Array<{ id: string; name: string; currentStock: string | number; storageUnit: string }>
-    >(
-      `SELECT "id", "name", "currentStock", "storageUnit"
+    const inventoryItems = await db.$queryRaw<
+      Array<{ id: string; name: string; currentStock: string | number; storageUnit: string }>>`SELECT "id", "name", "currentStock", "storageUnit"
        FROM "InventoryItem"
-       WHERE "id" IN (${invPlaceholders})`,
-      ...invIds,
-    )
+       WHERE "id" IN (${invPlaceholders})`
 
     // Build lookup
     const invMap = new Map<string, { name: string; currentStock: number; unit: string }>()

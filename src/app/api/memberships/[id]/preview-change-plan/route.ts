@@ -21,19 +21,19 @@ export const POST = withVenue(async function POST(
     const auth = await requirePermission(requestingEmployeeId, locationId, 'admin.manage_memberships')
     if (!auth.authorized) return err(auth.error, auth.status)
 
-    const mbrs: any[] = await db.$queryRawUnsafe(`
+    const mbrs: any[] = await db.$queryRaw`
       SELECT "priceAtSignup", "currentPeriodStart", "currentPeriodEnd"
       FROM "Membership"
-      WHERE "id" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
+      WHERE "id" = ${id} AND "locationId" = ${locationId} AND "deletedAt" IS NULL
       LIMIT 1
-    `, id, locationId)
+    `
     if (mbrs.length === 0) return notFound('Membership not found')
 
-    const plans: any[] = await db.$queryRawUnsafe(`
+    const plans: any[] = await db.$queryRaw`
       SELECT "price", "name" FROM "MembershipPlan"
-      WHERE "id" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
+      WHERE "id" = ${newPlanId} AND "locationId" = ${locationId} AND "deletedAt" IS NULL
       LIMIT 1
-    `, newPlanId, locationId)
+    `
     if (plans.length === 0) return notFound('Plan not found')
 
     const mbr = mbrs[0]

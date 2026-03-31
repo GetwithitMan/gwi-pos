@@ -13,6 +13,7 @@
  */
 
 import crypto from 'crypto'
+import { Prisma } from '@/generated/prisma/client'
 import { db } from '@/lib/db'
 import { createChildLogger } from '@/lib/logger'
 import {
@@ -84,9 +85,8 @@ export async function processScreenLinks(
     // This prevents items from being forwarded to downstream screens after a delivery
     // driver has already left with the order.
     try {
-      const deliveryRows = await db.$queryRawUnsafe<Array<{ status: string }>>(
-        `SELECT status FROM "DeliveryOrder" WHERE "orderId" = $1 LIMIT 1`,
-        orderId,
+      const deliveryRows = await db.$queryRaw<Array<{ status: string }>>(
+        Prisma.sql`SELECT status FROM "DeliveryOrder" WHERE "orderId" = ${orderId} LIMIT 1`,
       )
       if (deliveryRows.length > 0 && ['picked_up', 'delivered', 'completed'].includes(deliveryRows[0].status)) {
         log.warn(`[KDS] Skipping forward for delivery order ${orderId} — already ${deliveryRows[0].status}`)
@@ -102,9 +102,8 @@ export async function processScreenLinks(
     try {
       await db.$transaction(async (tx) => {
         // Lock the target screen row and re-check it's still valid
-        const [screenRow] = await tx.$queryRawUnsafe<Array<{ id: string; deletedAt: Date | null; isActive: boolean }>>(
-          `SELECT id, "deletedAt", "isActive" FROM "KDSScreen" WHERE id = $1 FOR UPDATE`,
-          target.id,
+        const [screenRow] = await tx.$queryRaw<Array<{ id: string; deletedAt: Date | null; isActive: boolean }>>(
+          Prisma.sql`SELECT id, "deletedAt", "isActive" FROM "KDSScreen" WHERE id = ${target.id} FOR UPDATE`,
         )
 
         if (!screenRow || screenRow.deletedAt || !screenRow.isActive) {
@@ -318,12 +317,12 @@ export async function cleanupOrphanedForwardedItems(
 ): Promise<number> {
   try {
     // Find items forwarded to screens that are now deleted or inactive
-    const result = await db.$executeRawUnsafe(
-      `UPDATE "OrderItem" oi
+    const result = await db.$executeRaw(
+      Prisma.sql`UPDATE "OrderItem" oi
        SET "kdsForwardedToScreenId" = NULL,
            "kdsFinalCompleted" = true,
            "updatedAt" = NOW()
-       WHERE oi."locationId" = $1
+       WHERE oi."locationId" = ${locationId}
          AND oi."kdsForwardedToScreenId" IS NOT NULL
          AND oi."kdsFinalCompleted" = false
          AND oi."deletedAt" IS NULL
@@ -333,7 +332,6 @@ export async function cleanupOrphanedForwardedItems(
              AND s."isActive" = true
              AND s."deletedAt" IS NULL
          )`,
-      locationId,
     )
 
     const cleanedCount = typeof result === 'number' ? result : 0
