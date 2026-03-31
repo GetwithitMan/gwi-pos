@@ -165,21 +165,20 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Normalize phone for consistent storage and dedup
     const normalizedPhone = normalizePhone(phone) || phone || null
 
-    // Check for duplicate email or phone
-    if (email) {
-      const existingEmail = await db.customer.findFirst({
-        where: { locationId, email, isActive: true },
-      })
-      if (existingEmail) {
-        return err('A customer with this email already exists', 409)
-      }
-    }
+    // Check for duplicate email or phone (single query)
+    if (email || normalizedPhone) {
+      const orConditions: Record<string, unknown>[] = []
+      if (email) orConditions.push({ email })
+      if (normalizedPhone) orConditions.push({ phone: normalizedPhone })
 
-    if (normalizedPhone) {
-      const existingPhone = await db.customer.findFirst({
-        where: { locationId, phone: normalizedPhone, isActive: true },
+      const existing = await db.customer.findFirst({
+        where: { locationId, isActive: true, OR: orConditions },
+        select: { email: true, phone: true },
       })
-      if (existingPhone) {
+      if (existing) {
+        if (email && existing.email === email) {
+          return err('A customer with this email already exists', 409)
+        }
         return err('A customer with this phone number already exists', 409)
       }
     }

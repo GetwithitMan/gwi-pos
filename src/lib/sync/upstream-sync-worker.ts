@@ -14,7 +14,7 @@ import { neonClient, hasNeonConnection } from '../neon-client'
 
 const log = createChildLogger('upstream-sync')
 import { masterClient } from '../db'
-import { getUpstreamModels, getBidirectionalModelNames, UPSTREAM_INTERVAL_MS } from './sync-config'
+import { getUpstreamModels, getBidirectionalModelNames, UPSTREAM_INTERVAL_MS, type SyncModelConfig } from './sync-config'
 import { QUARANTINE_PROTECTED_MODELS } from './sync-conflict-quarantine'
 import { dispatchOutageStatus } from '../socket-dispatch'
 import { notifyDataChanged } from '../cloud-notify'
@@ -448,6 +448,35 @@ async function syncTable(tableName: string, batchSize: number): Promise<number> 
   return synced
 }
 
+/**
+ * Batch-check which upstream tables have pending (unsynced) rows.
+ * Returns a Map of tableName → pendingCount for tables with count > 0.
+ * Replaces 100+ individual COUNT(*) queries with a single UNION ALL query.
+ */
+async function batchCountPendingTables(
+  entries: [number, [string, SyncModelConfig]][]
+): Promise<Map<string, number>> {
+  const parts: string[] = []
+  for (const [, [tableName]] of entries) {
+    const columns = columnCache.get(tableName)
+    if (!columns) continue
+    if (!columns.includes('syncedAt') || !columns.includes('updatedAt')) continue
+
+    const isBiDir = biDirModels.has(tableName) && columns.includes('lastMutatedBy')
+    const biDirFilter = isBiDir ? ` AND ("lastMutatedBy" IS NULL OR "lastMutatedBy" != 'cloud')` : ''
+    const whereClause = `"updatedAt" > COALESCE("syncedAt", '1970-01-01'::timestamptz)${biDirFilter}`
+
+    parts.push(`SELECT '${tableName}' as tablename, COUNT(*)::int as count FROM "${tableName}" WHERE ${whereClause}`)
+  }
+
+  if (parts.length === 0) return new Map()
+
+  const sql = `SELECT tablename, count FROM (${parts.join(' UNION ALL ')}) counts WHERE count > 0`
+  const rows = await masterClient.$queryRawUnsafe<{ tablename: string; count: number }[]>(sql)
+
+  return new Map(rows.map(r => [r.tablename, r.count]))
+}
+
 async function runSyncCycle(): Promise<void> {
   if (!hasNeonConnection()) return
   if (cycleRunning) return // Prevent overlapping cycles
@@ -498,10 +527,29 @@ async function runSyncCycle(): Promise<void> {
     // Models are already sorted by priority (ascending) from getUpstreamModels().
     const modelEntries = Array.from(models.entries()).filter(([, [tableName]]) => columnCache.has(tableName))
 
-    // Group models into FK tiers by priority value. Models at the same priority
+    // Batch-check which tables have pending rows — single UNION ALL query
+    // replaces 100+ individual COUNT(*) queries per cycle
+    let pendingTables: Map<string, number>
+    try {
+      pendingTables = await batchCountPendingTables(modelEntries)
+      totalPending = Array.from(pendingTables.values()).reduce((sum, c) => sum + c, 0)
+    } catch (err) {
+      log.warn({ err }, 'Batch pending count failed — falling back to full table scan')
+      // Fallback: treat all tables as potentially dirty
+      pendingTables = new Map(modelEntries.map(([, [tableName]]) => [tableName, 1]))
+    }
+
+    // Only process tables with pending rows — skip idle tables entirely
+    const activeEntries = modelEntries.filter(([, [tableName]]) => pendingTables.has(tableName))
+
+    if (activeEntries.length > 0) {
+      log.debug({ cycleId, active: activeEntries.length, total: modelEntries.length }, 'Tables with pending rows')
+    }
+
+    // Group active models into FK tiers by priority value. Models at the same priority
     // level have no FK dependencies between them and can safely run in parallel.
-    const tiers = new Map<number, typeof modelEntries>()
-    for (const entry of modelEntries) {
+    const tiers = new Map<number, typeof activeEntries>()
+    for (const entry of activeEntries) {
       const priority = entry[1][1].priority
       if (!tiers.has(priority)) tiers.set(priority, [])
       tiers.get(priority)!.push(entry)
@@ -516,30 +564,16 @@ async function runSyncCycle(): Promise<void> {
         const batch = tierEntries.slice(i, i + 5)
         const results = await Promise.allSettled(
           batch.map(async ([, [tableName, config]]) => {
-            const columns = columnCache.get(tableName)!
-            const hasSyncedAt = columns.includes('syncedAt')
-            const hasUpdatedAt = columns.includes('updatedAt')
-            if (!hasUpdatedAt || !hasSyncedAt) return { synced: 0, pending: 0 }
-
-            // Count pending rows (bidirectional models exclude cloud-originated rows)
-            const isBiDir = biDirModels.has(tableName) && columns.includes('lastMutatedBy')
-            const biDirFilter = isBiDir ? ` AND ("lastMutatedBy" IS NULL OR "lastMutatedBy" != 'cloud')` : ''
-            const whereClause = `"updatedAt" > COALESCE("syncedAt", '1970-01-01'::timestamptz)${biDirFilter}`
-            const [{ count }] = await masterClient.$queryRawUnsafe<{ count: bigint }[]>(
-              `SELECT COUNT(*) as count FROM "${tableName}" WHERE ${whereClause}`
-            )
-
             const synced = await syncTable(tableName, config.batchSize)
             if (synced > 0) {
               log.info({ cycleId, table: tableName, rows: synced }, 'Table synced')
             }
-            return { synced, pending: Number(count) }
+            return { synced, pending: pendingTables.get(tableName) ?? 0 }
           })
         )
         for (const result of results) {
           if (result.status === 'fulfilled') {
             totalSynced += result.value.synced
-            totalPending += result.value.pending
           } else {
             metrics.errorCount++
           }

@@ -210,14 +210,16 @@ export const PUT = withVenue(async function PUT(
           itemTotal: calculateUpdatedItemTotal(Number(item.price), liveModifierTotal, updateData.quantity),
         }, tx)
 
-        const fullOrder = await OrderRepository.getOrderByIdWithInclude(orderId, locationId, {
+        const orderForTotals = await OrderRepository.getOrderByIdWithSelect(orderId, locationId, {
+          tipTotal: true,
+          isTaxExempt: true,
           location: { select: { settings: true } },
         }, tx)
-        if (!fullOrder) throw new Error('Order not found after update')
+        if (!orderForTotals) throw new Error('Order not found after update')
 
         const totals = await recalculateOrderTotals(
-          tx as any, orderId, fullOrder.location.settings,
-          Number(fullOrder.tipTotal) || 0, fullOrder.isTaxExempt
+          tx as any, orderId, orderForTotals.location.settings,
+          Number(orderForTotals.tipTotal) || 0, orderForTotals.isTaxExempt
         )
 
         await OrderRepository.updateOrder(orderId, locationId, {
@@ -429,14 +431,16 @@ export const DELETE = withVenue(async function DELETE(
       })
 
       // Recalculate totals from remaining active items via domain (tenant-safe)
-      const fullOrder = await OrderRepository.getOrderByIdWithInclude(orderId, locationId, {
+      const orderForTotals = await OrderRepository.getOrderByIdWithSelect(orderId, locationId, {
+        tipTotal: true,
+        isTaxExempt: true,
         location: { select: { settings: true } },
       }, tx)
-      if (!fullOrder) throw new Error('Order not found after soft delete')
+      if (!orderForTotals) throw new Error('Order not found after soft delete')
 
       const totals = await recalculateOrderTotals(
-        tx, orderId, fullOrder.location.settings,
-        Number(fullOrder.tipTotal) || 0, fullOrder.isTaxExempt
+        tx, orderId, orderForTotals.location.settings,
+        Number(orderForTotals.tipTotal) || 0, orderForTotals.isTaxExempt
       )
 
       await OrderRepository.updateOrder(orderId, locationId, {

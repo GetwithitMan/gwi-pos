@@ -109,27 +109,23 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.POS_ACCESS)
     if (!auth.authorized) return err(auth.error, auth.status)
 
-    // Check if employee is already clocked in
-    const existing = await db.timeClockEntry.findFirst({
-      where: {
-        employeeId,
-        clockOut: null,
-      },
-    })
-
-    if (existing) {
-      return err('Employee is already clocked in', 409)
-    }
-
-    // 60-second cooldown: prevent instant clock-out/clock-in cycling
-    const lastClockOut = await db.timeClockEntry.findFirst({
-      where: {
-        employeeId,
-        clockOut: { not: null },
-      },
-      orderBy: { clockOut: 'desc' },
-      select: { clockOut: true },
-    })
+    // Check if employee is already clocked in + fetch last clock-out for cooldown (parallel)
+    const [existing, lastClockOut] = await Promise.all([
+      db.timeClockEntry.findFirst({
+        where: {
+          employeeId,
+          clockOut: null,
+        },
+      }),
+      db.timeClockEntry.findFirst({
+        where: {
+          employeeId,
+          clockOut: { not: null },
+        },
+        orderBy: { clockOut: 'desc' },
+        select: { clockOut: true },
+      }),
+    ])
 
     if (lastClockOut?.clockOut) {
       const secondsSinceClockOut = (Date.now() - lastClockOut.clockOut.getTime()) / 1000
