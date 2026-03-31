@@ -89,6 +89,8 @@ let cycleRunning = false
 
 /** Batched menu-update locations — collected per sync cycle, emitted once after all tables complete. */
 const menuUpdateLocations = new Set<string>()
+/** Menu-related models whose socket events are batched per sync cycle instead of per-row. */
+const BATCHED_MENU_MODELS = new Set(['MenuItem', 'Category', 'ModifierGroup', 'Modifier', 'ComboTemplate', 'ComboComponent', 'ComboComponentOption', 'ModifierGroupTemplate', 'ModifierTemplate', 'PricingOptionGroup', 'PricingOption', 'ItemBarcode', 'PizzaConfig', 'PizzaSize', 'PizzaCrust', 'PizzaSauce', 'PizzaCheese', 'PizzaTopping', 'PizzaSpecialty', 'BottleProduct', 'SpiritCategory', 'SpiritModifierGroup', 'BottleServiceTier', 'MenuItemRecipe', 'RecipeIngredient'])
 /** Per-table-batch deduplication for open-orders socket dispatch (cleared in syncTableDown) */
 const notificationDispatchedLocations = new Set<string>()
 
@@ -534,8 +536,7 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
       // Downstream notification pipeline — fires registered handlers for this row.
       // Skip for menu-related models — they are batched per sync cycle (see below).
       const rowLocationId = (row.locationId as string) || ''
-      const BATCHED_MODELS = new Set(['MenuItem', 'Category', 'ModifierGroup', 'Modifier', 'ComboTemplate', 'ComboComponent', 'ComboComponentOption', 'ModifierGroupTemplate', 'ModifierTemplate', 'PricingOptionGroup', 'PricingOption', 'ItemBarcode', 'PizzaConfig', 'PizzaSize', 'PizzaCrust', 'PizzaSauce', 'PizzaCheese', 'PizzaTopping', 'PizzaSpecialty', 'BottleProduct', 'SpiritCategory', 'SpiritModifierGroup', 'BottleServiceTier', 'MenuItemRecipe', 'RecipeIngredient'])
-      if (!BATCHED_MODELS.has(tableName)) {
+      if (!BATCHED_MENU_MODELS.has(tableName)) {
         void dispatchDownstreamNotifications(tableName, row, rowLocationId).catch((err) => {
           log.error({ err, table: tableName, recordId: row.id }, 'Notification pipeline error')
         })
@@ -1186,15 +1187,19 @@ async function runDownstreamCycle(): Promise<void> {
     if (menuUpdateLocations.size > 0) {
       const locations = [...menuUpdateLocations]
       menuUpdateLocations.clear()
-      for (const locId of locations) {
-        try {
-          const { dispatchMenuUpdate } = await import('../socket-dispatch')
-          await dispatchMenuUpdate(locId, { action: 'updated' })
-        } catch (err) {
-          log.error({ err, locationId: locId }, 'Batched menu:updated dispatch failed')
+      try {
+        const { dispatchMenuUpdate } = await import('../socket-dispatch')
+        for (const locId of locations) {
+          try {
+            await dispatchMenuUpdate(locId, { action: 'updated' })
+          } catch (err) {
+            log.error({ err, locationId: locId }, 'Batched menu:updated dispatch failed')
+          }
         }
+        log.info({ cycleId, locations: locations.length }, 'Batched menu:updated dispatched')
+      } catch (err) {
+        log.error({ err }, 'Failed to import socket-dispatch for batched menu update')
       }
-      log.info({ cycleId, locations: locations.length }, 'Batched menu:updated dispatched')
     }
 
     // P2-5: Re-check orders that are pending fulfillment (items not yet synced)
