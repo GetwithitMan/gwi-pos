@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server'
+import { z } from 'zod'
 import { db } from '@/lib/db'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -8,6 +9,24 @@ import { normalizePhone } from '@/lib/utils'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { err, ok } from '@/lib/api-response'
+
+// ── Zod schema for POST /api/customers ──────────────────────────────
+const CreateCustomerSchema = z.object({
+  locationId: z.string().min(1, 'Location ID is required'),
+  firstName: z.string().min(1, 'First name is required').max(100),
+  lastName: z.string().min(1, 'Last name is required').max(100),
+  displayName: z.string().max(200).optional().nullable(),
+  email: z.string().email().optional().or(z.literal('')).nullable(),
+  phone: z.string().max(30).optional().nullable(),
+  notes: z.string().max(2000).optional().nullable(),
+  allergies: z.string().max(1000).optional().nullable(),
+  favoriteDrink: z.string().max(200).optional().nullable(),
+  favoriteFood: z.string().max(200).optional().nullable(),
+  tags: z.array(z.string()).optional(),
+  marketingOptIn: z.boolean().optional(),
+  birthday: z.string().optional().nullable(),
+  requestingEmployeeId: z.string().min(1).optional(),
+}).passthrough()
 
 // GET - List customers with optional search
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -112,7 +131,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 // POST - Create a new customer
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
+    const rawBody = await request.json()
+    const parseResult = CreateCustomerSchema.safeParse(rawBody)
+    if (!parseResult.success) {
+      return err(`Validation failed: ${parseResult.error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`)
+    }
+    const body = parseResult.data
+
     const {
       locationId,
       firstName,
@@ -136,10 +161,6 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Auth check — require customers.edit permission
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.CUSTOMERS_EDIT)
     if (!auth.authorized) return err(auth.error, auth.status)
-
-    if (!locationId || !firstName || !lastName) {
-      return err('Location ID, first name, and last name are required')
-    }
 
     // Normalize phone for consistent storage and dedup
     const normalizedPhone = normalizePhone(phone) || phone || null

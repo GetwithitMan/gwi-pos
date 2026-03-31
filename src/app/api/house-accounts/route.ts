@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server'
+import { z } from 'zod'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
@@ -7,6 +8,23 @@ import { getLocationId } from '@/lib/location-cache'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { created, err, ok } from '@/lib/api-response'
+
+// ── Zod schema for POST /api/house-accounts ─────────────────────────
+const CreateHouseAccountSchema = z.object({
+  name: z.string().min(1, 'Account name is required').max(200),
+  contactName: z.string().max(200).optional().nullable(),
+  email: z.string().email().optional().or(z.literal('')).nullable(),
+  phone: z.string().max(30).optional().nullable(),
+  address: z.string().max(500).optional().nullable(),
+  creditLimit: z.number().nonnegative().optional(),
+  paymentTerms: z.number().int().positive().optional(),
+  billingCycle: z.enum(['monthly', 'weekly', 'bi-weekly']).optional(),
+  taxExempt: z.boolean().optional(),
+  taxId: z.string().max(50).optional().nullable(),
+  customerId: z.string().min(1).optional().nullable(),
+  locationId: z.string().min(1).optional(),
+  requestingEmployeeId: z.string().min(1).optional(),
+}).passthrough()
 
 // GET - List house accounts (no admin perm needed — read-only POS query)
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -65,7 +83,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 // POST - Create a new house account
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
+    const rawBody = await request.json()
+    const parseResult = CreateHouseAccountSchema.safeParse(rawBody)
+    if (!parseResult.success) {
+      return err(`Validation failed: ${parseResult.error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`)
+    }
+    const body = parseResult.data
+
     const {
       name,
       contactName,
@@ -89,10 +113,6 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.CUSTOMERS_HOUSE_ACCOUNTS)
     if (!auth.authorized) return err(auth.error, auth.status)
-
-    if (!name) {
-      return err('Account name is required')
-    }
 
     // Check for duplicate name at location
     const existing = await db.houseAccount.findUnique({

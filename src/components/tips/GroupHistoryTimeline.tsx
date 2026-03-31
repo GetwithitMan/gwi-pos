@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { toast } from '@/stores/toast-store'
+import { formatDate } from '@/lib/utils'
 
 interface GroupHistoryTimelineProps {
   locationId: string
@@ -75,11 +76,6 @@ function formatDateTime(iso: string): string {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) +
     ', ' +
     d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
-}
-
-function formatDate(iso: string): string {
-  const d = new Date(iso)
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 function calculateDuration(start: string, end: string | null): string {

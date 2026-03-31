@@ -30,6 +30,18 @@ import {
   type BusinessDayRange,
 } from '@/lib/query-services'
 import { err, ok } from '@/lib/api-response'
+import {
+  round,
+  processPaymentSummary,
+  buildCategoryMap,
+  processVoidLogs,
+  processLaborEntries,
+  processGiftCardTransactions,
+  processTipShares,
+  processCashReconciliation,
+  computeStats,
+  processWeightSales,
+} from '@/lib/reports/daily-calculations'
 
 // ============================================================
 // SQL-AGGREGATE DAILY REPORT (replaces in-memory iteration)
@@ -93,36 +105,19 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     // ── SQL-Aggregate path ────────────────────────────────────
-    // All independent queries run in parallel via query services.
-
     const range: BusinessDayRange = { start: startOfDay, end: endOfDay }
     const pricingProgramForSurcharge = getPricingProgram(locationSettings)
     const needsSurcharge = pricingProgramForSurcharge.model === 'surcharge'
       && pricingProgramForSurcharge.enabled
       && !!pricingProgramForSurcharge.surchargePercent
 
-    // We run all independent queries in parallel.
     const [
-      revenueSummary,
-      orderTypeSummary,
-      categorySales,
-      categoryVoids,
-      paymentSummary,
-      discountSummary,
-      weightSummary,
-      statsSummary,
-      surchargeBase,
-      voidLogs,
-      timeEntries,
-      paidInOuts,
-      giftCardTransactions,
-      tipsBankedToday,
-      tipsCollectedToday,
-      tipSharesDistributed,
-      categories,
-      ccTipFeesResult,
-      entertainmentSummary,
-      refundAggregate,
+      revenueSummary, orderTypeSummary, categorySales, categoryVoids,
+      paymentSummaryRows, discountSummary, weightSummary, _statsSummary,
+      surchargeBase, voidLogs, timeEntries, paidInOuts,
+      giftCardTransactions, tipsBankedToday, tipsCollectedToday,
+      tipSharesDistributed, categories, ccTipFeesResult,
+      entertainmentSummary, refundAggregate,
     ] = await Promise.all([
       getRevenueSummary(locationId, range),
       getSalesByOrderType(locationId, range),
@@ -153,12 +148,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }),
     ])
 
-    // ============================================
-    // PROCESS AGGREGATE RESULTS
-    // ============================================
-
+    // ── Process aggregate results ─────────────────────────────
     const rev = revenueSummary
-
     const adjustedGrossSales = Number(rev.subtotal) || 0
     const totalTax = Number(rev.tax_total) || 0
     const totalTaxFromInclusive = Number(rev.tax_from_inclusive) || 0
@@ -173,191 +164,27 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const totalCheckTimeMinutes = Number(rev.total_check_time_minutes) || 0
     const closedOrderCount = Number(rev.closed_count) || 0
 
-    // Surcharge calculation
+    // Surcharge
     const pricingProgram = getPricingProgram(locationSettings)
     let totalSurcharge = 0
     if (pricingProgram.model === 'surcharge' && pricingProgram.enabled && pricingProgram.surchargePercent) {
       totalSurcharge = Math.round(Number(surchargeBase) * pricingProgram.surchargePercent) / 100
     }
 
-    // Revenue derivations (same formulas as legacy)
+    // Revenue derivations
     const preTaxGrossSales = adjustedGrossSales - totalTaxFromInclusive
     const netSales = preTaxGrossSales - totalDiscounts
     const grossSales = netSales + totalTax + totalSurcharge
     const totalCollected = grossSales + totalTips - totalRefunds
 
-    // ============================================
-    // PROCESS PAYMENTS (from SQL aggregate)
-    // ============================================
+    // ── Delegate to calculation helpers ───────────────────────
+    const payments = processPaymentSummary(paymentSummaryRows)
 
-    let totalRoundingAdjustments = 0
-
-    const paymentsByType: Record<string, {
-      count: number
-      amount: number
-      tips: number
-    }> = {
-      cash: { count: 0, amount: 0, tips: 0 },
-      credit: { count: 0, amount: 0, tips: 0 },
-      debit: { count: 0, amount: 0, tips: 0 },
-      gift: { count: 0, amount: 0, tips: 0 },
-      house_account: { count: 0, amount: 0, tips: 0 },
-      room_charge: { count: 0, amount: 0, tips: 0 },
-      loyalty_points: { count: 0, amount: 0, tips: 0 },
-      other: { count: 0, amount: 0, tips: 0 },
-    }
-
-    const creditCardBreakdown: Record<string, { count: number; amount: number }> = {
-      visa: { count: 0, amount: 0 },
-      mastercard: { count: 0, amount: 0 },
-      amex: { count: 0, amount: 0 },
-      discover: { count: 0, amount: 0 },
-      other: { count: 0, amount: 0 },
-    }
-
-    paymentSummary.forEach(row => {
-      const paymentType = (row.payment_method || 'other').toLowerCase()
-      const amount = Number(row.total) || 0
-      const tip = Number(row.tips) || 0
-      const count = Number(row.count) || 0
-      const rounding = Number(row.rounding) || 0
-
-      totalRoundingAdjustments += rounding
-
-      if (paymentType === 'cash') {
-        paymentsByType.cash.count += count
-        paymentsByType.cash.amount += amount
-        paymentsByType.cash.tips += tip
-      } else if (paymentType === 'credit' || paymentType === 'card') {
-        paymentsByType.credit.count += count
-        paymentsByType.credit.amount += amount
-        paymentsByType.credit.tips += tip
-
-        // Card brand breakdown — each row is already grouped by cardBrand
-        const cardType = (row.card_brand || 'other').toLowerCase()
-        if (cardType.includes('visa')) {
-          creditCardBreakdown.visa.count += count
-          creditCardBreakdown.visa.amount += amount
-        } else if (cardType.includes('master')) {
-          creditCardBreakdown.mastercard.count += count
-          creditCardBreakdown.mastercard.amount += amount
-        } else if (cardType.includes('amex') || cardType.includes('american')) {
-          creditCardBreakdown.amex.count += count
-          creditCardBreakdown.amex.amount += amount
-        } else if (cardType.includes('discover')) {
-          creditCardBreakdown.discover.count += count
-          creditCardBreakdown.discover.amount += amount
-        } else {
-          creditCardBreakdown.other.count += count
-          creditCardBreakdown.other.amount += amount
-        }
-      } else if (paymentType === 'debit') {
-        paymentsByType.debit.count += count
-        paymentsByType.debit.amount += amount
-        paymentsByType.debit.tips += tip
-      } else if (paymentType === 'gift' || paymentType === 'gift_card') {
-        paymentsByType.gift.count += count
-        paymentsByType.gift.amount += amount
-        paymentsByType.gift.tips += tip
-      } else if (paymentType === 'house_account') {
-        paymentsByType.house_account.count += count
-        paymentsByType.house_account.amount += amount
-      } else if (paymentType === 'room_charge') {
-        paymentsByType.room_charge.count += count
-        paymentsByType.room_charge.amount += amount
-        paymentsByType.room_charge.tips += tip
-      } else if (paymentType === 'loyalty_points' || paymentType === 'loyalty') {
-        paymentsByType.loyalty_points.count += count
-        paymentsByType.loyalty_points.amount += amount
-      } else {
-        paymentsByType.other.count += count
-        paymentsByType.other.amount += amount
-        paymentsByType.other.tips += tip
-      }
-    })
-
-    const totalPayments = Object.values(paymentsByType).reduce(
-      (sum, p) => sum + p.amount, 0
-    )
-
-    // ============================================
-    // PROCESS SALES BY CATEGORY (from SQL)
-    // ============================================
-
-    // Build a lookup of all categories
-    const catMap: Record<string, {
-      name: string
-      categoryType: string
-      units: number
-      gross: number
-      discounts: number
-      net: number
-      voids: number
-    }> = {}
-
-    categories.forEach(cat => {
-      catMap[cat.id] = {
-        name: cat.name,
-        categoryType: cat.categoryType || 'food',
-        units: 0,
-        gross: 0,
-        discounts: 0,
-        net: 0,
-        voids: 0,
-      }
-    })
-
-    // Get inclusive tax rate for backing out embedded tax from category gross
     const inclTaxRateRaw = locationSettings.tax?.inclusiveTaxRate
     const catInclRate = (inclTaxRateRaw != null && Number.isFinite(inclTaxRateRaw) && inclTaxRateRaw > 0)
       ? inclTaxRateRaw / 100 : 0
+    const catMap = buildCategoryMap(categories, categorySales, categoryVoids, catInclRate)
 
-    // Merge SQL category sales
-    categorySales.forEach(row => {
-      const id = row.category_id
-      if (!catMap[id]) {
-        catMap[id] = {
-          name: row.category_name,
-          categoryType: row.category_type || 'food',
-          units: 0,
-          gross: 0,
-          discounts: 0,
-          net: 0,
-          voids: 0,
-        }
-      }
-      catMap[id].units = Number(row.units) || 0
-      // Back out inclusive tax from category gross so it matches preTaxGrossSales
-      const rawGross = Number(row.gross) || 0
-      const inclusiveGross = Number(row.inclusive_gross) || 0
-      const backedOutTax = (catInclRate > 0 && inclusiveGross > 0)
-        ? Math.round((inclusiveGross - inclusiveGross / (1 + catInclRate)) * 100) / 100
-        : 0
-      catMap[id].gross = rawGross - backedOutTax
-      catMap[id].discounts = Number(row.discount_share) || 0
-    })
-
-    // Merge SQL category voids
-    categoryVoids.forEach(row => {
-      if (catMap[row.category_id]) {
-        catMap[row.category_id].voids = Number(row.void_amount) || 0
-      }
-    })
-
-    // Calculate net for each category
-    Object.values(catMap).forEach(cat => {
-      cat.net = cat.gross - cat.discounts
-    })
-
-    // ============================================
-    // ORDER TYPE BREAKDOWN (from SQL)
-    // ============================================
-
-    // Note: the legacy code added surcharge per-order to the gross for order types.
-    // Since surcharge detection in the aggregate path works at the total level, we
-    // distribute the surcharge proportionally across order types with card payments.
-    // This is a minor simplification — the exact per-order surcharge allocation is
-    // only cosmetically different when multiple order types exist AND surcharge is active.
     const salesByOrderType = orderTypeSummary.map(row => ({
       name: row.order_type,
       count: Number(row.count) || 0,
@@ -365,452 +192,105 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       net: Number(row.net) || 0,
     }))
 
-    // ============================================
-    // CASH RECONCILIATION
-    // ============================================
-
-    const cashPayoutsToday = tipsCollectedToday
-      .filter(e => e.sourceType === 'PAYOUT_CASH')
-      .reduce((sum, e) => sum + Math.abs(Number(e.amountCents)) / 100, 0)
-
-    let cashIn = 0
-    let cashOut = 0
-
-    paidInOuts.forEach(pio => {
-      const amount = Number(pio.amount) || 0
-      if (pio.type === 'in') {
-        cashIn += amount
-      } else {
-        cashOut += amount
-      }
-    })
-
-    const cashReceived = paymentsByType.cash.amount
-    const cashTipsOut = cashPayoutsToday
-    const cashDue = cashReceived + cashIn - cashOut - cashPayoutsToday
-
-    // ============================================
-    // VOIDS & REFUNDS (from row-level voidLogs)
-    // ============================================
-
-    let voidedTicketCount = 0
-    let voidedTicketAmount = 0
-    let voidedItemCount = 0
-    let voidedItemAmount = 0
-
-    const voidsByReason: Record<string, { count: number; amount: number }> = {}
-
-    voidLogs.forEach(log => {
-      const amount = Number(log.amount) || 0
-      const reason = log.reason || 'Unknown'
-
-      if (!voidsByReason[reason]) {
-        voidsByReason[reason] = { count: 0, amount: 0 }
-      }
-      voidsByReason[reason].count++
-      voidsByReason[reason].amount += amount
-
-      if (log.itemId) {
-        voidedItemCount++
-        voidedItemAmount += amount
-      } else {
-        voidedTicketCount++
-        voidedTicketAmount += amount
-      }
-    })
-
-    const totalVoids = voidedTicketAmount + voidedItemAmount
-    const voidPercentage = adjustedGrossSales > 0 ? (totalVoids / adjustedGrossSales) * 100 : 0
-
-    // ============================================
-    // DISCOUNT BREAKDOWN (from SQL aggregate)
-    // ============================================
-
+    const cash = processCashReconciliation(payments.paymentsByType.cash.amount, tipsCollectedToday, paidInOuts)
+    const voids = processVoidLogs(voidLogs, adjustedGrossSales)
     const discountsByType = discountSummary.map(row => ({
-      name: row.discount_name,
-      count: Number(row.count) || 0,
-      amount: Number(row.total) || 0,
+      name: row.discount_name, count: Number(row.count) || 0, amount: Number(row.total) || 0,
     }))
+    const labor = processLaborEntries(timeEntries, netSales)
+    const giftCards = processGiftCardTransactions(giftCardTransactions)
+    const tipShares = processTipShares(tipSharesDistributed)
+    const tipsBankedIn = tipsBankedToday.reduce((sum, e) => sum + Number(e.amountCents) / 100, 0)
+    const tipsCollectedOut = tipsCollectedToday.reduce((sum, e) => sum + Math.abs(Number(e.amountCents)) / 100, 0)
+    const weight = processWeightSales(weightSummary)
+    const stats = computeStats(checkCount, totalCovers, closedOrderCount, totalCheckTimeMinutes, totalCollected, catMap)
 
-    // ============================================
-    // LABOR SUMMARY (from row-level timeEntries)
-    // ============================================
-
-    let fohHours = 0
-    let fohCost = 0
-    let bohHours = 0
-    let bohCost = 0
-
-    timeEntries.forEach(entry => {
-      if (!entry.clockOut) return
-
-      const hours =
-        (entry.clockOut.getTime() - entry.clockIn.getTime()) / (1000 * 60 * 60)
-      const breakHours = (entry.breakMinutes || 0) / 60
-      const netHours = Math.max(0, hours - breakHours)
-      const hourlyRate = Number(entry.employee.hourlyRate) || 0
-      const cost = netHours * hourlyRate
-
-      const roleName = (entry.employee.role?.name || '').toLowerCase()
-      const isBOH =
-        roleName.includes('cook') ||
-        roleName.includes('chef') ||
-        roleName.includes('kitchen') ||
-        roleName.includes('prep') ||
-        roleName.includes('dish')
-
-      if (isBOH) {
-        bohHours += netHours
-        bohCost += cost
-      } else {
-        fohHours += netHours
-        fohCost += cost
-      }
-    })
-
-    const totalLaborHours = fohHours + bohHours
-    const totalLaborCost = fohCost + bohCost
-    const laborPercentage = netSales > 0 ? (totalLaborCost / netSales) * 100 : 0
-
-    // ============================================
-    // GIFT CARD SUMMARY
-    // ============================================
-
-    let giftCardLoads = 0
-    let giftCardRedemptions = 0
-
-    giftCardTransactions.forEach(txn => {
-      const amount = Number(txn.amount) || 0
-      if (txn.type === 'load' || txn.type === 'sale') {
-        giftCardLoads += amount
-      } else if (txn.type === 'redeem' || txn.type === 'redemption') {
-        giftCardRedemptions += amount
-      }
-    })
-
-    // ============================================
-    // TIP BANK SUMMARY
-    // ============================================
-
-    const tipsBankedIn = tipsBankedToday.reduce((sum, entry) => sum + Number(entry.amountCents) / 100, 0)
-    const tipsCollectedOut = tipsCollectedToday.reduce((sum, entry) => sum + Math.abs(Number(entry.amountCents)) / 100, 0)
-    const tipBankNetChange = tipsBankedIn - tipsCollectedOut
-
-    const tipSharesByGiver: Record<string, {
-      employeeId: string
-      employeeName: string
-      totalGiven: number
-      shares: Array<{
-        toEmployee: string
-        amount: number
-        shareType: string
-        ruleName: string | null
-        percentage: number | null
-        status: string
-      }>
-    }> = {}
-
-    const tipoutDebits = tipSharesDistributed.filter(e => e.type === 'DEBIT')
-    const tipoutCredits = tipSharesDistributed.filter(e => e.type === 'CREDIT')
-
-    tipoutDebits.forEach(entry => {
-      const giverId = entry.employee.id
-      const giverName = entry.employee.displayName ||
-        `${entry.employee.firstName} ${entry.employee.lastName}`
-      const amount = Math.abs(Number(entry.amountCents)) / 100
-
-      if (!tipSharesByGiver[giverId]) {
-        tipSharesByGiver[giverId] = {
-          employeeId: giverId,
-          employeeName: giverName,
-          totalGiven: 0,
-          shares: [],
-        }
-      }
-
-      const matchingCredit = entry.sourceId
-        ? tipoutCredits.find(c => c.sourceId === entry.sourceId)
-        : null
-      const recipientName = matchingCredit
-        ? (matchingCredit.employee.displayName ||
-          `${matchingCredit.employee.firstName} ${matchingCredit.employee.lastName}`)
-        : 'Unknown'
-
-      tipSharesByGiver[giverId].totalGiven += amount
-      tipSharesByGiver[giverId].shares.push({
-        toEmployee: recipientName,
-        amount,
-        shareType: 'role_tipout',
-        ruleName: entry.memo || null,
-        percentage: null,
-        status: 'completed',
-      })
-    })
-
-    const totalTipSharesDistributed = tipoutDebits.reduce(
-      (sum, entry) => sum + Math.abs(Number(entry.amountCents)) / 100, 0
-    )
-
-    // ============================================
-    // STATS
-    // ============================================
-
-    const avgCheck = checkCount > 0 ? totalCollected / checkCount : 0
-    const totalCoversOrDefault = totalCovers > 0 ? totalCovers : checkCount // fallback: 1 guest per order
-    const avgCover = totalCoversOrDefault > 0 ? totalCollected / totalCoversOrDefault : 0
-    const avgCheckTime = closedOrderCount > 0 ? totalCheckTimeMinutes / closedOrderCount : 0
-
-    // Food, Bev, Retail averages
-    let foodTotal = 0
-    let bevTotal = 0
-    let retailTotal = 0
-
-    Object.values(catMap).forEach(cat => {
-      if (cat.categoryType === 'food') {
-        foodTotal += cat.net
-      } else if (
-        cat.categoryType === 'drinks' ||
-        cat.categoryType === 'liquor' ||
-        cat.categoryType === 'beer' ||
-        cat.categoryType === 'wine'
-      ) {
-        bevTotal += cat.net
-      } else if (cat.categoryType === 'retail') {
-        retailTotal += cat.net
-      }
-    })
-
-    const foodAvg = checkCount > 0 ? foodTotal / checkCount : 0
-    const bevAvg = checkCount > 0 ? bevTotal / checkCount : 0
-    const retailAvg = checkCount > 0 ? retailTotal / checkCount : 0
-
-    // ============================================
-    // WEIGHT-BASED SALES
-    // ============================================
-
-    let weightBasedRevenue = 0
-    let weightBasedItemCount = 0
-    const weightByUnit: Record<string, number> = {}
-
-    weightSummary.forEach(row => {
-      weightBasedRevenue += Number(row.revenue) || 0
-      weightBasedItemCount += Number(row.item_count) || 0
-      const unit = row.weight_unit || 'lb'
-      weightByUnit[unit] = (weightByUnit[unit] || 0) + (Number(row.total_weight) || 0)
-    })
-
-    // ============================================
-    // BUILD RESPONSE (identical shape to legacy)
-    // ============================================
-
+    // ── Build response (identical shape to legacy) ────────────
     return ok({
       reportDate: date.toISOString().split('T')[0],
       generatedAt: new Date().toISOString(),
-
       revenue: {
-        adjustedGrossSales: round(preTaxGrossSales),
-        discounts: round(totalDiscounts),
-        netSales: round(netSales),
-        salesTax: round(totalTax),
-        taxFromInclusive: round(totalTaxFromInclusive),
-        taxFromExclusive: round(totalTaxFromExclusive),
-        surcharge: round(totalSurcharge),
-        grossSales: round(grossSales),
-        tips: round(totalTips),
-        gratuity: 0,
-        refunds: round(totalRefunds),
-        giftCardLoads: round(giftCardLoads),
-        roundingAdjustments: round(totalRoundingAdjustments),
+        adjustedGrossSales: round(preTaxGrossSales), discounts: round(totalDiscounts),
+        netSales: round(netSales), salesTax: round(totalTax),
+        taxFromInclusive: round(totalTaxFromInclusive), taxFromExclusive: round(totalTaxFromExclusive),
+        surcharge: round(totalSurcharge), grossSales: round(grossSales),
+        tips: round(totalTips), gratuity: 0, refunds: round(totalRefunds),
+        giftCardLoads: round(giftCards.giftCardLoads),
+        roundingAdjustments: round(payments.totalRoundingAdjustments),
         totalCollected: round(totalCollected),
-        commission: round(totalCommission),
-        donations: round(totalDonations),
+        commission: round(totalCommission), donations: round(totalDonations),
       },
-
       payments: {
-        cash: {
-          count: paymentsByType.cash.count,
-          amount: round(paymentsByType.cash.amount),
-          tips: round(paymentsByType.cash.tips),
-        },
+        cash: { count: payments.paymentsByType.cash.count, amount: round(payments.paymentsByType.cash.amount), tips: round(payments.paymentsByType.cash.tips) },
         credit: {
-          count: paymentsByType.credit.count,
-          amount: round(paymentsByType.credit.amount),
-          tips: round(paymentsByType.credit.tips),
+          count: payments.paymentsByType.credit.count, amount: round(payments.paymentsByType.credit.amount), tips: round(payments.paymentsByType.credit.tips),
           breakdown: {
-            visa: creditCardBreakdown.visa,
-            mastercard: creditCardBreakdown.mastercard,
-            amex: creditCardBreakdown.amex,
-            discover: creditCardBreakdown.discover,
-            other: creditCardBreakdown.other,
+            visa: payments.creditCardBreakdown.visa, mastercard: payments.creditCardBreakdown.mastercard,
+            amex: payments.creditCardBreakdown.amex, discover: payments.creditCardBreakdown.discover, other: payments.creditCardBreakdown.other,
           },
         },
-        debit: {
-          count: paymentsByType.debit.count,
-          amount: round(paymentsByType.debit.amount),
-          tips: round(paymentsByType.debit.tips),
-        },
-        gift: {
-          count: paymentsByType.gift.count,
-          amount: round(paymentsByType.gift.amount),
-        },
-        houseAccount: {
-          count: paymentsByType.house_account.count,
-          amount: round(paymentsByType.house_account.amount),
-        },
-        roomCharge: {
-          count: paymentsByType.room_charge.count,
-          amount: round(paymentsByType.room_charge.amount),
-          tips: round(paymentsByType.room_charge.tips),
-        },
-        loyaltyPoints: {
-          count: paymentsByType.loyalty_points.count,
-          amount: round(paymentsByType.loyalty_points.amount),
-        },
-        other: {
-          count: paymentsByType.other.count,
-          amount: round(paymentsByType.other.amount),
-        },
-        totalPayments: round(totalPayments),
+        debit: { count: payments.paymentsByType.debit.count, amount: round(payments.paymentsByType.debit.amount), tips: round(payments.paymentsByType.debit.tips) },
+        gift: { count: payments.paymentsByType.gift.count, amount: round(payments.paymentsByType.gift.amount) },
+        houseAccount: { count: payments.paymentsByType.house_account.count, amount: round(payments.paymentsByType.house_account.amount) },
+        roomCharge: { count: payments.paymentsByType.room_charge.count, amount: round(payments.paymentsByType.room_charge.amount), tips: round(payments.paymentsByType.room_charge.tips) },
+        loyaltyPoints: { count: payments.paymentsByType.loyalty_points.count, amount: round(payments.paymentsByType.loyalty_points.amount) },
+        other: { count: payments.paymentsByType.other.count, amount: round(payments.paymentsByType.other.amount) },
+        totalPayments: round(payments.totalPayments),
       },
-
       cash: {
-        cashReceived: round(cashReceived),
-        cashIn: round(cashIn),
-        cashOut: round(cashOut),
-        tipsOut: round(cashTipsOut),
-        roundingAdjustments: round(totalRoundingAdjustments),
-        tipSharesIn: round(totalTipSharesDistributed),
-        cashDue: round(cashDue + totalTipSharesDistributed + totalRoundingAdjustments),
+        cashReceived: round(cash.cashReceived), cashIn: round(cash.cashIn), cashOut: round(cash.cashOut),
+        tipsOut: round(cash.cashTipsOut), roundingAdjustments: round(payments.totalRoundingAdjustments),
+        tipSharesIn: round(tipShares.totalTipSharesDistributed),
+        cashDue: round(cash.cashDue + tipShares.totalTipSharesDistributed + payments.totalRoundingAdjustments),
       },
-
-      paidInOut: {
-        paidIn: round(cashIn),
-        paidOut: round(cashOut),
-        net: round(cashIn - cashOut),
-      },
-
+      paidInOut: { paidIn: round(cash.cashIn), paidOut: round(cash.cashOut), net: round(cash.cashIn - cash.cashOut) },
       salesByCategory: Object.values(catMap)
         .filter(c => c.gross > 0 || c.voids > 0)
-        .map(c => ({
-          ...c,
-          gross: round(c.gross),
-          discounts: round(c.discounts),
-          net: round(c.net),
-          voids: round(c.voids),
-          percentOfTotal: netSales > 0 ? round((c.net / netSales) * 100) : 0,
-        }))
+        .map(c => ({ ...c, gross: round(c.gross), discounts: round(c.discounts), net: round(c.net), voids: round(c.voids), percentOfTotal: netSales > 0 ? round((c.net / netSales) * 100) : 0 }))
         .sort((a, b) => b.net - a.net),
-
-      salesByOrderType: salesByOrderType
-        .map(t => ({
-          ...t,
-          gross: round(t.gross),
-          net: round(t.net),
-        }))
-        .sort((a, b) => b.net - a.net),
-
+      salesByOrderType: salesByOrderType.map(t => ({ ...t, gross: round(t.gross), net: round(t.net) })).sort((a, b) => b.net - a.net),
       voids: {
-        tickets: { count: voidedTicketCount, amount: round(voidedTicketAmount) },
-        items: { count: voidedItemCount, amount: round(voidedItemAmount) },
-        total: { count: voidedTicketCount + voidedItemCount, amount: round(totalVoids) },
-        percentOfSales: round(voidPercentage),
-        byReason: Object.entries(voidsByReason).map(([reason, data]) => ({
-          reason,
-          count: data.count,
-          amount: round(data.amount),
-        })),
+        tickets: { count: voids.voidedTicketCount, amount: round(voids.voidedTicketAmount) },
+        items: { count: voids.voidedItemCount, amount: round(voids.voidedItemAmount) },
+        total: { count: voids.voidedTicketCount + voids.voidedItemCount, amount: round(voids.totalVoids) },
+        percentOfSales: round(voids.voidPercentage),
+        byReason: Object.entries(voids.voidsByReason).map(([reason, data]) => ({ reason, count: data.count, amount: round(data.amount) })),
       },
-
       discounts: {
         total: round(totalDiscounts),
-        byType: discountsByType
-          .map(d => ({
-            name: d.name,
-            count: d.count,
-            amount: round(d.amount),
-          }))
-          .sort((a, b) => b.amount - a.amount),
+        byType: discountsByType.map(d => ({ name: d.name, count: d.count, amount: round(d.amount) })).sort((a, b) => b.amount - a.amount),
       },
-
       labor: {
-        frontOfHouse: {
-          hours: round(fohHours),
-          cost: round(fohCost),
-          percentOfLabor: totalLaborCost > 0 ? round((fohCost / totalLaborCost) * 100) : 0,
-        },
-        backOfHouse: {
-          hours: round(bohHours),
-          cost: round(bohCost),
-          percentOfLabor: totalLaborCost > 0 ? round((bohCost / totalLaborCost) * 100) : 0,
-        },
-        total: {
-          hours: round(totalLaborHours),
-          cost: round(totalLaborCost),
-          percentOfSales: round(laborPercentage),
-        },
+        frontOfHouse: { hours: round(labor.fohHours), cost: round(labor.fohCost), percentOfLabor: labor.totalLaborCost > 0 ? round((labor.fohCost / labor.totalLaborCost) * 100) : 0 },
+        backOfHouse: { hours: round(labor.bohHours), cost: round(labor.bohCost), percentOfLabor: labor.totalLaborCost > 0 ? round((labor.bohCost / labor.totalLaborCost) * 100) : 0 },
+        total: { hours: round(labor.totalLaborHours), cost: round(labor.totalLaborCost), percentOfSales: round(labor.laborPercentage) },
       },
-
-      giftCards: {
-        loads: round(giftCardLoads),
-        redemptions: round(giftCardRedemptions),
-        netLiability: round(giftCardLoads - giftCardRedemptions),
-      },
-
+      giftCards: { loads: round(giftCards.giftCardLoads), redemptions: round(giftCards.giftCardRedemptions), netLiability: round(giftCards.giftCardLoads - giftCards.giftCardRedemptions) },
       tipShares: {
-        totalDistributed: round(totalTipSharesDistributed),
-        byEmployee: Object.values(tipSharesByGiver).map(giver => ({
-          employeeId: giver.employeeId,
-          employeeName: giver.employeeName,
-          totalGiven: round(giver.totalGiven),
-          shares: giver.shares.map(s => ({
-            ...s,
-            amount: round(s.amount),
-          })),
+        totalDistributed: round(tipShares.totalTipSharesDistributed),
+        byEmployee: Object.values(tipShares.tipSharesByGiver).map(g => ({
+          employeeId: g.employeeId, employeeName: g.employeeName, totalGiven: round(g.totalGiven),
+          shares: g.shares.map(s => ({ ...s, amount: round(s.amount) })),
         })).sort((a, b) => b.totalGiven - a.totalGiven),
       },
-
-      tipBank: {
-        total: round(totalTipSharesDistributed),
-        pendingPayroll: round(totalTipSharesDistributed),
-      },
-
-      weightBasedSales: weightBasedItemCount > 0 ? {
-        revenue: round(weightBasedRevenue),
-        itemCount: weightBasedItemCount,
-        totalWeight: Object.entries(weightByUnit).map(([unit, weight]) => ({
-          unit,
-          weight: round(weight),
-        })),
+      tipBank: { total: round(tipShares.totalTipSharesDistributed), pendingPayroll: round(tipShares.totalTipSharesDistributed) },
+      weightBasedSales: weight.weightBasedItemCount > 0 ? {
+        revenue: round(weight.weightBasedRevenue), itemCount: weight.weightBasedItemCount,
+        totalWeight: Object.entries(weight.weightByUnit).map(([unit, w]) => ({ unit, weight: round(w) })),
       } : null,
-
       stats: {
-        checks: checkCount,
-        avgCheck: round(avgCheck),
-        avgCheckTimeMinutes: round(avgCheckTime),
-        covers: totalCovers,
-        avgCover: round(avgCover),
-        foodAvg: round(foodAvg),
-        bevAvg: round(bevAvg),
-        retailAvg: round(retailAvg),
+        checks: stats.checkCount, avgCheck: round(stats.avgCheck), avgCheckTimeMinutes: round(stats.avgCheckTime),
+        covers: stats.totalCovers, avgCover: round(stats.avgCover),
+        foodAvg: round(stats.foodAvg), bevAvg: round(stats.bevAvg), retailAvg: round(stats.retailAvg),
       },
-
-      businessCosts: {
-        ccTipFees: round(ccTipFeesResult.totalCents / 100),
-        ccTipFeeTransactions: ccTipFeesResult.transactionCount,
-      },
-
+      businessCosts: { ccTipFees: round(ccTipFeesResult.totalCents / 100), ccTipFeeTransactions: ccTipFeesResult.transactionCount },
       entertainment: (() => {
         const ent = entertainmentSummary
         if (!ent || Number(ent.session_count) === 0) return null
         const sessions = Number(ent.session_count) || 0
         const revenue = Number(ent.revenue) || 0
         const totalMin = Number(ent.total_minutes) || 0
-        return {
-          revenue: round(revenue),
-          sessions,
-          averageSessionMinutes: sessions > 0 ? round(totalMin / sessions) : 0,
-          topItem: ent.top_item_name || null,
-        }
+        return { revenue: round(revenue), sessions, averageSessionMinutes: sessions > 0 ? round(totalMin / sessions) : 0, topItem: ent.top_item_name || null }
       })(),
     })
   } catch (error) {
@@ -818,8 +298,6 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     return err('Failed to generate daily report', 500)
   }
 })
-
-// Type definitions now live in @/lib/query-services/order-reporting-queries.ts
 
 // ============================================================
 // LEGACY PATH — full in-memory processing (fallback via ?legacy=true)
@@ -832,27 +310,14 @@ async function legacyReport(
   date: Date,
   locationSettings: ReturnType<typeof parseSettings>,
 ) {
-  // Fetch all daily data in parallel (all queries are independent)
   const [
-    orders,
-    voidedOrders,
-    voidLogs,
-    timeEntries,
-    paidInOuts,
-    giftCardTransactions,
-    tipsBankedToday,
-    tipsCollectedToday,
-    tipSharesDistributed,
-    categories,
-    legacyRefundAggregate,
+    orders, voidedOrders, voidLogs, timeEntries, paidInOuts,
+    giftCardTransactions, tipsBankedToday, tipsCollectedToday,
+    tipSharesDistributed, categories, legacyRefundAggregate,
   ] = await Promise.all([
-    // Completed/paid orders
-    // Exclude split parents to prevent double-counting when pay-all-splits
-    // marks the parent as 'paid' alongside its children.
     db.order.findMany({
       where: {
-        locationId,
-        deletedAt: null,
+        locationId, deletedAt: null,
         status: { in: [...REVENUE_ORDER_STATUSES] },
         NOT: { splitOrders: { some: {} } },
         OR: [
@@ -865,256 +330,78 @@ async function legacyReport(
         items: {
           where: { deletedAt: null },
           include: {
-            modifiers: {
-              select: { price: true },
-            },
-            menuItem: {
-              select: {
-                category: { select: { id: true } },
-              },
-            },
+            modifiers: { select: { price: true } },
+            menuItem: { select: { category: { select: { id: true } } } },
           },
         },
         payments: {
           where: { status: 'completed' },
-          select: {
-            paymentMethod: true,
-            amount: true,
-            tipAmount: true,
-            roundingAdjustment: true,
-            cardBrand: true,
-          },
+          select: { paymentMethod: true, amount: true, tipAmount: true, roundingAdjustment: true, cardBrand: true },
         },
-        discounts: {
-          select: {
-            name: true,
-            amount: true,
-            discountRule: { select: { name: true } },
-          },
-        },
-        employee: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            displayName: true,
-          },
-        },
+        discounts: { select: { name: true, amount: true, discountRule: { select: { name: true } } } },
+        employee: { select: { id: true, firstName: true, lastName: true, displayName: true } },
       },
     }),
-    // Voided orders
     db.order.findMany({
       where: {
-        locationId,
-        deletedAt: null,
-        status: 'voided',
+        locationId, deletedAt: null, status: 'voided',
         OR: [
           { businessDayDate: { gte: startOfDay, lte: endOfDay } },
           { businessDayDate: null, createdAt: { gte: startOfDay, lte: endOfDay } },
         ],
       },
       take: 10000,
-      include: {
-        items: {
-          where: { deletedAt: null },
-          include: {
-            menuItem: {
-              select: {
-                category: { select: { id: true } },
-              },
-            },
-          },
-        },
-      },
+      include: { items: { where: { deletedAt: null }, include: { menuItem: { select: { category: { select: { id: true } } } } } } },
     }),
-    // Void logs
-    db.voidLog.findMany({
-      where: {
-        locationId,
-        createdAt: { gte: startOfDay, lte: endOfDay },
-      },
-      take: 10000,
-    }),
-    // Time clock entries for labor
+    db.voidLog.findMany({ where: { locationId, createdAt: { gte: startOfDay, lte: endOfDay } }, take: 10000 }),
     db.timeClockEntry.findMany({
-      where: {
-        locationId,
-        clockIn: { gte: startOfDay, lte: endOfDay },
-      },
-      take: 10000,
-      include: {
-        employee: {
-          select: {
-            hourlyRate: true,
-            role: { select: { name: true } },
-          },
-        },
-      },
+      where: { locationId, clockIn: { gte: startOfDay, lte: endOfDay } }, take: 10000,
+      include: { employee: { select: { hourlyRate: true, role: { select: { name: true } } } } },
     }),
-    // Paid in/out
-    db.paidInOut.findMany({
-      where: {
-        locationId,
-        createdAt: { gte: startOfDay, lte: endOfDay },
-      },
-      take: 10000,
-    }),
-    // Gift card transactions
-    db.giftCardTransaction.findMany({
-      where: {
-        locationId,
-        createdAt: { gte: startOfDay, lte: endOfDay },
-      },
-      take: 10000,
-    }),
-    // Tips BANKED today (Skill 273)
+    db.paidInOut.findMany({ where: { locationId, createdAt: { gte: startOfDay, lte: endOfDay } }, take: 10000 }),
+    db.giftCardTransaction.findMany({ where: { locationId, createdAt: { gte: startOfDay, lte: endOfDay } }, take: 10000 }),
     db.tipLedgerEntry.findMany({
-      where: {
-        locationId,
-        type: 'CREDIT',
-        sourceType: { in: ['DIRECT_TIP', 'TIP_GROUP'] },
-        deletedAt: null,
-        createdAt: { gte: startOfDay, lte: endOfDay },
-      },
-      take: 10000,
-      include: {
-        employee: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            displayName: true,
-          },
-        },
-      },
+      where: { locationId, type: 'CREDIT', sourceType: { in: ['DIRECT_TIP', 'TIP_GROUP'] }, deletedAt: null, createdAt: { gte: startOfDay, lte: endOfDay } },
+      take: 10000, include: { employee: { select: { id: true, firstName: true, lastName: true, displayName: true } } },
     }),
-    // Tips COLLECTED today (Skill 273)
     db.tipLedgerEntry.findMany({
-      where: {
-        locationId,
-        type: 'DEBIT',
-        sourceType: { in: ['PAYOUT_CASH', 'PAYOUT_PAYROLL'] },
-        deletedAt: null,
-        createdAt: { gte: startOfDay, lte: endOfDay },
-      },
-      take: 10000,
-      include: {
-        employee: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            displayName: true,
-          },
-        },
-      },
+      where: { locationId, type: 'DEBIT', sourceType: { in: ['PAYOUT_CASH', 'PAYOUT_PAYROLL'] }, deletedAt: null, createdAt: { gte: startOfDay, lte: endOfDay } },
+      take: 10000, include: { employee: { select: { id: true, firstName: true, lastName: true, displayName: true } } },
     }),
-    // Tip shares distributed today (Skill 273)
     db.tipLedgerEntry.findMany({
-      where: {
-        locationId,
-        sourceType: 'ROLE_TIPOUT',
-        deletedAt: null,
-        createdAt: { gte: startOfDay, lte: endOfDay },
-      },
-      take: 10000,
-      include: {
-        employee: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            displayName: true,
-          },
-        },
-      },
+      where: { locationId, sourceType: 'ROLE_TIPOUT', deletedAt: null, createdAt: { gte: startOfDay, lte: endOfDay } },
+      take: 10000, include: { employee: { select: { id: true, firstName: true, lastName: true, displayName: true } } },
     }),
-    // Categories for grouping
-    db.category.findMany({
-      where: { locationId, deletedAt: null },
-      select: { id: true, name: true, categoryType: true },
-    }),
-    // Refund totals from RefundLog
-    db.refundLog.aggregate({
-      where: {
-        locationId,
-        deletedAt: null,
-        createdAt: { gte: startOfDay, lte: endOfDay },
-      },
-      _sum: { refundAmount: true },
-    }),
+    db.category.findMany({ where: { locationId, deletedAt: null }, select: { id: true, name: true, categoryType: true } }),
+    db.refundLog.aggregate({ where: { locationId, deletedAt: null, createdAt: { gte: startOfDay, lte: endOfDay } }, _sum: { refundAmount: true } }),
   ])
 
-  // ============================================
-  // CALCULATE REVENUE
-  // ============================================
-
-  let adjustedGrossSales = 0
-  let totalDiscounts = 0
-  let totalTax = 0
-  let totalTaxFromInclusive = 0
-  let totalTaxFromExclusive = 0
-  let totalSurcharge = 0
-  let totalTips = 0
-  const totalGratuity = 0
+  // ── Calculate Revenue ─────────────────────────────────────
+  let adjustedGrossSales = 0, totalDiscounts = 0, totalTax = 0
+  let totalTaxFromInclusive = 0, totalTaxFromExclusive = 0
+  let totalSurcharge = 0, totalTips = 0, totalCommission = 0
   const totalRefunds = Number(legacyRefundAggregate._sum.refundAmount) || 0
-  let totalCommission = 0
 
-  // Sales by category
-  const salesByCategory: Record<string, {
-    name: string
-    categoryType: string
-    units: number
-    gross: number
-    discounts: number
-    net: number
-    voids: number
-  }> = {}
+  const salesByCategory: Record<string, { name: string; categoryType: string; units: number; gross: number; discounts: number; net: number; voids: number }> = {}
+  const salesByOrderType: Record<string, { name: string; count: number; gross: number; net: number }> = {}
 
-  // Sales by order type
-  const salesByOrderType: Record<string, {
-    name: string
-    count: number
-    gross: number
-    net: number
-  }> = {}
-
-  // Initialize categories
   categories.forEach(cat => {
-    salesByCategory[cat.id] = {
-      name: cat.name,
-      categoryType: cat.categoryType || 'food',
-      units: 0,
-      gross: 0,
-      discounts: 0,
-      net: 0,
-      voids: 0,
-    }
+    salesByCategory[cat.id] = { name: cat.name, categoryType: cat.categoryType || 'food', units: 0, gross: 0, discounts: 0, net: 0, voids: 0 }
   })
 
-  // B16 fix: Derive per-order dual pricing adjustments from pricing program settings.
   const pricingProgram = getPricingProgram(locationSettings)
   const orderSurcharges = new Map<string, number>()
   if (pricingProgram.model === 'surcharge' && pricingProgram.enabled && pricingProgram.surchargePercent) {
     const pct = pricingProgram.surchargePercent
     for (const order of orders) {
-      const hasCardPayment = order.payments.some(p => {
-        const method = (p.paymentMethod || '').toLowerCase()
-        return method === 'credit' || method === 'card'
-      })
-      if (hasCardPayment) {
-        const sub = Number(order.subtotal) || 0
-        orderSurcharges.set(order.id, Math.round(sub * pct) / 100)
-      }
+      const hasCardPayment = order.payments.some(p => { const m = (p.paymentMethod || '').toLowerCase(); return m === 'credit' || m === 'card' })
+      if (hasCardPayment) orderSurcharges.set(order.id, Math.round((Number(order.subtotal) || 0) * pct) / 100)
     }
   }
 
-  // Weight-based sales tracking
-  let weightBasedRevenue = 0
-  let weightBasedItemCount = 0
+  let weightBasedRevenue = 0, weightBasedItemCount = 0
   const weightByUnit: Record<string, number> = {}
 
-  // Process orders
   orders.forEach(order => {
     const orderSubtotal = Number(order.subtotal) || 0
     const orderTax = Number(order.taxTotal) || 0
@@ -1123,648 +410,215 @@ async function legacyReport(
     const orderCommission = Number(order.commissionTotal) || 0
     const orderSurcharge = orderSurcharges.get(order.id) || 0
 
-    adjustedGrossSales += orderSubtotal
-    totalDiscounts += orderDiscount
-    totalTax += orderTax
-    totalTaxFromInclusive += Number(order.taxFromInclusive) || 0
+    adjustedGrossSales += orderSubtotal; totalDiscounts += orderDiscount
+    totalTax += orderTax; totalTaxFromInclusive += Number(order.taxFromInclusive) || 0
     totalTaxFromExclusive += Number(order.taxFromExclusive) || 0
-    totalSurcharge += orderSurcharge
-    totalTips += orderTip
-    totalCommission += orderCommission
+    totalSurcharge += orderSurcharge; totalTips += orderTip; totalCommission += orderCommission
 
-    // Track by order type
     const orderTypeName = order.orderType || 'Unknown'
-    if (!salesByOrderType[orderTypeName]) {
-      salesByOrderType[orderTypeName] = {
-        name: orderTypeName,
-        count: 0,
-        gross: 0,
-        net: 0,
-      }
-    }
+    if (!salesByOrderType[orderTypeName]) salesByOrderType[orderTypeName] = { name: orderTypeName, count: 0, gross: 0, net: 0 }
     salesByOrderType[orderTypeName].count++
     salesByOrderType[orderTypeName].gross += orderSubtotal + orderTax + orderSurcharge
     salesByOrderType[orderTypeName].net += orderSubtotal - orderDiscount
 
-    // Track by category + weight-based sales
-    // Skip voided and comped items — they should not count toward category revenue
     order.items.filter(item => item.status !== 'voided' && item.status !== 'comped').forEach(item => {
       const itemBaseTotal = Number(item.price) * item.quantity
-      const modifierTotal = (item.modifiers || []).reduce(
-        (sum: number, mod: { price: any }) => sum + (Number(mod.price) || 0), 0
-      )
+      const modifierTotal = (item.modifiers || []).reduce((sum: number, mod: { price: any }) => sum + (Number(mod.price) || 0), 0)
       const itemTotal = itemBaseTotal + modifierTotal
       const categoryId = item.menuItem?.category?.id
-
-      if (categoryId && salesByCategory[categoryId]) {
-        salesByCategory[categoryId].units += item.quantity
-        salesByCategory[categoryId].gross += itemTotal
-      }
-
-      // Track weight-based items
+      if (categoryId && salesByCategory[categoryId]) { salesByCategory[categoryId].units += item.quantity; salesByCategory[categoryId].gross += itemTotal }
       if (item.soldByWeight && item.weight) {
-        weightBasedRevenue += Number(item.itemTotal)
-        weightBasedItemCount += item.quantity
-        const unit = item.weightUnit || 'lb'
-        weightByUnit[unit] = (weightByUnit[unit] || 0) + Number(item.weight) * item.quantity
+        weightBasedRevenue += Number(item.itemTotal); weightBasedItemCount += item.quantity
+        const unit = item.weightUnit || 'lb'; weightByUnit[unit] = (weightByUnit[unit] || 0) + Number(item.weight) * item.quantity
       }
     })
 
-    // Distribute discounts to categories (proportionally)
-    // Skip voided and comped items — consistent with category gross above
     if (orderDiscount > 0 && orderSubtotal > 0) {
       order.items.filter(item => item.status !== 'voided' && item.status !== 'comped').forEach(item => {
         const itemTotal = Number(item.price) * item.quantity
         const itemDiscountShare = (itemTotal / orderSubtotal) * orderDiscount
         const categoryId = item.menuItem?.category?.id
-        if (categoryId && salesByCategory[categoryId]) {
-          salesByCategory[categoryId].discounts += itemDiscountShare
-        }
+        if (categoryId && salesByCategory[categoryId]) salesByCategory[categoryId].discounts += itemDiscountShare
       })
     }
   })
 
-  // Calculate net for each category
-  Object.values(salesByCategory).forEach(cat => {
-    cat.net = cat.gross - cat.discounts
-  })
+  Object.values(salesByCategory).forEach(cat => { cat.net = cat.gross - cat.discounts })
 
-  // Calculate voids by category
   voidedOrders.forEach(order => {
     order.items.forEach(item => {
       const itemTotal = Number(item.price) * item.quantity
       const categoryId = item.menuItem?.category?.id
-      if (categoryId && salesByCategory[categoryId]) {
-        salesByCategory[categoryId].voids += itemTotal
-      }
+      if (categoryId && salesByCategory[categoryId]) salesByCategory[categoryId].voids += itemTotal
     })
   })
 
-  // Back out hidden tax from inclusive items for accurate gross sales
   const preTaxGrossSales = adjustedGrossSales - totalTaxFromInclusive
   const netSales = preTaxGrossSales - totalDiscounts
   const grossSales = netSales + totalTax + totalSurcharge
   const totalCollected = grossSales + totalTips - totalRefunds
 
-  // ============================================
-  // CALCULATE PAYMENTS
-  // ============================================
+  // ── Delegate to helpers ───────────────────────────────────
+  const voidsResult = processVoidLogs(voidLogs, adjustedGrossSales)
+  const laborResult = processLaborEntries(timeEntries, netSales)
+  const gcResult = processGiftCardTransactions(giftCardTransactions)
+  const tipShareResult = processTipShares(tipSharesDistributed)
+  const cashResult = processCashReconciliation(0, tipsCollectedToday, paidInOuts) // cash amount calculated below
 
+  // Legacy payment processing (per-order iteration)
   let totalRoundingAdjustments = 0
-
-  const paymentsByType: Record<string, {
-    count: number
-    amount: number
-    tips: number
-  }> = {
-    cash: { count: 0, amount: 0, tips: 0 },
-    credit: { count: 0, amount: 0, tips: 0 },
-    debit: { count: 0, amount: 0, tips: 0 },
-    gift: { count: 0, amount: 0, tips: 0 },
-    house_account: { count: 0, amount: 0, tips: 0 },
-    room_charge: { count: 0, amount: 0, tips: 0 },
-    loyalty_points: { count: 0, amount: 0, tips: 0 },
-    other: { count: 0, amount: 0, tips: 0 },
+  const paymentsByType: Record<string, { count: number; amount: number; tips: number }> = {
+    cash: { count: 0, amount: 0, tips: 0 }, credit: { count: 0, amount: 0, tips: 0 },
+    debit: { count: 0, amount: 0, tips: 0 }, gift: { count: 0, amount: 0, tips: 0 },
+    house_account: { count: 0, amount: 0, tips: 0 }, room_charge: { count: 0, amount: 0, tips: 0 },
+    loyalty_points: { count: 0, amount: 0, tips: 0 }, other: { count: 0, amount: 0, tips: 0 },
   }
-
   const creditCardBreakdown: Record<string, { count: number; amount: number }> = {
-    visa: { count: 0, amount: 0 },
-    mastercard: { count: 0, amount: 0 },
-    amex: { count: 0, amount: 0 },
-    discover: { count: 0, amount: 0 },
-    other: { count: 0, amount: 0 },
+    visa: { count: 0, amount: 0 }, mastercard: { count: 0, amount: 0 },
+    amex: { count: 0, amount: 0 }, discover: { count: 0, amount: 0 }, other: { count: 0, amount: 0 },
   }
 
   orders.forEach(order => {
     order.payments.forEach(payment => {
-      const paymentType = (payment.paymentMethod || 'other').toLowerCase()
+      const pt = (payment.paymentMethod || 'other').toLowerCase()
       const amount = Number(payment.amount) || 0
       const tip = Number(payment.tipAmount) || 0
-
-      // Track rounding adjustments from cash payments
       const rounding = Number(payment.roundingAdjustment) || 0
-      if (rounding !== 0) {
-        totalRoundingAdjustments += rounding
-      }
+      if (rounding !== 0) totalRoundingAdjustments += rounding
 
-      if (paymentType === 'cash') {
-        paymentsByType.cash.count++
-        paymentsByType.cash.amount += amount
-        paymentsByType.cash.tips += tip
-      } else if (paymentType === 'credit' || paymentType === 'card') {
-        paymentsByType.credit.count++
-        paymentsByType.credit.amount += amount
-        paymentsByType.credit.tips += tip
-
-        // Track by card type
-        const cardType = (payment.cardBrand || 'other').toLowerCase()
-        if (cardType.includes('visa')) {
-          creditCardBreakdown.visa.count++
-          creditCardBreakdown.visa.amount += amount
-        } else if (cardType.includes('master')) {
-          creditCardBreakdown.mastercard.count++
-          creditCardBreakdown.mastercard.amount += amount
-        } else if (cardType.includes('amex') || cardType.includes('american')) {
-          creditCardBreakdown.amex.count++
-          creditCardBreakdown.amex.amount += amount
-        } else if (cardType.includes('discover')) {
-          creditCardBreakdown.discover.count++
-          creditCardBreakdown.discover.amount += amount
-        } else {
-          creditCardBreakdown.other.count++
-          creditCardBreakdown.other.amount += amount
-        }
-      } else if (paymentType === 'debit') {
-        paymentsByType.debit.count++
-        paymentsByType.debit.amount += amount
-        paymentsByType.debit.tips += tip
-      } else if (paymentType === 'gift' || paymentType === 'gift_card') {
-        paymentsByType.gift.count++
-        paymentsByType.gift.amount += amount
-        paymentsByType.gift.tips += tip
-      } else if (paymentType === 'house_account') {
-        paymentsByType.house_account.count++
-        paymentsByType.house_account.amount += amount
-      } else if (paymentType === 'room_charge') {
-        paymentsByType.room_charge.count++
-        paymentsByType.room_charge.amount += amount
-        paymentsByType.room_charge.tips += tip
-      } else if (paymentType === 'loyalty_points' || paymentType === 'loyalty') {
-        paymentsByType.loyalty_points.count++
-        paymentsByType.loyalty_points.amount += amount
-      } else {
-        paymentsByType.other.count++
-        paymentsByType.other.amount += amount
-        paymentsByType.other.tips += tip
+      if (pt === 'cash') { paymentsByType.cash.count++; paymentsByType.cash.amount += amount; paymentsByType.cash.tips += tip }
+      else if (pt === 'credit' || pt === 'card') {
+        paymentsByType.credit.count++; paymentsByType.credit.amount += amount; paymentsByType.credit.tips += tip
+        const ct = (payment.cardBrand || 'other').toLowerCase()
+        if (ct.includes('visa')) { creditCardBreakdown.visa.count++; creditCardBreakdown.visa.amount += amount }
+        else if (ct.includes('master')) { creditCardBreakdown.mastercard.count++; creditCardBreakdown.mastercard.amount += amount }
+        else if (ct.includes('amex') || ct.includes('american')) { creditCardBreakdown.amex.count++; creditCardBreakdown.amex.amount += amount }
+        else if (ct.includes('discover')) { creditCardBreakdown.discover.count++; creditCardBreakdown.discover.amount += amount }
+        else { creditCardBreakdown.other.count++; creditCardBreakdown.other.amount += amount }
       }
+      else if (pt === 'debit') { paymentsByType.debit.count++; paymentsByType.debit.amount += amount; paymentsByType.debit.tips += tip }
+      else if (pt === 'gift' || pt === 'gift_card') { paymentsByType.gift.count++; paymentsByType.gift.amount += amount; paymentsByType.gift.tips += tip }
+      else if (pt === 'house_account') { paymentsByType.house_account.count++; paymentsByType.house_account.amount += amount }
+      else if (pt === 'room_charge') { paymentsByType.room_charge.count++; paymentsByType.room_charge.amount += amount; paymentsByType.room_charge.tips += tip }
+      else if (pt === 'loyalty_points' || pt === 'loyalty') { paymentsByType.loyalty_points.count++; paymentsByType.loyalty_points.amount += amount }
+      else { paymentsByType.other.count++; paymentsByType.other.amount += amount; paymentsByType.other.tips += tip }
     })
   })
 
-  const totalPayments = Object.values(paymentsByType).reduce(
-    (sum, p) => sum + p.amount,
-    0
-  )
+  const totalPayments = Object.values(paymentsByType).reduce((sum, p) => sum + p.amount, 0)
 
-  // ============================================
-  // CASH RECONCILIATION
-  // ============================================
-
-  const cashPayoutsToday = tipsCollectedToday
-    .filter(e => e.sourceType === 'PAYOUT_CASH')
-    .reduce((sum, e) => sum + Math.abs(Number(e.amountCents)) / 100, 0)
-
-  let cashIn = 0
-  let cashOut = 0
-
-  paidInOuts.forEach(pio => {
-    const amount = Number(pio.amount) || 0
-    if (pio.type === 'in') {
-      cashIn += amount
-    } else {
-      cashOut += amount
-    }
-  })
-
+  // Legacy cash reconciliation
   const cashReceived = paymentsByType.cash.amount
-  const cashTipsOut = cashPayoutsToday
-  const cashDue = cashReceived + cashIn - cashOut - cashPayoutsToday
+  const cashDue = cashReceived + cashResult.cashIn - cashResult.cashOut - cashResult.cashTipsOut
 
-  // ============================================
-  // VOIDS & REFUNDS
-  // ============================================
-
-  let voidedTicketCount = 0
-  let voidedTicketAmount = 0
-  let voidedItemCount = 0
-  let voidedItemAmount = 0
-
-  const voidsByReason: Record<string, { count: number; amount: number }> = {}
-
-  voidLogs.forEach(log => {
-    const amount = Number(log.amount) || 0
-    const reason = log.reason || 'Unknown'
-
-    if (!voidsByReason[reason]) {
-      voidsByReason[reason] = { count: 0, amount: 0 }
-    }
-    voidsByReason[reason].count++
-    voidsByReason[reason].amount += amount
-
-    if (log.itemId) {
-      voidedItemCount++
-      voidedItemAmount += amount
-    } else {
-      voidedTicketCount++
-      voidedTicketAmount += amount
-    }
-  })
-
-  const totalVoids = voidedTicketAmount + voidedItemAmount
-  const voidPercentage = adjustedGrossSales > 0 ? (totalVoids / adjustedGrossSales) * 100 : 0
-
-  // ============================================
-  // DISCOUNTS BREAKDOWN
-  // ============================================
-
+  // Discount breakdown
   const discountsByType: Record<string, { count: number; amount: number }> = {}
-
   orders.forEach(order => {
     order.discounts.forEach(discount => {
       const name = discount.discountRule?.name || discount.name || 'Unknown'
       const amount = Number(discount.amount) || 0
-
-      if (!discountsByType[name]) {
-        discountsByType[name] = { count: 0, amount: 0 }
-      }
-      discountsByType[name].count++
-      discountsByType[name].amount += amount
+      if (!discountsByType[name]) discountsByType[name] = { count: 0, amount: 0 }
+      discountsByType[name].count++; discountsByType[name].amount += amount
     })
   })
 
-  // ============================================
-  // LABOR SUMMARY
-  // ============================================
-
-  let fohHours = 0
-  let fohCost = 0
-  let bohHours = 0
-  let bohCost = 0
-
-  timeEntries.forEach(entry => {
-    if (!entry.clockOut) return
-
-    const hours =
-      (entry.clockOut.getTime() - entry.clockIn.getTime()) / (1000 * 60 * 60)
-    const breakHours = (entry.breakMinutes || 0) / 60
-    const netHours = Math.max(0, hours - breakHours)
-    const hourlyRate = Number(entry.employee.hourlyRate) || 0
-    const cost = netHours * hourlyRate
-
-    const roleName = (entry.employee.role?.name || '').toLowerCase()
-    const isBOH =
-      roleName.includes('cook') ||
-      roleName.includes('chef') ||
-      roleName.includes('kitchen') ||
-      roleName.includes('prep') ||
-      roleName.includes('dish')
-
-    if (isBOH) {
-      bohHours += netHours
-      bohCost += cost
-    } else {
-      fohHours += netHours
-      fohCost += cost
-    }
-  })
-
-  const totalLaborHours = fohHours + bohHours
-  const totalLaborCost = fohCost + bohCost
-  const laborPercentage = netSales > 0 ? (totalLaborCost / netSales) * 100 : 0
-
-  // ============================================
-  // GIFT CARD SUMMARY
-  // ============================================
-
-  let giftCardLoads = 0
-  let giftCardRedemptions = 0
-
-  giftCardTransactions.forEach(txn => {
-    const amount = Number(txn.amount) || 0
-    if (txn.type === 'load' || txn.type === 'sale') {
-      giftCardLoads += amount
-    } else if (txn.type === 'redeem' || txn.type === 'redemption') {
-      giftCardRedemptions += amount
-    }
-  })
-
-  // ============================================
-  // TIP BANK SUMMARY
-  // ============================================
-
-  const tipsBankedIn = tipsBankedToday.reduce((sum, entry) => sum + Number(entry.amountCents) / 100, 0)
-  const tipsCollectedOut = tipsCollectedToday.reduce((sum, entry) => sum + Math.abs(Number(entry.amountCents)) / 100, 0)
-  const tipBankNetChange = tipsBankedIn - tipsCollectedOut
-
-  const tipSharesByGiver: Record<string, {
-    employeeId: string
-    employeeName: string
-    totalGiven: number
-    shares: Array<{
-      toEmployee: string
-      amount: number
-      shareType: string
-      ruleName: string | null
-      percentage: number | null
-      status: string
-    }>
-  }> = {}
-
-  const tipoutDebits = tipSharesDistributed.filter(e => e.type === 'DEBIT')
-  const tipoutCredits = tipSharesDistributed.filter(e => e.type === 'CREDIT')
-
-  tipoutDebits.forEach(entry => {
-    const giverId = entry.employee.id
-    const giverName = entry.employee.displayName ||
-      `${entry.employee.firstName} ${entry.employee.lastName}`
-    const amount = Math.abs(Number(entry.amountCents)) / 100
-
-    if (!tipSharesByGiver[giverId]) {
-      tipSharesByGiver[giverId] = {
-        employeeId: giverId,
-        employeeName: giverName,
-        totalGiven: 0,
-        shares: [],
-      }
-    }
-
-    const matchingCredit = entry.sourceId
-      ? tipoutCredits.find(c => c.sourceId === entry.sourceId)
-      : null
-    const recipientName = matchingCredit
-      ? (matchingCredit.employee.displayName ||
-        `${matchingCredit.employee.firstName} ${matchingCredit.employee.lastName}`)
-      : 'Unknown'
-
-    tipSharesByGiver[giverId].totalGiven += amount
-    tipSharesByGiver[giverId].shares.push({
-      toEmployee: recipientName,
-      amount,
-      shareType: 'role_tipout',
-      ruleName: entry.memo || null,
-      percentage: null,
-      status: 'completed',
-    })
-  })
-
-  const totalTipSharesDistributed = tipoutDebits.reduce(
-    (sum, entry) => sum + Math.abs(Number(entry.amountCents)) / 100, 0
-  )
-
-  // ============================================
-  // STATS
-  // ============================================
-
+  // Stats
   const checkCount = orders.length
   const avgCheck = checkCount > 0 ? totalCollected / checkCount : 0
-
-  let totalCovers = 0
-  orders.forEach(order => {
-    totalCovers += order.guestCount || 1
-  })
-  const avgCover = totalCovers > 0 ? totalCollected / totalCovers : 0
-
-  let totalCheckTime = 0
-  let checkTimeCount = 0
-  orders.forEach(order => {
-    if (order.closedAt && order.createdAt) {
-      const minutes =
-        (order.closedAt.getTime() - order.createdAt.getTime()) / (1000 * 60)
-      totalCheckTime += minutes
-      checkTimeCount++
-    }
-  })
+  let totalCoversLegacy = 0
+  orders.forEach(order => { totalCoversLegacy += order.guestCount || 1 })
+  const avgCover = totalCoversLegacy > 0 ? totalCollected / totalCoversLegacy : 0
+  let totalCheckTime = 0, checkTimeCount = 0
+  orders.forEach(order => { if (order.closedAt && order.createdAt) { totalCheckTime += (order.closedAt.getTime() - order.createdAt.getTime()) / (1000 * 60); checkTimeCount++ } })
   const avgCheckTime = checkTimeCount > 0 ? totalCheckTime / checkTimeCount : 0
 
-  let foodTotal = 0
-  let bevTotal = 0
-  let retailTotal = 0
-
+  let foodTotal = 0, bevTotal = 0, retailTotal = 0
   Object.values(salesByCategory).forEach(cat => {
-    if (cat.categoryType === 'food') {
-      foodTotal += cat.net
-    } else if (
-      cat.categoryType === 'drinks' ||
-      cat.categoryType === 'liquor' ||
-      cat.categoryType === 'beer' ||
-      cat.categoryType === 'wine'
-    ) {
-      bevTotal += cat.net
-    } else if (cat.categoryType === 'retail') {
-      retailTotal += cat.net
-    }
+    if (cat.categoryType === 'food') foodTotal += cat.net
+    else if (['drinks', 'liquor', 'beer', 'wine'].includes(cat.categoryType)) bevTotal += cat.net
+    else if (cat.categoryType === 'retail') retailTotal += cat.net
   })
-
-  const foodAvg = checkCount > 0 ? foodTotal / checkCount : 0
-  const bevAvg = checkCount > 0 ? bevTotal / checkCount : 0
-  const retailAvg = checkCount > 0 ? retailTotal / checkCount : 0
-
-  // ============================================
-  // BUSINESS COSTS (CC Tip Fees)
-  // ============================================
 
   const ccTipFees = await db.tipTransaction.aggregate({
-    _sum: { ccFeeAmountCents: true },
-    _count: true,
-    where: {
-      locationId,
-      collectedAt: { gte: startOfDay, lte: endOfDay },
-      ccFeeAmountCents: { gt: 0 },
-      deletedAt: null,
-    },
+    _sum: { ccFeeAmountCents: true }, _count: true,
+    where: { locationId, collectedAt: { gte: startOfDay, lte: endOfDay }, ccFeeAmountCents: { gt: 0 }, deletedAt: null },
   })
-
-  // ============================================
-  // BUILD RESPONSE
-  // ============================================
 
   return ok({
     reportDate: date.toISOString().split('T')[0],
     generatedAt: new Date().toISOString(),
-
     revenue: {
-      adjustedGrossSales: round(preTaxGrossSales),
-      discounts: round(totalDiscounts),
-      netSales: round(netSales),
-      salesTax: round(totalTax),
-      taxFromInclusive: round(totalTaxFromInclusive),
-      taxFromExclusive: round(totalTaxFromExclusive),
-      surcharge: round(totalSurcharge),
-      grossSales: round(grossSales),
-      tips: round(totalTips),
-      gratuity: 0,
-      refunds: round(totalRefunds),
-      giftCardLoads: round(giftCardLoads),
+      adjustedGrossSales: round(preTaxGrossSales), discounts: round(totalDiscounts),
+      netSales: round(netSales), salesTax: round(totalTax),
+      taxFromInclusive: round(totalTaxFromInclusive), taxFromExclusive: round(totalTaxFromExclusive),
+      surcharge: round(totalSurcharge), grossSales: round(grossSales),
+      tips: round(totalTips), gratuity: 0, refunds: round(totalRefunds),
+      giftCardLoads: round(gcResult.giftCardLoads),
       roundingAdjustments: round(totalRoundingAdjustments),
-      totalCollected: round(totalCollected),
-      commission: round(totalCommission),
-      donations: 0,
+      totalCollected: round(totalCollected), commission: round(totalCommission), donations: 0,
     },
-
     payments: {
-      cash: {
-        count: paymentsByType.cash.count,
-        amount: round(paymentsByType.cash.amount),
-        tips: round(paymentsByType.cash.tips),
-      },
+      cash: { count: paymentsByType.cash.count, amount: round(paymentsByType.cash.amount), tips: round(paymentsByType.cash.tips) },
       credit: {
-        count: paymentsByType.credit.count,
-        amount: round(paymentsByType.credit.amount),
-        tips: round(paymentsByType.credit.tips),
-        breakdown: {
-          visa: creditCardBreakdown.visa,
-          mastercard: creditCardBreakdown.mastercard,
-          amex: creditCardBreakdown.amex,
-          discover: creditCardBreakdown.discover,
-          other: creditCardBreakdown.other,
-        },
+        count: paymentsByType.credit.count, amount: round(paymentsByType.credit.amount), tips: round(paymentsByType.credit.tips),
+        breakdown: { visa: creditCardBreakdown.visa, mastercard: creditCardBreakdown.mastercard, amex: creditCardBreakdown.amex, discover: creditCardBreakdown.discover, other: creditCardBreakdown.other },
       },
-      debit: {
-        count: paymentsByType.debit.count,
-        amount: round(paymentsByType.debit.amount),
-        tips: round(paymentsByType.debit.tips),
-      },
-      gift: {
-        count: paymentsByType.gift.count,
-        amount: round(paymentsByType.gift.amount),
-      },
-      houseAccount: {
-        count: paymentsByType.house_account.count,
-        amount: round(paymentsByType.house_account.amount),
-      },
-      roomCharge: {
-        count: paymentsByType.room_charge.count,
-        amount: round(paymentsByType.room_charge.amount),
-        tips: round(paymentsByType.room_charge.tips),
-      },
-      loyaltyPoints: {
-        count: paymentsByType.loyalty_points.count,
-        amount: round(paymentsByType.loyalty_points.amount),
-      },
-      other: {
-        count: paymentsByType.other.count,
-        amount: round(paymentsByType.other.amount),
-      },
+      debit: { count: paymentsByType.debit.count, amount: round(paymentsByType.debit.amount), tips: round(paymentsByType.debit.tips) },
+      gift: { count: paymentsByType.gift.count, amount: round(paymentsByType.gift.amount) },
+      houseAccount: { count: paymentsByType.house_account.count, amount: round(paymentsByType.house_account.amount) },
+      roomCharge: { count: paymentsByType.room_charge.count, amount: round(paymentsByType.room_charge.amount), tips: round(paymentsByType.room_charge.tips) },
+      loyaltyPoints: { count: paymentsByType.loyalty_points.count, amount: round(paymentsByType.loyalty_points.amount) },
+      other: { count: paymentsByType.other.count, amount: round(paymentsByType.other.amount) },
       totalPayments: round(totalPayments),
     },
-
     cash: {
-      cashReceived: round(cashReceived),
-      cashIn: round(cashIn),
-      cashOut: round(cashOut),
-      tipsOut: round(cashTipsOut),
-      roundingAdjustments: round(totalRoundingAdjustments),
-      tipSharesIn: round(totalTipSharesDistributed),
-      cashDue: round(cashDue + totalTipSharesDistributed + totalRoundingAdjustments),
+      cashReceived: round(cashReceived), cashIn: round(cashResult.cashIn), cashOut: round(cashResult.cashOut),
+      tipsOut: round(cashResult.cashTipsOut), roundingAdjustments: round(totalRoundingAdjustments),
+      tipSharesIn: round(tipShareResult.totalTipSharesDistributed),
+      cashDue: round(cashDue + tipShareResult.totalTipSharesDistributed + totalRoundingAdjustments),
     },
-
-    paidInOut: {
-      paidIn: round(cashIn),
-      paidOut: round(cashOut),
-      net: round(cashIn - cashOut),
-    },
-
+    paidInOut: { paidIn: round(cashResult.cashIn), paidOut: round(cashResult.cashOut), net: round(cashResult.cashIn - cashResult.cashOut) },
     salesByCategory: Object.values(salesByCategory)
       .filter(c => c.gross > 0 || c.voids > 0)
-      .map(c => ({
-        ...c,
-        gross: round(c.gross),
-        discounts: round(c.discounts),
-        net: round(c.net),
-        voids: round(c.voids),
-        percentOfTotal: netSales > 0 ? round((c.net / netSales) * 100) : 0,
-      }))
+      .map(c => ({ ...c, gross: round(c.gross), discounts: round(c.discounts), net: round(c.net), voids: round(c.voids), percentOfTotal: netSales > 0 ? round((c.net / netSales) * 100) : 0 }))
       .sort((a, b) => b.net - a.net),
-
-    salesByOrderType: Object.values(salesByOrderType)
-      .map(t => ({
-        ...t,
-        gross: round(t.gross),
-        net: round(t.net),
-      }))
-      .sort((a, b) => b.net - a.net),
-
+    salesByOrderType: Object.values(salesByOrderType).map(t => ({ ...t, gross: round(t.gross), net: round(t.net) })).sort((a, b) => b.net - a.net),
     voids: {
-      tickets: { count: voidedTicketCount, amount: round(voidedTicketAmount) },
-      items: { count: voidedItemCount, amount: round(voidedItemAmount) },
-      total: { count: voidedTicketCount + voidedItemCount, amount: round(totalVoids) },
-      percentOfSales: round(voidPercentage),
-      byReason: Object.entries(voidsByReason).map(([reason, data]) => ({
-        reason,
-        count: data.count,
-        amount: round(data.amount),
-      })),
+      tickets: { count: voidsResult.voidedTicketCount, amount: round(voidsResult.voidedTicketAmount) },
+      items: { count: voidsResult.voidedItemCount, amount: round(voidsResult.voidedItemAmount) },
+      total: { count: voidsResult.voidedTicketCount + voidsResult.voidedItemCount, amount: round(voidsResult.totalVoids) },
+      percentOfSales: round(voidsResult.voidPercentage),
+      byReason: Object.entries(voidsResult.voidsByReason).map(([reason, data]) => ({ reason, count: data.count, amount: round(data.amount) })),
     },
-
     discounts: {
       total: round(totalDiscounts),
-      byType: Object.entries(discountsByType)
-        .map(([name, data]) => ({
-          name,
-          count: data.count,
-          amount: round(data.amount),
-        }))
-        .sort((a, b) => b.amount - a.amount),
+      byType: Object.entries(discountsByType).map(([name, data]) => ({ name, count: data.count, amount: round(data.amount) })).sort((a, b) => b.amount - a.amount),
     },
-
     labor: {
-      frontOfHouse: {
-        hours: round(fohHours),
-        cost: round(fohCost),
-        percentOfLabor: totalLaborCost > 0 ? round((fohCost / totalLaborCost) * 100) : 0,
-      },
-      backOfHouse: {
-        hours: round(bohHours),
-        cost: round(bohCost),
-        percentOfLabor: totalLaborCost > 0 ? round((bohCost / totalLaborCost) * 100) : 0,
-      },
-      total: {
-        hours: round(totalLaborHours),
-        cost: round(totalLaborCost),
-        percentOfSales: round(laborPercentage),
-      },
+      frontOfHouse: { hours: round(laborResult.fohHours), cost: round(laborResult.fohCost), percentOfLabor: laborResult.totalLaborCost > 0 ? round((laborResult.fohCost / laborResult.totalLaborCost) * 100) : 0 },
+      backOfHouse: { hours: round(laborResult.bohHours), cost: round(laborResult.bohCost), percentOfLabor: laborResult.totalLaborCost > 0 ? round((laborResult.bohCost / laborResult.totalLaborCost) * 100) : 0 },
+      total: { hours: round(laborResult.totalLaborHours), cost: round(laborResult.totalLaborCost), percentOfSales: round(laborResult.laborPercentage) },
     },
-
-    giftCards: {
-      loads: round(giftCardLoads),
-      redemptions: round(giftCardRedemptions),
-      netLiability: round(giftCardLoads - giftCardRedemptions),
-    },
-
+    giftCards: { loads: round(gcResult.giftCardLoads), redemptions: round(gcResult.giftCardRedemptions), netLiability: round(gcResult.giftCardLoads - gcResult.giftCardRedemptions) },
     tipShares: {
-      totalDistributed: round(totalTipSharesDistributed),
-      byEmployee: Object.values(tipSharesByGiver).map(giver => ({
-        employeeId: giver.employeeId,
-        employeeName: giver.employeeName,
-        totalGiven: round(giver.totalGiven),
-        shares: giver.shares.map(s => ({
-          ...s,
-          amount: round(s.amount),
-        })),
+      totalDistributed: round(tipShareResult.totalTipSharesDistributed),
+      byEmployee: Object.values(tipShareResult.tipSharesByGiver).map(g => ({
+        employeeId: g.employeeId, employeeName: g.employeeName, totalGiven: round(g.totalGiven),
+        shares: g.shares.map(s => ({ ...s, amount: round(s.amount) })),
       })).sort((a, b) => b.totalGiven - a.totalGiven),
     },
-
-    tipBank: {
-      total: round(totalTipSharesDistributed),
-      pendingPayroll: round(totalTipSharesDistributed),
-    },
-
+    tipBank: { total: round(tipShareResult.totalTipSharesDistributed), pendingPayroll: round(tipShareResult.totalTipSharesDistributed) },
     weightBasedSales: weightBasedItemCount > 0 ? {
-      revenue: round(weightBasedRevenue),
-      itemCount: weightBasedItemCount,
-      totalWeight: Object.entries(weightByUnit).map(([unit, weight]) => ({
-        unit,
-        weight: round(weight),
-      })),
+      revenue: round(weightBasedRevenue), itemCount: weightBasedItemCount,
+      totalWeight: Object.entries(weightByUnit).map(([unit, weight]) => ({ unit, weight: round(weight) })),
     } : null,
-
     stats: {
-      checks: checkCount,
-      avgCheck: round(avgCheck),
-      avgCheckTimeMinutes: round(avgCheckTime),
-      covers: totalCovers,
-      avgCover: round(avgCover),
-      foodAvg: round(foodAvg),
-      bevAvg: round(bevAvg),
-      retailAvg: round(retailAvg),
+      checks: checkCount, avgCheck: round(avgCheck), avgCheckTimeMinutes: round(avgCheckTime),
+      covers: totalCoversLegacy, avgCover: round(avgCover),
+      foodAvg: round(checkCount > 0 ? foodTotal / checkCount : 0),
+      bevAvg: round(checkCount > 0 ? bevTotal / checkCount : 0),
+      retailAvg: round(checkCount > 0 ? retailTotal / checkCount : 0),
     },
-
-    businessCosts: {
-      ccTipFees: round(Number(ccTipFees._sum.ccFeeAmountCents || 0) / 100),
-      ccTipFeeTransactions: ccTipFees._count || 0,
-    },
+    businessCosts: { ccTipFees: round(Number(ccTipFees._sum.ccFeeAmountCents || 0) / 100), ccTipFeeTransactions: ccTipFees._count || 0 },
   })
-}
-
-function round(value: number): number {
-  return Math.round(value * 100) / 100
 }
