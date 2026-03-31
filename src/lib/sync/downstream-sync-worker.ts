@@ -501,7 +501,8 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
           // Guard: if the local row was recently mutated locally (not by cloud),
           // skip the conflict resolution to avoid silently destroying local data.
           // Only resolve if local row is cloud-origin, null-origin, or older than Neon.
-          const localIsLocallyMutated = hasLastMutatedBy && local.lastMutatedBy === 'local'
+          const hasLastMutatedByCol = columns.includes('lastMutatedBy')
+          const localIsLocallyMutated = hasLastMutatedByCol && local.lastMutatedBy === 'local'
           const neonUpdatedAt = row.updatedAt ? new Date(row.updatedAt as unknown as string) : null
           const localUpdatedAt = local.updatedAt ? new Date(local.updatedAt as unknown as string) : null
           const localIsNewer = neonUpdatedAt && localUpdatedAt && localUpdatedAt > neonUpdatedAt
