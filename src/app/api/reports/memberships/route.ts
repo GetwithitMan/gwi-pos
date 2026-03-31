@@ -39,7 +39,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 })
 
 async function getSummary(db: any, locationId: string) {
-  const stats: any[] = await db.$queryRawUnsafe(`
+  const stats: any[] = await db.$queryRaw`
     SELECT
       COUNT(*) FILTER (WHERE "status" IN ('active', 'trial'))::int AS "activeCount",
       COUNT(*) FILTER (WHERE "billingStatus" = 'past_due')::int AS "pastDueCount",
@@ -53,17 +53,17 @@ async function getSummary(db: any, locationId: string) {
         END
       ), 0)::float AS "mrr"
     FROM "Membership"
-    WHERE "locationId" = $1 AND "deletedAt" IS NULL
-  `, locationId)
+    WHERE "locationId" = ${locationId} AND "deletedAt" IS NULL
+  `
 
   // Churn: cancelled or expired in last 30 days / active at start of period
-  const churn: any[] = await db.$queryRawUnsafe(`
+  const churn: any[] = await db.$queryRaw`
     SELECT
       COUNT(*) FILTER (WHERE "status" IN ('cancelled', 'expired') AND "endedAt" >= NOW() - interval '30 days')::int AS "churned",
       COUNT(*) FILTER (WHERE "createdAt" < NOW() - interval '30 days' AND "status" IN ('active', 'trial', 'cancelled', 'expired'))::int AS "periodStart"
     FROM "Membership"
-    WHERE "locationId" = $1 AND "deletedAt" IS NULL
-  `, locationId)
+    WHERE "locationId" = ${locationId} AND "deletedAt" IS NULL
+  `
 
   const s = stats[0] || {}
   const c = churn[0] || {}
@@ -83,50 +83,50 @@ async function getSummary(db: any, locationId: string) {
 async function getRevenue(db: any, locationId: string, period: string) {
   const trunc = period === 'daily' ? 'day' : period === 'weekly' ? 'week' : 'month'
 
-  const rows: any[] = await db.$queryRawUnsafe(`
+  const rows: any[] = await db.$queryRaw`
     SELECT
-      date_trunc($2, "processedAt") AS "period",
+      date_trunc(${trunc}, "processedAt") AS "period",
       COALESCE(SUM("totalAmount") FILTER (WHERE "status" = 'approved'), 0)::float AS "collected",
       COALESCE(SUM("totalAmount") FILTER (WHERE "status" = 'declined'), 0)::float AS "failed",
       COALESCE(SUM("totalAmount") FILTER (WHERE "status" = 'approved' AND "chargeType" = 'retry'), 0)::float AS "recovered",
       COUNT(*) FILTER (WHERE "status" = 'approved')::int AS "successCount",
       COUNT(*) FILTER (WHERE "status" = 'declined')::int AS "failCount"
     FROM "MembershipCharge"
-    WHERE "locationId" = $1 AND "processedAt" IS NOT NULL AND "processedAt" >= NOW() - interval '12 months'
-    GROUP BY date_trunc($2, "processedAt")
+    WHERE "locationId" = ${locationId} AND "processedAt" IS NOT NULL AND "processedAt" >= NOW() - interval '12 months'
+    GROUP BY date_trunc(${trunc}, "processedAt")
     ORDER BY "period" DESC
     LIMIT 60
-  `, locationId, trunc)
+  `
 
   return { rows, period }
 }
 
 async function getDeclines(db: any, locationId: string) {
-  const byReason: any[] = await db.$queryRawUnsafe(`
+  const byReason: any[] = await db.$queryRaw`
     SELECT "declineReason", COUNT(*)::int AS "count",
            SUM("totalAmount")::float AS "totalAmount"
     FROM "MembershipCharge"
-    WHERE "locationId" = $1 AND "status" = 'declined' AND "processedAt" >= NOW() - interval '90 days'
+    WHERE "locationId" = ${locationId} AND "status" = 'declined' AND "processedAt" >= NOW() - interval '90 days'
     GROUP BY "declineReason"
     ORDER BY "count" DESC
-  `, locationId)
+  `
 
-  const byType: any[] = await db.$queryRawUnsafe(`
+  const byType: any[] = await db.$queryRaw`
     SELECT "failureType", COUNT(*)::int AS "count"
     FROM "MembershipCharge"
-    WHERE "locationId" = $1 AND "status" = 'declined' AND "processedAt" >= NOW() - interval '90 days'
+    WHERE "locationId" = ${locationId} AND "status" = 'declined' AND "processedAt" >= NOW() - interval '90 days'
     GROUP BY "failureType"
     ORDER BY "count" DESC
-  `, locationId)
+  `
 
-  const totals: any[] = await db.$queryRawUnsafe(`
+  const totals: any[] = await db.$queryRaw`
     SELECT
       COUNT(*)::int AS "totalDeclines",
       COUNT(*) FILTER (WHERE "chargeType" = 'retry' AND "status" = 'approved')::int AS "retrySuccesses",
       COUNT(*) FILTER (WHERE "chargeType" = 'retry')::int AS "totalRetries"
     FROM "MembershipCharge"
-    WHERE "locationId" = $1 AND "processedAt" >= NOW() - interval '90 days'
-  `, locationId)
+    WHERE "locationId" = ${locationId} AND "processedAt" >= NOW() - interval '90 days'
+  `
 
   const t = totals[0] || {}
   return {
@@ -138,7 +138,7 @@ async function getDeclines(db: any, locationId: string) {
 }
 
 async function getAging(db: any, locationId: string) {
-  const rows: any[] = await db.$queryRawUnsafe(`
+  const rows: any[] = await db.$queryRaw`
     SELECT
       COUNT(*) FILTER (WHERE "lastFailedAt" >= NOW() - interval '3 days')::int AS "d1_3",
       COUNT(*) FILTER (WHERE "lastFailedAt" < NOW() - interval '3 days' AND "lastFailedAt" >= NOW() - interval '7 days')::int AS "d4_7",
@@ -149,8 +149,8 @@ async function getAging(db: any, locationId: string) {
       COALESCE(SUM("priceAtSignup") FILTER (WHERE "lastFailedAt" < NOW() - interval '7 days' AND "lastFailedAt" >= NOW() - interval '14 days'), 0)::float AS "amt8_14",
       COALESCE(SUM("priceAtSignup") FILTER (WHERE "lastFailedAt" < NOW() - interval '14 days'), 0)::float AS "amt14_plus"
     FROM "Membership"
-    WHERE "locationId" = $1 AND "deletedAt" IS NULL AND "billingStatus" IN ('past_due', 'retry_scheduled', 'uncollectible')
-  `, locationId)
+    WHERE "locationId" = ${locationId} AND "deletedAt" IS NULL AND "billingStatus" IN ('past_due', 'retry_scheduled', 'uncollectible')
+  `
 
   const r = rows[0] || {}
   return {
@@ -164,7 +164,7 @@ async function getAging(db: any, locationId: string) {
 }
 
 async function getByPlan(db: any, locationId: string) {
-  const rows: any[] = await db.$queryRawUnsafe(`
+  const rows: any[] = await db.$queryRaw`
     SELECT
       "p"."id" AS "planId", "p"."name" AS "planName", "p"."price" AS "planPrice",
       COUNT("m"."id") FILTER (WHERE "m"."status" IN ('active', 'trial'))::int AS "activeCount",
@@ -179,10 +179,10 @@ async function getByPlan(db: any, locationId: string) {
       ), 0)::float AS "mrr"
     FROM "MembershipPlan" "p"
     LEFT JOIN "Membership" "m" ON "p"."id" = "m"."planId" AND "m"."deletedAt" IS NULL
-    WHERE "p"."locationId" = $1 AND "p"."deletedAt" IS NULL
+    WHERE "p"."locationId" = ${locationId} AND "p"."deletedAt" IS NULL
     GROUP BY "p"."id", "p"."name", "p"."price"
     ORDER BY "mrr" DESC
-  `, locationId)
+  `
 
   return { plans: rows }
 }

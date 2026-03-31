@@ -66,16 +66,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       ? getBusinessDayRange(endDate, dayStartTime, timezone)
       : startRange
 
-    const rows = await db.$queryRawUnsafe<CoverChargeRow[]>(
-      `SELECT "id", "amount", "paymentMethod", "guestCount", "isVip", "isComped", "createdAt", "employeeId"
+    const rows = await db.$queryRaw<CoverChargeRow[]>`
+      SELECT "id", "amount", "paymentMethod", "guestCount", "isVip", "isComped", "createdAt", "employeeId"
        FROM "CoverCharge"
-       WHERE "locationId" = $1 AND "deletedAt" IS NULL
-         AND "createdAt" >= $2 AND "createdAt" <= $3
-       ORDER BY "createdAt" ASC`,
-      locationId,
-      startRange.start,
-      endRange.end
-    )
+       WHERE "locationId" = ${locationId} AND "deletedAt" IS NULL
+         AND "createdAt" >= ${startRange.start} AND "createdAt" <= ${endRange.end}
+       ORDER BY "createdAt" ASC`
 
     // Aggregate metrics
     let totalRevenue = 0

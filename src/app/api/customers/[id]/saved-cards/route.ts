@@ -39,7 +39,7 @@ export const GET = withVenue(async function GET(
     // Fetch saved cards — NEVER return tokens
     // No cardOnFile.enabled gate on GET — already-saved cards should always be listable
     // (memberships, house accounts, etc. need to read cards regardless of the tab-level setting)
-    const cards = await db.$queryRawUnsafe<Array<{
+    const cards = await db.$queryRaw<Array<{
       id: string
       last4: string
       cardBrand: string
@@ -48,13 +48,11 @@ export const GET = withVenue(async function GET(
       expiryMonth: string | null
       expiryYear: string | null
       createdAt: Date
-    }>>(
-      `SELECT id, last4, "cardBrand", nickname, "isDefault", "expiryMonth", "expiryYear", "createdAt"
+    }>>`
+      SELECT id, last4, "cardBrand", nickname, "isDefault", "expiryMonth", "expiryYear", "createdAt"
        FROM "SavedCard"
-       WHERE "customerId" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
-       ORDER BY "isDefault" DESC, "createdAt" DESC`,
-      customerId, locationId
-    )
+       WHERE "customerId" = ${customerId} AND "locationId" = ${locationId} AND "deletedAt" IS NULL
+       ORDER BY "isDefault" DESC, "createdAt" DESC`
 
     return ok({
         customerId,
@@ -127,11 +125,9 @@ export const POST = withVenue(async function POST(
     }
 
     // Check max cards limit
-    const existingCount = await db.$queryRawUnsafe<Array<{ count: string }>>(
-      `SELECT COUNT(*) as count FROM "SavedCard"
-       WHERE "customerId" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL`,
-      customerId, locationId
-    )
+    const existingCount = await db.$queryRaw<Array<{ count: string }>>`
+      SELECT COUNT(*) as count FROM "SavedCard"
+       WHERE "customerId" = ${customerId} AND "locationId" = ${locationId} AND "deletedAt" IS NULL`
     const currentCount = Number(existingCount[0]?.count ?? 0)
     const maxCards = cardSettings.maxCardsPerCustomer ?? 5
 
@@ -140,12 +136,10 @@ export const POST = withVenue(async function POST(
     }
 
     // Check for duplicate (same last4 + brand already saved)
-    const duplicate = await db.$queryRawUnsafe<Array<{ id: string }>>(
-      `SELECT id FROM "SavedCard"
-       WHERE "customerId" = $1 AND "locationId" = $2 AND last4 = $3
-         AND "cardBrand" = $4 AND "deletedAt" IS NULL LIMIT 1`,
-      customerId, locationId, last4, cardBrand
-    )
+    const duplicate = await db.$queryRaw<Array<{ id: string }>>`
+      SELECT id FROM "SavedCard"
+       WHERE "customerId" = ${customerId} AND "locationId" = ${locationId} AND last4 = ${last4}
+         AND "cardBrand" = ${cardBrand} AND "deletedAt" IS NULL LIMIT 1`
 
     if (duplicate.length > 0) {
       return err('This card is already saved', 409)
@@ -153,25 +147,21 @@ export const POST = withVenue(async function POST(
 
     // If setting as default, unset other defaults
     if (isDefault) {
-      await db.$executeRawUnsafe(
-        `UPDATE "SavedCard" SET "isDefault" = false, "updatedAt" = CURRENT_TIMESTAMP
-         WHERE "customerId" = $1 AND "locationId" = $2 AND "isDefault" = true AND "deletedAt" IS NULL`,
-        customerId, locationId
-      )
+      await db.$executeRaw`
+        UPDATE "SavedCard" SET "isDefault" = false, "updatedAt" = CURRENT_TIMESTAMP
+         WHERE "customerId" = ${customerId} AND "locationId" = ${locationId} AND "isDefault" = true AND "deletedAt" IS NULL`
     }
 
     // Store the card — token is the Datacap tokenized value (already tokenized, not raw PAN)
     const cardId = `sc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
     const shouldBeDefault = isDefault || currentCount === 0 // First card is always default
 
-    await db.$executeRawUnsafe(
-      `INSERT INTO "SavedCard" (id, "locationId", "customerId", token, last4, "cardBrand",
+    await db.$executeRaw`
+      INSERT INTO "SavedCard" (id, "locationId", "customerId", token, last4, "cardBrand",
         "expiryMonth", "expiryYear", nickname, "isDefault", "consentMethod")
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'in_person')`,
-      cardId, locationId, customerId, token, last4, cardBrand,
-      expiryMonth || null, expiryYear || null,
-      nickname || null, shouldBeDefault
-    )
+       VALUES (${cardId}, ${locationId}, ${customerId}, ${token}, ${last4}, ${cardBrand},
+        ${expiryMonth || null}, ${expiryYear || null},
+        ${nickname || null}, ${shouldBeDefault}, 'in_person')`
 
     void emitToLocation(locationId, 'customers:changed', { locationId }).catch(console.error)
 
@@ -213,34 +203,28 @@ export const DELETE = withVenue(async function DELETE(
     if (!auth.authorized) return err(auth.error, auth.status)
 
     // Verify the card belongs to this customer
-    const card = await db.$queryRawUnsafe<Array<{ id: string; isDefault: boolean }>>(
-      `SELECT id, "isDefault" FROM "SavedCard"
-       WHERE id = $1 AND "customerId" = $2 AND "locationId" = $3 AND "deletedAt" IS NULL LIMIT 1`,
-      cardId, customerId, locationId
-    )
+    const card = await db.$queryRaw<Array<{ id: string; isDefault: boolean }>>`
+      SELECT id, "isDefault" FROM "SavedCard"
+       WHERE id = ${cardId} AND "customerId" = ${customerId} AND "locationId" = ${locationId} AND "deletedAt" IS NULL LIMIT 1`
 
     if (!card.length) {
       return notFound('Card not found')
     }
 
     // Soft delete
-    await db.$executeRawUnsafe(
-      `UPDATE "SavedCard" SET "deletedAt" = CURRENT_TIMESTAMP, "updatedAt" = CURRENT_TIMESTAMP
-       WHERE id = $1`,
-      cardId
-    )
+    await db.$executeRaw`
+      UPDATE "SavedCard" SET "deletedAt" = CURRENT_TIMESTAMP, "updatedAt" = CURRENT_TIMESTAMP
+       WHERE id = ${cardId}`
 
     // If this was the default, promote the next card
     if (card[0].isDefault) {
-      await db.$executeRawUnsafe(
-        `UPDATE "SavedCard" SET "isDefault" = true, "updatedAt" = CURRENT_TIMESTAMP
+      await db.$executeRaw`
+        UPDATE "SavedCard" SET "isDefault" = true, "updatedAt" = CURRENT_TIMESTAMP
          WHERE id = (
            SELECT id FROM "SavedCard"
-           WHERE "customerId" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
+           WHERE "customerId" = ${customerId} AND "locationId" = ${locationId} AND "deletedAt" IS NULL
            ORDER BY "createdAt" ASC LIMIT 1
-         )`,
-        customerId, locationId
-      )
+         )`
     }
 
     void emitToLocation(locationId, 'customers:changed', { locationId }).catch(console.error)

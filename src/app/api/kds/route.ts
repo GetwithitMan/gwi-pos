@@ -243,12 +243,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const deliveryInfoMap: Record<string, { customerName: string | null; phone: string | null; address: string | null; notes: string | null }> = {}
     if (orderIds.length > 0 && !deliveryTableMissing) {
       try {
-        const deliveryRows: Array<{ orderId: string; customerName: string | null; phone: string | null; address: string | null; addressLine2: string | null; city: string | null; state: string | null; zipCode: string | null; notes: string | null }> = await db.$queryRawUnsafe(
-          `SELECT "orderId", "customerName", "phone", "address", "addressLine2", "city", "state", "zipCode", "notes"
+        const deliveryRows: Array<{ orderId: string; customerName: string | null; phone: string | null; address: string | null; addressLine2: string | null; city: string | null; state: string | null; zipCode: string | null; notes: string | null }> = await db.$queryRaw`
+          SELECT "orderId", "customerName", "phone", "address", "addressLine2", "city", "state", "zipCode", "notes"
            FROM "DeliveryOrder"
-           WHERE "orderId" = ANY($1::text[])`,
-          orderIds
-        )
+           WHERE "orderId" = ANY(${orderIds}::text[])`
         for (const row of deliveryRows) {
           if (row.orderId) {
             // Build full address from components
@@ -839,16 +837,14 @@ const putHandler = async function PUT(request: NextRequest) {
               // Look up pagerNumber from target assignment (source of truth)
               let pagerNumber: string | null = order.pagerNumber || null
               try {
-                const pagerResult: any[] = await db.$queryRawUnsafe(
-                  `SELECT "targetValue" FROM "NotificationTargetAssignment"
-                   WHERE "locationId" = $1
+                const pagerResult: any[] = await db.$queryRaw`
+                  SELECT "targetValue" FROM "NotificationTargetAssignment"
+                   WHERE "locationId" = ${locationId}
                      AND "subjectType" = 'order'
-                     AND "subjectId" = $2
+                     AND "subjectId" = ${orderId}
                      AND status = 'active'
                      AND "targetType" IN ('guest_pager', 'staff_pager')
-                   ORDER BY "isPrimary" DESC LIMIT 1`,
-                  locationId, orderId
-                )
+                   ORDER BY "isPrimary" DESC LIMIT 1`
                 if (pagerResult[0]?.targetValue) {
                   pagerNumber = pagerResult[0].targetValue
                 }
@@ -857,16 +853,14 @@ const putHandler = async function PUT(request: NextRequest) {
               // If split child with no pager, inherit from parent order's assignment
               if (!pagerNumber && order.parentOrderId) {
                 try {
-                  const parentPagerResult: any[] = await db.$queryRawUnsafe(
-                    `SELECT "targetValue" FROM "NotificationTargetAssignment"
-                     WHERE "locationId" = $1
+                  const parentPagerResult: any[] = await db.$queryRaw`
+                    SELECT "targetValue" FROM "NotificationTargetAssignment"
+                     WHERE "locationId" = ${locationId}
                        AND "subjectType" = 'order'
-                       AND "subjectId" = $2
+                       AND "subjectId" = ${order.parentOrderId}
                        AND status = 'active'
                        AND "targetType" IN ('guest_pager', 'staff_pager')
-                     ORDER BY "isPrimary" DESC LIMIT 1`,
-                    locationId, order.parentOrderId
-                  )
+                     ORDER BY "isPrimary" DESC LIMIT 1`
                   if (parentPagerResult[0]?.targetValue) {
                     pagerNumber = parentPagerResult[0].targetValue
                   }

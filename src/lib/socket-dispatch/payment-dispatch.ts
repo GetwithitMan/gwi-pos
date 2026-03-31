@@ -53,44 +53,6 @@ export async function dispatchPaymentProcessed(
   }
 }
 
-/**
- * Dispatch payment:voided event
- *
- * Called after a payment is successfully voided. Notifies all terminals
- * so they can update UI (remove payment badge, refresh order totals, etc.).
- */
-export async function dispatchPaymentVoided(
-  locationId: string,
-  data: { orderId: string; paymentId: string }
-): Promise<boolean> {
-  try {
-    await emitToLocation(locationId, 'payment:voided', data)
-    return true
-  } catch (error) {
-    log.error({ err: error }, 'Failed to dispatch payment:voided')
-    return false
-  }
-}
-
-/**
- * Dispatch payment:refunded event
- *
- * Called after a payment is successfully refunded. Notifies all terminals
- * so they can update UI (show refund indicator, refresh order totals, etc.).
- */
-export async function dispatchPaymentRefunded(
-  locationId: string,
-  data: { orderId: string; paymentId: string; amount: number }
-): Promise<boolean> {
-  try {
-    await emitToLocation(locationId, 'payment:refunded', data)
-    return true
-  } catch (error) {
-    log.error({ err: error }, 'Failed to dispatch payment:refunded')
-    return false
-  }
-}
-
 // ==================== Tip Allocation Events ====================
 
 /**
@@ -183,20 +145,3 @@ export async function dispatchGiftCardBalanceChanged(
   }
 }
 
-// ==================== Card Detection Events ====================
-
-/**
- * Dispatch card:detected event for multi-terminal awareness
- *
- * Called when the card listener detects a card tap/insert on a reader.
- * Notifies all POS terminals at this location so they can show awareness
- * (e.g., "Card detected on Terminal 1") and prevent conflicting actions.
- */
-export function dispatchCardDetected(
-  locationId: string,
-  data: { readerId: string; detectionId: string; cardLast4: string }
-): void {
-  emitToLocation(locationId, 'card:detected', data).catch((err) =>
-    log.error({ err }, 'Failed to dispatch card:detected')
-  )
-}

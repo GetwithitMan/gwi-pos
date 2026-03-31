@@ -46,7 +46,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const end = endDate ? new Date(endDate + 'T23:59:59.999Z') : new Date()
 
     // Per-rule performance
-    const perRule = await db.$queryRawUnsafe<RulePerformanceRow[]>(`
+    const perRule = await db.$queryRaw<RulePerformanceRow[]>`
       SELECT
         e."upsellRuleId",
         r."name" as "ruleName",
@@ -56,16 +56,16 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         COALESCE(SUM(e."addedAmount") FILTER (WHERE e."action" = 'accepted'), 0) as "revenueGenerated"
       FROM "UpsellEvent" e
       JOIN "UpsellRule" r ON e."upsellRuleId" = r."id"
-      WHERE e."locationId" = $1
-        AND e."createdAt" >= $2
-        AND e."createdAt" <= $3
+      WHERE e."locationId" = ${locationId}
+        AND e."createdAt" >= ${start}
+        AND e."createdAt" <= ${end}
         AND e."deletedAt" IS NULL
       GROUP BY e."upsellRuleId", r."name"
       ORDER BY "timesAccepted" DESC
-    `, locationId, start, end)
+    `
 
     // Overall metrics
-    const overall = await db.$queryRawUnsafe<OverallRow[]>(`
+    const overall = await db.$queryRaw<OverallRow[]>`
       SELECT
         COUNT(*) FILTER (WHERE "action" = 'shown') as "totalShown",
         COUNT(*) FILTER (WHERE "action" = 'accepted') as "totalAccepted",
@@ -73,11 +73,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         COALESCE(SUM("addedAmount") FILTER (WHERE "action" = 'accepted'), 0) as "totalRevenue",
         COUNT(DISTINCT "orderId") FILTER (WHERE "action" = 'accepted') as "uniqueOrders"
       FROM "UpsellEvent"
-      WHERE "locationId" = $1
-        AND "createdAt" >= $2
-        AND "createdAt" <= $3
+      WHERE "locationId" = ${locationId}
+        AND "createdAt" >= ${start}
+        AND "createdAt" <= ${end}
         AND "deletedAt" IS NULL
-    `, locationId, start, end)
+    `
 
     const overallData = overall[0] || {
       totalShown: BigInt(0),

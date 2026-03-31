@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server'
+import { Prisma } from '@/generated/prisma/client'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -22,26 +23,23 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       return err(auth.error, auth.status)
     }
 
-    // Build date conditions
-    let dateCondition = ''
-    const params: unknown[] = [locationId]
-    let paramIdx = 2
-
+    // Build date conditions using Prisma.sql for safe parameterization
+    const dateConditions: Prisma.Sql[] = []
     if (startDate) {
-      dateCondition += ` AND d."createdAt" >= $${paramIdx}::timestamp`
-      params.push(new Date(startDate))
-      paramIdx++
+      dateConditions.push(Prisma.sql`AND d."createdAt" >= ${new Date(startDate)}::timestamp`)
     }
     if (endDate) {
       const end = new Date(endDate)
       end.setHours(23, 59, 59, 999)
-      dateCondition += ` AND d."createdAt" <= $${paramIdx}::timestamp`
-      params.push(end)
-      paramIdx++
+      dateConditions.push(Prisma.sql`AND d."createdAt" <= ${end}::timestamp`)
     }
 
+    const dateFilter = dateConditions.length > 0
+      ? Prisma.sql`${Prisma.join(dateConditions, ' ')}`
+      : Prisma.empty
+
     // Fetch all deposits in period
-    const deposits = await db.$queryRawUnsafe<Array<{
+    const deposits = await db.$queryRaw<Array<{
       id: string
       reservationId: string
       type: string
@@ -58,18 +56,16 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       reservationDate: Date
       reservationTime: string
       reservationStatus: string
-    }>>(
-      `SELECT d.id, d."reservationId", d.type, d.amount, d."paymentMethod",
+    }>>`
+      SELECT d.id, d."reservationId", d.type, d.amount, d."paymentMethod",
               d."cardLast4", d.status, d."refundedAmount", d."refundedAt", d."refundReason",
               d."createdAt",
               r."guestName", r."partySize", r."reservationDate", r."reservationTime",
               r.status as "reservationStatus"
        FROM "ReservationDeposit" d
        JOIN "Reservation" r ON r.id = d."reservationId"
-       WHERE d."locationId" = $1 AND d."deletedAt" IS NULL ${dateCondition}
-       ORDER BY d."createdAt" DESC`,
-      ...params
-    )
+       WHERE d."locationId" = ${locationId} AND d."deletedAt" IS NULL ${dateFilter}
+       ORDER BY d."createdAt" DESC`
 
     // Calculate summary metrics
     const totalCollected = deposits.reduce((sum, d) =>

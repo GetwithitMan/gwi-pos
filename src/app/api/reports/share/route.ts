@@ -55,17 +55,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const expiresAt = new Date(Date.now() + expirationHours * 60 * 60 * 1000)
 
     // Store in SharedReport table
-    await db.$executeRawUnsafe(
-      `INSERT INTO "SharedReport" ("id", "locationId", "token", "reportType", "parameters", "generatedData", "expiresAt", "createdById")
-       VALUES (gen_random_uuid()::text, $1, $2, $3, $4::jsonb, $5::jsonb, $6, $7)`,
-      locationId,
-      token,
-      reportType,
-      JSON.stringify(parameters || {}),
-      JSON.stringify(generatedData),
-      expiresAt,
-      employeeId
-    )
+    const paramsJson = JSON.stringify(parameters || {})
+    const dataJson = JSON.stringify(generatedData)
+    await db.$executeRaw`
+      INSERT INTO "SharedReport" ("id", "locationId", "token", "reportType", "parameters", "generatedData", "expiresAt", "createdById")
+       VALUES (gen_random_uuid()::text, ${locationId}, ${token}, ${reportType}, ${paramsJson}::jsonb, ${dataJson}::jsonb, ${expiresAt}, ${employeeId})`
 
     // Build the share URL
     const host = request.headers.get('host') || 'localhost:3005'

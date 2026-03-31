@@ -622,38 +622,6 @@ export async function dispatchMenuStructureChanged(
   return doEmit()
 }
 
-/**
- * Dispatch menu:modifier-changed event
- *
- * Called when a modifier group or individual modifier is added/updated/deleted.
- * Notifies all POS terminals and menu builders to refresh modifier data.
- */
-export async function dispatchModifierChanged(
-  locationId: string,
-  payload: {
-    menuItemId: string | null
-    modifierGroupId: string
-  },
-  options: DispatchOptions = {}
-): Promise<boolean> {
-  const doEmit = async () => {
-    try {
-      await emitToLocation(locationId, 'menu:modifier-changed', payload)
-      return true
-    } catch (error) {
-      log.error({ err: error }, 'Failed to dispatch menu:modifier-changed')
-      return false
-    }
-  }
-
-  if (options.async) {
-    doEmit().catch((err) => log.error({ err }, 'Async menu:modifier-changed failed'))
-    return true
-  }
-
-  return doEmit()
-}
-
 // ==================== Waitlist ====================
 
 /**
@@ -903,22 +871,6 @@ export async function dispatchCakeOrderUpdated(
     await emitToLocation(locationId, 'cake-orders:list-changed', { locationId })
   } catch (err) {
     log.error({ err }, 'Failed to dispatch cake-orders:updated')
-  }
-}
-
-/**
- * Dispatch cake-orders:list-changed event (standalone)
- *
- * Lightweight signal for any cake order list mutation that doesn't
- * warrant a specific new/updated event (e.g. bulk operations, deletes).
- */
-export async function dispatchCakeOrdersListChanged(
-  locationId: string
-): Promise<void> {
-  try {
-    await emitToLocation(locationId, 'cake-orders:list-changed', { locationId })
-  } catch (err) {
-    log.error({ err }, 'Failed to dispatch cake-orders:list-changed')
   }
 }
 

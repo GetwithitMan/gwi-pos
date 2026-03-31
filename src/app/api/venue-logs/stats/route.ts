@@ -32,49 +32,39 @@ export const GET = withVenue(async function GET(req: NextRequest) {
     // Run all aggregation queries in parallel
     const [byLevel, bySource, byCategory, trending, totalCount] = await Promise.all([
       // Count by level
-      db.$queryRawUnsafe<CountRow[]>(
-        `SELECT "level" as label, COUNT(*) as count
+      db.$queryRaw<CountRow[]>`
+        SELECT "level" as label, COUNT(*) as count
          FROM "VenueLog"
-         WHERE "locationId" = $1 AND "createdAt" >= $2
+         WHERE "locationId" = ${locationId} AND "createdAt" >= ${since}
          GROUP BY "level"
          ORDER BY count DESC`,
-        locationId, since
-      ),
       // Count by source
-      db.$queryRawUnsafe<CountRow[]>(
-        `SELECT "source" as label, COUNT(*) as count
+      db.$queryRaw<CountRow[]>`
+        SELECT "source" as label, COUNT(*) as count
          FROM "VenueLog"
-         WHERE "locationId" = $1 AND "createdAt" >= $2
+         WHERE "locationId" = ${locationId} AND "createdAt" >= ${since}
          GROUP BY "source"
          ORDER BY count DESC`,
-        locationId, since
-      ),
       // Count by category
-      db.$queryRawUnsafe<CountRow[]>(
-        `SELECT "category" as label, COUNT(*) as count
+      db.$queryRaw<CountRow[]>`
+        SELECT "category" as label, COUNT(*) as count
          FROM "VenueLog"
-         WHERE "locationId" = $1 AND "createdAt" >= $2
+         WHERE "locationId" = ${locationId} AND "createdAt" >= ${since}
          GROUP BY "category"
          ORDER BY count DESC`,
-        locationId, since
-      ),
       // Trending issues: top 10 most frequent messages
-      db.$queryRawUnsafe<TrendRow[]>(
-        `SELECT "message", "level", "source", "category",
+      db.$queryRaw<TrendRow[]>`
+        SELECT "message", "level", "source", "category",
                 COUNT(*) as count, MAX("createdAt") as latest
          FROM "VenueLog"
-         WHERE "locationId" = $1 AND "createdAt" >= $2
+         WHERE "locationId" = ${locationId} AND "createdAt" >= ${since}
          GROUP BY "message", "level", "source", "category"
          ORDER BY count DESC
          LIMIT 10`,
-        locationId, since
-      ),
       // Total log count
-      db.$queryRawUnsafe<{ count: bigint }[]>(
-        `SELECT COUNT(*) as count FROM "VenueLog"
-         WHERE "locationId" = $1 AND "createdAt" >= $2`,
-        locationId, since
-      ),
+      db.$queryRaw<{ count: bigint }[]>`
+        SELECT COUNT(*) as count FROM "VenueLog"
+         WHERE "locationId" = ${locationId} AND "createdAt" >= ${since}`,
     ])
 
     // Convert BigInt to number for JSON serialization
