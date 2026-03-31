@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -38,6 +39,59 @@ import {
 import { createChildLogger } from '@/lib/logger'
 import { err, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-items')
+
+// ── Zod schema for POST /api/orders/[id]/items ──────────────────────
+const AddItemModifierSchema = z.object({
+  modifierId: z.string().min(1),
+  name: z.string().min(1),
+  price: z.number(),
+  preModifier: z.string().nullable().optional(),
+  depth: z.number().int().nonnegative().optional(),
+  spiritTier: z.string().nullable().optional(),
+  linkedBottleProductId: z.string().nullable().optional(),
+  parentModifierId: z.string().nullable().optional(),
+  isCustomEntry: z.boolean().optional(),
+  customEntryName: z.string().nullable().optional(),
+  customEntryPrice: z.number().nullable().optional(),
+  isNoneSelection: z.boolean().optional(),
+  noneShowOnReceipt: z.boolean().optional(),
+  swapTargetName: z.string().nullable().optional(),
+  swapTargetItemId: z.string().nullable().optional(),
+  swapPricingMode: z.string().nullable().optional(),
+  swapEffectivePrice: z.number().nullable().optional(),
+}).passthrough()
+
+const AddItemSchema = z.object({
+  menuItemId: z.string().min(1),
+  name: z.string().min(1),
+  price: z.number(),
+  quantity: z.number().int().positive(),
+  modifiers: z.array(AddItemModifierSchema).optional(),
+  specialNotes: z.string().max(500).nullable().optional(),
+  seatNumber: z.number().int().nonnegative().nullable().optional(),
+  courseNumber: z.number().int().nonnegative().nullable().optional(),
+  isHeld: z.boolean().optional(),
+  soldByWeight: z.boolean().optional(),
+  weight: z.number().nullable().optional(),
+  weightUnit: z.string().nullable().optional(),
+  unitPrice: z.number().nullable().optional(),
+  grossWeight: z.number().nullable().optional(),
+  tareWeight: z.number().nullable().optional(),
+  pricingOptionId: z.string().nullable().optional(),
+  pricingOptionLabel: z.string().nullable().optional(),
+  pourSize: z.string().nullable().optional(),
+  pourMultiplier: z.number().nullable().optional(),
+  correlationId: z.string().optional(),
+  blockTimeMinutes: z.number().nullable().optional(),
+  pizzaConfig: z.record(z.string(), z.unknown()).nullable().optional(),
+  ingredientModifications: z.array(z.record(z.string(), z.unknown())).optional(),
+}).passthrough()
+
+const AddItemsBodySchema = z.object({
+  items: z.array(AddItemSchema).min(1, 'At least one item is required'),
+  idempotencyKey: z.string().optional(),
+  requestingEmployeeId: z.string().optional(),
+}).passthrough()
 
 /**
  * Calculate cost-at-sale for a single order item (fire-and-forget).
@@ -151,7 +205,15 @@ export const POST = withVenue(async function POST(
 ) {
   try {
     const { id: orderId } = await params
-    const body = await request.json()
+    const rawBody = await request.json()
+    const parseResult = AddItemsBodySchema.safeParse(rawBody)
+    if (!parseResult.success) {
+      return apiError.badRequest(
+        `Validation failed: ${parseResult.error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`,
+        ERROR_CODES.VALIDATION_ERROR,
+      )
+    }
+    const body = parseResult.data
     const { items, idempotencyKey, requestingEmployeeId } = body as { items: AddItemInput[], idempotencyKey?: string, requestingEmployeeId?: string }
 
     // Validate items input (count, prices, quantities, weights, modifiers, pizza)

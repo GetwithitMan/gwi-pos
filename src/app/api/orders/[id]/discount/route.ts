@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 import { db } from '@/lib/db'
 import * as OrderRepository from '@/lib/repositories/order-repository'
 import { calculateOrderTotals } from '@/lib/order-calculations'
@@ -23,6 +24,17 @@ import { createChildLogger } from '@/lib/logger'
 import { err, forbidden, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-discount')
 
+// ── Zod schema for POST /api/orders/[id]/discount ───────────────────
+const ApplyDiscountSchema = z.object({
+  discountRuleId: z.string().min(1).optional(),
+  type: z.enum(['percent', 'fixed']).optional(),
+  value: z.number().nonnegative().optional(),
+  name: z.string().max(200).optional(),
+  reason: z.string().max(500).optional(),
+  employeeId: z.string().min(1).optional(),
+  approvedById: z.string().min(1).optional(),
+}).passthrough()
+
 interface ApplyDiscountRequest {
   // Either use a preset discount rule or custom values
   discountRuleId?: string
@@ -42,7 +54,12 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
 ) {
   try {
     const { id: orderId } = await ctx.params
-    const body = await request.json() as ApplyDiscountRequest
+    const rawBody = await request.json()
+    const parseResult = ApplyDiscountSchema.safeParse(rawBody)
+    if (!parseResult.success) {
+      return err(`Validation failed: ${parseResult.error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`)
+    }
+    const body = parseResult.data as ApplyDiscountRequest
 
     // SECURITY: Use authenticated employee ID for permission checks.
     // body.employeeId is still used for business logic (employee discount clock-in check)

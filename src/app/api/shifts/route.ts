@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server'
+import { z } from 'zod'
 import { db } from '@/lib/db'
 import { ShiftStatus } from '@/generated/prisma/client'
 import { emitToLocation } from '@/lib/socket-server'
@@ -10,6 +11,17 @@ import { createChildLogger } from '@/lib/logger'
 import { err, ok } from '@/lib/api-response'
 
 const log = createChildLogger('shifts')
+
+// ── Zod schema for POST /api/shifts ─────────────────────────────────
+const CreateShiftSchema = z.object({
+  locationId: z.string().min(1, 'Location ID is required'),
+  employeeId: z.string().min(1, 'Employee ID is required'),
+  startingCash: z.number().nonnegative().optional(),
+  notes: z.string().max(1000).optional().nullable(),
+  drawerId: z.string().min(1).optional(),
+  workingRoleId: z.string().min(1).optional(),
+  cashHandlingMode: z.enum(['drawer', 'purse', 'none']).optional(),
+}).passthrough()
 
 // GET - List shifts with optional filters
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -85,20 +97,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 // POST - Start a new shift
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
-    const { locationId, employeeId, startingCash, notes, drawerId, workingRoleId, cashHandlingMode } = body as {
-      locationId: string
-      employeeId: string
-      startingCash?: number
-      notes?: string
-      drawerId?: string
-      workingRoleId?: string
-      cashHandlingMode?: string // "drawer" | "purse" | "none"
+    const rawBody = await request.json()
+    const parseResult = CreateShiftSchema.safeParse(rawBody)
+    if (!parseResult.success) {
+      return err(`Validation failed: ${parseResult.error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`)
     }
-
-    if (!locationId || !employeeId) {
-      return err('Location ID and Employee ID are required')
-    }
+    const body = parseResult.data
+    const { locationId, employeeId, startingCash, notes, drawerId, workingRoleId, cashHandlingMode } = body
 
     // Auth check — require manager shift review permission
     const actor = await getActorFromRequest(request)

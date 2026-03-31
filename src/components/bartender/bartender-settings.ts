@@ -120,6 +120,22 @@ export const HOT_MODIFIER_CONFIG: Record<string, { label: string; color: string 
   twist: { label: 'Twist', color: 'bg-amber-500' },
 }
 
+// Spirit tier display config
+export const SPIRIT_TIER_CONFIG: Record<string, { label: string; color: string; hoverColor: string }> = {
+  well: { label: 'Well', color: 'bg-zinc-600', hoverColor: 'hover:bg-zinc-500' },
+  call: { label: 'Call', color: 'bg-sky-600', hoverColor: 'hover:bg-sky-500' },
+  premium: { label: 'Prem', color: 'bg-violet-600', hoverColor: 'hover:bg-violet-500' },
+  top_shelf: { label: 'Top', color: 'bg-amber-500', hoverColor: 'hover:bg-amber-400' },
+}
+
+// Pour size display config - cohesive teal gradient
+export const POUR_SIZE_CONFIG: Record<string, { label: string; short: string; color: string }> = {
+  shot: { label: 'Shot', short: '1x', color: 'bg-teal-700' },
+  double: { label: 'Dbl', short: '2x', color: 'bg-teal-600' },
+  tall: { label: 'Tall', short: '1.5x', color: 'bg-teal-500' },
+  short: { label: 'Shrt', short: '.75x', color: 'bg-teal-800' },
+}
+
 // Local storage keys
 export const getFavoritesKey = (employeeId: string) => `bartender_favorites_${employeeId}`
 export const getCategorySettingsKey = (employeeId: string) => `bartender_category_settings_${employeeId}`

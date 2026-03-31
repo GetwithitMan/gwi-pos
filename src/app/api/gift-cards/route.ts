@@ -1,5 +1,6 @@
 import { randomInt } from 'crypto'
 import { NextRequest } from 'next/server'
+import { z } from 'zod'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth, type AuthenticatedContext } from '@/lib/api-auth-middleware'
@@ -11,6 +12,19 @@ import { allocatePooledGiftCard } from '@/lib/domain/gift-cards/allocate-pooled-
 import { activateGiftCard } from '@/lib/domain/gift-cards/activate-gift-card'
 import { dispatchGiftCardBalanceChanged } from '@/lib/socket-dispatch'
 import { created, err, ok } from '@/lib/api-response'
+
+// ── Zod schema for POST /api/gift-cards ─────────────────────────────
+const CreateGiftCardSchema = z.object({
+  amount: z.number().positive('A positive amount is required'),
+  recipientName: z.string().max(200).optional().nullable(),
+  recipientEmail: z.string().email().optional().nullable(),
+  recipientPhone: z.string().max(30).optional().nullable(),
+  purchaserName: z.string().max(200).optional().nullable(),
+  message: z.string().max(1000).optional().nullable(),
+  orderId: z.string().min(1).optional().nullable(),
+  expiresAt: z.string().optional().nullable(),
+  skipPaymentCheck: z.boolean().optional(),
+}).passthrough()
 
 // Generate a unique gift card number
 function generateCardNumber(): string {
@@ -83,7 +97,13 @@ export const POST = withVenue(withAuth('CUSTOMERS_GIFT_CARDS', async function PO
   ctx: AuthenticatedContext
 ) {
   try {
-    const body = await request.json()
+    const rawBody = await request.json()
+    const parseResult = CreateGiftCardSchema.safeParse(rawBody)
+    if (!parseResult.success) {
+      return err(`Validation failed: ${parseResult.error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`)
+    }
+    const body = parseResult.data
+
     const {
       amount,
       recipientName,
@@ -98,10 +118,6 @@ export const POST = withVenue(withAuth('CUSTOMERS_GIFT_CARDS', async function PO
     // Use verified locationId and employeeId from session
     const locationId = ctx.auth.locationId
     const purchasedById = ctx.auth.employeeId
-
-    if (!amount || amount <= 0) {
-      return err('A positive amount is required')
-    }
 
     // Gift card creation must be tied to a payment (anti-fraud guard)
     const skipPaymentCheck = body.skipPaymentCheck === true
@@ -128,11 +144,11 @@ export const POST = withVenue(withAuth('CUSTOMERS_GIFT_CARDS', async function PO
         }
 
         const activation = await activateGiftCard(tx as any, allocation.cardId as string, amount, ctx.auth.employeeId ?? 'system', {
-          recipientName,
-          recipientEmail,
-          recipientPhone,
-          purchaserName,
-          message,
+          recipientName: recipientName ?? undefined,
+          recipientEmail: recipientEmail ?? undefined,
+          recipientPhone: recipientPhone ?? undefined,
+          purchaserName: purchaserName ?? undefined,
+          message: message ?? undefined,
         })
 
         if (!activation.success) {

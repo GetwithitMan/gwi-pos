@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server'
+import { z } from 'zod'
 import { db } from '@/lib/db'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
@@ -12,6 +13,13 @@ import { createChildLogger } from '@/lib/logger'
 import { err, notFound, ok } from '@/lib/api-response'
 
 const log = createChildLogger('orders.id.pre-auth')
+
+// ── Zod schema for POST /api/orders/[id]/pre-auth ───────────────────
+const PreAuthSchema = z.object({
+  readerId: z.string().min(1, 'readerId is required'),
+  employeeId: z.string().min(1, 'employeeId is required'),
+  amount: z.number().positive().optional(),
+}).passthrough()
 
 /**
  * POST /api/orders/[id]/pre-auth
@@ -31,16 +39,12 @@ export const POST = withVenue(withAuth(async function POST(
 ) {
   try {
     const { id: orderId } = await params
-    const body = await request.json().catch(() => ({}))
-    const { readerId, employeeId, amount } = body as {
-      readerId?: string
-      employeeId?: string
-      amount?: number
+    const rawBody = await request.json().catch(() => ({}))
+    const parseResult = PreAuthSchema.safeParse(rawBody)
+    if (!parseResult.success) {
+      return err(`Validation failed: ${parseResult.error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`)
     }
-
-    if (!readerId || !employeeId) {
-      return err('Missing required fields: readerId, employeeId')
-    }
+    const { readerId, employeeId, amount } = parseResult.data
 
     const order = await db.order.findFirst({
       where: { id: orderId, deletedAt: null },

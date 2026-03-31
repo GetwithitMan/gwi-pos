@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
-import { formatCurrency } from '@/lib/utils'
+import { formatCurrency, formatDate } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { useReportAutoRefresh } from '@/hooks/useReportAutoRefresh'
 
@@ -75,14 +75,6 @@ const REASON_LABELS: Record<string, string> = {
 
 function formatReason(reason: string): string {
   return REASON_LABELS[reason] || reason.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
-}
-
-function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString([], {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  })
 }
 
 function exportWasteCSV(

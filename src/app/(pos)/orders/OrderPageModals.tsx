@@ -750,7 +750,7 @@ export function OrderPageModals(props: OrderPageModalsProps) {
             parentOrderId={payAllSplitsParentId}
             total={payAllSplitsTotal}
             cardTotal={payAllSplitsCardTotal !== payAllSplitsTotal ? payAllSplitsCardTotal : undefined}
-            unpaidCount={orderSplitChips.filter(c => !c.isPaid).length}
+            unpaidCount={orderSplitChips.filter((c: { isPaid: boolean }) => !c.isPaid).length}
             terminalId={terminalId}
             employeeId={employee.id}
             locationId={employee?.location?.id}

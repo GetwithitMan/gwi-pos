@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 import { db } from '@/lib/db'
 import * as OrderRepository from '@/lib/repositories/order-repository'
 import * as OrderItemRepository from '@/lib/repositories/order-item-repository'
@@ -43,6 +44,19 @@ import { createChildLogger } from '@/lib/logger'
 import { err, forbidden, notFound, ok, unauthorized } from '@/lib/api-response'
 const log = createChildLogger('orders-comp-void')
 
+// ── Zod schema for POST /api/orders/[id]/comp-void ──────────────────
+const CompVoidSchema = z.object({
+  action: z.enum(['comp', 'void']),
+  itemId: z.string().min(1, 'Item ID is required'),
+  reason: z.string().min(1, 'Reason is required').max(500),
+  employeeId: z.string().min(1, 'Employee ID is required'),
+  wasMade: z.boolean().optional(),
+  approvedById: z.string().min(1).optional(),
+  managerPinHash: z.string().optional(),
+  remoteApprovalCode: z.string().length(6).optional(),
+  version: z.number().int().nonnegative().optional(),
+}).passthrough()
+
 interface CompVoidRequest {
   action: 'comp' | 'void'
   itemId: string
@@ -62,17 +76,18 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
 ) {
   try {
     const { id: orderId } = await ctx.params
-    const body = await request.json() as CompVoidRequest
+    const rawBody = await request.json()
+    const parseResult = CompVoidSchema.safeParse(rawBody)
+    if (!parseResult.success) {
+      return err(`Validation failed: ${parseResult.error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`)
+    }
+    const body = parseResult.data as CompVoidRequest
 
     const { action, itemId, reason, wasMade, approvedById, managerPinHash, remoteApprovalCode, version } = body
     // SECURITY: Use authenticated employee ID for the performer, not body.employeeId.
     // body.employeeId is accepted as a fallback for cellular terminals (which may have
     // employeeId in the token but also send it in body for legacy compatibility).
     const employeeId = ctx.auth.employeeId || body.employeeId
-
-    if (!action || !itemId || !reason || !employeeId) {
-      return err('Action, item ID, reason, and employee ID are required')
-    }
 
     // Cellular terminal: require manager PIN re-authentication for comp/void
     // (only when approvedById is provided and not using remote approval)

@@ -1,5 +1,5 @@
 import PDFDocument from 'pdfkit'
-import { formatCurrency } from '@/lib/utils'
+import { formatCurrency, formatDate } from '@/lib/utils'
 
 export interface PayStubData {
   // Company info
@@ -328,11 +328,3 @@ export function generatePayStubPDF(data: PayStubData): Promise<Buffer> {
   })
 }
 
-function formatDate(dateStr: string): string {
-  const date = new Date(dateStr)
-  return date.toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  })
-}

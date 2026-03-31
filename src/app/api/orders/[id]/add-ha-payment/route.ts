@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server'
+import { z } from 'zod'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate } from '@/lib/socket-dispatch'
@@ -12,6 +13,13 @@ import { createChildLogger } from '@/lib/logger'
 import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-add-ha-payment')
 
+// ── Zod schema for POST /api/orders/[id]/add-ha-payment ─────────────
+const AddHaPaymentSchema = z.object({
+  houseAccountId: z.string().min(1, 'houseAccountId is required'),
+  amount: z.number().positive('amount must be a positive number'),
+  employeeId: z.string().min(1).optional(),
+}).passthrough()
+
 // POST - Add a house account balance payment as an order line item
 export const POST = withVenue(async function POST(
   request: NextRequest,
@@ -20,12 +28,13 @@ export const POST = withVenue(async function POST(
   const { id: orderId } = await params
 
   try {
-    const body = await request.json()
-    const { houseAccountId, amount, employeeId } = body as {
-      houseAccountId?: string
-      amount?: number
-      employeeId?: string
+    const rawBody = await request.json()
+    const parseResult = AddHaPaymentSchema.safeParse(rawBody)
+    if (!parseResult.success) {
+      return err(`Validation failed: ${parseResult.error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`)
     }
+    const body = parseResult.data
+    const { houseAccountId, amount, employeeId } = body
 
     // Auth check
     const actor = await getActorFromRequest(request)
@@ -42,14 +51,6 @@ export const POST = withVenue(async function POST(
     if (haLocationId) {
       const auth = await requirePermission(resolvedEmployeeId, haLocationId, PERMISSIONS.POS_ACCESS)
       if (!auth.authorized) return err(auth.error, auth.status)
-    }
-
-    if (!houseAccountId) {
-      return err('houseAccountId is required')
-    }
-
-    if (!amount || amount <= 0) {
-      return err('amount must be a positive number')
     }
 
     // Validate the order exists and fetch current totals under FOR UPDATE lock

@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { sendEmail } from '@/lib/email-service'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
-import { formatCurrency } from '@/lib/utils'
+import { formatCurrency, formatDate, formatTime } from '@/lib/utils'
 import { err, forbidden, notFound, ok } from '@/lib/api-response'
 
 function escapeHtml(text: string): string {
@@ -15,21 +15,6 @@ function escapeHtml(text: string): string {
     "'": '&#039;',
   }
   return text.replace(/[&<>"']/g, (m) => map[m])
-}
-
-function formatDate(date: Date): string {
-  return date.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  })
-}
-
-function formatTime(date: Date): string {
-  return date.toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-  })
 }
 
 // Payment method display labels
