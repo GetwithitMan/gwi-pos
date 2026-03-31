@@ -372,6 +372,9 @@ async function fetchOperationalState(locationId: string) {
       select: {
         id: true, name: true, sectionId: true, locationId: true,
         capacity: true, status: true,
+        posX: true, posY: true, width: true, height: true,
+        shape: true, rotation: true, seatPattern: true,
+        abbreviation: true, isActive: true,
         deletedAt: true, createdAt: true, updatedAt: true,
       },
     }),
