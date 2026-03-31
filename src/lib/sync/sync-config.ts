@@ -329,12 +329,12 @@ export function getSkipFields(model: string): Set<string> | undefined {
 }
 
 export const UPSTREAM_INTERVAL_MS = parseInt(
-  process.env.SYNC_UPSTREAM_INTERVAL_MS || '5000',
+  process.env.SYNC_UPSTREAM_INTERVAL_MS || '3000',
   10
 )
 
 export const DOWNSTREAM_INTERVAL_MS = parseInt(
-  process.env.SYNC_DOWNSTREAM_INTERVAL_MS || '5000',
+  process.env.SYNC_DOWNSTREAM_INTERVAL_MS || '3000',
   10
 )
 
