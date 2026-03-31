@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
@@ -32,6 +33,14 @@ const log = createChildLogger('orders-seating')
  */
 
 type SeatTimestamps = Record<string, string>
+
+const SeatActionSchema = z.object({
+  action: z.enum(['INSERT', 'REMOVE', 'CLEANUP', 'RESET_TABLE'], { error: 'action is required' }),
+  position: z.number().int().min(1).optional(),
+  seatVersion: z.number().int().optional(),
+  tableId: z.string().optional(),
+  employeeId: z.string().optional(),
+})
 
 interface SeatAction {
   action: 'INSERT' | 'REMOVE' | 'CLEANUP' | 'RESET_TABLE'
@@ -225,19 +234,20 @@ export const POST = withVenue(async function POST(
 ) {
   try {
     const { id: orderId } = await params
-    const body: SeatAction = await request.json()
+    const rawBody = await request.json()
+    const parseResult = SeatActionSchema.safeParse(rawBody)
+    if (!parseResult.success) {
+      return err(`Validation failed: ${parseResult.error.issues.map(i => i.message).join(', ')}`)
+    }
+    const body = parseResult.data
     const { action, position, seatVersion, tableId: resetTableId } = body
 
     // HA cellular sync — detect mutation origin for downstream sync
     const isCellularSeating = request.headers.get('x-cellular-authenticated') === '1'
     const mutationOrigin = isCellularSeating ? 'cloud' : 'local'
 
-    if (!action) {
-      return err('Action is required')
-    }
-
     // Resolve employeeId from body or session
-    const employeeId = (body as any).employeeId || (await getActorFromRequest(request)).employeeId
+    const employeeId = body.employeeId || (await getActorFromRequest(request)).employeeId
 
     // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
     let orderLocationId = getRequestLocationId()

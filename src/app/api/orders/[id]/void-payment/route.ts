@@ -111,7 +111,7 @@ export const POST = withVenue(async function POST(
     // Phase 1: Read order + validate under FOR UPDATE lock on Order row.
     // This contends with pay/route.ts which also holds FOR UPDATE on Order.
     const lockedRead = await db.$transaction(async (tx) => {
-      await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', orderId)
+      await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${orderId} FOR UPDATE`
 
       const order = await OrderRepository.getOrderByIdWithInclude(orderId, voidLocationId, {
         payments: {
@@ -296,7 +296,7 @@ export const POST = withVenue(async function POST(
     try {
       voidedPayment = await db.$transaction(async (tx) => {
         // Acquire row locks on Order + Payment + synchronous replication for void durability
-        await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', orderId)
+        await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${orderId} FOR UPDATE`
         await tx.$queryRaw`SELECT id FROM "Payment" WHERE id = ${paymentId} FOR UPDATE`
         await enableSyncReplication(tx)
 
@@ -555,12 +555,11 @@ export const POST = withVenue(async function POST(
         if (voidAmount <= 0) return
 
         // Find the GiftCardTransaction for this payment via orderId + type='redemption'
-        const gcTxns = await db.$queryRawUnsafe<Array<{ giftCardId: string }>>(
-          `SELECT DISTINCT "giftCardId" FROM "GiftCardTransaction"
-           WHERE "orderId" = $1 AND "type" = 'redemption' AND "deletedAt" IS NULL
-           LIMIT 1`,
-          orderId,
-        )
+        const gcTxns = await db.$queryRaw<Array<{ giftCardId: string }>>`
+          SELECT DISTINCT "giftCardId" FROM "GiftCardTransaction"
+           WHERE "orderId" = ${orderId} AND "type" = 'redemption' AND "deletedAt" IS NULL
+           LIMIT 1
+        `
 
         if (gcTxns.length === 0) {
           console.warn(`[void-payment] Gift card payment voided but no GiftCardTransaction found for orderId=${orderId}`)
@@ -572,45 +571,36 @@ export const POST = withVenue(async function POST(
         // Lock the gift card row and restore balance
         let newBalance = 0
         await db.$transaction(async (tx) => {
-          await tx.$queryRawUnsafe('SELECT id FROM "GiftCard" WHERE id = $1 FOR UPDATE', giftCardId)
+          await tx.$queryRaw`SELECT id FROM "GiftCard" WHERE id = ${giftCardId} FOR UPDATE`
 
-          const gcRows = await tx.$queryRawUnsafe<Array<{ currentBalance: unknown; status: string }>>(
-            `SELECT "currentBalance", "status" FROM "GiftCard" WHERE "id" = $1`,
-            giftCardId,
-          )
+          const gcRows = await tx.$queryRaw<Array<{ currentBalance: unknown; status: string }>>`
+            SELECT "currentBalance", "status" FROM "GiftCard" WHERE "id" = ${giftCardId}
+          `
           if (gcRows.length === 0) return
 
           const currentBalance = Number(gcRows[0].currentBalance)
           newBalance = currentBalance + voidAmount
 
-          await tx.$executeRawUnsafe(
-            `UPDATE "GiftCard"
-             SET "currentBalance" = $2, "status" = 'active', "updatedAt" = NOW()
-             WHERE "id" = $1`,
-            giftCardId,
-            newBalance,
-          )
+          await tx.$executeRaw`
+            UPDATE "GiftCard"
+             SET "currentBalance" = ${newBalance}, "status" = 'active', "updatedAt" = NOW()
+             WHERE "id" = ${giftCardId}
+          `
 
-          await tx.$executeRawUnsafe(
-            `INSERT INTO "GiftCardTransaction" (
+          const gcTxnId = crypto.randomUUID()
+          const gcMgrId = managerId || null
+          const gcNotes = `Payment voided — $${voidAmount.toFixed(2)} restored to gift card`
+          await tx.$executeRaw`
+            INSERT INTO "GiftCardTransaction" (
               "id", "locationId", "giftCardId", "type", "amount",
               "balanceBefore", "balanceAfter", "orderId", "employeeId", "notes",
               "createdAt", "updatedAt"
             ) VALUES (
-              $1, $2, $3, 'refund', $4,
-              $5, $6, $7, $8, $9,
+              ${gcTxnId}, ${order.locationId}, ${giftCardId}, 'refund', ${voidAmount},
+              ${currentBalance}, ${newBalance}, ${orderId}, ${gcMgrId}, ${gcNotes},
               NOW(), NOW()
-            )`,
-            crypto.randomUUID(),
-            order.locationId,
-            giftCardId,
-            voidAmount,
-            currentBalance,
-            newBalance,
-            orderId,
-            managerId || null,
-            `Payment voided — $${voidAmount.toFixed(2)} restored to gift card`,
-          )
+            )
+          `
         }, { timeout: 10000 })
 
         console.log(`[void-payment] Gift card ${giftCardId} balance restored by $${voidAmount.toFixed(2)} for orderId=${orderId}`)
@@ -628,39 +618,36 @@ export const POST = withVenue(async function POST(
         if (!locSettings.loyalty.enabled) return
 
         // Find all 'earn' loyalty transactions for this order
-        const earnTxns = await db.$queryRawUnsafe<Array<{ points: unknown }>>(
-          `SELECT "points" FROM "LoyaltyTransaction" WHERE "orderId" = $1 AND "type" = 'earn'`,
-          orderId,
-        ).catch(() => [] as Array<{ points: unknown }>)
+        const earnTxns = await db.$queryRaw<Array<{ points: unknown }>>`
+          SELECT "points" FROM "LoyaltyTransaction" WHERE "orderId" = ${orderId} AND "type" = 'earn'
+        `.catch(() => [] as Array<{ points: unknown }>)
 
         const earnedPoints = earnTxns.reduce((sum, t) => sum + (Number(t.points) || 0), 0)
         if (earnedPoints <= 0) return
 
         // Decrement customer loyalty points and stats
-        await db.$executeRawUnsafe(
-          `UPDATE "Customer" SET
-            "loyaltyPoints" = GREATEST(0, "loyaltyPoints" - $2),
-            "lifetimePoints" = GREATEST(0, "lifetimePoints" - $2),
-            "totalSpent" = GREATEST(0, "totalSpent" - $3),
+        const voidTotalAmount = Number(payment.totalAmount)
+        await db.$executeRaw`
+          UPDATE "Customer" SET
+            "loyaltyPoints" = GREATEST(0, "loyaltyPoints" - ${earnedPoints}),
+            "lifetimePoints" = GREATEST(0, "lifetimePoints" - ${earnedPoints}),
+            "totalSpent" = GREATEST(0, "totalSpent" - ${voidTotalAmount}),
             "totalOrders" = GREATEST(0, "totalOrders" - 1),
             "updatedAt" = NOW()
-          WHERE "id" = $1`,
-          order.customerId,
-          earnedPoints,
-          Number(payment.totalAmount),
-        )
+          WHERE "id" = ${order.customerId}
+        `
 
         // Create reversal LoyaltyTransaction
         const txnId = crypto.randomUUID()
-        await db.$executeRawUnsafe(
-          `INSERT INTO "LoyaltyTransaction" (
+        const loyaltyDesc = `Reversed: payment voided on order #${order.orderNumber}`
+        const loyaltyMgrId = managerId || null
+        const negEarnedPoints = -earnedPoints
+        await db.$executeRaw`
+          INSERT INTO "LoyaltyTransaction" (
             "id", "customerId", "locationId", "orderId", "type", "points",
             "balanceBefore", "balanceAfter", "description", "employeeId", "createdAt"
-          ) VALUES ($1, $2, $3, $4, 'adjust', $5, 0, 0, $6, $7, NOW())`,
-          txnId, order.customerId, order.locationId, orderId, -earnedPoints,
-          `Reversed: payment voided on order #${order.orderNumber}`,
-          managerId || null,
-        )
+          ) VALUES (${txnId}, ${order.customerId}, ${order.locationId}, ${orderId}, 'adjust', ${negEarnedPoints}, 0, 0, ${loyaltyDesc}, ${loyaltyMgrId}, NOW())
+        `
       } catch (caughtErr) {
         console.error('[void-payment] Loyalty point reversal failed:', err)
       }

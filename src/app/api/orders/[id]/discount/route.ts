@@ -89,9 +89,9 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
 
     const result = await db.$transaction(async (tx) => {
       // Lock the Order row to prevent concurrent discount applications from bypassing stacking/cap guards
-      const [lockedRow] = await tx.$queryRawUnsafe<Array<{ id: string; locationId: string }>>(
-        'SELECT id, "locationId" FROM "Order" WHERE id = $1 FOR UPDATE', orderId
-      )
+      const [lockedRow] = await tx.$queryRaw<Array<{ id: string; locationId: string }>>`
+        SELECT id, "locationId" FROM "Order" WHERE id = ${orderId} FOR UPDATE
+      `
       if (!lockedRow) {
         return notFound('Order not found')
       }
@@ -710,9 +710,9 @@ export const DELETE = withVenue(withAuth({ allowCellular: true }, async function
 
     const result = await db.$transaction(async (tx) => {
       // Lock the Order row to prevent concurrent discount removals from producing incorrect totals
-      const [lockedRowDel] = await tx.$queryRawUnsafe<Array<{ id: string; locationId: string }>>(
-        'SELECT id, "locationId" FROM "Order" WHERE id = $1 FOR UPDATE', orderId
-      )
+      const [lockedRowDel] = await tx.$queryRaw<Array<{ id: string; locationId: string }>>`
+        SELECT id, "locationId" FROM "Order" WHERE id = ${orderId} FOR UPDATE
+      `
       if (!lockedRowDel) {
         return notFound('Order not found')
       }

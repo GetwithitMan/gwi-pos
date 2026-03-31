@@ -17,7 +17,8 @@ export interface MenuItemButtonMenuItem {
   name: string
   price: number
   categoryId: string
-  hasModifiers: boolean
+  categoryType?: string
+  hasModifiers?: boolean
   itemType?: string
   pourSizes?: Record<string, any>
   defaultPourSize?: string | null

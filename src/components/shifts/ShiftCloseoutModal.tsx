@@ -9,6 +9,9 @@ import { hasPermission, PERMISSIONS } from '@/lib/auth-utils'
 import { toast } from '@/stores/toast-store'
 import { Modal } from '@/components/ui/modal'
 import { ShiftHandoffModal } from './ShiftHandoffModal'
+import { ShiftCloseoutDrawer } from './ShiftCloseoutDrawer'
+import { ShiftCloseoutSummary } from './ShiftCloseoutSummary'
+import { ShiftCloseoutTips } from './ShiftCloseoutTips'
 
 interface ShiftSummary {
   totalSales: number
@@ -107,20 +110,6 @@ interface ShiftCloseoutModalProps {
   permissions?: string[]
   cashHandlingMode?: string
 }
-
-// Denomination structure for cash counting
-const DENOMINATIONS = [
-  { label: '$100', value: 100 },
-  { label: '$50', value: 50 },
-  { label: '$20', value: 20 },
-  { label: '$10', value: 10 },
-  { label: '$5', value: 5 },
-  { label: '$1', value: 1 },
-  { label: '25¢', value: 0.25 },
-  { label: '10¢', value: 0.10 },
-  { label: '5¢', value: 0.05 },
-  { label: '1¢', value: 0.01 },
-]
 
 export function ShiftCloseoutModal({
   isOpen,
@@ -601,269 +590,36 @@ export function ShiftCloseoutModal({
             <>
               {/* Step 1: Blind Cash Count (default for all employees) */}
               {step === 'count' && (
-                <div className="space-y-4">
-                  {/* Blind Mode Indicator */}
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center gap-2">
-                    <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
-                    </svg>
-                    <div className="flex-1">
-                      <span className="text-sm font-medium text-blue-800">Blind Count Mode</span>
-                      <p className="text-xs text-blue-600">Count your {mode === 'purse' ? 'purse' : 'drawer'} before seeing the expected amount</p>
-                    </div>
-                    {canSeeExpectedFirst && !viewedSummaryFirst && (
-                      <button
-                        onClick={handleViewSummaryFirst}
-                        className="text-xs text-blue-600 hover:underline"
-                      >
-                        Manager: View Summary First
-                      </button>
-                    )}
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-semibold text-lg">{mode === 'purse' ? 'Count Your Purse' : 'Count Your Drawer'}</h3>
-                    {mode !== 'purse' && (
-                      <button
-                        className="text-sm text-blue-600 hover:underline"
-                        onClick={() => setUseManual(!useManual)}
-                      >
-                        {useManual ? 'Count by denomination' : 'Enter total manually'}
-                      </button>
-                    )}
-                  </div>
-
-                  {useManual ? (
-                    <div>
-                      <label className="block text-sm text-gray-600 mb-2">
-                        Enter total cash in {mode === 'purse' ? 'purse' : 'drawer'}
-                      </label>
-                      <div className="relative">
-                        <span className="absolute left-3 top-3 text-gray-700 text-xl">$</span>
-                        <input
-                          type="number"
-                          value={manualTotal}
-                          onChange={(e) => setManualTotal(e.target.value)}
-                          className="w-full pl-8 pr-4 py-3 text-2xl border rounded-lg"
-                          placeholder="0.00"
-                          step="0.01"
-                          min="0"
-                          autoFocus
-                        />
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-2 gap-2">
-                      {DENOMINATIONS.map(({ label, value }) => (
-                        <div key={value} className="flex items-center gap-2">
-                          <span className="w-12 text-right font-medium">{label}</span>
-                          <span className="text-gray-400">×</span>
-                          <input
-                            type="number"
-                            min="0"
-                            value={counts[value] || ''}
-                            onChange={(e) => handleCountChange(value, e.target.value)}
-                            className="w-20 px-2 py-1 border rounded text-center"
-                            placeholder="0"
-                          />
-                          <span className="text-gray-700 text-sm">
-                            = {formatCurrency((counts[value] || 0) * value)}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Running total - blind mode doesn't show expected */}
-                  <Card className="p-4 bg-gray-50">
-                    <div className="text-center">
-                      <div className="text-sm text-gray-700">Total Counted</div>
-                      <div className="text-3xl font-bold">{formatCurrency(actualCash)}</div>
-                    </div>
-                  </Card>
-
-                  <div>
-                    <label className="block text-sm text-gray-600 mb-2">
-                      Tips to Declare
-                    </label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-2 text-gray-700">$</span>
-                      <input
-                        type="number"
-                        value={tipsDeclared}
-                        onChange={(e) => setTipsDeclared(e.target.value)}
-                        className="w-full pl-8 pr-4 py-2 border rounded-lg"
-                        placeholder="0.00"
-                        step="0.01"
-                        min="0"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm text-gray-600 mb-2">
-                      Notes (optional)
-                    </label>
-                    <textarea
-                      value={notes}
-                      onChange={(e) => setNotes(e.target.value)}
-                      className="w-full px-3 py-2 border rounded-lg"
-                      rows={2}
-                      placeholder="Any notes about the shift..."
-                    />
-                  </div>
-
-                  <Button
-                    variant="primary"
-                    className="w-full"
-                    onClick={handleSubmitBlindCount}
-                    disabled={actualCash === 0 || isLoading}
-                  >
-                    {isLoading ? 'Processing...' : 'Submit Count & Reveal →'}
-                  </Button>
-                </div>
+                <ShiftCloseoutDrawer
+                  mode={mode}
+                  canSeeExpectedFirst={canSeeExpectedFirst}
+                  viewedSummaryFirst={viewedSummaryFirst}
+                  counts={counts}
+                  manualTotal={manualTotal}
+                  useManual={useManual}
+                  tipsDeclared={tipsDeclared}
+                  notes={notes}
+                  actualCash={actualCash}
+                  isLoading={isLoading}
+                  onCountChange={handleCountChange}
+                  onManualTotalChange={setManualTotal}
+                  onUseManualToggle={() => setUseManual(!useManual)}
+                  onTipsDeclaredChange={setTipsDeclared}
+                  onNotesChange={setNotes}
+                  onSubmitBlindCount={handleSubmitBlindCount}
+                  onViewSummaryFirst={handleViewSummaryFirst}
+                />
               )}
 
               {/* Manager View Summary First (optional step for managers) */}
               {step === 'summary' && summary && (
-                <div className="space-y-4">
-                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 flex items-center gap-2">
-                    <svg className="w-5 h-5 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                    </svg>
-                    <span className="text-sm font-medium text-yellow-800">Manager Override - Non-Blind Mode</span>
-                  </div>
-
-                  <h3 className="font-semibold text-lg">Shift Summary</h3>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <Card className="p-4">
-                      <div className="text-sm text-gray-700">Total Sales</div>
-                      <div className="text-2xl font-bold">{formatCurrency(summary.totalSales)}</div>
-                    </Card>
-                    <Card className="p-4">
-                      <div className="text-sm text-gray-700">Orders</div>
-                      <div className="text-2xl font-bold">{summary.orderCount}</div>
-                    </Card>
-                  </div>
-
-                  <Card className="p-4">
-                    <div className="text-sm font-medium mb-2">Payment Breakdown</div>
-                    <div className="space-y-2">
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">Cash Sales</span>
-                        <span className="font-medium">{formatCurrency(summary.cashSales)}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">Card Sales</span>
-                        <span className="font-medium">{formatCurrency(summary.cardSales)}</span>
-                      </div>
-                      <div className="flex justify-between border-t pt-2">
-                        <span className="text-gray-600">Tips Collected</span>
-                        <span className="font-medium">{formatCurrency(summary.totalTips)}</span>
-                      </div>
-                    </div>
-                  </Card>
-
-                  {/* Cash Drawer breakdown — only visible to managers with full cash drawer access */}
-                  {canSeeExpectedFirst && (
-                  <Card className="p-4 bg-blue-50">
-                    <div className="text-sm font-medium mb-2">Cash Drawer</div>
-                    <div className="space-y-2">
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">Starting Cash</span>
-                        <span className="font-medium">{formatCurrency(shift.startingCash)}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">Cash Received</span>
-                        <span className="font-medium text-green-600">+{formatCurrency(summary.cashReceived)}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">Change Given</span>
-                        <span className="font-medium text-red-600">-{formatCurrency(summary.changeGiven)}</span>
-                      </div>
-                      {(summary.paidIn > 0 || summary.paidOut > 0) && (
-                        <>
-                          {summary.paidIn > 0 && (
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">Paid In</span>
-                              <span className="font-medium text-green-600">+{formatCurrency(summary.paidIn)}</span>
-                            </div>
-                          )}
-                          {summary.paidOut > 0 && (
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">Paid Out / Drops</span>
-                              <span className="font-medium text-red-600">-{formatCurrency(summary.paidOut)}</span>
-                            </div>
-                          )}
-                        </>
-                      )}
-                      <div className="flex justify-between border-t pt-2 font-bold">
-                        <span>Expected in Drawer</span>
-                        <span>{formatCurrency(expectedCash)}</span>
-                      </div>
-                    </div>
-                  </Card>
-                  )}
-
-                  {(summary.voidCount > 0 || summary.compCount > 0) && (
-                    <Card className="p-4 bg-yellow-50">
-                      <div className="text-sm font-medium mb-2">Adjustments</div>
-                      <div className="space-y-1">
-                        {summary.voidCount > 0 && (
-                          <div className="flex justify-between text-sm">
-                            <span>Voids</span>
-                            <span>{summary.voidCount}</span>
-                          </div>
-                        )}
-                        {summary.compCount > 0 && (
-                          <div className="flex justify-between text-sm">
-                            <span>Comps</span>
-                            <span>{summary.compCount}</span>
-                          </div>
-                        )}
-                      </div>
-                    </Card>
-                  )}
-
-                  {((summary.safPendingCount ?? 0) > 0 || (summary.safFailedCount ?? 0) > 0) && (
-                    <Card className={`p-4 ${(summary.safFailedCount ?? 0) > 0 ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200'}`}>
-                      <div className="text-sm font-medium mb-2">Offline Card Payments (SAF)</div>
-                      <div className="space-y-1">
-                        {(summary.safPendingCount ?? 0) > 0 && (
-                          <div className="flex justify-between text-sm">
-                            <span className="text-amber-700">Pending Upload</span>
-                            <span className="font-medium text-amber-700">
-                              {summary.safPendingCount} — {formatCurrency(summary.safPendingTotal ?? 0)}
-                            </span>
-                          </div>
-                        )}
-                        {(summary.safFailedCount ?? 0) > 0 && (
-                          <div className="flex justify-between text-sm">
-                            <span className="text-red-700">Failed / Needs Attention</span>
-                            <span className="font-medium text-red-700">
-                              {summary.safFailedCount} — {formatCurrency(summary.safFailedTotal ?? 0)}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                      <p className="text-xs text-gray-600 mt-2">
-                        {(summary.safFailedCount ?? 0) > 0
-                          ? 'Failed uploads need manager attention before closing shift.'
-                          : 'These payments were approved offline and will upload when internet returns.'}
-                      </p>
-                    </Card>
-                  )}
-
-                  <Button
-                    variant="primary"
-                    className="w-full"
-                    onClick={() => setStep('count')}
-                  >
-                    Count Drawer →
-                  </Button>
-                </div>
+                <ShiftCloseoutSummary
+                  summary={summary}
+                  startingCash={shift.startingCash}
+                  expectedCash={expectedCash}
+                  canSeeExpectedFirst={canSeeExpectedFirst}
+                  onCountDrawer={() => setStep('count')}
+                />
               )}
 
               {/* Step 2: Reveal (after blind count submission) */}
@@ -1037,219 +793,32 @@ export function ShiftCloseoutModal({
 
               {/* Step 3: Tip Distribution */}
               {step === 'tips' && (
-                <div className="space-y-4">
-                  <h3 className="font-semibold text-lg">Tip Distribution</h3>
-
-                  {/* Commission Earned (if any) */}
-                  {summary && summary.totalCommission > 0 && (
-                    <Card className="p-4 bg-purple-50">
-                      <div className="flex justify-between items-center">
-                        <div>
-                          <span className="text-gray-700">Commission Earned</span>
-                          <p className="text-xs text-gray-600">Added to payroll</p>
-                        </div>
-                        <span className="text-2xl font-bold text-purple-600">
-                          {formatCurrency(summary.totalCommission)}
-                        </span>
-                      </div>
-                    </Card>
-                  )}
-
-                  {/* Gross Tips */}
-                  <Card className="p-4 bg-green-50">
-                    <div className="flex justify-between items-center">
-                      <span className="text-gray-700">Gross Tips Collected</span>
-                      <span className="text-2xl font-bold text-green-600">
-                        {formatCurrency(grossTips)}
-                      </span>
-                    </div>
-                  </Card>
-
-                  {/* CC Processing Fee (shown only when enabled and > $0) */}
-                  {ccFeeDeducted > 0 && (
-                    <Card className="p-4 bg-red-50 border-red-200">
-                      <div className="flex justify-between items-center">
-                        <div>
-                          <span className="text-gray-700">CC Processing Fee ({tipBankSettings?.ccFeePercent}%)</span>
-                          <p className="text-xs text-gray-600">Deducted from credit card tips</p>
-                        </div>
-                        <span className="text-lg font-bold text-red-600">
-                          -{formatCurrency(ccFeeDeducted)}
-                        </span>
-                      </div>
-                    </Card>
-                  )}
-
-                  {/* Automatic Tip-Outs */}
-                  {calculatedTipOuts.length > 0 && (
-                    <Card className="p-4">
-                      <h4 className="font-medium text-gray-900 mb-3">
-                        Automatic Tip-Outs (from rules)
-                      </h4>
-                      <div className="space-y-2">
-                        {calculatedTipOuts.map((tipOut, index) => (
-                          <div key={index} className="py-2 border-b last:border-0">
-                            <div className="flex justify-between items-center">
-                              <div>
-                                <span className="font-medium">{tipOut.toRoleName}</span>
-                                {tipOut.basisType === 'tips_earned' ? (
-                                  <span className="text-sm text-gray-600 ml-2">({tipOut.percentage}%)</span>
-                                ) : (
-                                  <span className="text-sm text-gray-600 ml-2">
-                                    ({tipOut.percentage}% of {formatCurrency(tipOut.basisAmount)} {tipOut.basisLabel})
-                                  </span>
-                                )}
-                              </div>
-                              <span className="text-red-600 font-medium">-{formatCurrency(tipOut.amount)}</span>
-                            </div>
-                            {tipOut.wasCapped && tipOut.uncappedAmount != null && (
-                              <div className="text-xs text-amber-600 mt-1 ml-1">
-                                Capped at {tipOut.maxPercentage}% of tips (was {formatCurrency(tipOut.uncappedAmount)})
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </Card>
-                  )}
-
-                  {calculatedTipOuts.length === 0 && (
-                    <div className="text-sm text-gray-700 text-center py-2">
-                      No automatic tip-out rules configured for your role.
-                    </div>
-                  )}
-
-                  {/* Custom Tip Shares */}
-                  <Card className="p-4">
-                    <h4 className="font-medium text-gray-900 mb-3">
-                      Custom Tip Shares
-                    </h4>
-
-                    {/* Existing custom shares */}
-                    {customTipShares.length > 0 && (
-                      <div className="space-y-2 mb-4">
-                        {customTipShares.map((share, index) => (
-                          <div key={index} className="flex justify-between items-center py-2 border-b">
-                            <span className="font-medium">{share.toEmployeeName}</span>
-                            <div className="flex items-center gap-2">
-                              <span className="text-red-600 font-medium">-{formatCurrency(share.amount)}</span>
-                              <button
-                                onClick={() => removeCustomShare(index)}
-                                className="text-gray-400 hover:text-red-600"
-                              >
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                </svg>
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Add new custom share */}
-                    <div className="flex gap-2 items-end">
-                      <div className="flex-1">
-                        <label className="block text-xs text-gray-700 mb-1">Employee</label>
-                        <select
-                          value={newShareEmployeeId}
-                          onChange={(e) => setNewShareEmployeeId(e.target.value)}
-                          className="w-full px-3 py-2 border rounded-lg text-sm"
-                        >
-                          <option value="">Select employee...</option>
-                          {employees.map(emp => (
-                            <option key={emp.id} value={emp.id}>
-                              {emp.firstName} {emp.lastName} ({emp.role.name})
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="w-28">
-                        <label className="block text-xs text-gray-700 mb-1">Amount</label>
-                        <div className="relative">
-                          <span className="absolute left-2 top-2 text-gray-700">$</span>
-                          <input
-                            type="number"
-                            value={newShareAmount}
-                            onChange={(e) => setNewShareAmount(e.target.value)}
-                            className="w-full pl-6 pr-2 py-2 border rounded-lg text-sm"
-                            placeholder="0.00"
-                            step="0.01"
-                            min="0"
-                          />
-                        </div>
-                      </div>
-                      <Button
-                        variant="outline"
-                        onClick={addCustomShare}
-                        className="px-3"
-                      >
-                        Add
-                      </Button>
-                    </div>
-                  </Card>
-
-                  {/* Net Tips Summary */}
-                  <Card className={`p-4 ${netTips >= 0 ? 'bg-blue-50' : 'bg-red-50'}`}>
-                    <div className="space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-600">Gross Tips</span>
-                        <span>{formatCurrency(grossTips)}</span>
-                      </div>
-                      {ccFeeDeducted > 0 && (
-                        <div className="flex justify-between text-sm">
-                          <span className="text-gray-600">CC Fee ({tipBankSettings?.ccFeePercent}%)</span>
-                          <span className="text-red-600">-{formatCurrency(ccFeeDeducted)}</span>
-                        </div>
-                      )}
-                      {totalTipOuts > 0 && (
-                        <div className="flex justify-between text-sm">
-                          <span className="text-gray-600">Role Tip-Outs</span>
-                          <span className="text-red-600">-{formatCurrency(totalTipOuts)}</span>
-                        </div>
-                      )}
-                      {totalCustomShares > 0 && (
-                        <div className="flex justify-between text-sm">
-                          <span className="text-gray-600">Custom Shares</span>
-                          <span className="text-red-600">-{formatCurrency(totalCustomShares)}</span>
-                        </div>
-                      )}
-                      <div className="flex justify-between border-t pt-2">
-                        <span className="font-medium">Your Net Tips</span>
-                        <span className={`text-xl font-bold ${netTips >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
-                          {formatCurrency(netTips)}
-                        </span>
-                      </div>
-                    </div>
-                  </Card>
-
-                  <p className="text-sm text-gray-600 text-center">
-                    Tip shares will be distributed to recipients. If a recipient is not on shift, their share will be banked.
-                  </p>
-
-                  <div className="flex gap-2">
-                    {mode !== 'none' && (
-                      <Button
-                        variant="outline"
-                        className="flex-1"
-                        onClick={() => setStep('reveal')}
-                      >
-                        ← Back
-                      </Button>
-                    )}
-                    <Button
-                      variant="primary"
-                      className="flex-1"
-                      onClick={async () => {
-                        await fetchTipBankInfo()
-                        setStep('payout')
-                      }}
-                      disabled={isLoading || netTips < 0}
-                    >
-                      {isLoading ? 'Loading...' : 'Continue to Payout \u2192'}
-                    </Button>
-                  </div>
-                </div>
+                <ShiftCloseoutTips
+                  mode={mode}
+                  grossTips={grossTips}
+                  netTips={netTips}
+                  totalTipOuts={totalTipOuts}
+                  totalCustomShares={totalCustomShares}
+                  ccFeeDeducted={ccFeeDeducted}
+                  tipBankSettings={tipBankSettings}
+                  totalCommission={summary?.totalCommission ?? 0}
+                  calculatedTipOuts={calculatedTipOuts}
+                  customTipShares={customTipShares}
+                  employees={employees}
+                  newShareEmployeeId={newShareEmployeeId}
+                  newShareAmount={newShareAmount}
+                  isLoading={isLoading}
+                  onNewShareEmployeeIdChange={setNewShareEmployeeId}
+                  onNewShareAmountChange={setNewShareAmount}
+                  onAddCustomShare={addCustomShare}
+                  onRemoveCustomShare={removeCustomShare}
+                  onBack={() => setStep('reveal')}
+                  onContinueToPayout={async () => {
+                    await fetchTipBankInfo()
+                    setStep('payout')
+                  }}
+                  error={error}
+                />
               )}
 
               {/* Step: Tip Payout Choice */}
