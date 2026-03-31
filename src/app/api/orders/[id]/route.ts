@@ -1,11 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import * as OrderRepository from '@/lib/repositories/order-repository'
-import { mapOrderForResponse } from '@/lib/api/order-response-mapper'
 import { recalculateTotalWithTip, calculateOrderTotals } from '@/lib/order-calculations'
-import { calculateCardPrice, roundToCents } from '@/lib/pricing'
-import { getLocationSettings } from '@/lib/location-cache'
-import { parseSettings } from '@/lib/settings'
+import { roundToCents } from '@/lib/pricing'
 import { apiError, ERROR_CODES } from '@/lib/api/error-responses'
 import { dispatchOrderTotalsUpdate, dispatchOrderUpdated, dispatchFloorPlanUpdate, dispatchTableStatusChanged, dispatchEntertainmentStatusChanged } from '@/lib/socket-dispatch'
 import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
@@ -18,9 +15,10 @@ import { getRequestLocationId } from '@/lib/request-context'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 import { err, ok } from '@/lib/api-response'
+import { getOrderForSplit, getOrderForPanel, getOrderFull } from '@/lib/orders/order-queries'
 const log = createChildLogger('orders')
 
-// GET - Get order details
+// GET - Get order details (dispatches to view-specific query helpers)
 export const GET = withVenue(async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -28,324 +26,16 @@ export const GET = withVenue(async function GET(
   try {
     const { id } = await params
     const view = request.nextUrl.searchParams.get('view')
-
-    // Auth check deferred — resolved from the order record after fetch (eliminates double-fetch)
     const requestingEmployeeId = request.headers.get('x-employee-id') || request.nextUrl.searchParams.get('requestingEmployeeId')
 
-    // Lightweight split view — items + modifiers + totals only (no payments, tips, entertainment)
-    // TODO: migrate to OrderRepository once a getOrderForSplitView() method exists
-    if (view === 'split') {
-      const order = await db.order.findFirst({
-        where: { id, deletedAt: null },
-        select: {
-          id: true, orderNumber: true, status: true, orderType: true,
-          subtotal: true, taxTotal: true, total: true, discountTotal: true,
-          tabName: true, tableId: true, employeeId: true, locationId: true, guestCount: true,
-          baseSeatCount: true, extraSeatCount: true, notes: true,
-          parentOrderId: true,
-          createdAt: true, updatedAt: true,
-          employee: { select: { id: true, displayName: true } },
-          table: { select: { id: true, name: true } },
-          items: {
-            where: { deletedAt: null },
-            include: {
-              modifiers: {
-                where: { deletedAt: null },
-                select: {
-                  id: true, modifierId: true, name: true, price: true,
-                  depth: true, preModifier: true, linkedMenuItemId: true,
-                },
-              },
-              ingredientModifications: true,
-            },
-          },
-        },
-      })
-
-      if (!order) {
-        return apiError.notFound('Order not found', ERROR_CODES.ORDER_NOT_FOUND)
-      }
-
-      const response = mapOrderForResponse(order)
-      return ok({ ...response, paidAmount: 0 })
+    switch (view) {
+      case 'split':
+        return getOrderForSplit(id)
+      case 'panel':
+        return getOrderForPanel(id)
+      default:
+        return getOrderFull(id, requestingEmployeeId)
     }
-
-    // Lightweight panel view — items + modifiers only (no payments, pizzaData, ingredientModifications)
-    // TODO: add repository method for panel view shape (getOrderForPanelView)
-    if (view === 'panel') {
-      const order = await db.order.findFirst({
-        where: { id, deletedAt: null },
-        select: {
-          id: true,
-          orderNumber: true,
-          status: true,
-          guestCount: true,
-          subtotal: true,
-          taxTotal: true,
-          taxFromInclusive: true,
-          taxFromExclusive: true,
-          total: true,
-          tipTotal: true,
-          discountTotal: true,
-          tableId: true,
-          locationId: true,
-          orderType: true,
-          createdAt: true,
-          updatedAt: true,
-          version: true,
-          itemCount: true,
-          baseSeatCount: true,
-          extraSeatCount: true,
-          employeeId: true,
-          splitClass: true,
-          splitMode: true,
-          splitResolution: true,
-          splitFamilyRootId: true,
-          splitFamilyTotal: true,
-          employee: { select: { id: true, displayName: true, firstName: true, lastName: true } },
-          table: { select: { id: true, name: true } },
-          items: {
-            where: { deletedAt: null },
-            select: {
-              id: true,
-              name: true,
-              price: true,
-              quantity: true,
-              specialNotes: true,
-              seatNumber: true,
-              courseNumber: true,
-              courseStatus: true,
-              isHeld: true,
-              kitchenStatus: true,
-              status: true,
-              itemTotal: true,
-              menuItemId: true,
-              pricingOptionLabel: true,
-              blockTimeMinutes: true,
-              blockTimeStartedAt: true,
-              blockTimeExpiresAt: true,
-              menuItem: { select: { itemType: true } },
-              createdAt: true,
-              modifiers: {
-                where: { deletedAt: null },
-                select: {
-                  id: true,
-                  name: true,
-                  price: true,
-                  depth: true,
-                  preModifier: true,
-                  quantity: true,
-                  modifierId: true,
-                },
-              },
-              itemDiscounts: {
-                where: { deletedAt: null },
-                select: { id: true, amount: true, percent: true, reason: true },
-              },
-            },
-          },
-        },
-      })
-
-      if (!order) {
-        return apiError.notFound('Order not found', ERROR_CODES.ORDER_NOT_FOUND)
-      }
-
-      // Compute server-authoritative cash/card totals
-      // Uses stored taxFromInclusive/taxFromExclusive to correctly handle tax-inclusive items.
-      // Inclusive-tax items have tax baked into the price — simple `sub * taxRate` double-counts.
-      let panelCashTotal = Number(order.total)
-      let panelCardTotal = Number(order.total)
-      let panelCashDiscountPercent = 0
-      try {
-        const locSettings = await getLocationSettings(order.locationId)
-        const parsed = parseSettings(locSettings as Record<string, unknown>)
-        const dp = parsed?.dualPricing
-        if (dp?.enabled) {
-          panelCashDiscountPercent = dp.cashDiscountPercent ?? 4.0
-          const sub = Number(order.subtotal)
-          const disc = Number(order.discountTotal || 0)
-          const discountedCashSub = Math.max(0, sub - disc)
-          const cardSub = calculateCardPrice(sub, panelCashDiscountPercent)
-          const discountedCardSub = Math.max(0, cardSub - disc)
-          const taxRate = (parsed?.tax?.defaultRate ?? 0) / 100
-          const storedTaxInc = Number(order.taxFromInclusive) || 0
-          const storedTaxExc = Number(order.taxFromExclusive) || 0
-          const storedTaxTotal = storedTaxInc + storedTaxExc
-          // Use the stored inclusive/exclusive ratio to split the tax correctly
-          const excRatio = storedTaxTotal > 0 ? storedTaxExc / storedTaxTotal : 1
-          // Cash: inclusive portion stays as-is (baked into price), only exclusive portion scales with subtotal
-          const cashTax = roundToCents(storedTaxInc + (discountedCashSub * taxRate * excRatio))
-          // Card: apply surcharge then compute tax on the exclusive portion
-          const cardTax = roundToCents(storedTaxInc + (discountedCardSub * taxRate * excRatio))
-          panelCashTotal = roundToCents(discountedCashSub + cashTax)
-          panelCardTotal = roundToCents(discountedCardSub + cardTax)
-        }
-      } catch {
-        // Settings unavailable — fall back to order.total
-      }
-
-      // Convert Decimal fields to numbers (Prisma returns Decimal objects)
-      return ok({
-        ...order,
-        subtotal: Number(order.subtotal),
-        taxTotal: Number(order.taxTotal),
-        total: Number(order.total),
-        tipTotal: Number(order.tipTotal),
-        discountTotal: Number(order.discountTotal),
-        splitClass: order.splitClass || null,
-        splitMode: order.splitMode || null,
-        splitResolution: order.splitResolution || null,
-        splitFamilyRootId: order.splitFamilyRootId || null,
-        splitFamilyTotal: order.splitFamilyTotal ? Number(order.splitFamilyTotal) : null,
-        cashTotal: panelCashTotal,
-        cardTotal: panelCardTotal,
-        cashDiscountPercent: panelCashDiscountPercent,
-        items: order.items.map(item => ({
-          ...item,
-          price: Number(item.price),
-          itemTotal: Number(item.itemTotal),
-          itemDiscounts: item.itemDiscounts.map(d => ({
-            id: d.id,
-            amount: Number(d.amount),
-            percent: d.percent ? Number(d.percent) : null,
-            reason: d.reason,
-          })),
-          modifiers: item.modifiers.map(mod => ({
-            ...mod,
-            price: Number(mod.price),
-          })),
-        })),
-      })
-    }
-
-    // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
-    let locationId = getRequestLocationId()
-    if (!locationId) {
-      const getLocationCheck = await db.order.findFirst({
-        where: { id, deletedAt: null },
-        select: { locationId: true },
-      })
-      if (!getLocationCheck) {
-        return apiError.notFound('Order not found', ERROR_CODES.ORDER_NOT_FOUND)
-      }
-      locationId = getLocationCheck.locationId
-    }
-
-    const order = await OrderRepository.getOrderByIdWithInclude(id, locationId, {
-        employee: {
-          select: { id: true, displayName: true, firstName: true, lastName: true },
-        },
-        table: {
-          select: { id: true, name: true },
-        },
-        items: {
-          where: { deletedAt: null },
-          include: {
-            modifiers: {
-              where: { deletedAt: null },
-              select: {
-                id: true,
-                modifierId: true,
-                name: true,
-                price: true,
-                depth: true,
-                preModifier: true,
-                linkedMenuItemId: true,
-              },
-            },
-            pizzaData: true,
-            ingredientModifications: true,
-            menuItem: { select: { itemType: true } },
-            itemDiscounts: {
-              where: { deletedAt: null },
-              select: { id: true, amount: true, percent: true, reason: true },
-            },
-          },
-        },
-        payments: {
-          where: { deletedAt: null },
-          select: {
-            id: true,
-            paymentMethod: true,
-            amount: true,
-            tipAmount: true,
-            totalAmount: true,
-            status: true,
-            cardLast4: true,
-            cardBrand: true,
-            roundingAdjustment: true,
-            appliedPricingTier: true,
-            detectedCardType: true,
-            walletType: true,
-            pricingProgramSnapshot: true,
-          },
-        },
-    })
-
-    if (!order) {
-      return apiError.notFound('Order not found', ERROR_CODES.ORDER_NOT_FOUND)
-    }
-
-    // Auth check — deferred to after fetch to eliminate double-fetch
-    if (requestingEmployeeId) {
-      const auth = await requirePermission(requestingEmployeeId, order.locationId, PERMISSIONS.POS_ACCESS)
-      if (!auth.authorized) return err(auth.error, auth.status)
-    }
-
-    // Use mapper for complete response with all modifier fields
-    const response = mapOrderForResponse(order)
-
-    const paidAmount = (order.payments as { status: string; totalAmount: unknown }[])
-      .filter(p => p.status === 'completed')
-      .reduce((sum, p) => sum + Number(p.totalAmount), 0)
-
-    // Compute server-authoritative cash/card totals so clients don't need to recalculate
-    // (prevents discrepancies from different client-side tax+dual pricing calculation orders)
-    let cashTotal = Number(order.total)
-    let cardTotal = Number(order.total)
-    let cashDiscountPercent = 0
-    try {
-      const locSettings = await getLocationSettings(order.locationId)
-      const parsed = parseSettings(locSettings as Record<string, unknown>)
-      const dualPricing = parsed?.dualPricing
-      if (dualPricing?.enabled) {
-        cashDiscountPercent = dualPricing.cashDiscountPercent ?? 4.0
-        const cashSub = Number(order.subtotal)
-        const disc = Number(order.discountTotal || 0)
-        const discountedCashSub = Math.max(0, cashSub - disc)
-        const cardSub = calculateCardPrice(cashSub, cashDiscountPercent)
-        const discountedCardSub = Math.max(0, cardSub - disc)
-        const taxRate = (parsed?.tax?.defaultRate ?? 0) / 100
-        const storedTaxInc = Number((order as any).taxFromInclusive) || 0
-        const storedTaxExc = Number((order as any).taxFromExclusive) || 0
-        const storedTaxTotal = storedTaxInc + storedTaxExc
-        // Use the stored inclusive/exclusive ratio to split the tax correctly
-        const excRatio = storedTaxTotal > 0 ? storedTaxExc / storedTaxTotal : 1
-        // Cash: inclusive portion stays as-is (baked into price), only exclusive portion scales with subtotal
-        const cashTax = roundToCents(storedTaxInc + (discountedCashSub * taxRate * excRatio))
-        // Card: apply surcharge then compute tax on the exclusive portion
-        const cardTax = roundToCents(storedTaxInc + (discountedCardSub * taxRate * excRatio))
-        cashTotal = roundToCents(discountedCashSub + cashTax)
-        cardTotal = roundToCents(discountedCardSub + cardTax)
-      }
-    } catch {
-      // Settings unavailable — fall back to order.total for both
-    }
-
-    return ok({
-      ...response,
-      paidAmount,
-      version: order.version,
-      splitClass: (order as any).splitClass || null,
-      splitMode: (order as any).splitMode || null,
-      splitResolution: (order as any).splitResolution || null,
-      splitFamilyRootId: (order as any).splitFamilyRootId || null,
-      splitFamilyTotal: (order as any).splitFamilyTotal ? Number((order as any).splitFamilyTotal) : null,
-      cashTotal,
-      cardTotal,
-      cashDiscountPercent,
-    })
   } catch (error) {
     console.error('Failed to fetch order:', error)
     return apiError.internalError('Failed to fetch order', ERROR_CODES.INTERNAL_ERROR)

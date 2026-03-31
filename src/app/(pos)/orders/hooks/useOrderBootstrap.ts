@@ -100,12 +100,15 @@ export function useOrderBootstrap(options: UseOrderBootstrapOptions) {
         }
       })
       .catch(err => {
-        console.error('Bootstrap failed, falling back to individual fetches:', err)
+        console.error('Bootstrap failed, falling back to parallel individual fetches:', err)
         bootstrapLoadedRef.current = false
         setInitialSnapshot(null)
-        loadMenuRef.current()
-        loadOrderTypesRef.current()
-        checkOpenShiftRef.current()
+        // Fire all fallback fetches in parallel
+        Promise.all([
+          loadMenuRef.current(),
+          loadOrderTypesRef.current(),
+          checkOpenShiftRef.current(),
+        ]).catch(() => { /* individual handlers log their own errors */ })
       })
   }, [locationId, employeeId, employeeRoleId, onShiftFound, onShiftChecked, onNoShift])
 

@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server'
+import { z } from 'zod'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
@@ -9,6 +10,28 @@ import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-record-card-auth')
+
+// ── Zod schema for POST /api/orders/[id]/record-card-auth ───────────
+const RecordCardAuthSchema = z.object({
+  cardholderName: z.string().max(200).optional(),
+  cardType: z.string().min(1, 'cardType is required'),
+  cardLast4: z.string().min(1, 'cardLast4 is required'),
+  entryMethod: z.string().optional(),
+  recordNo: z.string().min(1, 'recordNo is required'),
+  authCode: z.string().min(1, 'authCode is required'),
+  authAmount: z.number().positive('authAmount must be a positive number'),
+  employeeId: z.string().min(1, 'employeeId is required'),
+  transactionType: z.string().optional(),
+  datacapResponseCode: z.string().optional(),
+  datacapRefNo: z.string().optional(),
+  datacapSequenceNo: z.string().optional(),
+  cvm: z.union([z.string(), z.number()]).optional(),
+  aid: z.string().optional(),
+  isPartialApproval: z.boolean().optional(),
+  acqRefData: z.string().optional(),
+  processData: z.string().optional(),
+  tokenFrequency: z.string().optional(),
+}).passthrough()
 
 /**
  * POST /api/orders/[id]/record-card-auth
@@ -32,7 +55,12 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
 ) {
   try {
     const { id: orderId } = await params
-    const body = await request.json().catch(() => ({}))
+    const rawBody = await request.json().catch(() => ({}))
+    const parseResult = RecordCardAuthSchema.safeParse(rawBody)
+    if (!parseResult.success) {
+      return err(`Validation failed: ${parseResult.error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`)
+    }
+    const body = parseResult.data
 
     const {
       cardholderName: rawCardholderName,
@@ -54,15 +82,6 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       processData,
       tokenFrequency,
     } = body
-
-    // Validate required fields
-    if (!cardType || !cardLast4 || !recordNo || !authCode || !authAmount || !employeeId) {
-      return err('Missing required fields: cardType, cardLast4, recordNo, authCode, authAmount, employeeId')
-    }
-
-    if (typeof authAmount !== 'number' || authAmount <= 0) {
-      return err('authAmount must be a positive number')
-    }
 
     // Fetch the order
     const order = await db.order.findFirst({

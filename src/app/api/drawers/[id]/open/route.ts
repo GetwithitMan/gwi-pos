@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -13,6 +14,12 @@ import { getLocationSettings } from '@/lib/location-cache'
 import { createChildLogger } from '@/lib/logger'
 import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('drawers-open')
+
+// ── Zod schema for POST /api/drawers/[id]/open ─────────────────────
+const OpenDrawerSchema = z.object({
+  employeeId: z.string().min(1, 'Employee ID is required'),
+  reason: z.enum(['manual_reconciliation', 'making_change', 'safe_drop', 'audit']).optional(),
+}).passthrough()
 
 /**
  * POST /api/drawers/[id]/open

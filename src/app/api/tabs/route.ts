@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server'
+import { z } from 'zod'
 import { db } from '@/lib/db'
 import { parseSettings } from '@/lib/settings'
 import { generateFakeTransactionId, calculatePreAuthExpiration } from '@/lib/payment'
@@ -13,6 +14,18 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { getRequestLocationId } from '@/lib/request-context'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { err, notFound, ok } from '@/lib/api-response'
+
+// ── Zod schema for POST /api/tabs ───────────────────────────────────
+const CreateTabSchema = z.object({
+  employeeId: z.string().min(1, 'Employee ID is required'),
+  tabName: z.string().max(100).optional(),
+  locationId: z.string().min(1).optional(),
+  preAuth: z.object({
+    cardBrand: z.string().min(1),
+    cardLast4: z.string().regex(/^\d{4}$/, 'Card last 4 must be exactly 4 digits'),
+    amount: z.number().positive().optional(),
+  }).optional(),
+}).passthrough()
 
 // GET - List open tabs with pagination
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -176,26 +189,20 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 // POST - Create new tab
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
+    const rawBody = await request.json()
+    const parseResult = CreateTabSchema.safeParse(rawBody)
+    if (!parseResult.success) {
+      return err(`Validation failed: ${parseResult.error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`)
+    }
+    const body = parseResult.data
+
     const {
       employeeId,
       tabName,
       preAuth,
-    } = body as {
-      employeeId: string
-      tabName?: string
-      preAuth?: {
-        cardBrand: string
-        cardLast4: string
-        amount?: number
-      }
-    }
+    } = body
 
-    const locationId = body.locationId as string | undefined
-
-    if (!employeeId) {
-      return err('Employee ID is required')
-    }
+    const locationId = body.locationId
 
     // Run employee lookup + last order number in parallel
     const today = new Date()

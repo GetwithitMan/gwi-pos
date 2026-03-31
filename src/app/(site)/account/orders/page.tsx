@@ -11,6 +11,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useSiteModeContext } from '@/components/site/SiteShell'
 import { useSiteAuth } from '@/hooks/useSiteAuth'
+import { formatDate, formatCurrency } from '@/lib/utils'
 
 interface OrderSummary {
   id: string
@@ -22,18 +23,6 @@ interface OrderSummary {
   depositPaid: number
   balanceDue: number
   createdAt: string
-}
-
-function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  })
-}
-
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount)
 }
 
 function statusColor(status: string): { bg: string; text: string } {

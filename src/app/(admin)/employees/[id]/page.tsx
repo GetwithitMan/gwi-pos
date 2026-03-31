@@ -12,6 +12,7 @@ import { toast } from '@/stores/toast-store'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { hasPermission, PERMISSIONS, PERMISSION_GROUPS } from '@/lib/auth-utils'
+import { formatDate, formatTime } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { formatCurrency } from '@/lib/utils'
 import { getPermissionMeta, getKeysByTab, type PermissionTab } from '@/lib/permission-registry'
@@ -556,12 +557,6 @@ export default function EmployeeDetailPage() {
   }
 
   // --- Helpers ---
-
-  const formatTime = (iso: string) =>
-    new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
-
-  const formatDate = (iso: string) =>
-    new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 
   const formatDay = (iso: string) =>
     new Date(iso).toLocaleDateString('en-US', { weekday: 'short' })

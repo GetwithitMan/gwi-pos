@@ -4,18 +4,18 @@
   "provisionerVersion": "1",
   "migrationCount": 120,
   "schemaSha256": "107b985a8d94063012f7c5ae03b3df47aae6986a6b81b1af1dd4f8dc40eefd24",
-  "installerVersion": "1.2.53",
-  "version": "1.2.53",
+  "installerVersion": "1.2.56",
+  "version": "1.2.56",
   "dashboardVersion": "0.3.0",
-  "syncAgentVersion": "1.2.53",
-  "monitoringVersion": "1.2.53",
+  "syncAgentVersion": "1.2.56",
+  "monitoringVersion": "1.2.56",
   "ansibleBaselineVersion": "2026.03.20.1",
-  "buildDate": "2026-03-31T14:20:42.416Z",
-  "gitSha": "79011a5e",
-  "generatedAt": "2026-03-31T14:20:42.416Z",
+  "buildDate": "2026-03-31T15:55:54.846Z",
+  "gitSha": "e28c6af6",
+  "generatedAt": "2026-03-31T15:55:54.847Z",
   "components": {
     "pos": {
-      "version": "1.2.53",
+      "version": "1.2.56",
       "artifact": "app"
     },
     "dashboard": {
@@ -24,15 +24,15 @@
       "url": "/gwi-nuc-dashboard.deb"
     },
     "installer": {
-      "version": "1.2.53",
+      "version": "1.2.56",
       "artifact": "installer.run"
     },
     "syncAgent": {
-      "version": "1.2.53",
+      "version": "1.2.56",
       "artifact": "sync-agent.js"
     },
     "monitoring": {
-      "version": "1.2.53",
+      "version": "1.2.56",
       "artifact": "scripts/"
     },
     "ansibleBaseline": {

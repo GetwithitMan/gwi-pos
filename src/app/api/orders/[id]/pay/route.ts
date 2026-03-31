@@ -418,7 +418,10 @@ export const POST = withVenue(withTiming(async function POST(
       ) }
     }
 
-    const { payments, employeeId, terminalId, idempotencyKey } = validation.data
+    const { payments, employeeId, terminalId, idempotencyKey: bodyKey } = validation.data
+    // X-Idempotency-Key header takes precedence over body field
+    const headerKey = request.headers.get('x-idempotency-key')
+    const idempotencyKey = headerKey || bodyKey
     const finalIdempotencyKey = idempotencyKey || crypto.randomUUID()
 
     // P0: Unbounded tip guard
