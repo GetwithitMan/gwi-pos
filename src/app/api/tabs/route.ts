@@ -255,10 +255,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // TODO: Phase 2 — extract order creation into OrderRepository.createOrder() with number lock
     const tab = await db.$transaction(async (tx) => {
       // Lock latest order row to prevent duplicate order numbers
-      const lastOrderRows = await tx.$queryRawUnsafe<{ orderNumber: number }[]>(
-        `SELECT "orderNumber" FROM "Order" WHERE "locationId" = $1 AND "createdAt" >= $2 AND "createdAt" < $3 ORDER BY "orderNumber" DESC LIMIT 1 FOR UPDATE`,
-        resolvedLocationId, today, tomorrow
-      )
+      const lastOrderRows = await tx.$queryRaw<{ orderNumber: number }[]>`
+        SELECT "orderNumber" FROM "Order" WHERE "locationId" = ${resolvedLocationId} AND "createdAt" >= ${today} AND "createdAt" < ${tomorrow} ORDER BY "orderNumber" DESC LIMIT 1 FOR UPDATE
+      `
       const orderNumber = ((lastOrderRows as any[])[0]?.orderNumber ?? 0) + 1
 
       // TX-KEEP: CREATE — bar tab order with pre-auth data inside order-number lock; no repo create method

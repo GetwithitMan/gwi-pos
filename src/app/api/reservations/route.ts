@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
@@ -95,6 +96,29 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   }
 })
 
+const CreateReservationSchema = z.object({
+  guestName: z.string().min(1, 'guestName is required'),
+  guestPhone: z.string().optional().nullable(),
+  guestEmail: z.string().email().optional().nullable(),
+  partySize: z.number().int().min(1).max(200, 'partySize must be between 1 and 200'),
+  reservationDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'reservationDate must be in YYYY-MM-DD format'),
+  reservationTime: z.string().regex(/^\d{2}:\d{2}$/, 'reservationTime must be in HH:MM format'),
+  duration: z.number().int().positive().optional(),
+  tableId: z.string().optional().nullable(),
+  specialRequests: z.string().optional().nullable(),
+  internalNotes: z.string().optional().nullable(),
+  occasion: z.string().optional().nullable(),
+  dietaryRestrictions: z.string().optional().nullable(),
+  sectionPreference: z.string().optional().nullable(),
+  source: z.string().optional().nullable(),
+  externalId: z.string().optional().nullable(),
+  smsOptIn: z.boolean().optional(),
+  tags: z.array(z.string()).optional().nullable(),
+  bottleServiceTierId: z.string().optional().nullable(),
+  idempotencyKey: z.string().optional().nullable(),
+  forceBook: z.boolean().optional(),
+})
+
 // POST - Create a new reservation via the reservation engine
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
@@ -103,7 +127,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       return err('No location found')
     }
 
-    const body = await request.json()
+    const rawBody = await request.json()
+    const parseResult = CreateReservationSchema.safeParse(rawBody)
+    if (!parseResult.success) {
+      return err(`Validation failed: ${parseResult.error.issues.map(i => i.message).join(', ')}`)
+    }
     const {
       guestName,
       guestPhone,
@@ -125,28 +153,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       bottleServiceTierId,
       idempotencyKey,
       forceBook,
-    } = body
+    } = parseResult.data
 
-    if (!guestName || !partySize || !reservationDate || !reservationTime) {
-      return err('guestName, partySize, reservationDate, and reservationTime are required')
-    }
-
-    // Validate partySize: must be a positive integer, capped at a reasonable max
-    const MAX_PARTY_SIZE = 200
-    if (!Number.isInteger(partySize) || partySize < 1 || partySize > MAX_PARTY_SIZE) {
-      return err(`partySize must be a positive integer (max ${MAX_PARTY_SIZE})`)
-    }
-
-    // Validate reservationDate: must match YYYY-MM-DD format
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(reservationDate)) {
-      return err('reservationDate must be in YYYY-MM-DD format')
-    }
-
-    // Validate reservationTime: must match HH:MM format with valid hours/minutes
-    const timeMatch = reservationTime.match(/^(\d{2}):(\d{2})$/)
-    if (!timeMatch) {
-      return err('reservationTime must be in HH:MM format')
-    }
+    // Validate reservationTime hours/minutes range (regex only checks format)
+    const timeMatch = reservationTime.match(/^(\d{2}):(\d{2})$/)!
     const parsedHours = parseInt(timeMatch[1], 10)
     const parsedMinutes = parseInt(timeMatch[2], 10)
     if (parsedHours < 0 || parsedHours > 23 || parsedMinutes < 0 || parsedMinutes > 59) {
@@ -200,7 +210,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       source: (source as SourceType) || 'staff',
       externalId,
       smsOptIn,
-      tags,
+      tags: tags ?? undefined,
       tableId,
       bottleServiceTierId,
       idempotencyKey,

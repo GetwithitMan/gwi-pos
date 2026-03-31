@@ -22,10 +22,9 @@ export async function acquireOrderLock(
   tx: any,
   orderId: string,
 ): Promise<{ earlyReturn: NextResponse } | null> {
-  const [lockedRow] = await tx.$queryRawUnsafe(
-    `SELECT id FROM "Order" WHERE id = $1 FOR UPDATE`,
-    orderId,
-  ) as Array<{ id: string }>
+  const [lockedRow] = await tx.$queryRaw`
+    SELECT id FROM "Order" WHERE id = ${orderId} FOR UPDATE
+  ` as Array<{ id: string }>
   if (!lockedRow) {
     return { earlyReturn: NextResponse.json({ error: 'Order not found' }, { status: 404 }) }
   }
@@ -47,25 +46,23 @@ export async function detectOrphanedSales(
 ): Promise<void> {
   let orphanedSales: Array<{ id: string; amount: unknown; datacapRecordNo: string | null; invoiceNo: string | null }> = []
   try {
-    await tx.$executeRawUnsafe(`SAVEPOINT orphan_check`)
-    orphanedSales = await tx.$queryRawUnsafe(
-      `SELECT id, amount, "datacapRecordNo", "invoiceNo" FROM "_pending_datacap_sales"
-       WHERE "orderId" = $1 AND "status" = 'pending' AND "createdAt" < NOW() - INTERVAL '60 seconds'`,
-      orderId,
-    ) as typeof orphanedSales
-    await tx.$executeRawUnsafe(`RELEASE SAVEPOINT orphan_check`)
+    await tx.$executeRaw`SAVEPOINT orphan_check`
+    orphanedSales = await tx.$queryRaw`
+      SELECT id, amount, "datacapRecordNo", "invoiceNo" FROM "_pending_datacap_sales"
+       WHERE "orderId" = ${orderId} AND "status" = 'pending' AND "createdAt" < NOW() - INTERVAL '60 seconds'
+    ` as typeof orphanedSales
+    await tx.$executeRaw`RELEASE SAVEPOINT orphan_check`
   } catch {
     // Table may not exist on this NUC -- roll back savepoint to keep transaction alive
-    await tx.$executeRawUnsafe(`ROLLBACK TO SAVEPOINT orphan_check`).catch((err: unknown) => log.warn({ err }, 'savepoint rollback failed'))
+    await tx.$executeRaw`ROLLBACK TO SAVEPOINT orphan_check`.catch((err: unknown) => log.warn({ err }, 'savepoint rollback failed'))
   }
 
   if (orphanedSales.length > 0) {
     console.warn(`[PAY] Found ${orphanedSales.length} orphaned pending Datacap sale(s) for order ${orderId}. These may need manual void.`)
     for (const sale of orphanedSales) {
-      await tx.$executeRawUnsafe(
-        `UPDATE "_pending_datacap_sales" SET "status" = 'orphaned', "resolvedAt" = NOW() WHERE id = $1`,
-        sale.id
-      )
+      await tx.$executeRaw`
+        UPDATE "_pending_datacap_sales" SET "status" = 'orphaned', "resolvedAt" = NOW() WHERE id = ${sale.id}
+      `
     }
   }
 }
@@ -180,59 +177,51 @@ export async function acquirePendingCaptureLock(
   finalIdempotencyKey: string,
 ): Promise<{ earlyReturn: NextResponse } | { inserted: boolean }> {
   try {
-    await tx.$executeRawUnsafe(`SAVEPOINT pending_capture_check`)
-    const existingPending = await tx.$queryRawUnsafe(
-      `SELECT id, status, response_json FROM "_pending_captures" WHERE "idempotencyKey" = $1 LIMIT 1`,
-      finalIdempotencyKey
-    ) as Array<{ id: string; status: string; response_json: string | null }>
+    await tx.$executeRaw`SAVEPOINT pending_capture_check`
+    const existingPending = await tx.$queryRaw`
+      SELECT id, status, response_json FROM "_pending_captures" WHERE "idempotencyKey" = ${finalIdempotencyKey} LIMIT 1
+    ` as Array<{ id: string; status: string; response_json: string | null }>
 
     if (Array.isArray(existingPending) && existingPending.length > 0) {
       const pending = existingPending[0] as any
       if (pending.status === 'processing') {
-        await tx.$executeRawUnsafe(`RELEASE SAVEPOINT pending_capture_check`)
+        await tx.$executeRaw`RELEASE SAVEPOINT pending_capture_check`
         return { earlyReturn: NextResponse.json(
           { error: 'Payment is already being processed. Please wait.', code: 'PAYMENT_IN_PROGRESS' },
           { status: 409 }
         ) }
       }
       if (pending.status === 'completed' && pending.response_json) {
-        await tx.$executeRawUnsafe(`RELEASE SAVEPOINT pending_capture_check`)
+        await tx.$executeRaw`RELEASE SAVEPOINT pending_capture_check`
         return { earlyReturn: NextResponse.json(
           { error: 'Payment already processed', code: 'DUPLICATE_PAYMENT', existingPayment: JSON.parse(pending.response_json) },
           { status: 409 }
         ) }
       }
       // status is 'failed' or 'pending' without response -- allow retry
-      await tx.$executeRawUnsafe(
-        `UPDATE "_pending_captures" SET "status" = 'processing', "errorMessage" = NULL WHERE "id" = $1`,
-        pending.id
-      )
-      await tx.$executeRawUnsafe(`RELEASE SAVEPOINT pending_capture_check`)
+      await tx.$executeRaw`
+        UPDATE "_pending_captures" SET "status" = 'processing', "errorMessage" = NULL WHERE "id" = ${pending.id}
+      `
+      await tx.$executeRaw`RELEASE SAVEPOINT pending_capture_check`
       return { inserted: true }
     } else {
       // No existing record -- insert a new one
       const captureId = crypto.randomUUID()
-      await tx.$executeRawUnsafe(
-        `INSERT INTO "_pending_captures" ("id", "orderId", "locationId", "cardRecordNo", "purchaseAmount", "totalAmount", "status", "idempotencyKey", "createdAt")
-         VALUES ($1, $2, $3, '', 0, 0, 'processing', $4, NOW())
-         ON CONFLICT ("idempotencyKey") WHERE "idempotencyKey" IS NOT NULL DO NOTHING`,
-        captureId,
-        orderId,
-        locationId,
-        finalIdempotencyKey
-      )
+      await tx.$executeRaw`
+        INSERT INTO "_pending_captures" ("id", "orderId", "locationId", "cardRecordNo", "purchaseAmount", "totalAmount", "status", "idempotencyKey", "createdAt")
+         VALUES (${captureId}, ${orderId}, ${locationId}, '', 0, 0, 'processing', ${finalIdempotencyKey}, NOW())
+         ON CONFLICT ("idempotencyKey") WHERE "idempotencyKey" IS NOT NULL DO NOTHING
+      `
       // Check if our insert won
-      const verifyInsert = await tx.$queryRawUnsafe(
-        `SELECT id FROM "_pending_captures" WHERE "idempotencyKey" = $1 AND "id" = $2 LIMIT 1`,
-        finalIdempotencyKey,
-        captureId
-      ) as Array<{ id: string }>
+      const verifyInsert = await tx.$queryRaw`
+        SELECT id FROM "_pending_captures" WHERE "idempotencyKey" = ${finalIdempotencyKey} AND "id" = ${captureId} LIMIT 1
+      ` as Array<{ id: string }>
       if (Array.isArray(verifyInsert) && verifyInsert.length > 0) {
-        await tx.$executeRawUnsafe(`RELEASE SAVEPOINT pending_capture_check`)
+        await tx.$executeRaw`RELEASE SAVEPOINT pending_capture_check`
         return { inserted: true }
       } else {
         // Another concurrent request won the insert
-        await tx.$executeRawUnsafe(`RELEASE SAVEPOINT pending_capture_check`)
+        await tx.$executeRaw`RELEASE SAVEPOINT pending_capture_check`
         return { earlyReturn: NextResponse.json(
           { error: 'Payment is already being processed. Please wait.', code: 'PAYMENT_IN_PROGRESS' },
           { status: 409 }
@@ -241,7 +230,7 @@ export async function acquirePendingCaptureLock(
     }
   } catch (pcError) {
     // Table may not exist on pre-migration NUCs
-    await tx.$executeRawUnsafe(`ROLLBACK TO SAVEPOINT pending_capture_check`).catch((err: unknown) => log.warn({ err }, 'savepoint rollback failed'))
+    await tx.$executeRaw`ROLLBACK TO SAVEPOINT pending_capture_check`.catch((err: unknown) => log.warn({ err }, 'savepoint rollback failed'))
     console.warn('[PAY] _pending_captures check failed (table may not exist), proceeding without lock', {
       orderId, error: pcError instanceof Error ? pcError.message : String(pcError),
     })
@@ -261,20 +250,18 @@ export async function completePendingCapture(
 ): Promise<void> {
   try {
     const { toNumber } = await import('@/lib/pricing')
-    await tx.$executeRawUnsafe(`SAVEPOINT pc_complete`)
+    await tx.$executeRaw`SAVEPOINT pc_complete`
     const responseJson = JSON.stringify({
       orderId,
       paymentIds: allPendingPayments.map((r: any) => r.id).filter(Boolean),
       amount: allPendingPayments.reduce((sum: number, r: any) => sum + toNumber(r.amount ?? 0), 0),
     })
-    await tx.$executeRawUnsafe(
-      `UPDATE "_pending_captures" SET "status" = 'completed', "completedAt" = NOW(), "response_json" = $2
-       WHERE "idempotencyKey" = $1 AND "status" = 'processing'`,
-      finalIdempotencyKey,
-      responseJson
-    )
-    await tx.$executeRawUnsafe(`RELEASE SAVEPOINT pc_complete`)
+    await tx.$executeRaw`
+      UPDATE "_pending_captures" SET "status" = 'completed', "completedAt" = NOW(), "response_json" = ${responseJson}
+       WHERE "idempotencyKey" = ${finalIdempotencyKey} AND "status" = 'processing'
+    `
+    await tx.$executeRaw`RELEASE SAVEPOINT pc_complete`
   } catch {
-    await tx.$executeRawUnsafe(`ROLLBACK TO SAVEPOINT pc_complete`).catch((err: unknown) => log.warn({ err }, 'savepoint rollback failed'))
+    await tx.$executeRaw`ROLLBACK TO SAVEPOINT pc_complete`.catch((err: unknown) => log.warn({ err }, 'savepoint rollback failed'))
   }
 }

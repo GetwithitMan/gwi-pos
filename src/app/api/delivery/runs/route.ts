@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
@@ -16,6 +17,14 @@ import { err, ok } from '@/lib/api-response'
 const log = createChildLogger('delivery-runs')
 
 export const dynamic = 'force-dynamic'
+
+const CreateRunSchema = z.object({
+  driverId: z.string().min(1, 'driverId is required'),
+  orderIds: z.array(z.string().min(1)).min(1, 'orderIds must be a non-empty array'),
+  sessionId: z.string().optional(),
+  idempotencyKey: z.string().optional(),
+  notes: z.string().optional(),
+})
 
 /**
  * GET /api/delivery/runs — List delivery runs with filters
@@ -156,16 +165,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const featureGate = await requireDeliveryFeature(locationId)
     if (featureGate) return featureGate
 
-    const body = await request.json()
-    const { driverId, orderIds, sessionId, idempotencyKey, notes } = body
-
-    // Basic validation
-    if (!driverId || typeof driverId !== 'string') {
-      return err('driverId is required')
+    const rawBody = await request.json()
+    const parseResult = CreateRunSchema.safeParse(rawBody)
+    if (!parseResult.success) {
+      return err(`Validation failed: ${parseResult.error.issues.map(i => i.message).join(', ')}`)
     }
-    if (!Array.isArray(orderIds) || orderIds.length === 0) {
-      return err('orderIds must be a non-empty array')
-    }
+    const { driverId, orderIds, sessionId, idempotencyKey, notes } = parseResult.data
 
     // Load settings
     const rawSettings = await getLocationSettings(locationId)

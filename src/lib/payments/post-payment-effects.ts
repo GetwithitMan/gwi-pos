@@ -247,33 +247,33 @@ export function updateCustomerStatsAndLoyalty(ctx: PostPaymentContext): void {
         const currentPoints = Number((ctx.order.customer as any).loyaltyPoints ?? 0)
         const currentLifetime = Number((ctx.order.customer as any).lifetimePoints ?? 0)
         const txnId = crypto.randomUUID()
-        await db.$executeRawUnsafe(
-          `INSERT INTO "LoyaltyTransaction" (
+        const balanceAfter = currentPoints + ctx.pointsEarned
+        const loyaltyDesc = `Earned ${ctx.pointsEarned} points on order #${ctx.order.orderNumber}${ctx.loyaltyTierMultiplier > 1 ? ` (${ctx.loyaltyTierMultiplier}x tier)` : ''}`
+        const loyaltyEmpId = ctx.employeeId || null
+        await db.$executeRaw`
+          INSERT INTO "LoyaltyTransaction" (
             "id", "customerId", "locationId", "orderId", "type", "points",
             "balanceBefore", "balanceAfter", "description", "employeeId", "createdAt"
-          ) VALUES ($1, $2, $3, $4, 'earn', $5, $6, $7, $8, $9, NOW())`,
-          txnId, custId, ctx.order.locationId, ctx.orderId, ctx.pointsEarned,
-          currentPoints, currentPoints + ctx.pointsEarned,
-          `Earned ${ctx.pointsEarned} points on order #${ctx.order.orderNumber}${ctx.loyaltyTierMultiplier > 1 ? ` (${ctx.loyaltyTierMultiplier}x tier)` : ''}`,
-          ctx.employeeId || null,
-        )
+          ) VALUES (${txnId}, ${custId}, ${ctx.order.locationId}, ${ctx.orderId}, 'earn', ${ctx.pointsEarned},
+          ${currentPoints}, ${balanceAfter},
+          ${loyaltyDesc},
+          ${loyaltyEmpId}, NOW())
+        `
         // Check tier promotion
         const newLifetime = currentLifetime + ctx.pointsEarned
         const custProgramId = (ctx.order.customer as any).loyaltyProgramId
         if (custProgramId) {
-          const tiers = await db.$queryRawUnsafe<Array<{ id: string; name: string; minimumPoints: number }>>(
-            `SELECT "id", "name", "minimumPoints" FROM "LoyaltyTier"
-             WHERE "programId" = $1 AND "deletedAt" IS NULL ORDER BY "minimumPoints" DESC`,
-            custProgramId,
-          )
+          const tiers = await db.$queryRaw<Array<{ id: string; name: string; minimumPoints: number }>>`
+            SELECT "id", "name", "minimumPoints" FROM "LoyaltyTier"
+             WHERE "programId" = ${custProgramId} AND "deletedAt" IS NULL ORDER BY "minimumPoints" DESC
+          `
           const currentTierId = (ctx.order.customer as any).loyaltyTierId
           for (const tier of tiers) {
             if (newLifetime >= Number(tier.minimumPoints)) {
               if (tier.id !== currentTierId) {
-                await db.$executeRawUnsafe(
-                  `UPDATE "Customer" SET "loyaltyTierId" = $2, "updatedAt" = NOW() WHERE "id" = $1`,
-                  custId, tier.id,
-                )
+                await db.$executeRaw`
+                  UPDATE "Customer" SET "loyaltyTierId" = ${tier.id}, "updatedAt" = NOW() WHERE "id" = ${custId}
+                `
               }
               break
             }
@@ -544,6 +544,7 @@ export function recalculateCommissions(ctx: PostPaymentContext): void {
       }
 
       // Batch update all changed commissions in a single SQL statement
+      // eslint-disable-next-line -- $executeRawUnsafe required: dynamic CASE clause count with numbered params
       if (commissionUpdates.length > 0) {
         const caseClauses = commissionUpdates.map((_, i) => `WHEN id = $${i * 2 + 1} THEN $${i * 2 + 2}`).join(' ')
         const ids = commissionUpdates.map(u => u.id)
@@ -552,9 +553,11 @@ export function recalculateCommissions(ctx: PostPaymentContext): void {
           params.push(u.id, u.commission)
         }
         params.push(...ids)
+        const mutOriginIdx = commissionUpdates.length * 2 + ids.length + 1
         const idPlaceholders = ids.map((_, i) => `$${commissionUpdates.length * 2 + i + 1}`).join(', ')
+        params.push(ctx.paymentMutationOrigin)
         await db.$executeRawUnsafe(
-          `UPDATE "OrderItem" SET "commissionAmount" = CASE ${caseClauses} END, "updatedAt" = NOW(), "lastMutatedBy" = '${ctx.paymentMutationOrigin}' WHERE id IN (${idPlaceholders})`,
+          `UPDATE "OrderItem" SET "commissionAmount" = CASE ${caseClauses} END, "updatedAt" = NOW(), "lastMutatedBy" = $${mutOriginIdx} WHERE id IN (${idPlaceholders})`,
           ...params
         )
       }
@@ -625,13 +628,11 @@ export function allocateTips(ctx: PostPaymentContext): void {
     // Delivery tip allocation
     void (async () => {
       try {
-        const deliveryOrders = await db.$queryRawUnsafe<{ id: string }[]>(
-          `SELECT "id" FROM "DeliveryOrder"
-           WHERE "orderId" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
-           LIMIT 1`,
-          ctx.orderId,
-          ctx.order.locationId,
-        )
+        const deliveryOrders = await db.$queryRaw<{ id: string }[]>`
+          SELECT "id" FROM "DeliveryOrder"
+           WHERE "orderId" = ${ctx.orderId} AND "locationId" = ${ctx.order.locationId} AND "deletedAt" IS NULL
+           LIMIT 1
+        `
         if (deliveryOrders.length) {
           const resolved = await resolveDeliveryTipRecipient(
             ctx.order.locationId,
@@ -810,10 +811,9 @@ export function dispatchPaymentSocketEvents(ctx: PostPaymentContext): void {
 
   // Release order claim after successful payment
   if (ctx.orderIsPaid) {
-    void db.$executeRawUnsafe(
-      `UPDATE "Order" SET "claimedByEmployeeId" = NULL, "claimedByTerminalId" = NULL, "claimedAt" = NULL WHERE id = $1`,
-      ctx.orderId
-    ).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.pay'))
+    void db.$executeRaw`
+      UPDATE "Order" SET "claimedByEmployeeId" = NULL, "claimedByTerminalId" = NULL, "claimedAt" = NULL WHERE id = ${ctx.orderId}
+    `.catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.pay'))
   }
 
   // Dispatch open orders list changed + order closed

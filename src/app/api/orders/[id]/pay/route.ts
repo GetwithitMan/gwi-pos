@@ -289,10 +289,9 @@ export const POST = withVenue(withTiming(async function POST(
     const txResult = await db.$transaction(async (tx) => {
 
     // Acquire row-level lock to prevent double-charge from concurrent terminals
-    const [lockedRow] = await tx.$queryRawUnsafe<Array<{ id: string }>>(
-      `SELECT id FROM "Order" WHERE id = $1 FOR UPDATE`,
-      orderId,
-    )
+    const [lockedRow] = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT id FROM "Order" WHERE id = ${orderId} FOR UPDATE
+    `
     if (!lockedRow) {
       return { earlyReturn: NextResponse.json({ error: 'Order not found' }, { status: 404 }) }
     }
@@ -306,25 +305,23 @@ export const POST = withVenue(withTiming(async function POST(
     // Uses a savepoint so a missing table doesn't abort the outer transaction.
     let orphanedSales: Array<{ id: string; amount: unknown; datacapRecordNo: string | null; invoiceNo: string | null }> = []
     try {
-      await tx.$executeRawUnsafe(`SAVEPOINT orphan_check`)
-      orphanedSales = await tx.$queryRawUnsafe<typeof orphanedSales>(
-        `SELECT id, amount, "datacapRecordNo", "invoiceNo" FROM "_pending_datacap_sales"
-         WHERE "orderId" = $1 AND "status" = 'pending' AND "createdAt" < NOW() - INTERVAL '60 seconds'`,
-        orderId,
-      )
-      await tx.$executeRawUnsafe(`RELEASE SAVEPOINT orphan_check`)
+      await tx.$executeRaw`SAVEPOINT orphan_check`
+      orphanedSales = await tx.$queryRaw<typeof orphanedSales>`
+        SELECT id, amount, "datacapRecordNo", "invoiceNo" FROM "_pending_datacap_sales"
+         WHERE "orderId" = ${orderId} AND "status" = 'pending' AND "createdAt" < NOW() - INTERVAL '60 seconds'
+      `
+      await tx.$executeRaw`RELEASE SAVEPOINT orphan_check`
     } catch {
       // Table may not exist on this NUC — roll back savepoint to keep transaction alive
-      await tx.$executeRawUnsafe(`ROLLBACK TO SAVEPOINT orphan_check`).catch(err => log.warn({ err }, 'savepoint rollback failed'))
+      await tx.$executeRaw`ROLLBACK TO SAVEPOINT orphan_check`.catch(err => log.warn({ err }, 'savepoint rollback failed'))
     }
 
     if (orphanedSales.length > 0) {
       console.warn(`[PAY] Found ${orphanedSales.length} orphaned pending Datacap sale(s) for order ${orderId}. These may need manual void.`)
       for (const sale of orphanedSales) {
-        await tx.$executeRawUnsafe(
-          `UPDATE "_pending_datacap_sales" SET "status" = 'orphaned', "resolvedAt" = NOW() WHERE id = $1`,
-          sale.id
-        )
+        await tx.$executeRaw`
+          UPDATE "_pending_datacap_sales" SET "status" = 'orphaned', "resolvedAt" = NOW() WHERE id = ${sale.id}
+        `
       }
     }
 
@@ -545,22 +542,21 @@ export const POST = withVenue(withTiming(async function POST(
     // Uses a savepoint so a missing table (pre-migration NUCs) doesn't abort the transaction.
     let pendingCaptureInserted = false
     try {
-      await tx.$executeRawUnsafe(`SAVEPOINT pending_capture_check`)
-      const existingPending = await tx.$queryRawUnsafe<Array<{ id: string; status: string; response_json: string | null }>>(
-        `SELECT id, status, response_json FROM "_pending_captures" WHERE "idempotencyKey" = $1 LIMIT 1`,
-        finalIdempotencyKey
-      )
+      await tx.$executeRaw`SAVEPOINT pending_capture_check`
+      const existingPending = await tx.$queryRaw<Array<{ id: string; status: string; response_json: string | null }>>`
+        SELECT id, status, response_json FROM "_pending_captures" WHERE "idempotencyKey" = ${finalIdempotencyKey} LIMIT 1
+      `
       if (Array.isArray(existingPending) && existingPending.length > 0) {
         const pending = existingPending[0] as any
         if (pending.status === 'processing') {
-          await tx.$executeRawUnsafe(`RELEASE SAVEPOINT pending_capture_check`)
+          await tx.$executeRaw`RELEASE SAVEPOINT pending_capture_check`
           return { earlyReturn: NextResponse.json(
             { error: 'Payment is already being processed. Please wait.', code: 'PAYMENT_IN_PROGRESS' },
             { status: 409 }
           )}
         }
         if (pending.status === 'completed' && pending.response_json) {
-          await tx.$executeRawUnsafe(`RELEASE SAVEPOINT pending_capture_check`)
+          await tx.$executeRaw`RELEASE SAVEPOINT pending_capture_check`
           // Return cached result — idempotent response
           return { earlyReturn: NextResponse.json(
             { error: 'Payment already processed', code: 'DUPLICATE_PAYMENT', existingPayment: JSON.parse(pending.response_json) },
@@ -568,44 +564,37 @@ export const POST = withVenue(withTiming(async function POST(
           )}
         }
         // status is 'failed' or 'pending' without response — allow retry by updating status
-        await tx.$executeRawUnsafe(
-          `UPDATE "_pending_captures" SET "status" = 'processing', "errorMessage" = NULL WHERE "id" = $1`,
-          pending.id
-        )
+        await tx.$executeRaw`
+          UPDATE "_pending_captures" SET "status" = 'processing', "errorMessage" = NULL WHERE "id" = ${pending.id}
+        `
         pendingCaptureInserted = true
       } else {
         // No existing record — insert a new one with status='processing'
         const captureId = crypto.randomUUID()
-        await tx.$executeRawUnsafe(
-          `INSERT INTO "_pending_captures" ("id", "orderId", "locationId", "cardRecordNo", "purchaseAmount", "totalAmount", "status", "idempotencyKey", "createdAt")
-           VALUES ($1, $2, $3, '', 0, 0, 'processing', $4, NOW())
-           ON CONFLICT ("idempotencyKey") WHERE "idempotencyKey" IS NOT NULL DO NOTHING`,
-          captureId,
-          orderId,
-          order.locationId,
-          finalIdempotencyKey
-        )
+        await tx.$executeRaw`
+          INSERT INTO "_pending_captures" ("id", "orderId", "locationId", "cardRecordNo", "purchaseAmount", "totalAmount", "status", "idempotencyKey", "createdAt")
+           VALUES (${captureId}, ${orderId}, ${order.locationId}, '', 0, 0, 'processing', ${finalIdempotencyKey}, NOW())
+           ON CONFLICT ("idempotencyKey") WHERE "idempotencyKey" IS NOT NULL DO NOTHING
+        `
         // Check if our insert won (ON CONFLICT DO NOTHING means 0 rows if conflict)
-        const verifyInsert = await tx.$queryRawUnsafe<Array<{ id: string }>>(
-          `SELECT id FROM "_pending_captures" WHERE "idempotencyKey" = $1 AND "id" = $2 LIMIT 1`,
-          finalIdempotencyKey,
-          captureId
-        )
+        const verifyInsert = await tx.$queryRaw<Array<{ id: string }>>`
+          SELECT id FROM "_pending_captures" WHERE "idempotencyKey" = ${finalIdempotencyKey} AND "id" = ${captureId} LIMIT 1
+        `
         if (Array.isArray(verifyInsert) && verifyInsert.length > 0) {
           pendingCaptureInserted = true
         } else {
           // Another concurrent request won the insert — this is a duplicate
-          await tx.$executeRawUnsafe(`RELEASE SAVEPOINT pending_capture_check`)
+          await tx.$executeRaw`RELEASE SAVEPOINT pending_capture_check`
           return { earlyReturn: NextResponse.json(
             { error: 'Payment is already being processed. Please wait.', code: 'PAYMENT_IN_PROGRESS' },
             { status: 409 }
           )}
         }
       }
-      await tx.$executeRawUnsafe(`RELEASE SAVEPOINT pending_capture_check`)
+      await tx.$executeRaw`RELEASE SAVEPOINT pending_capture_check`
     } catch (pcError) {
       // Table may not exist on pre-migration NUCs — roll back savepoint and proceed without protection
-      await tx.$executeRawUnsafe(`ROLLBACK TO SAVEPOINT pending_capture_check`).catch(err => log.warn({ err }, 'savepoint rollback failed'))
+      await tx.$executeRaw`ROLLBACK TO SAVEPOINT pending_capture_check`.catch(err => log.warn({ err }, 'savepoint rollback failed'))
       console.warn('[PAY] _pending_captures check failed (table may not exist), proceeding without lock', {
         orderId, error: pcError instanceof Error ? pcError.message : String(pcError),
       })
@@ -1178,10 +1167,7 @@ export const POST = withVenue(withTiming(async function POST(
       const haAmount = roundToCents(toNumber((haItem as any).price) * ((haItem as any).quantity || 1))
 
       // Lock and read current balance
-      await tx.$queryRawUnsafe(
-        `SELECT id FROM "HouseAccount" WHERE id = $1 FOR UPDATE`,
-        haId,
-      )
+      await tx.$queryRaw`SELECT id FROM "HouseAccount" WHERE id = ${haId} FOR UPDATE`
       const haAccount = await tx.houseAccount.findUnique({ where: { id: haId } })
       if (haAccount && haAccount.status === 'active') {
         const currentBal = toNumber(haAccount.currentBalance)
@@ -1288,10 +1274,9 @@ export const POST = withVenue(withTiming(async function POST(
       const custTierId = (order.customer as any).loyaltyTierId
       if (custTierId) {
         try {
-          const tierRows = await db.$queryRawUnsafe<Array<{ pointsMultiplier: unknown }>>(
-            `SELECT "pointsMultiplier" FROM "LoyaltyTier" WHERE "id" = $1 AND "deletedAt" IS NULL`,
-            custTierId,
-          )
+          const tierRows = await db.$queryRaw<Array<{ pointsMultiplier: unknown }>>`
+            SELECT "pointsMultiplier" FROM "LoyaltyTier" WHERE "id" = ${custTierId} AND "deletedAt" IS NULL
+          `
           if (tierRows.length > 0) {
             loyaltyTierMultiplier = Number(tierRows[0].pointsMultiplier) || 1.0
           }
@@ -1386,21 +1371,19 @@ export const POST = withVenue(withTiming(async function POST(
     // (which is correct — it will be retryable). Fire-and-forget with savepoint for safety.
     if (pendingCaptureInserted) {
       try {
-        await tx.$executeRawUnsafe(`SAVEPOINT pc_complete`)
+        await tx.$executeRaw`SAVEPOINT pc_complete`
         const responseJson = JSON.stringify({
           orderId,
           paymentIds: allPendingPayments.map((r: any) => r.id).filter(Boolean),
           amount: allPendingPayments.reduce((sum: number, r: any) => sum + toNumber(r.amount ?? 0), 0),
         })
-        await tx.$executeRawUnsafe(
-          `UPDATE "_pending_captures" SET "status" = 'completed', "completedAt" = NOW(), "response_json" = $2
-           WHERE "idempotencyKey" = $1 AND "status" = 'processing'`,
-          finalIdempotencyKey,
-          responseJson
-        )
-        await tx.$executeRawUnsafe(`RELEASE SAVEPOINT pc_complete`)
+        await tx.$executeRaw`
+          UPDATE "_pending_captures" SET "status" = 'completed', "completedAt" = NOW(), "response_json" = ${responseJson}
+           WHERE "idempotencyKey" = ${finalIdempotencyKey} AND "status" = 'processing'
+        `
+        await tx.$executeRaw`RELEASE SAVEPOINT pc_complete`
       } catch {
-        await tx.$executeRawUnsafe(`ROLLBACK TO SAVEPOINT pc_complete`).catch(err => log.warn({ err }, 'savepoint rollback failed'))
+        await tx.$executeRaw`ROLLBACK TO SAVEPOINT pc_complete`.catch(err => log.warn({ err }, 'savepoint rollback failed'))
       }
     }
 
@@ -1664,33 +1647,33 @@ export const POST = withVenue(withTiming(async function POST(
             const currentPoints = Number((order.customer as any).loyaltyPoints ?? 0)
             const currentLifetime = Number((order.customer as any).lifetimePoints ?? 0)
             const txnId = crypto.randomUUID()
-            await db.$executeRawUnsafe(
-              `INSERT INTO "LoyaltyTransaction" (
+            const balAfter = currentPoints + pointsEarned
+            const loyaltyDesc = `Earned ${pointsEarned} points on order #${order.orderNumber}${loyaltyTierMultiplier > 1 ? ` (${loyaltyTierMultiplier}x tier)` : ''}`
+            const loyaltyEmpId = employeeId || null
+            await db.$executeRaw`
+              INSERT INTO "LoyaltyTransaction" (
                 "id", "customerId", "locationId", "orderId", "type", "points",
                 "balanceBefore", "balanceAfter", "description", "employeeId", "createdAt"
-              ) VALUES ($1, $2, $3, $4, 'earn', $5, $6, $7, $8, $9, NOW())`,
-              txnId, custId, order.locationId, orderId, pointsEarned,
-              currentPoints, currentPoints + pointsEarned,
-              `Earned ${pointsEarned} points on order #${order.orderNumber}${loyaltyTierMultiplier > 1 ? ` (${loyaltyTierMultiplier}x tier)` : ''}`,
-              employeeId || null,
-            )
+              ) VALUES (${txnId}, ${custId}, ${order.locationId}, ${orderId}, 'earn', ${pointsEarned},
+              ${currentPoints}, ${balAfter},
+              ${loyaltyDesc},
+              ${loyaltyEmpId}, NOW())
+            `
             // Check tier promotion
             const newLifetime = currentLifetime + pointsEarned
             const custProgramId = (order.customer as any).loyaltyProgramId
             if (custProgramId) {
-              const tiers = await db.$queryRawUnsafe<Array<{ id: string; name: string; minimumPoints: number }>>(
-                `SELECT "id", "name", "minimumPoints" FROM "LoyaltyTier"
-                 WHERE "programId" = $1 AND "deletedAt" IS NULL ORDER BY "minimumPoints" DESC`,
-                custProgramId,
-              )
+              const tiers = await db.$queryRaw<Array<{ id: string; name: string; minimumPoints: number }>>`
+                SELECT "id", "name", "minimumPoints" FROM "LoyaltyTier"
+                 WHERE "programId" = ${custProgramId} AND "deletedAt" IS NULL ORDER BY "minimumPoints" DESC
+              `
               const currentTierId = (order.customer as any).loyaltyTierId
               for (const tier of tiers) {
                 if (newLifetime >= Number(tier.minimumPoints)) {
                   if (tier.id !== currentTierId) {
-                    await db.$executeRawUnsafe(
-                      `UPDATE "Customer" SET "loyaltyTierId" = $2, "updatedAt" = NOW() WHERE "id" = $1`,
-                      custId, tier.id,
-                    )
+                    await db.$executeRaw`
+                      UPDATE "Customer" SET "loyaltyTierId" = ${tier.id}, "updatedAt" = NOW() WHERE "id" = ${custId}
+                    `
                   }
                   break
                 }
@@ -1946,6 +1929,7 @@ export const POST = withVenue(withTiming(async function POST(
           }
 
           // Batch update all changed commissions in a single SQL statement
+          // eslint-disable-next-line -- $executeRawUnsafe required: dynamic CASE clause count with numbered params
           if (commissionUpdates.length > 0) {
             const caseClauses = commissionUpdates.map((_, i) => `WHEN id = $${i * 2 + 1} THEN $${i * 2 + 2}`).join(' ')
             const ids = commissionUpdates.map(u => u.id)
@@ -1954,9 +1938,11 @@ export const POST = withVenue(withTiming(async function POST(
               params.push(u.id, u.commission)
             }
             params.push(...ids)
+            const mutOriginIdx = commissionUpdates.length * 2 + ids.length + 1
             const idPlaceholders = ids.map((_, i) => `$${commissionUpdates.length * 2 + i + 1}`).join(', ')
+            params.push(paymentMutationOrigin)
             await db.$executeRawUnsafe(
-              `UPDATE "OrderItem" SET "commissionAmount" = CASE ${caseClauses} END, "updatedAt" = NOW(), "lastMutatedBy" = '${paymentMutationOrigin}' WHERE id IN (${idPlaceholders})`,
+              `UPDATE "OrderItem" SET "commissionAmount" = CASE ${caseClauses} END, "updatedAt" = NOW(), "lastMutatedBy" = $${mutOriginIdx} WHERE id IN (${idPlaceholders})`,
               ...params
             )
           }
@@ -2028,13 +2014,11 @@ export const POST = withVenue(withTiming(async function POST(
       if (totalTips > 0 && order.orderType === 'delivery' && !isTrainingPayment) {
         try {
           // Look up the delivery order linked to this POS order
-          const deliveryOrders = await db.$queryRawUnsafe<{ id: string }[]>(
-            `SELECT "id" FROM "DeliveryOrder"
-             WHERE "orderId" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
-             LIMIT 1`,
-            orderId,
-            order.locationId,
-          )
+          const deliveryOrders = await db.$queryRaw<{ id: string }[]>`
+            SELECT "id" FROM "DeliveryOrder"
+             WHERE "orderId" = ${orderId} AND "locationId" = ${order.locationId} AND "deletedAt" IS NULL
+             LIMIT 1
+          `
           if (deliveryOrders.length) {
             const resolved = await resolveDeliveryTipRecipient(
               order.locationId,
@@ -2270,10 +2254,9 @@ export const POST = withVenue(withTiming(async function POST(
 
     // Release order claim after successful payment (fire-and-forget)
     if (orderIsPaid) {
-      void db.$executeRawUnsafe(
-        `UPDATE "Order" SET "claimedByEmployeeId" = NULL, "claimedByTerminalId" = NULL, "claimedAt" = NULL WHERE id = $1`,
-        orderId
-      ).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.pay'))
+      void db.$executeRaw`
+        UPDATE "Order" SET "claimedByEmployeeId" = NULL, "claimedByTerminalId" = NULL, "claimedAt" = NULL WHERE id = ${orderId}
+      `.catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.pay'))
     }
 
     // Dispatch open orders list changed when order is fully paid (fire-and-forget)
@@ -2483,12 +2466,11 @@ export const POST = withVenue(withTiming(async function POST(
     // can be retried. Fire-and-forget — if this fails the record stays 'processing' which
     // will block retries for safety (ops can manually reset via DB).
     if (pendingCaptureIdempotencyKey) {
-      void db.$executeRawUnsafe(
-        `UPDATE "_pending_captures" SET "status" = 'failed', "errorMessage" = $2
-         WHERE "idempotencyKey" = $1 AND "status" = 'processing'`,
-        pendingCaptureIdempotencyKey,
-        (error instanceof Error ? error.message : String(error)).substring(0, 500)
-      ).catch((pcErr) => {
+      const pcErrorMsg = (error instanceof Error ? error.message : String(error)).substring(0, 500)
+      void db.$executeRaw`
+        UPDATE "_pending_captures" SET "status" = 'failed', "errorMessage" = ${pcErrorMsg}
+         WHERE "idempotencyKey" = ${pendingCaptureIdempotencyKey} AND "status" = 'processing'
+      `.catch((pcErr) => {
         console.warn('[PAY] Failed to mark pending capture as failed', {
           idempotencyKey: pendingCaptureIdempotencyKey,
           error: pcErr instanceof Error ? pcErr.message : String(pcErr),

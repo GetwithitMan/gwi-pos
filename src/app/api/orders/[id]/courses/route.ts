@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
@@ -14,6 +15,13 @@ import { createChildLogger } from '@/lib/logger'
 import { err, notFound, ok } from '@/lib/api-response'
 
 const log = createChildLogger('orders.id.courses')
+
+const CourseActionSchema = z.object({
+  courseNumber: z.number().int().optional(),
+  action: z.string().min(1, 'action is required'),
+  courseMode: z.enum(['off', 'manual', 'auto']).optional(),
+  employeeId: z.string().optional(),
+})
 
 // Default course names for display
 const DEFAULT_COURSE_NAMES: Record<number, { name: string; color: string }> = {
@@ -166,7 +174,12 @@ export const POST = withVenue(async function POST(
 ) {
   try {
     const { id: orderId } = await params
-    const body = await request.json()
+    const rawBody = await request.json()
+    const parseResult = CourseActionSchema.safeParse(rawBody)
+    if (!parseResult.success) {
+      return err(`Validation failed: ${parseResult.error.issues.map(i => i.message).join(', ')}`)
+    }
+    const body = parseResult.data
     const { courseNumber, action, courseMode } = body
 
     // HA cellular sync — detect mutation origin for downstream sync
@@ -181,7 +194,7 @@ export const POST = withVenue(async function POST(
 
     // Permission check: POS_ACCESS required for course operations
     const actor = await getActorFromRequest(request)
-    const courseEmployeeId = (body as any).employeeId || actor.employeeId
+    const courseEmployeeId = body.employeeId || actor.employeeId
     const courseAuth = await requirePermission(courseEmployeeId, postLocationId, PERMISSIONS.POS_ACCESS)
     if (!courseAuth.authorized) return err(courseAuth.error, courseAuth.status)
 

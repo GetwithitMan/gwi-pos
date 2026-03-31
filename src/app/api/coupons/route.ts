@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
@@ -87,10 +88,35 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   }
 })
 
+const CreateCouponSchema = z.object({
+  locationId: z.string().min(1, 'locationId is required'),
+  code: z.string().min(1, 'code is required'),
+  name: z.string().min(1, 'name is required'),
+  description: z.string().optional(),
+  discountType: z.string().min(1, 'discountType is required'),
+  discountValue: z.number({ error: 'discountValue is required' }),
+  freeItemId: z.string().optional().nullable(),
+  minimumOrder: z.number().optional().nullable(),
+  maximumDiscount: z.number().optional().nullable(),
+  appliesTo: z.string().optional(),
+  categoryIds: z.array(z.string()).optional().nullable(),
+  itemIds: z.array(z.string()).optional().nullable(),
+  usageLimit: z.number().int().optional().nullable(),
+  perCustomerLimit: z.number().int().optional().nullable(),
+  singleUse: z.boolean().optional(),
+  validFrom: z.string().optional().nullable(),
+  validUntil: z.string().optional().nullable(),
+  createdBy: z.string().optional(),
+})
+
 // POST - Create a new coupon
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
+    const rawBody = await request.json()
+    const parseResult = CreateCouponSchema.safeParse(rawBody)
+    if (!parseResult.success) {
+      return err(`Validation failed: ${parseResult.error.issues.map(i => i.message).join(', ')}`)
+    }
     const {
       locationId,
       code,
@@ -109,12 +135,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       singleUse,
       validFrom,
       validUntil,
-      createdBy,
-    } = body
-
-    if (!locationId || !code || !name || !discountType || discountValue === undefined) {
-      return err('Location ID, code, name, discount type, and discount value are required')
-    }
+    } = parseResult.data
 
     // Auth check — require manager.discounts permission for coupon management
     const actor = await getActorFromRequest(request)
@@ -148,8 +169,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         minimumOrder,
         maximumDiscount,
         appliesTo: appliesTo || 'order',
-        categoryIds,
-        itemIds,
+        categoryIds: categoryIds ?? undefined,
+        itemIds: itemIds ?? undefined,
         usageLimit,
         perCustomerLimit,
         singleUse: singleUse || false,

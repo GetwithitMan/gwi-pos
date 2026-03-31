@@ -159,7 +159,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
         order = await db.$transaction(async (tx) => {
           // Lock table row to prevent concurrent double-claim
           if (tableId) {
-            await tx.$queryRawUnsafe(`SELECT id FROM "Table" WHERE id = $1 FOR UPDATE`, tableId)
+            await tx.$queryRaw`SELECT id FROM "Table" WHERE id = ${tableId} FOR UPDATE`
             // TX-KEEP: LOCK — find active order on table inside FOR UPDATE lock to prevent double-claim
             const existingOrder = await tx.order.findFirst({
               where: {
@@ -178,12 +178,11 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
           // Advisory lock on locationId hash to serialize order number generation
           // This works even when there are zero rows (unlike FOR UPDATE which only locks existing rows)
           const lockKey = Math.abs(locationId.split('').reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0))
-          await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock($1)`, lockKey)
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(${lockKey})`
 
-          const lastOrderRows = await tx.$queryRawUnsafe<{ orderNumber: number }[]>(
-            `SELECT "orderNumber" FROM "Order" WHERE "locationId" = $1 AND "parentOrderId" IS NULL AND "businessDayDate" = $2::timestamp ORDER BY "orderNumber" DESC LIMIT 1`,
-            locationId, businessDayStart.toISOString()
-          )
+          const lastOrderRows = await tx.$queryRaw<{ orderNumber: number }[]>`
+            SELECT "orderNumber" FROM "Order" WHERE "locationId" = ${locationId} AND "parentOrderId" IS NULL AND "businessDayDate" = ${businessDayStart.toISOString()}::timestamp ORDER BY "orderNumber" DESC LIMIT 1
+          `
           const orderNumber = ((lastOrderRows as any[])[0]?.orderNumber ?? 0) + 1
 
           // TX-KEEP: CREATE — draft order shell inside advisory lock; no repo create method
@@ -236,21 +235,20 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
 
       // Stamp fulfillmentMode if provided (fire-and-forget)
       if (fulfillmentMode) {
-        void db.$executeRawUnsafe(
-          `UPDATE "Order" SET "fulfillmentMode" = $1 WHERE id = $2`,
-          fulfillmentMode, order.id
-        ).catch(err => log.warn({ err }, 'Background task failed'))
+        void db.$executeRaw`
+          UPDATE "Order" SET "fulfillmentMode" = ${fulfillmentMode} WHERE id = ${order.id}
+        `.catch(err => log.warn({ err }, 'Background task failed'))
       }
 
       // Auto-assign pager if requested (fire-and-forget)
       if (assignPager) {
         void (async () => {
           try {
-            const assignResult: any[] = await db.$queryRawUnsafe(
-              `WITH device AS (
+            const assignResult: any[] = await db.$queryRaw`
+              WITH device AS (
                 SELECT id, "deviceNumber", "providerId"
                 FROM "NotificationDevice"
-                WHERE "locationId" = $1
+                WHERE "locationId" = ${locationId}
                   AND "deviceType" = 'pager'
                   AND status = 'available'
                   AND "deletedAt" IS NULL
@@ -261,42 +259,38 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
                 UPDATE "NotificationDevice" d
                 SET status = 'assigned',
                     "assignedToSubjectType" = 'order',
-                    "assignedToSubjectId" = $2,
+                    "assignedToSubjectId" = ${order.id},
                     "assignedAt" = CURRENT_TIMESTAMP,
                     "updatedAt" = CURRENT_TIMESTAMP
                 FROM device
                 WHERE d.id = device.id
                 RETURNING d.id, d."deviceNumber", d."providerId"
               )
-              SELECT * FROM updated_device`,
-              locationId, order.id
-            )
+              SELECT * FROM updated_device
+            `
             if (assignResult.length > 0) {
               const pNum = assignResult[0].deviceNumber
               // Create target assignment
-              await db.$executeRawUnsafe(
-                `INSERT INTO "NotificationTargetAssignment" (
+              await db.$executeRaw`
+                INSERT INTO "NotificationTargetAssignment" (
                   id, "locationId", "subjectType", "subjectId", "targetType", "targetValue",
                   "providerId", "isPrimary", source, status,
                   "assignedAt", "createdAt", "updatedAt"
                 ) VALUES (
-                  gen_random_uuid()::text, $1, 'order', $2, 'guest_pager', $3,
-                  $4, true, 'auto_assign', 'active',
+                  gen_random_uuid()::text, ${locationId}, 'order', ${order.id}, 'guest_pager', ${pNum},
+                  ${assignResult[0].providerId}, true, 'auto_assign', 'active',
                   CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-                )`,
-                locationId, order.id, pNum, assignResult[0].providerId
-              )
+                )
+              `
               // Sync cache
-              await db.$executeRawUnsafe(
-                `UPDATE "Order" SET "pagerNumber" = $2 WHERE id = $1`,
-                order.id, pNum
-              )
+              await db.$executeRaw`
+                UPDATE "Order" SET "pagerNumber" = ${pNum} WHERE id = ${order.id}
+              `
               // Log device event
-              void db.$executeRawUnsafe(
-                `INSERT INTO "NotificationDeviceEvent" (id, "deviceId", "locationId", "eventType", "subjectType", "subjectId", metadata, "createdAt")
-                 VALUES (gen_random_uuid()::text, $1, $2, 'assigned', 'order', $3, '{"autoAssign":true}'::jsonb, CURRENT_TIMESTAMP)`,
-                assignResult[0].id, locationId, order.id
-              ).catch(err => log.warn({ err }, 'Background task failed'))
+              void db.$executeRaw`
+                INSERT INTO "NotificationDeviceEvent" (id, "deviceId", "locationId", "eventType", "subjectType", "subjectId", metadata, "createdAt")
+                 VALUES (gen_random_uuid()::text, ${assignResult[0].id}, ${locationId}, 'assigned', 'order', ${order.id}, '{"autoAssign":true}'::jsonb, CURRENT_TIMESTAMP)
+              `.catch(err => log.warn({ err }, 'Background task failed'))
             }
           } catch (pagerErr) {
             console.warn('[Orders] Auto-assign pager failed:', pagerErr)
@@ -306,10 +300,9 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
 
       // Stamp scheduledFor for pre-orders (fire-and-forget, column added by migration 027)
       if (scheduledForDate) {
-        void db.$executeRawUnsafe(
-          `UPDATE "Order" SET "scheduledFor" = $1 WHERE id = $2`,
-          scheduledForDate, order.id
-        ).catch(err => log.warn({ err }, 'Background task failed'))
+        void db.$executeRaw`
+          UPDATE "Order" SET "scheduledFor" = ${scheduledForDate} WHERE id = ${order.id}
+        `.catch(err => log.warn({ err }, 'Background task failed'))
       }
 
       // Fire-and-forget audit log
@@ -621,7 +614,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
       order = await db.$transaction(async (tx) => {
         // Lock table row to prevent concurrent double-claim (Bug 13)
         if (tableId) {
-          await tx.$queryRawUnsafe(`SELECT id FROM "Table" WHERE id = $1 FOR UPDATE`, tableId)
+          await tx.$queryRaw`SELECT id FROM "Table" WHERE id = ${tableId} FOR UPDATE`
           // TX-KEEP: LOCK — find active order on table inside FOR UPDATE lock to prevent double-claim
           const existingOrder = await tx.order.findFirst({
             where: {
@@ -640,12 +633,11 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
         // Advisory lock on locationId hash to serialize order number generation
         // This works even when there are zero rows (unlike FOR UPDATE which only locks existing rows)
         const lockKey = Math.abs(locationId.split('').reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0))
-        await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock($1)`, lockKey)
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(${lockKey})`
 
-        const lastOrderRows = await tx.$queryRawUnsafe<{ orderNumber: number }[]>(
-          `SELECT "orderNumber" FROM "Order" WHERE "locationId" = $1 AND "parentOrderId" IS NULL AND "businessDayDate" = $2::timestamp ORDER BY "orderNumber" DESC LIMIT 1`,
-          locationId, businessDayStart.toISOString()
-        )
+        const lastOrderRows = await tx.$queryRaw<{ orderNumber: number }[]>`
+          SELECT "orderNumber" FROM "Order" WHERE "locationId" = ${locationId} AND "parentOrderId" IS NULL AND "businessDayDate" = ${businessDayStart.toISOString()}::timestamp ORDER BY "orderNumber" DESC LIMIT 1
+        `
         const orderNumber = ((lastOrderRows as any[])[0]?.orderNumber ?? 0) + 1
 
         // TX-KEEP: CREATE — full order with nested items/modifiers inside advisory lock; no repo create method
@@ -755,10 +747,9 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
 
     // Stamp scheduledFor for pre-orders (fire-and-forget, column added by migration 027)
     if (scheduledForDate) {
-      void db.$executeRawUnsafe(
-        `UPDATE "Order" SET "scheduledFor" = $1 WHERE id = $2`,
-        scheduledForDate, order.id
-      ).catch(err => log.warn({ err }, 'Background task failed'))
+      void db.$executeRaw`
+        UPDATE "Order" SET "scheduledFor" = ${scheduledForDate} WHERE id = ${order.id}
+      `.catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     // Link reservation to this order (fire-and-forget)
@@ -809,21 +800,20 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
       },
     }).catch(err => log.warn({ err }, 'Background task failed'))
     if (fulfillmentMode) {
-      void db.$executeRawUnsafe(
-        `UPDATE "Order" SET "fulfillmentMode" = $1 WHERE id = $2`,
-        fulfillmentMode, order.id
-      ).catch(err => log.warn({ err }, 'Background task failed'))
+      void db.$executeRaw`
+        UPDATE "Order" SET "fulfillmentMode" = ${fulfillmentMode} WHERE id = ${order.id}
+      `.catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     // Notification Platform: auto-assign pager for full order (fire-and-forget)
     if (assignPager) {
       void (async () => {
         try {
-          const assignResult: any[] = await db.$queryRawUnsafe(
-            `WITH device AS (
+          const assignResult: any[] = await db.$queryRaw`
+            WITH device AS (
               SELECT id, "deviceNumber", "providerId"
               FROM "NotificationDevice"
-              WHERE "locationId" = $1
+              WHERE "locationId" = ${locationId}
                 AND "deviceType" = 'pager'
                 AND status = 'available'
                 AND "deletedAt" IS NULL
@@ -834,34 +824,31 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
               UPDATE "NotificationDevice" d
               SET status = 'assigned',
                   "assignedToSubjectType" = 'order',
-                  "assignedToSubjectId" = $2,
+                  "assignedToSubjectId" = ${order.id},
                   "assignedAt" = CURRENT_TIMESTAMP,
                   "updatedAt" = CURRENT_TIMESTAMP
               FROM device
               WHERE d.id = device.id
               RETURNING d.id, d."deviceNumber", d."providerId"
             )
-            SELECT * FROM updated_device`,
-            locationId, order.id
-          )
+            SELECT * FROM updated_device
+          `
           if (assignResult.length > 0) {
             const pNum = assignResult[0].deviceNumber
-            await db.$executeRawUnsafe(
-              `INSERT INTO "NotificationTargetAssignment" (
+            await db.$executeRaw`
+              INSERT INTO "NotificationTargetAssignment" (
                 id, "locationId", "subjectType", "subjectId", "targetType", "targetValue",
                 "providerId", "isPrimary", source, status,
                 "assignedAt", "createdAt", "updatedAt"
               ) VALUES (
-                gen_random_uuid()::text, $1, 'order', $2, 'guest_pager', $3,
-                $4, true, 'auto_assign', 'active',
+                gen_random_uuid()::text, ${locationId}, 'order', ${order.id}, 'guest_pager', ${pNum},
+                ${assignResult[0].providerId}, true, 'auto_assign', 'active',
                 CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-              )`,
-              locationId, order.id, pNum, assignResult[0].providerId
-            )
-            await db.$executeRawUnsafe(
-              `UPDATE "Order" SET "pagerNumber" = $2 WHERE id = $1`,
-              order.id, pNum
-            )
+              )
+            `
+            await db.$executeRaw`
+              UPDATE "Order" SET "pagerNumber" = ${pNum} WHERE id = ${order.id}
+            `
           }
         } catch (pagerErr) {
           console.warn('[Orders] Full-order auto-assign pager failed:', pagerErr)

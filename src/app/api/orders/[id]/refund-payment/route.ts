@@ -98,10 +98,9 @@ export const POST = withVenue(async function POST(
 
     // Derive a numeric lock key from paymentId (first 12 hex chars → safe integer)
     const lockKey = parseInt(paymentId.replace(/-/g, '').slice(0, 12), 16)
-    const [{ acquired }] = await db.$queryRawUnsafe<[{ acquired: boolean }]>(
-      'SELECT pg_try_advisory_lock($1::bigint) as acquired',
-      lockKey,
-    )
+    const [{ acquired }] = await db.$queryRaw<[{ acquired: boolean }]>`
+      SELECT pg_try_advisory_lock(${lockKey}::bigint) as acquired
+    `
     if (!acquired) {
       return err('Another refund is already in progress for this payment', 409)
     }
@@ -112,8 +111,8 @@ export const POST = withVenue(async function POST(
       // Lock both Payment AND Order rows to serialize void-vs-refund on the same order.
       // The void route locks the Order row; without this, void and refund can both pass
       // Phase 1 simultaneously on the same order.
-      await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', id)
-      await tx.$queryRawUnsafe('SELECT id FROM "Payment" WHERE id = $1 FOR UPDATE', paymentId)
+      await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${id} FOR UPDATE`
+      await tx.$queryRaw`SELECT id FROM "Payment" WHERE id = ${paymentId} FOR UPDATE`
 
       // W5-11: 2FA enforcement for large refunds — MUST be inside the FOR UPDATE lock
       // to prevent concurrent requests from bypassing the check before the lock serializes them.
@@ -271,7 +270,7 @@ export const POST = withVenue(async function POST(
 
     // ── Phase 3: Write under lock (record refund result) ──────────────────────
     const txResult = await db.$transaction(async (tx) => {
-      await tx.$queryRawUnsafe('SELECT id FROM "Payment" WHERE id = $1 FOR UPDATE', paymentId)
+      await tx.$queryRaw`SELECT id FROM "Payment" WHERE id = ${paymentId} FOR UPDATE`
 
       // Re-check payment status inside lock (may have changed between Phase 1 and Phase 3)
       const freshPayment = await PaymentRepository.getPaymentById(paymentId, order.locationId, tx)
@@ -512,10 +511,9 @@ export const POST = withVenue(async function POST(
         if (!locSettings.loyalty.enabled) return
 
         // Find all 'earn' loyalty transactions for this order
-        const earnTxns = await db.$queryRawUnsafe<Array<{ points: unknown }>>(
-          `SELECT "points" FROM "LoyaltyTransaction" WHERE "orderId" = $1 AND "type" = 'earn'`,
-          id,
-        ).catch(() => [] as Array<{ points: unknown }>)
+        const earnTxns = await db.$queryRaw<Array<{ points: unknown }>>`
+          SELECT "points" FROM "LoyaltyTransaction" WHERE "orderId" = ${id} AND "type" = 'earn'
+        `.catch(() => [] as Array<{ points: unknown }>)
 
         const earnedPoints = earnTxns.reduce((sum, t) => sum + (Number(t.points) || 0), 0)
         if (earnedPoints <= 0) return
@@ -530,32 +528,36 @@ export const POST = withVenue(async function POST(
 
         // Decrement customer loyalty points and stats (proportional for partial)
         const spentReduction = isPartial ? refundAmount : paymentAmount
-        const totalOrdersClause = !isPartial ? ', "totalOrders" = GREATEST(0, "totalOrders" - 1)' : ''
-        await db.$executeRawUnsafe(
-          `UPDATE "Customer" SET
-            "loyaltyPoints" = GREATEST(0, "loyaltyPoints" - $2),
-            "lifetimePoints" = GREATEST(0, "lifetimePoints" - $2),
-            "totalSpent" = GREATEST(0, "totalSpent" - $3)${totalOrdersClause},
-            "updatedAt" = NOW()
-          WHERE "id" = $1`,
-          orderWithCustomer.customerId,
-          pointsToReverse,
-          spentReduction,
-        )
+        if (isPartial) {
+          await db.$executeRaw`
+            UPDATE "Customer" SET
+              "loyaltyPoints" = GREATEST(0, "loyaltyPoints" - ${pointsToReverse}),
+              "lifetimePoints" = GREATEST(0, "lifetimePoints" - ${pointsToReverse}),
+              "totalSpent" = GREATEST(0, "totalSpent" - ${spentReduction}),
+              "updatedAt" = NOW()
+            WHERE "id" = ${orderWithCustomer.customerId}`
+        } else {
+          await db.$executeRaw`
+            UPDATE "Customer" SET
+              "loyaltyPoints" = GREATEST(0, "loyaltyPoints" - ${pointsToReverse}),
+              "lifetimePoints" = GREATEST(0, "lifetimePoints" - ${pointsToReverse}),
+              "totalSpent" = GREATEST(0, "totalSpent" - ${spentReduction}),
+              "totalOrders" = GREATEST(0, "totalOrders" - 1),
+              "updatedAt" = NOW()
+            WHERE "id" = ${orderWithCustomer.customerId}`
+        }
 
         // Create reversal LoyaltyTransaction
         const txnId = crypto.randomUUID()
         const desc = isPartial
           ? `Reversed ${pointsToReverse} points: partial refund ($${refundAmount.toFixed(2)}) on order #${orderWithCustomer.orderNumber}`
           : `Reversed: payment refunded on order #${orderWithCustomer.orderNumber}`
-        await db.$executeRawUnsafe(
-          `INSERT INTO "LoyaltyTransaction" (
+        const mgrId = managerId || null
+        await db.$executeRaw`
+          INSERT INTO "LoyaltyTransaction" (
             "id", "customerId", "locationId", "orderId", "type", "points",
             "balanceBefore", "balanceAfter", "description", "employeeId", "createdAt"
-          ) VALUES ($1, $2, $3, $4, 'adjust', $5, 0, 0, $6, $7, NOW())`,
-          txnId, orderWithCustomer.customerId, order.locationId, id, -pointsToReverse,
-          desc, managerId || null,
-        )
+          ) VALUES (${txnId}, ${orderWithCustomer.customerId}, ${order.locationId}, ${id}, 'adjust', ${-pointsToReverse}, 0, 0, ${desc}, ${mgrId}, NOW())`
       } catch (caughtErr) {
         console.error('[refund-payment] Loyalty point reversal failed:', err)
       }
@@ -569,12 +571,11 @@ export const POST = withVenue(async function POST(
 
         // Find the GiftCardTransaction for this payment via orderId + type='redemption'
         // The gift card payment creates a 'redemption' transaction linked to the orderId
-        const gcTxns = await db.$queryRawUnsafe<Array<{ giftCardId: string }>>(
-          `SELECT DISTINCT "giftCardId" FROM "GiftCardTransaction"
-           WHERE "orderId" = $1 AND "type" = 'redemption' AND "deletedAt" IS NULL
-           LIMIT 1`,
-          id,
-        )
+        const gcTxns = await db.$queryRaw<Array<{ giftCardId: string }>>`
+          SELECT DISTINCT "giftCardId" FROM "GiftCardTransaction"
+           WHERE "orderId" = ${id} AND "type" = 'redemption' AND "deletedAt" IS NULL
+           LIMIT 1
+        `
 
         if (gcTxns.length === 0) {
           console.warn(`[refund-payment] Gift card payment refunded but no GiftCardTransaction found for orderId=${id}`)
@@ -586,47 +587,38 @@ export const POST = withVenue(async function POST(
         // Lock the gift card row and restore balance
         let newBalance = 0
         await db.$transaction(async (tx) => {
-          await tx.$queryRawUnsafe('SELECT id FROM "GiftCard" WHERE id = $1 FOR UPDATE', giftCardId)
+          await tx.$queryRaw`SELECT id FROM "GiftCard" WHERE id = ${giftCardId} FOR UPDATE`
 
-          const gcRows = await tx.$queryRawUnsafe<Array<{ currentBalance: unknown; status: string }>>(
-            `SELECT "currentBalance", "status" FROM "GiftCard" WHERE "id" = $1`,
-            giftCardId,
-          )
+          const gcRows = await tx.$queryRaw<Array<{ currentBalance: unknown; status: string }>>`
+            SELECT "currentBalance", "status" FROM "GiftCard" WHERE "id" = ${giftCardId}
+          `
           if (gcRows.length === 0) return
 
           const currentBalance = Number(gcRows[0].currentBalance)
           newBalance = currentBalance + refundAmount
 
-          await tx.$executeRawUnsafe(
-            `UPDATE "GiftCard"
-             SET "currentBalance" = $2, "status" = 'active', "updatedAt" = NOW()
-             WHERE "id" = $1`,
-            giftCardId,
-            newBalance,
-          )
+          await tx.$executeRaw`
+            UPDATE "GiftCard"
+             SET "currentBalance" = ${newBalance}, "status" = 'active', "updatedAt" = NOW()
+             WHERE "id" = ${giftCardId}
+          `
 
-          await tx.$executeRawUnsafe(
-            `INSERT INTO "GiftCardTransaction" (
+          const gcTxnId = crypto.randomUUID()
+          const gcMgrId = managerId || null
+          const gcNotes = isPartial
+            ? `Partial refund of $${refundAmount.toFixed(2)} restored to gift card`
+            : `Full refund of $${refundAmount.toFixed(2)} restored to gift card`
+          await tx.$executeRaw`
+            INSERT INTO "GiftCardTransaction" (
               "id", "locationId", "giftCardId", "type", "amount",
               "balanceBefore", "balanceAfter", "orderId", "employeeId", "notes",
               "createdAt", "updatedAt"
             ) VALUES (
-              $1, $2, $3, 'refund', $4,
-              $5, $6, $7, $8, $9,
+              ${gcTxnId}, ${order.locationId}, ${giftCardId}, 'refund', ${refundAmount},
+              ${currentBalance}, ${newBalance}, ${id}, ${gcMgrId}, ${gcNotes},
               NOW(), NOW()
-            )`,
-            crypto.randomUUID(),
-            order.locationId,
-            giftCardId,
-            refundAmount,
-            currentBalance,
-            newBalance,
-            id,
-            managerId || null,
-            isPartial
-              ? `Partial refund of $${refundAmount.toFixed(2)} restored to gift card`
-              : `Full refund of $${refundAmount.toFixed(2)} restored to gift card`,
-          )
+            )
+          `
         }, { timeout: 10000 })
 
         console.log(`[refund-payment] Gift card ${giftCardId} balance restored by $${refundAmount.toFixed(2)} for orderId=${id}`)
@@ -669,7 +661,7 @@ export const POST = withVenue(async function POST(
       })
     } finally {
       // PAY-P2-1: Release advisory lock after all 3 phases complete (success or failure)
-      await db.$queryRawUnsafe('SELECT pg_advisory_unlock($1::bigint)', lockKey).catch(err => log.warn({ err }, 'Background task failed'))
+      await db.$queryRaw`SELECT pg_advisory_unlock(${lockKey}::bigint)`.catch(err => log.warn({ err }, 'Background task failed'))
     }
   } catch (error) {
     console.error('Failed to refund payment:', error)

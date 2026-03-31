@@ -154,9 +154,9 @@ export const PUT = withVenue(async function PUT(
       // Check for pending outage queue entries before closing the shift.
       // This is a warning only — it does not block the close.
       try {
-        const outageResult = await db.$queryRawUnsafe<[{ cnt: number }]>(
-          `SELECT COUNT(*)::int as cnt FROM "OutageQueueEntry" WHERE status IN ('PENDING', 'PROCESSING')`
-        )
+        const outageResult = await db.$queryRaw<[{ cnt: number }]>`
+          SELECT COUNT(*)::int as cnt FROM "OutageQueueEntry" WHERE status IN ('PENDING', 'PROCESSING')
+        `
         const pendingCount = outageResult?.[0]?.cnt ?? 0
         if (pendingCount > 0) {
           console.warn(
