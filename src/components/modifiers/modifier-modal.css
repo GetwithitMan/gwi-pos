@@ -422,3 +422,29 @@
   color: white;
   box-shadow: 0 0 6px var(--mm-accent-glow);
 }
+
+/* ════════════════════════════════════════════════
+   SHAKE ANIMATION — unsatisfied required groups
+   ════════════════════════════════════════════════ */
+
+@keyframes mm-shake-required {
+  0%, 100% { transform: translateX(0); }
+  15% { transform: translateX(-6px); }
+  30% { transform: translateX(6px); }
+  45% { transform: translateX(-4px); }
+  60% { transform: translateX(4px); }
+  75% { transform: translateX(-2px); }
+  90% { transform: translateX(2px); }
+}
+
+.mm-group-box.mm-shake-invalid {
+  animation: mm-shake-required 0.5s ease;
+  box-shadow: 0 0 16px rgba(239, 68, 68, 0.6) !important;
+  border-color: #ef4444 !important;
+}
+
+.mm-step-box.mm-shake-invalid {
+  animation: mm-shake-required 0.5s ease;
+  box-shadow: 0 0 16px rgba(239, 68, 68, 0.6) !important;
+  border-color: #ef4444 !important;
+}

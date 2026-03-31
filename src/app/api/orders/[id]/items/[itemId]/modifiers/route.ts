@@ -46,10 +46,52 @@ export const PUT = withVenue(withAuth({ allowCellular: true }, async function PU
     const orderItem = await OrderItemRepository.getItemByIdWithSelect(itemId, locationId, {
       id: true,
       orderId: true,
+      menuItemId: true,
     })
 
     if (!orderItem || orderItem.orderId !== orderId) {
       return notFound('Order item not found')
+    }
+
+    // Server-side required modifier group validation before replacing modifiers
+    if (orderItem.menuItemId) {
+      const requiredGroups = await db.modifierGroup.findMany({
+        where: {
+          menuItemId: orderItem.menuItemId,
+          isRequired: true,
+          deletedAt: null,
+        },
+        select: {
+          id: true,
+          name: true,
+          minSelections: true,
+          modifiers: {
+            where: { deletedAt: null },
+            select: { id: true },
+          },
+        },
+      })
+
+      if (requiredGroups.length > 0) {
+        const newModifiers = modifiers || []
+        for (const group of requiredGroups) {
+          const groupModifierIds = new Set(group.modifiers.map(m => m.id))
+          let selectionCount = 0
+
+          for (const mod of newModifiers) {
+            if (mod.id && groupModifierIds.has(mod.id)) {
+              selectionCount++
+            }
+          }
+
+          const minRequired = group.minSelections > 0 ? group.minSelections : 1
+          if (selectionCount < minRequired) {
+            return err(
+              `Required modifier group "${group.name}" is not satisfied (requires ${minRequired}, got ${selectionCount})`
+            )
+          }
+        }
+      }
     }
 
     // Delete existing modifiers and create new ones in a transaction

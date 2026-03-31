@@ -521,9 +521,9 @@ export interface RequiredModifierError {
  * Server-side safety net: validate that required modifier groups have
  * minimum selections satisfied for each item being added.
  *
- * Only validates items that have modifiers AND a menuItemId (skip open items).
- * Legacy clients that don't send modifier data are not blocked — this only
- * validates when modifiers are present but a required group is unsatisfied.
+ * Validates ALL items with a menuItemId (skip open items without catalog backing).
+ * Items with `modifiers: []` (empty array) are validated — an item with required
+ * modifier groups but zero modifiers is now correctly rejected.
  *
  * Returns null if valid, or the first validation error found.
  */
@@ -531,11 +531,13 @@ export async function validateRequiredModifierGroups(
   tx: TxClient,
   items: AddItemInput[],
 ): Promise<RequiredModifierError | null> {
-  // Collect unique menuItemIds from items that have modifiers
-  const itemsWithModifiers = items.filter(i => i.menuItemId && i.modifiers && i.modifiers.length > 0)
-  if (itemsWithModifiers.length === 0) return null
+  // Validate ALL items with a menuItemId — not just those with modifiers.
+  // An item with modifiers: [] must still satisfy required groups.
+  const itemsToValidate = items.filter(i => i.menuItemId)
+  if (itemsToValidate.length === 0) return null
 
-  const uniqueMenuItemIds = [...new Set(itemsWithModifiers.map(i => i.menuItemId))]
+  // Get unique menu item IDs
+  const uniqueMenuItemIds = [...new Set(itemsToValidate.map(i => i.menuItemId!))]
 
   // Batch-fetch all required modifier groups for these menu items
   const requiredGroups = await tx.modifierGroup.findMany({
@@ -558,35 +560,21 @@ export async function validateRequiredModifierGroups(
 
   if (requiredGroups.length === 0) return null
 
-  // Build a map: menuItemId -> required groups with their modifier IDs
-  const groupsByMenuItem = new Map<string, typeof requiredGroups>()
-  for (const group of requiredGroups) {
-    if (!group.menuItemId) continue
-    const existing = groupsByMenuItem.get(group.menuItemId) || []
-    existing.push(group)
-    groupsByMenuItem.set(group.menuItemId, existing)
-  }
-
   // For each item, check required groups are satisfied
-  for (const item of itemsWithModifiers) {
-    const groups = groupsByMenuItem.get(item.menuItemId)
-    if (!groups) continue
+  for (const item of itemsToValidate) {
+    const groups = requiredGroups.filter(g => g.menuItemId === item.menuItemId)
+    if (groups.length === 0) continue
 
-    // Build a set of modifier IDs submitted for this item
-    const submittedModifierIds = new Set(item.modifiers.map(m => m.modifierId))
-    // Count isNoneSelection as satisfying the group
-    const noneSelectionModifierIds = new Set(
-      item.modifiers.filter(m => m.isNoneSelection).map(m => m.modifierId)
-    )
+    const itemModifiers = item.modifiers || []
 
     for (const group of groups) {
+      // Check if any modifier in the submitted list is from this group
       const groupModifierIds = new Set(group.modifiers.map(m => m.id))
-
-      // Count how many modifiers from this group are in the submission
       let selectionCount = 0
       let hasNone = false
-      for (const mod of item.modifiers) {
-        if (groupModifierIds.has(mod.modifierId)) {
+
+      for (const mod of itemModifiers) {
+        if (mod.modifierId && groupModifierIds.has(mod.modifierId)) {
           if (mod.isNoneSelection) {
             hasNone = true
           } else {

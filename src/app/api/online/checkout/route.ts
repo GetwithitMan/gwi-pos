@@ -391,6 +391,60 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // ── 2b½. Server-side required modifier group validation ─────────────────
+    // Validate that all required modifier groups are satisfied for each item.
+    // Uses venueDb (not a transaction) because this runs before order creation.
+    {
+      const uniqueCheckoutMenuItemIds = [...new Set(items.map(i => i.menuItemId))]
+      const requiredGroups = await venueDb.modifierGroup.findMany({
+        where: {
+          menuItemId: { in: uniqueCheckoutMenuItemIds },
+          isRequired: true,
+          deletedAt: null,
+        },
+        select: {
+          id: true,
+          menuItemId: true,
+          name: true,
+          minSelections: true,
+          modifiers: {
+            where: { deletedAt: null },
+            select: { id: true },
+          },
+        },
+      })
+
+      if (requiredGroups.length > 0) {
+        for (const item of items) {
+          const groups = requiredGroups.filter(g => g.menuItemId === item.menuItemId)
+          if (groups.length === 0) continue
+
+          const itemModifiers = item.modifiers || []
+
+          for (const group of groups) {
+            const groupModifierIds = new Set(group.modifiers.map(m => m.id))
+            let selectionCount = 0
+
+            for (const mod of itemModifiers) {
+              if (mod.modifierId && groupModifierIds.has(mod.modifierId)) {
+                selectionCount++
+              }
+            }
+
+            const minRequired = group.minSelections > 0 ? group.minSelections : 1
+            if (selectionCount < minRequired) {
+              const miName = menuItemMap.get(item.menuItemId)?.name ?? item.menuItemId
+              return err(
+                `Required modifier group "${group.name}" is not satisfied for item "${miName}" ` +
+                `(requires ${minRequired}, got ${selectionCount})`,
+                400
+              )
+            }
+          }
+        }
+      }
+    }
+
     // ── 2c. Compute total from DB prices (never trust client) ────────────────
 
     let subtotal = 0

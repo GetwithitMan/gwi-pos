@@ -18,6 +18,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
 import type { AddItemInput } from '@/lib/domain/order-items/types'
+import { validateRequiredModifierGroups } from '@/lib/domain/order-items/item-operations'
 import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { isTrainingEmployee } from '@/lib/training-mode'
@@ -648,6 +649,15 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
         )
         const orderNumber = ((lastOrderRows as any[])[0]?.orderNumber ?? 0) + 1
 
+        // Server-side required modifier group validation (safety net — clients already validate)
+        const modGroupError = await validateRequiredModifierGroups(tx, items as AddItemInput[])
+        if (modGroupError) {
+          throw new Error(
+            `REQUIRED_MODIFIER_MISSING:${modGroupError.itemName}:${modGroupError.groupName}` +
+            `:requires ${modGroupError.minSelections}, got ${modGroupError.actualSelections}`
+          )
+        }
+
         // TX-KEEP: CREATE — full order with nested items/modifiers inside advisory lock; no repo create method
         const created = await tx.order.create({
           data: {
@@ -945,6 +955,15 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
 
     return ok(response)
   } catch (error) {
+    // Handle required modifier validation errors (thrown inside transaction)
+    const message = error instanceof Error ? error.message : ''
+    if (message.startsWith('REQUIRED_MODIFIER_MISSING:')) {
+      const parts = message.replace('REQUIRED_MODIFIER_MISSING:', '').split(':')
+      const itemName = parts[0]
+      const groupName = parts[1]
+      return err(`Required modifier group "${groupName}" is not satisfied for item "${itemName}"`)
+    }
+
     console.error('Failed to create order:', error)
 
     // Capture CRITICAL order creation error
