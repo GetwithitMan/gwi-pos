@@ -21,6 +21,7 @@ import type { WeightReading } from '@/lib/scale/scale-protocol'
 import { emitToLocation, emitToTags, emitToRoom, emitToTerminal, emitCriticalToLocation } from '@/lib/socket-server'
 import { CFD_EVENTS, MOBILE_EVENTS } from '@/types/multi-surface'
 import { invalidateSnapshotCache } from '@/lib/snapshot-cache'
+import { invalidateOpenOrdersCache } from '@/app/api/orders/open/route'
 import { db } from '@/lib/db'
 import { createChildLogger } from '@/lib/logger'
 
@@ -960,6 +961,10 @@ export async function dispatchOpenOrdersChanged(
   },
   options: DispatchOptions = {}
 ): Promise<boolean> {
+  // Immediately invalidate the open-orders response cache so the next GET
+  // fetches fresh data from the DB instead of serving stale results.
+  invalidateOpenOrdersCache(locationId)
+
   const doEmit = async () => {
     try {
       await emitToLocation(locationId, 'orders:list-changed', payload)

@@ -160,7 +160,7 @@ _PRISMA_RUNTIME_PKGS=(
 _SERVER_PKGS=(
     next @next/env @swc/helpers baseline-browser-mapping caniuse-lite
     picocolors postcss styled-jsx source-map-js nanoid
-    socket.io engine.io cors
+    socket.io engine.io base64id cors
     socket.io-client engine.io-client engine.io-parser socket.io-parser
     xmlhttprequest-ssl ws debug ms
     @socket.io/component-emitter
@@ -223,7 +223,12 @@ _SMOKE_RESULT=$(cd "$STAGING" && node -e "
     require('@prisma/adapter-pg');
     require('@prisma/driver-adapter-utils');
     require('pg');
-    require('socket.io');
+    // Instantiate Socket.IO server (not just require) to catch missing transitive deps like base64id
+    const http = require('http');
+    const { Server } = require('socket.io');
+    const srv = http.createServer();
+    new Server(srv, { path: '/test' }); // This triggers engine.io → base64id require chain
+    srv.close();
     require('socket.io-client');
     require('next/dist/server/next-server');
     console.log('SMOKE_OK');

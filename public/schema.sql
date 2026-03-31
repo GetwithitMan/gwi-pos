@@ -20,10 +20,10 @@ CREATE TYPE "KitchenStatus" AS ENUM ('pending', 'sent', 'cooking', 'ready', 'del
 CREATE TYPE "CourseStatus" AS ENUM ('pending', 'fired', 'ready', 'served');
 
 -- CreateEnum
-CREATE TYPE "PaymentMethod" AS ENUM ('cash', 'card', 'credit', 'debit', 'gift_card', 'house_account', 'loyalty', 'loyalty_points', 'room_charge');
+CREATE TYPE "PaymentMethod" AS ENUM ('cash', 'card', 'credit', 'debit', 'ach', 'gift_card', 'house_account', 'loyalty', 'loyalty_points', 'room_charge');
 
 -- CreateEnum
-CREATE TYPE "PaymentStatus" AS ENUM ('pending', 'completed', 'refunded', 'voided');
+CREATE TYPE "PaymentStatus" AS ENUM ('pending', 'processing', 'completed', 'declined', 'failed', 'refunded', 'voided');
 
 -- CreateEnum
 CREATE TYPE "ShiftStatus" AS ENUM ('open', 'closed');
@@ -335,7 +335,7 @@ CREATE TABLE "Role" (
     "name" TEXT NOT NULL,
     "permissions" JSONB,
     "isTipped" BOOLEAN NOT NULL DEFAULT false,
-    "tipWeight" DECIMAL(6,4) NOT NULL DEFAULT 1.0,
+    "tipWeight" DECIMAL(10,4) NOT NULL DEFAULT 1.0,
     "cashHandlingMode" "CashHandlingMode" NOT NULL DEFAULT 'drawer',
     "trackLaborCost" BOOLEAN NOT NULL DEFAULT true,
     "roleType" TEXT NOT NULL DEFAULT 'FOH',
@@ -600,7 +600,7 @@ CREATE TABLE "MenuItem" (
     "priceCC" DECIMAL(10,2),
     "cost" DECIMAL(10,2),
     "onlinePrice" DECIMAL(10,2),
-    "taxRate" DECIMAL(6,4),
+    "taxRate" DECIMAL(10,4),
     "isTaxExempt" BOOLEAN NOT NULL DEFAULT false,
     "sortOrder" INTEGER NOT NULL DEFAULT 0,
     "isActive" BOOLEAN NOT NULL DEFAULT true,
@@ -632,7 +632,7 @@ CREATE TABLE "MenuItem" (
     "happyHourDays" JSONB,
     "overtimeEnabled" BOOLEAN DEFAULT false,
     "overtimeMode" TEXT,
-    "overtimeMultiplier" DECIMAL(6,4),
+    "overtimeMultiplier" DECIMAL(10,4),
     "overtimePerMinuteRate" DECIMAL(10,2),
     "overtimeFlatFee" DECIMAL(10,2),
     "overtimeGraceMinutes" INTEGER DEFAULT 5,
@@ -667,7 +667,7 @@ CREATE TABLE "MenuItem" (
     "deletedAt" TIMESTAMP(3),
     "syncedAt" TIMESTAMP(3),
     "linkedBottleProductId" TEXT,
-    "linkedPourSizeOz" DECIMAL(65,30),
+    "linkedPourSizeOz" DECIMAL(6,3),
     "metadata" JSONB,
 
     CONSTRAINT "MenuItem_pkey" PRIMARY KEY ("id")
@@ -722,8 +722,8 @@ CREATE TABLE "Modifier" (
     "allowOnSide" BOOLEAN NOT NULL DEFAULT false,
     "allowExtra" BOOLEAN NOT NULL DEFAULT false,
     "extraPrice" DECIMAL(10,2) NOT NULL DEFAULT 0,
-    "liteMultiplier" DECIMAL(6,4),
-    "extraMultiplier" DECIMAL(6,4),
+    "liteMultiplier" DECIMAL(10,4),
+    "extraMultiplier" DECIMAL(10,4),
     "allowedPreModifiers" JSONB,
     "extraUpsellPrice" DECIMAL(10,2),
     "ingredientId" TEXT,
@@ -733,7 +733,7 @@ CREATE TABLE "Modifier" (
     "linkedMenuItemId" TEXT,
     "spiritTier" TEXT,
     "linkedBottleProductId" TEXT,
-    "pourSizeOz" DECIMAL(65,30),
+    "pourSizeOz" DECIMAL(6,3),
     "sortOrder" INTEGER NOT NULL DEFAULT 0,
     "isDefault" BOOLEAN NOT NULL DEFAULT false,
     "isActive" BOOLEAN NOT NULL DEFAULT true,
@@ -746,7 +746,7 @@ CREATE TABLE "Modifier" (
     "swapEnabled" BOOLEAN NOT NULL DEFAULT false,
     "swapTargets" JSONB,
     "customPreModifiers" JSONB,
-    "inventoryDeductionAmount" DECIMAL(65,30),
+    "inventoryDeductionAmount" DECIMAL(10,4),
     "inventoryDeductionUnit" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
@@ -999,6 +999,13 @@ CREATE TABLE "Order" (
     "displayNumber" TEXT,
     "parentOrderId" TEXT,
     "splitIndex" INTEGER,
+    "splitClass" TEXT,
+    "splitMode" TEXT,
+    "splitFamilyRootId" TEXT,
+    "splitFamilyTotal" DECIMAL(65,30),
+    "splitResolution" TEXT,
+    "supersededBy" TEXT,
+    "supersededAt" TIMESTAMP(3),
     "orderType" TEXT NOT NULL DEFAULT 'dine_in',
     "orderTypeId" TEXT,
     "tableId" TEXT,
@@ -1026,7 +1033,7 @@ CREATE TABLE "Order" (
     "taxTotal" DECIMAL(10,2) NOT NULL DEFAULT 0,
     "taxFromInclusive" DECIMAL(10,2) NOT NULL DEFAULT 0,
     "taxFromExclusive" DECIMAL(10,2) NOT NULL DEFAULT 0,
-    "inclusiveTaxRate" DECIMAL(6,4) NOT NULL DEFAULT 0,
+    "inclusiveTaxRate" DECIMAL(10,4) NOT NULL DEFAULT 0,
     "tipTotal" DECIMAL(10,2) NOT NULL DEFAULT 0,
     "donationAmount" DECIMAL(10,2),
     "total" DECIMAL(10,2) NOT NULL DEFAULT 0,
@@ -1097,7 +1104,7 @@ CREATE TABLE "OrderItem" (
     "price" DECIMAL(10,2) NOT NULL,
     "quantity" INTEGER NOT NULL DEFAULT 1,
     "pourSize" TEXT,
-    "pourMultiplier" DECIMAL(6,4),
+    "pourMultiplier" DECIMAL(10,4),
     "cardPrice" DECIMAL(10,2),
     "isTaxInclusive" BOOLEAN NOT NULL DEFAULT false,
     "categoryType" TEXT,
@@ -2097,7 +2104,7 @@ CREATE TABLE "TaxRule" (
     "id" TEXT NOT NULL,
     "locationId" TEXT NOT NULL,
     "name" TEXT NOT NULL,
-    "rate" DECIMAL(6,4) NOT NULL,
+    "rate" DECIMAL(10,4) NOT NULL,
     "appliesTo" TEXT NOT NULL DEFAULT 'all',
     "categoryIds" JSONB,
     "itemIds" JSONB,
@@ -2244,24 +2251,24 @@ CREATE TABLE "InventoryItem" (
     "subcategory" TEXT,
     "brand" TEXT,
     "purchaseUnit" TEXT NOT NULL,
-    "purchaseSize" DECIMAL(65,30) NOT NULL,
-    "purchaseCost" DECIMAL(65,30) NOT NULL,
+    "purchaseSize" DECIMAL(10,4) NOT NULL,
+    "purchaseCost" DECIMAL(10,2) NOT NULL,
     "defaultVendorId" TEXT,
     "storageUnit" TEXT NOT NULL,
-    "unitsPerPurchase" DECIMAL(65,30) NOT NULL,
-    "costPerUnit" DECIMAL(65,30) NOT NULL,
+    "unitsPerPurchase" DECIMAL(10,4) NOT NULL,
+    "costPerUnit" DECIMAL(10,4) NOT NULL,
     "costingMethod" TEXT NOT NULL DEFAULT 'weighted_average',
     "lastPriceUpdate" TIMESTAMP(3),
     "priceSource" TEXT NOT NULL DEFAULT 'manual',
-    "yieldPercent" DECIMAL(65,30) NOT NULL DEFAULT 100,
-    "yieldCostPerUnit" DECIMAL(65,30),
+    "yieldPercent" DECIMAL(8,4) NOT NULL DEFAULT 100,
+    "yieldCostPerUnit" DECIMAL(10,4),
     "spiritCategoryId" TEXT,
-    "pourSizeOz" DECIMAL(65,30),
-    "proofPercent" DECIMAL(65,30),
-    "currentStock" DECIMAL(65,30) NOT NULL DEFAULT 0,
-    "parLevel" DECIMAL(65,30),
-    "reorderPoint" DECIMAL(65,30),
-    "reorderQty" DECIMAL(65,30),
+    "pourSizeOz" DECIMAL(6,3),
+    "proofPercent" DECIMAL(6,2),
+    "currentStock" DECIMAL(10,4) NOT NULL DEFAULT 0,
+    "parLevel" DECIMAL(10,4),
+    "reorderPoint" DECIMAL(10,4),
+    "reorderQty" DECIMAL(10,4),
     "isActive" BOOLEAN NOT NULL DEFAULT true,
     "trackInventory" BOOLEAN NOT NULL DEFAULT true,
     "version" INTEGER NOT NULL DEFAULT 0,
@@ -2283,8 +2290,8 @@ CREATE TABLE "InventoryItemStorage" (
     "locationId" TEXT NOT NULL,
     "inventoryItemId" TEXT NOT NULL,
     "storageLocationId" TEXT NOT NULL,
-    "currentStock" DECIMAL(65,30) NOT NULL DEFAULT 0,
-    "parLevel" DECIMAL(65,30),
+    "currentStock" DECIMAL(10,4) NOT NULL DEFAULT 0,
+    "parLevel" DECIMAL(10,4),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "deletedAt" TIMESTAMP(3),
@@ -2300,17 +2307,17 @@ CREATE TABLE "PrepItem" (
     "name" TEXT NOT NULL,
     "description" TEXT,
     "outputUnit" TEXT NOT NULL,
-    "batchYield" DECIMAL(65,30) NOT NULL,
+    "batchYield" DECIMAL(10,4) NOT NULL,
     "batchUnit" TEXT NOT NULL,
-    "costPerUnit" DECIMAL(65,30),
+    "costPerUnit" DECIMAL(10,4),
     "shelfLifeHours" INTEGER,
     "storageNotes" TEXT,
     "isDailyCountItem" BOOLEAN NOT NULL DEFAULT false,
-    "currentPrepStock" DECIMAL(65,30) NOT NULL DEFAULT 0,
+    "currentPrepStock" DECIMAL(10,4) NOT NULL DEFAULT 0,
     "lastCountedAt" TIMESTAMP(3),
-    "lowStockThreshold" DECIMAL(65,30),
-    "criticalStockThreshold" DECIMAL(65,30),
-    "onlineStockThreshold" DECIMAL(65,30),
+    "lowStockThreshold" DECIMAL(10,4),
+    "criticalStockThreshold" DECIMAL(10,4),
+    "onlineStockThreshold" DECIMAL(10,4),
     "isActive" BOOLEAN NOT NULL DEFAULT true,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
@@ -2326,7 +2333,7 @@ CREATE TABLE "PrepItemIngredient" (
     "locationId" TEXT NOT NULL,
     "prepItemId" TEXT NOT NULL,
     "inventoryItemId" TEXT NOT NULL,
-    "quantity" DECIMAL(65,30) NOT NULL,
+    "quantity" DECIMAL(10,4) NOT NULL,
     "unit" TEXT NOT NULL,
     "sortOrder" INTEGER NOT NULL DEFAULT 0,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -2342,8 +2349,8 @@ CREATE TABLE "MenuItemRecipe" (
     "id" TEXT NOT NULL,
     "locationId" TEXT NOT NULL,
     "menuItemId" TEXT NOT NULL,
-    "totalCost" DECIMAL(65,30),
-    "foodCostPct" DECIMAL(65,30),
+    "totalCost" DECIMAL(10,2),
+    "foodCostPct" DECIMAL(8,4),
     "lastMutatedBy" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
@@ -2360,9 +2367,9 @@ CREATE TABLE "MenuItemRecipeIngredient" (
     "recipeId" TEXT NOT NULL,
     "inventoryItemId" TEXT,
     "prepItemId" TEXT,
-    "quantity" DECIMAL(65,30) NOT NULL,
+    "quantity" DECIMAL(10,4) NOT NULL,
     "unit" TEXT NOT NULL,
-    "cost" DECIMAL(65,30),
+    "cost" DECIMAL(10,2),
     "sortOrder" INTEGER NOT NULL DEFAULT 0,
     "notes" TEXT,
     "lastMutatedBy" TEXT,
@@ -2459,10 +2466,10 @@ CREATE TABLE "InventoryCount" (
     "startedById" TEXT,
     "completedById" TEXT,
     "reviewedById" TEXT,
-    "expectedValue" DECIMAL(65,30),
-    "countedValue" DECIMAL(65,30),
-    "varianceValue" DECIMAL(65,30),
-    "variancePct" DECIMAL(65,30),
+    "expectedValue" DECIMAL(10,2),
+    "countedValue" DECIMAL(10,2),
+    "varianceValue" DECIMAL(10,2),
+    "variancePct" DECIMAL(8,4),
     "totalVarianceCost" DECIMAL(10,2),
     "categoryFilter" TEXT,
     "notes" TEXT,
@@ -2483,11 +2490,11 @@ CREATE TABLE "InventoryCountItem" (
     "locationId" TEXT NOT NULL,
     "inventoryCountId" TEXT NOT NULL,
     "inventoryItemId" TEXT NOT NULL,
-    "expectedQty" DECIMAL(65,30) NOT NULL,
-    "countedQty" DECIMAL(65,30),
-    "variance" DECIMAL(65,30),
-    "varianceValue" DECIMAL(65,30),
-    "variancePct" DECIMAL(65,30),
+    "expectedQty" DECIMAL(10,4) NOT NULL,
+    "countedQty" DECIMAL(10,4),
+    "variance" DECIMAL(10,4),
+    "varianceValue" DECIMAL(10,2),
+    "variancePct" DECIMAL(8,4),
     "countedAt" TIMESTAMP(3),
     "notes" TEXT,
     "lastMutatedBy" TEXT,
@@ -2634,14 +2641,14 @@ CREATE TABLE "InventorySettings" (
     "countReminderDay" TEXT,
     "countReminderTime" TEXT,
     "requireManagerReview" BOOLEAN NOT NULL DEFAULT true,
-    "varianceAlertPct" DECIMAL(65,30) NOT NULL DEFAULT 5,
-    "costChangeAlertPct" DECIMAL(65,30) NOT NULL DEFAULT 10,
-    "targetFoodCostPct" DECIMAL(65,30),
-    "targetLiquorCostPct" DECIMAL(65,30),
-    "multiplierLite" DECIMAL(65,30) NOT NULL DEFAULT 0.5,
-    "multiplierExtra" DECIMAL(65,30) NOT NULL DEFAULT 2.0,
-    "multiplierTriple" DECIMAL(65,30) NOT NULL DEFAULT 3.0,
-    "defaultPourSizeOz" DECIMAL(65,30) NOT NULL DEFAULT 1.5,
+    "varianceAlertPct" DECIMAL(8,4) NOT NULL DEFAULT 5,
+    "costChangeAlertPct" DECIMAL(8,4) NOT NULL DEFAULT 10,
+    "targetFoodCostPct" DECIMAL(8,4),
+    "targetLiquorCostPct" DECIMAL(8,4),
+    "multiplierLite" DECIMAL(10,4) NOT NULL DEFAULT 0.5,
+    "multiplierExtra" DECIMAL(10,4) NOT NULL DEFAULT 2.0,
+    "multiplierTriple" DECIMAL(10,4) NOT NULL DEFAULT 3.0,
+    "defaultPourSizeOz" DECIMAL(6,3) NOT NULL DEFAULT 1.5,
     "exportEnabled" BOOLEAN NOT NULL DEFAULT false,
     "exportTarget" TEXT,
     "exportApiKey" TEXT,
@@ -2702,11 +2709,11 @@ CREATE TABLE "BottleProduct" (
     "spiritCategoryId" TEXT NOT NULL,
     "tier" TEXT NOT NULL,
     "bottleSizeMl" INTEGER NOT NULL,
-    "bottleSizeOz" DECIMAL(65,30),
-    "unitCost" DECIMAL(65,30) NOT NULL,
-    "pourSizeOz" DECIMAL(65,30),
+    "bottleSizeOz" DECIMAL(10,4),
+    "unitCost" DECIMAL(10,2) NOT NULL,
+    "pourSizeOz" DECIMAL(6,3),
     "poursPerBottle" INTEGER,
-    "pourCost" DECIMAL(65,30),
+    "pourCost" DECIMAL(10,2),
     "containerType" TEXT NOT NULL DEFAULT 'bottle',
     "alcoholSubtype" TEXT,
     "vintage" INTEGER,
@@ -2734,11 +2741,11 @@ CREATE TABLE "RecipeIngredient" (
     "menuItemId" TEXT NOT NULL,
     "bottleProductId" TEXT,
     "ingredientId" TEXT,
-    "pourCount" DECIMAL(65,30) NOT NULL DEFAULT 1,
-    "pourSizeOz" DECIMAL(65,30),
+    "pourCount" DECIMAL(6,3) NOT NULL DEFAULT 1,
+    "pourSizeOz" DECIMAL(6,3),
     "isRequired" BOOLEAN NOT NULL DEFAULT true,
     "isSubstitutable" BOOLEAN NOT NULL DEFAULT true,
-    "quantity" DECIMAL(65,30),
+    "quantity" DECIMAL(10,4),
     "unit" TEXT,
     "sortOrder" INTEGER NOT NULL DEFAULT 0,
     "notes" TEXT,
@@ -2840,47 +2847,47 @@ CREATE TABLE "Ingredient" (
     "categoryId" TEXT,
     "inventoryItemId" TEXT,
     "prepItemId" TEXT,
-    "standardQuantity" DECIMAL(65,30),
+    "standardQuantity" DECIMAL(10,4),
     "standardUnit" TEXT,
     "sourceType" TEXT NOT NULL DEFAULT 'delivered',
     "purchaseUnit" TEXT,
-    "purchaseCost" DECIMAL(65,30),
-    "unitsPerPurchase" DECIMAL(65,30),
+    "purchaseCost" DECIMAL(10,2),
+    "unitsPerPurchase" DECIMAL(10,4),
     "allowNo" BOOLEAN NOT NULL DEFAULT true,
     "allowLite" BOOLEAN NOT NULL DEFAULT true,
     "allowExtra" BOOLEAN NOT NULL DEFAULT true,
     "allowOnSide" BOOLEAN NOT NULL DEFAULT false,
-    "extraPrice" DECIMAL(65,30) NOT NULL DEFAULT 0,
-    "liteMultiplier" DECIMAL(65,30) NOT NULL DEFAULT 0.5,
-    "extraMultiplier" DECIMAL(65,30) NOT NULL DEFAULT 2.0,
+    "extraPrice" DECIMAL(10,2) NOT NULL DEFAULT 0,
+    "liteMultiplier" DECIMAL(10,4) NOT NULL DEFAULT 0.5,
+    "extraMultiplier" DECIMAL(10,4) NOT NULL DEFAULT 2.0,
     "allowSwap" BOOLEAN NOT NULL DEFAULT false,
     "swapGroupId" TEXT,
-    "swapUpcharge" DECIMAL(65,30) NOT NULL DEFAULT 0,
+    "swapUpcharge" DECIMAL(10,2) NOT NULL DEFAULT 0,
     "visibility" TEXT NOT NULL DEFAULT 'visible',
     "sortOrder" INTEGER NOT NULL DEFAULT 0,
     "isActive" BOOLEAN NOT NULL DEFAULT true,
     "parentIngredientId" TEXT,
     "preparationType" TEXT,
-    "yieldPercent" DECIMAL(65,30),
-    "batchYield" DECIMAL(65,30),
-    "inputQuantity" DECIMAL(65,30),
+    "yieldPercent" DECIMAL(10,4),
+    "batchYield" DECIMAL(10,4),
+    "inputQuantity" DECIMAL(10,4),
     "inputUnit" TEXT,
-    "outputQuantity" DECIMAL(65,30) DEFAULT 1,
+    "outputQuantity" DECIMAL(10,4) DEFAULT 1,
     "outputUnit" TEXT DEFAULT 'each',
-    "recipeYieldQuantity" DECIMAL(65,30),
+    "recipeYieldQuantity" DECIMAL(10,4),
     "recipeYieldUnit" TEXT,
-    "portionSize" DECIMAL(65,30),
+    "portionSize" DECIMAL(10,4),
     "portionUnit" TEXT,
     "isDailyCountItem" BOOLEAN NOT NULL DEFAULT false,
-    "currentPrepStock" DECIMAL(65,30) NOT NULL DEFAULT 0,
+    "currentPrepStock" DECIMAL(10,4) NOT NULL DEFAULT 0,
     "lastCountedAt" TIMESTAMP(3),
     "countPrecision" TEXT NOT NULL DEFAULT 'whole',
-    "lowStockThreshold" DECIMAL(65,30),
-    "criticalStockThreshold" DECIMAL(65,30),
-    "onlineStockThreshold" DECIMAL(65,30),
+    "lowStockThreshold" DECIMAL(10,4),
+    "criticalStockThreshold" DECIMAL(10,4),
+    "onlineStockThreshold" DECIMAL(10,4),
     "resetDailyToZero" BOOLEAN NOT NULL DEFAULT true,
     "varianceHandling" TEXT NOT NULL DEFAULT 'auto_adjust',
-    "varianceThreshold" DECIMAL(65,30) NOT NULL DEFAULT 10,
+    "varianceThreshold" DECIMAL(8,4) NOT NULL DEFAULT 10,
     "isBaseIngredient" BOOLEAN NOT NULL DEFAULT true,
     "is86d" BOOLEAN NOT NULL DEFAULT false,
     "last86dAt" TIMESTAMP(3),
@@ -2929,9 +2936,9 @@ CREATE TABLE "IngredientRecipe" (
     "locationId" TEXT NOT NULL,
     "outputId" TEXT NOT NULL,
     "componentId" TEXT NOT NULL,
-    "quantity" DECIMAL(65,30) NOT NULL,
+    "quantity" DECIMAL(10,4) NOT NULL,
     "unit" TEXT NOT NULL,
-    "batchSize" DECIMAL(65,30),
+    "batchSize" DECIMAL(10,4),
     "batchUnit" TEXT,
     "sortOrder" INTEGER NOT NULL DEFAULT 0,
     "lastMutatedBy" TEXT,
@@ -2951,13 +2958,13 @@ CREATE TABLE "MenuItemIngredient" (
     "ingredientId" TEXT NOT NULL,
     "pricingOptionId" TEXT,
     "isIncluded" BOOLEAN NOT NULL DEFAULT true,
-    "quantity" DECIMAL(65,30),
+    "quantity" DECIMAL(10,4),
     "unit" TEXT,
     "allowNo" BOOLEAN,
     "allowLite" BOOLEAN,
     "allowExtra" BOOLEAN,
     "allowOnSide" BOOLEAN,
-    "extraPrice" DECIMAL(65,30),
+    "extraPrice" DECIMAL(10,2),
     "isBase" BOOLEAN NOT NULL DEFAULT true,
     "sortOrder" INTEGER NOT NULL DEFAULT 0,
     "lastMutatedBy" TEXT,
@@ -3018,7 +3025,7 @@ CREATE TABLE "OrderItemIngredient" (
     "ingredientId" TEXT NOT NULL,
     "ingredientName" TEXT NOT NULL,
     "modificationType" TEXT NOT NULL DEFAULT 'standard',
-    "priceAdjustment" DECIMAL(65,30) NOT NULL DEFAULT 0,
+    "priceAdjustment" DECIMAL(10,2) NOT NULL DEFAULT 0,
     "swappedToModifierId" TEXT,
     "swappedToModifierName" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -3256,7 +3263,7 @@ CREATE TABLE "Scale" (
     "connectionType" TEXT NOT NULL DEFAULT 'serial',
     "networkHost" TEXT,
     "networkPort" INTEGER,
-    "maxCapacity" DECIMAL(65,30),
+    "maxCapacity" DECIMAL(10,4),
     "weightUnit" TEXT NOT NULL DEFAULT 'lb',
     "precision" INTEGER NOT NULL DEFAULT 2,
     "isActive" BOOLEAN NOT NULL DEFAULT true,
@@ -3295,7 +3302,7 @@ CREATE TABLE "PaymentReader" (
     "lastError" TEXT,
     "firmwareVersion" TEXT,
     "avgResponseTime" INTEGER,
-    "successRate" DECIMAL(65,30),
+    "successRate" DECIMAL(6,2),
     "sortOrder" INTEGER NOT NULL DEFAULT 0,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
@@ -3412,7 +3419,7 @@ CREATE TABLE "PizzaConfig" (
     "freeToppingsEnabled" BOOLEAN NOT NULL DEFAULT false,
     "freeToppingsCount" INTEGER NOT NULL DEFAULT 0,
     "freeToppingsMode" TEXT NOT NULL DEFAULT 'per_pizza',
-    "extraToppingPrice" DECIMAL(65,30),
+    "extraToppingPrice" DECIMAL(10,2),
     "showVisualBuilder" BOOLEAN NOT NULL DEFAULT true,
     "showToppingList" BOOLEAN NOT NULL DEFAULT true,
     "defaultToListView" BOOLEAN NOT NULL DEFAULT false,
@@ -3440,14 +3447,14 @@ CREATE TABLE "PizzaSize" (
     "displayName" TEXT,
     "inches" INTEGER,
     "slices" INTEGER NOT NULL DEFAULT 8,
-    "basePrice" DECIMAL(65,30) NOT NULL,
-    "priceMultiplier" DECIMAL(65,30) NOT NULL DEFAULT 1.0,
-    "toppingMultiplier" DECIMAL(65,30) NOT NULL DEFAULT 1.0,
+    "basePrice" DECIMAL(10,2) NOT NULL,
+    "priceMultiplier" DECIMAL(10,4) NOT NULL DEFAULT 1.0,
+    "toppingMultiplier" DECIMAL(10,4) NOT NULL DEFAULT 1.0,
     "freeToppings" INTEGER NOT NULL DEFAULT 0,
-    "inventoryMultiplier" DECIMAL(65,30) NOT NULL DEFAULT 1.0,
+    "inventoryMultiplier" DECIMAL(10,4) NOT NULL DEFAULT 1.0,
     "ingredientId" TEXT,
     "inventoryItemId" TEXT,
-    "usageQuantity" DECIMAL(65,30),
+    "usageQuantity" DECIMAL(10,4),
     "usageUnit" TEXT,
     "sortOrder" INTEGER NOT NULL DEFAULT 0,
     "isDefault" BOOLEAN NOT NULL DEFAULT false,
@@ -3468,10 +3475,10 @@ CREATE TABLE "PizzaCrust" (
     "name" TEXT NOT NULL,
     "displayName" TEXT,
     "description" TEXT,
-    "price" DECIMAL(65,30) NOT NULL DEFAULT 0,
+    "price" DECIMAL(10,2) NOT NULL DEFAULT 0,
     "ingredientId" TEXT,
     "inventoryItemId" TEXT,
-    "usageQuantity" DECIMAL(65,30),
+    "usageQuantity" DECIMAL(10,4),
     "usageUnit" TEXT,
     "sortOrder" INTEGER NOT NULL DEFAULT 0,
     "isDefault" BOOLEAN NOT NULL DEFAULT false,
@@ -3492,13 +3499,13 @@ CREATE TABLE "PizzaSauce" (
     "name" TEXT NOT NULL,
     "displayName" TEXT,
     "description" TEXT,
-    "price" DECIMAL(65,30) NOT NULL DEFAULT 0,
+    "price" DECIMAL(10,2) NOT NULL DEFAULT 0,
     "allowLight" BOOLEAN NOT NULL DEFAULT true,
     "allowExtra" BOOLEAN NOT NULL DEFAULT true,
-    "extraPrice" DECIMAL(65,30) NOT NULL DEFAULT 0,
+    "extraPrice" DECIMAL(10,2) NOT NULL DEFAULT 0,
     "ingredientId" TEXT,
     "inventoryItemId" TEXT,
-    "usageQuantity" DECIMAL(65,30),
+    "usageQuantity" DECIMAL(10,4),
     "usageUnit" TEXT,
     "sortOrder" INTEGER NOT NULL DEFAULT 0,
     "isDefault" BOOLEAN NOT NULL DEFAULT false,
@@ -3519,13 +3526,13 @@ CREATE TABLE "PizzaCheese" (
     "name" TEXT NOT NULL,
     "displayName" TEXT,
     "description" TEXT,
-    "price" DECIMAL(65,30) NOT NULL DEFAULT 0,
+    "price" DECIMAL(10,2) NOT NULL DEFAULT 0,
     "allowLight" BOOLEAN NOT NULL DEFAULT true,
     "allowExtra" BOOLEAN NOT NULL DEFAULT true,
-    "extraPrice" DECIMAL(65,30) NOT NULL DEFAULT 0,
+    "extraPrice" DECIMAL(10,2) NOT NULL DEFAULT 0,
     "ingredientId" TEXT,
     "inventoryItemId" TEXT,
-    "usageQuantity" DECIMAL(65,30),
+    "usageQuantity" DECIMAL(10,4),
     "usageUnit" TEXT,
     "sortOrder" INTEGER NOT NULL DEFAULT 0,
     "isDefault" BOOLEAN NOT NULL DEFAULT false,
@@ -3547,13 +3554,13 @@ CREATE TABLE "PizzaTopping" (
     "displayName" TEXT,
     "description" TEXT,
     "category" TEXT NOT NULL DEFAULT 'standard',
-    "price" DECIMAL(65,30) NOT NULL,
-    "extraPrice" DECIMAL(65,30),
+    "price" DECIMAL(10,2) NOT NULL,
+    "extraPrice" DECIMAL(10,2),
     "color" TEXT,
     "iconUrl" TEXT,
     "ingredientId" TEXT,
     "inventoryItemId" TEXT,
-    "usageQuantity" DECIMAL(65,30),
+    "usageQuantity" DECIMAL(10,4),
     "usageUnit" TEXT,
     "sortOrder" INTEGER NOT NULL DEFAULT 0,
     "isActive" BOOLEAN NOT NULL DEFAULT true,
@@ -3656,8 +3663,8 @@ CREATE TABLE "PayStub" (
     "locationId" TEXT NOT NULL,
     "payrollPeriodId" TEXT NOT NULL,
     "employeeId" TEXT NOT NULL,
-    "regularHours" DECIMAL(65,30) NOT NULL DEFAULT 0,
-    "overtimeHours" DECIMAL(65,30) NOT NULL DEFAULT 0,
+    "regularHours" DECIMAL(6,2) NOT NULL DEFAULT 0,
+    "overtimeHours" DECIMAL(6,2) NOT NULL DEFAULT 0,
     "breakMinutes" INTEGER NOT NULL DEFAULT 0,
     "hourlyRate" DECIMAL(10,2) NOT NULL DEFAULT 0,
     "regularPay" DECIMAL(10,2) NOT NULL DEFAULT 0,
@@ -3728,7 +3735,7 @@ CREATE TABLE "ScheduledShift" (
     "status" "ScheduledShiftStatus" NOT NULL DEFAULT 'scheduled',
     "actualStartTime" TIMESTAMP(3),
     "actualEndTime" TIMESTAMP(3),
-    "actualHours" DECIMAL(65,30),
+    "actualHours" DECIMAL(6,2),
     "originalEmployeeId" TEXT,
     "swappedAt" TIMESTAMP(3),
     "swapApprovedBy" TEXT,
@@ -3776,18 +3783,18 @@ CREATE TABLE "PayrollSettings" (
     "payDayOfWeek" INTEGER,
     "payDayOfMonth1" INTEGER,
     "payDayOfMonth2" INTEGER,
-    "overtimeThresholdDaily" DECIMAL(6,4) NOT NULL DEFAULT 8,
-    "overtimeThresholdWeekly" DECIMAL(6,4) NOT NULL DEFAULT 40,
-    "overtimeMultiplier" DECIMAL(6,4) NOT NULL DEFAULT 1.5,
-    "doubleTimeThreshold" DECIMAL(6,4),
-    "doubleTimeMultiplier" DECIMAL(6,4) NOT NULL DEFAULT 2.0,
+    "overtimeThresholdDaily" DECIMAL(10,4) NOT NULL DEFAULT 8,
+    "overtimeThresholdWeekly" DECIMAL(10,4) NOT NULL DEFAULT 40,
+    "overtimeMultiplier" DECIMAL(10,4) NOT NULL DEFAULT 1.5,
+    "doubleTimeThreshold" DECIMAL(10,4),
+    "doubleTimeMultiplier" DECIMAL(10,4) NOT NULL DEFAULT 2.0,
     "stateTaxState" TEXT,
-    "stateTaxRate" DECIMAL(6,4),
+    "stateTaxRate" DECIMAL(10,4),
     "localTaxEnabled" BOOLEAN NOT NULL DEFAULT false,
-    "localTaxRate" DECIMAL(6,4),
+    "localTaxRate" DECIMAL(10,4),
     "localTaxName" TEXT,
-    "socialSecurityRate" DECIMAL(6,4) NOT NULL DEFAULT 6.2,
-    "medicareRate" DECIMAL(6,4) NOT NULL DEFAULT 1.45,
+    "socialSecurityRate" DECIMAL(10,4) NOT NULL DEFAULT 6.2,
+    "medicareRate" DECIMAL(10,4) NOT NULL DEFAULT 1.45,
     "socialSecurityWageBase" DECIMAL(10,2) NOT NULL DEFAULT 168600,
     "minimumWage" DECIMAL(10,2) NOT NULL DEFAULT 7.25,
     "tippedMinimumWage" DECIMAL(10,2) NOT NULL DEFAULT 2.13,
@@ -3811,7 +3818,7 @@ CREATE TABLE "PrepTrayConfig" (
     "locationId" TEXT NOT NULL,
     "prepItemId" TEXT NOT NULL,
     "name" TEXT NOT NULL,
-    "capacity" DECIMAL(65,30) NOT NULL,
+    "capacity" DECIMAL(10,4) NOT NULL,
     "description" TEXT,
     "sortOrder" INTEGER NOT NULL DEFAULT 0,
     "isActive" BOOLEAN NOT NULL DEFAULT true,
@@ -3852,12 +3859,12 @@ CREATE TABLE "DailyPrepCountItem" (
     "dailyCountId" TEXT NOT NULL,
     "prepItemId" TEXT NOT NULL,
     "trayBreakdown" JSONB,
-    "totalCounted" DECIMAL(65,30) NOT NULL,
-    "expectedQuantity" DECIMAL(65,30),
-    "variance" DECIMAL(65,30),
-    "variancePercent" DECIMAL(65,30),
-    "costPerUnit" DECIMAL(65,30),
-    "totalCost" DECIMAL(65,30),
+    "totalCounted" DECIMAL(10,4) NOT NULL,
+    "expectedQuantity" DECIMAL(10,4),
+    "variance" DECIMAL(10,4),
+    "variancePercent" DECIMAL(8,4),
+    "costPerUnit" DECIMAL(10,4),
+    "totalCost" DECIMAL(10,2),
     "notes" TEXT,
     "lastMutatedBy" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -4023,7 +4030,7 @@ CREATE TABLE "BottleServiceTier" (
     "color" TEXT NOT NULL DEFAULT '#D4AF37',
     "depositAmount" DECIMAL(10,2) NOT NULL,
     "minimumSpend" DECIMAL(10,2) NOT NULL,
-    "autoGratuityPercent" DECIMAL(6,4),
+    "autoGratuityPercent" DECIMAL(10,4),
     "sortOrder" INTEGER NOT NULL DEFAULT 0,
     "isActive" BOOLEAN NOT NULL DEFAULT true,
     "lastMutatedBy" TEXT,
@@ -4740,7 +4747,7 @@ CREATE TABLE "ItemBarcode" (
     "barcode" TEXT NOT NULL,
     "label" TEXT,
     "packSize" INTEGER NOT NULL DEFAULT 1,
-    "price" DECIMAL(65,30),
+    "price" DECIMAL(10,2),
     "menuItemId" TEXT,
     "inventoryItemId" TEXT,
     "locationId" TEXT NOT NULL,
@@ -4802,6 +4809,7 @@ CREATE TABLE "OutageQueueEntry" (
     "outageId" TEXT,
     "metadata" JSONB,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
     "replayedAt" TIMESTAMP(3),
 
     CONSTRAINT "OutageQueueEntry_pkey" PRIMARY KEY ("id")
@@ -4962,6 +4970,7 @@ CREATE TABLE "SyncConflict" (
 CREATE TABLE "_gwi_sync_state" (
     "table_name" TEXT NOT NULL,
     "high_water_mark" TIMESTAMP(3) NOT NULL,
+    "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "_gwi_sync_state_pkey" PRIMARY KEY ("table_name")
 );
@@ -5387,6 +5396,27 @@ CREATE TABLE "ExternalWebhookEvent" (
     CONSTRAINT "ExternalWebhookEvent_pkey" PRIMARY KEY ("id")
 );
 
+-- CreateTable
+CREATE TABLE "ItemShare" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "sourceItemId" TEXT NOT NULL,
+    "sourceOrderId" TEXT NOT NULL,
+    "targetOrderId" TEXT NOT NULL,
+    "shareIndex" INTEGER NOT NULL,
+    "totalShares" INTEGER NOT NULL,
+    "allocatedAmount" DECIMAL(10,2) NOT NULL,
+    "allocatedTax" DECIMAL(10,2) NOT NULL DEFAULT 0,
+    "allocatedDiscount" DECIMAL(10,2) NOT NULL DEFAULT 0,
+    "resolvedAt" TIMESTAMP(3),
+    "resolvedByPaymentId" TEXT,
+    "splitResolution" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "deletedAt" TIMESTAMP(3),
+
+    CONSTRAINT "ItemShare_pkey" PRIMARY KEY ("id")
+);
+
 -- CreateIndex
 CREATE UNIQUE INDEX "Location_slug_key" ON "Location"("slug");
 
@@ -5469,6 +5499,9 @@ CREATE INDEX "TimeClockEntry_locationId_clockIn_idx" ON "TimeClockEntry"("locati
 CREATE INDEX "TimeClockEntry_employeeId_clockOut_idx" ON "TimeClockEntry"("employeeId", "clockOut");
 
 -- CreateIndex
+CREATE INDEX "TimeClockEntry_locationId_updatedAt_idx" ON "TimeClockEntry"("locationId", "updatedAt");
+
+-- CreateIndex
 CREATE INDEX "Shift_employeeId_idx" ON "Shift"("employeeId");
 
 -- CreateIndex
@@ -5490,7 +5523,13 @@ CREATE INDEX "Shift_locationId_startedAt_idx" ON "Shift"("locationId", "startedA
 CREATE INDEX "Shift_locationId_employeeId_status_idx" ON "Shift"("locationId", "employeeId", "status");
 
 -- CreateIndex
+CREATE INDEX "Shift_locationId_updatedAt_idx" ON "Shift"("locationId", "updatedAt");
+
+-- CreateIndex
 CREATE INDEX "Drawer_locationId_idx" ON "Drawer"("locationId");
+
+-- CreateIndex
+CREATE INDEX "Drawer_locationId_updatedAt_idx" ON "Drawer"("locationId", "updatedAt");
 
 -- CreateIndex
 CREATE INDEX "PaidInOut_locationId_idx" ON "PaidInOut"("locationId");
@@ -5584,6 +5623,9 @@ CREATE INDEX "Modifier_linkedMenuItemId_idx" ON "Modifier"("linkedMenuItemId");
 
 -- CreateIndex
 CREATE INDEX "Modifier_locationId_linkedMenuItemId_idx" ON "Modifier"("locationId", "linkedMenuItemId");
+
+-- CreateIndex
+CREATE INDEX "Modifier_locationId_updatedAt_idx" ON "Modifier"("locationId", "updatedAt");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "Modifier_modifierGroupId_name_key" ON "Modifier"("modifierGroupId", "name");
@@ -5757,6 +5799,15 @@ CREATE INDEX "Order_claimedByEmployeeId_claimedAt_idx" ON "Order"("claimedByEmpl
 CREATE INDEX "Order_id_version_idx" ON "Order"("id", "version");
 
 -- CreateIndex
+CREATE INDEX "Order_splitFamilyRootId_idx" ON "Order"("splitFamilyRootId");
+
+-- CreateIndex
+CREATE INDEX "Order_splitResolution_idx" ON "Order"("splitResolution");
+
+-- CreateIndex
+CREATE INDEX "Order_locationId_updatedAt_idx" ON "Order"("locationId", "updatedAt");
+
+-- CreateIndex
 CREATE INDEX "OrderItem_locationId_idx" ON "OrderItem"("locationId");
 
 -- CreateIndex
@@ -5808,6 +5859,9 @@ CREATE INDEX "OrderItemModifier_spiritTier_idx" ON "OrderItemModifier"("spiritTi
 CREATE INDEX "OrderItemModifier_linkedMenuItemId_idx" ON "OrderItemModifier"("linkedMenuItemId");
 
 -- CreateIndex
+CREATE INDEX "OrderItemModifier_locationId_updatedAt_idx" ON "OrderItemModifier"("locationId", "updatedAt");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "Payment_offlineIntentId_key" ON "Payment"("offlineIntentId");
 
 -- CreateIndex
@@ -5857,6 +5911,9 @@ CREATE INDEX "Payment_orderId_status_idx" ON "Payment"("orderId", "status");
 
 -- CreateIndex
 CREATE INDEX "Payment_employeeId_processedAt_idx" ON "Payment"("employeeId", "processedAt");
+
+-- CreateIndex
+CREATE INDEX "Payment_locationId_updatedAt_idx" ON "Payment"("locationId", "updatedAt");
 
 -- CreateIndex
 CREATE INDEX "SyncAuditEntry_orderId_idx" ON "SyncAuditEntry"("orderId");
@@ -5955,6 +6012,9 @@ CREATE INDEX "OrderDiscount_orderId_idx" ON "OrderDiscount"("orderId");
 CREATE INDEX "OrderDiscount_couponId_idx" ON "OrderDiscount"("couponId");
 
 -- CreateIndex
+CREATE INDEX "OrderDiscount_locationId_updatedAt_idx" ON "OrderDiscount"("locationId", "updatedAt");
+
+-- CreateIndex
 CREATE INDEX "VoidLog_locationId_idx" ON "VoidLog"("locationId");
 
 -- CreateIndex
@@ -5968,6 +6028,9 @@ CREATE INDEX "VoidLog_createdAt_idx" ON "VoidLog"("createdAt");
 
 -- CreateIndex
 CREATE INDEX "VoidLog_locationId_createdAt_idx" ON "VoidLog"("locationId", "createdAt");
+
+-- CreateIndex
+CREATE INDEX "VoidLog_locationId_updatedAt_idx" ON "VoidLog"("locationId", "updatedAt");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "RemoteVoidApproval_approvalToken_key" ON "RemoteVoidApproval"("approvalToken");
@@ -6012,6 +6075,9 @@ CREATE INDEX "AuditLog_locationId_createdAt_idx" ON "AuditLog"("locationId", "cr
 CREATE INDEX "AuditLog_locationId_action_createdAt_idx" ON "AuditLog"("locationId", "action", "createdAt");
 
 -- CreateIndex
+CREATE INDEX "AuditLog_locationId_updatedAt_idx" ON "AuditLog"("locationId", "updatedAt");
+
+-- CreateIndex
 CREATE INDEX "TipPool_locationId_idx" ON "TipPool"("locationId");
 
 -- CreateIndex
@@ -6048,6 +6114,9 @@ CREATE INDEX "TipShare_createdAt_idx" ON "TipShare"("createdAt");
 CREATE INDEX "TipLedger_employeeId_idx" ON "TipLedger"("employeeId");
 
 -- CreateIndex
+CREATE INDEX "TipLedger_locationId_updatedAt_idx" ON "TipLedger"("locationId", "updatedAt");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "TipLedger_locationId_employeeId_key" ON "TipLedger"("locationId", "employeeId");
 
 -- CreateIndex
@@ -6081,6 +6150,9 @@ CREATE INDEX "TipLedgerEntry_locationId_employeeId_createdAt_idx" ON "TipLedgerE
 CREATE INDEX "TipLedgerEntry_locationId_type_sourceType_createdAt_idx" ON "TipLedgerEntry"("locationId", "type", "sourceType", "createdAt");
 
 -- CreateIndex
+CREATE INDEX "TipLedgerEntry_locationId_updatedAt_idx" ON "TipLedgerEntry"("locationId", "updatedAt");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "TipTransaction_idempotencyKey_key" ON "TipTransaction"("idempotencyKey");
 
 -- CreateIndex
@@ -6094,6 +6166,9 @@ CREATE INDEX "TipTransaction_tipGroupId_idx" ON "TipTransaction"("tipGroupId");
 
 -- CreateIndex
 CREATE INDEX "TipTransaction_collectedAt_idx" ON "TipTransaction"("collectedAt");
+
+-- CreateIndex
+CREATE INDEX "TipTransaction_locationId_updatedAt_idx" ON "TipTransaction"("locationId", "updatedAt");
 
 -- CreateIndex
 CREATE INDEX "TipGroupTemplate_locationId_idx" ON "TipGroupTemplate"("locationId");
@@ -6768,6 +6843,9 @@ CREATE INDEX "OrderItemIngredient_ingredientId_idx" ON "OrderItemIngredient"("in
 CREATE INDEX "OrderItemIngredient_modificationType_idx" ON "OrderItemIngredient"("modificationType");
 
 -- CreateIndex
+CREATE INDEX "OrderItemIngredient_locationId_updatedAt_idx" ON "OrderItemIngredient"("locationId", "updatedAt");
+
+-- CreateIndex
 CREATE INDEX "Printer_locationId_idx" ON "Printer"("locationId");
 
 -- CreateIndex
@@ -6951,6 +7029,9 @@ CREATE INDEX "PrintJob_createdAt_idx" ON "PrintJob"("createdAt");
 CREATE INDEX "PrintJob_locationId_status_idx" ON "PrintJob"("locationId", "status");
 
 -- CreateIndex
+CREATE INDEX "PrintJob_locationId_updatedAt_idx" ON "PrintJob"("locationId", "updatedAt");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "PizzaConfig_locationId_key" ON "PizzaConfig"("locationId");
 
 -- CreateIndex
@@ -7024,6 +7105,9 @@ CREATE INDEX "OrderItemPizza_orderItemId_idx" ON "OrderItemPizza"("orderItemId")
 
 -- CreateIndex
 CREATE INDEX "OrderItemPizza_sizeId_idx" ON "OrderItemPizza"("sizeId");
+
+-- CreateIndex
+CREATE INDEX "OrderItemPizza_locationId_updatedAt_idx" ON "OrderItemPizza"("locationId", "updatedAt");
 
 -- CreateIndex
 CREATE INDEX "PayrollPeriod_locationId_idx" ON "PayrollPeriod"("locationId");
@@ -7162,6 +7246,9 @@ CREATE INDEX "OrderCard_status_idx" ON "OrderCard"("status");
 
 -- CreateIndex
 CREATE INDEX "OrderCard_recordNo_idx" ON "OrderCard"("recordNo");
+
+-- CreateIndex
+CREATE INDEX "OrderCard_locationId_updatedAt_idx" ON "OrderCard"("locationId", "updatedAt");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "DigitalReceipt_orderId_key" ON "DigitalReceipt"("orderId");
@@ -7321,6 +7408,9 @@ CREATE INDEX "RefundLog_createdAt_idx" ON "RefundLog"("createdAt");
 
 -- CreateIndex
 CREATE INDEX "RefundLog_locationId_createdAt_idx" ON "RefundLog"("locationId", "createdAt");
+
+-- CreateIndex
+CREATE INDEX "RefundLog_locationId_updatedAt_idx" ON "RefundLog"("locationId", "updatedAt");
 
 -- CreateIndex
 CREATE INDEX "OrderItemDiscount_locationId_idx" ON "OrderItemDiscount"("locationId");
@@ -7772,6 +7862,18 @@ CREATE INDEX "ExternalWebhookEvent_provider_processingStatus_idx" ON "ExternalWe
 -- CreateIndex
 CREATE UNIQUE INDEX "ExternalWebhookEvent_provider_externalTransactionId_eventTy_key" ON "ExternalWebhookEvent"("provider", "externalTransactionId", "eventType");
 
+-- CreateIndex
+CREATE INDEX "ItemShare_sourceItemId_idx" ON "ItemShare"("sourceItemId");
+
+-- CreateIndex
+CREATE INDEX "ItemShare_targetOrderId_idx" ON "ItemShare"("targetOrderId");
+
+-- CreateIndex
+CREATE INDEX "ItemShare_sourceOrderId_idx" ON "ItemShare"("sourceOrderId");
+
+-- CreateIndex
+CREATE INDEX "ItemShare_locationId_idx" ON "ItemShare"("locationId");
+
 -- AddForeignKey
 ALTER TABLE "Location" ADD CONSTRAINT "Location_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "Organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
@@ -7989,6 +8091,9 @@ ALTER TABLE "Order" ADD CONSTRAINT "Order_customerId_fkey" FOREIGN KEY ("custome
 ALTER TABLE "Order" ADD CONSTRAINT "Order_parentOrderId_fkey" FOREIGN KEY ("parentOrderId") REFERENCES "Order"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "Order" ADD CONSTRAINT "Order_splitFamilyRootId_fkey" FOREIGN KEY ("splitFamilyRootId") REFERENCES "Order"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
+
+-- AddForeignKey
 ALTER TABLE "Order" ADD CONSTRAINT "Order_orderTypeId_fkey" FOREIGN KEY ("orderTypeId") REFERENCES "OrderType"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -8034,7 +8139,7 @@ ALTER TABLE "OrderItemModifier" ADD CONSTRAINT "OrderItemModifier_modifierId_fke
 ALTER TABLE "Payment" ADD CONSTRAINT "Payment_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Payment" ADD CONSTRAINT "Payment_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "Order"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "Payment" ADD CONSTRAINT "Payment_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "Order"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Payment" ADD CONSTRAINT "Payment_employeeId_fkey" FOREIGN KEY ("employeeId") REFERENCES "Employee"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -9283,4 +9388,16 @@ ALTER TABLE "LoyaltyTransaction" ADD CONSTRAINT "LoyaltyTransaction_locationId_f
 
 -- AddForeignKey
 ALTER TABLE "LoyaltyTransaction" ADD CONSTRAINT "LoyaltyTransaction_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "Order"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ItemShare" ADD CONSTRAINT "ItemShare_sourceItemId_fkey" FOREIGN KEY ("sourceItemId") REFERENCES "OrderItem"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ItemShare" ADD CONSTRAINT "ItemShare_sourceOrderId_fkey" FOREIGN KEY ("sourceOrderId") REFERENCES "Order"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ItemShare" ADD CONSTRAINT "ItemShare_targetOrderId_fkey" FOREIGN KEY ("targetOrderId") REFERENCES "Order"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ItemShare" ADD CONSTRAINT "ItemShare_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 

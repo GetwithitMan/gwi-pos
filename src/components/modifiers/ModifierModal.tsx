@@ -19,7 +19,7 @@ import { SwapPickerSheet } from './SwapPickerSheet'
 import { IngredientsSection } from './IngredientsSection'
 import { ModifierGroupSection } from './ModifierGroupSection'
 import { X } from 'lucide-react'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import type { SwapTarget } from '@/components/menu/item-editor-types'
 
 type ViewMode = 'steps' | 'grid'
@@ -105,6 +105,30 @@ export function ModifierModal({
   const cpm = dualPricing?.enabled && dualPricing.cashDiscountPercent > 0
     ? 1 + dualPricing.cashDiscountPercent / 100
     : 1
+
+  // Debounced special notes: local state updates immediately for input
+  // responsiveness, but propagation to the hook (which triggers modifier
+  // group recalculations) is debounced by 300ms.
+  const [localNotes, setLocalNotes] = useState(specialNotes)
+  const debouncedNotesRef = useRef<ReturnType<typeof setTimeout>>(undefined)
+
+  const handleNotesChange = useCallback((value: string) => {
+    setLocalNotes(value) // Immediate local state for input responsiveness
+    clearTimeout(debouncedNotesRef.current)
+    debouncedNotesRef.current = setTimeout(() => {
+      setSpecialNotes(value) // Propagate to hook after debounce
+    }, 300)
+  }, [setSpecialNotes])
+
+  // Sync local notes when the hook's specialNotes changes externally (e.g. on edit init)
+  useEffect(() => {
+    setLocalNotes(specialNotes)
+  }, [specialNotes])
+
+  // Cleanup debounce timer on unmount
+  useEffect(() => {
+    return () => clearTimeout(debouncedNotesRef.current)
+  }, [])
 
   // Quick pre-modifier: when set, the next modifier tapped gets this prefix
   const [pendingQuickPreMod, setPendingQuickPreMod] = useState<string | null>(null)
@@ -768,8 +792,8 @@ export function ModifierModal({
                   📝 Special Instructions <span className="text-gray-600 font-normal">(optional)</span>
                 </label>
                 <textarea
-                  value={specialNotes}
-                  onChange={(e) => setSpecialNotes(e.target.value)}
+                  value={localNotes}
+                  onChange={(e) => handleNotesChange(e.target.value)}
                   placeholder="Special instructions..."
                   className="w-full p-2 bg-white/5 border border-white/10 rounded text-sm text-white placeholder:text-slate-500 resize-none focus:outline-none"
                   style={{ transition: 'border-color 0.15s ease' }}
@@ -797,14 +821,18 @@ export function ModifierModal({
               variant="primary"
               className="flex-1 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white border-0"
               disabled={!canConfirm()}
-              onClick={() => onConfirm(
-                getAllSelectedModifiers(),
-                specialNotes.trim() || undefined,
-                selectedPourSize || undefined,
-                pourMultiplier !== 1 ? pourMultiplier : undefined,
-                getAllIngredientMods().length > 0 ? getAllIngredientMods() : undefined,
-                pourCustomPrice
-              )}
+              onClick={() => {
+                // Flush any pending debounced notes before confirming
+                clearTimeout(debouncedNotesRef.current)
+                onConfirm(
+                  getAllSelectedModifiers(),
+                  localNotes.trim() || undefined,
+                  selectedPourSize || undefined,
+                  pourMultiplier !== 1 ? pourMultiplier : undefined,
+                  getAllIngredientMods().length > 0 ? getAllIngredientMods() : undefined,
+                  pourCustomPrice
+                )
+              }}
             >
               {editingItem ? 'Update' : 'Add'}
             </Button>

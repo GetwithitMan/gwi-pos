@@ -707,10 +707,18 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
         return
       }
       toast.success(`Split ${numWays} ways`)
-      const orderResponse = await fetch(`/api/orders/${orderId}`)
-      if (orderResponse.ok) {
-        const orderData = await orderResponse.json()
-        loadOrder(orderData)
+      // Use the split response directly if it contains the updated order
+      const splitData = await res.json()
+      const splitOrder = splitData.data ?? splitData
+      if (splitOrder && splitOrder.id) {
+        loadOrder(splitOrder)
+      } else {
+        // Fallback: fetch the order if split response doesn't include it
+        const orderResponse = await fetch(`/api/orders/${orderId}`)
+        if (orderResponse.ok) {
+          const orderData = await orderResponse.json()
+          loadOrder(orderData)
+        }
       }
       setFloorPlanRefreshTrigger(prev => prev + 1)
     } catch {

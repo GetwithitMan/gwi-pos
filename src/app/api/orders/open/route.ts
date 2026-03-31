@@ -1,4 +1,4 @@
-import { NextRequest } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withTiming, getTimingFromRequest } from '@/lib/with-timing'
@@ -6,6 +6,24 @@ import { getCurrentBusinessDay } from '@/lib/business-day'
 import { err, ok } from '@/lib/api-response'
 // TODO: Migrate to OrderRepository once it supports getOpenOrdersSummary(), getOpenOrdersFull(),
 // business day batching, empty-shell exclusion, rich includes, multi-filter, and pagination
+
+// ---------------------------------------------------------------------------
+// Lightweight in-memory response cache for summary queries
+// Android registers poll every 60s + on socket events. Most calls return
+// identical data. A 5s TTL eliminates redundant DB work while socket-driven
+// invalidation keeps the cache fresh on mutations.
+// ---------------------------------------------------------------------------
+const openOrdersCache = new Map<string, { data: any; timestamp: number }>()
+const OPEN_ORDERS_CACHE_TTL = 5_000 // 5 seconds
+
+/** Clear cached open-orders responses for a given location (called on mutations). */
+export function invalidateOpenOrdersCache(locationId: string) {
+  for (const key of openOrdersCache.keys()) {
+    if (key.startsWith(locationId + ':')) {
+      openOrdersCache.delete(key)
+    }
+  }
+}
 
 // Force dynamic rendering - never cache this endpoint
 export const dynamic = 'force-dynamic'
@@ -124,6 +142,13 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
       // Pagination: default 100, max 200
       const limitParam = searchParams.get('limit')
       const summaryLimit = Math.min(Math.max(parseInt(limitParam || '100', 10) || 100, 1), 200)
+
+      // Check response cache (summary-only, keyed by location + params)
+      const cacheKey = `${locationId}:${summaryLimit}:${employeeId || ''}:${orderType || ''}:${rolledOver || ''}:${minAge || ''}:${previousDay}`
+      const cached = openOrdersCache.get(cacheKey)
+      if (cached && Date.now() - cached.timestamp < OPEN_ORDERS_CACHE_TTL) {
+        return NextResponse.json(cached.data)
+      }
 
       timing.start('db')
       const summaryOrders = await batchBusinessDayQuery({
@@ -246,7 +271,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
         } catch (_) { /* query failed — skip */ }
       }
 
-      return ok({
+      const summaryResponseData = {
         orders: summaryOrders.map(o => ({
           id: o.id,
           orderNumber: o.orderNumber,
@@ -350,7 +375,12 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
         count: summaryOrders.length,
         limit: summaryLimit,
         summary: true,
-      })
+      }
+
+      // Store in cache for subsequent requests within the TTL window
+      openOrdersCache.set(cacheKey, { data: { data: summaryResponseData }, timestamp: Date.now() })
+
+      return ok(summaryResponseData)
     }
 
     timing.start('db')

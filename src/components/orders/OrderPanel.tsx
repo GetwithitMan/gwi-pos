@@ -322,6 +322,71 @@ export const OrderPanel = memo(function OrderPanel({
   onPagerAssigned,
   onPageNow: onPageNowProp,
 }: OrderPanelProps) {
+  // ── Stable callback refs for renderItem ──
+  // Storing callback props in refs allows renderItem's useCallback to have a
+  // much smaller dependency array (only data values that affect rendering),
+  // preventing unnecessary re-creation of the render function when parent
+  // re-renders with new callback identities.
+  const onItemClickRef = useRef(onItemClick)
+  useEffect(() => { onItemClickRef.current = onItemClick }, [onItemClick])
+
+  const onItemRemoveRef = useRef(onItemRemove)
+  useEffect(() => { onItemRemoveRef.current = onItemRemove }, [onItemRemove])
+
+  const onQuantityChangeRef = useRef(onQuantityChange)
+  useEffect(() => { onQuantityChangeRef.current = onQuantityChange }, [onQuantityChange])
+
+  const onSessionEndedRef = useRef(onSessionEnded)
+  useEffect(() => { onSessionEndedRef.current = onSessionEnded }, [onSessionEnded])
+
+  const onTimerStartedRef = useRef(onTimerStarted)
+  useEffect(() => { onTimerStartedRef.current = onTimerStarted }, [onTimerStarted])
+
+  const onTimeExtendedRef = useRef(onTimeExtended)
+  useEffect(() => { onTimeExtendedRef.current = onTimeExtended }, [onTimeExtended])
+
+  const onItemHoldToggleRef = useRef(onItemHoldToggle)
+  useEffect(() => { onItemHoldToggleRef.current = onItemHoldToggle }, [onItemHoldToggle])
+
+  const onItemNoteEditRef = useRef(onItemNoteEdit)
+  useEffect(() => { onItemNoteEditRef.current = onItemNoteEdit }, [onItemNoteEdit])
+
+  const onItemCourseChangeRef = useRef(onItemCourseChange)
+  useEffect(() => { onItemCourseChangeRef.current = onItemCourseChange }, [onItemCourseChange])
+
+  const onItemEditModifiersRef = useRef(onItemEditModifiers)
+  useEffect(() => { onItemEditModifiersRef.current = onItemEditModifiers }, [onItemEditModifiers])
+
+  const onItemCompVoidRef = useRef(onItemCompVoid)
+  useEffect(() => { onItemCompVoidRef.current = onItemCompVoid }, [onItemCompVoid])
+
+  const onItemDiscountRef = useRef(onItemDiscount)
+  useEffect(() => { onItemDiscountRef.current = onItemDiscount }, [onItemDiscount])
+
+  const onItemDiscountRemoveRef = useRef(onItemDiscountRemove)
+  useEffect(() => { onItemDiscountRemoveRef.current = onItemDiscountRemove }, [onItemDiscountRemove])
+
+  const onItemResendRef = useRef(onItemResend)
+  useEffect(() => { onItemResendRef.current = onItemResend }, [onItemResend])
+
+  const onItemRepeatRef = useRef(onItemRepeat)
+  useEffect(() => { onItemRepeatRef.current = onItemRepeat }, [onItemRepeat])
+
+  const onItemToggleExpandRef = useRef(onItemToggleExpand)
+  useEffect(() => { onItemToggleExpandRef.current = onItemToggleExpand }, [onItemToggleExpand])
+
+  const onItemSeatChangeRef = useRef(onItemSeatChange)
+  useEffect(() => { onItemSeatChangeRef.current = onItemSeatChange }, [onItemSeatChange])
+
+  const onItemSelectRef = useRef(onItemSelect)
+  useEffect(() => { onItemSelectRef.current = onItemSelect }, [onItemSelect])
+
+  const onFireItemRef = useRef(onFireItem)
+  useEffect(() => { onFireItemRef.current = onFireItem }, [onFireItem])
+
+  const onCancelItemDelayRef = useRef(onCancelItemDelay)
+  useEffect(() => { onCancelItemDelayRef.current = onCancelItemDelay }, [onCancelItemDelay])
+
   const hasItems = items.length > 0
   const hasPendingItems = items.some(item =>
     !item.sentToKitchen && (!item.kitchenStatus || item.kitchenStatus === 'pending')
@@ -786,6 +851,9 @@ export const OrderPanel = memo(function OrderPanel({
   }, [items])
 
   // Shared item renderer — ensures identical rendering everywhere
+  // Shared item renderer — uses stable callback refs to avoid re-creating
+  // on every parent render. Only data values that affect visual output are
+  // in the dependency array (reduced from 31 deps to 11).
   const renderItem = useCallback((item: OrderPanelItemData) => (
     <OrderPanelItem
       key={item.id}
@@ -793,35 +861,35 @@ export const OrderPanel = memo(function OrderPanel({
       locationId={locationId}
       showControls={showItemControls}
       showEntertainmentTimer={showEntertainmentTimers}
-      onClick={onItemClick}
-      onRemove={onItemRemove}
-      onQuantityChange={onQuantityChange}
-      onSessionEnded={onSessionEnded}
-      onTimerStarted={onTimerStarted}
-      onTimeExtended={onTimeExtended}
-      onHoldToggle={onItemHoldToggle}
-      onNoteEdit={onItemNoteEdit}
-      onCourseChange={onItemCourseChange}
-      onEditModifiers={onItemEditModifiers}
-      onCompVoid={onItemCompVoid}
-      onItemDiscount={onItemDiscount}
-      onItemDiscountRemove={onItemDiscountRemove}
-      onResend={onItemResend}
-      onRepeat={onItemRepeat}
+      onClick={onItemClickRef.current}
+      onRemove={onItemRemoveRef.current}
+      onQuantityChange={onQuantityChangeRef.current}
+      onSessionEnded={onSessionEndedRef.current}
+      onTimerStarted={onTimerStartedRef.current}
+      onTimeExtended={onTimeExtendedRef.current}
+      onHoldToggle={onItemHoldToggleRef.current}
+      onNoteEdit={onItemNoteEditRef.current}
+      onCourseChange={onItemCourseChangeRef.current}
+      onEditModifiers={onItemEditModifiersRef.current}
+      onCompVoid={onItemCompVoidRef.current}
+      onItemDiscount={onItemDiscountRef.current}
+      onItemDiscountRemove={onItemDiscountRemoveRef.current}
+      onResend={onItemResendRef.current}
+      onRepeat={onItemRepeatRef.current}
       isExpanded={expandedItemId === item.id}
-      onToggleExpand={onItemToggleExpand}
+      onToggleExpand={onItemToggleExpandRef.current}
       maxSeats={maxSeats}
       maxCourses={maxCourses}
-      onSeatChange={onItemSeatChange}
+      onSeatChange={onItemSeatChangeRef.current}
       isNewest={newestItemId === item.id}
       isLastSent={lastSentItemIds?.has(item.id)}
       isSelected={selectedItemIds ? selectedItemIds.has(item.id) : selectedItemId === item.id}
-      onSelect={onItemSelect}
-      onFireItem={onFireItem}
-      onCancelItemDelay={onCancelItemDelay}
+      onSelect={onItemSelectRef.current}
+      onFireItem={onFireItemRef.current}
+      onCancelItemDelay={onCancelItemDelayRef.current}
       cardPriceMultiplier={cardPriceMultiplier}
     />
-  ), [locationId, showItemControls, showEntertainmentTimers, onItemClick, onItemRemove, onQuantityChange, onSessionEnded, onTimerStarted, onTimeExtended, onItemHoldToggle, onItemNoteEdit, onItemCourseChange, onItemEditModifiers, onItemCompVoid, onItemDiscount, onItemDiscountRemove, onItemResend, onItemRepeat, expandedItemId, onItemToggleExpand, maxSeats, maxCourses, onItemSeatChange, newestItemId, lastSentItemIds, selectedItemIds, selectedItemId, onItemSelect, onFireItem, onCancelItemDelay, cardPriceMultiplier])
+  ), [locationId, showItemControls, showEntertainmentTimers, expandedItemId, maxSeats, maxCourses, newestItemId, lastSentItemIds, selectedItemIds, selectedItemId, cardPriceMultiplier])
 
   // Build a match key for condensing like items
   const getCondenseKey = (item: OrderPanelItemData): string => {
