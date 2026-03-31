@@ -1,1 +1,5 @@
-export { default } from '../../liquor-modifiers/page'
+import { redirect } from 'next/navigation'
+
+export default function SettingsLiquorModifiersPage() {
+  redirect('/menu/templates')
+}

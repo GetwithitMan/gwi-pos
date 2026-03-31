@@ -12,6 +12,17 @@ interface RouteParams {
   params: Promise<{ id: string }>
 }
 
+const ALLOWED_MODIFIER_TYPES = ['food', 'liquor', 'universal'] as const
+
+function normalizeModifierTypes(types: unknown): string[] {
+  if (!Array.isArray(types)) return ['food']
+  const valid = types
+    .filter((t): t is string => typeof t === 'string' && ALLOWED_MODIFIER_TYPES.includes(t as any))
+    .filter((t, i, arr) => arr.indexOf(t) === i)
+  if (valid.length === 0) return ['food']
+  return valid.sort()
+}
+
 function formatTemplate(t: any) {
   return {
     id: t.id,
@@ -20,6 +31,8 @@ function formatTemplate(t: any) {
     minSelections: t.minSelections,
     maxSelections: t.maxSelections,
     isRequired: t.isRequired,
+    allowStacking: t.allowStacking ?? false,
+    modifierTypes: t.modifierTypes ?? ['food'],
     sortOrder: t.sortOrder,
     isActive: t.isActive,
     createdAt: t.createdAt,
@@ -27,6 +40,7 @@ function formatTemplate(t: any) {
     modifiers: (t.modifiers || []).map((m: any) => ({
       id: m.id,
       name: m.name,
+      displayName: m.displayName ?? null,
       price: Number(m.price),
       allowNo: m.allowNo,
       allowLite: m.allowLite,
@@ -35,6 +49,12 @@ function formatTemplate(t: any) {
       extraPrice: Number(m.extraPrice),
       sortOrder: m.sortOrder,
       isDefault: m.isDefault,
+      ingredientId: m.ingredientId ?? null,
+      ingredientName: m.ingredientName ?? null,
+      inventoryDeductionAmount: m.inventoryDeductionAmount ? Number(m.inventoryDeductionAmount) : null,
+      inventoryDeductionUnit: m.inventoryDeductionUnit ?? null,
+      showOnPOS: m.showOnPOS ?? true,
+      showOnline: m.showOnline ?? true,
     })),
   }
 }
@@ -98,6 +118,8 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
       minSelections,
       maxSelections,
       isRequired,
+      allowStacking,
+      modifierTypes: rawModifierTypes,
       modifiers: bodyModifiers,
     } = body
 
@@ -126,11 +148,14 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
           minSelections: minSelections ?? existing.minSelections,
           maxSelections: maxSelections ?? existing.maxSelections,
           isRequired: isRequired ?? existing.isRequired,
+          allowStacking: allowStacking ?? existing.allowStacking,
+          modifierTypes: rawModifierTypes ? normalizeModifierTypes(rawModifierTypes) : undefined,
           modifiers: Array.isArray(bodyModifiers)
             ? {
                 create: bodyModifiers.map((m: any, i: number) => ({
                   locationId,
                   name: m.name || `Modifier ${i + 1}`,
+                  displayName: m.displayName || null,
                   price: m.price ?? 0,
                   allowNo: m.allowNo ?? true,
                   allowLite: m.allowLite ?? false,
@@ -139,6 +164,12 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
                   extraPrice: m.extraPrice ?? 0,
                   sortOrder: m.sortOrder ?? i,
                   isDefault: m.isDefault ?? false,
+                  ingredientId: m.ingredientId || null,
+                  ingredientName: m.ingredientName || null,
+                  inventoryDeductionAmount: m.inventoryDeductionAmount ?? null,
+                  inventoryDeductionUnit: m.inventoryDeductionUnit || null,
+                  showOnPOS: m.showOnPOS ?? true,
+                  showOnline: m.showOnline ?? true,
                 })),
               }
             : undefined,

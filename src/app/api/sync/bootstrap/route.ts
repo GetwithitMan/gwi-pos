@@ -310,11 +310,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     toppingCategory: toppingCategoryMap.get(normalizeName(m.name ?? '')) ?? null,
   })
 
-  // Fetch shared/global modifier groups (menuItemId IS NULL) — these include
-  // spirit upgrade groups created via the liquor builder that aren't tied to a
-  // specific menu item. Without this, 5 of 6 spirit groups are invisible on Android.
+  // Fetch spirit-only global modifier groups (menuItemId IS NULL, isSpiritGroup) —
+  // these are spirit upgrade groups created via the liquor builder for upsell.
+  // Regular shared modifier groups are migrated to templates and excluded here.
   const sharedModifierGroups = await db.modifierGroup.findMany({
-    where: { locationId, menuItemId: null, deletedAt: null },
+    where: { locationId, menuItemId: null, isSpiritGroup: true, deletedAt: null },
     include: {
       modifiers: {
         where: { deletedAt: null, isActive: true },

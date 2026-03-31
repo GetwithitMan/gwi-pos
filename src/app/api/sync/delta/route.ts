@@ -47,9 +47,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     db.orderType.findMany({ where: { locationId, updatedAt: { gt: since } } }),
     adminDb.order.findMany({ where: { locationId, updatedAt: { gt: since }, status: { in: ['draft', 'open', 'sent', 'in_progress', 'split'] }, deletedAt: null }, include: { items: { include: { modifiers: true, itemDiscounts: true } }, payments: true }, take: 100, orderBy: { updatedAt: 'desc' } }),
     db.pricingOptionGroup.findMany({ where: { locationId, updatedAt: { gt: since }, deletedAt: null }, include: { options: { where: { deletedAt: null }, orderBy: { sortOrder: 'asc' } } } }),
-    // Shared/global modifier groups (menuItemId: null) — not nested under menuItems
+    // Spirit-only global modifier groups (menuItemId: null, isSpiritGroup) — for upsell
     db.modifierGroup.findMany({
-      where: { locationId, menuItemId: null, deletedAt: null, updatedAt: { gt: since } },
+      where: { locationId, menuItemId: null, isSpiritGroup: true, deletedAt: null, updatedAt: { gt: since } },
       include: {
         modifiers: {
           where: { deletedAt: null, isActive: true },

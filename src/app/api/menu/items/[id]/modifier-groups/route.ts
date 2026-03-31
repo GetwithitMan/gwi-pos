@@ -78,6 +78,8 @@ function formatModifierGroup(group: {
     nonePrintsToKitchen: group.nonePrintsToKitchen,
     noneShowOnReceipt: group.noneShowOnReceipt,
     autoAdvance: group.autoAdvance,
+    sourceTemplateId: (group as any).sourceTemplateId ?? null,
+    sourceTemplateName: (group as any).sourceTemplateName ?? null,
     sortOrder: group.sortOrder,
     modifiers: group.modifiers.map(m => {
       const childGroup = m.childModifierGroupId ? allGroups.get(m.childModifierGroupId) : null
@@ -599,6 +601,9 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
     let templateMinSelections: number | null = null
     let templateMaxSelections: number | null = null
     let templateIsRequired: boolean | null = null
+    let templateAllowStacking: boolean | null = null
+    let sourceTemplateId: string | null = null
+    let sourceTemplateName: string | null = null
 
     if (templateId) {
       const template = await db.modifierGroupTemplate.findUnique({
@@ -611,24 +616,41 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
         },
       })
 
-      if (template) {
-        // Copy group settings from the template (minSelections, maxSelections, isRequired)
-        templateMinSelections = template.minSelections
-        templateMaxSelections = template.maxSelections
-        templateIsRequired = template.isRequired
-
-        templateModifiers = template.modifiers.map(m => ({
-          name: m.name,
-          price: Number(m.price),
-          allowNo: m.allowNo,
-          allowLite: m.allowLite,
-          allowOnSide: m.allowOnSide,
-          allowExtra: m.allowExtra,
-          extraPrice: Number(m.extraPrice),
-          isDefault: m.isDefault,
-          sortOrder: m.sortOrder,
-        }))
+      if (!template) {
+        return notFound('Template not found')
       }
+
+      // Reject archived/deleted templates
+      if (template.deletedAt) {
+        return err('Template is archived', 422)
+      }
+
+      // Copy group settings from the template
+      templateMinSelections = template.minSelections
+      templateMaxSelections = template.maxSelections
+      templateIsRequired = template.isRequired
+      templateAllowStacking = template.allowStacking
+      sourceTemplateId = template.id
+      sourceTemplateName = template.name
+
+      templateModifiers = template.modifiers.map(m => ({
+        name: m.name,
+        displayName: m.displayName || null,
+        price: Number(m.price),
+        allowNo: m.allowNo,
+        allowLite: m.allowLite,
+        allowOnSide: m.allowOnSide,
+        allowExtra: m.allowExtra,
+        extraPrice: Number(m.extraPrice),
+        isDefault: m.isDefault,
+        sortOrder: m.sortOrder,
+        // Soft ingredient links become real bindings on the item-owned copy
+        ingredientId: m.ingredientId || null,
+        inventoryDeductionAmount: m.inventoryDeductionAmount ? Number(m.inventoryDeductionAmount) : null,
+        inventoryDeductionUnit: m.inventoryDeductionUnit || null,
+        showOnPOS: m.showOnPOS ?? true,
+        showOnline: m.showOnline ?? true,
+      }))
     }
 
     // Resolve group settings: template values take priority over body defaults
@@ -684,7 +706,10 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
           minSelections: resolvedMinSelections,
           maxSelections: resolvedMaxSelections,
           isRequired: resolvedIsRequired,
+          allowStacking: templateAllowStacking ?? false,
           isSpiritGroup,
+          sourceTemplateId,
+          sourceTemplateName,
           sortOrder: (maxSort._max.sortOrder || 0) + 1,
           // Create modifiers from template if provided
           modifiers: templateModifiers.length > 0
@@ -692,6 +717,7 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
                 create: templateModifiers.map(m => ({
                   locationId: menuItem.locationId,
                   name: m.name,
+                  displayName: (m as any).displayName || null,
                   price: m.price,
                   allowNo: m.allowNo,
                   allowLite: m.allowLite,
@@ -700,6 +726,12 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
                   extraPrice: m.extraPrice,
                   isDefault: m.isDefault,
                   sortOrder: m.sortOrder,
+                  // Ingredient soft-links become real bindings
+                  ingredientId: (m as any).ingredientId || undefined,
+                  inventoryDeductionAmount: (m as any).inventoryDeductionAmount ?? undefined,
+                  inventoryDeductionUnit: (m as any).inventoryDeductionUnit || undefined,
+                  showOnPOS: (m as any).showOnPOS ?? true,
+                  showOnline: (m as any).showOnline ?? true,
                 })),
               }
             : undefined,

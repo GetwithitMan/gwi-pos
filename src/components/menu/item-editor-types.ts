@@ -124,6 +124,8 @@ export interface ModifierGroup {
   noneShowOnReceipt?: boolean
   autoAdvance?: boolean
   isSpiritGroup?: boolean
+  sourceTemplateId?: string | null
+  sourceTemplateName?: string | null
 }
 
 export type { MenuItemEditorSummary as MenuItem } from '@/types'

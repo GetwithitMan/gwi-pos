@@ -1680,6 +1680,11 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
                               {group.name}
                             </span>
                           )}
+                          {group.sourceTemplateName && (
+                            <span className="text-[9px] px-1 py-0.5 bg-emerald-50 text-emerald-600 rounded truncate max-w-[120px]" title={`From template: ${group.sourceTemplateName}`}>
+                              from: {group.sourceTemplateName}
+                            </span>
+                          )}
                           {/* Settings badges — always visible in header */}
                           <span className="ml-auto text-[9px] text-gray-600 flex items-center gap-1 shrink-0">
                             <span className="px-1 py-0.5 bg-gray-100 rounded">{group.minSelections}-{group.maxSelections}</span>
