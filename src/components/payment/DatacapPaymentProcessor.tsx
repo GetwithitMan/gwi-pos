@@ -9,6 +9,7 @@ import { SwapConfirmationModal } from './SwapConfirmationModal'
 import { ReaderStatusIndicator } from './ReaderStatusIndicator'
 import { formatCurrency } from '@/lib/utils'
 import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
+import { clientLog } from '@/lib/client-logger'
 
 /** Card detection result from CardLookup (Model 3: dual_price_pan_debit) */
 export interface CardDetectionResult {
@@ -181,7 +182,7 @@ export function DatacapPaymentProcessor({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ event, locationId, payload: { orderId, ...payload } }),
-      }).catch(err => console.warn('fire-and-forget failed in payment.DatacapPaymentProcessor:', err))
+      }).catch(err => clientLog.warn('fire-and-forget failed in payment.DatacapPaymentProcessor:', err))
     }
 
     switch (processingStatus) {
@@ -247,7 +248,7 @@ export function DatacapPaymentProcessor({
           }
         } else {
           // CardLookup failed — fall back to credit (higher price = safe default)
-          console.warn('[DatacapPaymentProcessor] CardLookup failed, defaulting to credit:', lookupResult?.error)
+          clientLog.warn('[DatacapPaymentProcessor] CardLookup failed, defaulting to credit:', lookupResult?.error)
           detection = {
             detectedCardType: 'credit',
             appliedPricingTier: 'credit',
@@ -257,7 +258,7 @@ export function DatacapPaymentProcessor({
         }
       } catch (err) {
         // Network error — fall back to credit
-        console.warn('[DatacapPaymentProcessor] CardLookup error, defaulting to credit:', err)
+        clientLog.warn('[DatacapPaymentProcessor] CardLookup error, defaulting to credit:', err)
         detection = {
           detectedCardType: 'credit',
           appliedPricingTier: 'credit',
@@ -286,7 +287,7 @@ export function DatacapPaymentProcessor({
           paymentMethod: 'credit',
         },
       }),
-    }).catch(err => console.warn('fire-and-forget failed in payment.DatacapPaymentProcessor:', err))
+    }).catch(err => clientLog.warn('fire-and-forget failed in payment.DatacapPaymentProcessor:', err))
 
     const result = await processPayment({
       orderId,
@@ -309,7 +310,7 @@ export function DatacapPaymentProcessor({
     // The orphaned auth localStorage entry (if any from a prior approval) will persist
     // and be voided on next mount.
     if (!result && lastApprovedRecordNoRef.current) {
-      console.warn(
+      clientLog.warn(
         '[DatacapPaymentProcessor] Payment returned null (timeout/abort) with a prior recordNo still tracked:',
         lastApprovedRecordNoRef.current,
         '- Will attempt void on next mount if not cleared.'
@@ -376,12 +377,12 @@ export function DatacapPaymentProcessor({
       // Only attempt void for orphans less than 24 hours old
       const storedAt = new Date(orphan.storedAt).getTime()
       if (Date.now() - storedAt > 24 * 60 * 60 * 1000) {
-        console.warn('[DatacapPaymentProcessor] Orphaned auth too old (>24h), clearing:', orphan.recordNo)
+        clientLog.warn('[DatacapPaymentProcessor] Orphaned auth too old (>24h), clearing:', orphan.recordNo)
         localStorage.removeItem(orphanStorageKey)
         return
       }
 
-      console.warn('[DatacapPaymentProcessor] Found orphaned auth, attempting void:', orphan.recordNo)
+      clientLog.warn('[DatacapPaymentProcessor] Found orphaned auth, attempting void:', orphan.recordNo)
       const res = await fetch('/api/datacap/void', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -395,7 +396,7 @@ export function DatacapPaymentProcessor({
       })
       const data = await res.json()
       if (data.data?.approved) {
-        console.log('[DatacapPaymentProcessor] Orphaned auth voided successfully:', orphan.recordNo)
+        clientLog.info('[DatacapPaymentProcessor] Orphaned auth voided successfully:', orphan.recordNo)
         localStorage.removeItem(orphanStorageKey)
       } else {
         console.error('[DatacapPaymentProcessor] Orphaned auth void failed:', data.data?.error,

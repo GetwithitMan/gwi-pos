@@ -9,6 +9,7 @@ import fs from 'fs'
 import path from 'path'
 import { withVenue } from '@/lib/with-venue'
 import { err, ok, unauthorized } from '@/lib/api-response'
+import { timingSafeCompare } from '@/lib/timing-safe-compare'
 
 // Allow up to 60s for seed (schema push via direct SQL is fast)
 export const maxDuration = 60
@@ -77,7 +78,7 @@ async function loadSchemaSql(): Promise<string> {
 export const POST = withVenue(async function POST(request: NextRequest) {
   // ── Auth ──────────────────────────────────────────────────────────────
   const apiKey = request.headers.get('x-api-key')
-  if (!apiKey || apiKey !== process.env.PROVISION_API_KEY) {
+  if (!apiKey || !process.env.PROVISION_API_KEY || !timingSafeCompare(apiKey, process.env.PROVISION_API_KEY)) {
     return unauthorized('Unauthorized')
   }
 

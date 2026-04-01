@@ -18,8 +18,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const source = searchParams.get('source')
     const startDate = searchParams.get('startDate')
     const endDate = searchParams.get('endDate')
-    const page = parseInt(searchParams.get('page') || '1')
-    const limit = parseInt(searchParams.get('limit') || '50')
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10) || 1)
+    const limit = Math.max(1, Math.min(parseInt(searchParams.get('limit') || '50', 10) || 50, 500))
 
     if (!locationId) {
       return err('locationId is required')

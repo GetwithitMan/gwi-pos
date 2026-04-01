@@ -25,7 +25,7 @@ export const GET = withVenue(async function GET(req: NextRequest) {
     }
 
     const params = req.nextUrl.searchParams
-    const hours = Math.min(720, Math.max(1, parseInt(params.get('hours') || '24', 10)))
+    const hours = Math.min(720, Math.max(1, parseInt(params.get('hours') || '24', 10) || 24))
 
     const since = new Date(Date.now() - hours * 60 * 60 * 1000)
 

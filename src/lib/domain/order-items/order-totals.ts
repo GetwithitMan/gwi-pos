@@ -60,12 +60,13 @@ export async function recalculateOrderTotals(
   tipTotal: number,
   isTaxExempt?: boolean
 ): Promise<OrderTotalsUpdate> {
-  // Fetch the order's stored inclusive tax rate and donation amount (survives setting changes)
+  // Fetch the order's stored inclusive/exclusive tax rates and donation amount (survives setting changes)
   const orderRow = await tx.order.findUnique({
     where: { id: orderId },
-    select: { inclusiveTaxRate: true, donationAmount: true, convenienceFee: true },
+    select: { inclusiveTaxRate: true, exclusiveTaxRate: true, donationAmount: true, convenienceFee: true },
   })
   const orderInclRate = orderRow?.inclusiveTaxRate ? Number(orderRow.inclusiveTaxRate) : undefined
+  const orderExclRate = orderRow?.exclusiveTaxRate != null ? Number(orderRow.exclusiveTaxRate) : undefined
   const donationAmount = Number(orderRow?.donationAmount ?? 0)
   const convenienceFee = Number(orderRow?.convenienceFee ?? 0)
 
@@ -95,7 +96,9 @@ export async function recalculateOrderTotals(
     parsedSettings?.priceRounding ?? undefined,
     'card',
     isTaxExempt,
-    orderInclRate
+    orderInclRate,
+    0, // convenienceFee handled separately below
+    orderExclRate
   )
 
   // Add donation and convenienceFee back to total — calculateOrderTotals doesn't know about them
@@ -127,12 +130,13 @@ export async function recalculateOrderTotalsForAdd(
   tipTotal: number,
   isTaxExempt?: boolean
 ): Promise<OrderTotalsUpdate> {
-  // Fetch the order's stored inclusive tax rate and donation amount (survives setting changes)
+  // Fetch the order's stored inclusive/exclusive tax rates and donation amount (survives setting changes)
   const orderRow = await tx.order.findUnique({
     where: { id: orderId },
-    select: { inclusiveTaxRate: true, donationAmount: true, convenienceFee: true },
+    select: { inclusiveTaxRate: true, exclusiveTaxRate: true, donationAmount: true, convenienceFee: true },
   })
   const orderInclRate = orderRow?.inclusiveTaxRate ? Number(orderRow.inclusiveTaxRate) : undefined
+  const orderExclRate = orderRow?.exclusiveTaxRate != null ? Number(orderRow.exclusiveTaxRate) : undefined
   const donationAmount = Number(orderRow?.donationAmount ?? 0)
   const convenienceFee = Number(orderRow?.convenienceFee ?? 0)
 
@@ -160,7 +164,9 @@ export async function recalculateOrderTotalsForAdd(
     parsedSettings?.priceRounding ?? undefined,
     'card',
     isTaxExempt,
-    orderInclRate
+    orderInclRate,
+    0, // convenienceFee handled separately below
+    orderExclRate
   )
 
   // Add donation and convenienceFee back to total — calculateOrderTotals doesn't know about them

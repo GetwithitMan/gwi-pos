@@ -97,8 +97,8 @@ export const GET = withVenue(withAuth('INVENTORY_VIEW', async function GET(
     const search = searchParams.get('search')
     const startDate = searchParams.get('startDate')
     const endDate = searchParams.get('endDate')
-    const page = parseInt(searchParams.get('page') || '1')
-    const limit = Math.min(parseInt(searchParams.get('limit') || '50'), 100)
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10) || 1)
+    const limit = Math.max(1, Math.min(parseInt(searchParams.get('limit') || '50', 10) || 50, 100))
 
     const where: Record<string, unknown> = {
       locationId,

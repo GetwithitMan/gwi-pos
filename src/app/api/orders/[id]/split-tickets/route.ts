@@ -311,7 +311,9 @@ export const POST = withVenue(withAuth(async function POST(
       tax?: { defaultRate?: number; inclusiveTaxRate?: number }
       priceRounding?: { enabled?: boolean; increment?: RoundingIncrement }
     } | null
-    const taxRate = getLocationTaxRate(settings)
+    // Prefer order-level exclusive tax rate snapshot; fall back to live rate
+    const orderExclRate = (parentOrder as any).exclusiveTaxRate != null ? Number((parentOrder as any).exclusiveTaxRate) : undefined
+    const taxRate = (orderExclRate != null && orderExclRate >= 0) ? orderExclRate : getLocationTaxRate(settings)
     // Prefer order-level snapshot; fall back to location setting with > 0 guard
     const orderInclRate = Number(parentOrder.inclusiveTaxRate) || undefined
     const inclRateRaw = settings?.tax?.inclusiveTaxRate
@@ -797,7 +799,9 @@ export const PATCH = withVenue(withAuth(async function PATCH(
         tax?: { defaultRate?: number; inclusiveTaxRate?: number }
         priceRounding?: { enabled?: boolean; increment?: RoundingIncrement }
       } | null
-      const taxRate = getLocationTaxRate(settings)
+      // Prefer order-level exclusive tax rate snapshot; fall back to live rate
+      const splitItemOrderExclRate = (parentOrder as any).exclusiveTaxRate != null ? Number((parentOrder as any).exclusiveTaxRate) : undefined
+      const taxRate = (splitItemOrderExclRate != null && splitItemOrderExclRate >= 0) ? splitItemOrderExclRate : getLocationTaxRate(settings)
       // Prefer order-level snapshot; fall back to location setting with > 0 guard
       const splitItemOrderInclRate = Number(parentOrder.inclusiveTaxRate) || undefined
       const splitItemInclRateRaw = settings?.tax?.inclusiveTaxRate
@@ -961,7 +965,9 @@ export const PATCH = withVenue(withAuth(async function PATCH(
       tax?: { defaultRate?: number; inclusiveTaxRate?: number }
       priceRounding?: { enabled?: boolean; increment?: RoundingIncrement }
     } | null
-    const taxRate = getLocationTaxRate(settings)
+    // Prefer order-level exclusive tax rate snapshot; fall back to live rate
+    const moveOrderExclRate = (parentOrder as any).exclusiveTaxRate != null ? Number((parentOrder as any).exclusiveTaxRate) : undefined
+    const taxRate = (moveOrderExclRate != null && moveOrderExclRate >= 0) ? moveOrderExclRate : getLocationTaxRate(settings)
     // Prefer order-level snapshot; fall back to location setting with > 0 guard
     const moveOrderInclRate = Number(parentOrder.inclusiveTaxRate) || undefined
     const moveInclRateRaw = settings?.tax?.inclusiveTaxRate
@@ -1143,7 +1149,9 @@ export const DELETE = withVenue(withAuth(async function DELETE(
       }, 0)
 
       const settings = parentOrder.location?.settings as { tax?: { defaultRate?: number; inclusiveTaxRate?: number } } | null
-      const taxRate = getLocationTaxRate(settings)
+      // Prefer order-level exclusive tax rate snapshot; fall back to live rate
+      const mergeOrderExclRate = (parentOrder as any).exclusiveTaxRate != null ? Number((parentOrder as any).exclusiveTaxRate) : undefined
+      const taxRate = (mergeOrderExclRate != null && mergeOrderExclRate >= 0) ? mergeOrderExclRate : getLocationTaxRate(settings)
       // Prefer order-level snapshot; fall back to location setting with > 0 guard
       const mergeOrderInclRate = Number(parentOrder.inclusiveTaxRate) || undefined
       const mergeInclRateRaw = settings?.tax?.inclusiveTaxRate

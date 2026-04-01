@@ -11,7 +11,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const sp = request.nextUrl.searchParams
     const locationId = await getLocationId()
     const date = sp.get('date')
-    const partySize = parseInt(sp.get('partySize') || '2', 10)
+    const partySize = parseInt(sp.get('partySize') || '2', 10) || 2
 
     if (!locationId || !date) {
       return err('date is required')

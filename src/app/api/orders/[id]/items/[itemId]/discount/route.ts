@@ -109,7 +109,8 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
           const totals = calculateOrderTotals(
             calcItems, order.location.settings as { tax?: { defaultRate?: number; inclusiveTaxRate?: number } },
             newDiscountTotal, Number(order.tipTotal || 0), undefined, 'card', order.isTaxExempt,
-            Number(order.inclusiveTaxRate) || undefined
+            Number(order.inclusiveTaxRate) || undefined, 0,
+            (order as any).exclusiveTaxRate != null ? Number((order as any).exclusiveTaxRate) : undefined
           )
           const toggleDonation = Number(order.donationAmount || 0)
           const toggleConvFee = Number(order.convenienceFee || 0)
@@ -192,7 +193,8 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       const totals = calculateOrderTotals(
         applyCalcItems, order.location.settings as { tax?: { defaultRate?: number; inclusiveTaxRate?: number } },
         newDiscountTotal, Number(order.tipTotal || 0), undefined, 'card', order.isTaxExempt,
-        Number(order.inclusiveTaxRate) || undefined
+        Number(order.inclusiveTaxRate) || undefined, 0,
+        (order as any).exclusiveTaxRate != null ? Number((order as any).exclusiveTaxRate) : undefined
       )
 
       const applyDonation = Number(order.donationAmount || 0)
@@ -350,7 +352,8 @@ export const DELETE = withVenue(withAuth({ allowCellular: true }, async function
       const totals = calculateOrderTotals(
         delCalcItems, order.location.settings as { tax?: { defaultRate?: number; inclusiveTaxRate?: number } },
         newDiscountTotal, Number(order.tipTotal || 0), undefined, 'card', order.isTaxExempt,
-        Number(order.inclusiveTaxRate) || undefined
+        Number(order.inclusiveTaxRate) || undefined, 0,
+        (order as any).exclusiveTaxRate != null ? Number((order as any).exclusiveTaxRate) : undefined
       )
 
       const delDonation = Number(order.donationAmount || 0)

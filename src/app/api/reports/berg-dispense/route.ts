@@ -25,8 +25,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const format = searchParams.get('format') || 'json'
     const includeRaw = searchParams.get('includeRaw') === 'true'
     const requestingEmployeeId = searchParams.get('employeeId') || ''
-    const page = parseInt(searchParams.get('page') || '1', 10)
-    const limit = Math.min(parseInt(searchParams.get('limit') || '100', 10), 500)
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10) || 1)
+    const limit = Math.max(1, Math.min(parseInt(searchParams.get('limit') || '100', 10) || 100, 500))
 
     if (!locationId) return err('locationId required')
 

@@ -2,6 +2,7 @@ import { invalidateMenuCache } from '@/lib/menu-cache'
 import { invalidateLocationCache } from '@/lib/location-cache'
 import { emitToLocation } from '@/lib/socket-server'
 import { err, ok, unauthorized } from '@/lib/api-response'
+import { timingSafeCompare } from '@/lib/timing-safe-compare'
 
 const VALID_DOMAINS = ['menu', 'floorplan', 'settings', 'employees', 'order-types'] as const
 type Domain = typeof VALID_DOMAINS[number]
@@ -10,7 +11,7 @@ export async function POST(request: Request) {
   try {
     // Internal route — require API key auth
     const apiKey = request.headers.get('x-api-key')
-    if (!apiKey || apiKey !== process.env.PROVISION_API_KEY) {
+    if (!apiKey || !process.env.PROVISION_API_KEY || !timingSafeCompare(apiKey, process.env.PROVISION_API_KEY)) {
       return unauthorized('Unauthorized')
     }
 

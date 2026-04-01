@@ -142,6 +142,11 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
     const draftInclusiveTaxRate = draftInclusiveTaxRateRaw != null && Number.isFinite(draftInclusiveTaxRateRaw) && draftInclusiveTaxRateRaw > 0
       ? draftInclusiveTaxRateRaw / 100 : 0
 
+    // Snapshot the exclusive tax rate (survives mid-day rate changes)
+    const draftExclusiveTaxRateRaw = (locSettings as any)?.tax?.defaultRate
+    const draftExclusiveTaxRate = draftExclusiveTaxRateRaw != null && Number.isFinite(draftExclusiveTaxRateRaw) && draftExclusiveTaxRateRaw > 0
+      ? draftExclusiveTaxRateRaw / 100 : 0
+
     // === FAST PATH: Draft shell creation (no items) ===
     // When items is empty, create a lightweight order shell without tax/commission/totals computation.
     // This enables background pre-creation on table tap so "Send to Kitchen" is near-instant.
@@ -208,6 +213,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
               taxFromInclusive: 0,
               taxFromExclusive: 0,
               inclusiveTaxRate: draftInclusiveTaxRate,
+              exclusiveTaxRate: draftExclusiveTaxRate,
               tipTotal: 0,
               total: 0,
               commissionTotal: 0,
@@ -592,6 +598,11 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
     const orderInclusiveTaxRate = orderInclusiveTaxRateRaw != null && Number.isFinite(orderInclusiveTaxRateRaw) && orderInclusiveTaxRateRaw > 0
       ? orderInclusiveTaxRateRaw / 100 : 0
 
+    // Snapshot the exclusive tax rate for this order — survives mid-day rate changes
+    const orderExclusiveTaxRateRaw = (locationSettings as any)?.tax?.defaultRate
+    const orderExclusiveTaxRate = orderExclusiveTaxRateRaw != null && Number.isFinite(orderExclusiveTaxRateRaw) && orderExclusiveTaxRateRaw > 0
+      ? orderExclusiveTaxRateRaw / 100 : 0
+
     // Compute per-channel convenience fee from settings + order source
     const orderConvenienceFee = getConvenienceFeeForChannel(orderSource, parsedSettings?.convenienceFees)
 
@@ -672,6 +683,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
             taxFromInclusive,
             taxFromExclusive,
             inclusiveTaxRate: orderInclusiveTaxRate,
+            exclusiveTaxRate: orderExclusiveTaxRate,
             tipTotal: 0,
             total,
             commissionTotal,
@@ -978,8 +990,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const locationId = searchParams.get('locationId')
     const status = searchParams.get('status')
     const employeeId = searchParams.get('employeeId')
-    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '50')))
-    const offset = Math.max(0, parseInt(searchParams.get('offset') || '0'))
+    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '50', 10) || 50))
+    const offset = Math.max(0, parseInt(searchParams.get('offset') || '0', 10) || 0)
 
     // T-078 admin filters
     const dateFrom = searchParams.get('dateFrom')

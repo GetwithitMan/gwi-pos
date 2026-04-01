@@ -4,6 +4,7 @@ import { withVenue } from '@/lib/with-venue'
 import { invalidateLocationCache } from '@/lib/location-cache'
 import { registerVenueDbName } from '@/lib/db-venue-cache'
 import { err, notFound, ok, unauthorized } from '@/lib/api-response'
+import { timingSafeCompare } from '@/lib/timing-safe-compare'
 
 /**
  * POST /api/internal/online-ordering/enabled
@@ -30,7 +31,7 @@ import { err, notFound, ok, unauthorized } from '@/lib/api-response'
 export const POST = withVenue(async function POST(request: NextRequest) {
   // ── Auth ──────────────────────────────────────────────────────────────
   const apiKey = request.headers.get('x-api-key')
-  if (!apiKey || apiKey !== process.env.PROVISION_API_KEY) {
+  if (!apiKey || !process.env.PROVISION_API_KEY || !timingSafeCompare(apiKey, process.env.PROVISION_API_KEY)) {
     return unauthorized('Unauthorized')
   }
 

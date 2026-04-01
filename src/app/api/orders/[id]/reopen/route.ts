@@ -209,7 +209,9 @@ export const POST = withVenue(async function POST(
         undefined,
         'card',
         order.isTaxExempt,
-        Number(order.inclusiveTaxRate) || undefined
+        Number(order.inclusiveTaxRate) || undefined,
+        0, // convenienceFee handled separately
+        (order as any).exclusiveTaxRate != null ? Number((order as any).exclusiveTaxRate) : undefined
       )
 
       const reopenDonation = Number(order.donationAmount || 0)

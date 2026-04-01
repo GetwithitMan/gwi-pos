@@ -2,6 +2,18 @@
 
 Bar/restaurant POS. Hybrid SaaS: local NUC servers + Neon cloud sync. Fewest-clicks philosophy.
 
+## Repo Paths (MANDATORY)
+
+All repos live under `/Users/brianlewis/Documents/My websites/GWI-POS FULL/`. **NEVER** clone or work from `~/gwi-*` paths.
+
+| Repo | Path |
+|------|------|
+| gwi-pos | `/Users/brianlewis/Documents/My websites/GWI-POS FULL/gwi-pos` |
+| gwi-android-register | `/Users/brianlewis/Documents/My websites/GWI-POS FULL/gwi-android-register` |
+| gwi-mission-control | `/Users/brianlewis/Documents/My websites/GWI-POS FULL/gwi-mission-control` |
+| gwi-pax-a6650 | `/Users/brianlewis/Documents/My websites/GWI-POS FULL/gwi-pax-a6650` |
+| gwi-kds-android | `/Users/brianlewis/Documents/My websites/GWI-POS FULL/gwi-kds-android` |
+
 ## Deployment Rule (MANDATORY)
 
 **NEVER run `git push` unless the user explicitly types "deploy" or "push".**

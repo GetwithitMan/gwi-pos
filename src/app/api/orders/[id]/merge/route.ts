@@ -158,7 +158,7 @@ export const POST = withVenue(async function POST(
       // P1-8: Move pre-auth cards from source to target (before source is voided)
       await tx.orderCard.updateMany({
         where: { orderId: sourceOrder.id, deletedAt: null },
-        data: { orderId: targetOrder.id },
+        data: { orderId: targetOrder.id, lastMutatedBy: 'local' },
       })
 
       // Recalculate target order totals
@@ -185,7 +185,8 @@ export const POST = withVenue(async function POST(
       const totals = calculateOrderTotals(
         mergeCalcItems, locationSettings as { tax?: { defaultRate?: number; inclusiveTaxRate?: number } },
         discountTotal, Number(targetOrder.tipTotal || 0), undefined, 'card', targetOrder.isTaxExempt,
-        Number(targetOrder.inclusiveTaxRate) || undefined
+        Number(targetOrder.inclusiveTaxRate) || undefined, 0,
+        (targetOrder as any).exclusiveTaxRate != null ? Number((targetOrder as any).exclusiveTaxRate) : undefined
       )
 
       const mergeDonation = Number(targetOrder.donationAmount || 0)

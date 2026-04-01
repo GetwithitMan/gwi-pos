@@ -156,7 +156,8 @@ function buildTotalsCacheKey(
   tipTotal: number,
   priceRounding: PriceRoundingSettings | undefined,
   paymentMethod: string,
-  isTaxExempt?: boolean
+  isTaxExempt?: boolean,
+  orderExclusiveTaxRate?: number | null
 ): string {
   // Cheap key: version + item count + sum of price-affecting fields.
   // This avoids JSON.stringify on 5-10KB of data per call.
@@ -185,7 +186,7 @@ function buildTotalsCacheKey(
   hash = (hash * 31 + (locationSettings?.tax?.inclusiveTaxRate ?? 0) * 100) | 0
   hash = (hash * 31 + discountTotal * 100) | 0
   hash = (hash * 31 + tipTotal * 100) | 0
-  return `${items.length}:${hash}:${paymentMethod}:${priceRounding ? 1 : 0}:${isTaxExempt ? 1 : 0}`
+  return `${items.length}:${hash}:${paymentMethod}:${priceRounding ? 1 : 0}:${isTaxExempt ? 1 : 0}:${orderExclusiveTaxRate ?? 'L'}`
 }
 
 /**
@@ -264,15 +265,22 @@ export function calculateOrderTotals(
    *  rate even if location settings change mid-service. */
   orderInclusiveTaxRate?: number,
   /** Per-channel convenience fee (dollars). Added to total but NOT included in tip basis. */
-  convenienceFee: number = 0
+  convenienceFee: number = 0,
+  /** Order-level exclusive tax rate (decimal, e.g. 0.08). Overrides locationSettings
+   *  when present — ensures orders created at a given rate keep that rate even if
+   *  the venue changes their tax rate mid-day. null/undefined = use live rate. */
+  orderExclusiveTaxRate?: number | null
 ): OrderTotals {
   // Memoization: return cached result if inputs unchanged
-  const cacheKey = buildTotalsCacheKey(items, locationSettings, existingDiscountTotal, existingTipTotal, priceRounding, paymentMethod, isTaxExempt)
+  const cacheKey = buildTotalsCacheKey(items, locationSettings, existingDiscountTotal, existingTipTotal, priceRounding, paymentMethod, isTaxExempt, orderExclusiveTaxRate)
   const cached = _totalsCache.get(cacheKey)
   if (cached) return cached
 
-  const rawRate = locationSettings?.tax?.defaultRate ?? 0
-  const taxRate = isTaxExempt ? 0 : (Number.isFinite(rawRate) ? rawRate : 0) / 100
+  // Prefer snapshotted exclusive tax rate over live setting (survives mid-day rate changes)
+  const taxRate = isTaxExempt ? 0
+    : (orderExclusiveTaxRate != null && orderExclusiveTaxRate >= 0)
+      ? orderExclusiveTaxRate // Already decimal (e.g. 0.08)
+      : (Number.isFinite(locationSettings?.tax?.defaultRate ?? 0) ? (locationSettings?.tax?.defaultRate ?? 0) : 0) / 100
   const commissionTotal = calculateOrderCommission(items)
 
   // 1. Split items into tax-inclusive vs tax-exclusive
@@ -300,14 +308,17 @@ export function calculateOrderTotals(
 
   // 2. Allocate discount proportionally between inclusive and exclusive items,
   //    then compute tax on the POST-DISCOUNT amounts (most US jurisdictions require this).
+  // Allocate discount (or surcharge, if negative) proportionally between inclusive and exclusive items.
+  // Negative existingDiscountTotal = surcharge — tax must still adjust on the increased basis.
   let discountOnInclusive = 0
   let discountOnExclusive = 0
-  if (existingDiscountTotal > 0 && subtotal > 0) {
+  if (existingDiscountTotal !== 0 && subtotal > 0) {
     const inclusiveShare = inclusiveSubtotal / subtotal
     discountOnInclusive = roundToCents(existingDiscountTotal * inclusiveShare)
     discountOnExclusive = roundToCents(existingDiscountTotal - discountOnInclusive)
   }
 
+  // For surcharges (negative discount), subtraction adds to the basis; Math.max(0) still prevents negatives.
   const postDiscountInclusive = roundToCents(Math.max(0, inclusiveSubtotal - discountOnInclusive))
   const postDiscountExclusive = roundToCents(Math.max(0, exclusiveSubtotal - discountOnExclusive))
 

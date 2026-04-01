@@ -34,8 +34,8 @@ export const GET = withVenue(async function GET(
     }
 
     const sp = request.nextUrl.searchParams
-    const limit = Math.min(parseInt(sp.get('limit') || '50', 10), 200)
-    const offset = parseInt(sp.get('offset') || '0', 10)
+    const limit = Math.max(1, Math.min(parseInt(sp.get('limit') || '50', 10) || 50, 200))
+    const offset = Math.max(0, parseInt(sp.get('offset') || '0', 10) || 0)
 
     const [events, total] = await Promise.all([
       db.reservationEvent.findMany({

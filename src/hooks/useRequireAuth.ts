@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth-store'
 import { useOrderStore } from '@/stores/order-store'
+import { clientLog } from '@/lib/client-logger'
 
 /** Cloud venue parent domains (must match proxy.ts) */
 const CLOUD_PARENT_DOMAINS = [
@@ -43,7 +44,7 @@ export function useRequireAuth() {
     )
       .then(async (r) => {
         if (r.status === 401) {
-          console.warn(
+          clientLog.warn(
             '[useRequireAuth] Session invalid for current venue DB'
           )
 
@@ -74,7 +75,7 @@ export function useRequireAuth() {
         }
       })
       .catch(err => {
-        console.warn('auth verification network error:', err)
+        clientLog.warn('auth verification network error:', err)
       })
   }, [isAuthenticated, employee, locationId, logout, login, clearOrder, router])
 

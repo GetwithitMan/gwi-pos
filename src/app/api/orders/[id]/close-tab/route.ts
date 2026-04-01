@@ -217,6 +217,26 @@ export const POST = withVenue(async function POST(
     }
     const cardsToTry = cardResolution.cards
 
+    // Pre-auth expiration check — Datacap pre-auths expire after ~7 days.
+    // A tab open longer than that will fail at capture. Reject early with a
+    // clear message so the server can run a new card instead of getting a
+    // cryptic Datacap decline.
+    const PRE_AUTH_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000 // 7 days
+    const oldestCard = cardsToTry[0]
+    if (oldestCard?.createdAt) {
+      const ageMs = Date.now() - new Date(oldestCard.createdAt).getTime()
+      if (ageMs > PRE_AUTH_MAX_AGE_MS) {
+        // Revert tabStatus so the tab can be retried with a new card
+        await OrderRepository.updateOrder(orderId, locationId, { tabStatus: 'open', version: { increment: 1 } })
+        const ageDays = Math.floor(ageMs / 86400000)
+        return err(
+          `Pre-authorization expired (${ageDays} days old). ` +
+          'Datacap pre-auths are valid for ~7 days. Please run a new card.',
+          409
+        )
+      }
+    }
+
     // ═══════════════════════════════════════════════════════════════════════════
     // PHASE 2: External Datacap API calls (NO database lock held)
     // This is the slow part (500-3000ms). No other terminal is blocked.

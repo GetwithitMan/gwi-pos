@@ -636,7 +636,10 @@ export const OrderPanelActions = memo(function OrderPanelActions({
               border: 'none',
               cursor: 'pointer',
               marginBottom: '10px',
+              minHeight: '44px',
             }}
+            aria-label={showTotalDetails ? 'Collapse total details' : 'Expand total details'}
+            aria-expanded={showTotalDetails}
           >
             <span style={{ fontSize: '13px', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '6px' }}>
               <svg

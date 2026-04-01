@@ -16,8 +16,8 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
     const search = searchParams.get('search') // Search by name, email, ticket number
     const tableId = searchParams.get('tableId') // Filter by table
     const tierId = searchParams.get('tierId') // Filter by pricing tier
-    const limit = parseInt(searchParams.get('limit') || '100')
-    const offset = parseInt(searchParams.get('offset') || '0')
+    const limit = Math.max(1, Math.min(parseInt(searchParams.get('limit') || '100', 10) || 100, 500))
+    const offset = Math.max(0, parseInt(searchParams.get('offset') || '0', 10) || 0)
 
     // Verify event exists
     const event = await db.event.findUnique({

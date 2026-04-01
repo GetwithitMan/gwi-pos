@@ -48,8 +48,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const eventType = searchParams.get('eventType')
     const startDate = searchParams.get('startDate')
     const endDate = searchParams.get('endDate')
-    const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10))
-    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '20', 10)))
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10) || 1)
+    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '20', 10) || 20))
     const offset = (page - 1) * limit
 
     // Build WHERE clauses dynamically

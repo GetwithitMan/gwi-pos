@@ -168,6 +168,7 @@ export const POST = withVenue(async function POST(
           authAmount: depositAmount,
           isDefault: true,
           status: 'authorized',
+          lastMutatedBy: 'local',
         },
       })
       await OrderRepository.updateOrder(orderId, locationId, {

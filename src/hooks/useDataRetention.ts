@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useAuthStore } from '@/stores/auth-store'
+import { clientLog } from '@/lib/client-logger'
 
 const RETENTION_DAYS: Record<string, number> = {
   daily: 1,
@@ -26,7 +27,7 @@ export function useDataRetention() {
         const retention = settings?.localDataRetention || 'monthly'
         setRetentionDays(RETENTION_DAYS[retention] || 30)
       })
-      .catch(err => console.warn('fire-and-forget failed in useDataRetention:', err))
+      .catch(err => clientLog.warn('fire-and-forget failed in useDataRetention:', err))
 
     // Load location to get venue slug
     fetch(`/api/location?locationId=${employee.location.id}&employeeId=${employee.id}`)
@@ -34,7 +35,7 @@ export function useDataRetention() {
       .then(data => {
         setVenueSlug(data.data?.slug || undefined)
       })
-      .catch(err => console.warn('fire-and-forget failed in useDataRetention:', err))
+      .catch(err => clientLog.warn('fire-and-forget failed in useDataRetention:', err))
   }, [employee?.location?.id, employee?.id])
 
   return { retentionDays, venueSlug }

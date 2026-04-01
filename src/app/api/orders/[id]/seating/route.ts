@@ -112,9 +112,10 @@ export const GET = withVenue(async function GET(
     // Calculate total seat count
     const totalSeats = order.baseSeatCount + order.extraSeatCount
 
-    // Get tax rate from location settings
+    // Get tax rate from location settings — prefer order-level exclusive rate snapshot
     const locSettings = order.location.settings as { tax?: { defaultRate?: number; inclusiveTaxRate?: number } } | null
-    const taxRate = getLocationTaxRate(locSettings)
+    const orderExclRate = (order as any).exclusiveTaxRate != null ? Number((order as any).exclusiveTaxRate) : undefined
+    const taxRate = (orderExclRate != null && orderExclRate >= 0) ? orderExclRate : getLocationTaxRate(locSettings)
     // Prefer order-level snapshot; fall back to location setting with > 0 guard
     const orderInclRate = Number(order.inclusiveTaxRate) || undefined
     const inclusiveTaxRateRaw = locSettings?.tax?.inclusiveTaxRate

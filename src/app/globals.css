@@ -203,6 +203,15 @@ input::placeholder, textarea::placeholder {
   animation: neon-flicker 3s ease-in-out infinite;
 }
 
+/* POS touch target minimum — WCAG 2.5.5 Target Size */
+.touch-target {
+  min-width: 48px;
+  min-height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 /* Writing mode utilities for menu builder */
 .writing-mode-vertical {
   writing-mode: vertical-rl;

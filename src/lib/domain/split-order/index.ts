@@ -53,6 +53,10 @@ export { calculateCustomSplit } from './custom-split'
 
 export { getSplitOrders } from './split-queries'
 
+// ─── Family Balance ─────────────────────────────────────────────────────────
+
+export { computeSplitFamilyBalance, validateSplitBalance } from './family-balance'
+
 // ─── Discount Distribution (pure policy) ─────────────────────────────────────
 
 export {

@@ -15,7 +15,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams
     const locationId = searchParams.get('locationId')
     const status = searchParams.get('status') as PayrollPeriodStatus | null
-    const limit = parseInt(searchParams.get('limit') || '20')
+    const limit = Math.max(1, Math.min(parseInt(searchParams.get('limit') || '20', 10) || 20, 500))
 
     if (!locationId) {
       return err('Location ID required')

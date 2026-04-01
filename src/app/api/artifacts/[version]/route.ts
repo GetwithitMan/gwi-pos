@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import fs from 'fs'
 import path from 'path'
 import { err, notFound, unauthorized } from '@/lib/api-response'
+import { timingSafeCompare } from '@/lib/timing-safe-compare'
 
 /**
  * GET /api/artifacts/:version/schema.sql
@@ -27,7 +28,7 @@ export async function GET(
 ) {
   // ── Auth ──────────────────────────────────────────────────────────────
   const apiKey = request.headers.get('x-api-key')
-  if (!apiKey || apiKey !== process.env.PROVISION_API_KEY) {
+  if (!apiKey || !process.env.PROVISION_API_KEY || !timingSafeCompare(apiKey, process.env.PROVISION_API_KEY)) {
     return unauthorized('Unauthorized')
   }
 

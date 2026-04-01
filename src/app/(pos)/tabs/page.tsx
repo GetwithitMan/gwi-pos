@@ -19,7 +19,7 @@ interface TabOrder {
   openedAt: string
   employeeId: string
   employeeName: string
-  status: 'open' | 'closed' | 'void'
+  status: 'open' | 'closed' | 'voided'
   tabStatus?: string | null
   items: {
     id: string

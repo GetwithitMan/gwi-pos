@@ -25,7 +25,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams
     const locationId = searchParams.get('locationId')
     const requestingEmployeeId = searchParams.get('requestingEmployeeId') || searchParams.get('employeeId')
-    const days = parseInt(searchParams.get('days') || '7', 10)
+    const days = parseInt(searchParams.get('days') || '7', 10) || 7
     const department = searchParams.get('department') || undefined
     const category = searchParams.get('category') || undefined
 

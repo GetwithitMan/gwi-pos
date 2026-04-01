@@ -38,7 +38,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     // ── Parse filters ─────────────────────────────────────────────────
     const cursor = searchParams.get('cursor')
-    const take = Math.min(parseInt(searchParams.get('take') || '50', 10), 100)
+    const take = Math.max(1, Math.min(parseInt(searchParams.get('take') || '50', 10) || 50, 100))
     const status = searchParams.get('status')
     const dateFrom = searchParams.get('dateFrom')
     const dateTo = searchParams.get('dateTo')

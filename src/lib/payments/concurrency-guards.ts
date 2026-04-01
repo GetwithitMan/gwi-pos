@@ -49,7 +49,7 @@ export async function detectOrphanedSales(
     await tx.$executeRaw`SAVEPOINT orphan_check`
     orphanedSales = await tx.$queryRaw`
       SELECT id, amount, "datacapRecordNo", "invoiceNo" FROM "_pending_datacap_sales"
-       WHERE "orderId" = ${orderId} AND "status" = 'pending' AND "createdAt" < NOW() - INTERVAL '60 seconds'
+       WHERE "orderId" = ${orderId} AND "status" = 'pending' AND "createdAt" < NOW() - INTERVAL '5 minutes'
     ` as typeof orphanedSales
     await tx.$executeRaw`RELEASE SAVEPOINT orphan_check`
   } catch {

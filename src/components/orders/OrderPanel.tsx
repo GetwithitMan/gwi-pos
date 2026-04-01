@@ -1,24 +1,25 @@
 'use client'
 
-import { useRef, useState, useEffect, useMemo, useCallback, memo } from 'react'
-import { OrderPanelItem, type OrderPanelItemData } from './OrderPanelItem'
+import { useRef, useEffect, useMemo, useCallback, memo } from 'react'
+import { type OrderPanelItemData } from './OrderPanelItem'
 import { OrderPanelActions } from './OrderPanelActions'
-import { getSeatColor, getSeatBgColor, getSeatTextColor, getSeatBorderColor } from '@/lib/seat-utils'
+import { OrderPanelItemList } from './OrderPanelItemList'
+import { OrderPanelSplitNav } from './OrderPanelSplitNav'
+import { OrderPanelPager } from './OrderPanelPager'
+import { OrderPanelModals } from './OrderPanelModals'
+import { getSeatColor, getSeatBgColor, getSeatTextColor } from '@/lib/seat-utils'
 import { calculateItemTotal } from '@/lib/order-calculations'
 import { formatCurrency } from '@/lib/utils'
 import { roundToCents } from '@/lib/pricing'
-import { OrderDelayBanner } from './OrderDelayBanner'
-import { SeatAllergyModal } from './SeatAllergyModal'
 import { ConflictBanner } from './ConflictBanner'
 import { ComboSuggestionBanner } from './ComboSuggestionBanner'
 import { UpsellPromptBanner } from './UpsellPromptBanner'
-import SharedOwnershipModal from '@/components/tips/SharedOwnershipModal'
-import { CustomerLookupModal } from '@/components/customers/CustomerLookupModal'
-import { CustomerProfileModal } from '@/components/customers/CustomerProfileModal'
 import { getSharedSocket } from '@/lib/shared-socket'
 import { useAuthStore } from '@/stores/auth-store'
 import { hasPermission, PERMISSIONS } from '@/lib/auth-utils'
 import { toast } from '@/stores/toast-store'
+import { clientLog } from '@/lib/client-logger'
+import { useOrderPanelStore } from '@/stores/order-panel-store'
 import type { DatacapResult } from '@/hooks/useDatacap'
 
 export type { OrderPanelItemData }
@@ -322,70 +323,27 @@ export const OrderPanel = memo(function OrderPanel({
   onPagerAssigned,
   onPageNow: onPageNowProp,
 }: OrderPanelProps) {
-  // ── Stable callback refs for renderItem ──
-  // Storing callback props in refs allows renderItem's useCallback to have a
-  // much smaller dependency array (only data values that affect rendering),
-  // preventing unnecessary re-creation of the render function when parent
-  // re-renders with new callback identities.
-  const onItemClickRef = useRef(onItemClick)
-  useEffect(() => { onItemClickRef.current = onItemClick }, [onItemClick])
-
-  const onItemRemoveRef = useRef(onItemRemove)
-  useEffect(() => { onItemRemoveRef.current = onItemRemove }, [onItemRemove])
-
-  const onQuantityChangeRef = useRef(onQuantityChange)
-  useEffect(() => { onQuantityChangeRef.current = onQuantityChange }, [onQuantityChange])
-
-  const onSessionEndedRef = useRef(onSessionEnded)
-  useEffect(() => { onSessionEndedRef.current = onSessionEnded }, [onSessionEnded])
-
-  const onTimerStartedRef = useRef(onTimerStarted)
-  useEffect(() => { onTimerStartedRef.current = onTimerStarted }, [onTimerStarted])
-
-  const onTimeExtendedRef = useRef(onTimeExtended)
-  useEffect(() => { onTimeExtendedRef.current = onTimeExtended }, [onTimeExtended])
-
-  const onItemHoldToggleRef = useRef(onItemHoldToggle)
-  useEffect(() => { onItemHoldToggleRef.current = onItemHoldToggle }, [onItemHoldToggle])
-
-  const onItemNoteEditRef = useRef(onItemNoteEdit)
-  useEffect(() => { onItemNoteEditRef.current = onItemNoteEdit }, [onItemNoteEdit])
-
-  const onItemCourseChangeRef = useRef(onItemCourseChange)
-  useEffect(() => { onItemCourseChangeRef.current = onItemCourseChange }, [onItemCourseChange])
-
-  const onItemEditModifiersRef = useRef(onItemEditModifiers)
-  useEffect(() => { onItemEditModifiersRef.current = onItemEditModifiers }, [onItemEditModifiers])
-
-  const onItemCompVoidRef = useRef(onItemCompVoid)
-  useEffect(() => { onItemCompVoidRef.current = onItemCompVoid }, [onItemCompVoid])
-
-  const onItemDiscountRef = useRef(onItemDiscount)
-  useEffect(() => { onItemDiscountRef.current = onItemDiscount }, [onItemDiscount])
-
-  const onItemDiscountRemoveRef = useRef(onItemDiscountRemove)
-  useEffect(() => { onItemDiscountRemoveRef.current = onItemDiscountRemove }, [onItemDiscountRemove])
-
-  const onItemResendRef = useRef(onItemResend)
-  useEffect(() => { onItemResendRef.current = onItemResend }, [onItemResend])
-
-  const onItemRepeatRef = useRef(onItemRepeat)
-  useEffect(() => { onItemRepeatRef.current = onItemRepeat }, [onItemRepeat])
-
-  const onItemToggleExpandRef = useRef(onItemToggleExpand)
-  useEffect(() => { onItemToggleExpandRef.current = onItemToggleExpand }, [onItemToggleExpand])
-
-  const onItemSeatChangeRef = useRef(onItemSeatChange)
-  useEffect(() => { onItemSeatChangeRef.current = onItemSeatChange }, [onItemSeatChange])
-
-  const onItemSelectRef = useRef(onItemSelect)
-  useEffect(() => { onItemSelectRef.current = onItemSelect }, [onItemSelect])
-
-  const onFireItemRef = useRef(onFireItem)
-  useEffect(() => { onFireItemRef.current = onFireItem }, [onFireItem])
-
-  const onCancelItemDelayRef = useRef(onCancelItemDelay)
-  useEffect(() => { onCancelItemDelayRef.current = onCancelItemDelay }, [onCancelItemDelay])
+  // ── Store state ──
+  const store = useOrderPanelStore()
+  const {
+    showShareOwnership, setShowShareOwnership,
+    showCustomerModal, setShowCustomerModal,
+    showCustomerProfile, setShowCustomerProfile,
+    showTaxExemptDialog, setShowTaxExemptDialog,
+    showCheckOverview, setShowCheckOverview,
+    assigningPager, setAssigningPager,
+    unassigningPager, setUnassigningPager,
+    isPagingNow, setIsPagingNow,
+    isTaxExempt, setIsTaxExempt,
+    taxExemptToggling, setTaxExemptToggling,
+    taxExemptReason, setTaxExemptReason,
+    taxExemptId,
+    linkedCustomer, setLinkedCustomer,
+    loyaltyEnabled, setLoyaltyEnabled,
+    setSeatAllergyNotes,
+    checkOverviewItems, setCheckOverviewItems,
+    checkOverviewTotal, setCheckOverviewTotal,
+  } = store
 
   const hasItems = items.length > 0
   const hasPendingItems = items.some(item =>
@@ -397,12 +355,11 @@ export const OrderPanel = memo(function OrderPanel({
   const employeePermissions = useAuthStore(s => s.employee?.permissions ?? [])
   const canTaxExempt = hasPermission(employeePermissions, PERMISSIONS.MGR_TAX_EXEMPT)
 
-  // Shared ownership modal
-  const [showShareOwnership, setShowShareOwnership] = useState(false)
+  // ── Pager handlers ──
+  const customerFetchedForRef = useRef<string | null>(null)
+  const orderIdRef = useRef(orderId)
+  orderIdRef.current = orderId
 
-  // Pager assignment
-  const [assigningPager, setAssigningPager] = useState(false)
-  const [unassigningPager, setUnassigningPager] = useState(false)
   const handleAssignPager = useCallback(async (replaceExisting = false) => {
     if (!orderId || assigningPager) return
     setAssigningPager(true)
@@ -428,7 +385,7 @@ export const OrderPanel = memo(function OrderPanel({
     } finally {
       setAssigningPager(false)
     }
-  }, [orderId, assigningPager, onPagerAssigned])
+  }, [orderId, assigningPager, onPagerAssigned, setAssigningPager])
 
   const handleUnassignPager = useCallback(async () => {
     if (!orderId || unassigningPager) return
@@ -451,11 +408,9 @@ export const OrderPanel = memo(function OrderPanel({
     } finally {
       setUnassigningPager(false)
     }
-  }, [orderId, unassigningPager, onPagerAssigned])
+  }, [orderId, unassigningPager, onPagerAssigned, setUnassigningPager])
 
-  // W18: Default page-now handler — calls /api/notifications/page with current orderId
-  // D1+D2: isPagingNow prevents spam-clicking the Page Now button
-  const [isPagingNow, setIsPagingNow] = useState(false)
+  // W18: Default page-now handler
   const handlePageNow = useCallback(async () => {
     if (isPagingNow) return
     if (onPageNowProp) {
@@ -481,30 +436,9 @@ export const OrderPanel = memo(function OrderPanel({
     } finally {
       setIsPagingNow(false)
     }
-  }, [orderId, onPageNowProp, isPagingNow])
+  }, [orderId, onPageNowProp, isPagingNow, setIsPagingNow])
 
-  // Customer modal + linked customer state
-  const [showCustomerModal, setShowCustomerModal] = useState(false)
-  const [showCustomerProfile, setShowCustomerProfile] = useState(false)
-  const [linkedCustomer, setLinkedCustomer] = useState<{
-    id: string
-    firstName: string
-    lastName: string
-    loyaltyPoints: number
-    tags?: string[]
-    birthday?: string | null
-  } | null>(null)
-  const [loyaltyEnabled, setLoyaltyEnabled] = useState(false)
-  const [isTaxExempt, setIsTaxExempt] = useState(false)
-  const [taxExemptToggling, setTaxExemptToggling] = useState(false)
-  const [taxExemptReason, setTaxExemptReason] = useState('')
-  const [taxExemptId, setTaxExemptId] = useState('')
-  const [showTaxExemptDialog, setShowTaxExemptDialog] = useState(false)
-  const customerFetchedForRef = useRef<string | null>(null)
-  const orderIdRef = useRef(orderId)
-  orderIdRef.current = orderId
-
-  // Fetch customer data when order changes
+  // ── Customer data fetch ──
   useEffect(() => {
     if (!orderId || orderId.startsWith('temp-')) {
       setLinkedCustomer(null)
@@ -542,15 +476,15 @@ export const OrderPanel = memo(function OrderPanel({
         customerFetchedForRef.current = null
       })
     return () => controller.abort()
-  }, [orderId])
+  }, [orderId, setLinkedCustomer, setLoyaltyEnabled, setIsTaxExempt])
 
-  // Cross-terminal customer sync: re-fetch when another terminal links/unlinks a customer
+  // Cross-terminal customer sync
   useEffect(() => {
     if (!orderId || orderId.startsWith('temp-')) return
     const socket = getSharedSocket()
     const handler = (data: { orderId: string; changes?: string[] }) => {
       if (data.orderId === orderId && data.changes?.includes('customer')) {
-        customerFetchedForRef.current = null // force re-fetch
+        customerFetchedForRef.current = null
         void fetch(`/api/orders/${orderId}/customer`)
           .then(r => r.ok ? r.json() : null)
           .then(raw => {
@@ -571,21 +505,19 @@ export const OrderPanel = memo(function OrderPanel({
             setIsTaxExempt(!!d?.isTaxExempt)
             customerFetchedForRef.current = orderId
           })
-          .catch(err => console.warn('fire-and-forget failed in orders.OrderPanel:', err))
+          .catch(err => clientLog.warn('fire-and-forget failed in orders.OrderPanel:', err))
       }
     }
     socket.on('order:updated', handler)
     return () => { socket.off('order:updated', handler) }
-  }, [orderId])
+  }, [orderId, setLinkedCustomer, setLoyaltyEnabled, setIsTaxExempt])
 
   // Handle customer selection from modal
-   
   const handleSelectCustomer = useCallback((customer: any) => {
     const currentOrderId = orderIdRef.current
     if (!currentOrderId) return
     const customerId = customer?.id ?? null
 
-    // Optimistic local update
     if (customer) {
       setLinkedCustomer({
         id: customer.id,
@@ -599,7 +531,6 @@ export const OrderPanel = memo(function OrderPanel({
       setLinkedCustomer(null)
     }
 
-    // Fire-and-forget API call — uses ref to always target the correct order
     void fetch(`/api/orders/${currentOrderId}/customer`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -607,7 +538,6 @@ export const OrderPanel = memo(function OrderPanel({
     })
       .then(r => {
         if (!r.ok) {
-          // Revert on failure
           setLinkedCustomer(null)
           customerFetchedForRef.current = null
           console.error('Failed to link customer')
@@ -618,22 +548,20 @@ export const OrderPanel = memo(function OrderPanel({
           })
         }
       })
-      .catch(err => console.warn('Operation failed:', err))
-  }, [])
+      .catch(err => clientLog.warn('Operation failed:', err))
+  }, [setLinkedCustomer, setLoyaltyEnabled])
 
-  // Tax exempt toggle handler — opens dialog when enabling, removes via DELETE when disabling
+  // ── Tax exempt handlers ──
   const handleTaxExemptToggle = useCallback(() => {
     if (!orderId || taxExemptToggling) return
     if (!isTaxExempt) {
-      // Opening: show dialog for reason/taxId
       setTaxExemptReason('')
-      setTaxExemptId('')
+      useOrderPanelStore.getState().setTaxExemptId('')
       setShowTaxExemptDialog(true)
       return
     }
-    // Removing: call DELETE
     setTaxExemptToggling(true)
-    setIsTaxExempt(false) // Optimistic
+    setIsTaxExempt(false)
     void fetch(`/api/orders/${orderId}/tax-exempt`, {
       method: 'DELETE',
       headers: {
@@ -642,56 +570,53 @@ export const OrderPanel = memo(function OrderPanel({
     })
       .then(r => {
         if (!r.ok) {
-          setIsTaxExempt(true) // Revert on failure
+          setIsTaxExempt(true)
           toast.error(r.status === 403 ? 'Manager permission required for tax exempt' : 'Failed to remove tax exempt')
           console.error('Failed to remove tax exempt')
         }
       })
       .catch(err => {
-        setIsTaxExempt(true) // Revert on error
+        setIsTaxExempt(true)
         toast.error('Failed to remove tax exempt')
         console.error('Tax exempt remove error:', err)
       })
       .finally(() => setTaxExemptToggling(false))
-  }, [orderId, isTaxExempt, taxExemptToggling, employeeId])
+  }, [orderId, isTaxExempt, taxExemptToggling, employeeId, setTaxExemptReason, setShowTaxExemptDialog, setTaxExemptToggling, setIsTaxExempt])
 
-  // Submit tax exempt with reason/taxId via POST
   const submitTaxExempt = useCallback(() => {
     if (!orderId || !taxExemptReason.trim()) return
     setTaxExemptToggling(true)
     setShowTaxExemptDialog(false)
-    setIsTaxExempt(true) // Optimistic
+    setIsTaxExempt(true)
     void fetch(`/api/orders/${orderId}/tax-exempt`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         ...(employeeId ? { 'x-employee-id': employeeId } : {}),
       },
-      body: JSON.stringify({ reason: taxExemptReason.trim(), taxId: taxExemptId.trim() || undefined, employeeId }),
+      body: JSON.stringify({ reason: taxExemptReason.trim(), taxId: useOrderPanelStore.getState().taxExemptId.trim() || undefined, employeeId }),
     })
       .then(r => {
         if (!r.ok) {
-          setIsTaxExempt(false) // Revert on failure
+          setIsTaxExempt(false)
           toast.error(r.status === 403 ? 'Manager permission required for tax exempt' : 'Failed to set tax exempt')
           console.error('Failed to set tax exempt')
         }
       })
       .catch(err => {
-        setIsTaxExempt(false) // Revert on error
+        setIsTaxExempt(false)
         toast.error('Failed to set tax exempt')
         console.error('Tax exempt submit error:', err)
       })
       .finally(() => setTaxExemptToggling(false))
-  }, [orderId, taxExemptReason, taxExemptId, employeeId])
+  }, [orderId, taxExemptReason, employeeId, setTaxExemptToggling, setShowTaxExemptDialog, setIsTaxExempt])
 
-  // Birthday proximity check: returns null, 'today', or days until birthday (1-7)
+  // ── Birthday proximity check ──
   const birthdayAlert = useMemo(() => {
     if (!linkedCustomer?.birthday) return null
     const bday = new Date(linkedCustomer.birthday)
     const now = new Date()
-    // Build this year's birthday
     const thisYearBday = new Date(now.getFullYear(), bday.getMonth(), bday.getDate())
-    // If already passed this year, check next year
     const checkDate = thisYearBday < new Date(now.getFullYear(), now.getMonth(), now.getDate())
       ? new Date(now.getFullYear() + 1, bday.getMonth(), bday.getDate())
       : thisYearBday
@@ -702,7 +627,6 @@ export const OrderPanel = memo(function OrderPanel({
     return null
   }, [linkedCustomer?.birthday])
 
-  // Tag colors (same as CustomerLookupModal)
   const TAG_COLORS: Record<string, string> = {
     VIP: 'bg-yellow-100 text-yellow-800',
     Regular: 'bg-green-100 text-green-800',
@@ -713,24 +637,7 @@ export const OrderPanel = memo(function OrderPanel({
     'Birthday Club': 'bg-red-100 text-red-800',
   }
 
-  // Sort direction: 'newest-bottom' (default, newest appended at bottom) or 'newest-top' (newest at top)
-  const [sortDirection, setSortDirection] = useState<'newest-bottom' | 'newest-top'>('newest-bottom')
-
-  // Condensed view: combine like items visually
-  const [condensedView, setCondensedView] = useState(false)
-  // Track which condensed groups are expanded by the user
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
-
-  // Check overview popover (table name click)
-  const [showCheckOverview, setShowCheckOverview] = useState(false)
-
-  // Seat allergy notes — persisted on Order.notes as JSON { seatAllergies: { [seat]: "notes" } }
-  const [seatAllergyNotes, setSeatAllergyNotes] = useState<Record<number, string>>({})
-  const [allergyModalSeat, setAllergyModalSeat] = useState<{ seatNumber: number; position: { x: number; y: number } } | null>(null)
-  const seatLongPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const seatLongPressTriggeredRef = useRef(false)
-
-  // Load seat allergies from the server when orderId changes
+  // ── Seat allergy notes fetch ──
   useEffect(() => {
     if (!orderId) {
       setSeatAllergyNotes({})
@@ -749,248 +656,14 @@ export const OrderPanel = memo(function OrderPanel({
         }
         setSeatAllergyNotes(loaded)
       })
-      .catch(err => console.warn('Operation failed:', err))
+      .catch(err => clientLog.warn('Operation failed:', err))
     return () => { cancelled = true }
-  }, [orderId])
+  }, [orderId, setSeatAllergyNotes])
 
-  // Track newest item for highlight + auto-scroll
-  const [newestItemId, setNewestItemId] = useState<string | null>(null)
-  const prevItemCountRef = useRef(items.length)
-  const scrollContainerRef = useRef<HTMLDivElement>(null)
-  const newestTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  // Detect when a new item is added
-  useEffect(() => {
-    const pendingItems = items.filter(item => !item.kitchenStatus || item.kitchenStatus === 'pending')
-    const prevCount = prevItemCountRef.current
-    prevItemCountRef.current = items.length
-
-    if (items.length > prevCount && pendingItems.length > 0) {
-      // New item was added — highlight the newest pending item
-      const newest = sortDirection === 'newest-top' ? pendingItems[0] : pendingItems[pendingItems.length - 1]
-      if (newest) {
-        setNewestItemId(newest.id)
-
-        // Auto-scroll to newest item
-        requestAnimationFrame(() => {
-          const container = scrollContainerRef.current
-          if (!container) return
-          const el = container.querySelector(`[data-item-id="${newest.id}"]`)
-          if (el) {
-            el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-          }
-        })
-
-        // Clear highlight after 2 seconds
-        if (newestTimerRef.current) clearTimeout(newestTimerRef.current)
-        newestTimerRef.current = setTimeout(() => setNewestItemId(null), 2000)
-      }
-    }
-  }, [items, sortDirection])
-
-  // Sort pending items based on direction
-  const sortPendingItems = (pendingItems: OrderPanelItemData[]) => {
-    if (sortDirection === 'newest-top') {
-      return [...pendingItems].reverse()
-    }
-    return pendingItems
-  }
-
-  // Pending and sent items
-  const pendingItems = useMemo(() =>
-    items.filter(item => !item.sentToKitchen && (!item.kitchenStatus || item.kitchenStatus === 'pending')),
-    [items]
-  )
-  const sentItems = useMemo(() =>
-    items.filter(item => item.sentToKitchen || (item.kitchenStatus && item.kitchenStatus !== 'pending')),
-    [items]
-  )
-
-  // Auto-group items by seat number when multiple seats have items (pre-split checks)
-  const autoSeatGroups = useMemo(() => {
-    const seatSet = new Set<number>()
-    for (const item of items) {
-      if (item.seatNumber && (!item.status || item.status === 'active')) seatSet.add(item.seatNumber)
-    }
-    if (seatSet.size < 2) return null // No grouping needed for 0 or 1 seat
-    const seats = Array.from(seatSet).sort((a, b) => a - b)
-    const groups: { seatNumber: number | null; items: OrderPanelItemData[]; subtotal: number }[] = seats.map(seatNum => {
-      const seatItems = items.filter(i => i.seatNumber === seatNum)
-      const subtotal = seatItems
-        .filter(i => !i.status || i.status === 'active')
-        .reduce((sum, i) => sum + calculateItemTotal(i), 0)
-      return { seatNumber: seatNum, items: seatItems, subtotal }
-    })
-    // Add "No Seat" group for active items without a seat assignment
-    const unassignedItems = items.filter(i => !i.seatNumber && (!i.status || i.status === 'active'))
-    if (unassignedItems.length > 0) {
-      const subtotal = unassignedItems.reduce((sum, i) => sum + calculateItemTotal(i), 0)
-      groups.push({ seatNumber: null, items: unassignedItems, subtotal })
-    }
-    return groups
-  }, [items])
-
-  // Auto-group items by split label when viewing a split parent order
-  const splitGroups = useMemo(() => {
-    const hasSplitLabels = items.some(i => i.splitLabel)
-    if (!hasSplitLabels) return null
-    const labelMap = new Map<string, OrderPanelItemData[]>()
-    for (const item of items) {
-      const label = item.splitLabel || 'Unsplit'
-      const existing = labelMap.get(label) || []
-      existing.push(item)
-      labelMap.set(label, existing)
-    }
-    return Array.from(labelMap.entries()).map(([label, groupItems]) => ({
-      label,
-      items: groupItems,
-      subtotal: groupItems
-        .filter(i => !i.status || i.status === 'active')
-        .reduce((sum, i) => sum + calculateItemTotal(i), 0),
-    }))
-  }, [items])
-
-  // Shared item renderer — ensures identical rendering everywhere
-  // Shared item renderer — uses stable callback refs to avoid re-creating
-  // on every parent render. Only data values that affect visual output are
-  // in the dependency array (reduced from 31 deps to 11).
-  const renderItem = useCallback((item: OrderPanelItemData) => (
-    <OrderPanelItem
-      key={item.id}
-      item={item}
-      locationId={locationId}
-      showControls={showItemControls}
-      showEntertainmentTimer={showEntertainmentTimers}
-      onClick={onItemClickRef.current}
-      onRemove={onItemRemoveRef.current}
-      onQuantityChange={onQuantityChangeRef.current}
-      onSessionEnded={onSessionEndedRef.current}
-      onTimerStarted={onTimerStartedRef.current}
-      onTimeExtended={onTimeExtendedRef.current}
-      onHoldToggle={onItemHoldToggleRef.current}
-      onNoteEdit={onItemNoteEditRef.current}
-      onCourseChange={onItemCourseChangeRef.current}
-      onEditModifiers={onItemEditModifiersRef.current}
-      onCompVoid={onItemCompVoidRef.current}
-      onItemDiscount={onItemDiscountRef.current}
-      onItemDiscountRemove={onItemDiscountRemoveRef.current}
-      onResend={onItemResendRef.current}
-      onRepeat={onItemRepeatRef.current}
-      isExpanded={expandedItemId === item.id}
-      onToggleExpand={onItemToggleExpandRef.current}
-      maxSeats={maxSeats}
-      maxCourses={maxCourses}
-      onSeatChange={onItemSeatChangeRef.current}
-      isNewest={newestItemId === item.id}
-      isLastSent={lastSentItemIds?.has(item.id)}
-      isSelected={selectedItemIds ? selectedItemIds.has(item.id) : selectedItemId === item.id}
-      onSelect={onItemSelectRef.current}
-      onFireItem={onFireItemRef.current}
-      onCancelItemDelay={onCancelItemDelayRef.current}
-      cardPriceMultiplier={cardPriceMultiplier}
-    />
-  ), [locationId, showItemControls, showEntertainmentTimers, expandedItemId, maxSeats, maxCourses, newestItemId, lastSentItemIds, selectedItemIds, selectedItemId, cardPriceMultiplier])
-
-  // Build a match key for condensing like items
-  const getCondenseKey = (item: OrderPanelItemData): string => {
-    const mods = (item.modifiers || [])
-      .map(m => `${m.name}|${m.price}|${m.preModifier || ''}`)
-      .sort()
-      .join(';')
-    return `${item.name}|${item.price}|${mods}`
-  }
-
-  // Condense like items into groups (purely visual — never mutates store)
-  const condenseItems = (itemList: OrderPanelItemData[]): (OrderPanelItemData & { _childIds?: string[] })[] => {
-    if (!condensedView) return itemList
-
-    const groups = new Map<string, { representative: OrderPanelItemData; childIds: string[]; totalQty: number }>()
-    const result: (OrderPanelItemData & { _childIds?: string[] })[] = []
-
-    for (const item of itemList) {
-      // Never group voided/comped items — they need individual visibility
-      if (item.status === 'voided' || item.status === 'comped') {
-        result.push(item)
-        continue
-      }
-      const key = getCondenseKey(item)
-      if (expandedGroups.has(key)) {
-        // User expanded this group — show individually
-        result.push(item)
-        continue
-      }
-      const existing = groups.get(key)
-      if (existing) {
-        existing.childIds.push(item.id)
-        existing.totalQty += item.quantity
-      } else {
-        groups.set(key, { representative: item, childIds: [item.id], totalQty: item.quantity })
-      }
-    }
-
-    // Build condensed items from groups
-    for (const [, group] of groups) {
-      if (group.childIds.length === 1) {
-        result.push(group.representative)
-      } else {
-        result.push({
-          ...group.representative,
-          quantity: group.totalQty,
-          _childIds: group.childIds,
-        })
-      }
-    }
-
-    return result
-  }
-
-  // Render a condensed item (with expand affordance)
-  const renderCondensedItem = (item: OrderPanelItemData & { _childIds?: string[] }) => {
-    if (!item._childIds) return renderItem(item)
-
-    const key = getCondenseKey(item)
-    return (
-      <div key={item.id} style={{ position: 'relative' }}>
-        {renderItem(item)}
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation()
-            setExpandedGroups(prev => {
-              const next = new Set(prev)
-              next.add(key)
-              return next
-            })
-          }}
-          style={{
-            position: 'absolute', top: '4px', right: '4px',
-            fontSize: '9px', color: '#818cf8', background: 'rgba(99,102,241,0.15)',
-            border: '1px solid rgba(99,102,241,0.3)', borderRadius: '4px',
-            padding: '1px 5px', cursor: 'pointer', fontWeight: 600,
-          }}
-        >
-          {item._childIds.length} items
-        </button>
-      </div>
-    )
-  }
-
-  // Render items with condensing support
-  const renderItemList = (itemList: OrderPanelItemData[]) => {
-    const condensed = condenseItems(itemList)
-    return condensed.map(item =>
-      (item as any)._childIds ? renderCondensedItem(item as any) : renderItem(item)
-    )
-  }
-
-  // Check overview: aggregate items by name for summary (fetches all splits if split order)
-  const [checkOverviewItems, setCheckOverviewItems] = useState<{ name: string; qty: number; total: number }[]>([])
-  const [checkOverviewTotal, setCheckOverviewTotal] = useState(0)
-
+  // ── Check overview ──
   useEffect(() => {
     if (!showCheckOverview) return
     if (splitInfo && splitInfo.allSplitIds.length > 0) {
-      // Fetch ALL split order items for full-table overview
       Promise.all(
         splitInfo.allSplitIds.map(id =>
           fetch(`/api/orders/${id}`).then(r => r.ok ? r.json() : null).catch(() => null)
@@ -999,7 +672,6 @@ export const OrderPanel = memo(function OrderPanel({
         const groups = new Map<string, { name: string; qty: number; total: number }>()
         let tot = 0
         for (const result of results) {
-          // API returns order directly (no data wrapper)
           const order = result?.data ?? result
           if (!order?.items) continue
           tot += Number(order.total ?? 0)
@@ -1021,7 +693,6 @@ export const OrderPanel = memo(function OrderPanel({
         setCheckOverviewTotal(tot)
       })
     } else {
-      // No splits — use current order items
       const groups = new Map<string, { name: string; qty: number; total: number }>()
       for (const item of items) {
         if (item.status === 'voided' || item.status === 'comped') continue
@@ -1032,485 +703,14 @@ export const OrderPanel = memo(function OrderPanel({
       setCheckOverviewItems(Array.from(groups.values()).sort((a, b) => b.qty - a.qty))
       setCheckOverviewTotal(total)
     }
-   
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showCheckOverview, splitInfo?.allSplitIds?.length])
 
-  const renderPendingItems = () => {
-    if (pendingItems.length === 0) return null
-    const sorted = sortPendingItems(pendingItems)
-
-    return (
-      <div>
-        {/* Section header with sort toggle + multi-select controls */}
-        <div style={{
-          fontSize: '11px', fontWeight: 700, color: '#94a3b8',
-          textTransform: 'uppercase' as const, letterSpacing: '0.05em',
-          marginBottom: '12px', paddingBottom: '8px',
-          borderBottom: '2px solid rgba(148, 163, 184, 0.3)',
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          gap: '6px',
-        }}>
-          <span>PENDING ({pendingItems.length})</span>
-          <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-            {/* Condense toggle */}
-            <button
-              onClick={() => {
-                setCondensedView(v => !v)
-                if (condensedView) setExpandedGroups(new Set())
-              }}
-              title={condensedView ? 'Expand all items' : 'Combine like items'}
-              style={{
-                background: condensedView ? 'rgba(99,102,241,0.2)' : 'rgba(255, 255, 255, 0.06)',
-                border: `1px solid ${condensedView ? 'rgba(99,102,241,0.4)' : 'rgba(255, 255, 255, 0.12)'}`,
-                borderRadius: '4px', color: condensedView ? '#a5b4fc' : '#94a3b8', cursor: 'pointer',
-                padding: '2px 6px', fontSize: '10px', lineHeight: 1, fontWeight: 600,
-                display: 'flex', alignItems: 'center', gap: '3px',
-                transition: 'all 0.15s ease',
-              }}
-            >
-              {condensedView ? '⊞' : '⊟'}
-            </button>
-            {/* Sort toggle */}
-            <button
-              onClick={() => setSortDirection(d => d === 'newest-bottom' ? 'newest-top' : 'newest-bottom')}
-              title={sortDirection === 'newest-bottom' ? 'Newest at bottom — click for top' : 'Newest at top — click for bottom'}
-              style={{
-                background: 'rgba(255, 255, 255, 0.06)',
-                border: '1px solid rgba(255, 255, 255, 0.12)',
-                borderRadius: '4px', color: '#94a3b8', cursor: 'pointer',
-                padding: '2px 6px', fontSize: '13px', lineHeight: 1,
-                display: 'flex', alignItems: 'center', gap: '3px',
-                transition: 'all 0.15s ease',
-              }}
-            >
-              {sortDirection === 'newest-bottom' ? '\u2193' : '\u2191'}
-              <span style={{ fontSize: '9px', letterSpacing: '0.03em' }}>NEW</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Order-level delay banner */}
-        {pendingDelay && pendingDelay > 0 && onFireDelayed && (
-          <OrderDelayBanner
-            delayMinutes={pendingDelay}
-            startedAt={delayStartedAt ?? null}
-            firedAt={delayFiredAt ?? null}
-            onAutoFire={onFireDelayed}
-            onFireNow={onFireDelayed}
-            onCancelDelay={onCancelDelay || (() => {})}
-          />
-        )}
-
-        {coursingEnabled ? (
-          // Course-grouped rendering
-          (() => {
-            // Group pending items by course number
-            const courseGroups = new Map<number, OrderPanelItemData[]>()
-            const unassigned: OrderPanelItemData[] = []
-            sorted.forEach(item => {
-              if (item.courseNumber) {
-                const existing = courseGroups.get(item.courseNumber) || []
-                existing.push(item)
-                courseGroups.set(item.courseNumber, existing)
-              } else {
-                unassigned.push(item)
-              }
-            })
-            const courseNumbers = Array.from(courseGroups.keys()).sort((a, b) => a - b)
-
-            return (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
-                {courseNumbers.map(courseNum => {
-                  const courseItems = courseGroups.get(courseNum)!
-                  const delay = courseDelays?.[courseNum]
-                  return (
-                    <div key={`course-${courseNum}`}>
-                      <div style={{
-                        display: 'flex', alignItems: 'center', gap: '8px',
-                        marginBottom: '8px', paddingBottom: '6px',
-                        borderBottom: '1px solid rgba(59, 130, 246, 0.15)',
-                      }}>
-                        <span style={{
-                          fontSize: '11px', fontWeight: 700,
-                          color: '#60a5fa',
-                          padding: '2px 8px',
-                          background: 'rgba(59, 130, 246, 0.15)',
-                          borderRadius: '4px',
-                        }}>
-                          COURSE {courseNum}
-                        </span>
-                        <span style={{ fontSize: '11px', color: '#64748b' }}>
-                          {courseItems.length} item{courseItems.length !== 1 ? 's' : ''}
-                        </span>
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        {renderItemList(courseItems)}
-                      </div>
-                      {/* Course delay status (fire controls are in the gutter strip) */}
-                      {courseNum > 1 && delay?.firedAt && (
-                        <div style={{
-                          display: 'flex', alignItems: 'center', gap: '6px',
-                          padding: '4px 10px', marginTop: '4px',
-                          background: 'rgba(34, 197, 94, 0.1)', borderRadius: '6px',
-                        }}>
-                          <svg width="12" height="12" fill="none" stroke="#22c55e" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                          </svg>
-                          <span style={{ fontSize: '10px', color: '#4ade80', fontWeight: 600 }}>Fired</span>
-                        </div>
-                      )}
-                      {courseNum > 1 && delay?.startedAt && !delay?.firedAt && (
-                        <div style={{
-                          display: 'flex', alignItems: 'center', gap: '6px',
-                          padding: '4px 10px', marginTop: '4px',
-                          background: 'rgba(251, 191, 36, 0.1)', borderRadius: '6px',
-                        }}>
-                          <svg width="12" height="12" fill="none" stroke="#fbbf24" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                          <span style={{ fontSize: '10px', color: '#fbbf24', fontWeight: 600 }}>Timer running</span>
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-                {/* Unassigned items */}
-                {unassigned.length > 0 && (
-                  <div>
-                    <div style={{
-                      display: 'flex', alignItems: 'center', gap: '8px',
-                      marginBottom: '8px', paddingBottom: '6px',
-                      borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
-                    }}>
-                      <span style={{
-                        fontSize: '11px', fontWeight: 600,
-                        color: '#94a3b8',
-                        padding: '2px 8px',
-                        background: 'rgba(255, 255, 255, 0.05)',
-                        borderRadius: '4px',
-                      }}>
-                        NO COURSE
-                      </span>
-                      <span style={{ fontSize: '11px', color: '#64748b' }}>
-                        {unassigned.length} item{unassigned.length !== 1 ? 's' : ''}
-                      </span>
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      {renderItemList(unassigned)}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )
-          })()
-        ) : splitGroups ? (
-          // Split-grouped rendering (viewing split parent with all child items)
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '20px' }}>
-            {splitGroups.map(group => {
-              const groupItems = group.items
-              if (groupItems.length === 0) return null
-              return (
-                <div key={`split-${group.label}`} style={{
-                  border: '1px solid rgba(139, 92, 246, 0.3)',
-                  borderRadius: '8px',
-                  overflow: 'hidden',
-                }}>
-                  {/* Split check header */}
-                  <div style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    padding: '8px 12px',
-                    background: 'rgba(139, 92, 246, 0.08)',
-                    borderBottom: '1px solid rgba(139, 92, 246, 0.2)',
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <div style={{
-                        width: '8px', height: '8px', borderRadius: '50%',
-                        background: '#8b5cf6',
-                      }} />
-                      <span style={{
-                        fontSize: '12px', fontWeight: 700,
-                        color: '#c4b5fd',
-                      }}>
-                        Check {group.label}
-                      </span>
-                      <span style={{ fontSize: '11px', color: '#64748b' }}>
-                        {groupItems.length} item{groupItems.length !== 1 ? 's' : ''}
-                      </span>
-                    </div>
-                    <span style={{
-                      fontSize: '12px', fontWeight: 600,
-                      color: '#c4b5fd',
-                    }}>
-                      {formatCurrency(group.subtotal)}
-                    </span>
-                  </div>
-                  {/* Split items */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '8px 12px' }}>
-                    {renderItemList(groupItems)}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        ) : autoSeatGroups ? (
-          // Auto seat-grouped rendering (pre-split checks)
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '20px' }}>
-            {autoSeatGroups.map(group => {
-              const groupPending = group.items.filter(i =>
-                !i.sentToKitchen && (!i.kitchenStatus || i.kitchenStatus === 'pending')
-              )
-              if (groupPending.length === 0) return null
-              const groupSorted = sortDirection === 'newest-top' ? [...groupPending].reverse() : groupPending
-              const isUnassigned = group.seatNumber === null
-              const seatColor = isUnassigned ? '#94a3b8' : getSeatColor(group.seatNumber!)
-              const seatSubtotal = groupPending
-                .filter(i => !i.status || i.status === 'active')
-                .reduce((sum, i) => sum + calculateItemTotal(i), 0)
-              return (
-                <div key={`seat-${group.seatNumber ?? 'none'}`} style={{
-                  border: `1px solid ${isUnassigned ? 'rgba(148, 163, 184, 0.3)' : getSeatBorderColor(group.seatNumber!)}`,
-                  borderRadius: '8px',
-                  overflow: 'hidden',
-                }}>
-                  {/* Seat check header — long-press for allergy notes */}
-                  {(() => {
-                    const isSelected = group.seatNumber === selectedSeatNumber
-                    const hasAllergyNotes = group.seatNumber !== null && !!seatAllergyNotes[group.seatNumber]
-                    return (
-                  <div
-                    onClick={() => {
-                      if (seatLongPressTriggeredRef.current) {
-                        seatLongPressTriggeredRef.current = false
-                        return
-                      }
-                      onSeatSelect?.(group.seatNumber)
-                    }}
-                    onContextMenu={(e) => {
-                      if (group.seatNumber !== null) {
-                        e.preventDefault()
-                        setAllergyModalSeat({ seatNumber: group.seatNumber, position: { x: e.clientX, y: e.clientY } })
-                      }
-                    }}
-                    onTouchStart={(e) => {
-                      seatLongPressTriggeredRef.current = false
-                      if (group.seatNumber === null) return
-                      const touch = e.touches[0]
-                      const pos = { x: touch.clientX, y: touch.clientY }
-                      seatLongPressTimerRef.current = setTimeout(() => {
-                        seatLongPressTriggeredRef.current = true
-                        setAllergyModalSeat({ seatNumber: group.seatNumber!, position: pos })
-                      }, 600)
-                    }}
-                    onTouchEnd={() => {
-                      if (seatLongPressTimerRef.current) {
-                        clearTimeout(seatLongPressTimerRef.current)
-                        seatLongPressTimerRef.current = null
-                      }
-                    }}
-                    onTouchMove={() => {
-                      if (seatLongPressTimerRef.current) {
-                        clearTimeout(seatLongPressTimerRef.current)
-                        seatLongPressTimerRef.current = null
-                      }
-                    }}
-                    style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    padding: '4px 10px',
-                    background: isSelected
-                      ? 'rgba(99, 102, 241, 0.1)'
-                      : isUnassigned ? 'rgba(148, 163, 184, 0.08)' : getSeatBgColor(group.seatNumber!),
-                    borderBottom: `1px solid ${isUnassigned ? 'rgba(148, 163, 184, 0.2)' : getSeatBorderColor(group.seatNumber!)}`,
-                    borderRadius: '6px 6px 0 0',
-                    cursor: onSeatSelect ? 'pointer' : undefined,
-                    borderLeft: isSelected ? '3px solid rgba(99, 102, 241, 0.6)' : `3px solid ${seatColor}`,
-                    transition: 'border-left-color 0.15s ease, background 0.15s ease',
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <div style={{
-                        width: '8px', height: '8px', borderRadius: '50%',
-                        background: seatColor,
-                      }} />
-                      {hasAllergyNotes && (
-                        <span style={{
-                          fontSize: '10px',
-                          background: 'rgba(239, 68, 68, 0.2)',
-                          color: '#f87171',
-                          borderRadius: '4px',
-                          padding: '1px 5px',
-                          fontWeight: 600,
-                        }}>
-                          ALLERGY
-                        </span>
-                      )}
-                      <span style={{
-                        fontSize: '12px', fontWeight: 700,
-                        color: isUnassigned ? '#94a3b8' : getSeatTextColor(group.seatNumber!),
-                      }}>
-                        {isUnassigned ? 'No Seat' : `Seat ${group.seatNumber}`}
-                      </span>
-                      <span style={{ fontSize: '11px', color: '#64748b' }}>
-                        {groupPending.length} item{groupPending.length !== 1 ? 's' : ''}
-                      </span>
-                    </div>
-                    <span style={{
-                      fontSize: '12px', fontWeight: 600,
-                      color: isUnassigned ? '#94a3b8' : getSeatTextColor(group.seatNumber!),
-                    }}>
-                      {formatCurrency(seatSubtotal)}
-                    </span>
-                  </div>
-                    )
-                  })()}
-                  {/* Seat items */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '8px 12px' }}>
-                    {renderItemList(groupSorted)}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        ) : (
-          // Flat rendering (no seat grouping)
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '20px' }}>
-            {renderItemList(sorted)}
-          </div>
-        )}
-      </div>
-    )
-  }
-
-  const renderSentItems = () => {
-    if (sentItems.length === 0) return null
-    return (
-      <div>
-        <div style={{
-          fontSize: '11px', fontWeight: 700, color: '#3b82f6',
-          textTransform: 'uppercase' as const, letterSpacing: '0.05em',
-          marginBottom: '12px', paddingBottom: '8px',
-          borderBottom: '2px solid rgba(59, 130, 246, 0.3)'
-        }}>
-          SENT TO KITCHEN ({sentItems.length})
-        </div>
-        {splitGroups ? (
-          // Split-grouped sent items
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {splitGroups.map(group => {
-              const groupSent = group.items.filter(i =>
-                i.sentToKitchen || (i.kitchenStatus && i.kitchenStatus !== 'pending')
-              )
-              if (groupSent.length === 0) return null
-              return (
-                <div key={`sent-split-${group.label}`} style={{
-                  border: '1px solid rgba(139, 92, 246, 0.2)',
-                  borderRadius: '8px',
-                  overflow: 'hidden',
-                  opacity: 0.7,
-                }}>
-                  <div style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    padding: '6px 12px',
-                    background: 'rgba(139, 92, 246, 0.06)',
-                    borderBottom: '1px solid rgba(139, 92, 246, 0.15)',
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <div style={{
-                        width: '8px', height: '8px', borderRadius: '50%',
-                        background: '#8b5cf6',
-                      }} />
-                      <span style={{
-                        fontSize: '11px', fontWeight: 700,
-                        color: '#c4b5fd',
-                      }}>
-                        Check {group.label}
-                      </span>
-                    </div>
-                    <span style={{
-                      fontSize: '11px', fontWeight: 600,
-                      color: '#c4b5fd',
-                    }}>
-                      {formatCurrency(group.subtotal)}
-                    </span>
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '8px 12px' }}>
-                    {renderItemList(groupSent)}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        ) : autoSeatGroups ? (
-          // Seat-grouped sent items
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {autoSeatGroups.map(group => {
-              const groupSent = group.items.filter(i =>
-                i.sentToKitchen || (i.kitchenStatus && i.kitchenStatus !== 'pending')
-              )
-              if (groupSent.length === 0) return null
-              const isUnassigned = group.seatNumber === null
-              const seatColor = isUnassigned ? '#94a3b8' : getSeatColor(group.seatNumber!)
-              const seatSubtotal = groupSent
-                .filter(i => !i.status || i.status === 'active')
-                .reduce((sum, i) => sum + calculateItemTotal(i), 0)
-              return (
-                <div key={`sent-seat-${group.seatNumber ?? 'none'}`} style={{
-                  border: `1px solid ${isUnassigned ? 'rgba(148, 163, 184, 0.3)' : getSeatBorderColor(group.seatNumber!)}`,
-                  borderRadius: '8px',
-                  overflow: 'hidden',
-                  opacity: 0.7,
-                }}>
-                  {(() => {
-                    const isSelected = group.seatNumber === selectedSeatNumber
-                    return (
-                  <div
-                    onClick={() => onSeatSelect?.(group.seatNumber)}
-                    style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    padding: '4px 10px',
-                    background: isSelected
-                      ? 'rgba(99, 102, 241, 0.1)'
-                      : isUnassigned ? 'rgba(148, 163, 184, 0.08)' : getSeatBgColor(group.seatNumber!),
-                    borderBottom: `1px solid ${isUnassigned ? 'rgba(148, 163, 184, 0.2)' : getSeatBorderColor(group.seatNumber!)}`,
-                    borderRadius: '6px 6px 0 0',
-                    cursor: onSeatSelect ? 'pointer' : undefined,
-                    borderLeft: isSelected ? '3px solid rgba(99, 102, 241, 0.6)' : `3px solid ${seatColor}`,
-                    transition: 'border-left-color 0.15s ease, background 0.15s ease',
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <div style={{
-                        width: '8px', height: '8px', borderRadius: '50%',
-                        background: seatColor,
-                      }} />
-                      <span style={{
-                        fontSize: '11px', fontWeight: 700,
-                        color: isUnassigned ? '#94a3b8' : getSeatTextColor(group.seatNumber!),
-                      }}>
-                        {isUnassigned ? 'No Seat' : `Seat ${group.seatNumber}`}
-                      </span>
-                    </div>
-                    <span style={{
-                      fontSize: '11px', fontWeight: 600,
-                      color: isUnassigned ? '#94a3b8' : getSeatTextColor(group.seatNumber!),
-                    }}>
-                      {formatCurrency(seatSubtotal)}
-                    </span>
-                  </div>
-                    )
-                  })()}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '8px 12px' }}>
-                    {renderItemList(groupSent)}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {renderItemList(sentItems)}
-          </div>
-        )}
-      </div>
-    )
-  }
+  // ── Computed ──
+  const pendingItems = useMemo(() =>
+    items.filter(item => !item.sentToKitchen && (!item.kitchenStatus || item.kitchenStatus === 'pending')),
+    [items]
+  )
 
   return (
     <div
@@ -1696,82 +896,17 @@ export const OrderPanel = memo(function OrderPanel({
                     {orderType.replace('_', ' ')}
                   </p>
                 )}
-                {/* Pager number badge — visible when notification providers are active */}
-                {pagerNumber && (
-                  <div style={{
-                    display: 'inline-flex', alignItems: 'center', gap: '6px', marginTop: '4px',
-                    padding: '2px 8px', background: 'rgba(20, 184, 166, 0.15)',
-                    border: '1px solid rgba(20, 184, 166, 0.3)', borderRadius: '4px',
-                  }}>
-                    <svg width="12" height="12" fill="none" stroke="#14b8a6" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-                    </svg>
-                    <span style={{ fontSize: '11px', fontWeight: 700, color: '#14b8a6' }}>
-                      Pager #{pagerNumber}
-                    </span>
-                    {pagerStatus && (
-                      <span style={{
-                        fontSize: '9px', fontWeight: 600,
-                        color: pagerStatus === 'active' ? '#10b981' : '#94a3b8',
-                        textTransform: 'uppercase',
-                      }}>
-                        {pagerStatus}
-                      </span>
-                    )}
-                    {/* Change Pager button */}
-                    <button
-                      onClick={() => handleAssignPager(true)}
-                      disabled={assigningPager}
-                      title="Change Pager"
-                      style={{
-                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                        width: '18px', height: '18px', padding: 0,
-                        background: 'rgba(20, 184, 166, 0.2)', border: '1px solid rgba(20, 184, 166, 0.3)',
-                        borderRadius: '3px', cursor: assigningPager ? 'wait' : 'pointer',
-                        opacity: assigningPager ? 0.5 : 1,
-                      }}
-                    >
-                      <svg width="10" height="10" fill="none" stroke="#14b8a6" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                      </svg>
-                    </button>
-                    {/* Unassign Pager button */}
-                    <button
-                      onClick={handleUnassignPager}
-                      disabled={unassigningPager}
-                      title="Unassign Pager"
-                      style={{
-                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                        width: '18px', height: '18px', padding: 0,
-                        background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.3)',
-                        borderRadius: '3px', cursor: unassigningPager ? 'wait' : 'pointer',
-                        opacity: unassigningPager ? 0.5 : 1,
-                      }}
-                    >
-                      <svg width="10" height="10" fill="none" stroke="#ef4444" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                  </div>
-                )}
-                {!pagerNumber && notificationProvidersActive && orderId && !orderId.startsWith('temp-') && (
-                  <button
-                    onClick={() => handleAssignPager(false)}
-                    disabled={assigningPager}
-                    style={{
-                      display: 'inline-flex', alignItems: 'center', gap: '4px', marginTop: '4px',
-                      fontSize: '11px', fontWeight: 500, color: '#14b8a6',
-                      padding: '2px 8px', background: 'rgba(20, 184, 166, 0.1)',
-                      border: '1px solid rgba(20, 184, 166, 0.2)', borderRadius: '4px',
-                      cursor: assigningPager ? 'wait' : 'pointer', opacity: assigningPager ? 0.6 : 1,
-                    }}
-                  >
-                    <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                    </svg>
-                    {assigningPager ? 'Assigning...' : 'Assign Pager'}
-                  </button>
-                )}
+                {/* Pager section */}
+                <OrderPanelPager
+                  pagerNumber={pagerNumber}
+                  pagerStatus={pagerStatus}
+                  orderId={orderId}
+                  notificationProvidersActive={notificationProvidersActive}
+                  assigningPager={assigningPager}
+                  unassigningPager={unassigningPager}
+                  onAssignPager={handleAssignPager}
+                  onUnassignPager={handleUnassignPager}
+                />
                 {/* Share Table/Tab button + Customer button */}
                 {orderId && (<>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px', flexWrap: 'wrap' }}>
@@ -1865,7 +1000,7 @@ export const OrderPanel = memo(function OrderPanel({
                         Add Customer
                       </button>
                     )}
-                    {/* Tax Exempt toggle — gated to employees with manager.tax_exempt permission */}
+                    {/* Tax Exempt toggle */}
                     {orderId && !orderId.startsWith('temp-') && canTaxExempt && (
                       <button
                         onClick={handleTaxExemptToggle}
@@ -1906,19 +1041,16 @@ export const OrderPanel = memo(function OrderPanel({
                       </button>
                     )}
                   </div>
-                  {/* Customer tag badges + birthday alert (below buttons row) */}
+                  {/* Customer tag badges + birthday alert */}
                   {linkedCustomer && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
-                      {/* Tag badges */}
                       {linkedCustomer.tags && linkedCustomer.tags.length > 0 && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
-                          {/* Show BANNED badge prominently if present */}
                           {linkedCustomer.tags.includes('banned') && (
                             <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-600 text-white">
                               BANNED
                             </span>
                           )}
-                          {/* Show up to 3 non-banned tags */}
                           {linkedCustomer.tags.filter(t => t !== 'banned').slice(0, 3).map(tag => (
                             <span
                               key={tag}
@@ -1927,7 +1059,6 @@ export const OrderPanel = memo(function OrderPanel({
                               {tag}
                             </span>
                           ))}
-                          {/* Overflow indicator */}
                           {linkedCustomer.tags.filter(t => t !== 'banned').length > 3 && (
                             <span style={{
                               fontSize: '9px',
@@ -1939,7 +1070,6 @@ export const OrderPanel = memo(function OrderPanel({
                           )}
                         </div>
                       )}
-                      {/* Birthday alert */}
                       {birthdayAlert !== null && (
                         <div style={{
                           display: 'inline-flex',
@@ -1976,7 +1106,7 @@ export const OrderPanel = memo(function OrderPanel({
                         background: 'rgba(34, 197, 94, 0.15)',
                         color: '#4ade80',
                       }}>
-                        💳 ****{cardLast4}
+                        {'\uD83D\uDCB3'} ****{cardLast4}
                       </span>
                     ) : (
                       <>
@@ -1990,7 +1120,7 @@ export const OrderPanel = memo(function OrderPanel({
                           background: 'rgba(239, 68, 68, 0.15)',
                           color: '#f87171',
                         }}>
-                          ⚠️ No Card
+                          {'\u26A0\uFE0F'} No Card
                         </span>
                         {onStartTab && (orderType === 'bar_tab' || orderType?.includes('tab')) && (
                           <button
@@ -2009,7 +1139,7 @@ export const OrderPanel = memo(function OrderPanel({
                               cursor: 'pointer',
                             }}
                           >
-                            💳 Attach Card
+                            {'\uD83D\uDCB3'} Attach Card
                           </button>
                         )}
                       </>
@@ -2047,109 +1177,17 @@ export const OrderPanel = memo(function OrderPanel({
         </div>
       )}
 
-      {/* Split Chips (visible in OrderPanel header when order has splits) */}
-      {splitChips && splitChips.length > 0 && (
-        <div style={{
-          padding: '8px 20px 10px',
-          borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
-          background: 'rgba(255, 255, 255, 0.02)',
-          flexShrink: 0,
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{
-              fontSize: 10, color: '#64748b', fontWeight: 500,
-              textTransform: 'uppercase', letterSpacing: '0.06em',
-            }}>
-              Split Checks
-            </span>
-            <div style={{ display: 'flex', gap: 5 }}>
-              {splitChips.some(s => !s.isPaid) && onPayAll && (
-                <button
-                  type="button"
-                  onClick={onPayAll}
-                  style={{
-                    padding: '3px 8px', borderRadius: 6,
-                    border: '1px solid rgba(34,197,94,0.5)',
-                    background: 'rgba(34,197,94,0.15)',
-                    color: '#4ade80', fontSize: 11, fontWeight: 600,
-                    cursor: 'pointer', whiteSpace: 'nowrap',
-                  }}
-                >
-                  Pay All
-                </button>
-              )}
-              {onManageSplits && (
-                <button
-                  type="button"
-                  onClick={onManageSplits}
-                  style={{
-                    padding: '3px 8px', borderRadius: 6,
-                    border: '1px solid rgba(168,85,247,0.5)',
-                    background: 'rgba(168,85,247,0.15)',
-                    color: '#e9d5ff', fontSize: 11, fontWeight: 600,
-                    cursor: 'pointer', whiteSpace: 'nowrap',
-                  }}
-                >
-                  Manage Splits
-                </button>
-              )}
-            </div>
-          </div>
-          <div style={{
-            display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 4,
-            animation: splitChipsFlashing ? 'splitChipsFlash 0.3s ease-in-out 3' : undefined,
-          }}>
-            <style>{`
-              @keyframes splitChipsFlash {
-                0%, 100% { background: transparent; }
-                50% { background: rgba(168, 85, 247, 0.2); }
-              }
-            `}</style>
-            {splitChips.map(split => (
-              <button
-                key={split.id}
-                type="button"
-                onClick={() => onSplitChipSelect?.(split.id)}
-                style={{
-                  padding: '3px 7px', borderRadius: 6,
-                  border: `1px solid ${split.id === orderId ? 'rgba(99,102,241,0.7)' : split.isPaid ? 'rgba(34,197,94,0.5)' : 'rgba(148,163,184,0.3)'}`,
-                  background: split.id === orderId ? 'rgba(99,102,241,0.25)' : split.isPaid ? 'rgba(34,197,94,0.12)' : 'rgba(15,23,42,0.9)',
-                  color: split.id === orderId ? '#a5b4fc' : split.isPaid ? '#4ade80' : '#e2e8f0',
-                  fontSize: 11, fontWeight: split.id === orderId || split.isPaid ? 600 : 500,
-                  display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer',
-                }}
-              >
-                <span>{split.label}</span>
-                <span style={{ opacity: 0.7 }}>${(cardPriceMultiplier ? split.total * cardPriceMultiplier : split.total).toFixed(2)}</span>
-                {split.isPaid && (
-                  <span style={{
-                    fontSize: 8, textTransform: 'uppercase', letterSpacing: '0.05em',
-                    padding: '1px 3px', borderRadius: 3, background: 'rgba(34,197,94,0.25)',
-                  }}>
-                    Paid
-                  </span>
-                )}
-              </button>
-            ))}
-            {onAddSplit && (
-              <button
-                type="button"
-                onClick={onAddSplit}
-                style={{
-                  padding: '3px 7px', borderRadius: 6,
-                  border: '1px dashed rgba(168,85,247,0.5)',
-                  background: 'rgba(168,85,247,0.08)',
-                  color: '#c084fc',
-                  fontSize: 11, fontWeight: 600,
-                  display: 'flex', alignItems: 'center', gap: 3, cursor: 'pointer',
-                }}
-              >
-                + New
-              </button>
-            )}
-          </div>
-        </div>
-      )}
+      {/* Split Chips */}
+      <OrderPanelSplitNav
+        orderId={orderId}
+        splitChips={splitChips ?? []}
+        splitChipsFlashing={splitChipsFlashing}
+        cardPriceMultiplier={cardPriceMultiplier}
+        onSplitChipSelect={onSplitChipSelect}
+        onManageSplits={onManageSplits}
+        onPayAll={onPayAll}
+        onAddSplit={onAddSplit}
+      />
 
       {/* Seat filter indicator */}
       {filterSeatNumber && (
@@ -2191,71 +1229,50 @@ export const OrderPanel = memo(function OrderPanel({
         </div>
       )}
 
-      {/* Items list (scrollable) */}
-      <div ref={scrollContainerRef} style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px 20px' }}>
-        {hasItems ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            {renderPendingItems()}
-            {renderSentItems()}
-          </div>
-        ) : orderId && !orderId.startsWith('temp-') ? (
-          /* Skeleton: existing order items are loading from server */
-          <div style={{ padding: '12px 0', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            {[0.7, 0.5, 0.85, 0.6].map((w, i) => (
-              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{
-                  height: '14px',
-                  width: `${w * 100}%`,
-                  background: 'linear-gradient(90deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 100%)',
-                  backgroundSize: '200% 100%',
-                  animation: 'shimmer 1.5s linear infinite',
-                  borderRadius: '4px',
-                }} />
-                <div style={{
-                  height: '12px',
-                  width: '48px',
-                  background: 'linear-gradient(90deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 100%)',
-                  backgroundSize: '200% 100%',
-                  animation: 'shimmer 1.5s linear infinite',
-                  borderRadius: '4px',
-                  marginLeft: '12px',
-                }} />
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            height: '100%',
-            textAlign: 'center',
-            padding: '40px 20px',
-          }}>
-            <div>
-              <svg
-                style={{ margin: '0 auto 16px', opacity: 0.4 }}
-                width="48"
-                height="48"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="#64748b"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"
-                />
-              </svg>
-              <p style={{ fontSize: '14px', color: '#64748b' }}>No items yet</p>
-              <p style={{ fontSize: '12px', color: '#475569', marginTop: '4px' }}>
-                Add items to start an order
-              </p>
-            </div>
-          </div>
-        )}
-      </div>
+      {/* Items list (scrollable) — delegated to sub-component */}
+      <OrderPanelItemList
+        orderId={orderId}
+        items={items}
+        locationId={locationId}
+        showItemControls={showItemControls}
+        showEntertainmentTimers={showEntertainmentTimers}
+        expandedItemId={expandedItemId}
+        maxSeats={maxSeats}
+        maxCourses={maxCourses}
+        selectedItemId={selectedItemId}
+        selectedItemIds={selectedItemIds}
+        lastSentItemIds={lastSentItemIds}
+        cardPriceMultiplier={cardPriceMultiplier}
+        selectedSeatNumber={selectedSeatNumber}
+        coursingEnabled={coursingEnabled}
+        courseDelays={courseDelays}
+        pendingDelay={pendingDelay}
+        delayStartedAt={delayStartedAt}
+        delayFiredAt={delayFiredAt}
+        onFireDelayed={onFireDelayed}
+        onCancelDelay={onCancelDelay}
+        onSeatSelect={onSeatSelect}
+        onItemClick={onItemClick}
+        onItemRemove={onItemRemove}
+        onQuantityChange={onQuantityChange}
+        onSessionEnded={onSessionEnded}
+        onTimerStarted={onTimerStarted}
+        onTimeExtended={onTimeExtended}
+        onItemHoldToggle={onItemHoldToggle}
+        onItemNoteEdit={onItemNoteEdit}
+        onItemCourseChange={onItemCourseChange}
+        onItemEditModifiers={onItemEditModifiers}
+        onItemCompVoid={onItemCompVoid}
+        onItemDiscount={onItemDiscount}
+        onItemDiscountRemove={onItemDiscountRemove}
+        onItemResend={onItemResend}
+        onItemRepeat={onItemRepeat}
+        onItemToggleExpand={onItemToggleExpand}
+        onItemSeatChange={onItemSeatChange}
+        onItemSelect={onItemSelect}
+        onFireItem={onFireItem}
+        onCancelItemDelay={onCancelItemDelay}
+      />
 
       {/* Combo auto-suggest banner */}
       {hasPendingItems && !hasSentItems && (
@@ -2289,7 +1306,7 @@ export const OrderPanel = memo(function OrderPanel({
           alignItems: 'center',
           gap: '8px',
         }}>
-          <span style={{ fontSize: '16px' }}>🔓</span>
+          <span style={{ fontSize: '16px' }}>{'\uD83D\uDD13'}</span>
           <div>
             <span style={{ fontSize: '13px', fontWeight: 700, color: '#fb923c' }}>REOPENED ORDER</span>
             {reopenReason && (
@@ -2361,234 +1378,15 @@ export const OrderPanel = memo(function OrderPanel({
         />
       </div>
 
-      {/* Shared Ownership Modal */}
-      {orderId && locationId && employeeId && (
-        <SharedOwnershipModal
-          orderId={orderId}
-          locationId={locationId}
-          employeeId={employeeId}
-          isOpen={showShareOwnership}
-          onClose={() => setShowShareOwnership(false)}
-        />
-      )}
-
-      {/* Customer Lookup Modal */}
-      <CustomerLookupModal
-        isOpen={showCustomerModal}
-        onClose={() => setShowCustomerModal(false)}
-        locationId={locationId || ''}
+      {/* Modals — delegated to sub-component */}
+      <OrderPanelModals
+        orderId={orderId}
+        locationId={locationId}
         employeeId={employeeId}
-        currentCustomerId={linkedCustomer?.id ?? null}
-        onSelectCustomer={handleSelectCustomer}
-        loyaltyEnabled={loyaltyEnabled}
+        employeeRole={employeeRole}
+        handleSelectCustomer={handleSelectCustomer}
+        submitTaxExempt={submitTaxExempt}
       />
-
-      {/* Customer Profile Modal (shown when clicking linked customer) */}
-      {linkedCustomer && (
-        <CustomerProfileModal
-          isOpen={showCustomerProfile}
-          onClose={() => setShowCustomerProfile(false)}
-          customerId={linkedCustomer.id}
-          locationId={locationId || ''}
-          employeeId={employeeId || ''}
-          isManager={employeeRole === 'manager' || employeeRole === 'admin' || employeeRole === 'owner'}
-          loyaltyEnabled={loyaltyEnabled}
-          onChangeCustomer={() => {
-            setShowCustomerProfile(false)
-            setShowCustomerModal(true)
-          }}
-          onRemoveCustomer={() => {
-            setShowCustomerProfile(false)
-            handleSelectCustomer(null)
-          }}
-        />
-      )}
-
-      {/* Tax Exempt Dialog — shown when enabling tax exemption */}
-      {showTaxExemptDialog && (
-        <div style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(0, 0, 0, 0.6)',
-          backdropFilter: 'blur(4px)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 60,
-        }}>
-          <div style={{
-            background: 'rgba(15, 23, 42, 0.95)',
-            backdropFilter: 'blur(20px)',
-            borderRadius: 16,
-            border: '1px solid rgba(255, 255, 255, 0.08)',
-            boxShadow: '0 25px 50px rgba(0, 0, 0, 0.5)',
-            width: '100%',
-            maxWidth: 400,
-            padding: 24,
-          }}>
-            <h3 style={{ color: '#f1f5f9', fontSize: 18, fontWeight: 700, marginBottom: 16 }}>
-              Tax Exempt
-            </h3>
-
-            {/* Tax Exempt Reason */}
-            <div style={{ marginBottom: 12 }}>
-              <label style={{ display: 'block', color: '#94a3b8', fontSize: 13, fontWeight: 600, marginBottom: 4 }}>
-                Reason <span style={{ color: '#f87171' }}>*</span>
-              </label>
-              <select
-                value={taxExemptReason}
-                onChange={e => setTaxExemptReason(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '10px 12px',
-                  background: 'rgba(15, 23, 42, 0.8)',
-                  border: '1px solid rgba(100, 116, 139, 0.3)',
-                  borderRadius: 8,
-                  color: '#ffffff',
-                  fontSize: 14,
-                  outline: 'none',
-                }}
-              >
-                <option value="">Select reason...</option>
-                <option value="Government purchase">Government purchase</option>
-                <option value="Resale certificate">Resale certificate</option>
-                <option value="Non-profit organization">Non-profit organization</option>
-                <option value="Diplomatic exemption">Diplomatic exemption</option>
-                <option value="Agricultural exemption">Agricultural exemption</option>
-                <option value="Other">Other</option>
-              </select>
-            </div>
-
-            {/* Custom reason input (when "Other" is selected) */}
-            {taxExemptReason === 'Other' && (
-              <div style={{ marginBottom: 12 }}>
-                <label style={{ display: 'block', color: '#94a3b8', fontSize: 13, fontWeight: 600, marginBottom: 4 }}>
-                  Specify Reason <span style={{ color: '#f87171' }}>*</span>
-                </label>
-                <input
-                  type="text"
-                  value=""
-                  onChange={e => setTaxExemptReason(e.target.value)}
-                  placeholder="Enter exemption reason..."
-                  style={{
-                    width: '100%',
-                    padding: '10px 12px',
-                    background: 'rgba(15, 23, 42, 0.8)',
-                    border: '1px solid rgba(100, 116, 139, 0.3)',
-                    borderRadius: 8,
-                    color: '#ffffff',
-                    fontSize: 14,
-                    outline: 'none',
-                  }}
-                />
-              </div>
-            )}
-
-            {/* Tax ID (optional) */}
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ display: 'block', color: '#94a3b8', fontSize: 13, fontWeight: 600, marginBottom: 4 }}>
-                Tax Exempt ID / Certificate # (optional)
-              </label>
-              <input
-                type="text"
-                value={taxExemptId}
-                onChange={e => setTaxExemptId(e.target.value)}
-                placeholder="e.g., EIN, certificate number..."
-                style={{
-                  width: '100%',
-                  padding: '10px 12px',
-                  background: 'rgba(15, 23, 42, 0.8)',
-                  border: '1px solid rgba(100, 116, 139, 0.3)',
-                  borderRadius: 8,
-                  color: '#ffffff',
-                  fontSize: 14,
-                  outline: 'none',
-                }}
-              />
-            </div>
-
-            {/* Info banner */}
-            <div style={{
-              padding: 10,
-              borderRadius: 8,
-              background: 'rgba(251, 191, 36, 0.1)',
-              border: '1px solid rgba(251, 191, 36, 0.2)',
-              color: '#fbbf24',
-              fontSize: 12,
-              marginBottom: 16,
-            }}>
-              Tax exemption will set all tax to $0 for this order. The pre-exempt tax amount is preserved for audit.
-            </div>
-
-            {/* Action buttons */}
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button
-                onClick={() => setShowTaxExemptDialog(false)}
-                style={{
-                  flex: 1,
-                  padding: '12px 16px',
-                  borderRadius: 10,
-                  border: '1px solid rgba(100, 116, 139, 0.3)',
-                  background: 'transparent',
-                  color: '#94a3b8',
-                  fontSize: 15,
-                  fontWeight: 500,
-                  cursor: 'pointer',
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={submitTaxExempt}
-                disabled={!taxExemptReason.trim() || taxExemptReason === 'Other'}
-                style={{
-                  flex: 1,
-                  padding: '12px 16px',
-                  borderRadius: 10,
-                  border: 'none',
-                  background: (!taxExemptReason.trim() || taxExemptReason === 'Other') ? '#374151' : '#f59e0b',
-                  color: (!taxExemptReason.trim() || taxExemptReason === 'Other') ? '#6b7280' : '#1e293b',
-                  fontSize: 15,
-                  fontWeight: 700,
-                  cursor: (!taxExemptReason.trim() || taxExemptReason === 'Other') ? 'not-allowed' : 'pointer',
-                }}
-              >
-                Apply Tax Exempt
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Seat Allergy Notes Modal */}
-      {allergyModalSeat && (
-        <SeatAllergyModal
-          seatNumber={allergyModalSeat.seatNumber}
-          currentNotes={seatAllergyNotes[allergyModalSeat.seatNumber] || ''}
-          position={allergyModalSeat.position}
-          onSave={(seatNumber, notes) => {
-            // Optimistic local update
-            setSeatAllergyNotes(prev => {
-              const next = { ...prev }
-              if (notes.trim()) {
-                next[seatNumber] = notes
-              } else {
-                delete next[seatNumber]
-              }
-              return next
-            })
-            // Persist to server
-            if (orderId) {
-              void fetch(`/api/orders/${orderId}/seat-notes`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ seatNumber, allergyNotes: notes }),
-              }).catch(err => console.warn('Operation failed:', err))
-            }
-          }}
-          onClose={() => setAllergyModalSeat(null)}
-        />
-      )}
     </div>
   )
 })

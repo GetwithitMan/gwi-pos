@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from 'react'
 import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
+import { clientLog } from '@/lib/client-logger'
 
 /**
  * Listens for system:update-required and auto-refreshes when the client is idle.
@@ -16,15 +17,15 @@ export function useAutoRefresh(isActive: boolean = false) {
     const socket = getSharedSocket()
 
     const onUpdateRequired = (data: { version: string }) => {
-      console.log('[AutoRefresh] Server updated to', data.version)
+      clientLog.info('[AutoRefresh] Server updated to', data.version)
 
       if (!isActive) {
         // Idle — refresh immediately (small delay for UX)
-        console.log('[AutoRefresh] Client idle — refreshing in 2s')
+        clientLog.info('[AutoRefresh] Client idle — refreshing in 2s')
         setTimeout(() => window.location.reload(), 2000)
       } else {
         // Active flow — defer until isActive becomes false
-        console.log('[AutoRefresh] Active flow detected — deferring refresh')
+        clientLog.info('[AutoRefresh] Active flow detected — deferring refresh')
         pendingRefresh.current = true
       }
     }
@@ -40,7 +41,7 @@ export function useAutoRefresh(isActive: boolean = false) {
   // When active flow completes, check if refresh is pending
   useEffect(() => {
     if (!isActive && pendingRefresh.current) {
-      console.log('[AutoRefresh] Active flow ended — executing deferred refresh')
+      clientLog.info('[AutoRefresh] Active flow ended — executing deferred refresh')
       pendingRefresh.current = false
       setTimeout(() => window.location.reload(), 1000)
     }

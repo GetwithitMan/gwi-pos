@@ -212,7 +212,13 @@ export async function applyCompVoid(
   // Cap discount at subtotal to prevent negative totals after comp reduces the subtotal
   const discountTotal = Math.min(rawDiscountTotal, split.subtotal)
 
-  const taxRate = getLocationTaxRate(locationSettings)
+  // Prefer order-level exclusive tax rate snapshot; fall back to live rate
+  const orderForRates = await (tx as any).order.findUnique({
+    where: { id: orderId },
+    select: { exclusiveTaxRate: true, donationAmount: true, convenienceFee: true },
+  })
+  const orderExclRate = orderForRates?.exclusiveTaxRate != null ? Number(orderForRates.exclusiveTaxRate) : undefined
+  const taxRate = (orderExclRate != null && orderExclRate >= 0) ? orderExclRate : getLocationTaxRate(locationSettings)
   // Get inclusive tax rate from location settings (may differ from exclusive rate)
   const inclusiveTaxRateRaw = (locationSettings as any)?.tax?.inclusiveTaxRate
   const inclusiveRate = inclusiveTaxRateRaw != null && Number.isFinite(inclusiveTaxRateRaw) && inclusiveTaxRateRaw > 0
@@ -235,10 +241,7 @@ export async function applyCompVoid(
 
   // Add donation and convenienceFee back to total — buildOrderTotals doesn't know about them
   // (matches pattern in order-totals.ts recalculateOrderTotals)
-  const orderForDonation = await (tx as any).order.findUnique({
-    where: { id: orderId },
-    select: { donationAmount: true, convenienceFee: true },
-  })
+  const orderForDonation = orderForRates
   const donationAmount = Number(orderForDonation?.donationAmount ?? 0)
   const compVoidConvFee = Number(orderForDonation?.convenienceFee ?? 0)
   if (donationAmount > 0 || compVoidConvFee > 0) {
@@ -338,7 +341,13 @@ export async function applyRestore(
   // Cap discount at subtotal for safety (restore adds subtotal back, but guard anyway)
   const discountTotal = Math.min(rawRestoreDiscount, split.subtotal)
 
-  const taxRate = getLocationTaxRate(locationSettings)
+  // Prefer order-level exclusive tax rate snapshot; fall back to live rate
+  const restoreOrderForRates = await (tx as any).order.findUnique({
+    where: { id: orderId },
+    select: { exclusiveTaxRate: true, donationAmount: true },
+  })
+  const restoreOrderExclRate = restoreOrderForRates?.exclusiveTaxRate != null ? Number(restoreOrderForRates.exclusiveTaxRate) : undefined
+  const taxRate = (restoreOrderExclRate != null && restoreOrderExclRate >= 0) ? restoreOrderExclRate : getLocationTaxRate(locationSettings)
   // Get inclusive tax rate from location settings (may differ from exclusive rate)
   const inclusiveTaxRateRaw = (locationSettings as any)?.tax?.inclusiveTaxRate
   const inclusiveRate = inclusiveTaxRateRaw != null && Number.isFinite(inclusiveTaxRateRaw) && inclusiveTaxRateRaw > 0
@@ -360,10 +369,7 @@ export async function applyRestore(
   )
 
   // Add donation back to total — buildOrderTotals doesn't know about donations
-  const restoreOrderForDonation = await (tx as any).order.findUnique({
-    where: { id: orderId },
-    select: { donationAmount: true },
-  })
+  const restoreOrderForDonation = restoreOrderForRates
   const restoreDonation = Number(restoreOrderForDonation?.donationAmount ?? 0)
   if (restoreDonation > 0) {
     totals.total = roundToCents(totals.total + restoreDonation)

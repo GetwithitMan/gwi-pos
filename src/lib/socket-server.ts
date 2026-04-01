@@ -192,10 +192,23 @@ async function markTerminalOffline(terminalId: string, locationId: string, reaso
       })
       return
     }
-    await db.terminal.update({
-      where: { id: terminalId },
+    // Grace period: only mark offline if lastSeenAt is > 2s old.
+    // This prevents a race where a disconnect fires after a reconnect has already
+    // marked the terminal online (disconnect-before-reconnect race condition).
+    const twoSecondsAgo = new Date(Date.now() - 2000)
+    const result = await db.terminal.updateMany({
+      where: {
+        id: terminalId,
+        locationId,
+        deletedAt: null,
+        lastSeenAt: { lte: twoSecondsAgo },
+      },
       data: { isOnline: false },
     })
+    if (result.count === 0) {
+      log.info({ terminalId, socketId, reason }, 'markTerminalOffline skipped — terminal was recently seen (race guard)')
+      return
+    }
     void emitToLocation(locationId, 'terminal:status_changed', {
       terminalId,
       isOnline: false,
@@ -235,15 +248,13 @@ async function markTerminalOnline(terminalId: string, locationId: string): Promi
       })
       return
     }
-    const terminal = await db.terminal.findFirst({
-      where: { id: terminalId, deletedAt: null },
-      select: { isOnline: true },
-    })
-    if (!terminal || terminal.isOnline) return // already online, skip
-    await db.terminal.update({
-      where: { id: terminalId },
+    // Use updateMany to atomically mark online only if not already online (prevents race with concurrent disconnect).
+    // This replaces the prior findFirst + update pattern which had a TOCTOU gap.
+    const result = await db.terminal.updateMany({
+      where: { id: terminalId, locationId, deletedAt: null, isOnline: false },
       data: { isOnline: true, lastSeenAt: new Date() },
     })
+    if (result.count === 0) return // already online or terminal not found, skip
     void emitToLocation(locationId, 'terminal:status_changed', {
       terminalId,
       isOnline: true,
@@ -410,16 +421,21 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
         return next()
       }
 
-      // Path 4: Development mode — allow unauthenticated
-      // Accept both NODE_ENV=development and non-production (custom server sets dev = NODE_ENV !== 'production')
+      // Path 4: Development mode — still require location context but allow without credentials
+      // SECURITY: Auth is enforced in ALL environments. Dev mode only relaxes credential requirement
+      // but still binds the socket to a valid location for room isolation.
       if (process.env.NODE_ENV !== 'production') {
-        socket.data.authenticated = false
-        // In dev, resolve locationId from DB so socket can join the location room
         try {
           const loc = await db.location.findFirst({ select: { id: true } })
-          if (loc) socket.data.locationId = loc.id
-        } catch { /* DB not ready yet — socket still connects */ }
-        return next()
+          if (loc) {
+            socket.data.locationId = loc.id
+            socket.data.authenticated = true
+            socket.data.devMode = true
+            return next()
+          }
+        } catch { /* DB not ready yet */ }
+        // No location found — reject even in dev
+        return next(new Error('No location configured — cannot authenticate socket'))
       }
 
       return next(new Error('Authentication required'))

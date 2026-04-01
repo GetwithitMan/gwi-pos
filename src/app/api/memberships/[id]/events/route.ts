@@ -13,8 +13,8 @@ export const GET = withVenue(async function GET(
     const sp = request.nextUrl.searchParams
     const locationId = sp.get('locationId')
     const employeeId = sp.get('requestingEmployeeId')
-    const limit = parseInt(sp.get('limit') || '50')
-    const offset = parseInt(sp.get('offset') || '0')
+    const limit = Math.max(1, Math.min(parseInt(sp.get('limit') || '50', 10) || 50, 500))
+    const offset = Math.max(0, parseInt(sp.get('offset') || '0', 10) || 0)
 
     if (!locationId) return err('locationId required')
 

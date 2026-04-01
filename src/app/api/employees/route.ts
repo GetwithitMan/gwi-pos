@@ -22,8 +22,8 @@ export const GET = withVenue(async function GET(
     const searchParams = request.nextUrl.searchParams
     const locationId = searchParams.get('locationId')
     const includeInactive = searchParams.get('includeInactive') === 'true'
-    const page = Math.max(1, parseInt(searchParams.get('page') || '1'))
-    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '50')))
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10) || 1)
+    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '50', 10) || 50))
     const skip = (page - 1) * limit
 
     if (!locationId) {

@@ -134,6 +134,39 @@ export async function dispatchOrderForwarded(
  * Emitted when a source screen bumps and has a multi_clear link.
  * Target screens apply the configured bump action to matching items.
  */
+/**
+ * Dispatch items-voided event to KDS screens
+ *
+ * Called when items are voided from POS after being sent to kitchen.
+ * KDS screens should remove/strike these items and optionally show the reason.
+ */
+export async function dispatchItemsVoided(
+  locationId: string,
+  payload: {
+    orderId: string
+    itemIds: string[]
+    reason: string
+  },
+  options: DispatchOptions = {}
+): Promise<boolean> {
+  const doEmit = async () => {
+    try {
+      await emitToLocation(locationId, 'kds:items-voided', payload)
+      return true
+    } catch (error) {
+      log.error({ err: error }, 'Failed to dispatch items-voided')
+      return false
+    }
+  }
+
+  if (options.async) {
+    doEmit().catch((err) => log.error({ err }, 'Async items-voided dispatch failed'))
+    return true
+  }
+
+  return doEmit()
+}
+
 export async function dispatchMultiClear(
   locationId: string,
   payload: {

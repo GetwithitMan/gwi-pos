@@ -20,7 +20,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const dateTo = searchParams.get('dateTo')
     const employeeId = searchParams.get('employeeId')
     const search = searchParams.get('search')?.trim()
-    const page = Math.max(1, parseInt(searchParams.get('page') || '1'))
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10) || 1)
     const limit = 25
     const offset = (page - 1) * limit
 

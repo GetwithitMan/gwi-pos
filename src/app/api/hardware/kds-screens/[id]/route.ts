@@ -204,6 +204,13 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
       data: { deletedAt: new Date() },
     })
 
+    // Reset any items forwarded to this screen back to unforwarded state
+    // so they return to their source screen's view instead of becoming invisible
+    await db.orderItem.updateMany({
+      where: { kdsForwardedToScreenId: id, deletedAt: null },
+      data: { kdsForwardedToScreenId: null },
+    })
+
     // Clean up orphaned screen links where this screen is source or target
     await db.kDSScreenLink.deleteMany({
       where: {
