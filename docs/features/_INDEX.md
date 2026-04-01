@@ -130,6 +130,7 @@ Every feature in this registry has a dedicated doc in `docs/features/`. Before c
 | **Cloud Relay** | Outbound WebSocket from NUC to cloud for real-time push | [cloud-relay.md](cloud-relay.md) | Active | pos | Offline Sync, Mission Control |
 | **Deployment Control Plane** | MC-managed fleet deployment, update agent, health gates, auto refresh | [../architecture/LOCAL-CORE-CELLULAR-EDGE-HA.md](../architecture/LOCAL-CORE-CELLULAR-EDGE-HA.md#phase-8--deployment-control-plane-planned--next-priority) | Planned | pos, mission-control | Offline Sync, Mission Control, Cloud Relay |
 | **Migration Architecture** | Unified migration runner, tracking table, 12 extracted migrations | `scripts/migrations/`, `scripts/nuc-pre-migrate.js` | Active | pos | Settings, Offline Sync |
+| **Release Pipeline** | End-to-end: commit -> Vercel build -> MC schema rollout -> NUC artifact deploy | [../deployment/RELEASE-PIPELINE.md](../deployment/RELEASE-PIPELINE.md) | Active | pos, mission-control | Mission Control, Offline Sync, Migration Architecture |
 
 ### Billing & Subscriptions
 
