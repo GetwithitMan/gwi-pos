@@ -58,7 +58,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
             orderId: { in: orderIds },
             status: 'authorized',
           },
-          data: { status: 'voided' },
+          data: { status: 'voided', lastMutatedBy: 'local' },
         })
 
         // TX-KEEP: BULK — void multiple orders by ID array; no repo method for batch order status updates

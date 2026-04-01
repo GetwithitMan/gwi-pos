@@ -30,14 +30,16 @@ let _clientSid: string | null = null
  * Load Twilio credentials from DB settings, falling back to env vars.
  * Caches for 1 minute to avoid repeated DB reads.
  */
-export async function loadCredentials(): Promise<{ sid: string | null; token: string | null; fromNumber: string | null }> {
+export async function loadCredentials(locationId?: string): Promise<{ sid: string | null; token: string | null; fromNumber: string | null }> {
   if (_cachedSid && Date.now() - _cachedAt < CACHE_TTL) {
     return { sid: _cachedSid, token: _cachedToken, fromNumber: _cachedFromNumber }
   }
 
   // Try DB settings first
   try {
-    const location = await db.location.findFirst({ select: { settings: true } })
+    const location = locationId
+      ? await db.location.findFirst({ where: { id: locationId }, select: { settings: true } })
+      : await db.location.findFirst({ select: { settings: true } })
     if (location?.settings) {
       const settings = parseSettings(location.settings)
       if (settings.twilio?.accountSid && settings.twilio?.authToken && settings.twilio?.fromNumber) {
@@ -379,7 +381,18 @@ export async function sendSMS(params: SendSMSParams): Promise<SMSResult> {
 
     return { success: true, messageSid: result.sid }
   } catch (error) {
-    log.error({ err: error }, '[Twilio] Failed to send SMS:')
+    log.error({ err: error }, '[Twilio] Failed to send SMS — queuing for retry')
+
+    // Queue for retry (best-effort — don't let queue failure mask the original error)
+    try {
+      const { getLocationId } = await import('@/lib/location-cache')
+      const locationId = await getLocationId()
+      if (locationId) {
+        const { queueRetry } = await import('@/lib/integration-retry-queue')
+        await queueRetry(locationId, 'twilio', 'sms_send', { to, body })
+      }
+    } catch { /* queue failure is non-fatal */ }
+
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',

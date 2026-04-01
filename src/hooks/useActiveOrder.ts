@@ -7,6 +7,7 @@ import { getOrderVersion, handleVersionConflict } from '@/lib/order-version'
 import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
 import { OfflineManager } from '@/lib/offline-manager'
 import { uuid } from '@/lib/uuid'
+import { clientLog } from '@/lib/client-logger'
 import type { OrderPanelItemData } from '@/components/orders/OrderPanelItem'
 
 interface UseActiveOrderOptions {
@@ -262,7 +263,7 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
-      }).catch(err => console.warn('fire-and-forget failed in useActiveOrder:', err))
+      }).catch(err => clientLog.warn('fire-and-forget failed in useActiveOrder:', err))
     }
   }, [options])
 
@@ -412,7 +413,7 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
   const addItem = useCallback((item: AddItemInput) => {
     const store = useOrderStore.getState()
     if (!store.currentOrder) {
-      console.warn('[useActiveOrder] addItem called but no currentOrder — call startOrder first')
+      clientLog.warn('[useActiveOrder] addItem called but no currentOrder — call startOrder first')
       return
     }
     const tempId = store.addItem({
@@ -775,7 +776,7 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
       // FIX C8: Wrap loadOrder in try/catch so unhandled fetch errors don't crash.
       // The polling fallback (useOrderSockets 15s interval) will eventually sync the data.
       loadOrder(orderId).catch(err => {
-        console.warn('[useActiveOrder] onListChanged loadOrder failed:', err)
+        clientLog.warn('[useActiveOrder] onListChanged loadOrder failed:', err)
       })
     }
 
@@ -818,7 +819,7 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ status: 'cancelled' }),
-          }).catch(err => console.warn('fire-and-forget failed in useActiveOrder:', err))
+          }).catch(err => clientLog.warn('fire-and-forget failed in useActiveOrder:', err))
         }
         store.clearOrder()
       }

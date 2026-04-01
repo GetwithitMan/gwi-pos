@@ -13,6 +13,7 @@ import { TabTransferModal } from './TabTransferModal'
 import { AuthStatusBadge } from '@/components/tabs/AuthStatusBadge'
 import { LastCallDialog } from '@/components/tabs/LastCallDialog'
 import { toast } from '@/stores/toast-store'
+import { clientLog } from '@/lib/client-logger'
 import { hasPermission, isAdmin } from '@/lib/auth-utils'
 import type { OpenOrder as BaseOpenOrder } from '@/types'
 
@@ -266,7 +267,7 @@ export function OpenOrdersPanel({
     fetch(`/api/orders/open?locationId=${locationId}&count=true&previousDay=true`, { cache: 'no-store' })
       .then(r => r.ok ? r.json() : null)
       .then(data => { if (data) setPreviousDayCount(data.data?.count ?? 0) })
-      .catch(err => console.warn('fire-and-forget failed in orders.OpenOrdersPanel:', err))
+      .catch(err => clientLog.warn('fire-and-forget failed in orders.OpenOrdersPanel:', err))
   }, [locationId, ageFilter])
 
   // Ref to avoid stale closure when reading orders inside socket handler
@@ -455,7 +456,7 @@ export function OpenOrdersPanel({
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ employeeId, terminalId: getTerminalId(), locationId }),
-    }).catch(err => console.warn('Operation failed:', err))
+    }).catch(err => clientLog.warn('Operation failed:', err))
   }, [employeeId, locationId])
 
   // Track the currently-selected order for heartbeat + auto-release
@@ -475,7 +476,7 @@ export function OpenOrdersPanel({
       if (heartbeatIntervalRef.current) clearInterval(heartbeatIntervalRef.current)
       heartbeatIntervalRef.current = setInterval(() => {
         if (claimedOrderIdRef.current) {
-          void claimOrder(claimedOrderIdRef.current).catch(err => console.warn('Operation failed:', err))
+          void claimOrder(claimedOrderIdRef.current).catch(err => clientLog.warn('Operation failed:', err))
         }
       }, 30_000)
     } else {
@@ -722,9 +723,10 @@ export function OpenOrdersPanel({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             onClick={() => { setIsSearchOpen(true); setTimeout(() => searchInputRef.current?.focus(), 50) }}
-            className={`p-2 rounded-lg transition-colors ${
+            className={`p-2.5 rounded-lg transition-colors min-w-[44px] min-h-[44px] inline-flex items-center justify-center ${
               dark ? 'hover:bg-white/10 text-slate-400 hover:text-white' : 'hover:bg-gray-100 text-gray-500 hover:text-gray-700'
             }`}
+            aria-label="Search orders"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -1133,10 +1135,11 @@ export function OpenOrdersPanel({
           {onToggleExpand && (
             <button
               onClick={onToggleExpand}
-              className={`p-2 rounded-lg transition-colors ${
+              className={`p-2.5 rounded-lg transition-colors min-w-[44px] min-h-[44px] inline-flex items-center justify-center ${
                 dark ? 'hover:bg-white/10 text-slate-400 hover:text-white' : 'hover:bg-gray-100 text-gray-500'
               }`}
               title={isExpanded ? 'Collapse' : 'Expand'}
+              aria-label={isExpanded ? 'Collapse orders panel' : 'Expand orders panel'}
             >
               {isExpanded ? (
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1239,15 +1242,17 @@ export function OpenOrdersPanel({
           <div className="flex gap-1">
             <button
               onClick={() => setViewStyle('card')}
-              className={`p-1.5 rounded transition-colors ${viewStyle === 'card' ? (dark ? 'bg-white/15 text-white' : 'bg-gray-800 text-white') : (dark ? 'text-slate-400 hover:bg-white/10' : 'text-gray-400 hover:bg-gray-100')}`}
+              className={`p-2 rounded transition-colors min-w-[36px] min-h-[36px] inline-flex items-center justify-center ${viewStyle === 'card' ? (dark ? 'bg-white/15 text-white' : 'bg-gray-800 text-white') : (dark ? 'text-slate-400 hover:bg-white/10' : 'text-gray-400 hover:bg-gray-100')}`}
               title="Card view"
+              aria-label="Card view"
             >
               <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M5 3a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2V5a2 2 0 00-2-2H5zM5 11a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2v-2a2 2 0 00-2-2H5zM11 5a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V5zM11 13a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
             </button>
             <button
               onClick={() => setViewStyle('condensed')}
-              className={`p-1.5 rounded transition-colors ${viewStyle === 'condensed' ? (dark ? 'bg-white/15 text-white' : 'bg-gray-800 text-white') : (dark ? 'text-slate-400 hover:bg-white/10' : 'text-gray-400 hover:bg-gray-100')}`}
+              className={`p-2 rounded transition-colors min-w-[36px] min-h-[36px] inline-flex items-center justify-center ${viewStyle === 'condensed' ? (dark ? 'bg-white/15 text-white' : 'bg-gray-800 text-white') : (dark ? 'text-slate-400 hover:bg-white/10' : 'text-gray-400 hover:bg-gray-100')}`}
               title="List view"
+              aria-label="List view"
             >
               <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clipRule="evenodd" /></svg>
             </button>

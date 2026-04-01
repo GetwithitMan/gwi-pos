@@ -240,7 +240,9 @@ export const PUT = withVenue(async function PUT(
         undefined,
         'card',
         isTaxExempt,
-        Number(existingOrder.inclusiveTaxRate) || undefined
+        Number(existingOrder.inclusiveTaxRate) || undefined,
+        0, // convenienceFee handled separately
+        (existingOrder as any).exclusiveTaxRate != null ? Number((existingOrder as any).exclusiveTaxRate) : undefined
       )
       const patchDonation = Number(existingOrder.donationAmount || 0)
       const patchConvFee = Number(existingOrder.convenienceFee || 0)
@@ -380,7 +382,7 @@ export const PUT = withVenue(async function PUT(
       if (employeeId !== undefined) metaPayload.employeeId = employeeId
       orderEvents.push({ type: 'ORDER_METADATA_UPDATED', payload: metaPayload })
     }
-    if (status !== undefined && ['closed', 'void', 'cancelled'].includes(status)) {
+    if (status !== undefined && ['closed', 'voided', 'cancelled'].includes(status)) {
       orderEvents.push({ type: 'ORDER_CLOSED', payload: { closedStatus: status } })
     }
     if (orderEvents.length > 0) {
@@ -653,7 +655,9 @@ export const PATCH = withVenue(async function PATCH(
         undefined,
         'card',
         isTaxExempt,
-        Number(existing.inclusiveTaxRate) || undefined
+        Number(existing.inclusiveTaxRate) || undefined,
+        0, // convenienceFee handled separately
+        (existing as any).exclusiveTaxRate != null ? Number((existing as any).exclusiveTaxRate) : undefined
       )
       const patch2Donation = Number(existing.donationAmount || 0)
       const patch2ConvFee = Number(existing.convenienceFee || 0)

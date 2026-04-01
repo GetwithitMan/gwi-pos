@@ -118,7 +118,9 @@ export const POST = withVenue(async function POST(
         undefined,
         'card',
         true, // isTaxExempt
-        Number(order.inclusiveTaxRate) || undefined
+        Number(order.inclusiveTaxRate) || undefined,
+        0, // convenienceFee handled separately
+        (order as any).exclusiveTaxRate != null ? Number((order as any).exclusiveTaxRate) : undefined
       )
 
       const exemptDonation = Number(order.donationAmount || 0)
@@ -304,7 +306,9 @@ export const DELETE = withVenue(async function DELETE(
         undefined,
         'card',
         false, // isTaxExempt = false
-        Number(order.inclusiveTaxRate) || undefined
+        Number(order.inclusiveTaxRate) || undefined,
+        0, // convenienceFee handled separately
+        (order as any).exclusiveTaxRate != null ? Number((order as any).exclusiveTaxRate) : undefined
       )
 
       const reapplyDonation = Number(order.donationAmount || 0)

@@ -7,7 +7,7 @@ import { calculateCardPrice } from '@/lib/pricing'
 import { fetchAndLoadSplitOrder } from '@/lib/split-order-loader'
 import { OfflineManager } from '@/lib/offline-manager'
 import { uuid } from '@/lib/uuid'
-import { SilentErrorBoundary } from '@/lib/error-boundary'
+import { FeatureErrorBoundary } from '@/components/error-boundaries/FeatureErrorBoundary'
 import { Modal } from '@/components/ui/modal'
 import { OrderPanel, type OrderPanelItemData } from '@/components/orders/OrderPanel'
 import { QuickPickStrip } from '@/components/orders/QuickPickStrip'
@@ -322,7 +322,7 @@ export function SharedOrderPanel(props: SharedOrderPanelProps) {
 
   return (
     <div className="flex h-full">
-      <SilentErrorBoundary name="OrderPanel">
+      <FeatureErrorBoundary featureName="Order Panel">
         <OrderPanel
           orderId={orderId || savedOrderId}
           orderNumber={orderNumber}
@@ -821,7 +821,7 @@ export function SharedOrderPanel(props: SharedOrderPanelProps) {
           lastSentItemIds={lastSentItemIds}
           onRepeatRound={onRepeatRound}
         />
-      </SilentErrorBoundary>
+      </FeatureErrorBoundary>
       {/* Quick Pick Strip */}
       <QuickPickStrip
         selectedItemId={quickPickSelectedId}

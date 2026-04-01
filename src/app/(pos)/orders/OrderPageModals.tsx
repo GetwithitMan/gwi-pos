@@ -7,6 +7,7 @@ import { POSDisplaySettingsModal } from '@/components/orders/POSDisplaySettings'
 import { NoteEditModal } from '@/components/orders/NoteEditModal'
 import { OpenOrdersPanel, type OpenOrder } from '@/components/orders/OpenOrdersPanel'
 import { SilentErrorBoundary } from '@/lib/error-boundary'
+import { FeatureErrorBoundary } from '@/components/error-boundaries/FeatureErrorBoundary'
 import { TimeClockModal } from '@/components/time-clock/TimeClockModal'
 import { ShiftStartModal } from '@/components/shifts/ShiftStartModal'
 import { useAuthStore } from '@/stores/auth-store'
@@ -485,45 +486,47 @@ export function OrderPageModals(props: OrderPageModalsProps) {
 
       {/* Payment Modal */}
       {showPaymentModal && orderToPayId && (
-        <Suspense fallback={null}>
-          <PaymentModal
-            key={orderToPayId}
-            isOpen={showPaymentModal}
-            initialMethod={initialPayMethod}
-            onClose={() => {
-              setShowPaymentModal(false)
-              setOrderToPayId(null)
-              setInitialPayMethod(undefined)
-            }}
-            orderId={orderToPayId}
-            orderTotal={currentOrder?.total ?? 0}
-            subtotal={currentOrder?.subtotal}
-            remainingBalance={currentOrder?.total ?? 0}
-            tipExemptAmount={
-              currentOrder?.items
-                ?.filter((i: any) => i.status !== 'voided' && (
-                  i.tipExempt ||
-                  (!entertainmentTipsEnabled && i.categoryType === 'entertainment')
-                ))
-                .reduce((sum: number, i: any) => sum + (Number(i.itemTotal) || (Number(i.price) * (i.quantity || 1))), 0) || undefined
-            }
-            tabCards={paymentTabCards}
-            onTabCardsChanged={onTabCardsChanged}
-            dualPricing={dualPricing}
-            paymentSettings={paymentSettings}
-            priceRounding={priceRounding}
-            onPaymentComplete={onPaymentComplete}
-            employeeId={employee?.id}
-            terminalId={terminalId}
-            locationId={employee?.location?.id}
-            waitForOrderReady={async () => {
-              if (orderReadyPromiseRef.current) {
-                await orderReadyPromiseRef.current
-                orderReadyPromiseRef.current = null
+        <FeatureErrorBoundary featureName="Payment">
+          <Suspense fallback={null}>
+            <PaymentModal
+              key={orderToPayId}
+              isOpen={showPaymentModal}
+              initialMethod={initialPayMethod}
+              onClose={() => {
+                setShowPaymentModal(false)
+                setOrderToPayId(null)
+                setInitialPayMethod(undefined)
+              }}
+              orderId={orderToPayId}
+              orderTotal={currentOrder?.total ?? 0}
+              subtotal={currentOrder?.subtotal}
+              remainingBalance={currentOrder?.total ?? 0}
+              tipExemptAmount={
+                currentOrder?.items
+                  ?.filter((i: any) => i.status !== 'voided' && (
+                    i.tipExempt ||
+                    (!entertainmentTipsEnabled && i.categoryType === 'entertainment')
+                  ))
+                  .reduce((sum: number, i: any) => sum + (Number(i.itemTotal) || (Number(i.price) * (i.quantity || 1))), 0) || undefined
               }
-            }}
-          />
-        </Suspense>
+              tabCards={paymentTabCards}
+              onTabCardsChanged={onTabCardsChanged}
+              dualPricing={dualPricing}
+              paymentSettings={paymentSettings}
+              priceRounding={priceRounding}
+              onPaymentComplete={onPaymentComplete}
+              employeeId={employee?.id}
+              terminalId={terminalId}
+              locationId={employee?.location?.id}
+              waitForOrderReady={async () => {
+                if (orderReadyPromiseRef.current) {
+                  await orderReadyPromiseRef.current
+                  orderReadyPromiseRef.current = null
+                }
+              }}
+            />
+          </Suspense>
+        </FeatureErrorBoundary>
       )}
 
       {/* Receipt Modal */}

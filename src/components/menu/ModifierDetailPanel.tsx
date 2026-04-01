@@ -6,6 +6,7 @@ import { calculateCardPrice } from '@/lib/pricing'
 import { Plus, ChevronUp, ChevronDown, Eye, EyeOff, X } from 'lucide-react'
 import { SwapTargetPicker } from './SwapTargetPicker'
 import type { Modifier, ModifierGroup, SwapTarget, CustomPreMod } from './item-editor-types'
+import { clientLog } from '@/lib/client-logger'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -420,7 +421,7 @@ export function ModifierDetailPanel({
             setPendingSwitch(null)
           })
           .catch(err => {
-            console.warn('modifier auto-save on switch failed:', err)
+            clientLog.warn('modifier auto-save on switch failed:', err)
             setPendingSwitch(modifier)
             setShowSwitchDialog(true)
           })
@@ -459,7 +460,7 @@ export function ModifierDetailPanel({
         })
         setStalePriceWarning(stale)
       })
-      .catch(err => console.warn('fire-and-forget failed in menu.ModifierDetailPanel:', err))
+      .catch(err => clientLog.warn('fire-and-forget failed in menu.ModifierDetailPanel:', err))
   }, [modifier.id])  
 
   // ── Patch helper ──────────────────────────────────────────────────────

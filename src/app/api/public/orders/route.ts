@@ -216,6 +216,8 @@ export async function POST(request: NextRequest) {
     const inclusiveTaxRateRaw = settings.tax.inclusiveTaxRate
     const inclusiveTaxRate = inclusiveTaxRateRaw != null && Number.isFinite(inclusiveTaxRateRaw) && inclusiveTaxRateRaw > 0
       ? inclusiveTaxRateRaw / 100 : undefined
+    // Snapshot exclusive tax rate at order creation (decimal form)
+    const exclusiveTaxRate = defaultTaxRate > 0 ? defaultTaxRate / 100 : 0
     const { taxFromInclusive, taxFromExclusive, totalTax: taxTotal } = calculateSplitTax(
       inclusiveSubtotal, exclusiveSubtotal, defaultTaxRate / 100, inclusiveTaxRate
     )
@@ -253,6 +255,7 @@ export async function POST(request: NextRequest) {
           taxFromInclusive,
           taxFromExclusive,
           inclusiveTaxRate: inclusiveTaxRate || 0,
+          exclusiveTaxRate,
           tipTotal: 0,
           total,
           commissionTotal: 0,

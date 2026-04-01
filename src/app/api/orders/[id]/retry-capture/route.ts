@@ -71,6 +71,22 @@ export const POST = withVenue(withAuth(async function POST(
         return err('No authorized cards on this tab')
       }
 
+      // Pre-auth expiration check — Datacap pre-auths expire after ~7 days.
+      // Reject early with a clear message instead of getting a cryptic Datacap decline.
+      const PRE_AUTH_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000 // 7 days
+      const oldestCard = order.cards[0]
+      if (oldestCard?.createdAt) {
+        const ageMs = Date.now() - new Date(oldestCard.createdAt).getTime()
+        if (ageMs > PRE_AUTH_MAX_AGE_MS) {
+          const ageDays = Math.floor(ageMs / 86400000)
+          return err(
+            `Pre-authorization expired (${ageDays} days old). ` +
+            'Datacap pre-auths are valid for ~7 days. Please run a new card.',
+            409
+          )
+        }
+      }
+
       const purchaseAmount = Number(order.total) - Number(order.tipTotal)
       let capturedCard = null
       let captureResponse = null

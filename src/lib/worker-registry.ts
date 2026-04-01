@@ -13,6 +13,10 @@ import { createChildLogger } from '@/lib/logger'
 
 const log = createChildLogger('WorkerRegistry')
 
+/** Exponential backoff delays for worker restarts: 5s, 10s, 30s, 60s, 60s */
+const RESTART_DELAYS = [5000, 10000, 30000, 60000, 60000]
+const MAX_RESTARTS = RESTART_DELAYS.length
+
 export type WorkerClass = 'required' | 'degraded' | 'optional'
 
 export interface WorkerEntry {
@@ -53,28 +57,62 @@ export function registerWorker(
 }
 
 /**
+ * Attempt to start a worker, restarting with exponential backoff on failure.
+ * Only `degraded` and `optional` workers are restarted — `required` workers
+ * re-throw so the process can abort.
+ */
+async function startWithRestart(worker: WorkerEntry): Promise<void> {
+  try {
+    await worker.start()
+    worker.running = true
+    worker.lastSuccessAt = new Date()
+    // Reset restart count on successful start so future crashes get full backoff budget
+    worker.restartCount = 0
+    log.info({ name: worker.name, class: worker.class }, 'Worker started')
+  } catch (err) {
+    worker.running = false
+    worker.lastErrorAt = new Date()
+    worker.errorCount++
+
+    // Required workers must crash the process — never auto-restart
+    if (worker.class === 'required') {
+      log.fatal({ name: worker.name, err }, 'Required worker failed to start')
+      throw err
+    }
+
+    if (worker.restartCount >= MAX_RESTARTS) {
+      log.error(
+        { err, name: worker.name, restarts: worker.restartCount },
+        `Worker ${worker.name} exceeded max restarts (${MAX_RESTARTS}) — leaving dead`,
+      )
+      return
+    }
+
+    const delay = RESTART_DELAYS[worker.restartCount]
+    worker.restartCount++
+
+    const level = worker.class === 'degraded' ? 'error' : 'warn'
+    log[level](
+      { err, name: worker.name, restartCount: worker.restartCount, nextRetryMs: delay },
+      `Worker ${worker.name} crashed — restarting in ${delay}ms`,
+    )
+
+    setTimeout(() => {
+      void startWithRestart(worker)
+    }, delay)
+  }
+}
+
+/**
  * Start all registered workers in order.
  *
  * - required: throws on failure (caller should abort boot)
- * - degraded: logs error, continues
- * - optional: logs warning, continues
+ * - degraded: logs error, schedules restart with backoff, continues boot
+ * - optional: logs warning, schedules restart with backoff, continues boot
  */
 export async function startAllWorkers(): Promise<void> {
   for (const worker of workers) {
-    try {
-      await worker.start()
-      worker.running = true
-      log.info({ name: worker.name, class: worker.class }, 'Worker started')
-    } catch (err) {
-      if (worker.class === 'required') {
-        log.fatal({ name: worker.name, err }, 'Required worker failed to start')
-        throw err
-      } else if (worker.class === 'degraded') {
-        log.error({ name: worker.name, err }, 'Degraded worker failed to start')
-      } else {
-        log.warn({ name: worker.name, err }, 'Optional worker failed to start')
-      }
-    }
+    await startWithRestart(worker)
   }
 
   const running = workers.filter(w => w.running).length

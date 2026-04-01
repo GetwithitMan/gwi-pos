@@ -136,9 +136,10 @@ export function Modal({
                 <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
                 <motion.button
                   onClick={onClose}
-                  className="p-1.5 rounded-lg text-gray-600 hover:text-gray-900 hover:bg-white/60 transition-colors"
+                  className="p-2.5 rounded-lg text-gray-600 hover:text-gray-900 hover:bg-white/60 transition-colors min-w-[44px] min-h-[44px] inline-flex items-center justify-center"
                   whileHover={{ scale: 1.1 }}
                   whileTap={{ scale: 0.95 }}
+                  aria-label="Close dialog"
                 >
                   <svg
                     className="w-5 h-5"

@@ -48,8 +48,8 @@ export const GET = withVenue(async function GET(req: NextRequest) {
     const search = params.get('search')
     const startDate = params.get('startDate')
     const endDate = params.get('endDate')
-    const limit = Math.min(200, Math.max(1, parseInt(params.get('limit') || '50', 10)))
-    const offset = Math.max(0, parseInt(params.get('offset') || '0', 10))
+    const limit = Math.min(200, Math.max(1, parseInt(params.get('limit') || '50', 10) || 50))
+    const offset = Math.max(0, parseInt(params.get('offset') || '0', 10) || 0)
 
     // Default to last 24 hours if no date range given
     const now = new Date()

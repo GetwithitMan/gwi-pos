@@ -564,7 +564,7 @@ export const OrderPanelItem = memo(function OrderPanelItem({
                   <button
                     onClick={(e) => { e.stopPropagation(); onFireItem(item.id) }}
                     style={{
-                      padding: '1px 6px',
+                      padding: '4px 8px',
                       fontSize: '10px',
                       fontWeight: 700,
                       borderRadius: '3px',
@@ -572,7 +572,9 @@ export const OrderPanelItem = memo(function OrderPanelItem({
                       background: 'rgba(239, 68, 68, 0.35)',
                       color: '#fca5a5',
                       cursor: 'pointer',
+                      minHeight: '28px',
                     }}
+                    aria-label={`Fire held item ${item.name}`}
                   >
                     Fire
                   </button>
@@ -626,14 +628,16 @@ export const OrderPanelItem = memo(function OrderPanelItem({
                     onClick={(e) => { e.stopPropagation(); setShowSeatPicker(!showSeatPicker) }}
                     style={{
                       fontSize: '9px',
-                      padding: '2px 6px',
+                      padding: '4px 8px',
                       borderRadius: '4px',
                       background: getSeatBgColor(item.seatNumber),
                       color: getSeatTextColor(item.seatNumber),
                       fontWeight: 600,
                       border: `1px solid ${getSeatBorderColor(item.seatNumber)}`,
                       cursor: 'pointer',
+                      minHeight: '28px',
                     }}
+                    aria-label={item.seatNumber ? `Change seat (currently seat ${item.seatNumber})` : 'Assign seat'}
                   >
                     {item.seatNumber ? `S${item.seatNumber}` : '+S'}
                   </button>
@@ -760,16 +764,17 @@ export const OrderPanelItem = memo(function OrderPanelItem({
               <button
                 onClick={(e) => { e.stopPropagation(); onNoteEdit(item.id, item.specialNotes) }}
                 style={{
-                  padding: '4px',
+                  padding: '6px',
                   background: item.specialNotes ? 'rgba(245, 158, 11, 0.15)' : 'transparent',
                   border: 'none',
                   borderRadius: '4px',
                   color: item.specialNotes ? '#f59e0b' : '#64748b',
                   cursor: 'pointer', display: 'inline-flex', alignItems: 'center',
                   lineHeight: 1, verticalAlign: 'middle',
-                  minWidth: '24px', minHeight: '24px', justifyContent: 'center',
+                  minWidth: '36px', minHeight: '36px', justifyContent: 'center',
                 }}
                 title={item.specialNotes ? 'Edit note' : 'Add note'}
+                aria-label={item.specialNotes ? 'Edit note' : 'Add note'}
               >
                 <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
@@ -996,9 +1001,12 @@ export const OrderPanelItem = memo(function OrderPanelItem({
                         color: '#ef4444',
                         cursor: 'pointer',
                         fontSize: '9px',
-                        padding: '0 3px',
+                        padding: '2px 6px',
                         lineHeight: '14px',
+                        minWidth: '28px', minHeight: '28px',
+                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                       }}
+                      aria-label="Remove discount"
                     >
                       ✕
                     </button>
@@ -1060,7 +1068,7 @@ export const OrderPanelItem = memo(function OrderPanelItem({
                 <button
                   onClick={(e) => { e.stopPropagation(); onCancelItemDelay(item.id) }}
                   style={{
-                    padding: '2px 8px',
+                    padding: '4px 10px',
                     fontSize: '10px',
                     fontWeight: 600,
                     borderRadius: '4px',
@@ -1068,7 +1076,10 @@ export const OrderPanelItem = memo(function OrderPanelItem({
                     background: 'rgba(59, 130, 246, 0.15)',
                     color: '#93c5fd',
                     cursor: 'pointer',
+                    minWidth: '36px', minHeight: '32px',
+                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                   }}
+                  aria-label="Cancel item delay"
                 >
                   ✕
                 </button>
@@ -1108,7 +1119,7 @@ export const OrderPanelItem = memo(function OrderPanelItem({
                 <button
                   onClick={(e) => { e.stopPropagation(); onFireItem(item.id) }}
                   style={{
-                    padding: '2px 8px',
+                    padding: '4px 10px',
                     fontSize: '10px',
                     fontWeight: 700,
                     borderRadius: '4px',
@@ -1116,7 +1127,9 @@ export const OrderPanelItem = memo(function OrderPanelItem({
                     background: 'rgba(239, 68, 68, 0.25)',
                     color: '#f87171',
                     cursor: 'pointer',
+                    minHeight: '32px',
                   }}
+                  aria-label={`Fire delayed item ${item.name}`}
                 >
                   Fire
                 </button>
@@ -1125,7 +1138,7 @@ export const OrderPanelItem = memo(function OrderPanelItem({
                 <button
                   onClick={(e) => { e.stopPropagation(); onCancelItemDelay(item.id) }}
                   style={{
-                    padding: '2px 6px',
+                    padding: '4px 10px',
                     fontSize: '10px',
                     fontWeight: 600,
                     borderRadius: '4px',
@@ -1133,7 +1146,9 @@ export const OrderPanelItem = memo(function OrderPanelItem({
                     background: 'rgba(255, 255, 255, 0.08)',
                     color: '#94a3b8',
                     cursor: 'pointer',
+                    minHeight: '32px',
                   }}
+                  aria-label="Cancel item delay"
                 >
                   Cancel
                 </button>
@@ -1177,14 +1192,17 @@ export const OrderPanelItem = memo(function OrderPanelItem({
             <button
               onClick={(e) => { e.stopPropagation(); onRemove(item.id) }}
               style={{
-                padding: '3px',
+                padding: '6px',
                 background: 'rgba(239, 68, 68, 0.1)',
                 border: '1px solid rgba(239, 68, 68, 0.2)',
                 borderRadius: '5px', color: '#f87171', cursor: 'pointer',
+                minWidth: '36px', minHeight: '36px',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
               }}
               title="Remove item"
+              aria-label="Remove item"
             >
-              <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
               </svg>
             </button>
@@ -1194,7 +1212,7 @@ export const OrderPanelItem = memo(function OrderPanelItem({
             <button
               onClick={(e) => { e.stopPropagation(); onItemDiscount(item.id) }}
               style={{
-                padding: '3px 5px',
+                padding: '6px 8px',
                 background: hasItemDiscount ? 'rgba(34, 197, 94, 0.15)' : 'rgba(255, 255, 255, 0.06)',
                 border: hasItemDiscount ? '1px solid rgba(34, 197, 94, 0.3)' : '1px solid rgba(255, 255, 255, 0.1)',
                 borderRadius: '5px',
@@ -1202,8 +1220,11 @@ export const OrderPanelItem = memo(function OrderPanelItem({
                 cursor: 'pointer',
                 fontSize: '11px',
                 fontWeight: 600,
+                minWidth: '36px', minHeight: '36px',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
               }}
               title="Apply discount"
+              aria-label="Apply item discount"
             >
               %
             </button>
@@ -1256,13 +1277,15 @@ export const OrderPanelItem = memo(function OrderPanelItem({
                 <button
                   onClick={(e) => { e.stopPropagation(); onResend(item) }}
                   style={{
-                    padding: '5px 10px',
+                    padding: '6px 12px',
                     background: 'rgba(245, 158, 11, 0.15)',
                     border: '1px solid rgba(245, 158, 11, 0.3)',
                     borderRadius: '6px', color: '#fbbf24',
                     fontSize: '11px', fontWeight: 500, cursor: 'pointer',
                     display: 'flex', alignItems: 'center', gap: '4px',
+                    minHeight: '36px',
                   }}
+                  aria-label={`Resend ${item.name} to kitchen`}
                 >
                   <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
@@ -1274,13 +1297,15 @@ export const OrderPanelItem = memo(function OrderPanelItem({
                 <button
                   onClick={(e) => { e.stopPropagation(); onRepeat(item) }}
                   style={{
-                    padding: '5px 10px',
+                    padding: '6px 12px',
                     background: 'rgba(34, 197, 94, 0.15)',
                     border: '1px solid rgba(34, 197, 94, 0.3)',
                     borderRadius: '6px', color: '#4ade80',
                     fontSize: '11px', fontWeight: 500, cursor: 'pointer',
                     display: 'flex', alignItems: 'center', gap: '4px',
+                    minHeight: '36px',
                   }}
+                  aria-label={`Repeat ${item.name}`}
                 >
                   ↻ Repeat
                 </button>
@@ -1289,12 +1314,14 @@ export const OrderPanelItem = memo(function OrderPanelItem({
                 <button
                   onClick={(e) => { e.stopPropagation(); onCompVoid(item) }}
                   style={{
-                    padding: '5px 10px',
+                    padding: '6px 12px',
                     background: 'rgba(245, 158, 11, 0.1)',
                     border: '1px solid rgba(245, 158, 11, 0.2)',
                     borderRadius: '6px', color: '#f59e0b',
                     fontSize: '11px', fontWeight: 500, cursor: 'pointer',
+                    minHeight: '36px',
                   }}
+                  aria-label={`Comp or void ${item.name}`}
                 >Comp/Void</button>
               )}
             </div>
@@ -1307,13 +1334,15 @@ export const OrderPanelItem = memo(function OrderPanelItem({
           <button
             onClick={(e) => { e.stopPropagation(); onRepeat(item) }}
             style={{
-              padding: '5px 10px',
+              padding: '6px 12px',
               background: 'rgba(34, 197, 94, 0.15)',
               border: '1px solid rgba(34, 197, 94, 0.3)',
               borderRadius: '6px', color: '#4ade80',
               fontSize: '11px', fontWeight: 500, cursor: 'pointer',
               display: 'flex', alignItems: 'center', gap: '4px',
+              minHeight: '36px',
             }}
+            aria-label={`Repeat ${item.name}`}
           >
             ↻ Repeat
           </button>

@@ -1,25 +1,24 @@
 'use client'
 
 import { useState, useEffect, useRef, Suspense } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
-import { formatCurrency } from '@/lib/utils'
 import { toast } from '@/stores/toast-store'
-import { SPIRIT_TIERS, BOTTLE_SIZES } from '@/lib/constants'
-import { RecipeBuilder } from '@/components/menu/RecipeBuilder'
-import { ModifierFlowEditor } from '@/components/menu/ModifierFlowEditor'
 import { getSharedSocket, releaseSharedSocket, getTerminalId } from '@/lib/shared-socket'
 import { useOrderSettings } from '@/hooks/useOrderSettings'
-import { calculateCardPrice } from '@/lib/pricing'
 import { SpiritCategory, BottleProduct } from './types'
 import { CategoryModal } from './CategoryModal'
 import { CreateMenuItemModal } from './CreateMenuItemModal'
+import { MenuCategoryModal } from './MenuCategoryModal'
+import { DrinkListPanel } from './DrinkListPanel'
+import { DrinkEditor } from './DrinkEditor'
+import { ModifierTemplatesPanel } from './ModifierTemplatesPanel'
+import { normalizePourSizes, DEFAULT_POUR_SIZES, PourSizeConfig } from './liquor-builder-utils'
 
 function LiquorBuilderContent() {
-  const router = useRouter()
   const searchParams = useSearchParams()
   const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/liquor-builder' })
   const employee = useAuthStore(s => s.employee)
@@ -49,22 +48,14 @@ function LiquorBuilderContent() {
   const [savingDrink, setSavingDrink] = useState(false)
 
   // Pour size editing state
-  const [enabledPourSizes, setEnabledPourSizes] = useState<Record<string, { label: string; multiplier: number; customPrice?: number | null }>>({})
+  const [enabledPourSizes, setEnabledPourSizes] = useState<Record<string, PourSizeConfig>>({})
   const [defaultPourSize, setDefaultPourSize] = useState<string>('standard')
   const [applyPourToModifiers, setApplyPourToModifiers] = useState(false)
   const [hideDefaultOnPos, setHideDefaultOnPos] = useState(false)
-  // Custom pour size creation
-  const [showCustomPourForm, setShowCustomPourForm] = useState(false)
-  const [customPourKey, setCustomPourKey] = useState('')
-  const [customPourLabel, setCustomPourLabel] = useState('')
-  const [customPourMultiplier, setCustomPourMultiplier] = useState('1.0')
-  const [customPourPrice, setCustomPourPrice] = useState('')
 
   // Modifier group editor state (inline in Drinks tab)
   const [selectedModGroupId, setSelectedModGroupId] = useState<string | null>(null)
   const [modGroupRefreshKey, setModGroupRefreshKey] = useState(0)
-  const [addingGroup, setAddingGroup] = useState(false)
-  const [showGroupPicker, setShowGroupPicker] = useState(false)
   const [attachingGroupId, setAttachingGroupId] = useState<string | null>(null)
 
   // Linked bottle state
@@ -119,6 +110,8 @@ function LiquorBuilderContent() {
 
   // Socket ref for real-time updates
   const socketRef = useRef<any>(null)
+
+  // ─── DATA LOADING ───────────────────────────────────────────────
 
   useEffect(() => {
     loadData()
@@ -192,7 +185,6 @@ function LiquorBuilderContent() {
       const data = await res.json()
       const liquorItems = data.data.items.filter((item: any) => item.categoryType === 'liquor')
       setDrinks(liquorItems)
-      // Load liquor-type menu categories (Beer, Cocktails, etc.)
       const liquorCats = data.data.categories.filter((c: any) => c.categoryType === 'liquor')
       setMenuCategories(liquorCats.map((c: any) => ({ id: c.id, name: c.name, itemCount: c.itemCount ?? 0, color: c.color || '#8b5cf6' })))
     }
@@ -202,9 +194,7 @@ function LiquorBuilderContent() {
     const res = await fetch('/api/menu/modifier-templates?type=liquor')
     if (res.ok) {
       const data = await res.json()
-      // Templates API returns data directly as array, not nested under data.modifierGroups
       const templates = data.data || []
-      // Map template shape to match what the UI expects
       const mappedGroups = templates.map((t: any) => ({
         id: t.id,
         name: t.name,
@@ -214,7 +204,7 @@ function LiquorBuilderContent() {
         maxSelections: t.maxSelections,
         isRequired: t.isRequired,
         allowStacking: t.allowStacking ?? false,
-        isSpiritGroup: false, // templates are never spirit groups
+        isSpiritGroup: false,
         modifiers: (t.modifiers || []).map((m: any) => ({
           id: m.id,
           name: m.name,
@@ -234,59 +224,8 @@ function LiquorBuilderContent() {
     return []
   }
 
-  // Pour size helpers
-  const DEFAULT_POUR_SIZES: Record<string, { label: string; multiplier: number }> = {
-    standard: { label: 'Standard Pour', multiplier: 1.0 },
-    shot: { label: 'Shot', multiplier: 1.0 },
-    double: { label: 'Double', multiplier: 2.0 },
-    tall: { label: 'Tall', multiplier: 1.5 },
-    short: { label: 'Short', multiplier: 0.75 },
-  }
+  // ─── DRINK SELECTION / LOADING ─────────────────────────────────
 
-  const normalizePourSizes = (data: Record<string, number | boolean | { label: string; multiplier: number; customPrice?: number | null }> | null): Record<string, { label: string; multiplier: number; customPrice?: number | null }> => {
-    if (!data) return {}
-    const result: Record<string, { label: string; multiplier: number; customPrice?: number | null }> = {}
-    for (const [key, value] of Object.entries(data)) {
-      // Skip metadata keys (prefixed with _)
-      if (key.startsWith('_')) continue
-      if (typeof value === 'boolean') continue
-      if (typeof value === 'number') {
-        result[key] = { label: DEFAULT_POUR_SIZES[key]?.label || key, multiplier: value }
-      } else {
-        result[key] = { ...value }
-      }
-    }
-    return result
-  }
-
-  const togglePourSize = (size: string) => {
-    if (size === 'standard') return // Standard pour is always on (base item tap)
-    const newSizes = { ...enabledPourSizes }
-    if (newSizes[size]) {
-      delete newSizes[size]
-      if (defaultPourSize === size) {
-        // Fall back to standard (base item) as default
-        setDefaultPourSize('standard')
-      }
-    } else {
-      newSizes[size] = { ...DEFAULT_POUR_SIZES[size] }
-    }
-    setEnabledPourSizes(newSizes)
-  }
-
-  const updatePourSizeLabel = (size: string, label: string) => {
-    setEnabledPourSizes(prev => ({ ...prev, [size]: { ...prev[size], label } }))
-  }
-
-  const updatePourSizeMultiplier = (size: string, multiplier: number) => {
-    setEnabledPourSizes(prev => ({ ...prev, [size]: { ...prev[size], multiplier } }))
-  }
-
-  const updatePourSizeCustomPrice = (size: string, customPrice: number | null) => {
-    setEnabledPourSizes(prev => ({ ...prev, [size]: { ...prev[size], customPrice } }))
-  }
-
-  // Load recipe ingredients for spirit upgrade auto-detection
   const loadDrinkRecipe = async (itemId: string) => {
     try {
       const res = await fetch(`/api/menu/items/${itemId}/recipe`)
@@ -314,7 +253,6 @@ function LiquorBuilderContent() {
     }
   }
 
-  // Reload modifier groups for the selected drink (called after group edits)
   const reloadDrinkModifiers = async (itemId: string) => {
     try {
       const res = await fetch(`/api/menu/items/${itemId}/modifier-groups`)
@@ -333,31 +271,23 @@ function LiquorBuilderContent() {
   // Load drink fields + modifier groups when selection changes
   useEffect(() => {
     if (!selectedDrink) return
-    let cancelled = false
     setEditingDrinkName(selectedDrink.name)
     setEditingDrinkPrice(String(selectedDrink.price))
-    // Standard pour is implicit (base item tap), strip it from quick pick buttons
     const normalized = normalizePourSizes(selectedDrink.pourSizes ?? null)
     delete normalized['standard']
     setEnabledPourSizes(normalized)
     setDefaultPourSize(selectedDrink.defaultPourSize || 'standard')
     setApplyPourToModifiers(selectedDrink.applyPourToModifiers || false)
     setHideDefaultOnPos(selectedDrink.pourSizes?._hideDefaultOnPos === true)
-    setShowCustomPourForm(false)
     setSelectedModGroupId(null)
-    setShowGroupPicker(false)
-    // Reset linked bottle picker
     setShowBottleLinkPicker(false)
     setBottleLinkSearch('')
     setRecipeExpanded(false)
-    // Initialize pour size from drink data
     const pourOz = selectedDrink.linkedPourSizeOz ?? selectedDrink.linkedBottlePourSizeOz ?? ''
     setEditingPourSize(pourOz ? String(pourOz) : '')
-    // Reset spirit state until modifiers are loaded
     setSpiritMode(false)
     setSpiritGroupId(null)
     setSpiritEntries([])
-    // Await async loads to prevent race conditions when clicking drinks quickly
     const loadAsync = async () => {
       await Promise.all([
         reloadDrinkModifiersRef.current(selectedDrink.id),
@@ -365,7 +295,6 @@ function LiquorBuilderContent() {
       ])
     }
     loadAsync()
-    return () => { cancelled = true }
   }, [selectedDrink?.id])
 
   // Auto-select newly created item after drinks list reloads
@@ -380,7 +309,6 @@ function LiquorBuilderContent() {
   }, [pendingItemId, drinks])
 
   // Update spirit state when drink modifier groups are (re)loaded
-  // Check item-specific groups first, then fall back to shared/global spirit groups
   useEffect(() => {
     const spiritGroup = drinkModifierGroups.find((mg: any) => mg.isSpiritGroup)
     if (spiritGroup) {
@@ -397,12 +325,10 @@ function LiquorBuilderContent() {
         }))
       )
     } else if (selectedDrink) {
-      // No item-specific spirit group — check for shared/global spirit groups
-      // These have menuItemId = NULL and apply to all cocktails
       fetch(`/api/modifiers/spirit-groups?locationId=${selectedDrink.locationId || ''}`)
         .then(res => res.ok ? res.json() : null)
         .then(data => {
-          const shared = data?.data?.[0] // Use first shared spirit group
+          const shared = data?.data?.[0]
           if (shared) {
             setSpiritGroupId(shared.id)
             setSpiritMode(true)
@@ -432,7 +358,12 @@ function LiquorBuilderContent() {
     }
   }, [drinkModifierGroups, selectedDrink])
 
-  // Spirit tier helpers
+  // Refs for load functions to avoid stale closures in socket listener
+  const loadBottlesRef = useRef<(() => Promise<void>) | null>(null)
+  loadBottlesRef.current = loadBottles
+
+  // ─── SPIRIT TIER HELPERS ──────────────────────────────────────
+
   const ensureSpiritGroup = async (itemId: string): Promise<string | null> => {
     if (spiritGroupId) return spiritGroupId
     const res = await fetch(`/api/menu/items/${itemId}/modifier-groups`, {
@@ -445,7 +376,6 @@ function LiquorBuilderContent() {
       const gid = data.data?.id || null
       setSpiritGroupId(gid)
 
-      // Auto-add default WELL modifier from linked bottle or first recipe ingredient
       const defaultWellBottleId = selectedDrink?.linkedBottleProductId || drinkRecipeIngredients[0]?.bottleProductId
       if (gid && defaultWellBottleId) {
         const wellBottle = bottles.find(b => b.id === defaultWellBottleId)
@@ -537,10 +467,11 @@ function LiquorBuilderContent() {
       body: JSON.stringify({ modifierId, isDefault: true }),
     })
     if (res.ok) {
-      // API auto-clears other defaults (maxSelections=1), update local state
       setSpiritEntries(prev => prev.map(e => ({ ...e, isDefault: e.id === modifierId })))
     }
   }
+
+  // ─── DRINK CRUD CALLBACKS ─────────────────────────────────────
 
   const handleSaveDrink = async () => {
     if (!selectedDrink) return
@@ -548,7 +479,6 @@ function LiquorBuilderContent() {
     try {
       const price = parseFloat(editingDrinkPrice) || 0
       const hasPourSizes = Object.keys(enabledPourSizes).length > 0
-      // Build pourSizes data with metadata
       const pourSizesData = hasPourSizes
         ? { ...enabledPourSizes, ...(hideDefaultOnPos ? { _hideDefaultOnPos: true as const } : {}) }
         : null
@@ -585,7 +515,6 @@ function LiquorBuilderContent() {
         body: JSON.stringify({ linkedBottleProductId: bottleId }),
       })
       if (res.ok) {
-        // Auto-create recipe ingredient (1 pour of linked bottle)
         await fetch(`/api/menu/items/${selectedDrink.id}/recipe`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
@@ -609,10 +538,8 @@ function LiquorBuilderContent() {
         } : prev)
         setShowBottleLinkPicker(false)
         setBottleLinkSearch('')
-        // Initialize pour size from bottle default
         const defaultPour = bottle?.pourSizeOz ? String(Number(bottle.pourSizeOz)) : '1.5'
         setEditingPourSize(defaultPour)
-        // Reload recipe to reflect the auto-created ingredient
         loadDrinkRecipe(selectedDrink.id)
         toast.success(`Linked to ${bottle?.name || 'bottle'}`)
       } else {
@@ -623,12 +550,10 @@ function LiquorBuilderContent() {
     }
   }
 
-  // Create bottle inline from picker (backward creation — marked unverified)
   const handleCreateInlineBottle = async () => {
     if (!inlineBottleName.trim() || !inlineBottleCategoryId || !inlineBottleCost) return
     setCreatingInlineBottle(true)
     try {
-      // Derive containerType and alcoholSubtype from the selected spirit category
       const inlineCat = categories.find(c => c.id === inlineBottleCategoryId)
       const inlineCatType = inlineCat?.categoryType || 'spirit'
       const derivedContainerType = inlineCatType === 'beer' ? 'can' : 'bottle'
@@ -650,12 +575,10 @@ function LiquorBuilderContent() {
         const result = await res.json()
         const bottleId = result.data?.id
         toast.success(`Created "${inlineBottleName.trim()}" (needs verification)`)
-        // Reload bottles, then auto-link
         await loadBottles()
         if (bottleId) {
           await linkDrinkToBottle(bottleId)
         }
-        // Reset form
         setShowInlineBottleForm(false)
         setInlineBottleName('')
         setInlineBottleBrand('')
@@ -727,9 +650,98 @@ function LiquorBuilderContent() {
     }
   }
 
-  // Refs for load functions to avoid stale closures in socket listener
-  const loadBottlesRef = useRef<(() => Promise<void>) | null>(null)
-  loadBottlesRef.current = loadBottles
+  // Pour size helpers
+  const togglePourSize = (size: string) => {
+    if (size === 'standard') return
+    const newSizes = { ...enabledPourSizes }
+    if (newSizes[size]) {
+      delete newSizes[size]
+      if (defaultPourSize === size) {
+        setDefaultPourSize('standard')
+      }
+    } else {
+      newSizes[size] = { ...DEFAULT_POUR_SIZES[size] }
+    }
+    setEnabledPourSizes(newSizes)
+  }
+
+  const updatePourSizeLabel = (size: string, label: string) => {
+    setEnabledPourSizes(prev => ({ ...prev, [size]: { ...prev[size], label } }))
+  }
+
+  const updatePourSizeMultiplier = (size: string, multiplier: number) => {
+    setEnabledPourSizes(prev => ({ ...prev, [size]: { ...prev[size], multiplier } }))
+  }
+
+  const updatePourSizeCustomPrice = (size: string, customPrice: number | null) => {
+    setEnabledPourSizes(prev => ({ ...prev, [size]: { ...prev[size], customPrice } }))
+  }
+
+  // Modifier template attach handler
+  const handleAttachGroup = async (group: any) => {
+    if (!selectedDrink) return
+    const res = await fetch(`/api/menu/items/${selectedDrink.id}/modifier-groups`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ templateId: group.id, name: group.name }),
+    })
+    if (res.ok) {
+      const data = await res.json()
+      await reloadDrinkModifiersRef.current(selectedDrink.id)
+      setSelectedModGroupId(data.data?.id || null)
+      setModGroupRefreshKey(k => k + 1)
+      toast.success(`Added "${group.name}"`)
+    } else {
+      toast.error('Failed to attach group')
+    }
+  }
+
+  // DrinkListPanel callbacks
+  const handleDrinkListToggleAvailability = async (drink: any) => {
+    await fetch(`/api/menu/items/${drink.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ isAvailable: !drink.isAvailable }),
+    })
+    await loadDrinks()
+    if (selectedDrink?.id === drink.id) setSelectedDrink(null)
+  }
+
+  const handleDrinkListRemove = async (drink: any) => {
+    if (!confirm(`Remove "${drink.name}" from the POS?`)) return
+    await fetch(`/api/menu/items/${drink.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deletedAt: new Date().toISOString() }),
+    })
+    await loadDrinks()
+    if (selectedDrink?.id === drink.id) setSelectedDrink(null)
+  }
+
+  // DrinkEditor 86/remove callbacks (operate on selectedDrink)
+  const handleEditorToggleAvailability = async () => {
+    if (!selectedDrink) return
+    const newAvail = !selectedDrink.isAvailable
+    await fetch(`/api/menu/items/${selectedDrink.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ isAvailable: newAvail }),
+    })
+    await loadDrinks()
+    setSelectedDrink((prev: any) => prev ? { ...prev, isAvailable: newAvail } : prev)
+  }
+
+  const handleEditorRemoveDrink = async () => {
+    if (!selectedDrink) return
+    if (!confirm(`Remove "${selectedDrink.name}" from the POS?`)) return
+    await fetch(`/api/menu/items/${selectedDrink.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deletedAt: new Date().toISOString() }),
+    })
+    await loadDrinks()
+    setSelectedDrink(null)
+  }
 
   // Filter drinks by selected menu category, alphabetized
   const filteredDrinks = (selectedMenuCategoryId
@@ -739,12 +751,13 @@ function LiquorBuilderContent() {
 
   if (!hydrated) return null
 
-  // Check if this is a fresh setup (no menu categories or drinks)
   const isEmptySetup = menuCategories.length === 0 && drinks.length === 0
+
+  // ─── RENDER ─────────────────────────────────────────────────────
 
   return (
     <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">
-      {/* Header — Row 1: title + back + inventory link */}
+      {/* Header -- Row 1: title + back + inventory link */}
       <div className="bg-white border-b shrink-0">
         <div className="px-4 py-2.5 flex items-center justify-between border-b border-gray-100">
           <h1 className="text-base font-bold">🥃 Liquor Builder</h1>
@@ -753,7 +766,7 @@ function LiquorBuilderContent() {
             <Link href="/menu" className="text-xs text-blue-600 hover:underline">← Back to Menu</Link>
           </div>
         </div>
-        {/* Row 2: POS category pills (what shows on front-end bar tabs) */}
+        {/* Row 2: POS category pills */}
         <div className="px-3 py-2 flex items-center gap-1.5 overflow-x-auto">
           <span className="text-[10px] uppercase text-gray-900 font-medium shrink-0 mr-1">POS Tabs:</span>
           <button
@@ -810,7 +823,6 @@ function LiquorBuilderContent() {
             <p className="text-gray-600 text-sm mb-6">Set up your bar menu in 3 steps:</p>
 
             <div className="space-y-4">
-              {/* Step 1 */}
               <div className="flex gap-4 p-4 bg-purple-50 rounded-lg border border-purple-200">
                 <div className="w-8 h-8 rounded-full bg-purple-600 text-white flex items-center justify-center font-bold shrink-0">1</div>
                 <div className="flex-1">
@@ -822,7 +834,6 @@ function LiquorBuilderContent() {
                 </div>
               </div>
 
-              {/* Step 2 */}
               <div className="flex gap-4 p-4 bg-gray-50 rounded-lg border border-gray-200 opacity-60">
                 <div className="w-8 h-8 rounded-full bg-gray-400 text-white flex items-center justify-center font-bold shrink-0">2</div>
                 <div className="flex-1">
@@ -831,7 +842,6 @@ function LiquorBuilderContent() {
                 </div>
               </div>
 
-              {/* Step 3 */}
               <div className="flex gap-4 p-4 bg-gray-50 rounded-lg border border-gray-200 opacity-60">
                 <div className="w-8 h-8 rounded-full bg-gray-400 text-white flex items-center justify-center font-bold shrink-0">3</div>
                 <div className="flex-1">
@@ -843,1166 +853,100 @@ function LiquorBuilderContent() {
           </div>
         </div>
       ) : (
-        /* Main Interface — Item-First Layout */
+        /* Main Interface -- Item-First Layout */
         <div className="flex flex-1 overflow-hidden">
-          {/* LEFT: Item List (w-72) */}
-          <div className="w-72 bg-white border-r flex flex-col shrink-0">
-            {/* Header row: category name */}
-            <div className="px-3 pt-2 pb-1 flex items-center justify-between border-b shrink-0">
-              <span className="text-xs font-medium text-purple-700">
-                {selectedMenuCategoryId
-                  ? `${menuCategories.find((c: any) => c.id === selectedMenuCategoryId)?.name} (${filteredDrinks.length})`
-                  : `All Drinks (${filteredDrinks.length})`
-                }
-              </span>
-              {selectedMenuCategoryId && (
-                <button
-                  onClick={() => { setSelectedMenuCategoryId(''); setSelectedDrink(null) }}
-                  className="text-xs text-gray-600 hover:text-gray-800"
-                >
-                  All
-                </button>
-              )}
-            </div>
-            {/* Primary "+ New Item" button - always visible */}
-            <div className="px-3 py-2 border-b">
-              <button
-                onClick={() => {
-                  setBottleForMenuItem(null)
-                  setShowCreateMenuItemModal(true)
-                }}
-                className="w-full px-3 py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
-              >
-                <span className="text-lg leading-none">+</span> New Item
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-3 space-y-1">
-              {filteredDrinks.length === 0 ? (
-                <p className="text-sm text-gray-600 text-center py-4">No items in this category</p>
-              ) : (
-                filteredDrinks.map((drink: any) => (
-                  <div
-                    key={drink.id}
-                    onClick={() => setSelectedDrink(drink)}
-                    className={`p-3 rounded cursor-pointer transition-colors ${
-                      selectedDrink?.id === drink.id
-                        ? 'bg-purple-50 border-2 border-purple-500'
-                        : !drink.isAvailable
-                        ? 'bg-gray-50 border-2 border-transparent opacity-50'
-                        : 'bg-gray-50 hover:bg-gray-100 border-2 border-transparent'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-1">
-                      <div className="font-medium text-sm leading-tight">{drink.name}</div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        {!drink.isAvailable && (
-                          <span className="text-[9px] bg-red-100 text-red-700 px-1 rounded font-medium">86</span>
-                        )}
-                        {/* 86 toggle */}
-                        <button
-                          onClick={async (e) => {
-                            e.stopPropagation()
-                            await fetch(`/api/menu/items/${drink.id}`, {
-                              method: 'PUT',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ isAvailable: !drink.isAvailable }),
-                            })
-                            await loadDrinks()
-                            if (selectedDrink?.id === drink.id) setSelectedDrink(null)
-                          }}
-                          title={drink.isAvailable ? '86 this item' : 'Un-86 this item'}
-                          className="text-gray-900 hover:text-orange-500 text-xs px-1 rounded"
-                        >
-                          {drink.isAvailable ? '⊘' : '✓'}
-                        </button>
-                        {/* Hide/delete */}
-                        <button
-                          onClick={async (e) => {
-                            e.stopPropagation()
-                            if (!confirm(`Remove "${drink.name}" from the POS?`)) return
-                            await fetch(`/api/menu/items/${drink.id}`, {
-                              method: 'PUT',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ deletedAt: new Date().toISOString() }),
-                            })
-                            await loadDrinks()
-                            if (selectedDrink?.id === drink.id) setSelectedDrink(null)
-                          }}
-                          title="Remove from POS"
-                          className="text-gray-900 hover:text-red-500 text-xs px-1 rounded"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    </div>
-                    <div className="text-xs text-gray-600 mt-0.5">{formatCurrency(drink.price)}</div>
-                    {drink.hasRecipe && (
-                      <div className="text-xs text-green-600 mt-1">✓ {drink.recipeIngredientCount} bottles</div>
-                    )}
-                    {drink.linkedBottleProductName && (
-                      <div className="text-xs text-blue-600 mt-0.5 flex items-center gap-1">
-                        <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded font-medium text-[10px]">LINKED</span>
-                        <span className="truncate">{drink.linkedBottleProductName}</span>
-                      </div>
-                    )}
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
+          {/* LEFT: Item List */}
+          <DrinkListPanel
+            filteredDrinks={filteredDrinks}
+            selectedDrink={selectedDrink}
+            selectedMenuCategoryId={selectedMenuCategoryId}
+            menuCategories={menuCategories}
+            onSelectDrink={setSelectedDrink}
+            onToggleAvailability={handleDrinkListToggleAvailability}
+            onRemoveDrink={handleDrinkListRemove}
+            onNewItem={() => {
+              setBottleForMenuItem(null)
+              setShowCreateMenuItemModal(true)
+            }}
+            onClearCategoryFilter={() => { setSelectedMenuCategoryId(''); setSelectedDrink(null) }}
+          />
 
-          {/* CENTER: Item Editor (flex-1) */}
+          {/* CENTER: Item Editor */}
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
             {selectedDrink ? (
-              <>
-                {/* Item Editor Card */}
-                <div className="bg-white rounded-lg border p-5">
-                  <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide mb-4">Item Details</h3>
-                  <div className="grid grid-cols-2 gap-4 mb-4">
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Name</label>
-                      <input
-                        type="text"
-                        value={editingDrinkName}
-                        onChange={e => setEditingDrinkName(e.target.value)}
-                        className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Price</label>
-                      <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-900 text-sm">$</span>
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          value={editingDrinkPrice}
-                          onChange={e => setEditingDrinkPrice(e.target.value)}
-                          className="w-full border rounded-lg pl-7 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
-                        />
-                      </div>
-                      {isDualPricingEnabled && parseFloat(editingDrinkPrice) > 0 && (
-                        <p className="text-xs text-indigo-400 mt-1">Card: ${calculateCardPrice(parseFloat(editingDrinkPrice) || 0, cashDiscountPct).toFixed(2)}</p>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      {/* 86 toggle */}
-                      <button
-                        onClick={async () => {
-                          const newAvail = !selectedDrink.isAvailable
-                          await fetch(`/api/menu/items/${selectedDrink.id}`, {
-                            method: 'PUT',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ isAvailable: newAvail }),
-                          })
-                          await loadDrinks()
-                          setSelectedDrink((prev: any) => prev ? { ...prev, isAvailable: newAvail } : prev)
-                        }}
-                        className={`px-3 py-1.5 rounded text-xs font-medium border ${
-                          selectedDrink.isAvailable
-                            ? 'border-gray-300 text-gray-600 hover:border-orange-400 hover:text-orange-600'
-                            : 'border-red-300 bg-red-50 text-red-600 hover:bg-red-100'
-                        }`}
-                      >
-                        {selectedDrink.isAvailable ? '⊘ 86 Item' : '✓ Un-86 Item'}
-                      </button>
-                      {/* Remove from POS */}
-                      <button
-                        onClick={async () => {
-                          if (!confirm(`Remove "${selectedDrink.name}" from the POS?`)) return
-                          await fetch(`/api/menu/items/${selectedDrink.id}`, {
-                            method: 'PUT',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ deletedAt: new Date().toISOString() }),
-                          })
-                          await loadDrinks()
-                          setSelectedDrink(null)
-                        }}
-                        className="px-3 py-1.5 rounded text-xs font-medium border border-gray-300 text-gray-900 hover:border-red-400 hover:text-red-600"
-                      >
-                        ✕ Remove
-                      </button>
-                    </div>
-                    <Button
-                      size="sm"
-                      onClick={handleSaveDrink}
-                      disabled={savingDrink || (!editingDrinkName.trim())}
-                      className="bg-purple-600 hover:bg-purple-700 text-white"
-                    >
-                      {savingDrink ? 'Saving...' : 'Save'}
-                    </Button>
-                  </div>
-                </div>
-
-                {/* Linked Bottle — direct bottle linking (like food ingredients) */}
-                {selectedDrink.linkedBottleProductId ? (() => {
-                  // Compute pour metrics
-                  const ML_PER_OZ = 29.5735
-                  const effectivePourOz = parseFloat(editingPourSize) || selectedDrink.linkedPourSizeOz || selectedDrink.linkedBottlePourSizeOz || 1.5
-                  const bottleSizeMl = selectedDrink.linkedBottleSizeMl || 750
-                  const unitCost = selectedDrink.linkedBottleUnitCost || 0
-                  const poursPerBottle = Math.floor(bottleSizeMl / (effectivePourOz * ML_PER_OZ))
-                  const computedPourCost = poursPerBottle > 0 ? unitCost / poursPerBottle : 0
-                  const sellPrice = parseFloat(editingDrinkPrice) || selectedDrink.price || 0
-                  const margin = sellPrice > 0 && computedPourCost > 0 ? ((sellPrice - computedPourCost) / sellPrice) * 100 : null
-                  const bottleDefaultPour = selectedDrink.linkedBottlePourSizeOz || 1.5
-
-                  return (
-                  <div className="bg-green-50 rounded-lg border border-green-200 p-5">
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-sm font-semibold text-green-700 uppercase tracking-wide">Linked Bottle</h3>
-                      <button
-                        onClick={unlinkDrinkFromBottle}
-                        disabled={linkingBottle}
-                        className="px-3 py-1 text-xs font-medium text-red-600 border border-red-200 rounded hover:bg-red-50 disabled:opacity-50"
-                      >
-                        {linkingBottle ? 'Unlinking...' : 'Unlink'}
-                      </button>
-                    </div>
-                    <div className="flex items-center gap-3 mb-3">
-                      <span className="font-semibold text-gray-900">{selectedDrink.linkedBottleProductName}</span>
-                      {selectedDrink.linkedBottleSpiritCategory && (
-                        <span className="text-xs text-gray-900">{selectedDrink.linkedBottleSpiritCategory}</span>
-                      )}
-                      {selectedDrink.linkedBottleTier && (
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
-                          selectedDrink.linkedBottleTier === 'well' ? 'bg-gray-200 text-gray-900'
-                          : selectedDrink.linkedBottleTier === 'call' ? 'bg-blue-100 text-blue-700'
-                          : selectedDrink.linkedBottleTier === 'premium' ? 'bg-purple-100 text-purple-700'
-                          : 'bg-amber-100 text-amber-700'
-                        }`}>
-                          {selectedDrink.linkedBottleTier === 'top_shelf' ? 'TOP SHELF' : selectedDrink.linkedBottleTier.toUpperCase()}
-                        </span>
-                      )}
-                      {selectedDrink.linkedBottleSizeMl && (
-                        <span className="text-xs text-gray-900">{selectedDrink.linkedBottleSizeMl}ml</span>
-                      )}
-                    </div>
-
-                    {/* POUR configuration — the "prep item" equivalent for liquor */}
-                    <div className="bg-white/70 rounded-lg border border-green-200 p-3 mb-3">
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className="text-[10px] uppercase font-bold text-green-700 tracking-wide bg-green-200 px-1.5 py-0.5 rounded">POUR</span>
-                        <span className="text-xs text-gray-600">bottle default: {bottleDefaultPour}oz</span>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <div className="flex items-center gap-1.5">
-                          <label className="text-xs font-medium text-gray-600">Pour Size:</label>
-                          <div className="relative">
-                            <input
-                              type="number"
-                              step="0.25"
-                              min="0.25"
-                              value={editingPourSize}
-                              onChange={e => setEditingPourSize(e.target.value)}
-                              className="w-20 px-2 py-1.5 text-sm border rounded-lg text-center focus:outline-none focus:ring-2 focus:ring-green-400"
-                              placeholder={String(bottleDefaultPour)}
-                            />
-                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-900">oz</span>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-3 text-xs text-gray-600">
-                          <span>{poursPerBottle} pours/bottle</span>
-                          <span>|</span>
-                          <span>{formatCurrency(Math.round(computedPourCost * 100) / 100)}/pour</span>
-                        </div>
-                        <button
-                          onClick={savePourSize}
-                          disabled={savingPourSize}
-                          className="ml-auto px-3 py-1.5 text-xs font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
-                        >
-                          {savingPourSize ? 'Saving...' : 'Save Pour'}
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Cost summary */}
-                    <div className="flex items-center gap-4 text-xs text-gray-600 bg-white/60 rounded px-3 py-2">
-                      <span>Pour Cost: <strong>{formatCurrency(Math.round(computedPourCost * 100) / 100)}</strong></span>
-                      <span>Sell Price: <strong>{formatCurrency(sellPrice)}</strong></span>
-                      {margin !== null && (
-                        <span>Margin: <strong className={margin >= 70 ? 'text-green-700' : margin >= 50 ? 'text-yellow-700' : 'text-red-700'}>
-                          {Math.round(margin)}%
-                        </strong></span>
-                      )}
-                    </div>
-                  </div>
-                  )
-                })() : (
-                  <div className={`rounded-lg border-2 border-dashed p-5 transition-colors ${showBottleLinkPicker ? 'border-blue-300 bg-blue-50/30' : 'border-gray-200'}`}>
-                    <div className="flex items-center justify-between mb-2">
-                      <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">Linked Bottle</h3>
-                      {!showBottleLinkPicker && (
-                        <button
-                          onClick={() => { setShowBottleLinkPicker(true); setExpandedPickerCats(new Set()) }}
-                          className="px-3 py-1.5 text-xs font-medium text-blue-600 border border-blue-300 rounded-lg hover:bg-blue-50"
-                        >
-                          Link to Bottle
-                        </button>
-                      )}
-                    </div>
-                    {!showBottleLinkPicker ? (
-                      <p className="text-xs text-gray-600">Link this drink to a bottle from inventory for cost tracking and deductions.</p>
-                    ) : (
-                      <div>
-                        <div className="flex items-center gap-2 mb-3">
-                          <input
-                            type="text"
-                            placeholder="Search bottles..."
-                            value={bottleLinkSearch}
-                            onChange={e => setBottleLinkSearch(e.target.value)}
-                            autoFocus
-                            className="flex-1 px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
-                          />
-                          <button
-                            onClick={() => { setShowBottleLinkPicker(false); setBottleLinkSearch('') }}
-                            className="px-2 py-2 text-gray-900 hover:text-gray-600 text-sm"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                        <div className="max-h-64 overflow-y-auto space-y-2">
-                          {(() => {
-                            const search = bottleLinkSearch.toLowerCase()
-                            const filtered = bottles.filter((b: BottleProduct) =>
-                              b.isActive !== false && (
-                                b.name.toLowerCase().includes(search) ||
-                                b.spiritCategory?.name?.toLowerCase().includes(search)
-                              )
-                            )
-                            // Group by spirit category
-                            const grouped = new Map<string, BottleProduct[]>()
-                            for (const b of filtered) {
-                              const cat = b.spiritCategory?.name || 'Other'
-                              if (!grouped.has(cat)) grouped.set(cat, [])
-                              grouped.get(cat)!.push(b)
-                            }
-                            if (grouped.size === 0 && !showInlineBottleForm) {
-                              return <p className="text-xs text-gray-600 text-center py-4">No bottles found — create one below</p>
-                            }
-                            return Array.from(grouped.entries()).map(([catName, catBottles]) => {
-                              const isCatExpanded = expandedPickerCats.has(catName) || bottleLinkSearch.length > 0
-                              return (
-                                <div key={catName}>
-                                  <button
-                                    type="button"
-                                    onClick={() => setExpandedPickerCats(prev => {
-                                      const next = new Set(prev)
-                                      if (next.has(catName)) next.delete(catName)
-                                      else next.add(catName)
-                                      return next
-                                    })}
-                                    className="w-full flex items-center gap-2 px-1 py-1.5 hover:bg-gray-50 rounded transition-colors"
-                                  >
-                                    <span className="text-gray-900 text-[10px] select-none">{isCatExpanded ? '\u25BC' : '\u25B6'}</span>
-                                    <span className="text-[10px] uppercase text-gray-900 font-semibold tracking-wide">{catName}</span>
-                                    <span className="text-[10px] text-gray-600">{catBottles.length}</span>
-                                  </button>
-                                  {isCatExpanded && (
-                                    <div className="space-y-0.5 ml-3">
-                                      {catBottles.map((b: BottleProduct) => (
-                                        <button
-                                          key={b.id}
-                                          onClick={() => linkDrinkToBottle(b.id)}
-                                          disabled={linkingBottle}
-                                          className="w-full text-left px-3 py-2 rounded-lg border border-gray-200 bg-white hover:border-blue-400 hover:bg-blue-50 transition-colors disabled:opacity-50"
-                                        >
-                                          <div className="flex items-center justify-between">
-                                            <div className="flex items-center gap-1.5">
-                                              <span className="text-sm font-medium text-gray-800">{b.name}</span>
-                                              {b.needsVerification && (
-                                                <span className="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0" title="Needs verification" />
-                                              )}
-                                            </div>
-                                            <div className="flex items-center gap-2">
-                                              <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
-                                                b.tier === 'well' ? 'bg-gray-200 text-gray-900'
-                                                : b.tier === 'call' ? 'bg-blue-100 text-blue-700'
-                                                : b.tier === 'premium' ? 'bg-purple-100 text-purple-700'
-                                                : 'bg-amber-100 text-amber-700'
-                                              }`}>
-                                                {b.tier === 'top_shelf' ? 'TOP SHELF' : b.tier.toUpperCase()}
-                                              </span>
-                                              {b.pourCost && (
-                                                <span className="text-xs text-gray-900">{formatCurrency(Number(b.pourCost))}</span>
-                                              )}
-                                            </div>
-                                          </div>
-                                        </button>
-                                      ))}
-                                    </div>
-                                  )}
-                                </div>
-                              )
-                            })
-                          })()}
-                        </div>
-
-                        {/* Inline bottle creation form */}
-                        {!showInlineBottleForm ? (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setShowInlineBottleForm(true)
-                              if (categories.length > 0 && !inlineBottleCategoryId) {
-                                setInlineBottleCategoryId(categories[0].id)
-                              }
-                            }}
-                            className="w-full mt-2 px-3 py-2 text-sm font-medium text-amber-600 border border-amber-300 border-dashed rounded-lg hover:bg-amber-50 transition-colors"
-                          >
-                            + Create New Bottle
-                          </button>
-                        ) : (
-                          <div className="mt-2 p-3 bg-amber-50 border border-amber-200 rounded-lg space-y-2">
-                            <div className="text-[10px] font-bold uppercase text-amber-600 tracking-wider">Create Bottle (Unverified)</div>
-                            <div className="grid grid-cols-2 gap-2">
-                              <input
-                                type="text"
-                                value={inlineBottleName}
-                                onChange={e => setInlineBottleName(e.target.value)}
-                                placeholder="Bottle name *"
-                                className="px-2 py-1.5 text-sm border rounded"
-                                autoFocus
-                              />
-                              <input
-                                type="text"
-                                value={inlineBottleBrand}
-                                onChange={e => setInlineBottleBrand(e.target.value)}
-                                placeholder="Brand"
-                                className="px-2 py-1.5 text-sm border rounded"
-                              />
-                            </div>
-                            <div className="grid grid-cols-3 gap-2">
-                              <select
-                                value={inlineBottleCategoryId}
-                                onChange={e => setInlineBottleCategoryId(e.target.value)}
-                                className="px-2 py-1.5 text-sm border rounded"
-                              >
-                                <option value="">Category *</option>
-                                {categories.map(c => (
-                                  <option key={c.id} value={c.id}>{c.name}</option>
-                                ))}
-                              </select>
-                              <select
-                                value={inlineBottleTier}
-                                onChange={e => setInlineBottleTier(e.target.value)}
-                                className="px-2 py-1.5 text-sm border rounded"
-                              >
-                                {SPIRIT_TIERS.map(t => (
-                                  <option key={t.value} value={t.value}>{t.label}</option>
-                                ))}
-                              </select>
-                              <select
-                                value={inlineBottleSizeMl}
-                                onChange={e => setInlineBottleSizeMl(e.target.value)}
-                                className="px-2 py-1.5 text-sm border rounded"
-                              >
-                                {BOTTLE_SIZES.map(s => (
-                                  <option key={s.value} value={s.value}>{s.label}</option>
-                                ))}
-                              </select>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <input
-                                type="number"
-                                step="0.01"
-                                min="0"
-                                value={inlineBottleCost}
-                                onChange={e => setInlineBottleCost(e.target.value)}
-                                placeholder="Unit cost ($) *"
-                                className="flex-1 px-2 py-1.5 text-sm border rounded"
-                                onKeyDown={e => {
-                                  if (e.key === 'Enter') { e.preventDefault(); handleCreateInlineBottle() }
-                                  if (e.key === 'Escape') setShowInlineBottleForm(false)
-                                }}
-                              />
-                              <button
-                                type="button"
-                                onClick={handleCreateInlineBottle}
-                                disabled={creatingInlineBottle || !inlineBottleName.trim() || !inlineBottleCategoryId || !inlineBottleCost}
-                                className="px-3 py-1.5 text-xs font-medium bg-amber-600 text-white rounded hover:bg-amber-700 disabled:opacity-50"
-                              >
-                                {creatingInlineBottle ? '...' : 'Create & Link'}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setShowInlineBottleForm(false)}
-                                className="px-2 py-1.5 text-xs text-gray-900 hover:text-gray-900"
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                            <p className="text-[10px] text-amber-600">
-                              Created bottles are marked as unverified and need to be verified in Liquor Inventory.
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Auto-detected Spirit Upgrades removed — redundant with manual spirit upgrade config below */}
-
-                {/* Pour Sizes / Spirit Upgrades toggle card */}
-                <div className="bg-white rounded-lg border p-5">
-                  {/* Mode toggle */}
-                  <label className="flex items-center gap-2 cursor-pointer mb-4">
-                    <input
-                      type="checkbox"
-                      checked={spiritMode}
-                      onChange={e => setSpiritMode(e.target.checked)}
-                      className="w-4 h-4 text-amber-600 rounded"
-                    />
-                    <span className="text-sm font-semibold text-gray-900">🥃 Spirit Upgrades</span>
-                    <span className="text-xs text-gray-600">(for cocktails — Well/Call/Prem/Top tiers)</span>
-                  </label>
-
-                  {spiritMode ? (
-                    /* Spirit Tier Editor */
-                    <div className="space-y-3">
-                      <p className="text-xs text-gray-600">Assign bottles from your inventory to each tier. Guests pick their spirit on the POS.</p>
-                      {savingSpirit && <p className="text-xs text-amber-600">Saving...</p>}
-                      {(['well', 'call', 'premium', 'top_shelf'] as const).map(tier => {
-                        const tierEntries = spiritEntries.filter(e => e.tier === tier)
-                        const tierLabel = tier === 'well' ? 'WELL' : tier === 'call' ? 'CALL' : tier === 'premium' ? 'PREMIUM' : 'TOP SHELF'
-                        const tierColors: Record<string, string> = {
-                          well: 'border-gray-300 bg-gray-50',
-                          call: 'border-blue-200 bg-blue-50',
-                          premium: 'border-purple-200 bg-purple-50',
-                          top_shelf: 'border-amber-200 bg-amber-50',
-                        }
-                        const tierTextColor: Record<string, string> = {
-                          well: 'text-gray-900',
-                          call: 'text-blue-700',
-                          premium: 'text-purple-700',
-                          top_shelf: 'text-amber-700',
-                        }
-                        const addedBottleIds = new Set(tierEntries.map(e => e.bottleProductId))
-                        const availableBottles = (bottles as any[]).filter((b: any) => b.tier === tier && b.isActive !== false && !addedBottleIds.has(b.id))
-                        return (
-                          <div key={tier} className={`rounded-lg border p-3 ${tierColors[tier]}`}>
-                            <div className={`text-xs font-bold uppercase tracking-wide mb-2 ${tierTextColor[tier]}`}>{tierLabel}</div>
-                            {tierEntries.length === 0 && (
-                              <p className="text-xs text-gray-600 mb-2">No bottles assigned yet</p>
-                            )}
-                            {tierEntries.map(entry => (
-                              <div key={entry.id || entry.bottleProductId} className="flex items-center gap-2 mb-1.5">
-                                {entry.isDefault ? (
-                                  <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-green-100 text-green-700 shrink-0">Default</span>
-                                ) : (
-                                  <button
-                                    onClick={() => entry.id && setSpiritEntryDefault(entry.id)}
-                                    className="text-[10px] uppercase px-1.5 py-0.5 rounded border border-gray-300 text-gray-900 hover:border-green-400 hover:text-green-600 hover:bg-green-50 shrink-0 transition-colors"
-                                    title="Set as default spirit"
-                                  >
-                                    Set default
-                                  </button>
-                                )}
-                                <span className="flex-1 text-sm font-medium text-gray-800 truncate">{entry.bottleName}</span>
-                                <span className="text-xs text-gray-900">+$</span>
-                                <input
-                                  type="number"
-                                  step="0.25"
-                                  min="0"
-                                  defaultValue={entry.price}
-                                  key={`${entry.id}-${entry.price}`}
-                                  onBlur={e => {
-                                    const price = parseFloat(e.target.value) || 0
-                                    if (entry.id && price !== entry.price) {
-                                      updateSpiritEntryPrice(entry.id, price)
-                                    }
-                                  }}
-                                  className="w-16 px-2 py-1 text-sm border rounded text-right bg-white focus:outline-none focus:ring-1 focus:ring-purple-500"
-                                  placeholder="0.00"
-                                />
-                                <button
-                                  onClick={() => entry.id && removeSpiritEntry(entry.id)}
-                                  className="text-gray-900 hover:text-red-500 text-lg leading-none shrink-0"
-                                  title="Remove"
-                                >
-                                  ×
-                                </button>
-                              </div>
-                            ))}
-                            {availableBottles.length > 0 && (
-                              <select
-                                key={`${tier}-${tierEntries.length}`}
-                                defaultValue=""
-                                onChange={e => {
-                                  const bottleId = e.target.value
-                                  if (bottleId) addSpiritBottle(tier, bottleId)
-                                }}
-                                disabled={savingSpirit}
-                                className="mt-1 w-full text-xs border rounded px-2 py-1.5 bg-white text-gray-600 focus:outline-none focus:ring-1 focus:ring-purple-500"
-                              >
-                                <option value="">+ Add {tierLabel.charAt(0) + tierLabel.slice(1).toLowerCase()} bottle...</option>
-                                {availableBottles.map((b: any) => (
-                                  <option key={b.id} value={b.id}>{b.name}</option>
-                                ))}
-                              </select>
-                            )}
-                            {availableBottles.length === 0 && tierEntries.length === 0 && (
-                              <p className="text-xs text-gray-600 italic">No {tier.replace('_', ' ')} bottles in inventory</p>
-                            )}
-                          </div>
-                        )
-                      })}
-                    </div>
-                  ) : (
-                    /* Pour Size Buttons Editor */
-                    <>
-                      <div className="flex items-center justify-between mb-1">
-                        <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">Pour Size Buttons</h3>
-                        <span className="text-xs text-gray-600">Shot / Tall / Short / Double</span>
-                      </div>
-                      <p className="text-xs text-gray-600 mb-3">Enable size variants for this item. Each multiplies the base price, or set a custom price override.</p>
-                      <div className="space-y-2 mb-3">
-                        {/* Standard Pour — always on, represents the base item tap */}
-                        {(() => {
-                          const basePrice = parseFloat(editingDrinkPrice) || 0
-                          return (
-                            <div className="p-2.5 border rounded-lg border-indigo-300 bg-indigo-50">
-                              <div className="flex items-center gap-2">
-                                <input type="checkbox" checked disabled className="w-4 h-4 text-indigo-600 shrink-0 opacity-60" />
-                                <span className="flex-1 text-sm font-medium text-indigo-800">Standard Pour</span>
-                                <span className="text-xs text-indigo-600">1.0x — Base price</span>
-                                <span className="text-sm font-semibold text-indigo-700">${basePrice.toFixed(2)}</span>
-                                {isDualPricingEnabled && (
-                                  <span className="text-[10px] text-blue-500">Card: ${calculateCardPrice(basePrice, cashDiscountPct).toFixed(2)}</span>
-                                )}
-                                {defaultPourSize === 'standard' && (
-                                  <span className="text-[10px] bg-indigo-600 text-white px-1.5 py-0.5 rounded shrink-0">Default</span>
-                                )}
-                              </div>
-                              <div className="mt-1 ml-6 text-[11px] text-indigo-600">Always on — this is the main item tap price. Select a quick pick below to change the default.</div>
-                            </div>
-                          )
-                        })()}
-                        {/* Quick pick pour size buttons */}
-                        {Object.entries(DEFAULT_POUR_SIZES).filter(([sizeKey]) => sizeKey !== 'standard').map(([sizeKey, defaults]) => {
-                          const isEnabled = enabledPourSizes[sizeKey] !== undefined
-                          const current = enabledPourSizes[sizeKey]
-                          const basePrice = parseFloat(editingDrinkPrice) || 0
-                          const autoPrice = basePrice * (current?.multiplier ?? defaults.multiplier)
-                          const hasCustomPrice = current?.customPrice != null
-                          return (
-                            <div key={sizeKey} className={`p-2.5 border rounded-lg transition-colors ${isEnabled ? 'border-purple-400 bg-purple-50' : 'border-gray-200 bg-white'}`}>
-                              <div className="flex items-center gap-2">
-                                <input
-                                  type="checkbox"
-                                  checked={isEnabled}
-                                  onChange={() => togglePourSize(sizeKey)}
-                                  className="w-4 h-4 text-purple-600 shrink-0"
-                                />
-                                {isEnabled ? (
-                                  <>
-                                    <input
-                                      type="text"
-                                      value={current?.label || ''}
-                                      onChange={e => updatePourSizeLabel(sizeKey, e.target.value)}
-                                      className="flex-1 px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-purple-500"
-                                      placeholder="Button label"
-                                    />
-                                    <div className="flex items-center gap-1 shrink-0">
-                                      <input
-                                        type="number"
-                                        step="0.25"
-                                        min="0.25"
-                                        defaultValue={current?.multiplier ?? 1}
-                                        key={`${sizeKey}-${current?.multiplier}`}
-                                        onBlur={e => {
-                                          const num = parseFloat(e.target.value)
-                                          if (!isNaN(num) && num > 0) updatePourSizeMultiplier(sizeKey, num)
-                                          else e.target.value = String(current?.multiplier || 1)
-                                        }}
-                                        className="w-14 px-1 py-1 text-sm border rounded text-center focus:outline-none focus:ring-1 focus:ring-purple-500"
-                                      />
-                                      <span className="text-xs text-purple-600">x</span>
-                                    </div>
-                                    <div className="flex items-center gap-1 shrink-0">
-                                      <span className="text-xs text-gray-500">$</span>
-                                      <input
-                                        type="number"
-                                        step="0.01"
-                                        min="0"
-                                        defaultValue={hasCustomPrice ? current!.customPrice! : ''}
-                                        key={`${sizeKey}-custom-${current?.customPrice ?? 'none'}`}
-                                        placeholder={autoPrice.toFixed(2)}
-                                        onBlur={e => {
-                                          const val = e.target.value.trim()
-                                          if (val === '') {
-                                            updatePourSizeCustomPrice(sizeKey, null)
-                                          } else {
-                                            const num = parseFloat(val)
-                                            if (!isNaN(num) && num >= 0) updatePourSizeCustomPrice(sizeKey, num)
-                                            else e.target.value = hasCustomPrice ? String(current!.customPrice!) : ''
-                                          }
-                                        }}
-                                        className={`w-20 px-1 py-1 text-sm border rounded text-right focus:outline-none focus:ring-1 focus:ring-purple-500 ${hasCustomPrice ? 'border-green-400 bg-green-50' : ''}`}
-                                        title={hasCustomPrice ? 'Custom price override (clear to use auto-calculated)' : `Auto-calculated: $${autoPrice.toFixed(2)}`}
-                                      />
-                                    </div>
-                                    {isEnabled && defaultPourSize === sizeKey && (
-                                      <span className="text-[10px] bg-purple-600 text-white px-1.5 py-0.5 rounded shrink-0">Default</span>
-                                    )}
-                                    {isEnabled && defaultPourSize !== sizeKey && (
-                                      <button
-                                        onClick={() => setDefaultPourSize(sizeKey)}
-                                        className="text-[10px] text-purple-500 hover:text-purple-700 shrink-0"
-                                      >Set default</button>
-                                    )}
-                                  </>
-                                ) : (
-                                  <div className="flex-1 flex items-center justify-between text-gray-600">
-                                    <span className="text-sm">{defaults.label}</span>
-                                    <span className="text-xs">{defaults.multiplier}x</span>
-                                  </div>
-                                )}
-                              </div>
-                              {isEnabled && hasCustomPrice && (
-                                <div className="mt-1 ml-6 flex items-center gap-2 text-[11px] text-green-700">
-                                  <span>
-                                    Custom price: ${current!.customPrice!.toFixed(2)} (auto would be ${autoPrice.toFixed(2)})
-                                    {isDualPricingEnabled && (
-                                      <span className="text-indigo-500 ml-1">
-                                        | Card: ${calculateCardPrice(current!.customPrice!, cashDiscountPct).toFixed(2)}
-                                      </span>
-                                    )}
-                                  </span>
-                                  <button
-                                    onClick={() => updatePourSizeCustomPrice(sizeKey, null)}
-                                    className="text-[10px] text-red-500 hover:text-red-700 underline shrink-0"
-                                  >
-                                    Reset to Default
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          )
-                        })}
-                      </div>
-
-                      {/* Custom Pour Sizes (Task 2) */}
-                      {Object.entries(enabledPourSizes).filter(([key]) => !Object.keys(DEFAULT_POUR_SIZES).includes(key)).length > 0 && (
-                        <div className="mt-3 pt-3 border-t border-gray-200">
-                          <div className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">Custom Pour Sizes</div>
-                          <div className="space-y-2">
-                            {Object.entries(enabledPourSizes).filter(([key]) => !Object.keys(DEFAULT_POUR_SIZES).includes(key)).map(([sizeKey, current]) => {
-                              const basePrice = parseFloat(editingDrinkPrice) || 0
-                              const autoPrice = basePrice * (current?.multiplier ?? 1)
-                              const hasCustomPrice = current?.customPrice != null
-                              return (
-                                <div key={sizeKey} className="p-2.5 border rounded-lg border-orange-300 bg-orange-50">
-                                  <div className="flex items-center gap-2">
-                                    <input
-                                      type="text"
-                                      value={current?.label || sizeKey}
-                                      onChange={e => updatePourSizeLabel(sizeKey, e.target.value)}
-                                      className="flex-1 px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-orange-500"
-                                      placeholder="Button label"
-                                    />
-                                    <div className="flex items-center gap-1 shrink-0">
-                                      <input
-                                        type="number"
-                                        step="0.25"
-                                        min="0.25"
-                                        defaultValue={current?.multiplier ?? 1}
-                                        key={`custom-${sizeKey}-${current?.multiplier}`}
-                                        onBlur={e => {
-                                          const num = parseFloat(e.target.value)
-                                          if (!isNaN(num) && num > 0) updatePourSizeMultiplier(sizeKey, num)
-                                          else e.target.value = String(current?.multiplier || 1)
-                                        }}
-                                        className="w-14 px-1 py-1 text-sm border rounded text-center focus:outline-none focus:ring-1 focus:ring-orange-500"
-                                      />
-                                      <span className="text-xs text-orange-600">x</span>
-                                    </div>
-                                    <div className="flex items-center gap-1 shrink-0">
-                                      <span className="text-xs text-gray-500">$</span>
-                                      <input
-                                        type="number"
-                                        step="0.01"
-                                        min="0"
-                                        defaultValue={hasCustomPrice ? current!.customPrice! : ''}
-                                        key={`custom-${sizeKey}-cp-${current?.customPrice ?? 'none'}`}
-                                        placeholder={autoPrice.toFixed(2)}
-                                        onBlur={e => {
-                                          const val = e.target.value.trim()
-                                          if (val === '') updatePourSizeCustomPrice(sizeKey, null)
-                                          else {
-                                            const num = parseFloat(val)
-                                            if (!isNaN(num) && num >= 0) updatePourSizeCustomPrice(sizeKey, num)
-                                          }
-                                        }}
-                                        className={`w-20 px-1 py-1 text-sm border rounded text-right focus:outline-none focus:ring-1 focus:ring-orange-500 ${hasCustomPrice ? 'border-green-400 bg-green-50' : ''}`}
-                                      />
-                                    </div>
-                                    {defaultPourSize === sizeKey && (
-                                      <span className="text-[10px] bg-orange-600 text-white px-1.5 py-0.5 rounded shrink-0">Default</span>
-                                    )}
-                                    {defaultPourSize !== sizeKey && (
-                                      <button
-                                        onClick={() => setDefaultPourSize(sizeKey)}
-                                        className="text-[10px] text-orange-500 hover:text-orange-700 shrink-0"
-                                      >Set default</button>
-                                    )}
-                                    <button
-                                      onClick={() => {
-                                        const newSizes = { ...enabledPourSizes }
-                                        delete newSizes[sizeKey]
-                                        setEnabledPourSizes(newSizes)
-                                        if (defaultPourSize === sizeKey) setDefaultPourSize('standard')
-                                      }}
-                                      className="text-red-400 hover:text-red-600 text-lg leading-none shrink-0"
-                                      title="Remove custom pour size"
-                                    >
-                                      x
-                                    </button>
-                                  </div>
-                                </div>
-                              )
-                            })}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Add Custom Pour Size button + form (Task 2) */}
-                      {!showCustomPourForm ? (
-                        <button
-                          onClick={() => { setShowCustomPourForm(true); setCustomPourKey(''); setCustomPourLabel(''); setCustomPourMultiplier('1.0'); setCustomPourPrice('') }}
-                          className="mt-2 text-xs text-orange-600 hover:text-orange-800 font-medium"
-                        >
-                          + Add Custom Pour Size
-                        </button>
-                      ) : (
-                        <div className="mt-2 p-3 bg-orange-50 border border-orange-200 rounded-lg">
-                          <div className="text-[10px] font-bold uppercase text-orange-600 tracking-wider mb-2">New Custom Pour Size</div>
-                          <div className="grid grid-cols-4 gap-2 mb-2">
-                            <div className="col-span-2">
-                              <label className="block text-[10px] text-gray-600 mb-0.5">Label</label>
-                              <input
-                                type="text"
-                                value={customPourLabel}
-                                onChange={e => {
-                                  setCustomPourLabel(e.target.value)
-                                  // Auto-generate key from label
-                                  setCustomPourKey(e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, ''))
-                                }}
-                                placeholder="e.g. Triple, Pint, Goblet"
-                                className="w-full px-2 py-1.5 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-orange-500"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-[10px] text-gray-600 mb-0.5">Multiplier</label>
-                              <input
-                                type="number"
-                                step="0.25"
-                                min="0.25"
-                                value={customPourMultiplier}
-                                onChange={e => setCustomPourMultiplier(e.target.value)}
-                                className="w-full px-2 py-1.5 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-orange-500"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-[10px] text-gray-600 mb-0.5">Price (opt)</label>
-                              <input
-                                type="number"
-                                step="0.01"
-                                min="0"
-                                value={customPourPrice}
-                                onChange={e => setCustomPourPrice(e.target.value)}
-                                placeholder="auto"
-                                className="w-full px-2 py-1.5 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-orange-500"
-                              />
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => {
-                                if (!customPourLabel.trim() || !customPourKey.trim()) return
-                                const mult = parseFloat(customPourMultiplier) || 1.0
-                                const price = customPourPrice ? parseFloat(customPourPrice) : null
-                                // Check for key collision
-                                if (enabledPourSizes[customPourKey] || DEFAULT_POUR_SIZES[customPourKey]) {
-                                  toast.error('A pour size with this name already exists')
-                                  return
-                                }
-                                setEnabledPourSizes(prev => ({
-                                  ...prev,
-                                  [customPourKey]: {
-                                    label: customPourLabel.trim(),
-                                    multiplier: mult,
-                                    ...(price != null ? { customPrice: price } : {}),
-                                  }
-                                }))
-                                setShowCustomPourForm(false)
-                                setCustomPourKey('')
-                                setCustomPourLabel('')
-                                setCustomPourMultiplier('1.0')
-                                setCustomPourPrice('')
-                              }}
-                              disabled={!customPourLabel.trim()}
-                              className="px-3 py-1.5 text-xs font-medium bg-orange-600 text-white rounded hover:bg-orange-700 disabled:opacity-50"
-                            >
-                              Add
-                            </button>
-                            <button
-                              onClick={() => setShowCustomPourForm(false)}
-                              className="px-3 py-1.5 text-xs text-gray-600 hover:text-gray-800"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Hide default pour on POS toggle (Task 1) */}
-                      {Object.keys(enabledPourSizes).length > 0 && (
-                        <label className="flex items-center gap-2 cursor-pointer mt-2">
-                          <input
-                            type="checkbox"
-                            checked={hideDefaultOnPos}
-                            onChange={e => setHideDefaultOnPos(e.target.checked)}
-                            className="w-4 h-4 text-purple-600"
-                          />
-                          <span className="text-xs text-gray-900">Hide default pour button on POS</span>
-                          <span className="text-[10px] text-gray-500">(tapping the item already uses the default)</span>
-                        </label>
-                      )}
-                      {Object.keys(enabledPourSizes).length > 0 && (
-                        <label className="flex items-center gap-2 cursor-pointer mt-2">
-                          <input
-                            type="checkbox"
-                            checked={applyPourToModifiers}
-                            onChange={e => setApplyPourToModifiers(e.target.checked)}
-                            className="w-4 h-4 text-purple-600"
-                          />
-                          <span className="text-xs text-gray-900">Apply multiplier to spirit upgrade charges too</span>
-                        </label>
-                      )}
-                      {Object.keys(enabledPourSizes).length > 0 && (
-                        <>
-                          <p className="text-xs text-gray-600 mt-1 ml-6">
-                            Price on POS: base price x multiplier, or set a custom price to override.
-                          </p>
-                          <div className="ml-6 mt-0.5 space-y-0.5">
-                            {Object.entries(enabledPourSizes).map(([key, cfg]) => {
-                              const base = parseFloat(editingDrinkPrice) || 0
-                              const pourPrice = cfg.customPrice != null ? cfg.customPrice : base * cfg.multiplier
-                              return (
-                                <p key={key} className="text-xs text-gray-500">
-                                  {cfg.label}: ${pourPrice.toFixed(2)}{cfg.customPrice != null ? ' (custom)' : ` (${base.toFixed(2)} x ${cfg.multiplier})`}
-                                  {isDualPricingEnabled && base > 0 && (
-                                    <span className="text-indigo-400 ml-2">Card: ${calculateCardPrice(pourPrice, cashDiscountPct).toFixed(2)}</span>
-                                  )}
-                                </p>
-                              )
-                            })}
-                          </div>
-                        </>
-                      )}
-                    </>
-                  )}
-                </div>
-
-                {/* Modifier Groups — tap a template in the right panel to attach (existing) */}
-                <div className="bg-white rounded-lg border overflow-hidden">
-                  <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50">
-                    <div>
-                      <h3 className="text-sm font-semibold text-gray-900">Modifier Groups</h3>
-                      <p className="text-xs text-gray-600 mt-0.5">Tap a template in the right panel to attach, then edit modifiers inline below</p>
-                    </div>
-                  </div>
-
-                  {/* Group list — spirit groups are managed in the Spirit Tier Editor above */}
-                  {drinkModifierGroups.filter((mg: any) => !mg.isSpiritGroup).length === 0 ? (
-                    <div className="px-4 py-6 text-center text-sm text-gray-600">
-                      <p className="mb-1 font-medium">No modifier groups yet.</p>
-                      <p className="text-xs">Tap a template in the Modifier Templates panel on the right →</p>
-                    </div>
-                  ) : (
-                    <div className="divide-y">
-                      {drinkModifierGroups.filter((mg: any) => !mg.isSpiritGroup).map((mg: any) => {
-                        const isExpanded = selectedModGroupId === mg.id
-                        return (
-                          <div key={mg.id}>
-                            <button
-                              onClick={() => setSelectedModGroupId(isExpanded ? null : mg.id)}
-                              className={`w-full flex items-center justify-between px-4 py-2.5 text-left text-sm transition-colors ${
-                                isExpanded
-                                  ? 'bg-purple-50 border-l-4 border-purple-500'
-                                  : 'hover:bg-gray-50 border-l-4 border-transparent'
-                              }`}
-                            >
-                              <div className="flex items-center gap-2">
-                                <span className="font-medium">{mg.name}</span>
-                                {mg.isRequired && <span className="text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded">Required</span>}
-                              </div>
-                              <div className="flex items-center gap-2 text-gray-600 text-xs">
-                                <span>{mg.modifiers?.length ?? 0} options</span>
-                                <span>{isExpanded ? '▲' : '▼'}</span>
-                              </div>
-                            </button>
-
-                            {/* Inline per-item modifier editing */}
-                            {isExpanded && (
-                              <div className="bg-gray-50 border-t px-4 py-3">
-                                {/* Column headers */}
-                                <div className="grid grid-cols-12 gap-2 text-[10px] text-gray-900 px-1 mb-1.5">
-                                  <div className="col-span-5">Name</div>
-                                  <div className="col-span-3 text-right">+Charge</div>
-                                  <div className="col-span-2 text-center">Active</div>
-                                  <div className="col-span-2"></div>
-                                </div>
-
-                                <div className="space-y-1">
-                                  {(mg.modifiers || []).map((mod: any) => (
-                                    <div
-                                      key={mod.id}
-                                      className={`grid grid-cols-12 gap-2 items-center p-1.5 rounded border transition-colors ${
-                                        mod.isActive !== false ? 'bg-white border-gray-200' : 'bg-gray-100 border-gray-100 opacity-60'
-                                      }`}
-                                    >
-                                      {/* Name */}
-                                      <div className="col-span-5">
-                                        <input
-                                          type="text"
-                                          defaultValue={mod.name}
-                                          key={`${mod.id}-name-${modGroupRefreshKey}`}
-                                          onBlur={async (e) => {
-                                            const newName = e.target.value.trim()
-                                            if (newName && newName !== mod.name) {
-                                              await fetch(`/api/menu/items/${selectedDrink.id}/modifier-groups/${mg.id}/modifiers`, {
-                                                method: 'PUT',
-                                                headers: { 'Content-Type': 'application/json' },
-                                                body: JSON.stringify({ modifierId: mod.id, name: newName }),
-                                              })
-                                              reloadDrinkModifiersRef.current(selectedDrink.id)
-                                            }
-                                          }}
-                                          className="w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-purple-400"
-                                        />
-                                      </div>
-
-                                      {/* Price */}
-                                      <div className="col-span-3">
-                                        <div className="relative">
-                                          <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-gray-900 text-xs">$</span>
-                                          <input
-                                            type="number"
-                                            step="0.25"
-                                            min="0"
-                                            defaultValue={mod.price || 0}
-                                            key={`${mod.id}-price-${modGroupRefreshKey}`}
-                                            onBlur={async (e) => {
-                                              const newPrice = parseFloat(e.target.value) || 0
-                                              if (newPrice !== (mod.price || 0)) {
-                                                await fetch(`/api/menu/items/${selectedDrink.id}/modifier-groups/${mg.id}/modifiers`, {
-                                                  method: 'PUT',
-                                                  headers: { 'Content-Type': 'application/json' },
-                                                  body: JSON.stringify({ modifierId: mod.id, price: newPrice }),
-                                                })
-                                                reloadDrinkModifiersRef.current(selectedDrink.id)
-                                              }
-                                            }}
-                                            className="w-full pl-4 pr-1 py-1 text-sm border rounded text-right focus:outline-none focus:ring-1 focus:ring-purple-400"
-                                          />
-                                        </div>
-                                        {isDualPricingEnabled && (mod.price || 0) > 0 && (
-                                          <p className="text-xs text-indigo-400 text-right mt-0.5">Card: ${calculateCardPrice(mod.price || 0, cashDiscountPct).toFixed(2)}</p>
-                                        )}
-                                      </div>
-
-                                      {/* Active toggle */}
-                                      <div className="col-span-2 flex justify-center">
-                                        <input
-                                          type="checkbox"
-                                          checked={mod.isActive !== false}
-                                          onChange={async (e) => {
-                                            await fetch(`/api/menu/items/${selectedDrink.id}/modifier-groups/${mg.id}/modifiers`, {
-                                              method: 'PUT',
-                                              headers: { 'Content-Type': 'application/json' },
-                                              body: JSON.stringify({ modifierId: mod.id, isActive: e.target.checked }),
-                                            })
-                                            reloadDrinkModifiersRef.current(selectedDrink.id)
-                                          }}
-                                          className="w-4 h-4"
-                                          title="Active on POS"
-                                        />
-                                      </div>
-
-                                      {/* Remove */}
-                                      <div className="col-span-2 flex justify-center">
-                                        <button
-                                          onClick={async () => {
-                                            await fetch(
-                                              `/api/menu/items/${selectedDrink.id}/modifier-groups/${mg.id}/modifiers?modifierId=${mod.id}`,
-                                              { method: 'DELETE' }
-                                            )
-                                            reloadDrinkModifiersRef.current(selectedDrink.id)
-                                          }}
-                                          className="text-gray-900 hover:text-red-500 text-lg leading-none"
-                                          title="Remove option"
-                                        >
-                                          ×
-                                        </button>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-
-                                {/* Add option button */}
-                                <button
-                                  onClick={async () => {
-                                    const res = await fetch(`/api/menu/items/${selectedDrink.id}/modifier-groups/${mg.id}/modifiers`, {
-                                      method: 'POST',
-                                      headers: { 'Content-Type': 'application/json' },
-                                      body: JSON.stringify({ name: 'New Option', price: 0, isActive: true }),
-                                    })
-                                    if (res.ok) {
-                                      reloadDrinkModifiersRef.current(selectedDrink.id)
-                                      setModGroupRefreshKey(k => k + 1)
-                                    }
-                                  }}
-                                  className="mt-2 text-xs text-purple-600 hover:text-purple-800 font-medium"
-                                >
-                                  + Add Option
-                                </button>
-
-                                {/* Group-level settings (tiered pricing, etc.) */}
-                                <div className="mt-3 pt-3 border-t">
-                                  <ModifierFlowEditor
-                                    item={{ id: selectedDrink.id, name: editingDrinkName || selectedDrink.name }}
-                                    selectedGroupId={mg.id}
-                                    refreshKey={modGroupRefreshKey}
-                                    onGroupUpdated={() => {
-                                      reloadDrinkModifiersRef.current(selectedDrink.id)
-                                      setModGroupRefreshKey(k => k + 1)
-                                    }}
-                                  />
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
-
-                {/* Recipe Builder — collapsed by default, auto-expands if drink has recipe */}
-                <RecipeBuilder
-                  menuItemId={selectedDrink.id}
-                  menuItemPrice={parseFloat(editingDrinkPrice) || selectedDrink.price}
-                  locationId={employee?.location?.id || ''}
-                  isExpanded={recipeExpanded}
-                  onToggle={() => setRecipeExpanded(prev => !prev)}
-                />
-
-              </>
+              <DrinkEditor
+                selectedDrink={selectedDrink}
+                editingDrinkName={editingDrinkName}
+                editingDrinkPrice={editingDrinkPrice}
+                savingDrink={savingDrink}
+                enabledPourSizes={enabledPourSizes}
+                defaultPourSize={defaultPourSize}
+                applyPourToModifiers={applyPourToModifiers}
+                hideDefaultOnPos={hideDefaultOnPos}
+                isDualPricingEnabled={isDualPricingEnabled}
+                cashDiscountPct={cashDiscountPct}
+                spiritMode={spiritMode}
+                spiritEntries={spiritEntries}
+                savingSpirit={savingSpirit}
+                bottles={bottles}
+                categories={categories}
+                drinkModifierGroups={drinkModifierGroups}
+                modGroupRefreshKey={modGroupRefreshKey}
+                selectedModGroupId={selectedModGroupId}
+                editingPourSize={editingPourSize}
+                savingPourSize={savingPourSize}
+                showBottleLinkPicker={showBottleLinkPicker}
+                bottleLinkSearch={bottleLinkSearch}
+                linkingBottle={linkingBottle}
+                expandedPickerCats={expandedPickerCats}
+                recipeExpanded={recipeExpanded}
+                locationId={employee?.location?.id || ''}
+                showInlineBottleForm={showInlineBottleForm}
+                inlineBottleName={inlineBottleName}
+                inlineBottleBrand={inlineBottleBrand}
+                inlineBottleCategoryId={inlineBottleCategoryId}
+                inlineBottleTier={inlineBottleTier}
+                inlineBottleSizeMl={inlineBottleSizeMl}
+                inlineBottleCost={inlineBottleCost}
+                creatingInlineBottle={creatingInlineBottle}
+                setEditingDrinkName={setEditingDrinkName}
+                setEditingDrinkPrice={setEditingDrinkPrice}
+                setEnabledPourSizes={setEnabledPourSizes}
+                setDefaultPourSize={setDefaultPourSize}
+                setApplyPourToModifiers={setApplyPourToModifiers}
+                setHideDefaultOnPos={setHideDefaultOnPos}
+                setSpiritMode={setSpiritMode}
+                setSelectedModGroupId={setSelectedModGroupId}
+                setModGroupRefreshKey={setModGroupRefreshKey}
+                setEditingPourSize={setEditingPourSize}
+                setShowBottleLinkPicker={setShowBottleLinkPicker}
+                setBottleLinkSearch={setBottleLinkSearch}
+                setExpandedPickerCats={setExpandedPickerCats}
+                setRecipeExpanded={setRecipeExpanded}
+                setShowInlineBottleForm={setShowInlineBottleForm}
+                setInlineBottleName={setInlineBottleName}
+                setInlineBottleBrand={setInlineBottleBrand}
+                setInlineBottleCategoryId={setInlineBottleCategoryId}
+                setInlineBottleTier={setInlineBottleTier}
+                setInlineBottleSizeMl={setInlineBottleSizeMl}
+                setInlineBottleCost={setInlineBottleCost}
+                onSaveDrink={handleSaveDrink}
+                onToggleAvailability={handleEditorToggleAvailability}
+                onRemoveDrink={handleEditorRemoveDrink}
+                onLinkBottle={linkDrinkToBottle}
+                onUnlinkBottle={unlinkDrinkFromBottle}
+                onSavePourSize={savePourSize}
+                onCreateInlineBottle={handleCreateInlineBottle}
+                onTogglePourSize={togglePourSize}
+                onUpdatePourSizeLabel={updatePourSizeLabel}
+                onUpdatePourSizeMultiplier={updatePourSizeMultiplier}
+                onUpdatePourSizeCustomPrice={updatePourSizeCustomPrice}
+                onAddSpiritBottle={addSpiritBottle}
+                onUpdateSpiritEntryPrice={updateSpiritEntryPrice}
+                onRemoveSpiritEntry={removeSpiritEntry}
+                onSetSpiritEntryDefault={setSpiritEntryDefault}
+                reloadDrinkModifiers={reloadDrinkModifiers}
+              />
             ) : (
               <div className="flex items-center justify-center h-full text-gray-600">
                 <p>Select a drink to edit</p>
@@ -2010,95 +954,15 @@ function LiquorBuilderContent() {
             )}
           </div>
 
-          {/* RIGHT: Modifier Templates — slim picker (w-64) */}
-          <div className="w-64 bg-white border-l flex flex-col shrink-0 overflow-hidden">
-            <div className="px-3 py-2 border-b shrink-0">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-[10px] uppercase text-gray-900 font-semibold tracking-wide">Modifier Templates</span>
-              </div>
-              <Link href="/liquor-modifiers" className="text-[10px] text-purple-600 hover:text-purple-700 font-medium">
-                Manage Templates →
-              </Link>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-2">
-              {modifierGroups.length === 0 ? (
-                <div className="text-center py-8 text-xs text-gray-600">
-                  <p className="mb-2">No modifier templates yet.</p>
-                  <p className="text-gray-600 mb-3">Create templates in the Modifier Templates page, then attach them here.</p>
-                  <Link href="/liquor-modifiers" className="text-purple-600 hover:text-purple-700 font-medium">
-                    Create templates →
-                  </Link>
-                </div>
-              ) : (
-                <div className="space-y-1.5">
-                  {selectedDrink && (
-                    <p className="text-[10px] text-purple-600 font-medium px-1 pb-1">
-                      Tap to attach to {selectedDrink.name || 'this drink'}:
-                    </p>
-                  )}
-                  {modifierGroups.map((group: any) => {
-                    const isAlreadyAdded = selectedDrink &&
-                      drinkModifierGroups.some((mg: any) => mg.name === group.name && !mg.isSpiritGroup)
-                    return (
-                      <button
-                        key={group.id}
-                        disabled={!!attachingGroupId || !selectedDrink || !!isAlreadyAdded}
-                        onClick={async () => {
-                          if (selectedDrink && !group.isSpiritGroup && !isAlreadyAdded) {
-                            setAttachingGroupId(group.id)
-                            try {
-                              const res = await fetch(`/api/menu/items/${selectedDrink.id}/modifier-groups`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ templateId: group.id, name: group.name }),
-                              })
-                              if (res.ok) {
-                                const data = await res.json()
-                                await reloadDrinkModifiersRef.current(selectedDrink.id)
-                                setSelectedModGroupId(data.data?.id || null)
-                                setModGroupRefreshKey(k => k + 1)
-                                toast.success(`Added "${group.name}"`)
-                              } else {
-                                toast.error('Failed to attach group')
-                              }
-                            } finally {
-                              setAttachingGroupId(null)
-                            }
-                          }
-                        }}
-                        className={`w-full text-left p-2.5 rounded-lg border transition-colors ${
-                          isAlreadyAdded
-                            ? 'bg-green-50 border-green-200 cursor-default'
-                            : attachingGroupId === group.id
-                            ? 'bg-blue-50 border-blue-300'
-                            : selectedDrink
-                            ? 'bg-white border-purple-200 hover:bg-purple-50 hover:border-purple-400'
-                            : 'bg-gray-50 border-gray-200'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-medium text-sm truncate">{group.name}</span>
-                        </div>
-                        <div className="flex items-center justify-between mt-0.5">
-                          <span className="text-xs text-gray-600">{group.modifiers?.length ?? 0} options</span>
-                          {isAlreadyAdded ? (
-                            <span className="text-xs text-green-600">✓ Added</span>
-                          ) : attachingGroupId === group.id ? (
-                            <span className="text-xs text-blue-600">Adding...</span>
-                          ) : selectedDrink ? (
-                            <span className="text-xs text-purple-500">+ Attach</span>
-                          ) : (
-                            <span className="text-xs text-gray-600">{group.modifiers?.length ?? 0} opts</span>
-                          )}
-                        </div>
-                      </button>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
+          {/* RIGHT: Modifier Templates */}
+          <ModifierTemplatesPanel
+            modifierGroups={modifierGroups}
+            selectedDrink={selectedDrink}
+            drinkModifierGroups={drinkModifierGroups}
+            attachingGroupId={attachingGroupId}
+            onAttachGroup={handleAttachGroup}
+            setAttachingGroupId={setAttachingGroupId}
+          />
         </div>
       )}
 
@@ -2142,12 +1006,10 @@ function LiquorBuilderContent() {
           bottle={bottleForMenuItem}
           menuCategories={menuCategories}
           onSave={async (data) => {
-            // Auto-set pour sizes based on container type
             const containerType = (bottleForMenuItem as any)?.containerType
             let defaultPourSizes = null
             let defaultPourSizeKey = null
             if (containerType === 'can' || containerType === 'bottle') {
-              // Beer — no pour sizes (single serve)
               defaultPourSizes = null
             } else if (containerType === 'draft') {
               defaultPourSizes = { pint: { label: 'Pint', multiplier: 1.0 }, half_pint: { label: 'Half Pint', multiplier: 0.5 } }
@@ -2156,12 +1018,10 @@ function LiquorBuilderContent() {
               defaultPourSizes = { glass: { label: 'Glass', multiplier: 1.0 }, bottle: { label: 'Bottle', multiplier: 1.0 } }
               defaultPourSizeKey = 'glass'
             } else if (bottleForMenuItem) {
-              // Spirit — default pour sizes
               defaultPourSizes = { shot: { label: 'Shot', multiplier: 1.0 }, double: { label: 'Double', multiplier: 2.0 }, tall: { label: 'Tall', multiplier: 1.5 } }
               defaultPourSizeKey = 'shot'
             }
 
-            // Create the menu item
             const res = await fetch('/api/menu/items', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -2181,7 +1041,6 @@ function LiquorBuilderContent() {
             const newItem = await res.json()
             const itemId = newItem.data?.id || newItem.id
 
-            // If a bottle was selected, create recipe ingredient
             if (data.bottleProductId && itemId) {
               await fetch(`/api/menu/items/${itemId}/recipe`, {
                 method: 'POST',
@@ -2197,10 +1056,8 @@ function LiquorBuilderContent() {
               })
             }
 
-            // Reload data and auto-select new item
             await Promise.all([loadDrinks(), loadBottles()])
 
-            // Select the new item
             if (data.categoryId) setSelectedMenuCategoryId(data.categoryId)
             setPendingItemId(itemId)
 
@@ -2261,87 +1118,5 @@ export default function LiquorBuilderPage() {
     <Suspense fallback={<div className="flex items-center justify-center min-h-screen">Loading...</div>}>
       <LiquorBuilderContent />
     </Suspense>
-  )
-}
-
-// Modal for creating/editing liquor menu categories (Beer, Cocktails, Whiskey, etc.)
-function MenuCategoryModal({
-  category,
-  onSave,
-  onDelete,
-  onClose,
-}: {
-  category: { id: string; name: string; color: string } | null
-  onSave: (data: { name: string; color: string }) => void
-  onDelete?: () => void
-  onClose: () => void
-}) {
-  const [name, setName] = useState(category?.name || '')
-  const [color, setColor] = useState(category?.color || '#8b5cf6')
-
-  const colors = [
-    '#ef4444', '#f97316', '#eab308', '#22c55e',
-    '#3b82f6', '#8b5cf6', '#ec4899', '#6b7280',
-  ]
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-bold">{category ? 'Edit Category' : 'New Menu Category'}</h2>
-          <button onClick={onClose} className="text-gray-900 hover:text-gray-600 text-xl leading-none">×</button>
-        </div>
-
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium mb-1">Name</label>
-            <input
-              type="text"
-              value={name}
-              onChange={e => setName(e.target.value)}
-              autoFocus
-              placeholder="e.g. Whiskey, Cocktails, Beer"
-              className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-2">Color</label>
-            <div className="flex gap-2 flex-wrap">
-              {colors.map(c => (
-                <button
-                  key={c}
-                  type="button"
-                  onClick={() => setColor(c)}
-                  className={`w-9 h-9 rounded-lg transition-all ${color === c ? 'ring-2 ring-offset-2 ring-gray-500 scale-110' : ''}`}
-                  style={{ backgroundColor: c }}
-                />
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div className="flex gap-2 mt-6">
-          {onDelete && (
-            <button
-              onClick={onDelete}
-              className="px-4 py-2 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50"
-            >
-              Delete
-            </button>
-          )}
-          <button onClick={onClose} className="flex-1 px-4 py-2 text-sm border rounded-lg hover:bg-gray-50">
-            Cancel
-          </button>
-          <button
-            onClick={() => onSave({ name: name.trim(), color })}
-            disabled={!name.trim()}
-            className="flex-1 px-4 py-2 text-sm bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50"
-          >
-            {category ? 'Save Changes' : 'Create Category'}
-          </button>
-        </div>
-      </div>
-    </div>
   )
 }

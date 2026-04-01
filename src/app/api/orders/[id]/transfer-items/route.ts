@@ -194,7 +194,8 @@ export const POST = withVenue(async function POST(
       const destTotals = calculateOrderTotals(
         destCalcItems, fromOrder.location.settings as { tax?: { defaultRate?: number; inclusiveTaxRate?: number } },
         Number(toOrder.discountTotal), Number(toOrder.tipTotal || 0), undefined, 'card', toOrder.isTaxExempt,
-        Number(toOrder.inclusiveTaxRate) || undefined
+        Number(toOrder.inclusiveTaxRate) || undefined, 0,
+        (toOrder as any).exclusiveTaxRate != null ? Number((toOrder as any).exclusiveTaxRate) : undefined
       )
 
       const destDonation = Number(toOrder.donationAmount || 0)
@@ -235,7 +236,8 @@ export const POST = withVenue(async function POST(
       const sourceTotals = calculateOrderTotals(
         sourceCalcItems, fromOrder.location.settings as { tax?: { defaultRate?: number; inclusiveTaxRate?: number } },
         Number(fromOrder.discountTotal), Number(fromOrder.tipTotal || 0), undefined, 'card', fromOrder.isTaxExempt,
-        Number(fromOrder.inclusiveTaxRate) || undefined
+        Number(fromOrder.inclusiveTaxRate) || undefined, 0,
+        (fromOrder as any).exclusiveTaxRate != null ? Number((fromOrder as any).exclusiveTaxRate) : undefined
       )
 
       const srcDonation = Number(fromOrder.donationAmount || 0)

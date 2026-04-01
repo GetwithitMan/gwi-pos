@@ -29,6 +29,17 @@ const eslintConfig = defineConfig([
       "unused-imports/no-unused-vars": "off",
     },
   },
+  // ── Accessibility (WCAG touch-target & ARIA) ────────────────────────────
+  // jsx-a11y plugin is already registered by eslint-config-next/core-web-vitals;
+  // we just enable additional rules as warnings to surface issues without blocking CI.
+  {
+    rules: {
+      "jsx-a11y/click-events-have-key-events": "warn",
+      "jsx-a11y/no-static-element-interactions": "warn",
+      "jsx-a11y/anchor-is-valid": "warn",
+      "jsx-a11y/alt-text": "warn",
+    },
+  },
   // ── Project-wide rule overrides ──────────────────────────────────────────
   {
     rules: {

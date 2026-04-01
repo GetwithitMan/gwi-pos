@@ -88,7 +88,7 @@ export const POST = withVenue(withAuth(async function POST(
     // Unset any existing default cards (shouldn't happen for "Start Tab" but be safe)
     await db.orderCard.updateMany({
       where: { orderId, isDefault: true, deletedAt: null },
-      data: { isDefault: false },
+      data: { isDefault: false, lastMutatedBy: 'local' },
     })
 
     const orderCard = await db.orderCard.create({
@@ -103,13 +103,14 @@ export const POST = withVenue(withAuth(async function POST(
         authAmount:     preAuthAmount,
         isDefault:      true,
         status:         'authorized',
+        lastMutatedBy:  'local',
       },
     })
 
     // Update order preAuthAmount so Open Orders panel shows the hold amount
     await db.order.update({
       where: { id: orderId },
-      data: { preAuthAmount },
+      data: { preAuthAmount, lastMutatedBy: 'local' },
     })
 
     // Fire-and-forget: emit TAB_OPENED event for event-sourced sync

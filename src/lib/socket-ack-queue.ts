@@ -48,6 +48,7 @@ interface PendingAck {
 }
 
 const pendingAcks = new Map<string, PendingAck>()
+const MAX_PENDING_ACKS = 5000 // Hard cap — prevents memory exhaustion from malicious/broken clients
 const MAX_ATTEMPTS = 3
 const BASE_RETRY_MS = 2000 // 2s, 4s, 8s (exponential)
 const ACK_TIMEOUT_MS = 30_000 // 30s max lifetime
@@ -69,6 +70,15 @@ export function enqueueAck(
   data: unknown,
   targetSocketIds?: Set<string>,
 ): string {
+  // Hard cap: evict oldest entries if queue is full (prevents memory exhaustion)
+  if (pendingAcks.size >= MAX_PENDING_ACKS) {
+    const oldestKey = pendingAcks.keys().next().value
+    if (oldestKey) {
+      log.warn({ ackId: oldestKey, queueSize: pendingAcks.size }, 'Ack queue at capacity — evicting oldest entry')
+      pendingAcks.delete(oldestKey)
+    }
+  }
+
   const ackId = `ack_${locationId}_${++ackCounter}_${Date.now()}`
   pendingAcks.set(ackId, {
     ackId,

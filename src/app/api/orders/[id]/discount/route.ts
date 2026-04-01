@@ -177,7 +177,9 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
             undefined,
             'card',
             order.isTaxExempt,
-            Number(order.inclusiveTaxRate) || undefined
+            Number(order.inclusiveTaxRate) || undefined,
+            0, // convenienceFee handled separately
+            (order as any).exclusiveTaxRate != null ? Number((order as any).exclusiveTaxRate) : undefined
           )
 
           const donationAmount = Number(order.donationAmount || 0)
@@ -484,7 +486,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
         isTaxInclusive: (i as any).isTaxInclusive ?? false,
         modifiers: i.modifiers.map(m => ({ price: Number(m.price), quantity: m.quantity ?? 1 })),
       }))
-      const totals = calculateOrderTotals(applyItems, order.location.settings as { tax?: { defaultRate?: number } }, newDiscountTotal, Number(order.tipTotal || 0), undefined, 'card', order.isTaxExempt, Number(order.inclusiveTaxRate) || undefined)
+      const totals = calculateOrderTotals(applyItems, order.location.settings as { tax?: { defaultRate?: number } }, newDiscountTotal, Number(order.tipTotal || 0), undefined, 'card', order.isTaxExempt, Number(order.inclusiveTaxRate) || undefined, 0, (order as any).exclusiveTaxRate != null ? Number((order as any).exclusiveTaxRate) : undefined)
 
       const applyDonationAmount = Number(order.donationAmount || 0)
       const applyConvenienceFee = Number(order.convenienceFee || 0)
@@ -808,7 +810,7 @@ export const DELETE = withVenue(withAuth({ allowCellular: true }, async function
         isTaxInclusive: (i as any).isTaxInclusive ?? false,
         modifiers: i.modifiers.map(m => ({ price: Number(m.price), quantity: m.quantity ?? 1 })),
       }))
-      const totals = calculateOrderTotals(deleteItems, order.location.settings as { tax?: { defaultRate?: number } }, newDiscountTotal, Number(order.tipTotal || 0), undefined, 'card', order.isTaxExempt, Number(order.inclusiveTaxRate) || undefined)
+      const totals = calculateOrderTotals(deleteItems, order.location.settings as { tax?: { defaultRate?: number } }, newDiscountTotal, Number(order.tipTotal || 0), undefined, 'card', order.isTaxExempt, Number(order.inclusiveTaxRate) || undefined, 0, (order as any).exclusiveTaxRate != null ? Number((order as any).exclusiveTaxRate) : undefined)
 
       const delDonationAmount = Number(order.donationAmount || 0)
       const delConvenienceFee = Number(order.convenienceFee || 0)

@@ -1,6 +1,7 @@
 'use client'
 
 import { useRef, useCallback } from 'react'
+import { clientLog } from '@/lib/client-logger'
 
 /**
  * Hidden 5-tap zone in the top-left corner to exit Chromium kiosk/fullscreen mode.
@@ -23,8 +24,8 @@ export function KioskExitZone() {
     if (tapCount.current >= 5) {
       tapCount.current = 0
       // Server station: POS API handles it
-      fetch('/api/system/exit-kiosk', { method: 'POST' }).catch(err => console.warn('kiosk exit request failed:', err))
-      fetch('http://localhost:3006/exit', { method: 'POST', mode: 'no-cors' }).catch(err => console.warn('fetch request failed:', err))
+      fetch('/api/system/exit-kiosk', { method: 'POST' }).catch(err => clientLog.warn('kiosk exit request failed:', err))
+      fetch('http://localhost:3006/exit', { method: 'POST', mode: 'no-cors' }).catch(err => clientLog.warn('fetch request failed:', err))
       return
     }
 

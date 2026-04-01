@@ -8,6 +8,7 @@ import { toast } from '@/stores/toast-store'
 import { useOrderStore } from '@/stores/order-store'
 import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
 import { OfflineManager } from '@/lib/offline-manager'
+import { clientLog } from '@/lib/client-logger'
 
 export interface SplitCheckScreenProps {
   orderId: string
@@ -576,9 +577,9 @@ function SplitUnifiedView({
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ orderId: split.id, type: 'check' }),
                     }).catch(err => {
-                      console.warn('split check print failed:', err)
+                      clientLog.warn('split check print failed:', err)
                       // B10: Queue print job for offline retry
-                      void OfflineManager.queuePrintJob(split.id, '', 0, []).catch(err2 => console.warn('offline print queue failed:', err2))
+                      void OfflineManager.queuePrintJob(split.id, '', 0, []).catch(err2 => clientLog.warn('offline print queue failed:', err2))
                     })
                   }
                   toast.success(`Printing ${splits.length} checks`)
@@ -642,8 +643,8 @@ function SplitUnifiedView({
             <button
               onClick={onClose}
               style={{
-                width: '36px',
-                height: '36px',
+                width: '44px',
+                height: '44px',
                 borderRadius: '8px',
                 fontSize: '20px',
                 fontWeight: 400,
@@ -655,6 +656,7 @@ function SplitUnifiedView({
                 alignItems: 'center',
                 justifyContent: 'center',
               }}
+              aria-label="Close split check"
             >
               ×
             </button>
@@ -726,9 +728,9 @@ function SplitUnifiedView({
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ orderId: split.id, type: 'check' }),
                     }).catch(err => {
-                      console.warn('split check print failed:', err)
+                      clientLog.warn('split check print failed:', err)
                       // B10: Queue print job for offline retry
-                      void OfflineManager.queuePrintJob(split.id, '', 0, []).catch(err2 => console.warn('offline print queue failed:', err2))
+                      void OfflineManager.queuePrintJob(split.id, '', 0, []).catch(err2 => clientLog.warn('offline print queue failed:', err2))
                       toast.info('Print queued — will retry when printer available')
                     })
                     toast.success(`Printing ${split.displayNumber || `Check ${(split.splitIndex ?? idx + 1)}`}`)
@@ -1075,8 +1077,8 @@ function SplitEditMode({
             <button
               onClick={onClose}
               style={{
-                width: '36px',
-                height: '36px',
+                width: '44px',
+                height: '44px',
                 borderRadius: '8px',
                 fontSize: '20px',
                 fontWeight: 400,
@@ -1088,6 +1090,7 @@ function SplitEditMode({
                 alignItems: 'center',
                 justifyContent: 'center',
               }}
+              aria-label="Close split check"
             >
               ×
             </button>

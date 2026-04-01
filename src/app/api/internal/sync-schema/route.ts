@@ -4,6 +4,7 @@ import { Pool } from '@neondatabase/serverless'
 import { readFileSync } from 'fs'
 import path from 'path'
 import { err, ok, unauthorized } from '@/lib/api-response'
+import { timingSafeCompare } from '@/lib/timing-safe-compare'
 
 // Allow up to 90s — large schemas (100+ tables) can take 30-60s for diff + apply
 export const maxDuration = 90
@@ -35,7 +36,7 @@ type Row = Record<string, any>
 export async function POST(request: NextRequest) {
   // ── Auth ──────────────────────────────────────────────────────────────
   const apiKey = request.headers.get('x-api-key')
-  if (!apiKey || apiKey !== process.env.PROVISION_API_KEY) {
+  if (!apiKey || !process.env.PROVISION_API_KEY || !timingSafeCompare(apiKey, process.env.PROVISION_API_KEY)) {
     return unauthorized('Unauthorized')
   }
 

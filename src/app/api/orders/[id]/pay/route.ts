@@ -715,7 +715,9 @@ export const POST = withVenue(withTiming(async function POST(
     if (perMinuteItems.length > 0) {
       const now = new Date()
       const payLocSettings = order.location.settings as { tax?: { defaultRate?: number; inclusiveTaxRate?: number } } | null
-      const taxRate = getLocationTaxRate(payLocSettings)
+      // Prefer order-level exclusive tax rate snapshot; fall back to live rate
+      const orderPayExclRate = (order as any).exclusiveTaxRate != null ? Number((order as any).exclusiveTaxRate) : undefined
+      const taxRate = (orderPayExclRate != null && orderPayExclRate >= 0) ? orderPayExclRate : getLocationTaxRate(payLocSettings)
       // Prefer order-level snapshot; fall back to location setting with > 0 guard
       const orderPayInclRate = toNumber(order.inclusiveTaxRate) || undefined
       const payInclRateRaw = payLocSettings?.tax?.inclusiveTaxRate

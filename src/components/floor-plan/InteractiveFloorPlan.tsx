@@ -153,8 +153,9 @@ export function InteractiveFloorPlan({
         <div className="bg-white rounded-lg shadow-lg flex flex-col">
           <button
             onClick={zoomIn}
-            className="p-2 hover:bg-gray-100 rounded-t-lg border-b"
+            className="p-3 hover:bg-gray-100 rounded-t-lg border-b min-w-[48px] min-h-[48px] flex items-center justify-center"
             title="Zoom in"
+            aria-label="Zoom in"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v12M6 12h12" />
@@ -162,8 +163,9 @@ export function InteractiveFloorPlan({
           </button>
           <button
             onClick={zoomOut}
-            className="p-2 hover:bg-gray-100 rounded-b-lg"
+            className="p-3 hover:bg-gray-100 rounded-b-lg min-w-[48px] min-h-[48px] flex items-center justify-center"
             title="Zoom out"
+            aria-label="Zoom out"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 12h12" />
@@ -174,8 +176,9 @@ export function InteractiveFloorPlan({
         {/* Reset view */}
         <button
           onClick={resetView}
-          className="p-2 bg-white rounded-lg shadow-lg hover:bg-gray-100"
+          className="p-3 bg-white rounded-lg shadow-lg hover:bg-gray-100 min-w-[48px] min-h-[48px] flex items-center justify-center"
           title="Reset view"
+          aria-label="Reset floor plan view"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5v-4m0 4h-4m4 0l-5-5" />

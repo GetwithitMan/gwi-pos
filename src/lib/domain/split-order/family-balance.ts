@@ -19,6 +19,62 @@ import type { TxClient } from './types'
 
 const log = createChildLogger('split-family-balance')
 
+// ─── Split Balance Reconciliation ───────────────────────────────────────────
+
+/**
+ * Validate that SUM(child totals) == parent total after a split mutation.
+ * Logs a WARNING on drift > $0.01 — does NOT block the operation.
+ * Should be called after split transactions commit (fire-and-forget safe).
+ */
+export async function validateSplitBalance(
+  tx: TxClient,
+  parentOrderId: string,
+): Promise<void> {
+  try {
+    const parentOrder = await tx.order.findFirst({
+      where: { id: parentOrderId, deletedAt: null },
+      select: { id: true, total: true, splitFamilyTotal: true },
+    })
+    if (!parentOrder) return
+
+    const childOrders = await tx.order.findMany({
+      where: {
+        OR: [
+          { parentOrderId },
+          { splitFamilyRootId: parentOrderId },
+        ],
+        deletedAt: null,
+        id: { not: parentOrderId },
+      },
+      select: { id: true, total: true },
+    })
+
+    if (childOrders.length === 0) return
+
+    const childSum = childOrders.reduce((sum, c) => sum + Number(c.total), 0)
+    const parentTotal = parentOrder.splitFamilyTotal != null
+      ? Number(parentOrder.splitFamilyTotal)
+      : Number(parentOrder.total)
+    const drift = Math.abs(childSum - parentTotal)
+
+    if (drift > 0.01) {
+      log.warn(
+        {
+          parentOrderId,
+          parentTotal,
+          childSum,
+          drift: Math.round(drift * 100) / 100,
+          childCount: childOrders.length,
+        },
+        'Split balance drift detected — SUM(child totals) != parent total',
+      )
+    }
+  } catch (e) {
+    // Never let reconciliation validation break the split flow
+    log.warn({ err: e, parentOrderId }, 'Split balance validation failed (non-blocking)')
+  }
+}
+
 // ─── Interfaces ─────────────────────────────────────────────────────────────
 
 export interface ChildBalance {

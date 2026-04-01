@@ -63,10 +63,9 @@ export const PaymentRequestSchema = z.object({
   payments: z.array(PaymentInputSchema).min(1, 'At least one payment is required'),
   employeeId: z.string().optional(),
   terminalId: z.string().optional(),
-  // Optional for backward compat with Android Register (doesn't send it yet).
-  // Server generates random UUID when missing — disables double-charge protection for that client.
-  // TODO: Update Register APK to send idempotencyKey, then make this required.
-  idempotencyKey: z.string().uuid('idempotencyKey must be a valid UUID').optional(),
+  // REQUIRED — all clients (POS, Android Register, PAX) must generate a UUID on button press
+  // and resend the same key on retries. This prevents double-charges on network retries/timeouts.
+  idempotencyKey: z.string().uuid('idempotencyKey must be a valid UUID'),
 })
 
 // ─── Idempotency Check ─────────────────────────────────────────────────────
@@ -192,11 +191,12 @@ export function validatePaymentAmounts(
     }
 
     // Prevent unreasonably large payments (potential UI bugs)
-    // 200% allows generous tips (bartenders routinely get 30-50%+) while catching fat-finger errors
-    // The separate tip bounds validator (200% of payment) catches truly unreasonable tip amounts
-    const maxReasonablePayment = orderTotal * 2.0
+    // 600% ceiling accommodates the 500% tip cap (validateTipBounds) plus the base payment amount.
+    // Example: $10 tab + $50 tip (500%) = $60 total = 600% of $10 order total.
+    // The separate tip bounds validator (500% of payment) catches truly unreasonable tip amounts.
+    const maxReasonablePayment = orderTotal * 6.0
     if (paymentAmount > maxReasonablePayment) {
-      return `Payment amount $${paymentAmount.toFixed(2)} exceeds reasonable limit (200% of order total). This may indicate an error.`
+      return `Payment amount $${paymentAmount.toFixed(2)} exceeds reasonable limit (600% of order total). This may indicate an error.`
     }
 
     // Validate Datacap field mutual exclusivity for card payments

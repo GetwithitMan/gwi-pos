@@ -43,13 +43,27 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     const orderCard = await db.orderCard.findFirst({
       where: { recordNo, locationId, deletedAt: null },
-      select: { authAmount: true },
+      select: { authAmount: true, createdAt: true },
     })
     if (!orderCard) {
       return notFound('No pre-auth found for this recordNo')
     }
     if (purchaseAmount + (gratuityAmount || 0) > Number(orderCard.authAmount)) {
       return err(`Capture amount $${(purchaseAmount + (gratuityAmount || 0)).toFixed(2)} exceeds authorized amount $${Number(orderCard.authAmount).toFixed(2)}`)
+    }
+
+    // Pre-auth expiration check — Datacap pre-auths expire after ~7 days
+    const PRE_AUTH_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000 // 7 days
+    if (orderCard.createdAt) {
+      const ageMs = Date.now() - new Date(orderCard.createdAt).getTime()
+      if (ageMs > PRE_AUTH_MAX_AGE_MS) {
+        const ageDays = Math.floor(ageMs / 86400000)
+        return err(
+          `Pre-authorization expired (${ageDays} days old). ` +
+          'Datacap pre-auths are valid for ~7 days. Please run a new card.',
+          409
+        )
+      }
     }
 
     await validateReader(readerId, locationId)

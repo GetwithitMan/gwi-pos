@@ -16,7 +16,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const employeeId = searchParams.get('employeeId')
     const status = searchParams.get('status')
     const vendorId = searchParams.get('vendorId')
-    const limit = parseInt(searchParams.get('limit') ?? '50', 10)
+    const limit = Math.max(1, Math.min(parseInt(searchParams.get('limit') ?? '50', 10) || 50, 500))
 
     if (!locationId || !employeeId) {
       return err('locationId and employeeId required')

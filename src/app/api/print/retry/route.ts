@@ -38,7 +38,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
     const status = searchParams.get('status') // 'queued', 'failed', 'failed_permanent', or null (all)
-    const limit = Math.min(parseInt(searchParams.get('limit') || '50', 10), 200)
+    const limit = Math.max(1, Math.min(parseInt(searchParams.get('limit') || '50', 10) || 50, 200))
 
     if (!locationId) {
       return err('locationId is required')

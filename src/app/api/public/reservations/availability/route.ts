@@ -42,7 +42,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url)
     const date = searchParams.get('date')
-    const partySize = parseInt(searchParams.get('partySize') || '2', 10)
+    const partySize = parseInt(searchParams.get('partySize') || '2', 10) || 2
 
     if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
       return err('Valid date (YYYY-MM-DD) is required')

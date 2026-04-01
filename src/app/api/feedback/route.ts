@@ -55,7 +55,7 @@ export const GET = withVenue(withAuth('REPORTS_VIEW', async function GET(request
     const locationId = params.get('locationId')
     const startDate = params.get('startDate')
     const endDate = params.get('endDate')
-    const rating = params.get('rating') ? parseInt(params.get('rating')!) : null
+    const rating = params.get('rating') ? (parseInt(params.get('rating')!, 10) || null) : null
     const source = params.get('source')
     const tag = params.get('tag')
 

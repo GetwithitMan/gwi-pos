@@ -1,6 +1,38 @@
+import type { MenuItem as BaseMenuItem } from '@/types'
+
 // ============================================================================
 // BARTENDER VIEW — DISPLAY SETTINGS & CONSTANTS
 // ============================================================================
+
+// ---------------------------------------------------------------------------
+// SHARED BARTENDER MENU ITEM TYPE
+// All bartender sub-components import this to avoid duplicate MenuItem types.
+// ---------------------------------------------------------------------------
+
+export interface SpiritOption {
+  id: string
+  name: string
+  price: number
+  spiritTier?: string | null
+  linkedBottleProductId?: string | null
+  currentStock?: number | null
+}
+
+export interface SpiritTiers {
+  well: SpiritOption[]
+  call: SpiritOption[]
+  premium: SpiritOption[]
+  top_shelf: SpiritOption[]
+}
+
+/** Bartender view extends base MenuItem with spirit-specific fields */
+export type BartenderMenuItem = Pick<BaseMenuItem,
+  'id' | 'name' | 'price' | 'categoryId' | 'categoryType' | 'hasModifiers'
+  | 'itemType' | 'pourSizes' | 'defaultPourSize' | 'pricingOptionGroups' | 'hasPricingOptions'
+> & {
+  hasOtherModifiers?: boolean
+  spiritTiers?: SpiritTiers | null
+}
 
 // Category display settings
 export type CategoryRows = 1 | 2

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { toast } from '@/stores/toast-store'
 import { uuid } from '@/lib/uuid'
 import type { EntertainmentItem, WaitlistEntry } from '@/lib/entertainment'
+import { clientLog } from '@/lib/client-logger'
 
 interface SeatFromWaitlistModalProps {
   isOpen: boolean
@@ -214,11 +215,11 @@ export function SeatFromWaitlistModal({
             }),
           })
           if (!blockRes.ok) {
-            console.warn('[SeatFromWaitlist] Block-time POST failed:', blockRes.status)
+            clientLog.warn('[SeatFromWaitlist] Block-time POST failed:', blockRes.status)
             toast.warning('Block time could not be started — please start it manually')
           }
         } catch (err) {
-          console.warn('[SeatFromWaitlist] Block-time POST error:', err)
+          clientLog.warn('[SeatFromWaitlist] Block-time POST error:', err)
           toast.warning('Block time could not be started — please start it manually')
         }
       }
@@ -236,11 +237,11 @@ export function SeatFromWaitlistModal({
             }),
           })
           if (!statusRes.ok) {
-            console.warn('[SeatFromWaitlist] Fallback status PATCH failed:', statusRes.status)
+            clientLog.warn('[SeatFromWaitlist] Fallback status PATCH failed:', statusRes.status)
             toast.warning('Item status could not be updated — please set it manually')
           }
         } catch (statusErr) {
-          console.warn('[SeatFromWaitlist] Fallback status PATCH error:', statusErr)
+          clientLog.warn('[SeatFromWaitlist] Fallback status PATCH error:', statusErr)
           toast.warning('Item status could not be updated — please set it manually')
         }
       }

@@ -630,7 +630,7 @@ model Organization {
 model Location {
   id             String       @id @default(cuid())
   organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id])
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
 
   name     String
   slug     String? @unique // URL-friendly identifier for venue subdomains
@@ -899,7 +899,8 @@ model Location {
   // Cloud-Primary Architecture (Fulfillment + Bridge + Outage Queue)
   fulfillmentEvents  FulfillmentEvent[]
   bridgeCheckpoints  BridgeCheckpoint[]
-  outageQueueEntries OutageQueueEntry[]
+  outageQueueEntries      OutageQueueEntry[]
+  integrationRetryEntries IntegrationRetryEntry[]
 
   // Reservation Engine
   reservationBlocks   ReservationBlock[]
@@ -928,7 +929,7 @@ model Location {
 model Customer {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   // Basic info
   firstName   String
@@ -949,9 +950,9 @@ model Customer {
   lifetimePoints    Int             @default(0) // Total ever earned, for tier calculation
   loyaltyEnrolledAt DateTime?
   loyaltyProgramId  String?
-  loyaltyProgram    LoyaltyProgram? @relation(fields: [loyaltyProgramId], references: [id])
+  loyaltyProgram    LoyaltyProgram? @relation(fields: [loyaltyProgramId], references: [id], onDelete: SetNull)
   loyaltyTierId     String?
-  loyaltyTier       LoyaltyTier?    @relation(fields: [loyaltyTierId], references: [id])
+  loyaltyTier       LoyaltyTier? @relation(fields: [loyaltyTierId], references: [id], onDelete: SetNull)
   totalSpent        Decimal         @default(0) @db.Decimal(10, 2)
   totalOrders       Int             @default(0)
   averageTicket     Decimal         @default(0) @db.Decimal(10, 2)
@@ -1007,7 +1008,7 @@ model Customer {
 model Role {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   name        String // Server, Bartender, Manager, Admin
   permissions Json? // Array of permission strings
@@ -1051,9 +1052,9 @@ model Role {
 model Employee {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   roleId     String
-  role       Role     @relation(fields: [roleId], references: [id])
+  role       Role @relation(fields: [roleId], references: [id], onDelete: Restrict)
 
   // Identity
   firstName   String
@@ -1252,11 +1253,11 @@ model Employee {
 model EmployeeRole {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   employeeId String
-  employee   Employee @relation(fields: [employeeId], references: [id])
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
   roleId     String
-  role       Role     @relation(fields: [roleId], references: [id])
+  role       Role @relation(fields: [roleId], references: [id], onDelete: Restrict)
 
   isPrimary Boolean @default(false) // Matches Employee.roleId
 
@@ -1278,9 +1279,9 @@ model EmployeeRole {
 model TimeClockEntry {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   employeeId String
-  employee   Employee @relation(fields: [employeeId], references: [id])
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
 
   clockIn  DateTime  @default(now())
   clockOut DateTime?
@@ -1302,11 +1303,11 @@ model TimeClockEntry {
 
   // Multi-role: which role the employee is working as this entry
   workingRoleId String?
-  workingRole   Role?   @relation("WorkingRole", fields: [workingRoleId], references: [id])
+  workingRole   Role? @relation("WorkingRole", fields: [workingRoleId], references: [id], onDelete: SetNull)
 
   // Tip group selected at clock-in (from TipGroupTemplate system)
   selectedTipGroupId String?
-  selectedTipGroup   TipGroup? @relation("ClockEntryTipGroup", fields: [selectedTipGroupId], references: [id])
+  selectedTipGroup   TipGroup? @relation("ClockEntryTipGroup", fields: [selectedTipGroupId], references: [id], onDelete: SetNull)
 
   // Reverse relations
   shifts Shift[]
@@ -1339,9 +1340,9 @@ model TimeClockEntry {
 model Shift {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   employeeId String
-  employee   Employee @relation(fields: [employeeId], references: [id])
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
 
   startedAt DateTime  @default(now())
   endedAt   DateTime?
@@ -1368,15 +1369,15 @@ model Shift {
 
   // Link to time clock entry
   timeClockEntryId String?
-  timeClockEntry   TimeClockEntry? @relation(fields: [timeClockEntryId], references: [id])
+  timeClockEntry   TimeClockEntry? @relation(fields: [timeClockEntryId], references: [id], onDelete: SetNull)
 
   // Multi-role: which role employee is working as
   workingRoleId String?
-  workingRole   Role?   @relation("ShiftWorkingRole", fields: [workingRoleId], references: [id])
+  workingRole   Role? @relation("ShiftWorkingRole", fields: [workingRoleId], references: [id], onDelete: SetNull)
 
   // Physical drawer claimed (null for purse/none cash handling modes)
   drawerId String?
-  drawer   Drawer? @relation(fields: [drawerId], references: [id])
+  drawer   Drawer? @relation(fields: [drawerId], references: [id], onDelete: SetNull)
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -1411,7 +1412,7 @@ model Shift {
 model Drawer {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   name     String // "Drawer 1", "Bar Drawer"
   deviceId String? // Associated terminal
@@ -1438,9 +1439,9 @@ model Drawer {
 model PaidInOut {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   drawerId   String
-  drawer     Drawer   @relation(fields: [drawerId], references: [id])
+  drawer     Drawer @relation(fields: [drawerId], references: [id], onDelete: Restrict)
 
   type      PaidInOutType
   amount    Decimal       @db.Decimal(10, 2)
@@ -1448,9 +1449,9 @@ model PaidInOut {
   reference String? // Check number, vendor, etc.
 
   employeeId String
-  employee   Employee  @relation("PaidInOutEmployee", fields: [employeeId], references: [id])
+  employee   Employee @relation("PaidInOutEmployee", fields: [employeeId], references: [id], onDelete: Restrict)
   approvedBy String? // Manager who approved
-  approver   Employee? @relation("PaidInOutApprover", fields: [approvedBy], references: [id])
+  approver   Employee? @relation("PaidInOutApprover", fields: [approvedBy], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1471,7 +1472,7 @@ model PaidInOut {
 model PrepStation {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   name        String // "Kitchen", "Bar", "Expo", "Grill", "Fryer"
   displayName String?
@@ -1515,7 +1516,7 @@ model PrepStation {
 model CourseConfig {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   courseNumber  Int // 1, 2, 3, 4, 5
   name          String // "Appetizers", "Soup/Salad", "Entrees", "Dessert", "After-Dinner"
@@ -1544,7 +1545,7 @@ model CourseConfig {
 model Category {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   name        String
   displayName String?
@@ -1566,7 +1567,7 @@ model Category {
 
   // Kitchen routing
   prepStationId String?
-  prepStation   PrepStation? @relation(fields: [prepStationId], references: [id])
+  prepStation   PrepStation? @relation(fields: [prepStationId], references: [id], onDelete: SetNull)
   courseNumber  Int?
 
   // Printer routing - printers for items in this category
@@ -1603,9 +1604,9 @@ model Category {
 model MenuItem {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   categoryId String
-  category   Category @relation(fields: [categoryId], references: [id])
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
 
   // Identity
   name        String
@@ -1632,7 +1633,7 @@ model MenuItem {
 
   // Kitchen
   prepStationId String? // Override category station
-  prepStation   PrepStation? @relation(fields: [prepStationId], references: [id])
+  prepStation   PrepStation? @relation(fields: [prepStationId], references: [id], onDelete: SetNull)
   prepTime      Int? // Minutes
   courseNumber  Int? // Override category course
 
@@ -1692,9 +1693,9 @@ model MenuItem {
   // Entertainment tracking (Skill 94-97)
   entertainmentStatus String? // 'available', 'in_use', 'maintenance'
   currentOrderId      String? // Links to order currently using this item
-  currentOrder        Order?     @relation("MenuItemCurrentOrder", fields: [currentOrderId], references: [id])
+  currentOrder        Order? @relation("MenuItemCurrentOrder", fields: [currentOrderId], references: [id], onDelete: SetNull)
   currentOrderItemId  String? // Links to specific order item
-  currentOrderItem    OrderItem? @relation("MenuItemCurrentOrderItem", fields: [currentOrderItemId], references: [id])
+  currentOrderItem    OrderItem? @relation("MenuItemCurrentOrderItem", fields: [currentOrderItemId], references: [id], onDelete: SetNull)
   blockTimeMinutes    Int? // If set, sells in blocks (30, 60, 90 mins)
   maxConcurrentUses   Int?       @default(1) // For items with multiple units
   currentUseCount     Int?       @default(0) // Current number in use
@@ -1761,7 +1762,7 @@ model MenuItem {
   // Direct link to bottle product (for spirit items like "Patron Silver" on the menu)
   // This enables bottles to be the source of truth for liquor menu items
   linkedBottleProductId String?
-  linkedBottleProduct   BottleProduct? @relation("LinkedBottleMenuItems", fields: [linkedBottleProductId], references: [id])
+  linkedBottleProduct   BottleProduct? @relation("LinkedBottleMenuItems", fields: [linkedBottleProductId], references: [id], onDelete: SetNull)
   linkedPourSizeOz      Decimal?       @db.Decimal(6, 3) // Custom pour size override for linked bottle (oz)
 
   // Modifiers that link to this item (for spirit upgrades, etc.)
@@ -1814,7 +1815,7 @@ model MenuItem {
 model ModifierGroup {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   // NEW: Item ownership - each modifier group belongs to ONE specific menu item
   // This enables per-item reporting and customization without affecting other items
@@ -1895,7 +1896,7 @@ model ModifierGroup {
 model Modifier {
   id              String        @id @default(cuid())
   locationId      String
-  location        Location      @relation(fields: [locationId], references: [id])
+  location        Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   modifierGroupId String
   modifierGroup   ModifierGroup @relation(fields: [modifierGroupId], references: [id], onDelete: Cascade)
 
@@ -1930,11 +1931,11 @@ model Modifier {
   // Link to ingredient for inventory deduction
   // When this modifier is ordered, deduct from this ingredient's stock
   ingredientId String?
-  ingredient   Ingredient? @relation("ModifierIngredient", fields: [ingredientId], references: [id])
+  ingredient   Ingredient? @relation("ModifierIngredient", fields: [ingredientId], references: [id], onDelete: SetNull)
 
   // Sub-modifier support - when selected, prompts for additional modifiers
   childModifierGroupId String?
-  childModifierGroup   ModifierGroup? @relation("SubModifier", fields: [childModifierGroupId], references: [id])
+  childModifierGroup   ModifierGroup? @relation("SubModifier", fields: [childModifierGroupId], references: [id], onDelete: SetNull)
 
   // Commission (Skill 29)
   commissionType  String? // 'fixed' | 'percent' | null
@@ -1943,12 +1944,12 @@ model Modifier {
   // Linked Menu Item - for spirit upgrades, links to actual menu item for pricing/reporting
   // When set, sales are tracked against this item for reporting purposes
   linkedMenuItemId String?
-  linkedMenuItem   MenuItem? @relation("LinkedModifierItem", fields: [linkedMenuItemId], references: [id])
+  linkedMenuItem   MenuItem? @relation("LinkedModifierItem", fields: [linkedMenuItemId], references: [id], onDelete: SetNull)
 
   // Liquor Builder - Spirit fields
   spiritTier            String? // 'well', 'call', 'premium', 'top_shelf'
   linkedBottleProductId String? // Links to bottle inventory
-  linkedBottleProduct   BottleProduct? @relation(fields: [linkedBottleProductId], references: [id])
+  linkedBottleProduct   BottleProduct? @relation(fields: [linkedBottleProductId], references: [id], onDelete: SetNull)
   pourSizeOz            Decimal?       @db.Decimal(6, 3) // Override default pour size
 
   // Display
@@ -2018,9 +2019,9 @@ model Modifier {
 model ComboTemplate {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   menuItemId String   @unique // Links to MenuItem with itemType="combo"
-  menuItem   MenuItem @relation("ComboTemplateMenuItem", fields: [menuItemId], references: [id])
+  menuItem   MenuItem @relation("ComboTemplateMenuItem", fields: [menuItemId], references: [id], onDelete: Restrict)
 
   basePrice    Decimal  @db.Decimal(10, 2)
   comparePrice Decimal? @db.Decimal(10, 2) // A la carte total for savings display
@@ -2039,7 +2040,7 @@ model ComboTemplate {
 model ComboComponent {
   id              String        @id @default(cuid())
   locationId      String
-  location        Location      @relation(fields: [locationId], references: [id])
+  location        Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   comboTemplateId String
   comboTemplate   ComboTemplate @relation(fields: [comboTemplateId], references: [id], onDelete: Cascade)
 
@@ -2053,7 +2054,7 @@ model ComboComponent {
 
   // The menu item for this combo slot
   menuItemId String?
-  menuItem   MenuItem? @relation("ComboComponentItem", fields: [menuItemId], references: [id])
+  menuItem   MenuItem? @relation("ComboComponentItem", fields: [menuItemId], references: [id], onDelete: SetNull)
 
   // Price override for the item itself (null = use item's default price)
   itemPriceOverride Decimal? @db.Decimal(10, 2)
@@ -2063,10 +2064,10 @@ model ComboComponent {
 
   // Legacy fields (kept for backward compatibility)
   modifierGroupId String?
-  modifierGroup   ModifierGroup? @relation(fields: [modifierGroupId], references: [id])
+  modifierGroup   ModifierGroup? @relation(fields: [modifierGroupId], references: [id], onDelete: SetNull)
   priceOverride   Decimal?       @db.Decimal(10, 2)
   defaultItemId   String?
-  defaultItem     MenuItem?      @relation("ComboComponentDefault", fields: [defaultItemId], references: [id])
+  defaultItem     MenuItem? @relation("ComboComponentDefault", fields: [defaultItemId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -2085,12 +2086,12 @@ model ComboComponent {
 model ComboComponentOption {
   id               String         @id @default(cuid())
   locationId       String
-  location         Location       @relation(fields: [locationId], references: [id])
+  location         Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   comboComponentId String
   comboComponent   ComboComponent @relation(fields: [comboComponentId], references: [id], onDelete: Cascade)
 
   menuItemId  String
-  menuItem    MenuItem @relation(fields: [menuItemId], references: [id])
+  menuItem    MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Restrict)
   upcharge    Decimal  @default(0) @db.Decimal(10, 2)
   sortOrder   Int      @default(0)
   isAvailable Boolean  @default(true)
@@ -2113,7 +2114,7 @@ model ComboComponentOption {
 model Section {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   name  String // "Bar", "Patio", "Main Floor"
   color String?
@@ -2156,11 +2157,11 @@ model Section {
 model SectionAssignment {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   sectionId  String
-  section    Section  @relation(fields: [sectionId], references: [id])
+  section    Section @relation(fields: [sectionId], references: [id], onDelete: Restrict)
   employeeId String
-  employee   Employee @relation(fields: [employeeId], references: [id])
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
 
   assignedAt   DateTime  @default(now())
   unassignedAt DateTime?
@@ -2180,9 +2181,9 @@ model SectionAssignment {
 model Table {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   sectionId  String?
-  section    Section? @relation("TableSection", fields: [sectionId], references: [id])
+  section    Section? @relation("TableSection", fields: [sectionId], references: [id], onDelete: SetNull)
 
   name         String // "Table 1", "Bar 3", "Patio A"
   abbreviation String? // Short display name for floor plan: "T1", "B3", "PA"
@@ -2201,7 +2202,7 @@ model Table {
   // For timed rentals (pool tables, dart boards)
   isTimedRental Boolean   @default(false)
   timedItemId   String? // Links to MenuItem for pricing
-  timedItem     MenuItem? @relation("TableTimedItem", fields: [timedItemId], references: [id])
+  timedItem     MenuItem? @relation("TableTimedItem", fields: [timedItemId], references: [id], onDelete: SetNull)
 
   // Status
   status   TableStatus @default(available)
@@ -2212,7 +2213,7 @@ model Table {
   defaultPosX      Int? // Admin-defined default X position
   defaultPosY      Int? // Admin-defined default Y position
   defaultSectionId String? // Admin-defined default section
-  defaultSection   Section? @relation("TableDefaultSection", fields: [defaultSectionId], references: [id])
+  defaultSection   Section? @relation("TableDefaultSection", fields: [defaultSectionId], references: [id], onDelete: SetNull)
 
   // Locked items (T019) - bolted down furniture that cannot be moved
   isLocked Boolean @default(false)
@@ -2265,9 +2266,9 @@ model Table {
 model FloorPlanElement {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   sectionId  String?
-  section    Section? @relation(fields: [sectionId], references: [id])
+  section    Section? @relation(fields: [sectionId], references: [id], onDelete: SetNull)
 
   name         String // "Pool Table 1", "Dartboard A"
   abbreviation String? // Short display name: "PT1", "DB-A"
@@ -2278,7 +2279,7 @@ model FloorPlanElement {
 
   // Link to menu item (for entertainment items with pricing/sessions)
   linkedMenuItemId String?
-  linkedMenuItem   MenuItem? @relation(fields: [linkedMenuItemId], references: [id])
+  linkedMenuItem   MenuItem? @relation(fields: [linkedMenuItemId], references: [id], onDelete: SetNull)
 
   // Position & dimensions (in pixels, for rectangle/circle elements)
   posX     Int @default(100)
@@ -2303,7 +2304,7 @@ model FloorPlanElement {
   // Status (for entertainment)
   status           FloorPlanElementStatus @default(available)
   currentOrderId   String? // Active order using this element
-  currentOrder     Order?                 @relation("FloorPlanCurrentOrder", fields: [currentOrderId], references: [id])
+  currentOrder     Order? @relation("FloorPlanCurrentOrder", fields: [currentOrderId], references: [id], onDelete: SetNull)
   sessionStartedAt DateTime?
   sessionExpiresAt DateTime?
 
@@ -2328,16 +2329,16 @@ model FloorPlanElement {
 model EntertainmentWaitlist {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   // Can be for a specific element OR any element of a type
   elementId  String? // Specific element (e.g., "Pool Table 2")
-  element    FloorPlanElement? @relation(fields: [elementId], references: [id])
+  element    FloorPlanElement? @relation(fields: [elementId], references: [id], onDelete: SetNull)
   visualType String? // OR any of this type (e.g., "any pool_table")
 
   // Who's waiting
   tableId      String? // Table that's waiting
-  table        Table?  @relation(fields: [tableId], references: [id])
+  table        Table? @relation(fields: [tableId], references: [id], onDelete: SetNull)
   customerName String? // Walk-in name
   partySize    Int     @default(1)
   phone        String? // For SMS notification
@@ -2381,7 +2382,7 @@ model EntertainmentWaitlist {
 model OrderType {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   name        String // "Dine In", "Call-in", "Drive-through"
   slug        String // "dine_in", "call_in", "drive_through" (code reference)
@@ -2436,13 +2437,13 @@ model OrderType {
 model Order {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   employeeId String
-  employee   Employee @relation(fields: [employeeId], references: [id])
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
 
   // Customer tracking (Skill 51)
   customerId String?
-  customer   Customer? @relation(fields: [customerId], references: [id])
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
 
   // Order identification
   orderNumber   Int // Sequential per location per day
@@ -2450,7 +2451,7 @@ model Order {
 
   // Split order tracking
   parentOrderId String? // If this is a split, reference to parent
-  parentOrder   Order?  @relation("OrderSplits", fields: [parentOrderId], references: [id])
+  parentOrder   Order? @relation("OrderSplits", fields: [parentOrderId], references: [id], onDelete: SetNull)
   splitOrders   Order[] @relation("OrderSplits")
   splitIndex    Int? // 1, 2, 3... for display as "31-1", "31-2"
 
@@ -2470,9 +2471,9 @@ model Order {
   // Type & Context
   orderType    String     @default("dine_in") // Legacy: dine_in, takeout, delivery, bar_tab
   orderTypeId  String? // New: Reference to configurable OrderType
-  orderTypeRef OrderType? @relation(fields: [orderTypeId], references: [id])
+  orderTypeRef OrderType? @relation(fields: [orderTypeId], references: [id], onDelete: SetNull)
   tableId      String?
-  table        Table?     @relation(fields: [tableId], references: [id])
+  table        Table? @relation(fields: [tableId], references: [id], onDelete: SetNull)
   guestCount   Int        @default(1)
 
   // Atomic Seat Management (Skill 121)
@@ -2515,6 +2516,7 @@ model Order {
   taxFromInclusive Decimal  @default(0) @db.Decimal(10, 2) // Tax backed out of inclusive items
   taxFromExclusive Decimal  @default(0) @db.Decimal(10, 2) // Tax added on top of exclusive items
   inclusiveTaxRate Decimal  @default(0) @db.Decimal(10, 4) // Inclusive tax rate snapshot at order creation (survives setting changes)
+  exclusiveTaxRate Decimal?  @db.Decimal(10, 4) // Exclusive tax rate snapshot at creation (null = use live rate)
   tipTotal         Decimal  @default(0) @db.Decimal(10, 2)
   donationAmount   Decimal? @db.Decimal(10, 2) // Optional donation added to order
   total            Decimal  @default(0) @db.Decimal(10, 2)
@@ -2539,12 +2541,12 @@ model Order {
   preAuthExpiresAt DateTime? // When the hold expires
   preAuthRecordNo  String? // Datacap RecordNo token for capture/increment
   preAuthReaderId  String? // Which reader did the pre-auth
-  preAuthReader    PaymentReader? @relation("OrderPreAuthReader", fields: [preAuthReaderId], references: [id])
+  preAuthReader    PaymentReader? @relation("OrderPreAuthReader", fields: [preAuthReaderId], references: [id], onDelete: SetNull)
 
   // Bottle Service (Phase 10)
   isBottleService           Boolean            @default(false)
   bottleServiceTierId       String? // Linked tier
-  bottleServiceTier         BottleServiceTier? @relation("OrderBottleServiceTier", fields: [bottleServiceTierId], references: [id])
+  bottleServiceTier         BottleServiceTier? @relation("OrderBottleServiceTier", fields: [bottleServiceTierId], references: [id], onDelete: SetNull)
   bottleServiceDeposit      Decimal?           @db.Decimal(10, 2) // Deposit amount pre-authorized
   bottleServiceMinSpend     Decimal?           @db.Decimal(10, 2) // Minimum spend requirement (from tier at time of creation)
   bottleServiceCurrentSpend Decimal?           @default(0) @db.Decimal(10, 2) // Denormalized: mirrors subtotal for bottle service orders (avoids re-computation in snapshot)
@@ -2587,7 +2589,7 @@ model Order {
 
   // Order claiming — soft lock to prevent concurrent editing
   claimedByEmployeeId String?
-  claimedByEmployee   Employee? @relation("ClaimedOrders", fields: [claimedByEmployeeId], references: [id])
+  claimedByEmployee   Employee? @relation("ClaimedOrders", fields: [claimedByEmployeeId], references: [id], onDelete: SetNull)
   claimedByTerminalId String? // Terminal ID that currently has the order open
   claimedAt           DateTime? // When the claim was acquired; auto-expires after 60s
 
@@ -2703,11 +2705,11 @@ model Order {
 model OrderItem {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   orderId    String
   order      Order    @relation(fields: [orderId], references: [id], onDelete: Restrict)
   menuItemId String
-  menuItem   MenuItem @relation(fields: [menuItemId], references: [id])
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Restrict)
 
   // Item details (snapshot at time of order)
   name     String
@@ -2728,7 +2730,7 @@ model OrderItem {
 
   // Virtual combine - source table for T-S notation (e.g., T2-S3)
   sourceTableId String? // Which table this item was ordered from
-  sourceTable   Table?  @relation("SourceTableOrderItems", fields: [sourceTableId], references: [id])
+  sourceTable   Table? @relation("SourceTableOrderItems", fields: [sourceTableId], references: [id], onDelete: SetNull)
 
   // Course (Skill 14)
   courseNumber Int?
@@ -2792,7 +2794,7 @@ model OrderItem {
 
   // Pricing Option - selected size/variant at time of order
   pricingOptionId    String?
-  pricingOption      PricingOption? @relation(fields: [pricingOptionId], references: [id])
+  pricingOption      PricingOption? @relation(fields: [pricingOptionId], references: [id], onDelete: SetNull)
   pricingOptionLabel String? // Snapshot of option label (e.g., "Large", "Bowl")
 
   // Cost snapshot at time of sale (for historically accurate food cost reports)
@@ -2806,7 +2808,7 @@ model OrderItem {
 
   // Shared Table Ownership (Skill 253) - who added this item
   addedByEmployeeId String?
-  addedByEmployee   Employee? @relation("OrderItemAddedBy", fields: [addedByEmployeeId], references: [id])
+  addedByEmployee   Employee? @relation("OrderItemAddedBy", fields: [addedByEmployeeId], references: [id], onDelete: SetNull)
 
   // HA cellular sync — mutation origin tracking
   lastMutatedBy String? // 'cloud' | 'local' | null
@@ -2853,11 +2855,11 @@ model OrderItem {
 model OrderItemModifier {
   id          String    @id @default(cuid())
   locationId  String
-  location    Location  @relation(fields: [locationId], references: [id])
+  location    Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   orderItemId String
   orderItem   OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
   modifierId  String? // Optional: null for combo component selections
-  modifier    Modifier? @relation(fields: [modifierId], references: [id])
+  modifier    Modifier? @relation(fields: [modifierId], references: [id], onDelete: SetNull)
 
   // Snapshot at time of sale
   name             String
@@ -2920,19 +2922,19 @@ model OrderItemModifier {
 model Payment {
   id         String    @id @default(cuid())
   locationId String
-  location   Location  @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   orderId    String
   order      Order     @relation(fields: [orderId], references: [id], onDelete: Restrict)
   employeeId String? // Who processed the payment
-  employee   Employee? @relation("PaymentEmployee", fields: [employeeId], references: [id])
+  employee   Employee? @relation("PaymentEmployee", fields: [employeeId], references: [id], onDelete: SetNull)
 
   // Cash drawer attribution (Phase: Role-Based Cash Handling)
   drawerId   String? // Which physical drawer received cash (null for card/purse)
-  drawer     Drawer?   @relation("PaymentDrawer", fields: [drawerId], references: [id])
+  drawer     Drawer? @relation("PaymentDrawer", fields: [drawerId], references: [id], onDelete: SetNull)
   shiftId    String? // Which shift was active (for reconciliation)
-  shift      Shift?    @relation("PaymentShift", fields: [shiftId], references: [id])
+  shift      Shift? @relation("PaymentShift", fields: [shiftId], references: [id], onDelete: SetNull)
   terminalId String? // Which terminal processed this payment
-  terminal   Terminal? @relation("PaymentTerminal", fields: [terminalId], references: [id])
+  terminal   Terminal? @relation("PaymentTerminal", fields: [terminalId], references: [id], onDelete: SetNull)
 
   // Payment details
   amount      Decimal @db.Decimal(10, 2)
@@ -2955,7 +2957,7 @@ model Payment {
 
   // Datacap Direct integration
   paymentReaderId   String? // Which reader processed this payment
-  paymentReader     PaymentReader? @relation("PaymentReaderPayments", fields: [paymentReaderId], references: [id])
+  paymentReader     PaymentReader? @relation("PaymentReaderPayments", fields: [paymentReaderId], references: [id], onDelete: SetNull)
   datacapRefNumber  String? // Datacap reference for voids/refunds
   datacapRecordNo   String? // RecordNo token — needed for voids, adjustments, captures
   datacapSequenceNo String? // SequenceNo for audit trail
@@ -3078,18 +3080,18 @@ model Payment {
 model SyncAuditEntry {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   // Transaction details
   orderId      String
-  order        Order     @relation(fields: [orderId], references: [id])
+  order        Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
   paymentId    String? // If payment was created
-  payment      Payment?  @relation("SyncAuditPayment", fields: [paymentId], references: [id])
+  payment      Payment? @relation("SyncAuditPayment", fields: [paymentId], references: [id], onDelete: SetNull)
   terminalId   String
-  terminal     Terminal  @relation("SyncAuditTerminal", fields: [terminalId], references: [id])
+  terminal     Terminal @relation("SyncAuditTerminal", fields: [terminalId], references: [id], onDelete: Restrict)
   terminalName String
   employeeId   String?
-  employee     Employee? @relation("SyncAuditEmployee", fields: [employeeId], references: [id])
+  employee     Employee? @relation("SyncAuditEmployee", fields: [employeeId], references: [id], onDelete: SetNull)
 
   // Amount
   amount Decimal @db.Decimal(10, 2)
@@ -3129,7 +3131,7 @@ model SyncAuditEntry {
 model Coupon {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   // Coupon code
   code        String // e.g., "SAVE20", "WELCOME10"
@@ -3140,7 +3142,7 @@ model Coupon {
   discountType  String // 'percent' | 'fixed' | 'free_item'
   discountValue Decimal   @db.Decimal(10, 2) // Percent or dollar amount
   freeItemId    String? // If discountType is 'free_item'
-  freeItem      MenuItem? @relation("CouponFreeItem", fields: [freeItemId], references: [id])
+  freeItem      MenuItem? @relation("CouponFreeItem", fields: [freeItemId], references: [id], onDelete: SetNull)
 
   // Restrictions
   minimumOrder    Decimal? @db.Decimal(10, 2) // Minimum order total
@@ -3186,13 +3188,13 @@ model Coupon {
 model CouponRedemption {
   id         String    @id @default(cuid())
   locationId String
-  location   Location  @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   couponId   String
-  coupon     Coupon    @relation(fields: [couponId], references: [id])
+  coupon     Coupon @relation(fields: [couponId], references: [id], onDelete: Restrict)
   orderId    String
-  order      Order     @relation(fields: [orderId], references: [id])
+  order      Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
   customerId String? // If linked to customer
-  customer   Customer? @relation(fields: [customerId], references: [id])
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
 
   discountAmount Decimal @db.Decimal(10, 2)
 
@@ -3218,7 +3220,7 @@ model CouponRedemption {
 model Reservation {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   // Guest info
   guestName  String
@@ -3233,7 +3235,7 @@ model Reservation {
 
   // Table assignment
   tableId String?
-  table   Table?  @relation(fields: [tableId], references: [id])
+  table   Table? @relation(fields: [tableId], references: [id], onDelete: SetNull)
 
   // Status
   status ReservationStatus @default(confirmed)
@@ -3244,15 +3246,15 @@ model Reservation {
 
   // Link to customer profile
   customerId String?
-  customer   Customer? @relation(fields: [customerId], references: [id])
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
 
   // Link to order when seated
   orderId String?
-  order   Order?  @relation("ReservationOrder", fields: [orderId], references: [id])
+  order   Order? @relation("ReservationOrder", fields: [orderId], references: [id], onDelete: SetNull)
 
   // Bottle Service (P2-B03)
   bottleServiceTierId String?
-  bottleServiceTier   BottleServiceTier? @relation(fields: [bottleServiceTierId], references: [id])
+  bottleServiceTier   BottleServiceTier? @relation(fields: [bottleServiceTierId], references: [id], onDelete: SetNull)
 
   // Reservation Engine — guest details
   occasion            String?
@@ -3324,7 +3326,7 @@ model Reservation {
 model DiscountRule {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   name        String
   displayText String
@@ -3370,15 +3372,15 @@ model DiscountRule {
 model OrderDiscount {
   id             String        @id @default(cuid())
   locationId     String
-  location       Location      @relation(fields: [locationId], references: [id])
+  location       Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   orderId        String
   order          Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
   discountRuleId String?
-  discountRule   DiscountRule? @relation(fields: [discountRuleId], references: [id])
+  discountRule   DiscountRule? @relation(fields: [discountRuleId], references: [id], onDelete: SetNull)
 
   // Coupon link (set when discount was applied via coupon redemption)
   couponId   String?
-  coupon     Coupon? @relation(fields: [couponId], references: [id])
+  coupon     Coupon? @relation(fields: [couponId], references: [id], onDelete: SetNull)
   couponCode String? // Denormalized for display/reporting
 
   name    String
@@ -3414,26 +3416,26 @@ model OrderDiscount {
 model VoidLog {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   orderId    String
-  order      Order    @relation(fields: [orderId], references: [id])
+  order      Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
   employeeId String
-  employee   Employee @relation(fields: [employeeId], references: [id])
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
 
   voidType VoidType
   itemId   String? // If item void
-  item     OrderItem? @relation("VoidLogItem", fields: [itemId], references: [id])
+  item     OrderItem? @relation("VoidLogItem", fields: [itemId], references: [id], onDelete: SetNull)
   amount   Decimal    @db.Decimal(10, 2)
   reason   String
   wasMade  Boolean    @default(false) // Was the item already made? For waste/loss tracking
 
   approvedById String?
-  approvedBy   Employee? @relation("VoidLogApprover", fields: [approvedById], references: [id])
+  approvedBy   Employee? @relation("VoidLogApprover", fields: [approvedById], references: [id], onDelete: SetNull)
   approvedAt   DateTime?
 
   // Remote approval reference
   remoteApprovalId String?
-  remoteApproval   RemoteVoidApproval? @relation(fields: [remoteApprovalId], references: [id])
+  remoteApproval   RemoteVoidApproval? @relation(fields: [remoteApprovalId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -3458,15 +3460,15 @@ model VoidLog {
 model RemoteVoidApproval {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   // Request Details
   orderId       String
-  order         Order      @relation(fields: [orderId], references: [id])
+  order         Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
   orderItemId   String? // If voiding specific item
-  orderItem     OrderItem? @relation("RemoteVoidItem", fields: [orderItemId], references: [id])
+  orderItem     OrderItem? @relation("RemoteVoidItem", fields: [orderItemId], references: [id], onDelete: SetNull)
   requestedById String
-  requestedBy   Employee   @relation("VoidRequester", fields: [requestedById], references: [id])
+  requestedBy   Employee @relation("VoidRequester", fields: [requestedById], references: [id], onDelete: Restrict)
   voidReason    String
   voidType      String // "item" | "order" | "comp"
   amount        Decimal    @db.Decimal(10, 2)
@@ -3475,7 +3477,7 @@ model RemoteVoidApproval {
 
   // Manager Assignment
   managerId    String
-  manager      Employee @relation("VoidApprover", fields: [managerId], references: [id])
+  manager      Employee @relation("VoidApprover", fields: [managerId], references: [id], onDelete: Restrict)
   managerPhone String // Cached phone for SMS
 
   // SMS Tracking
@@ -3496,7 +3498,7 @@ model RemoteVoidApproval {
 
   // Terminal tracking for socket notifications
   requestingTerminalId String?
-  requestingTerminal   Terminal? @relation("RemoteVoidTerminal", fields: [requestingTerminalId], references: [id])
+  requestingTerminal   Terminal? @relation("RemoteVoidTerminal", fields: [requestingTerminalId], references: [id], onDelete: SetNull)
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -3518,9 +3520,9 @@ model RemoteVoidApproval {
 model AuditLog {
   id         String    @id @default(cuid())
   locationId String
-  location   Location  @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   employeeId String?
-  employee   Employee? @relation(fields: [employeeId], references: [id])
+  employee   Employee? @relation(fields: [employeeId], references: [id], onDelete: SetNull)
 
   action     String // login, logout, order_created, item_voided, etc.
   entityType String? // order, employee, menu_item, etc.
@@ -3561,7 +3563,7 @@ model AuditLog {
 model TipPool {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   name        String // "Bar Pool", "Server Pool"
   description String?
@@ -3591,12 +3593,12 @@ model TipPool {
 model TipOutRule {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   fromRoleId String // Role that tips out (Server)
-  fromRole   Role   @relation("TipOutFrom", fields: [fromRoleId], references: [id])
+  fromRole   Role @relation("TipOutFrom", fields: [fromRoleId], references: [id], onDelete: Restrict)
   toRoleId   String // Role that receives (Busser, Bartender)
-  toRole     Role   @relation("TipOutTo", fields: [toRoleId], references: [id])
+  toRole     Role @relation("TipOutTo", fields: [toRoleId], references: [id], onDelete: Restrict)
 
   percentage Decimal @db.Decimal(8, 4) // e.g., 3.0 for 3% (8,4 allows values up to 9999.9999)
   isActive   Boolean @default(true)
@@ -3629,20 +3631,20 @@ model TipOutRule {
 model TipShare {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   shiftId String? // Link to shift closeout (optional)
-  shift   Shift?  @relation(fields: [shiftId], references: [id])
+  shift   Shift? @relation(fields: [shiftId], references: [id], onDelete: SetNull)
 
   fromEmployeeId String
-  fromEmployee   Employee @relation("TipShareFrom", fields: [fromEmployeeId], references: [id])
+  fromEmployee   Employee @relation("TipShareFrom", fields: [fromEmployeeId], references: [id], onDelete: Restrict)
   toEmployeeId   String
-  toEmployee     Employee @relation("TipShareTo", fields: [toEmployeeId], references: [id])
+  toEmployee     Employee @relation("TipShareTo", fields: [toEmployeeId], references: [id], onDelete: Restrict)
 
   amount    Decimal     @db.Decimal(10, 2)
   shareType String // 'role_tipout' | 'custom' | 'pool'
   ruleId    String? // Reference to TipOutRule if role-based
-  rule      TipOutRule? @relation(fields: [ruleId], references: [id])
+  rule      TipOutRule? @relation(fields: [ruleId], references: [id], onDelete: SetNull)
 
   status      String    @default("pending") // pending, collected, banked, paid_out
   collectedAt DateTime?
@@ -3670,9 +3672,9 @@ model TipShare {
 model TipLedger {
   id                  String           @id @default(cuid())
   locationId          String
-  location            Location         @relation(fields: [locationId], references: [id])
+  location            Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   employeeId          String
-  employee            Employee         @relation(fields: [employeeId], references: [id])
+  employee            Employee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
   currentBalanceCents Decimal          @default(0) @db.Decimal(10, 2)
   createdAt           DateTime         @default(now())
   updatedAt           DateTime         @updatedAt
@@ -3688,11 +3690,11 @@ model TipLedger {
 model TipLedgerEntry {
   id             String             @id @default(cuid())
   locationId     String
-  location       Location           @relation(fields: [locationId], references: [id])
+  location       Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   ledgerId       String
-  ledger         TipLedger          @relation(fields: [ledgerId], references: [id])
+  ledger         TipLedger @relation(fields: [ledgerId], references: [id], onDelete: Restrict)
   employeeId     String
-  employee       Employee           @relation(fields: [employeeId], references: [id])
+  employee       Employee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
   type           TipLedgerEntryType
   amountCents    Decimal            @db.Decimal(10, 2)
   sourceType     String // DIRECT_TIP, TIP_GROUP, ROLE_TIPOUT, MANUAL_TRANSFER, PAYOUT_CASH, PAYOUT_PAYROLL, CHARGEBACK, ADJUSTMENT
@@ -3700,9 +3702,9 @@ model TipLedgerEntry {
   memo           String?
   adjustmentId   String?
   shiftId        String?
-  shift          Shift?             @relation("TipLedgerShift", fields: [shiftId], references: [id])
+  shift          Shift? @relation("TipLedgerShift", fields: [shiftId], references: [id], onDelete: SetNull)
   orderId        String?
-  order          Order?             @relation("TipLedgerOrder", fields: [orderId], references: [id])
+  order          Order? @relation("TipLedgerOrder", fields: [orderId], references: [id], onDelete: SetNull)
   idempotencyKey String?            @unique // Skill 274: dedup guard (e.g. "tip-ledger:{orderId}:{paymentId}:{employeeId}")
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
@@ -3724,21 +3726,21 @@ model TipLedgerEntry {
 model TipTransaction {
   id                String                   @id @default(cuid())
   locationId        String
-  location          Location                 @relation(fields: [locationId], references: [id])
+  location          Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   orderId           String
-  order             Order                    @relation("TipTransactionOrder", fields: [orderId], references: [id])
+  order             Order @relation("TipTransactionOrder", fields: [orderId], references: [id], onDelete: Restrict)
   paymentId         String?
-  payment           Payment?                 @relation("TipTransactionPayment", fields: [paymentId], references: [id])
+  payment           Payment? @relation("TipTransactionPayment", fields: [paymentId], references: [id], onDelete: SetNull)
   tipGroupId        String?
-  tipGroup          TipGroup?                @relation("TipTransactionGroup", fields: [tipGroupId], references: [id])
+  tipGroup          TipGroup? @relation("TipTransactionGroup", fields: [tipGroupId], references: [id], onDelete: SetNull)
   segmentId         String?
-  segment           TipGroupSegment?         @relation(fields: [segmentId], references: [id])
+  segment           TipGroupSegment? @relation(fields: [segmentId], references: [id], onDelete: SetNull)
   amountCents       Decimal                  @db.Decimal(10, 2)
   sourceType        TipTransactionSourceType
   kind              String                   @default("tip") // Skill 277: 'tip' | 'service_charge' | 'auto_gratuity'
   collectedAt       DateTime
   primaryEmployeeId String?
-  primaryEmployee   Employee?                @relation("TipTransactionEmployee", fields: [primaryEmployeeId], references: [id])
+  primaryEmployee   Employee? @relation("TipTransactionEmployee", fields: [primaryEmployeeId], references: [id], onDelete: SetNull)
   ccFeeAmountCents  Decimal                  @default(0) @db.Decimal(10, 2)
   idempotencyKey    String?                  @unique // Skill 274: dedup guard (e.g. "tip-txn:{orderId}:{paymentId}")
   createdAt         DateTime                 @default(now())
@@ -3760,7 +3762,7 @@ model TipTransaction {
 model TipGroupTemplate {
   id               String            @id @default(cuid())
   locationId       String
-  location         Location          @relation(fields: [locationId], references: [id])
+  location         Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   name             String // "Downstairs Servers", "Bar Team", etc.
   allowedRoleIds   Json // Array of role IDs that can join this team
   defaultSplitMode TipGroupSplitMode @default(equal)
@@ -3785,15 +3787,15 @@ model TipGroupTemplate {
 model TipGroup {
   id                String            @id @default(cuid())
   locationId        String
-  location          Location          @relation(fields: [locationId], references: [id])
+  location          Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   createdBy         String // Employee who started the group
-  createdByEmployee Employee          @relation("TipGroupCreatedBy", fields: [createdBy], references: [id])
+  createdByEmployee Employee @relation("TipGroupCreatedBy", fields: [createdBy], references: [id], onDelete: Restrict)
   ownerId           String // Current owner (for approvals)
-  owner             Employee          @relation("TipGroupOwner", fields: [ownerId], references: [id])
+  owner             Employee @relation("TipGroupOwner", fields: [ownerId], references: [id], onDelete: Restrict)
   registerId        String? // Terminal/register
-  register          Terminal?         @relation("TipGroupRegister", fields: [registerId], references: [id])
+  register          Terminal? @relation("TipGroupRegister", fields: [registerId], references: [id], onDelete: SetNull)
   templateId        String? // Links to admin-defined TipGroupTemplate (null = ad-hoc group)
-  template          TipGroupTemplate? @relation(fields: [templateId], references: [id])
+  template          TipGroupTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
   startedAt         DateTime          @default(now())
   endedAt           DateTime?
   status            TipGroupStatus    @default(active)
@@ -3822,11 +3824,11 @@ model TipGroup {
 model TipGroupMembership {
   id         String                   @id @default(cuid())
   locationId String
-  location   Location                 @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   groupId    String
-  group      TipGroup                 @relation(fields: [groupId], references: [id])
+  group      TipGroup @relation(fields: [groupId], references: [id], onDelete: Restrict)
   employeeId String
-  employee   Employee                 @relation(fields: [employeeId], references: [id])
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
   joinedAt   DateTime                 @default(now())
   leftAt     DateTime?
   role       String? // For role-weighted splits
@@ -3847,9 +3849,9 @@ model TipGroupMembership {
 model TipGroupSegment {
   id          String    @id @default(cuid())
   locationId  String
-  location    Location  @relation(fields: [locationId], references: [id])
+  location    Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   groupId     String
-  group       TipGroup  @relation(fields: [groupId], references: [id])
+  group       TipGroup @relation(fields: [groupId], references: [id], onDelete: Restrict)
   startedAt   DateTime
   endedAt     DateTime?
   memberCount Int
@@ -3874,13 +3876,13 @@ model TipGroupSegment {
 model TipDebt {
   id                  String        @id @default(cuid())
   locationId          String
-  location            Location      @relation(fields: [locationId], references: [id])
+  location            Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   employeeId          String
-  employee            Employee      @relation(fields: [employeeId], references: [id])
+  employee            Employee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
   originalAmountCents Decimal       @db.Decimal(10, 2) // What was owed at chargeback time
   remainingCents      Decimal       @db.Decimal(10, 2) // What's still outstanding
   sourcePaymentId     String // The payment that triggered chargeback
-  sourcePayment       Payment       @relation("TipDebtSourcePayment", fields: [sourcePaymentId], references: [id])
+  sourcePayment       Payment @relation("TipDebtSourcePayment", fields: [sourcePaymentId], references: [id], onDelete: Restrict)
   sourceType          String        @default("CHARGEBACK")
   memo                String?
   status              TipDebtStatus @default(open)
@@ -3904,11 +3906,11 @@ model TipDebt {
 model OrderOwnership {
   id          String                @id @default(cuid())
   locationId  String
-  location    Location              @relation(fields: [locationId], references: [id])
+  location    Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   orderId     String
-  order       Order                 @relation(fields: [orderId], references: [id])
+  order       Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
   createdById String // Employee who set the split
-  createdBy   Employee              @relation("OrderOwnershipCreatedBy", fields: [createdById], references: [id])
+  createdBy   Employee @relation("OrderOwnershipCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
   isActive    Boolean               @default(true)
   createdAt   DateTime              @default(now())
   updatedAt   DateTime              @updatedAt
@@ -3923,11 +3925,11 @@ model OrderOwnership {
 model OrderOwnershipEntry {
   id               String         @id @default(cuid())
   locationId       String
-  location         Location       @relation(fields: [locationId], references: [id])
+  location         Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   orderOwnershipId String
-  ownership        OrderOwnership @relation(fields: [orderOwnershipId], references: [id])
+  ownership        OrderOwnership @relation(fields: [orderOwnershipId], references: [id], onDelete: Restrict)
   employeeId       String
-  employee         Employee       @relation(fields: [employeeId], references: [id])
+  employee         Employee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
   sharePercent     Decimal        @db.Decimal(6, 2) // e.g., 50.00, 33.33 — Decimal for financial precision
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
@@ -3946,9 +3948,9 @@ model OrderOwnershipEntry {
 model TipAdjustment {
   id             String    @id @default(cuid())
   locationId     String
-  location       Location  @relation(fields: [locationId], references: [id])
+  location       Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   createdById    String
-  createdBy      Employee  @relation(fields: [createdById], references: [id])
+  createdBy      Employee @relation(fields: [createdById], references: [id], onDelete: Restrict)
   reason         String
   adjustmentType String // 'group_membership' | 'ownership_split' | 'clock_fix' | 'manual_override' | 'tip_amount'
   contextJson    Json? // Structured before/after state
@@ -3970,11 +3972,11 @@ model TipAdjustment {
 model CashTipDeclaration {
   id             String    @id @default(cuid())
   locationId     String
-  location       Location  @relation(fields: [locationId], references: [id])
+  location       Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   employeeId     String
-  employee       Employee  @relation(fields: [employeeId], references: [id])
+  employee       Employee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
   shiftId        String?
-  shift          Shift?    @relation(fields: [shiftId], references: [id])
+  shift          Shift? @relation(fields: [shiftId], references: [id], onDelete: SetNull)
   amountCents    Decimal   @db.Decimal(10, 2)
   declaredAt     DateTime  @default(now())
   source         String    @default("employee") // 'employee' | 'manager_override'
@@ -3997,7 +3999,7 @@ model CashTipDeclaration {
 model GiftCard {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   // Card identification
   cardNumber String  @unique // Unique code (e.g., "GC-1234-5678-9012")
@@ -4018,7 +4020,7 @@ model GiftCard {
 
   // Purchaser info (optional)
   purchasedById  String? // Employee who sold it
-  purchasedBy    Employee? @relation("GiftCardSoldBy", fields: [purchasedById], references: [id])
+  purchasedBy    Employee? @relation("GiftCardSoldBy", fields: [purchasedById], references: [id], onDelete: SetNull)
   recipientName  String?
   recipientEmail String?
   recipientPhone String?
@@ -4027,14 +4029,14 @@ model GiftCard {
 
   // Tracking
   orderId String? // Order where it was purchased
-  order   Order?  @relation("GiftCardOrder", fields: [orderId], references: [id])
+  order   Order? @relation("GiftCardOrder", fields: [orderId], references: [id], onDelete: SetNull)
 
   // Pool / import tracking
   source        String? // 'manual' | 'import' | 'range' | 'online' | 'datacap_virtual'
   batchId       String? // Groups imported/range-generated cards
   activatedAt   DateTime? // When an unactivated card was activated
   activatedById String? // Employee who activated
-  activatedBy   Employee? @relation("GiftCardActivatedBy", fields: [activatedById], references: [id])
+  activatedBy   Employee? @relation("GiftCardActivatedBy", fields: [activatedById], references: [id], onDelete: SetNull)
 
   // External system tracking (Datacap Virtual Gift)
   externalProvider      String? // 'datacap_virtual_gift'
@@ -4069,9 +4071,9 @@ model GiftCard {
 model GiftCardTransaction {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   giftCardId String
-  giftCard   GiftCard @relation(fields: [giftCardId], references: [id])
+  giftCard   GiftCard @relation(fields: [giftCardId], references: [id], onDelete: Restrict)
 
   // Transaction type
   type String // purchase, redemption, reload, refund, adjustment
@@ -4083,9 +4085,9 @@ model GiftCardTransaction {
 
   // Reference
   orderId    String? // Order where used
-  order      Order?    @relation("GiftCardTransactionOrder", fields: [orderId], references: [id])
+  order      Order? @relation("GiftCardTransactionOrder", fields: [orderId], references: [id], onDelete: SetNull)
   employeeId String? // Employee who processed
-  employee   Employee? @relation("GiftCardTransactionEmployee", fields: [employeeId], references: [id])
+  employee   Employee? @relation("GiftCardTransactionEmployee", fields: [employeeId], references: [id], onDelete: SetNull)
   notes      String?
 
   // Ledger integrity
@@ -4115,7 +4117,7 @@ model GiftCardTransaction {
 model HouseAccount {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   // Account holder
   name        String // Individual or business name
@@ -4145,7 +4147,7 @@ model HouseAccount {
 
   // Link to customer profile (optional)
   customerId String?
-  customer   Customer? @relation(fields: [customerId], references: [id])
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
 
   lastMutatedBy String? // 'cloud' | 'local' | null
   createdAt     DateTime  @default(now())
@@ -4165,9 +4167,9 @@ model HouseAccount {
 model HouseAccountTransaction {
   id             String       @id @default(cuid())
   locationId     String
-  location       Location     @relation(fields: [locationId], references: [id])
+  location       Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   houseAccountId String
-  houseAccount   HouseAccount @relation(fields: [houseAccountId], references: [id])
+  houseAccount   HouseAccount @relation(fields: [houseAccountId], references: [id], onDelete: Restrict)
 
   // Transaction type
   type String // charge, payment, adjustment, credit
@@ -4179,9 +4181,9 @@ model HouseAccountTransaction {
 
   // Reference
   orderId         String? // Order that was charged
-  order           Order?    @relation("HouseAcctTxnOrder", fields: [orderId], references: [id])
+  order           Order? @relation("HouseAcctTxnOrder", fields: [orderId], references: [id], onDelete: SetNull)
   employeeId      String? // Employee who processed
-  employee        Employee? @relation("HouseAcctTxnEmployee", fields: [employeeId], references: [id])
+  employee        Employee? @relation("HouseAcctTxnEmployee", fields: [employeeId], references: [id], onDelete: SetNull)
   paymentMethod   String? // For payments: check, cash, card, etc.
   referenceNumber String? // Check number, etc.
   notes           String?
@@ -4209,13 +4211,13 @@ model HouseAccountTransaction {
 model TimedSession {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   menuItemId String // The timed rental item (for pricing)
-  menuItem   MenuItem @relation("TimedSessionMenuItem", fields: [menuItemId], references: [id])
+  menuItem   MenuItem @relation("TimedSessionMenuItem", fields: [menuItemId], references: [id], onDelete: Restrict)
   tableId    String? // The physical table/equipment being used
-  table      Table?   @relation(fields: [tableId], references: [id])
+  table      Table? @relation(fields: [tableId], references: [id], onDelete: SetNull)
   orderId    String? // Linked order for billing
-  order      Order?   @relation(fields: [orderId], references: [id])
+  order      Order? @relation(fields: [orderId], references: [id], onDelete: SetNull)
 
   // Session timing
   startedAt     DateTime  @default(now())
@@ -4236,9 +4238,9 @@ model TimedSession {
 
   // Who started/ended
   startedById String?
-  startedBy   Employee? @relation("TimedSessionStartedBy", fields: [startedById], references: [id])
+  startedBy   Employee? @relation("TimedSessionStartedBy", fields: [startedById], references: [id], onDelete: SetNull)
   endedById   String?
-  endedBy     Employee? @relation("TimedSessionEndedBy", fields: [endedById], references: [id])
+  endedBy     Employee? @relation("TimedSessionEndedBy", fields: [endedById], references: [id], onDelete: SetNull)
 
   notes String?
 
@@ -4264,7 +4266,7 @@ model TimedSession {
 model Seat {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   tableId    String
   table      Table    @relation(fields: [tableId], references: [id], onDelete: Cascade)
 
@@ -4288,12 +4290,12 @@ model Seat {
   // Temporary seat (created by POS when server adds extra seats)
   isTemporary   Boolean @default(false) // true = created by POS, not editor
   sourceOrderId String? // order that created this temp seat
-  sourceOrder   Order?  @relation("tempSeats", fields: [sourceOrderId], references: [id])
+  sourceOrder   Order? @relation("tempSeats", fields: [sourceOrderId], references: [id], onDelete: SetNull)
 
   // Status tracking
   status             SeatStatus @default(available)
   currentOrderItemId String? // Currently active order item at this seat
-  currentOrderItem   OrderItem? @relation("SeatCurrentItem", fields: [currentOrderItemId], references: [id])
+  currentOrderItem   OrderItem? @relation("SeatCurrentItem", fields: [currentOrderItemId], references: [id], onDelete: SetNull)
 
   // Historical tracking
   lastOccupiedAt DateTime? // When seat was last occupied
@@ -4324,7 +4326,7 @@ model Seat {
 model Event {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   // Event Details
   name        String
@@ -4385,7 +4387,7 @@ model Event {
 model EventPricingTier {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   eventId    String
   event      Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
@@ -4426,17 +4428,17 @@ model EventPricingTier {
 model EventTableConfig {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   eventId    String
   event      Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
   tableId    String
-  table      Table    @relation(fields: [tableId], references: [id])
+  table      Table @relation(fields: [tableId], references: [id], onDelete: Restrict)
 
   // Per-event table settings
   isIncluded    Boolean           @default(true) // Include this table in event
   bookingMode   String            @default("inherit") // inherit, per_seat, per_table, disabled
   pricingTierId String?
-  pricingTier   EventPricingTier? @relation(fields: [pricingTierId], references: [id])
+  pricingTier   EventPricingTier? @relation(fields: [pricingTierId], references: [id], onDelete: SetNull)
 
   // For per-table booking: min/max party size
   minPartySize Int?
@@ -4457,19 +4459,19 @@ model EventTableConfig {
 model Ticket {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   eventId    String
-  event      Event    @relation(fields: [eventId], references: [id])
+  event      Event @relation(fields: [eventId], references: [id], onDelete: Restrict)
 
   // Pricing
   pricingTierId String
-  pricingTier   EventPricingTier @relation(fields: [pricingTierId], references: [id])
+  pricingTier   EventPricingTier @relation(fields: [pricingTierId], references: [id], onDelete: Restrict)
 
   // Seat Assignment (nullable for GA)
   tableId String?
-  table   Table?  @relation(fields: [tableId], references: [id])
+  table   Table? @relation(fields: [tableId], references: [id], onDelete: SetNull)
   seatId  String?
-  seat    Seat?   @relation(fields: [seatId], references: [id])
+  seat    Seat? @relation(fields: [seatId], references: [id], onDelete: SetNull)
 
   // Ticket Identification
   ticketNumber String @unique // Human-readable: EVT-20260128-001
@@ -4480,7 +4482,7 @@ model Ticket {
   customerEmail String?
   customerPhone String?
   customerId    String?
-  customer      Customer? @relation(fields: [customerId], references: [id])
+  customer      Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
 
   // Pricing Snapshot (at time of purchase)
   basePrice  Decimal @db.Decimal(10, 2)
@@ -4500,9 +4502,9 @@ model Ticket {
   purchasedAt     DateTime?
   purchaseChannel String? // pos, online, phone, comp
   orderId         String? // Link to POS Order for F&B
-  order           Order?    @relation("TicketOrder", fields: [orderId], references: [id])
+  order           Order? @relation("TicketOrder", fields: [orderId], references: [id], onDelete: SetNull)
   paymentId       String? // Payment reference
-  payment         Payment?  @relation("TicketPayment", fields: [paymentId], references: [id])
+  payment         Payment? @relation("TicketPayment", fields: [paymentId], references: [id], onDelete: SetNull)
 
   // Check-in
   checkedInAt DateTime?
@@ -4541,7 +4543,7 @@ model Ticket {
 model TaxRule {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   name String // "State Tax", "City Tax", "Alcohol Tax"
   rate Decimal @db.Decimal(10, 4) // 0.0825 = 8.25%
@@ -4579,9 +4581,9 @@ model TaxRule {
 model InventoryTransaction {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   menuItemId String
-  menuItem   MenuItem @relation(fields: [menuItemId], references: [id])
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Restrict)
 
   // Transaction type
   type String // sale, purchase, adjustment, waste, transfer, count
@@ -4593,9 +4595,9 @@ model InventoryTransaction {
 
   // Reference
   orderId       String? // If from a sale
-  order         Order?    @relation("InvTxnOrder", fields: [orderId], references: [id])
+  order         Order? @relation("InvTxnOrder", fields: [orderId], references: [id], onDelete: SetNull)
   employeeId    String? // Who made the change
-  employee      Employee? @relation("InvTxnEmployee", fields: [employeeId], references: [id])
+  employee      Employee? @relation("InvTxnEmployee", fields: [employeeId], references: [id], onDelete: SetNull)
   vendorName    String? // If purchase
   invoiceNumber String? // If purchase
   reason        String? // For adjustments/waste
@@ -4630,9 +4632,9 @@ model InventoryTransaction {
 model StockAlert {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   menuItemId String
-  menuItem   MenuItem @relation(fields: [menuItemId], references: [id])
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Restrict)
 
   alertType    String // low_stock, out_of_stock, reorder
   currentStock Int
@@ -4667,7 +4669,7 @@ model StockAlert {
 model VoidReason {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   name            String // "Kitchen Error - Made", "Customer Changed Mind"
   description     String?
@@ -4689,7 +4691,7 @@ model VoidReason {
 model CompReason {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   name            String // "Manager Comp", "VIP Guest", "Service Recovery"
   description     String?
@@ -4711,7 +4713,7 @@ model CompReason {
 model ReasonAccess {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   subjectType String // "role" | "employee"
   subjectId   String // role name or employee id
@@ -4732,7 +4734,7 @@ model ReasonAccess {
 model StorageLocation {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   name        String // "Main Walk-in", "Bar Well 1", "Dry Storage"
   description String?
@@ -4755,7 +4757,7 @@ model StorageLocation {
 model InventoryItem {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   // Identity
   name        String // "Chicken Breast", "Tito's Vodka"
@@ -4775,7 +4777,7 @@ model InventoryItem {
   purchaseSize    Decimal @db.Decimal(10, 4) // 15 (for 15lb case), 1 (for single bottle)
   purchaseCost    Decimal @db.Decimal(10, 2) // $65.00 per case
   defaultVendorId String?
-  defaultVendor   Vendor? @relation("DefaultVendor", fields: [defaultVendorId], references: [id])
+  defaultVendor   Vendor? @relation("DefaultVendor", fields: [defaultVendorId], references: [id], onDelete: SetNull)
 
   // Storage/usage unit (what you count in)
   storageUnit      String // "oz", "each", "bottle"
@@ -4793,7 +4795,7 @@ model InventoryItem {
 
   // For liquor items
   spiritCategoryId String?
-  spiritCategory   SpiritCategory? @relation("InventoryItemSpirit", fields: [spiritCategoryId], references: [id])
+  spiritCategory   SpiritCategory? @relation("InventoryItemSpirit", fields: [spiritCategoryId], references: [id], onDelete: SetNull)
   pourSizeOz       Decimal?        @db.Decimal(6, 3) // Standard pour size (overrides location default)
   proofPercent     Decimal?        @db.Decimal(6, 2) // Alcohol proof
 
@@ -4873,11 +4875,11 @@ model InventoryItem {
 model InventoryItemStorage {
   id                String          @id @default(cuid())
   locationId        String
-  location          Location        @relation(fields: [locationId], references: [id])
+  location          Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   inventoryItemId   String
-  inventoryItem     InventoryItem   @relation(fields: [inventoryItemId], references: [id])
+  inventoryItem     InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Restrict)
   storageLocationId String
-  storageLocation   StorageLocation @relation(fields: [storageLocationId], references: [id])
+  storageLocation   StorageLocation @relation(fields: [storageLocationId], references: [id], onDelete: Restrict)
 
   currentStock Decimal  @default(0) @db.Decimal(10, 4) // Stock at THIS location
   parLevel     Decimal? @db.Decimal(10, 4) // Par level for THIS location
@@ -4897,7 +4899,7 @@ model InventoryItemStorage {
 model PrepItem {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   name        String // "Shredded Chicken", "Simple Syrup"
   description String?
@@ -4951,11 +4953,11 @@ model PrepItem {
 model PrepItemIngredient {
   id              String        @id @default(cuid())
   locationId      String
-  location        Location      @relation(fields: [locationId], references: [id])
+  location        Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   prepItemId      String
   prepItem        PrepItem      @relation(fields: [prepItemId], references: [id], onDelete: Cascade)
   inventoryItemId String
-  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Restrict)
 
   quantity Decimal @db.Decimal(10, 4) // Amount used
   unit     String // Unit (should match inventory storageUnit)
@@ -4975,7 +4977,7 @@ model PrepItemIngredient {
 model MenuItemRecipe {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   menuItemId String   @unique
   menuItem   MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
 
@@ -5000,15 +5002,15 @@ model MenuItemRecipe {
 model MenuItemRecipeIngredient {
   id         String         @id @default(cuid())
   locationId String
-  location   Location       @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   recipeId   String
   recipe     MenuItemRecipe @relation(fields: [recipeId], references: [id], onDelete: Cascade)
 
   // Link to either inventory item OR prep item (one must be set)
   inventoryItemId String?
-  inventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id])
+  inventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id], onDelete: SetNull)
   prepItemId      String?
-  prepItem        PrepItem?      @relation(fields: [prepItemId], references: [id])
+  prepItem        PrepItem? @relation(fields: [prepItemId], references: [id], onDelete: SetNull)
 
   quantity Decimal  @db.Decimal(10, 4) // Amount used
   unit     String // Unit
@@ -5033,15 +5035,15 @@ model MenuItemRecipeIngredient {
 model ModifierInventoryLink {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   modifierId String   @unique
   modifier   Modifier @relation(fields: [modifierId], references: [id], onDelete: Cascade)
 
   // Link to either inventory item OR prep item
   inventoryItemId String?
-  inventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id])
+  inventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id], onDelete: SetNull)
   prepItemId      String?
-  prepItem        PrepItem?      @relation(fields: [prepItemId], references: [id])
+  prepItem        PrepItem? @relation(fields: [prepItemId], references: [id], onDelete: SetNull)
 
   // Usage amount when modifier is selected
   usageQuantity  Decimal  @db.Decimal(10, 4)
@@ -5067,7 +5069,7 @@ model ModifierInventoryLink {
 model PricingOptionGroup {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   menuItemId String
   menuItem   MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
 
@@ -5094,7 +5096,7 @@ model PricingOptionGroup {
 model PricingOption {
   id         String             @id @default(cuid())
   locationId String
-  location   Location           @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   groupId    String
   group      PricingOptionGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
 
@@ -5125,17 +5127,17 @@ model PricingOption {
 model PricingOptionInventoryLink {
   id              String        @id @default(cuid())
   locationId      String
-  location        Location      @relation(fields: [locationId], references: [id])
+  location        Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   pricingOptionId String
   pricingOption   PricingOption @relation(fields: [pricingOptionId], references: [id], onDelete: Cascade)
 
   // Link to inventory item, prep item, OR ingredient (from hierarchy picker)
   inventoryItemId String?
-  inventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id])
+  inventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id], onDelete: SetNull)
   prepItemId      String?
-  prepItem        PrepItem?      @relation(fields: [prepItemId], references: [id])
+  prepItem        PrepItem? @relation(fields: [prepItemId], references: [id], onDelete: SetNull)
   ingredientId    String?
-  ingredient      Ingredient?    @relation(fields: [ingredientId], references: [id])
+  ingredient      Ingredient? @relation(fields: [ingredientId], references: [id], onDelete: SetNull)
 
   // Usage amount when this pricing option is selected
   usageQuantity  Decimal  @db.Decimal(10, 4)
@@ -5158,7 +5160,7 @@ model PricingOptionInventoryLink {
 model InventoryCount {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   countDate DateTime             @default(now())
   countType String // "full", "area", "spot", "cycle"
@@ -5166,15 +5168,15 @@ model InventoryCount {
 
   // Link to storage location (for area counts)
   storageLocationId String?
-  storageLocation   StorageLocation? @relation(fields: [storageLocationId], references: [id])
+  storageLocation   StorageLocation? @relation(fields: [storageLocationId], references: [id], onDelete: SetNull)
 
   // Who did it
   startedById   String?
-  startedBy     Employee? @relation("InvCountStartedBy", fields: [startedById], references: [id])
+  startedBy     Employee? @relation("InvCountStartedBy", fields: [startedById], references: [id], onDelete: SetNull)
   completedById String?
-  completedBy   Employee? @relation("InvCountCompletedBy", fields: [completedById], references: [id])
+  completedBy   Employee? @relation("InvCountCompletedBy", fields: [completedById], references: [id], onDelete: SetNull)
   reviewedById  String?
-  reviewedBy    Employee? @relation("InvCountReviewedBy", fields: [reviewedById], references: [id])
+  reviewedBy    Employee? @relation("InvCountReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
 
   // Totals
   expectedValue     Decimal? @db.Decimal(10, 2)
@@ -5211,11 +5213,11 @@ model InventoryCount {
 model InventoryCountItem {
   id               String         @id @default(cuid())
   locationId       String
-  location         Location       @relation(fields: [locationId], references: [id])
+  location         Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   inventoryCountId String
   inventoryCount   InventoryCount @relation(fields: [inventoryCountId], references: [id], onDelete: Cascade)
   inventoryItemId  String
-  inventoryItem    InventoryItem  @relation(fields: [inventoryItemId], references: [id])
+  inventoryItem    InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Restrict)
 
   expectedQty   Decimal  @db.Decimal(10, 4) // What system says
   countedQty    Decimal? @db.Decimal(10, 4) // What was counted
@@ -5240,9 +5242,9 @@ model InventoryCountItem {
 model InventoryItemTransaction {
   id              String        @id @default(cuid())
   locationId      String
-  location        Location      @relation(fields: [locationId], references: [id])
+  location        Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   inventoryItemId String
-  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Restrict)
 
   // Transaction type
   type String // "purchase", "sale", "adjustment", "waste", "transfer", "count"
@@ -5265,7 +5267,7 @@ model InventoryItemTransaction {
 
   // Who did it
   employeeId String?
-  employee   Employee? @relation("InvItemTxnEmployee", fields: [employeeId], references: [id])
+  employee   Employee? @relation("InvItemTxnEmployee", fields: [employeeId], references: [id], onDelete: SetNull)
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -5285,7 +5287,7 @@ model InventoryItemTransaction {
 model Vendor {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   name       String
   accountNum String?
@@ -5317,9 +5319,9 @@ model Vendor {
 model Invoice {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   vendorId   String
-  vendor     Vendor   @relation(fields: [vendorId], references: [id])
+  vendor     Vendor @relation(fields: [vendorId], references: [id], onDelete: Restrict)
 
   invoiceNumber String
   invoiceDate   DateTime
@@ -5352,7 +5354,7 @@ model Invoice {
 
   // Who entered / approved it
   enteredById  String?
-  enteredBy    Employee? @relation("InvoiceEnteredBy", fields: [enteredById], references: [id])
+  enteredBy    Employee? @relation("InvoiceEnteredBy", fields: [enteredById], references: [id], onDelete: SetNull)
   createdById  String?
   approvedById String?
   approvedAt   DateTime?
@@ -5373,11 +5375,11 @@ model Invoice {
 model InvoiceLineItem {
   id                  String         @id @default(cuid())
   locationId          String
-  location            Location       @relation(fields: [locationId], references: [id])
+  location            Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   invoiceId           String
   invoice             Invoice        @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   inventoryItemId     String?
-  inventoryItem       InventoryItem? @relation(fields: [inventoryItemId], references: [id])
+  inventoryItem       InventoryItem? @relation(fields: [inventoryItemId], references: [id], onDelete: SetNull)
   marginEdgeProductId String?
 
   // If not linked to inventory item
@@ -5407,9 +5409,9 @@ model InvoiceLineItem {
 model WasteLogEntry {
   id              String        @id @default(cuid())
   locationId      String
-  location        Location      @relation(fields: [locationId], references: [id])
+  location        Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   inventoryItemId String
-  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Restrict)
 
   quantity   Decimal  @db.Decimal(10, 4)
   unit       String
@@ -5420,7 +5422,7 @@ model WasteLogEntry {
 
   // Who logged it
   employeeId String?
-  employee   Employee? @relation("WasteLogEmployee", fields: [employeeId], references: [id])
+  employee   Employee? @relation("WasteLogEmployee", fields: [employeeId], references: [id], onDelete: SetNull)
 
   wasteDate DateTime @default(now())
 
@@ -5440,7 +5442,7 @@ model WasteLogEntry {
 model InventorySettings {
   id         String   @id @default(cuid())
   locationId String   @unique
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   // Tracking mode: determines what features are enabled
   // - "usage_only": Track what goes out (sales, waste) - no incoming inventory logging required
@@ -5495,11 +5497,11 @@ model InventorySettings {
 model Break {
   id               String         @id @default(cuid())
   locationId       String
-  location         Location       @relation(fields: [locationId], references: [id])
+  location         Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   timeClockEntryId String
-  timeClockEntry   TimeClockEntry @relation(fields: [timeClockEntryId], references: [id])
+  timeClockEntry   TimeClockEntry @relation(fields: [timeClockEntryId], references: [id], onDelete: Restrict)
   employeeId       String
-  employee         Employee       @relation(fields: [employeeId], references: [id])
+  employee         Employee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
 
   breakType BreakType @default(unpaid)
   startedAt DateTime  @default(now())
@@ -5533,7 +5535,7 @@ model Break {
 model SpiritCategory {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   name         String // "Tequila", "Vodka", "Gin"
   categoryType String  @default("spirit") // 'spirit' | 'beer' | 'wine'
@@ -5565,7 +5567,7 @@ model SpiritCategory {
 model BottleProduct {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   // Identity
   name        String // "Seagram's 7"
@@ -5574,7 +5576,7 @@ model BottleProduct {
 
   // Classification
   spiritCategoryId String
-  spiritCategory   SpiritCategory @relation(fields: [spiritCategoryId], references: [id])
+  spiritCategory   SpiritCategory @relation(fields: [spiritCategoryId], references: [id], onDelete: Restrict)
   tier             String // 'well', 'call', 'premium', 'top_shelf'
 
   // Bottle specs
@@ -5619,7 +5621,7 @@ model BottleProduct {
 
   // Link to unified inventory for stock tracking
   inventoryItemId String?
-  inventoryItem   InventoryItem? @relation("BottleInventoryLink", fields: [inventoryItemId], references: [id])
+  inventoryItem   InventoryItem? @relation("BottleInventoryLink", fields: [inventoryItemId], references: [id], onDelete: SetNull)
 
   @@unique([locationId, name])
   @@index([locationId])
@@ -5632,17 +5634,17 @@ model BottleProduct {
 model RecipeIngredient {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   menuItemId String
   menuItem   MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
 
   // Spirit link (optional — one of bottleProduct OR ingredient must be set)
   bottleProductId String?
-  bottleProduct   BottleProduct? @relation(fields: [bottleProductId], references: [id])
+  bottleProduct   BottleProduct? @relation(fields: [bottleProductId], references: [id], onDelete: SetNull)
 
   // Food ingredient link (optional — alternative to bottleProduct)
   ingredientId String?
-  ingredient   Ingredient? @relation(fields: [ingredientId], references: [id])
+  ingredient   Ingredient? @relation(fields: [ingredientId], references: [id], onDelete: SetNull)
 
   // Pour amount (for spirits)
   pourCount       Decimal  @default(1) @db.Decimal(6, 3) // 1 pour, 0.5 pour, 2 pours
@@ -5677,11 +5679,11 @@ model RecipeIngredient {
 model SpiritModifierGroup {
   id               String         @id @default(cuid())
   locationId       String
-  location         Location       @relation(fields: [locationId], references: [id])
+  location         Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   modifierGroupId  String         @unique
   modifierGroup    ModifierGroup  @relation(fields: [modifierGroupId], references: [id], onDelete: Cascade)
   spiritCategoryId String
-  spiritCategory   SpiritCategory @relation(fields: [spiritCategoryId], references: [id])
+  spiritCategory   SpiritCategory @relation(fields: [spiritCategoryId], references: [id], onDelete: Restrict)
 
   // Upsell configuration
   upsellEnabled    Boolean @default(true)
@@ -5705,12 +5707,12 @@ model SpiritModifierGroup {
 model SpiritUpsellEvent {
   id          String   @id @default(cuid())
   locationId  String
-  location    Location @relation(fields: [locationId], references: [id])
+  location    Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   orderId     String
-  order       Order    @relation(fields: [orderId], references: [id])
+  order       Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
   orderItemId String
   employeeId  String
-  employee    Employee @relation("SpiritUpsellEmployee", fields: [employeeId], references: [id])
+  employee    Employee @relation("SpiritUpsellEmployee", fields: [employeeId], references: [id], onDelete: Restrict)
 
   // What was the default (well) option
   baseModifierId String // Well spirit modifier ID
@@ -5750,7 +5752,7 @@ model SpiritUpsellEvent {
 model IngredientCategory {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   // Identity - code is IMMUTABLE after creation (for historical tracking)
   code        Int // Auto-assigned sequential number, NEVER changes
@@ -5783,7 +5785,7 @@ model IngredientCategory {
 model IngredientSwapGroup {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   name        String // "Proteins", "Cheese Options", "Bread Choices"
   description String?
@@ -5808,7 +5810,7 @@ model IngredientSwapGroup {
 model Ingredient {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   // Identity
   name        String // "Lettuce", "Bacon", "Ranch"
@@ -5819,14 +5821,14 @@ model Ingredient {
 
   // New Category relation (optional for backwards compatibility, required in UI)
   categoryId       String?
-  categoryRelation IngredientCategory? @relation(fields: [categoryId], references: [id])
+  categoryRelation IngredientCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
 
   // Inventory Link (for deduction tracking)
   // Links to InventoryItem OR PrepItem - one must be set for inventory tracking
   inventoryItemId String?
-  inventoryItem   InventoryItem? @relation("IngredientInventoryLink", fields: [inventoryItemId], references: [id])
+  inventoryItem   InventoryItem? @relation("IngredientInventoryLink", fields: [inventoryItemId], references: [id], onDelete: SetNull)
   prepItemId      String?
-  prepItem        PrepItem?      @relation("IngredientPrepLink", fields: [prepItemId], references: [id])
+  prepItem        PrepItem? @relation("IngredientPrepLink", fields: [prepItemId], references: [id], onDelete: SetNull)
 
   // Standard portion (used in recipes and for deduction)
   standardQuantity Decimal? @db.Decimal(10, 4) // e.g., 1.5
@@ -5858,7 +5860,7 @@ model Ingredient {
   // Swap configuration
   allowSwap    Boolean              @default(false)
   swapGroupId  String? // Links to a group of swappable ingredients
-  swapGroup    IngredientSwapGroup? @relation(fields: [swapGroupId], references: [id])
+  swapGroup    IngredientSwapGroup? @relation(fields: [swapGroupId], references: [id], onDelete: SetNull)
   swapUpcharge Decimal              @default(0) @db.Decimal(10, 2)
 
   // Visibility (for future use)
@@ -5881,7 +5883,7 @@ model Ingredient {
   // Allows tracking preparations like: Raw Chicken → Sliced Chicken, Diced Chicken
   // Child ingredient cost = Parent cost / yieldPercent
   parentIngredientId String?
-  parentIngredient   Ingredient?  @relation("IngredientHierarchy", fields: [parentIngredientId], references: [id])
+  parentIngredient   Ingredient? @relation("IngredientHierarchy", fields: [parentIngredientId], references: [id], onDelete: SetNull)
   childIngredients   Ingredient[] @relation("IngredientHierarchy")
 
   // Preparation info (for child ingredients)
@@ -5990,10 +5992,10 @@ model Ingredient {
 model IngredientStockAdjustment {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   ingredientId String
-  ingredient   Ingredient @relation(fields: [ingredientId], references: [id])
+  ingredient   Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Restrict)
 
   // Adjustment type
   type String // "manual", "count", "waste", "transfer", "receiving"
@@ -6010,7 +6012,7 @@ model IngredientStockAdjustment {
 
   // Who and why
   employeeId String?
-  employee   Employee? @relation(fields: [employeeId], references: [id])
+  employee   Employee? @relation(fields: [employeeId], references: [id], onDelete: SetNull)
   reason     String? // "Morning count", "Waste - dropped", "Received delivery", etc.
   notes      String?
 
@@ -6038,7 +6040,7 @@ model IngredientStockAdjustment {
 model IngredientRecipe {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   // The output item (what gets made) - e.g., Pizza Dough
   outputId String
@@ -6046,7 +6048,7 @@ model IngredientRecipe {
 
   // The component/raw material used - e.g., Flour
   componentId String
-  component   Ingredient @relation("RecipeComponent", fields: [componentId], references: [id])
+  component   Ingredient @relation("RecipeComponent", fields: [componentId], references: [id], onDelete: Restrict)
 
   // How much of the component is needed
   quantity Decimal @db.Decimal(10, 4) // e.g., 2
@@ -6075,17 +6077,17 @@ model IngredientRecipe {
 model MenuItemIngredient {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   menuItemId String
   menuItem   MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
 
   ingredientId String
-  ingredient   Ingredient @relation(fields: [ingredientId], references: [id])
+  ingredient   Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Restrict)
 
   // Pricing Option - links ingredient usage to a specific pricing option (e.g., "Large" uses more cheese)
   pricingOptionId String?
-  pricingOption   PricingOption? @relation(fields: [pricingOptionId], references: [id])
+  pricingOption   PricingOption? @relation(fields: [pricingOptionId], references: [id], onDelete: SetNull)
 
   // Legacy field - kept for backwards compatibility
   isIncluded Boolean @default(true) // Comes on item by default?
@@ -6129,7 +6131,7 @@ model MenuItemIngredient {
 model ModifierGroupTemplate {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   name        String // "Salad Dressings", "Meat Temps", "Burger Add-ons"
   description String?
@@ -6160,7 +6162,7 @@ model ModifierGroupTemplate {
 model ModifierTemplate {
   id         String                @id @default(cuid())
   locationId String
-  location   Location              @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   templateId String
   template   ModifierGroupTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
 
@@ -6202,12 +6204,12 @@ model ModifierTemplate {
 model OrderItemIngredient {
   id          String    @id @default(cuid())
   locationId  String
-  location    Location  @relation(fields: [locationId], references: [id])
+  location    Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   orderItemId String
   orderItem   OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
 
   ingredientId   String
-  ingredient     Ingredient @relation(fields: [ingredientId], references: [id])
+  ingredient     Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Restrict)
   ingredientName String // Snapshot at time of order
 
   // Modification type: "standard", "no", "lite", "on_side", "extra", "swap"
@@ -6216,7 +6218,7 @@ model OrderItemIngredient {
 
   // For swaps - what was it replaced with?
   swappedToModifierId   String?
-  swappedToModifier     Modifier? @relation("IngredientSwapModifier", fields: [swappedToModifierId], references: [id])
+  swappedToModifier     Modifier? @relation("IngredientSwapModifier", fields: [swappedToModifierId], references: [id], onDelete: SetNull)
   swappedToModifierName String?
 
   createdAt DateTime @default(now())
@@ -6240,7 +6242,7 @@ model OrderItemIngredient {
 model Printer {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   name        String // "Kitchen Printer", "Bar Printer", "Receipt Printer"
   printerType PrinterType
@@ -6301,7 +6303,7 @@ model Printer {
 model Station {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   // Identity
   name        String // "Pizza Oven", "Main Expo", "Grill KDS", "Bar Printer"
@@ -6348,7 +6350,7 @@ model Station {
 
   // Backup/Failover (for PRINTER type)
   backupStationId String?
-  backupStation   Station?  @relation("StationBackup", fields: [backupStationId], references: [id])
+  backupStation   Station? @relation("StationBackup", fields: [backupStationId], references: [id], onDelete: SetNull)
   backsUpFor      Station[] @relation("StationBackup")
   failoverTimeout Int?      @default(5000) // ms to wait before trying backup
 
@@ -6373,7 +6375,7 @@ model Station {
 model KDSScreen {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   name       String // "Kitchen Main", "Grill Station", "Bar Display"
   slug       String? // URL-friendly identifier: "kitchen-main", "grill-station"
@@ -6440,7 +6442,7 @@ model KDSScreen {
 model KDSScreenStation {
   id          String      @id @default(cuid())
   locationId  String
-  location    Location    @relation(fields: [locationId], references: [id])
+  location    Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   kdsScreenId String
   kdsScreen   KDSScreen   @relation(fields: [kdsScreenId], references: [id], onDelete: Cascade)
   stationId   String
@@ -6464,7 +6466,7 @@ model KDSScreenStation {
 model KDSScreenLink {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   sourceScreenId String
   sourceScreen   KDSScreen @relation("SourceLinks", fields: [sourceScreenId], references: [id], onDelete: Cascade)
@@ -6496,7 +6498,7 @@ model KDSScreenLink {
 model Terminal {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   // Identity
   name        String // "Bar Terminal 1", "Server Station", "Handheld 3"
@@ -6526,13 +6528,13 @@ model Terminal {
   // Local Receipt Printer
   // The physical receipt printer attached to or near this terminal
   receiptPrinterId String?
-  receiptPrinter   Printer? @relation("TerminalReceiptPrinter", fields: [receiptPrinterId], references: [id])
+  receiptPrinter   Printer? @relation("TerminalReceiptPrinter", fields: [receiptPrinterId], references: [id], onDelete: SetNull)
 
   // Kitchen & Bar Printers (handheld per-terminal assignment)
   kitchenPrinterId String?
-  kitchenPrinter   Printer? @relation("TerminalKitchenPrinter", fields: [kitchenPrinterId], references: [id])
+  kitchenPrinter   Printer? @relation("TerminalKitchenPrinter", fields: [kitchenPrinterId], references: [id], onDelete: SetNull)
   barPrinterId     String?
-  barPrinter       Printer? @relation("TerminalBarPrinter", fields: [barPrinterId], references: [id])
+  barPrinter       Printer? @relation("TerminalBarPrinter", fields: [barPrinterId], references: [id], onDelete: SetNull)
 
   // Role-Based Skip Rules
   // Format: { "bartender": ["bar"], "manager": ["bar", "kitchen"], "chef": ["kitchen"] }
@@ -6552,26 +6554,26 @@ model Terminal {
   // Failover Configuration
   // If this terminal goes offline, redirect tickets to the backup
   backupTerminalId String?
-  backupTerminal   Terminal?  @relation("TerminalFailover", fields: [backupTerminalId], references: [id])
+  backupTerminal   Terminal? @relation("TerminalFailover", fields: [backupTerminalId], references: [id], onDelete: SetNull)
   primaryFor       Terminal[] @relation("TerminalFailover")
   failoverEnabled  Boolean    @default(false)
   failoverTimeout  Int        @default(45000) // ms before considered offline
 
   // Payment Reader Binding (Datacap Direct Integration)
   paymentReaderId       String?
-  paymentReader         PaymentReader?  @relation("TerminalPaymentReader", fields: [paymentReaderId], references: [id])
+  paymentReader         PaymentReader? @relation("TerminalPaymentReader", fields: [paymentReaderId], references: [id], onDelete: SetNull)
   paymentProvider       PaymentProvider @default(SIMULATED)
   backupPaymentReaderId String?
-  backupPaymentReader   PaymentReader?  @relation("TerminalBackupReader", fields: [backupPaymentReaderId], references: [id])
+  backupPaymentReader   PaymentReader? @relation("TerminalBackupReader", fields: [backupPaymentReaderId], references: [id], onDelete: SetNull)
   readerFailoverTimeout Int             @default(10000) // 10s before trying backup reader
 
   // Scale Binding (Weight-Based Selling)
   scaleId String?
-  scale   Scale?  @relation(fields: [scaleId], references: [id])
+  scale   Scale? @relation(fields: [scaleId], references: [id], onDelete: SetNull)
 
   // CFD Pairing (PAX A3700 Customer-Facing Display)
   cfdTerminalId     String? // ID of paired CFD terminal record (the A3700)
-  cfdTerminal       Terminal?  @relation("TerminalCFD", fields: [cfdTerminalId], references: [id])
+  cfdTerminal       Terminal? @relation("TerminalCFD", fields: [cfdTerminalId], references: [id], onDelete: SetNull)
   cfdRegisterFor    Terminal[] @relation("TerminalCFD")
   cfdIpAddress      String? // A3700 LAN IP address for DC Direct TCP connection
   cfdConnectionMode String?    @default("usb") // "usb" | "bluetooth"
@@ -6613,7 +6615,7 @@ model Terminal {
 model CfdSettings {
   id         String   @id @default(cuid())
   locationId String   @unique
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   // Tip configuration
   tipMode      String  @default("pre_tap") // "pre_tap" | "post_auth"
@@ -6651,7 +6653,7 @@ model CfdSettings {
 model Scale {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   // Identity
   name      String // "Deli Scale", "Produce Scale"
@@ -6696,7 +6698,7 @@ model Scale {
 model PaymentReader {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   // Identity
   name         String // "Bar Reader", "Lobby Reader", "Mobile Reader 1"
@@ -6775,9 +6777,9 @@ model PaymentReader {
 model PaymentReaderLog {
   id           String        @id @default(cuid())
   locationId   String
-  location     Location      @relation(fields: [locationId], references: [id])
+  location     Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   readerId     String
-  reader       PaymentReader @relation(fields: [readerId], references: [id])
+  reader       PaymentReader @relation(fields: [readerId], references: [id], onDelete: Restrict)
   responseTime Int // milliseconds
   success      Boolean
   errorCode    String?
@@ -6796,7 +6798,7 @@ model PaymentReaderLog {
 model PrintRule {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   name String?
 
@@ -6853,7 +6855,7 @@ model PrintRule {
 model PrintRoute {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   name      String // "Pizza Printer 1", "Bar Printer"
   routeType String // "category" | "item_type" | "station" | "custom"
@@ -6864,15 +6866,15 @@ model PrintRoute {
   categoryIds Json? // Array of category IDs this route handles
   itemTypes   Json? // Array of item types (food, liquor, etc.)
   stationId   String? // Specific station
-  station     PrepStation? @relation(fields: [stationId], references: [id])
+  station     PrepStation? @relation(fields: [stationId], references: [id], onDelete: SetNull)
 
   // Target printer
   printerId String?
-  printer   Printer? @relation("PrintRoutePrimaryPrinter", fields: [printerId], references: [id])
+  printer   Printer? @relation("PrintRoutePrimaryPrinter", fields: [printerId], references: [id], onDelete: SetNull)
 
   // Backup printer for failover
   backupPrinterId String?
-  backupPrinter   Printer? @relation("PrintRouteBackupPrinter", fields: [backupPrinterId], references: [id])
+  backupPrinter   Printer? @relation("PrintRouteBackupPrinter", fields: [backupPrinterId], references: [id], onDelete: SetNull)
   failoverTimeout Int?     @default(5000) // ms before trying backup
 
   // Settings
@@ -6892,13 +6894,13 @@ model PrintRoute {
 model PrintJob {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   jobType   String // "kitchen_ticket" | "receipt" | "reference"
   orderId   String?
-  order     Order?  @relation("PrintJobOrder", fields: [orderId], references: [id])
+  order     Order? @relation("PrintJobOrder", fields: [orderId], references: [id], onDelete: SetNull)
   printerId String
-  printer   Printer @relation(fields: [printerId], references: [id])
+  printer   Printer @relation(fields: [printerId], references: [id], onDelete: Restrict)
 
   status       PrintJobStatus @default(pending)
   errorMessage String?
@@ -6930,7 +6932,7 @@ model PrintJob {
 model PizzaConfig {
   id         String   @id @default(cuid())
   locationId String   @unique
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   // Sectional settings
   maxSections     Int  @default(8) // Max sections: 1 (whole), 2 (halves), 4 (quarters), 8 (eighths)
@@ -6988,7 +6990,7 @@ model PizzaConfig {
 model PizzaSize {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   name        String // "Small", "Medium", "Large", "XL"
   displayName String? // "10\"", "12\"", "14\"", "18\""
@@ -7011,11 +7013,11 @@ model PizzaSize {
   // Ingredient link — connects size to the ingredient library for
   // cost tracking and inventory deduction (same pattern as MenuItemIngredient)
   ingredientId String?
-  ingredient   Ingredient? @relation("PizzaSizeIngredient", fields: [ingredientId], references: [id])
+  ingredient   Ingredient? @relation("PizzaSizeIngredient", fields: [ingredientId], references: [id], onDelete: SetNull)
 
   // Direct inventory linkage (e.g., dough ball per size)
   inventoryItemId String?
-  inventoryItem   InventoryItem? @relation("PizzaSizeInventory", fields: [inventoryItemId], references: [id])
+  inventoryItem   InventoryItem? @relation("PizzaSizeInventory", fields: [inventoryItemId], references: [id], onDelete: SetNull)
   usageQuantity   Decimal?       @db.Decimal(10, 4)
   usageUnit       String?
 
@@ -7041,7 +7043,7 @@ model PizzaSize {
 model PizzaCrust {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   name        String // "Hand Tossed", "Thin", "Deep Dish", "Stuffed"
   displayName String?
@@ -7051,12 +7053,12 @@ model PizzaCrust {
   // Ingredient link — connects crust to the ingredient library for
   // cost tracking and inventory deduction (same pattern as MenuItemIngredient)
   ingredientId String?
-  ingredient   Ingredient? @relation("PizzaCrustIngredient", fields: [ingredientId], references: [id])
+  ingredient   Ingredient? @relation("PizzaCrustIngredient", fields: [ingredientId], references: [id], onDelete: SetNull)
 
   // Inventory tracking (Skill 115)
   // Links to dough inventory - usage is for MEDIUM size, scaled by size multiplier
   inventoryItemId String?
-  inventoryItem   InventoryItem? @relation("PizzaCrustInventory", fields: [inventoryItemId], references: [id])
+  inventoryItem   InventoryItem? @relation("PizzaCrustInventory", fields: [inventoryItemId], references: [id], onDelete: SetNull)
   usageQuantity   Decimal?       @db.Decimal(10, 4) // Base usage for medium pizza (e.g., 12 oz dough)
   usageUnit       String? // "oz", "each"
 
@@ -7083,7 +7085,7 @@ model PizzaCrust {
 model PizzaSauce {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   name        String // "Marinara", "White", "BBQ", "Buffalo", "No Sauce"
   displayName String?
@@ -7098,11 +7100,11 @@ model PizzaSauce {
   // Ingredient link — connects sauce to the ingredient library for
   // cost tracking and inventory deduction (same pattern as MenuItemIngredient)
   ingredientId String?
-  ingredient   Ingredient? @relation("PizzaSauceIngredient", fields: [ingredientId], references: [id])
+  ingredient   Ingredient? @relation("PizzaSauceIngredient", fields: [ingredientId], references: [id], onDelete: SetNull)
 
   // Inventory tracking (Skill 115)
   inventoryItemId String?
-  inventoryItem   InventoryItem? @relation("PizzaSauceInventory", fields: [inventoryItemId], references: [id])
+  inventoryItem   InventoryItem? @relation("PizzaSauceInventory", fields: [inventoryItemId], references: [id], onDelete: SetNull)
   usageQuantity   Decimal?       @db.Decimal(10, 4) // Base usage for medium pizza (e.g., 4 oz sauce)
   usageUnit       String? // "oz"
 
@@ -7129,7 +7131,7 @@ model PizzaSauce {
 model PizzaCheese {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   name        String // "Mozzarella", "No Cheese", "Extra Cheese", "Vegan"
   displayName String?
@@ -7144,11 +7146,11 @@ model PizzaCheese {
   // Ingredient link — connects cheese to the ingredient library for
   // cost tracking and inventory deduction (same pattern as MenuItemIngredient)
   ingredientId String?
-  ingredient   Ingredient? @relation("PizzaCheeseIngredient", fields: [ingredientId], references: [id])
+  ingredient   Ingredient? @relation("PizzaCheeseIngredient", fields: [ingredientId], references: [id], onDelete: SetNull)
 
   // Inventory tracking (Skill 115)
   inventoryItemId String?
-  inventoryItem   InventoryItem? @relation("PizzaCheeseInventory", fields: [inventoryItemId], references: [id])
+  inventoryItem   InventoryItem? @relation("PizzaCheeseInventory", fields: [inventoryItemId], references: [id], onDelete: SetNull)
   usageQuantity   Decimal?       @db.Decimal(10, 4) // Base usage for medium pizza (e.g., 8 oz cheese)
   usageUnit       String? // "oz"
 
@@ -7175,7 +7177,7 @@ model PizzaCheese {
 model PizzaTopping {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   name        String // "Pepperoni", "Mushrooms", "Onions"
   displayName String?
@@ -7195,11 +7197,11 @@ model PizzaTopping {
   // Ingredient link — connects topping to the ingredient library for
   // cost tracking and inventory deduction (same pattern as MenuItemIngredient)
   ingredientId String?
-  ingredient   Ingredient? @relation("PizzaToppingIngredient", fields: [ingredientId], references: [id])
+  ingredient   Ingredient? @relation("PizzaToppingIngredient", fields: [ingredientId], references: [id], onDelete: SetNull)
 
   // Inventory tracking (Skill 115) — resolved from ingredient chain when available
   inventoryItemId String?
-  inventoryItem   InventoryItem? @relation("PizzaToppingInventory", fields: [inventoryItemId], references: [id])
+  inventoryItem   InventoryItem? @relation("PizzaToppingInventory", fields: [inventoryItemId], references: [id], onDelete: SetNull)
   usageQuantity   Decimal?       @db.Decimal(10, 4) // Base usage for medium whole pizza (e.g., 2 oz pepperoni)
   usageUnit       String? // "oz", "each"
 
@@ -7222,17 +7224,17 @@ model PizzaTopping {
 model PizzaSpecialty {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   menuItemId String   @unique // Links to MenuItem with itemType="pizza"
   menuItem   MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
 
   // Default configuration
   defaultCrustId  String?
-  defaultCrust    PizzaCrust?  @relation("DefaultCrust", fields: [defaultCrustId], references: [id])
+  defaultCrust    PizzaCrust? @relation("DefaultCrust", fields: [defaultCrustId], references: [id], onDelete: SetNull)
   defaultSauceId  String?
-  defaultSauce    PizzaSauce?  @relation("DefaultSauce", fields: [defaultSauceId], references: [id])
+  defaultSauce    PizzaSauce? @relation("DefaultSauce", fields: [defaultSauceId], references: [id], onDelete: SetNull)
   defaultCheeseId String?
-  defaultCheese   PizzaCheese? @relation("DefaultCheese", fields: [defaultCheeseId], references: [id])
+  defaultCheese   PizzaCheese? @relation("DefaultCheese", fields: [defaultCheeseId], references: [id], onDelete: SetNull)
 
   sauceAmount  String @default("regular") // "none", "light", "regular", "extra"
   cheeseAmount String @default("regular")
@@ -7263,26 +7265,26 @@ model PizzaSpecialty {
 model OrderItemPizza {
   id          String    @id @default(cuid())
   locationId  String
-  location    Location  @relation(fields: [locationId], references: [id])
+  location    Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   orderItemId String    @unique
   orderItem   OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
 
   // Size selection
   sizeId String
-  size   PizzaSize @relation(fields: [sizeId], references: [id])
+  size   PizzaSize @relation(fields: [sizeId], references: [id], onDelete: Restrict)
 
   // Crust selection
   crustId String
-  crust   PizzaCrust @relation(fields: [crustId], references: [id])
+  crust   PizzaCrust @relation(fields: [crustId], references: [id], onDelete: Restrict)
 
   // Sauce selection (optional - "No Sauce" pizzas)
   sauceId     String?
-  sauce       PizzaSauce? @relation(fields: [sauceId], references: [id])
+  sauce       PizzaSauce? @relation(fields: [sauceId], references: [id], onDelete: SetNull)
   sauceAmount String      @default("regular") // "none", "light", "regular", "extra"
 
   // Cheese selection (optional - "No Cheese" pizzas)
   cheeseId     String?
-  cheese       PizzaCheese? @relation(fields: [cheeseId], references: [id])
+  cheese       PizzaCheese? @relation(fields: [cheeseId], references: [id], onDelete: SetNull)
   cheeseAmount String       @default("regular") // "none", "light", "regular", "extra"
 
   // Section-based condiments (null = whole pizza, JSON array of section indices 0-23)
@@ -7335,7 +7337,7 @@ model OrderItemPizza {
 model PayrollPeriod {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   // Period details
   periodStart DateTime
@@ -7380,12 +7382,12 @@ model PayrollPeriod {
 model PayStub {
   id              String   @id @default(cuid())
   locationId      String
-  location        Location @relation(fields: [locationId], references: [id])
+  location        Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   payrollPeriodId String
   employeeId      String
 
-  payrollPeriod PayrollPeriod @relation(fields: [payrollPeriodId], references: [id])
-  employee      Employee      @relation(fields: [employeeId], references: [id])
+  payrollPeriod PayrollPeriod @relation(fields: [payrollPeriodId], references: [id], onDelete: Restrict)
+  employee      Employee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
 
   // Time worked
   regularHours  Decimal @default(0) @db.Decimal(6, 2)
@@ -7462,7 +7464,7 @@ model PayStub {
 model Schedule {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   // Week this schedule is for
   weekStart DateTime // Monday of the week
@@ -7495,11 +7497,11 @@ model Schedule {
 model ScheduledShift {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   scheduleId String
   schedule   Schedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
   employeeId String
-  employee   Employee @relation("ScheduledShiftEmployee", fields: [employeeId], references: [id])
+  employee   Employee @relation("ScheduledShiftEmployee", fields: [employeeId], references: [id], onDelete: Restrict)
 
   // Shift timing
   date      DateTime // Date of the shift
@@ -7511,11 +7513,11 @@ model ScheduledShift {
 
   // Role/position for this shift (may differ from employee's primary role)
   roleId String?
-  role   Role?   @relation(fields: [roleId], references: [id])
+  role   Role? @relation(fields: [roleId], references: [id], onDelete: SetNull)
 
   // Section assignment (if applicable)
   sectionId String?
-  section   Section? @relation("ScheduledShiftSection", fields: [sectionId], references: [id])
+  section   Section? @relation("ScheduledShiftSection", fields: [sectionId], references: [id], onDelete: SetNull)
 
   // Status tracking
   status ScheduledShiftStatus @default(scheduled)
@@ -7527,7 +7529,7 @@ model ScheduledShift {
 
   // Trade/swap tracking
   originalEmployeeId String? // If swapped, who was originally scheduled
-  originalEmployee   Employee? @relation("ScheduledShiftOriginal", fields: [originalEmployeeId], references: [id])
+  originalEmployee   Employee? @relation("ScheduledShiftOriginal", fields: [originalEmployeeId], references: [id], onDelete: SetNull)
   swappedAt          DateTime?
   swapApprovedBy     String? // Manager who approved swap
 
@@ -7558,13 +7560,13 @@ model ScheduledShift {
 model ShiftSwapRequest {
   id                    String                 @id @default(cuid())
   locationId            String
-  location              Location               @relation(fields: [locationId], references: [id])
+  location              Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   shiftId               String
   shift                 ScheduledShift         @relation(fields: [shiftId], references: [id], onDelete: Cascade)
   requestedByEmployeeId String
-  requestedByEmployee   Employee               @relation("SwapInitiator", fields: [requestedByEmployeeId], references: [id])
+  requestedByEmployee   Employee @relation("SwapInitiator", fields: [requestedByEmployeeId], references: [id], onDelete: Restrict)
   requestedToEmployeeId String?
-  requestedToEmployee   Employee?              @relation("SwapTarget", fields: [requestedToEmployeeId], references: [id])
+  requestedToEmployee   Employee? @relation("SwapTarget", fields: [requestedToEmployeeId], references: [id], onDelete: SetNull)
   type                  ShiftRequestType       @default(swap)
   status                ShiftSwapRequestStatus @default(pending)
   reason                String? // Employee's reason for requesting
@@ -7572,7 +7574,7 @@ model ShiftSwapRequest {
   respondedAt           DateTime?
   approvedAt            DateTime?
   approvedByEmployeeId  String?
-  approvedByEmployee    Employee?              @relation("SwapApprover", fields: [approvedByEmployeeId], references: [id])
+  approvedByEmployee    Employee? @relation("SwapApprover", fields: [approvedByEmployeeId], references: [id], onDelete: SetNull)
   expiresAt             DateTime?
   notes                 String?
   declineReason         String?
@@ -7599,7 +7601,7 @@ model ShiftSwapRequest {
 model PayrollSettings {
   id         String   @id @default(cuid())
   locationId String   @unique
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   // Pay Period Configuration
   payPeriodType  String @default("biweekly") // 'weekly' | 'biweekly' | 'semimonthly' | 'monthly'
@@ -7656,7 +7658,7 @@ model PayrollSettings {
 model PrepTrayConfig {
   id         String     @id @default(cuid())
   locationId String
-  location   Location   @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   prepItemId String // Actually stores Ingredient ID (prep-style ingredients)
   ingredient Ingredient @relation("IngredientTrayConfigs", fields: [prepItemId], references: [id], onDelete: Cascade)
 
@@ -7681,7 +7683,7 @@ model PrepTrayConfig {
 model DailyPrepCount {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   // Session details
   countDate DateTime             @default(now()) // Date of the count (morning of prep day)
@@ -7689,14 +7691,14 @@ model DailyPrepCount {
 
   // Who created, submitted, approved
   createdById String
-  createdBy   Employee @relation("PrepCountCreatedBy", fields: [createdById], references: [id])
+  createdBy   Employee @relation("PrepCountCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
 
   submittedById String?
-  submittedBy   Employee? @relation("PrepCountSubmittedBy", fields: [submittedById], references: [id])
+  submittedBy   Employee? @relation("PrepCountSubmittedBy", fields: [submittedById], references: [id], onDelete: SetNull)
   submittedAt   DateTime?
 
   approvedById String?
-  approvedBy   Employee? @relation("PrepCountApprovedBy", fields: [approvedById], references: [id])
+  approvedBy   Employee? @relation("PrepCountApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
   approvedAt   DateTime?
 
   rejectionReason String? // If status = "rejected", why?
@@ -7722,13 +7724,13 @@ model DailyPrepCount {
 model DailyPrepCountItem {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   dailyCountId String
   dailyCount   DailyPrepCount @relation(fields: [dailyCountId], references: [id], onDelete: Cascade)
 
   prepItemId String // Actually stores Ingredient ID (prep-style ingredients)
-  ingredient Ingredient @relation("IngredientDailyCountItems", fields: [prepItemId], references: [id])
+  ingredient Ingredient @relation("IngredientDailyCountItems", fields: [prepItemId], references: [id], onDelete: Restrict)
 
   // Tray breakdown - JSON: { "Large Tray": 3, "Small Tray": 2, "Loose": 4 }
   // Keys are tray names, values are quantities counted
@@ -7762,7 +7764,7 @@ model DailyPrepCountItem {
 model DailyPrepCountTransaction {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   dailyCountId String
   dailyCount   DailyPrepCount @relation(fields: [dailyCountId], references: [id], onDelete: Cascade)
@@ -7772,11 +7774,11 @@ model DailyPrepCountTransaction {
 
   // For prep item stock additions (actually Ingredient ID)
   prepItemId String?
-  ingredient Ingredient? @relation("IngredientDailyCountTransactions", fields: [prepItemId], references: [id])
+  ingredient Ingredient? @relation("IngredientDailyCountTransactions", fields: [prepItemId], references: [id], onDelete: SetNull)
 
   // For raw ingredient deductions
   inventoryItemId String?
-  inventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id])
+  inventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id], onDelete: SetNull)
 
   // Quantity movement
   quantityBefore Decimal @db.Decimal(10, 4)
@@ -7806,13 +7808,13 @@ model DailyPrepCountTransaction {
 model OrderCard {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   orderId    String
   order      Order    @relation(fields: [orderId], references: [id], onDelete: Restrict)
 
   // Reader that processed this card
   readerId String
-  reader   PaymentReader @relation("OrderCardReader", fields: [readerId], references: [id])
+  reader   PaymentReader @relation("OrderCardReader", fields: [readerId], references: [id], onDelete: Restrict)
 
   // Datacap tokens
   recordNo String // Datacap RecordNo token — needed for capture/increment/void
@@ -7869,12 +7871,12 @@ model OrderCard {
 model DigitalReceipt {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   orderId   String  @unique
-  order     Order   @relation(fields: [orderId], references: [id])
+  order     Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
   paymentId String
-  payment   Payment @relation(fields: [paymentId], references: [id])
+  payment   Payment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
 
   // Full receipt content (items, amounts, taxes, discounts, etc.)
   receiptData Json
@@ -7903,13 +7905,13 @@ model DigitalReceipt {
 model ChargebackCase {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   // Auto-matched order/payment (if found)
   orderId   String?
-  order     Order?   @relation("ChargebackOrder", fields: [orderId], references: [id])
+  order     Order? @relation("ChargebackOrder", fields: [orderId], references: [id], onDelete: SetNull)
   paymentId String?
-  payment   Payment? @relation("ChargebackPayment", fields: [paymentId], references: [id])
+  payment   Payment? @relation("ChargebackPayment", fields: [paymentId], references: [id], onDelete: SetNull)
 
   // Card info for matching
   cardLast4 String
@@ -7954,7 +7956,7 @@ model ChargebackCase {
 model CardProfile {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   // Hashed card identity (privacy-safe — cannot reverse to card number)
   cardholderIdHash String // SHA-256 of Datacap CardholderID
@@ -7972,7 +7974,7 @@ model CardProfile {
 
   // Link to Customer record (future: merge via phone number)
   customerId String?
-  customer   Customer? @relation(fields: [customerId], references: [id])
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -7991,12 +7993,12 @@ model CardProfile {
 model WalkoutRetry {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   orderId     String
-  order       Order     @relation(fields: [orderId], references: [id])
+  order       Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
   orderCardId String // Which OrderCard to retry capture against
-  orderCard   OrderCard @relation(fields: [orderCardId], references: [id])
+  orderCard   OrderCard @relation(fields: [orderCardId], references: [id], onDelete: Restrict)
 
   // Amount to capture
   amount Decimal @db.Decimal(10, 2)
@@ -8034,7 +8036,7 @@ model WalkoutRetry {
 model BottleServiceTier {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   // Tier details
   name        String // e.g., "Bronze", "Silver", "Gold", "Platinum"
@@ -8088,22 +8090,22 @@ model ErrorLog {
 
   // Context (THE KEY TO QUICK DIAGNOSIS)
   locationId String
-  location   Location  @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   employeeId String?
-  employee   Employee? @relation(fields: [employeeId], references: [id])
+  employee   Employee? @relation(fields: [employeeId], references: [id], onDelete: SetNull)
   path       String // URL path or API route (e.g., "/api/orders/123/pay")
   action     String // Human-readable action (e.g., "Processing payment for Order #1234")
   component  String? // React component name if frontend error
 
   // Business Context (CRITICAL PATH)
   orderId    String? // Link to order if order-related
-  order      Order?    @relation("ErrorLogOrder", fields: [orderId], references: [id])
+  order      Order? @relation("ErrorLogOrder", fields: [orderId], references: [id], onDelete: SetNull)
   tableId    String? // Link to table if applicable
-  table      Table?    @relation("ErrorLogTable", fields: [tableId], references: [id])
+  table      Table? @relation("ErrorLogTable", fields: [tableId], references: [id], onDelete: SetNull)
   paymentId  String? // Link to payment if payment-related
-  payment    Payment?  @relation("ErrorLogPayment", fields: [paymentId], references: [id])
+  payment    Payment? @relation("ErrorLogPayment", fields: [paymentId], references: [id], onDelete: SetNull)
   customerId String? // Link to customer if applicable
-  customer   Customer? @relation("ErrorLogCustomer", fields: [customerId], references: [id])
+  customer   Customer? @relation("ErrorLogCustomer", fields: [customerId], references: [id], onDelete: SetNull)
 
   // Technical Context
   userAgent    String? // Browser user agent
@@ -8183,7 +8185,7 @@ model HealthCheck {
   id String @id @default(cuid())
 
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   // Check Details
   checkType    String // ORDER_CREATION, PAYMENT_PROCESSING, PRINTER_CONNECTION, DATABASE_QUERY, API_RESPONSE
@@ -8219,7 +8221,7 @@ enum RegistrationTokenStatus {
 model ServerRegistrationToken {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   token     String                  @unique
   status    RegistrationTokenStatus @default(PENDING)
@@ -8246,7 +8248,7 @@ model CloudEventQueue {
   id          String    @id @default(cuid())
   venueId     String
   locationId  String
-  location    Location  @relation(fields: [locationId], references: [id])
+  location    Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   eventType   String
   body        Json
   status      String    @default("pending")
@@ -8274,13 +8276,13 @@ model CloudEventQueue {
 model RefundLog {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   orderId    String
-  order      Order    @relation(fields: [orderId], references: [id])
+  order      Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
   paymentId  String
-  payment    Payment  @relation(fields: [paymentId], references: [id])
+  payment    Payment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
   employeeId String
-  employee   Employee @relation(fields: [employeeId], references: [id])
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
 
   refundAmount   Decimal @db.Decimal(10, 2)
   originalAmount Decimal @db.Decimal(10, 2)
@@ -8293,7 +8295,7 @@ model RefundLog {
 
   // Approval chain
   approvedById String?
-  approvedBy   Employee? @relation("RefundLogApprover", fields: [approvedById], references: [id])
+  approvedBy   Employee? @relation("RefundLogApprover", fields: [approvedById], references: [id], onDelete: SetNull)
   approvedAt   DateTime?
 
   // Receipt
@@ -8321,17 +8323,17 @@ model RefundLog {
 model OrderItemDiscount {
   id             String        @id @default(cuid())
   locationId     String
-  location       Location      @relation(fields: [locationId], references: [id])
+  location       Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   orderId        String
-  order          Order         @relation(fields: [orderId], references: [id])
+  order          Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
   orderItemId    String
-  orderItem      OrderItem     @relation(fields: [orderItemId], references: [id])
+  orderItem      OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
   discountRuleId String?
-  discountRule   DiscountRule? @relation(fields: [discountRuleId], references: [id])
+  discountRule   DiscountRule? @relation(fields: [discountRuleId], references: [id], onDelete: SetNull)
   amount         Decimal       @db.Decimal(10, 2)
   percent        Decimal?      @db.Decimal(8, 4) // Whole-number percentages (0-100), must fit 100.0000
   appliedById    String?
-  appliedBy      Employee?     @relation("ItemDiscountAppliedBy", fields: [appliedById], references: [id])
+  appliedBy      Employee? @relation("ItemDiscountAppliedBy", fields: [appliedById], references: [id], onDelete: SetNull)
   reason         String?
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
@@ -8352,12 +8354,12 @@ model OrderItemDiscount {
 model RegisteredDevice {
   id                String          @id @default(cuid())
   locationId        String
-  location          Location        @relation(fields: [locationId], references: [id])
+  location          Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   name              String // "Sarah's iPhone"
   deviceType        String          @default("phone") // phone, tablet
   deviceFingerprint String? // browser fingerprint (optional)
   registeredById    String // employeeId who first registered
-  registeredBy      Employee        @relation("RegisteredDeviceEmployee", fields: [registeredById], references: [id])
+  registeredBy      Employee @relation("RegisteredDeviceEmployee", fields: [registeredById], references: [id], onDelete: Restrict)
   isActive          Boolean         @default(true)
   lastSeenAt        DateTime        @default(now())
   createdAt         DateTime        @default(now())
@@ -8373,11 +8375,11 @@ model RegisteredDevice {
 model MobileSession {
   id           String           @id @default(cuid())
   locationId   String
-  location     Location         @relation(fields: [locationId], references: [id])
+  location     Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   deviceId     String
-  device       RegisteredDevice @relation(fields: [deviceId], references: [id])
+  device       RegisteredDevice @relation(fields: [deviceId], references: [id], onDelete: Restrict)
   employeeId   String
-  employee     Employee         @relation(fields: [employeeId], references: [id])
+  employee     Employee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
   sessionToken String           @unique
   expiresAt    DateTime
   createdAt    DateTime         @default(now())
@@ -8399,7 +8401,7 @@ model MobileSession {
 model HardwareCommand {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   commandType    String // "PRINTER_PING" | "PRINTER_TEST_PAGE" | "PAYMENT_READER_PING"
   targetDeviceId String // Printer or PaymentReader ID
@@ -8430,7 +8432,7 @@ model OrderEvent {
   eventId         String    @unique /// Global identity (ULID/UUID from device)
   orderId         String
   locationId      String
-  location        Location  @relation(fields: [locationId], references: [id])
+  location        Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   deviceId        String /// Originating device ID
   deviceCounter   Int /// Monotonic counter per device
   serverSequence  Int       @unique /// Canonical ordering — assigned by nextval('order_event_server_seq')
@@ -8457,7 +8459,7 @@ model OrderEvent {
 model OrderSnapshot {
   id                 String              @id /// Same as orderId
   locationId         String
-  location           Location            @relation(fields: [locationId], references: [id])
+  location           Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   employeeId         String
   orderType          String              @default("dine_in")
   tableId            String?
@@ -8586,7 +8588,7 @@ model OrderItemSnapshot {
   snapshotId         String
   snapshot           OrderSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
   locationId         String
-  location           Location      @relation(fields: [locationId], references: [id])
+  location           Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   menuItemId         String
   name               String
   priceCents         Int
@@ -8687,7 +8689,7 @@ model QuickBarPreference {
   itemIds    String // JSON array of menuItem IDs
   deletedAt  DateTime?
   updatedAt  DateTime  @updatedAt
-  employee   Employee  @relation(fields: [employeeId], references: [id])
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
 
   @@index([locationId])
   @@index([locationId, deletedAt])
@@ -8709,7 +8711,7 @@ model QuickBarDefault {
 model SevenShiftsDailySalesPush {
   id                   String    @id @default(cuid())
   locationId           String
-  location             Location  @relation(fields: [locationId], references: [id])
+  location             Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   businessDate         String // "YYYY-MM-DD" in location timezone
   revenueType          String // "food" | "liquor" | "other" | "combined"
   sevenShiftsReceiptId String? // returned receipt_id from 7shifts
@@ -8784,8 +8786,8 @@ model IngredientCostHistory {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  location      Location      @relation(fields: [locationId], references: [id])
-  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  location      Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Restrict)
 
   @@index([locationId, inventoryItemId, effectiveDate])
   @@index([locationId, effectiveDate])
@@ -8814,8 +8816,8 @@ model VendorOrder {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  location  Location              @relation(fields: [locationId], references: [id])
-  vendor    Vendor                @relation(fields: [vendorId], references: [id])
+  location  Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  vendor    Vendor @relation(fields: [vendorId], references: [id], onDelete: Restrict)
   lineItems VendorOrderLineItem[]
 
   @@index([locationId, status])
@@ -8840,9 +8842,9 @@ model VendorOrderLineItem {
   updatedAt     DateTime  @updatedAt
   deletedAt     DateTime?
 
-  location      Location      @relation(fields: [locationId], references: [id])
+  location      Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   vendorOrder   VendorOrder   @relation(fields: [vendorOrderId], references: [id], onDelete: Cascade)
-  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Restrict)
 
   @@index([locationId])
   @@index([locationId, vendorOrderId])
@@ -8871,9 +8873,9 @@ model InventoryCountEntry {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  location       Location       @relation(fields: [locationId], references: [id])
+  location       Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   inventoryCount InventoryCount @relation(fields: [inventoryCountId], references: [id], onDelete: Cascade)
-  inventoryItem  InventoryItem  @relation(fields: [inventoryItemId], references: [id])
+  inventoryItem  InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Restrict)
 
   @@unique([inventoryCountId, inventoryItemId])
   @@index([inventoryCountId])
@@ -8899,8 +8901,8 @@ model WasteLog {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  location      Location       @relation(fields: [locationId], references: [id])
-  inventoryItem InventoryItem? @relation(fields: [inventoryItemId], references: [id])
+  location      Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  inventoryItem InventoryItem? @relation(fields: [inventoryItemId], references: [id], onDelete: SetNull)
 
   @@index([locationId, businessDate])
   @@index([locationId, reason])
@@ -8925,8 +8927,8 @@ model MarginEdgeProductMapping {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  location      Location      @relation(fields: [locationId], references: [id])
-  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  location      Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Restrict)
 
   @@unique([locationId, marginEdgeProductId])
   @@index([locationId, inventoryItemId])
@@ -8954,7 +8956,7 @@ model PendingDeduction {
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
 
-  location Location       @relation(fields: [locationId], references: [id])
+  location Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   runs     DeductionRun[]
 
   @@index([locationId, status, availableAt])
@@ -9000,8 +9002,8 @@ model BergPluMapping {
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
-  location       Location            @relation(fields: [locationId], references: [id])
-  device         BergDevice?         @relation(fields: [deviceId], references: [id])
+  location       Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  device         BergDevice? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
   dispenseEvents BergDispenseEvent[]
 
   @@unique([mappingScopeKey, pluNumber])
@@ -9040,7 +9042,7 @@ model BergDevice {
   createdAt                       DateTime            @default(now())
   updatedAt                       DateTime            @updatedAt
 
-  location       Location            @relation(fields: [locationId], references: [id])
+  location       Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   pluMappings    BergPluMapping[]
   dispenseEvents BergDispenseEvent[]
 
@@ -9085,11 +9087,11 @@ model BergDispenseEvent {
   syncedAt          DateTime?
   updatedAt         DateTime              @updatedAt
 
-  location   Location        @relation(fields: [locationId], references: [id])
-  device     BergDevice      @relation(fields: [deviceId], references: [id])
-  pluMapping BergPluMapping? @relation(fields: [pluMappingId], references: [id])
-  order      Order?          @relation(fields: [orderId], references: [id])
-  employee   Employee?       @relation("BergDispenseEmployee", fields: [employeeId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  device     BergDevice @relation(fields: [deviceId], references: [id], onDelete: Restrict)
+  pluMapping BergPluMapping? @relation(fields: [pluMappingId], references: [id], onDelete: SetNull)
+  order      Order? @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  employee   Employee? @relation("BergDispenseEmployee", fields: [employeeId], references: [id], onDelete: SetNull)
 
   @@index([locationId, receivedAt])
   @@index([locationId, status])
@@ -9116,12 +9118,12 @@ model ItemBarcode {
 
   // Link to one of: MenuItem or InventoryItem (or both)
   menuItemId      String?
-  menuItem        MenuItem?      @relation(fields: [menuItemId], references: [id])
+  menuItem        MenuItem? @relation(fields: [menuItemId], references: [id], onDelete: SetNull)
   inventoryItemId String?
-  inventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id])
+  inventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id], onDelete: SetNull)
 
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -9155,7 +9157,7 @@ model FulfillmentEvent {
   retryCount  Int       @default(0)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
-  location    Location  @relation(fields: [locationId], references: [id])
+  location    Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   @@index([locationId, status])
   @@index([claimedBy, status])
@@ -9172,7 +9174,7 @@ model BridgeCheckpoint {
   fulfillmentLag    Int? // ms since last processed event
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
-  location          Location  @relation(fields: [locationId], references: [id])
+  location          Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   @@unique([locationId, nodeId])
 }
@@ -9208,7 +9210,7 @@ model OutageQueueEntry {
 model ReservationBlock {
   id                     String    @id @default(uuid())
   locationId             String
-  location               Location  @relation(fields: [locationId], references: [id])
+  location               Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   name                   String
   reason                 String?
   blockDate              DateTime  @db.Date
@@ -9243,7 +9245,7 @@ model ReservationEvent {
   id            String       @id @default(uuid())
   locationId    String
   reservationId String?
-  reservation   Reservation? @relation(fields: [reservationId], references: [id])
+  reservation   Reservation? @relation(fields: [reservationId], references: [id], onDelete: SetNull)
   eventType     String
   actor         String
   actorId       String?
@@ -9261,7 +9263,7 @@ model ReservationEvent {
 model ReservationIdempotencyKey {
   key           String      @id
   reservationId String
-  reservation   Reservation @relation(fields: [reservationId], references: [id])
+  reservation   Reservation @relation(fields: [reservationId], references: [id], onDelete: Restrict)
   source        String      @default("booking")
   createdAt     DateTime    @default(now())
 
@@ -9271,7 +9273,7 @@ model ReservationIdempotencyKey {
 model ReservationDepositToken {
   token         String      @id @default(uuid())
   reservationId String
-  reservation   Reservation @relation(fields: [reservationId], references: [id])
+  reservation   Reservation @relation(fields: [reservationId], references: [id], onDelete: Restrict)
   expiresAt     DateTime
   usedAt        DateTime?
   createdAt     DateTime    @default(now())
@@ -9283,9 +9285,9 @@ model ReservationDepositToken {
 model ReservationDeposit {
   id               String      @id @default(uuid())
   locationId       String
-  location         Location    @relation(fields: [locationId], references: [id])
+  location         Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   reservationId    String
-  reservation      Reservation @relation(fields: [reservationId], references: [id])
+  reservation      Reservation @relation(fields: [reservationId], references: [id], onDelete: Restrict)
   type             String      @default("deposit")
   amount           Decimal     @db.Decimal(10, 2)
   paymentMethod    String
@@ -9320,9 +9322,9 @@ model ReservationDeposit {
 model EmployeePermissionOverride {
   id            String    @id @default(cuid())
   locationId    String
-  location      Location  @relation(fields: [locationId], references: [id])
+  location      Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   employeeId    String
-  employee      Employee  @relation(fields: [employeeId], references: [id])
+  employee      Employee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
   permissionKey String // e.g., "manager.void_items"
   allowed       Boolean // true = grant extra, false = deny from role
   reason        String? // Why this override was set
@@ -9417,7 +9419,7 @@ model CellularEvent {
 model LoyaltyProgram {
   id         String   @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   name                String   @default("Loyalty Program")
   isActive            Boolean  @default(true)
@@ -9470,11 +9472,11 @@ model LoyaltyTier {
 model LoyaltyTransaction {
   id         String   @id @default(cuid())
   customerId String
-  customer   Customer @relation(fields: [customerId], references: [id])
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
   orderId    String?
-  order      Order?   @relation(fields: [orderId], references: [id])
+  order      Order? @relation(fields: [orderId], references: [id], onDelete: SetNull)
 
   type          String // 'earn' | 'redeem' | 'adjust' | 'expire' | 'tier_bonus' | 'welcome'
   points        Int // Positive for earn, negative for redeem
@@ -9879,15 +9881,39 @@ model ItemShare {
   createdAt           DateTime  @default(now())
   deletedAt           DateTime?
 
-  sourceItem  OrderItem @relation("ItemShareSource", fields: [sourceItemId], references: [id])
-  sourceOrder Order     @relation("ItemShareSourceOrder", fields: [sourceOrderId], references: [id])
-  targetOrder Order     @relation("ItemShareTarget", fields: [targetOrderId], references: [id])
-  location    Location  @relation(fields: [locationId], references: [id])
+  sourceItem  OrderItem @relation("ItemShareSource", fields: [sourceItemId], references: [id], onDelete: Restrict)
+  sourceOrder Order @relation("ItemShareSourceOrder", fields: [sourceOrderId], references: [id], onDelete: Restrict)
+  targetOrder Order @relation("ItemShareTarget", fields: [targetOrderId], references: [id], onDelete: Restrict)
+  location    Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
 
   @@index([sourceItemId])
   @@index([targetOrderId])
   @@index([sourceOrderId])
   @@index([locationId])
+}
+
+// ── Integration Retry Queue ────────────────────────────────────────────────
+// Database-backed retry queue for failed third-party API calls (7shifts, Twilio, etc.).
+// Cron worker drains entries with exponential backoff. Dead-lettered after max retries.
+
+model IntegrationRetryEntry {
+  id           String   @id @default(cuid())
+  locationId   String
+  integration  String   // '7shifts' | 'twilio' | 'marginedge' | 'oracle_pms'
+  action       String   // 'time_punch_create' | 'sms_send' | 'receipt_create' etc.
+  payload      Json     // Full request payload for replay
+  retryCount   Int      @default(0)
+  maxRetries   Int      @default(5)
+  lastError    String?
+  status       String   @default("pending") // 'pending' | 'processing' | 'completed' | 'dead_letter'
+  nextRetryAt  DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  completedAt  DateTime?
+  location     Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@index([locationId, status, nextRetryAt])
+  @@index([integration, status])
 }
 
 // NOTE: _local_schema_state and _local_install_state are NUC-only tables

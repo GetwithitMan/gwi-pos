@@ -40,7 +40,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const startDate = searchParams.get('startDate')
     const endDate = searchParams.get('endDate')
     const requestingEmployeeId = searchParams.get('requestingEmployeeId')
-    const page = parseInt(searchParams.get('page') || '1')
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10) || 1)
 
     if (!locationId) {
       return err('Location ID required')

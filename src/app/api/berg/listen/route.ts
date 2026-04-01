@@ -14,7 +14,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const requestingEmployeeId = searchParams.get('employeeId') || ''
     const deviceId = searchParams.get('deviceId') || undefined
     const since = searchParams.get('since') ? new Date(searchParams.get('since')!) : undefined
-    const limit = Math.min(parseInt(searchParams.get('limit') || '30', 10), MAX_LIMIT)
+    const limit = Math.max(1, Math.min(parseInt(searchParams.get('limit') || '30', 10) || 30, MAX_LIMIT))
 
     if (!locationId) return err('locationId required')
 

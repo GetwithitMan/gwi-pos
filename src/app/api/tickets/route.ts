@@ -13,8 +13,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const status = searchParams.get('status')
     const customerId = searchParams.get('customerId')
     const search = searchParams.get('search') // Search by name, email, ticket number
-    const limit = parseInt(searchParams.get('limit') || '50')
-    const offset = parseInt(searchParams.get('offset') || '0')
+    const limit = Math.max(1, Math.min(parseInt(searchParams.get('limit') || '50', 10) || 50, 500))
+    const offset = Math.max(0, parseInt(searchParams.get('offset') || '0', 10) || 0)
 
     // Resolve locationId — query param → fallback to cached location
     const locationId = queryLocationId || await getLocationId()

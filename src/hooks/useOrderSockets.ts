@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { getSharedSocket, releaseSharedSocket, getTerminalId, onSocketReconnect } from '@/lib/shared-socket'
 import { useOrderStore } from '@/stores/order-store'
+import { clientLog } from '@/lib/client-logger'
 
 // Socket.io client type
 type SocketCallback = (...args: unknown[]) => void
@@ -164,7 +165,7 @@ export function useOrderSockets(options: UseOrderSocketsOptions): { isConnected:
 
     const onConnectError = (error: unknown) => {
       // Downgraded to warn — expected in dev when socket server isn't running
-      console.warn('[Order Socket] Connection error (socket server may not be running):', error)
+      clientLog.warn('[Order Socket] Connection error (socket server may not be running):', error)
     }
 
     const onListChanged = (data: unknown) => {
@@ -330,7 +331,7 @@ export function useOrderSockets(options: UseOrderSocketsOptions): { isConnected:
     const onSettingsUpdated = (data: unknown) => {
       if (!isMountedRef.current) return
       const payload = data as { changedKeys?: string[] }
-      console.warn('[useOrderSockets] settings:updated — location settings changed, terminals should refresh', payload)
+      clientLog.warn('[useOrderSockets] settings:updated — location settings changed, terminals should refresh', payload)
       callbacksRef.current.onSettingsUpdated?.(payload)
     }
 
@@ -367,7 +368,7 @@ export function useOrderSockets(options: UseOrderSocketsOptions): { isConnected:
             useOrderStore.getState().loadOrder(order)
           }
         })
-        .catch(err => console.warn('[useOrderSockets] reconnect refetch failed:', err))
+        .catch(err => clientLog.warn('[useOrderSockets] reconnect refetch failed:', err))
     })
 
     // If already connected (shared socket was created by another consumer), join immediately

@@ -25,6 +25,7 @@ import { useFloorPlanModals } from '@/hooks/useFloorPlanModals'
 const CompVoidModal = lazy(() => import('@/components/orders/CompVoidModal').then(m => ({ default: m.CompVoidModal })))
 import { NoteEditModal } from '@/components/orders/NoteEditModal'
 import { logger } from '@/lib/logger'
+import { clientLog } from '@/lib/client-logger'
 import type { PizzaOrderConfig, MenuItem, CategoryFloorPlan as Category, PricingOption } from '@/types'
 import type { OrderTypeConfig } from '@/types/order-types'
 import { toast } from '@/stores/toast-store'
@@ -680,7 +681,7 @@ export function FloorPlanHome({
         setPricingRules(rules)
         setActivePricingRules(getActivePricingRules(rules))
       })
-      .catch(err => console.warn('fire-and-forget failed in floor-plan.FloorPlanHome:', err))
+      .catch(err => clientLog.warn('fire-and-forget failed in floor-plan.FloorPlanHome:', err))
     return () => { cancelled = true }
   }, [])
 
@@ -883,7 +884,7 @@ export function FloorPlanHome({
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'RESET_TABLE', tableId }),
-    }).catch(err => console.warn('fire-and-forget failed in floor-plan.FloorPlanHome:', err))
+    }).catch(err => clientLog.warn('fire-and-forget failed in floor-plan.FloorPlanHome:', err))
     setExtraSeats(prev => { if (!prev.has(tableId)) return prev; const next = new Map(prev); next.delete(tableId); return next })
     setActiveOrderId(null); setActiveOrderNumber(null); setActiveTableId(null); setShowOrderPanel(false)
     useOrderStore.getState().clearOrder()
@@ -902,7 +903,7 @@ export function FloorPlanHome({
           void fetch(`/api/orders/${prevOrderId}/seating`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action: 'CLEANUP' }),
-          }).catch(err => console.warn('fire-and-forget failed in floor-plan.FloorPlanHome:', err))
+          }).catch(err => clientLog.warn('fire-and-forget failed in floor-plan.FloorPlanHome:', err))
         }
         setExtraSeats(prev => { if (!prev.has(activeTableId)) return prev; const next = new Map(prev); next.delete(activeTableId); return next })
       }
@@ -1138,7 +1139,7 @@ export function FloorPlanHome({
         })
       } else if (activeTableId) { updateSingleTableStatus(activeTableId, 'occupied') }
       clearOrderPanel()
-      loadFloorPlanData(false).catch(err => console.warn('floor plan data load failed:', err))
+      loadFloorPlanData(false).catch(err => clientLog.warn('floor plan data load failed:', err))
     } catch (error) { console.error('[FloorPlanHome] Failed to send order:', error) }
     finally { isProcessingSendRef.current = false; setIsSendingOrder(false) }
   }, [inlineOrderItems, activeOrder.handleSendToKitchen, employeeId, activeTableId, addTableOrder, updateSingleTableStatus, clearOrderPanel])
@@ -1166,8 +1167,8 @@ export function FloorPlanHome({
         body: JSON.stringify({ action: 'CLEANUP' }),
       })
       void cleanup().catch(err => {
-        console.warn('floor plan cleanup failed, retrying:', err)
-        setTimeout(() => void cleanup().catch(err2 => console.warn('floor plan cleanup retry failed:', err2)), 1000)
+        clientLog.warn('floor plan cleanup failed, retrying:', err)
+        setTimeout(() => void cleanup().catch(err2 => clientLog.warn('floor plan cleanup retry failed:', err2)), 1000)
       })
     }
     if (activeTableId) { setExtraSeats(prev => { if (!prev.has(activeTableId)) return prev; const next = new Map(prev); next.delete(activeTableId); return next }) }
@@ -1195,7 +1196,7 @@ export function FloorPlanHome({
     fetch(`/api/seats/${seatId}?context=pos`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ relativeX: newRelativeX, relativeY: newRelativeY }),
-    }).catch(err => console.warn('Operation failed:', err))
+    }).catch(err => clientLog.warn('Operation failed:', err))
   }, [])
 
   // Stable TableNode callbacks
@@ -1457,7 +1458,7 @@ export function FloorPlanHome({
                 void fetch(`/api/orders/${activeOrderId}`)
                   .then(r => r.ok ? r.json() : null)
                   .then(d => { if (d) useOrderStore.getState().loadOrder(d.data || d) })
-                  .catch(err => console.warn('fire-and-forget failed in floor-plan.FloorPlanHome:', err))
+                  .catch(err => clientLog.warn('fire-and-forget failed in floor-plan.FloorPlanHome:', err))
               }
             }}
           />

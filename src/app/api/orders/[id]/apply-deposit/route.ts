@@ -176,6 +176,8 @@ export const POST = withVenue(async function POST(
         { tax: { defaultRate: settings.tax?.defaultRate ?? 0 } },
         Number(order.discountTotal),
         Number(order.tipTotal || 0),
+        undefined, 'card', undefined, undefined, 0,
+        (order as any).exclusiveTaxRate != null ? Number((order as any).exclusiveTaxRate) : undefined
       )
 
       const depDonation = Number(order.donationAmount || 0)
@@ -221,6 +223,8 @@ export const POST = withVenue(async function POST(
         { tax: { defaultRate: settings.tax?.defaultRate ?? 0 } },
         newDiscountTotal,
         Number(order.tipTotal || 0),
+        undefined, 'card', undefined, undefined, 0,
+        (order as any).exclusiveTaxRate != null ? Number((order as any).exclusiveTaxRate) : undefined
       )
 
       const newFinalTotal = depDonation > 0 || depConvFee > 0

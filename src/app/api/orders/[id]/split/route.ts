@@ -17,6 +17,7 @@ import {
   createSeatSplit,
   createTableSplit,
   calculateCustomSplit,
+  validateSplitBalance,
 } from '@/lib/domain/split-order'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
@@ -134,9 +135,10 @@ export const POST = withVenue(async function POST(
     // If this is a split order, get the parent
     const isAlreadySplit = order.parentOrderId !== null || order.splitOrders.length > 0
 
-    // Get tax rate from location settings
+    // Get tax rate from location settings — prefer order-level exclusive rate snapshot
     const locSettings = order.location.settings as { tax?: { defaultRate?: number; inclusiveTaxRate?: number } } | null
-    const taxRate = getLocationTaxRate(locSettings)
+    const orderExclRate = (order as any).exclusiveTaxRate != null ? Number((order as any).exclusiveTaxRate) : undefined
+    const taxRate = (orderExclRate != null && orderExclRate >= 0) ? orderExclRate : getLocationTaxRate(locSettings)
     // Prefer order-level snapshot (survives setting changes); fall back to location setting with > 0 guard
     const orderInclRate = Number(order.inclusiveTaxRate) || undefined
     const inclusiveTaxRateRaw = locSettings?.tax?.inclusiveTaxRate
@@ -217,6 +219,9 @@ export const POST = withVenue(async function POST(
       console.log(`[AUDIT] ORDER_SPLIT: parentId=${id}, type=even, children=${splitOrders.length}, by employee ${body.employeeId}`)
 
       pushUpstream()
+
+      // Split balance reconciliation (non-blocking warning)
+      void validateSplitBalance(db, order.id).catch(() => {})
 
       return ok({
         type: 'even',
@@ -331,6 +336,9 @@ export const POST = withVenue(async function POST(
       console.log(`[AUDIT] ORDER_SPLIT: parentId=${id}, type=by_item, children=1, by employee ${body.employeeId}`)
 
       pushUpstream()
+
+      // Split balance reconciliation (non-blocking warning)
+      void validateSplitBalance(db, order.parentOrderId || order.id).catch(() => {})
 
       return ok({
         type: 'by_item',
@@ -465,6 +473,9 @@ export const POST = withVenue(async function POST(
 
       pushUpstream()
 
+      // Split balance reconciliation (non-blocking warning)
+      void validateSplitBalance(db, order.id).catch(() => {})
+
       return ok({
         type: 'by_seat',
         parentOrder: {
@@ -583,6 +594,9 @@ export const POST = withVenue(async function POST(
       console.log(`[AUDIT] ORDER_SPLIT: parentId=${id}, type=by_table, children=${splitOrders.length}, by employee ${body.employeeId}`)
 
       pushUpstream()
+
+      // Split balance reconciliation (non-blocking warning)
+      void validateSplitBalance(db, order.id).catch(() => {})
 
       return ok({
         type: 'by_table',

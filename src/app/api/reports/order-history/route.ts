@@ -20,8 +20,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const search = searchParams.get('search')
     const orderType = searchParams.get('orderType')
     const format = searchParams.get('format') || 'json'
-    const page = parseInt(searchParams.get('page') || '1')
-    const limit = format === 'csv' ? 10000 : parseInt(searchParams.get('limit') || '50')
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10) || 1)
+    const limit = format === 'csv' ? 10000 : Math.max(1, Math.min(parseInt(searchParams.get('limit') || '50', 10) || 50, 500))
     const requestingEmployeeId = searchParams.get('requestingEmployeeId') || searchParams.get('employeeId') || employeeId
 
     if (!locationId) {

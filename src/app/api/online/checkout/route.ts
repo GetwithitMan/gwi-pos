@@ -565,6 +565,8 @@ export async function POST(request: NextRequest) {
 
     const inclusiveTaxRate = onlineLocSettings?.tax?.inclusiveTaxRate != null
       ? onlineLocSettings.tax.inclusiveTaxRate / 100 : undefined
+    // Snapshot exclusive tax rate at order creation (decimal form)
+    const exclusiveTaxRate = taxRate > 0 ? taxRate : 0
     const { taxFromInclusive, taxFromExclusive, totalTax: taxTotal } = calculateSplitTax(
       inclusiveSubtotal, exclusiveSubtotal, taxRate, inclusiveTaxRate
     )
@@ -828,6 +830,7 @@ export async function POST(request: NextRequest) {
           taxFromInclusive,
           taxFromExclusive,
           inclusiveTaxRate: inclusiveTaxRate || 0,
+          exclusiveTaxRate,
           tipTotal: tip,
           total: totalPlusTip,
           commissionTotal: 0,

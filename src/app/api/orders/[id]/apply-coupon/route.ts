@@ -309,7 +309,8 @@ export const POST = withVenue(async function POST(
       const totals = calculateOrderTotals(
         couponCalcItems, order.location.settings as { tax?: { defaultRate?: number; inclusiveTaxRate?: number } },
         newDiscountTotal, Number(order.tipTotal || 0), undefined, 'card', order.isTaxExempt,
-        Number(order.inclusiveTaxRate) || undefined
+        Number(order.inclusiveTaxRate) || undefined, 0,
+        (order as any).exclusiveTaxRate != null ? Number((order as any).exclusiveTaxRate) : undefined
       )
 
       const couponDonation = Number(order.donationAmount || 0)

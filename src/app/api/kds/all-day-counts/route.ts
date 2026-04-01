@@ -8,7 +8,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const locationId = searchParams.get('locationId')
-    const resetHour = parseInt(searchParams.get('resetHour') || '4', 10)
+    const resetHour = parseInt(searchParams.get('resetHour') || '4', 10) || 4
 
     if (!locationId) {
       return err('Location ID is required')

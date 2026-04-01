@@ -119,7 +119,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Get terminal names for audit logging
     const terminalIds = [...new Set(transactions.map((t: OfflineTransaction) => t.terminalId))]
     const terminals = await db.terminal.findMany({
-      where: { id: { in: terminalIds } },
+      where: { id: { in: terminalIds }, locationId },
       select: { id: true, name: true },
     })
     const terminalNameMap = new Map(terminals.map((t) => [t.id, t.name]))
@@ -137,6 +137,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           // TODO: PaymentRepository lacks OR-based lookups (idempotencyKey OR offlineIntentId)
           const existingPayment = await db.payment.findFirst({
             where: {
+              locationId,
               OR: [
                 { idempotencyKey: tx.idempotencyKey },
                 { offlineIntentId: tx.localId },
@@ -191,6 +192,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         // TODO: PaymentRepository lacks OR-based lookups (idempotencyKey OR offlineIntentId)
         const existingPayment = await db.payment.findFirst({
           where: {
+            locationId,
             OR: [
               { idempotencyKey: tx.idempotencyKey },
               { offlineIntentId: tx.localId },
@@ -235,7 +237,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         // TODO: Add OrderRepository.getOrderByOfflineLocalId() for tenant-safe offline sync lookup
         if (tx.localOrderId && !tx.orderId.startsWith('c')) {
           const syncedOrder = await db.order.findFirst({
-            where: { offlineLocalId: tx.localOrderId },
+            where: { locationId, offlineLocalId: tx.localOrderId },
           })
 
           if (syncedOrder) {

@@ -1036,6 +1036,7 @@ CREATE TABLE "Order" (
     "taxFromInclusive" DECIMAL(10,2) NOT NULL DEFAULT 0,
     "taxFromExclusive" DECIMAL(10,2) NOT NULL DEFAULT 0,
     "inclusiveTaxRate" DECIMAL(10,4) NOT NULL DEFAULT 0,
+    "exclusiveTaxRate" DECIMAL(10,4),
     "tipTotal" DECIMAL(10,2) NOT NULL DEFAULT 0,
     "donationAmount" DECIMAL(10,2),
     "total" DECIMAL(10,2) NOT NULL DEFAULT 0,
@@ -5428,6 +5429,25 @@ CREATE TABLE "ItemShare" (
     CONSTRAINT "ItemShare_pkey" PRIMARY KEY ("id")
 );
 
+-- CreateTable
+CREATE TABLE "IntegrationRetryEntry" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "integration" TEXT NOT NULL,
+    "action" TEXT NOT NULL,
+    "payload" JSONB NOT NULL,
+    "retryCount" INTEGER NOT NULL DEFAULT 0,
+    "maxRetries" INTEGER NOT NULL DEFAULT 5,
+    "lastError" TEXT,
+    "status" TEXT NOT NULL DEFAULT 'pending',
+    "nextRetryAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "completedAt" TIMESTAMP(3),
+
+    CONSTRAINT "IntegrationRetryEntry_pkey" PRIMARY KEY ("id")
+);
+
 -- CreateIndex
 CREATE UNIQUE INDEX "Location_slug_key" ON "Location"("slug");
 
@@ -7885,6 +7905,12 @@ CREATE INDEX "ItemShare_sourceOrderId_idx" ON "ItemShare"("sourceOrderId");
 -- CreateIndex
 CREATE INDEX "ItemShare_locationId_idx" ON "ItemShare"("locationId");
 
+-- CreateIndex
+CREATE INDEX "IntegrationRetryEntry_locationId_status_nextRetryAt_idx" ON "IntegrationRetryEntry"("locationId", "status", "nextRetryAt");
+
+-- CreateIndex
+CREATE INDEX "IntegrationRetryEntry_integration_status_idx" ON "IntegrationRetryEntry"("integration", "status");
+
 -- AddForeignKey
 ALTER TABLE "Location" ADD CONSTRAINT "Location_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "Organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
@@ -9411,4 +9437,7 @@ ALTER TABLE "ItemShare" ADD CONSTRAINT "ItemShare_targetOrderId_fkey" FOREIGN KE
 
 -- AddForeignKey
 ALTER TABLE "ItemShare" ADD CONSTRAINT "ItemShare_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "IntegrationRetryEntry" ADD CONSTRAINT "IntegrationRetryEntry_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 

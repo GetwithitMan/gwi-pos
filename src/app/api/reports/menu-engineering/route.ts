@@ -32,7 +32,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const startDate = searchParams.get('startDate')
     const endDate = searchParams.get('endDate')
     const categoryId = searchParams.get('categoryId')
-    const minQtySold = parseInt(searchParams.get('minQtySold') || '1')
+    const minQtySold = parseInt(searchParams.get('minQtySold') || '1', 10) || 1
     const requestingEmployeeId = searchParams.get('requestingEmployeeId') || searchParams.get('employeeId')
 
     if (!locationId) {

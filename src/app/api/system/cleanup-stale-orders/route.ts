@@ -32,7 +32,7 @@ export const POST = withVenue(async (request) => {
 
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
-    const maxAgeHours = parseInt(searchParams.get('maxAgeHours') || '4', 10)
+    const maxAgeHours = parseInt(searchParams.get('maxAgeHours') || '4', 10) || 4
     const dryRun = searchParams.get('dryRun') === 'true'
 
     if (!locationId) {

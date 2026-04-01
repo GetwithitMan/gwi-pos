@@ -12,7 +12,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const locationId = searchParams.get('locationId')
     const requestingEmployeeId = searchParams.get('requestingEmployeeId')
     const threshold = parseFloat(searchParams.get('threshold') || '5')
-    const days = parseInt(searchParams.get('days') || '30')
+    const days = parseInt(searchParams.get('days') || '30', 10) || 30
 
     if (!locationId) {
       return err('locationId is required')

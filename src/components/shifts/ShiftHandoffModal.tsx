@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/card'
 import { formatCurrency } from '@/lib/utils'
 import { toast } from '@/stores/toast-store'
 import { Modal } from '@/components/ui/modal'
+import { clientLog } from '@/lib/client-logger'
 import type { OpenOrderHandoff as OpenOrder } from '@/types'
 
 interface TipGroupOwned {
@@ -139,10 +140,10 @@ export function ShiftHandoffModal({
               tipGroupsTransferred++
             } else {
               const err = await tipRes.json()
-              console.warn(`Failed to transfer tip group ${group.id}:`, err.error)
+              clientLog.warn(`Failed to transfer tip group ${group.id}:`, err.error)
             }
           } catch {
-            console.warn(`Failed to transfer tip group ${group.id}`)
+            clientLog.warn(`Failed to transfer tip group ${group.id}`)
           }
         }
       }

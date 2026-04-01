@@ -116,7 +116,9 @@ export const DELETE = withVenue(withAuth(async function DELETE(
       const settings = location?.settings as {
         tax?: { defaultRate?: number; inclusiveTaxRate?: number }
       } | null
-      const taxRate = getLocationTaxRate(settings)
+      // Prefer order-level exclusive tax rate snapshot; fall back to live rate
+      const autoMergeOrderExclRate = (parentOrder as any).exclusiveTaxRate != null ? Number((parentOrder as any).exclusiveTaxRate) : undefined
+      const taxRate = (autoMergeOrderExclRate != null && autoMergeOrderExclRate >= 0) ? autoMergeOrderExclRate : getLocationTaxRate(settings)
       // Prefer order-level snapshot; fall back to location setting with > 0 guard
       const autoMergeOrderInclRate = Number(parentOrder.inclusiveTaxRate) || undefined
       const autoMergeInclRateRaw = settings?.tax?.inclusiveTaxRate

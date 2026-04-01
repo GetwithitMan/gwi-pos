@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { db, masterClient } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { err, ok, unauthorized } from '@/lib/api-response'
+import { timingSafeCompare } from '@/lib/timing-safe-compare'
 
 /**
  * POST /api/internal/deprovision
@@ -17,7 +18,7 @@ import { err, ok, unauthorized } from '@/lib/api-response'
  */
 export const POST = withVenue(async function POST(request: NextRequest) {
   const apiKey = request.headers.get('x-api-key')
-  if (!apiKey || apiKey !== process.env.PROVISION_API_KEY) {
+  if (!apiKey || !process.env.PROVISION_API_KEY || !timingSafeCompare(apiKey, process.env.PROVISION_API_KEY)) {
     return unauthorized('Unauthorized')
   }
 

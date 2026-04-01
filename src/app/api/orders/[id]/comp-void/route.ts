@@ -9,7 +9,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { withAuth, type AuthenticatedContext } from '@/lib/api-auth-middleware'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { roundToCents, calculateCardPrice } from '@/lib/pricing'
-import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate, dispatchFloorPlanUpdate, dispatchOrderSummaryUpdated, dispatchOrderClosed, dispatchTabItemsUpdated, dispatchEntertainmentStatusChanged, dispatchCFDOrderUpdated, dispatchTableStatusChanged } from '@/lib/socket-dispatch'
+import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate, dispatchFloorPlanUpdate, dispatchOrderSummaryUpdated, dispatchOrderClosed, dispatchTabItemsUpdated, dispatchEntertainmentStatusChanged, dispatchCFDOrderUpdated, dispatchTableStatusChanged, dispatchItemsVoided } from '@/lib/socket-dispatch'
 import { cleanupTemporarySeats } from '@/lib/cleanup-temp-seats'
 import { emitCloudEvent } from '@/lib/cloud-events'
 import { getDatacapClient } from '@/lib/datacap/helpers'
@@ -457,6 +457,19 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     }).catch(err => {
       console.error('[CompVoid] Failed to dispatch KDS void event:', err)
     })
+
+    // KDS void notification: if the item was sent to kitchen, emit a dedicated
+    // kds:items-voided event so KDS screens can show a void alert with reason
+    const wasSentToKitchen = !!(item as any)?.kitchenSentAt || (item as any)?.kitchenStatus === 'sent'
+    if (wasSentToKitchen && action === 'void') {
+      void dispatchItemsVoided(order.locationId, {
+        orderId,
+        itemIds: [itemId],
+        reason: reason || 'Voided from POS',
+      }, { async: true }).catch(err => {
+        log.warn({ err }, '[CompVoid] Failed to dispatch kds:items-voided')
+      })
+    }
 
     // Fire-and-forget: Track employee meal if comp reason is employee_meal
     if (action === 'comp') {

@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react'
 import type { DeclineDetail } from '@/lib/datacap/types'
+import { clientLog } from '@/lib/client-logger'
 
 // Processing status for UI feedback
 export type DatacapProcessingStatus =
@@ -278,7 +279,7 @@ export function useDatacap(options: UseDatacapOptions): UseDatacapReturn {
         }
       }
       if (cancelUrl) {
-        fetch(cancelUrl, { method: 'POST' }).catch(err => console.warn('fetch request failed:', err))
+        fetch(cancelUrl, { method: 'POST' }).catch(err => clientLog.warn('fetch request failed:', err))
       }
     }
   }, [])
@@ -335,7 +336,7 @@ export function useDatacap(options: UseDatacapOptions): UseDatacapReturn {
    */
   const swapToBackup = useCallback(() => {
     if (!backupReader) {
-      console.warn('[useDatacap] No backup reader available')
+      clientLog.warn('[useDatacap] No backup reader available')
       return
     }
 

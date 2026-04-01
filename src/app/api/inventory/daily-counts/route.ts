@@ -14,7 +14,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const status = searchParams.get('status') // 'draft', 'submitted', 'approved', 'rejected'
     const startDate = searchParams.get('startDate')
     const endDate = searchParams.get('endDate')
-    const limit = parseInt(searchParams.get('limit') || '50')
+    const limit = Math.max(1, Math.min(parseInt(searchParams.get('limit') || '50', 10) || 50, 500))
 
     if (!locationId) {
       return err('Location ID required')

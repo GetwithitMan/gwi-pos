@@ -17,8 +17,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const actionType = searchParams.get('actionType')
     const filterEmployeeId = searchParams.get('filterEmployeeId')
     const search = searchParams.get('search')?.trim() || ''
-    const limit = Math.min(parseInt(searchParams.get('limit') || '50'), 200)
-    const offset = parseInt(searchParams.get('offset') || '0')
+    const limit = Math.max(1, Math.min(parseInt(searchParams.get('limit') || '50', 10) || 50, 200))
+    const offset = Math.max(0, parseInt(searchParams.get('offset') || '0', 10) || 0)
 
     if (!employeeId || !locationId) {
       return unauthorized('employeeId and locationId query params are required')

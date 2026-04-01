@@ -1,80 +1,44 @@
 'use client'
 
 import { useEffect, useState, useCallback, useRef, useMemo, useTransition, useDeferredValue } from 'react'
-import { motion } from 'framer-motion'
 import { toast } from '@/stores/toast-store'
 import { usePricing } from '@/hooks/usePricing'
 import { useOrderStore } from '@/stores/order-store'
 import { useActiveOrder } from '@/hooks/useActiveOrder'
-import { useOrderingEngine } from '@/hooks/useOrderingEngine'
-import { isTempId } from '@/lib/order-utils'
-import type { EngineMenuItem, EnginePricingOption } from '@/hooks/useOrderingEngine'
-import { PricingOptionPicker } from '@/components/orders/PricingOptionPicker'
 import { useLongPress } from '@/hooks/useLongPress'
 import { hasPermission, isAdmin } from '@/lib/auth-utils'
 import { useOrderEditing } from '@/hooks/useOrderEditing'
 import { useTabCreation } from '@/hooks/useTabCreation'
+import { useBartenderPreferences } from '@/hooks/useBartenderPreferences'
+import { useBartenderOrdering } from '@/hooks/useBartenderOrdering'
+import { useSocket } from '@/hooks/useSocket'
 import ModeSelector from '@/components/orders/ModeSelector'
-import { OpenOrdersPanel } from '@/components/orders/OpenOrdersPanel'
-import { SilentErrorBoundary } from '@/lib/error-boundary'
+import { PricingOptionPicker } from '@/components/orders/PricingOptionPicker'
 import { NewTabModal } from '@/components/bartender/NewTabModal'
 import { SpiritSelectionModal } from '@/components/bartender/SpiritSelectionModal'
-import { FavoriteItem } from '@/components/bartender/FavoriteItem'
+import { BartenderCategoryNav } from '@/components/bartender/BartenderCategoryNav'
+import { BartenderFavorites } from '@/components/bartender/BartenderFavorites'
+import { BartenderMenuGrid } from '@/components/bartender/BartenderMenuGrid'
+import { BartenderTabPanel } from '@/components/bartender/BartenderTabPanel'
 import type { FavoriteItemData } from '@/components/bartender/FavoriteItem'
 import {
-  type CategoryRows,
-  type ItemsPerRow,
   type ItemCustomization,
-  CATEGORY_SIZES,
-  FONT_FAMILIES,
-  EFFECT_PRESETS,
-  GLOW_COLORS,
-  ITEM_SIZES,
-  isLightColor,
+  type BartenderMenuItem,
   COMMON_BAR_MODIFIERS,
 } from '@/components/bartender/bartender-settings'
-import { useBartenderPreferences } from '@/hooks/useBartenderPreferences'
-import { useSocket } from '@/hooks/useSocket'
-import type { MenuItem as BaseMenuItem, CategoryFloorPlan as Category } from '@/types'
+import type { CategoryFloorPlan as Category } from '@/types'
 
 // ============================================================================
 // TYPES
 // ============================================================================
 
-interface SpiritOption {
-  id: string
-  name: string
-  price: number
-  spiritTier?: string | null
-  linkedBottleProductId?: string | null
-  currentStock?: number | null
-}
+type MenuItem = BartenderMenuItem
 
-interface SpiritTiers {
-  well: SpiritOption[]
-  call: SpiritOption[]
-  premium: SpiritOption[]
-  top_shelf: SpiritOption[]
-}
+// Menu sections - bar, food, or entertainment (standalone)
+type MenuSection = 'bar' | 'food' | 'entertainment'
 
-/** Bartender view extends base MenuItem with spirit-specific fields */
-type MenuItem = Pick<BaseMenuItem,
-  'id' | 'name' | 'price' | 'categoryId' | 'categoryType' | 'hasModifiers'
-  | 'itemType' | 'pourSizes' | 'defaultPourSize' | 'pricingOptionGroups' | 'hasPricingOptions'
-> & {
-  hasOtherModifiers?: boolean  // Has non-spirit modifier groups
-  spiritTiers?: SpiritTiers | null  // Spirit upgrade options by tier
-}
-
-// Pour size display config - cohesive teal gradient (also used by handlePourSizeClick)
-const POUR_SIZE_CONFIG: Record<string, { label: string; short: string; color: string }> = {
-  shot: { label: 'Shot', short: '1x', color: 'bg-teal-700' },
-  double: { label: 'Dbl', short: '2x', color: 'bg-teal-600' },
-  tall: { label: 'Tall', short: '1.5x', color: 'bg-teal-500' },
-  short: { label: 'Shrt', short: '.75x', color: 'bg-teal-800' },
-}
-
-
+// FavoriteItem type alias for internal use
+type FavoriteItem = FavoriteItemData
 
 interface BartenderViewProps {
   locationId: string
@@ -88,37 +52,16 @@ interface BartenderViewProps {
   ) => void
   onOpenCompVoid?: (item: { id: string; name: string; quantity: number; price: number; modifiers: { id: string; name: string; price: number }[]; status?: string; voidReason?: string }) => void
   employeePermissions?: string[]
-  // Settings
   requireNameWithoutCard?: boolean
-  // Dual pricing from parent (avoids duplicate useOrderSettings call)
   dualPricing?: { enabled: boolean; cashDiscountPercent: number; applyToCredit: boolean; applyToDebit: boolean; showSavingsMessage: boolean }
-  // Pre-loaded menu data from parent (avoids duplicate /api/menu fetch)
   initialCategories?: Category[]
   initialMenuItems?: MenuItem[]
-  // OrderPanel rendered by parent, passed as children
   children?: React.ReactNode
-  // Ref to allow parent to deselect current tab (e.g., "Hide" button)
   onRegisterDeselectTab?: (fn: () => void) => void
-  // External refresh trigger (e.g., parent increments after payment)
   refreshTrigger?: number
-  // Notify parent when a tab is selected/deselected so savedOrderId stays in sync
   onSelectedTabChange?: (tabId: string | null) => void
-  // Combo builder modal callback
   onOpenComboBuilder?: (item: MenuItem, onComplete: (modifiers: { id: string; name: string; price: number; depth?: number }[]) => void) => void
 }
-
-// Menu sections - bar, food, or entertainment (standalone)
-type MenuSection = 'bar' | 'food' | 'entertainment'
-
-// FavoriteItem type alias for internal use (re-exported from FavoriteItem.tsx)
-type FavoriteItem = FavoriteItemData
-
-// Stable empty object for items with no customization (prevents new {} per render)
-const EMPTY_CUSTOMIZATION: ItemCustomization = {} as ItemCustomization
-
-// MenuItemButton extracted to ./MenuItemButton.tsx — use the standalone component
-import { MenuItemButton } from '@/components/bartender/MenuItemButton'
-import type { MenuItemButtonMenuItem } from '@/components/bartender/MenuItemButton'
 
 // ============================================================================
 // COMPONENT
@@ -145,7 +88,6 @@ export function BartenderView({
   // STATE
   // ---------------------------------------------------------------------------
 
-  // Permission: only managers/admins can edit category bar layout, reorder items, etc.
   const canEditLayout = isAdmin(employeePermissions) ||
     hasPermission(employeePermissions, 'manager') ||
     hasPermission(employeePermissions, 'settings.edit') ||
@@ -157,24 +99,22 @@ export function BartenderView({
   const selectedTabIdRef = useRef<string | null>(null)
   selectedTabIdRef.current = selectedTabId
 
-  // Socket (for cross-terminal events like order:closed)
+  // Socket
   const { socket, isConnected } = useSocket()
-
-  // Multi-terminal editing awareness
   useOrderEditing(selectedTabId, locationId)
 
   // Tab panel expansion
   const [isTabPanelExpanded, setIsTabPanelExpanded] = useState(false)
   const [tabRefreshTrigger, setTabRefreshTrigger] = useState(0)
 
-  // Menu section (Bar / Food / My Bar)
+  // Menu section
   const [menuSection, setMenuSection] = useState<MenuSection>('bar')
 
-  // Categories & Menu — initialized from parent props when available
+  // Categories & Menu
   const [categories, setCategories] = useState<Category[]>(initialCategories || [])
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null)
-  const [allMenuItems, setAllMenuItems] = useState<MenuItem[]>(initialMenuItems || []) // Full menu, loaded once
-  const [menuItems, setMenuItems] = useState<MenuItem[]>([])       // Filtered by category
+  const [allMenuItems, setAllMenuItems] = useState<MenuItem[]>(initialMenuItems || [])
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([])
   const [isLoadingMenu, setIsLoadingMenu] = useState(false)
   const [menuPage, setMenuPage] = useState(1)
 
@@ -184,7 +124,7 @@ export function BartenderView({
   const selectedCategoryIdRef = useRef(selectedCategoryId)
   selectedCategoryIdRef.current = selectedCategoryId
 
-  // Sync from parent when props update (e.g., parent's loadMenu completes after mount)
+  // Sync from parent when props update
   useEffect(() => {
     if (initialCategories && initialCategories.length > 0) {
       setCategories(initialCategories)
@@ -194,7 +134,6 @@ export function BartenderView({
   useEffect(() => {
     if (initialMenuItems && initialMenuItems.length > 0) {
       setAllMenuItems(initialMenuItems)
-      // If a category is selected, refresh its filtered view
       if (selectedCategoryIdRef.current) {
         const selectedCat = categories.find(c => c.id === selectedCategoryIdRef.current)
         if (selectedCat?.categoryType === 'pizza') {
@@ -212,10 +151,10 @@ export function BartenderView({
     }
   }, [initialMenuItems, categories])
 
-  // Server-synced bartender preferences (replaces 14 localStorage calls)
+  // Server-synced bartender preferences
   const bartPrefs = useBartenderPreferences({ employeeId, locationId })
 
-  // Custom favorites bar
+  // Favorites
   const favorites = bartPrefs.favorites as FavoriteItem[]
   const showFavorites = true
   const [isEditingFavorites, setIsEditingFavorites] = useState(false)
@@ -232,37 +171,47 @@ export function BartenderView({
   const itemCustomizations = bartPrefs.itemCustomizations as Record<string, ItemCustomization>
   const itemOrder = bartPrefs.itemOrder
   const [draggedItemId, setDraggedItemId] = useState<string | null>(null)
-  const [editingItemId, setEditingItemId] = useState<string | null>(null) // Item being customized
+  const [editingItemId, setEditingItemId] = useState<string | null>(null)
 
-  // === Shared order hook (single source of truth for order items) ===
-  const activeOrder = useActiveOrder({
+  // Shared order hook
+  const activeOrder = useActiveOrder({ locationId, employeeId })
+
+  // Search state
+  const [searchQuery, setSearchQuery] = useState('')
+  const [isSearchExpanded, setIsSearchExpanded] = useState(false)
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  const [isCategoryPending, startCategoryTransition] = useTransition()
+  const deferredSearchQuery = useDeferredValue(searchQuery)
+
+  // Hot modifier cache
+  const [hotModifierCache, setHotModifierCache] = useState<Record<string, { id: string; name: string; price: number }[]>>({})
+  const hotModifierFetchedCats = useRef<Set<string>>(new Set())
+
+  // Refs
+  const categoryScrollRef = useRef<HTMLDivElement>(null)
+  const loadedTabIdRef = useRef<string | null>(null)
+
+  // ---------------------------------------------------------------------------
+  // ORDERING HOOK (extracted to useBartenderOrdering)
+  // ---------------------------------------------------------------------------
+
+  const ordering = useBartenderOrdering({
     locationId,
     employeeId,
+    selectedTabId,
+    selectedTabIdRef,
+    onOpenModifiers,
+    onOpenComboBuilder,
+    onSelectedTabChange,
+    loadedTabIdRef,
+    onTabRefresh: useCallback(() => setTabRefreshTrigger(t => t + 1), []),
   })
 
-  // Pricing option picker state (for non-quick-pick items)
-  const [pricingPickerItem, setPricingPickerItem] = useState<MenuItem | null>(null)
-  const pricingPickerCallbackRef = useRef<((option: EnginePricingOption) => void) | null>(null)
+  // ---------------------------------------------------------------------------
+  // COMPUTED
+  // ---------------------------------------------------------------------------
 
-  // === Shared ordering engine (item add, modifier modal coordination) ===
-  const engine = useOrderingEngine({
-    locationId,
-    employeeId,
-    defaultOrderType: 'bar_tab',
-    onOpenModifiers: onOpenModifiers as ((
-      item: EngineMenuItem,
-      onComplete: (modifiers: { id: string; name: string; price: number; depth?: number; preModifier?: string | null }[], ingredientMods?: { ingredientId: string; name: string; modificationType: string; priceAdjustment: number; swappedTo?: { modifierId: string; name: string; price: number } }[]) => void,
-      existingModifiers?: { id: string; name: string; price: number; depth?: number; preModifier?: string | null }[],
-      existingIngredientMods?: { ingredientId: string; name: string; modificationType: string; priceAdjustment: number; swappedTo?: { modifierId: string; name: string; price: number } }[]
-    ) => void) | undefined,
-    onOpenPricingOptionPicker: (item, onComplete) => {
-      pricingPickerCallbackRef.current = onComplete
-      setPricingPickerItem(item as unknown as MenuItem)
-    },
-    onOpenComboBuilder: onOpenComboBuilder as any,
-  })
-
-  // orderItems — read-only projection from Zustand store via useActiveOrder hook
+  // orderItems projection from Zustand store
   const orderItems = useMemo(() => {
     const storeItems = useOrderStore.getState().currentOrder?.items || []
     return storeItems.map(item => ({
@@ -290,60 +239,21 @@ export function BartenderView({
       voidReason: item.voidReason,
       wasMade: item.wasMade,
     }))
-   
   }, [activeOrder.items])
 
-  // Tab creation (shared POST logic between "New Tab" modal and quick-tab button)
-
-  // W3-10: Search state
-  const [searchQuery, setSearchQuery] = useState('')
-  const [isSearchExpanded, setIsSearchExpanded] = useState(false)
-  const searchInputRef = useRef<HTMLInputElement>(null)
-  const [isCategoryPending, startCategoryTransition] = useTransition()
-  const deferredSearchQuery = useDeferredValue(searchQuery)
-
-  // W3-11: Hot modifier cache — menuItemId → matching common bar modifiers
-  const [hotModifierCache, setHotModifierCache] = useState<Record<string, { id: string; name: string; price: number }[]>>({})
-  const hotModifierFetchedCats = useRef<Set<string>>(new Set()) // categories already fetched
-
-  // Spirit tier popup state
-  const [spiritPopupItem, setSpiritPopupItem] = useState<MenuItem | null>(null)
-  const [selectedSpiritTier, setSelectedSpiritTier] = useState<string | null>(null)
-
-  // Refs
-  const categoryScrollRef = useRef<HTMLDivElement>(null)
-
-  // ---------------------------------------------------------------------------
-  // COMPUTED
-  // ---------------------------------------------------------------------------
-
-
-  // Filter categories by categoryShow field
+  // Filter categories by section
   const filteredCategories = useMemo(() => {
     return categories.filter(cat => {
       const show = (cat.categoryShow || 'all').toLowerCase()
-
-      if (menuSection === 'entertainment') {
-        // Entertainment mode: only show entertainment categories
-        return show === 'entertainment'
-      } else if (menuSection === 'bar') {
-        // Bar mode: show bar categories and 'all' categories
-        return show === 'bar' || show === 'all'
-      } else {
-        // Food mode: show food categories and 'all' categories
-        return show === 'food' || show === 'all'
-      }
+      if (menuSection === 'entertainment') return show === 'entertainment'
+      else if (menuSection === 'bar') return show === 'bar' || show === 'all'
+      else return show === 'food' || show === 'all'
     })
   }, [categories, menuSection])
-
-  // Category display helpers
-  const currentSizeConfig = CATEGORY_SIZES.find(s => s.value === categorySettings.size) || CATEGORY_SIZES[3]
 
   // Order categories based on custom order
   const orderedCategories = useMemo(() => {
     if (categoryOrder.length === 0) return filteredCategories
-
-    // Sort by custom order, put unordered ones at the end
     return [...filteredCategories].sort((a, b) => {
       const aIndex = categoryOrder.indexOf(a.id)
       const bIndex = categoryOrder.indexOf(b.id)
@@ -354,15 +264,14 @@ export function BartenderView({
     })
   }, [filteredCategories, categoryOrder])
 
-  // Reset scroll position when section changes
+  // Reset scroll on section change
   useEffect(() => {
     if (categoryScrollRef.current) {
       categoryScrollRef.current.scrollTo({ left: 0, behavior: 'smooth' })
     }
   }, [menuSection])
 
-  // Filtered and sorted tabs
-  // Calculate subtotal from local items for usePricing
+  // Order subtotal for pricing
   const orderSubtotal = useMemo(() => {
     return orderItems.reduce((sum, item) => {
       if (item.status === 'voided' || item.status === 'comped') return sum
@@ -372,29 +281,11 @@ export function BartenderView({
     }, 0)
   }, [orderItems])
 
-  // Use the shared pricing hook (same as FloorPlanHome and /orders)
   const pricing = usePricing({ subtotal: orderSubtotal })
-  const orderTotals = {
-    subtotal: pricing.subtotal,
-    tax: pricing.tax,
-    discounts: pricing.discounts,
-    total: pricing.total,
-  }
 
-  // Backward compatibility - keep orderTotal for existing code
-  const orderTotal = orderTotals.total
-
-  const unsavedItemCount = useMemo(() => {
-    return orderItems.filter(i => !i.sentToKitchen).length
-  }, [orderItems])
-
-  // Item display helpers
-  const currentItemSizeConfig = ITEM_SIZES.find(s => s.value === itemSettings.size) || ITEM_SIZES[1]
-
-  // Calculate items per row and page based on settings
+  // Items per row
   const effectiveItemsPerRow = useMemo(() => {
     if (itemSettings.itemsPerRow !== 'auto') return itemSettings.itemsPerRow
-    // Auto: calculate based on size
     switch (itemSettings.size) {
       case 'compact': return 5
       case 'normal': return 4
@@ -404,14 +295,13 @@ export function BartenderView({
     }
   }, [itemSettings.itemsPerRow, itemSettings.size])
 
-  const itemsPerPage = effectiveItemsPerRow * 4 // 4 rows
+  const itemsPerPage = effectiveItemsPerRow * 4
 
-  // Order menu items based on custom order
+  // Order menu items by custom order
   const orderedMenuItems = useMemo(() => {
     if (!selectedCategoryId) return menuItems
     const customOrder = itemOrder[selectedCategoryId]
     if (!customOrder || customOrder.length === 0) return menuItems
-
     return [...menuItems].sort((a, b) => {
       const aIdx = customOrder.indexOf(a.id)
       const bIdx = customOrder.indexOf(b.id)
@@ -422,26 +312,21 @@ export function BartenderView({
     })
   }, [menuItems, selectedCategoryId, itemOrder])
 
-  // Paginated or scrollable menu items
+  // Pagination
   const totalMenuPages = itemSettings.useScrolling ? 1 : Math.ceil(orderedMenuItems.length / itemsPerPage)
   const displayedMenuItems = useMemo(() => {
-    if (itemSettings.useScrolling) {
-      return orderedMenuItems // Show all items for scrolling
-    }
+    if (itemSettings.useScrolling) return orderedMenuItems
     const start = (menuPage - 1) * itemsPerPage
     return orderedMenuItems.slice(start, start + itemsPerPage)
   }, [orderedMenuItems, menuPage, itemsPerPage, itemSettings.useScrolling])
 
-
-  // W3-10: Search-filtered items — when search is active, filter across all items regardless of category
-  // useDeferredValue keeps the text input responsive; filtering runs a frame behind on large menus
+  // Search-filtered items
   const searchFilteredItems = useMemo(() => {
-    if (!deferredSearchQuery.trim()) return null // null = not searching
+    if (!deferredSearchQuery.trim()) return null
     const query = deferredSearchQuery.toLowerCase().trim()
     return allMenuItems.filter(item => item.name.toLowerCase().includes(query))
   }, [deferredSearchQuery, allMenuItems])
 
-  // Items to actually display — search results override category/paginated items
   const finalDisplayedItems = searchFilteredItems ?? displayedMenuItems
 
   // ---------------------------------------------------------------------------
@@ -453,8 +338,7 @@ export function BartenderView({
       const res = await fetch(`/api/menu?locationId=${locationId}`)
       if (res.ok) {
         const data = await res.json()
-        const cats = data.data?.categories || []
-        setCategories(cats)
+        setCategories(data.data?.categories || [])
         setAllMenuItems(data.data?.items || [])
       }
     } catch (error) {
@@ -462,8 +346,6 @@ export function BartenderView({
     }
   }, [locationId])
 
-  // Client-side category filter — no API call needed
-  // Pizza category guard: when a pizza category is selected, include all pizza items
   const filterMenuItemsByCategory = useCallback((categoryId: string) => {
     setMenuPage(1)
     const selectedCat = categories.find(c => c.id === categoryId)
@@ -478,25 +360,20 @@ export function BartenderView({
     }
   }, [categories])
 
-  // Initial load — skip if parent owns menu data (prop defined, even if empty while loading)
+  // Initial load
   useEffect(() => {
     if (initialCategories === undefined) {
       loadCategories()
     }
-   
   }, [locationId])
 
-  // W3-11: Fetch hot modifiers for liquor items in current category
+  // Hot modifier fetch
   const fetchHotModifiersForCategory = useCallback(async (categoryId: string, items: MenuItem[]) => {
     if (hotModifierFetchedCats.current.has(categoryId)) return
-
-    // Only fetch for items that have non-spirit modifiers and are likely liquor items (have pour sizes)
     const liquorItems = items.filter(i => i.hasOtherModifiers && i.pourSizes && Object.keys(i.pourSizes).length > 0)
     if (liquorItems.length === 0) return
-
     hotModifierFetchedCats.current.add(categoryId)
 
-    // Batch fetch modifier groups for up to 20 items
     const itemsToFetch = liquorItems.slice(0, 20)
     const newCache: Record<string, { id: string; name: string; price: number }[]> = {}
 
@@ -506,8 +383,6 @@ export function BartenderView({
         if (!res.ok) return
         const data = await res.json()
         const groups = data.data?.modifierGroups || []
-
-        // Find modifiers matching COMMON_BAR_MODIFIERS (skip spirit groups)
         const matches: { id: string; name: string; price: number }[] = []
         for (const group of groups) {
           if (group.isSpiritGroup) continue
@@ -518,12 +393,8 @@ export function BartenderView({
             }
           }
         }
-        if (matches.length > 0) {
-          newCache[item.id] = matches
-        }
-      } catch {
-        // Silently skip failed fetches
-      }
+        if (matches.length > 0) newCache[item.id] = matches
+      } catch { /* skip */ }
     }))
 
     if (Object.keys(newCache).length > 0) {
@@ -531,138 +402,109 @@ export function BartenderView({
     }
   }, [])
 
-  // Trigger hot modifier fetch when category changes
   useEffect(() => {
     if (selectedCategoryId && menuItems.length > 0) {
       void fetchHotModifiersForCategory(selectedCategoryId, menuItems)
     }
   }, [selectedCategoryId, menuItems, fetchHotModifiersForCategory])
 
-  // Items from FloorPlanHome are automatically available via Zustand store
-  // No mount-time sync needed — the store IS the source of truth
-  // If the store has an order with a real ID, auto-select the matching tab
+  // Auto-select store order on mount
   useEffect(() => {
     const storeOrder = useOrderStore.getState().currentOrder
     if (storeOrder?.id && !storeOrder.id.startsWith('local-') && storeOrder.items.length > 0) {
       setSelectedTabId(storeOrder.id)
     }
-   
-  }, []) // Only run on mount
+  }, [])
 
-  // Server-synced save callbacks (delegate to useBartenderPreferences hook)
+  // ---------------------------------------------------------------------------
+  // CATEGORY & ITEM DRAG HANDLERS
+  // ---------------------------------------------------------------------------
+
   const saveCategorySettings = bartPrefs.setCategorySettings
   const saveCategoryOrder = bartPrefs.setCategoryOrder
   const saveItemSettings = bartPrefs.setItemSettings
   const saveItemCustomization = bartPrefs.setItemCustomization
   const saveItemOrder = bartPrefs.setItemOrder
+  const saveFavorites = bartPrefs.setFavorites
 
-  // Handle category drag start
   const handleCategoryDragStart = useCallback((categoryId: string) => {
     setDraggedCategoryId(categoryId)
   }, [])
 
-  // Handle category drag over
   const handleCategoryDragOver = useCallback((targetCategoryId: string) => {
     if (!draggedCategoryId || draggedCategoryId === targetCategoryId) return
-
     const currentOrder = categoryOrder.length > 0
       ? [...categoryOrder]
       : orderedCategories.map(c => c.id)
-
     const draggedIndex = currentOrder.indexOf(draggedCategoryId)
     const targetIndex = currentOrder.indexOf(targetCategoryId)
-
     if (draggedIndex === -1 || targetIndex === -1) return
-
-    // Remove dragged item and insert at target position
     currentOrder.splice(draggedIndex, 1)
     currentOrder.splice(targetIndex, 0, draggedCategoryId)
-
     saveCategoryOrder(currentOrder)
   }, [draggedCategoryId, categoryOrder, orderedCategories, saveCategoryOrder])
 
-  // Handle category drag end
   const handleCategoryDragEnd = useCallback(() => {
     setDraggedCategoryId(null)
   }, [])
 
-  // Handle item drag start
   const handleItemDragStart = useCallback((itemId: string) => {
     setDraggedItemId(itemId)
   }, [])
 
-  // Handle item drag over
   const handleItemDragOver = useCallback((targetItemId: string) => {
     if (!draggedItemId || draggedItemId === targetItemId || !selectedCategoryId) return
-
     const currentOrder = itemOrder[selectedCategoryId]?.length > 0
       ? [...itemOrder[selectedCategoryId]]
       : orderedMenuItems.map(i => i.id)
-
     const draggedIdx = currentOrder.indexOf(draggedItemId)
     const targetIdx = currentOrder.indexOf(targetItemId)
-
     if (draggedIdx === -1 || targetIdx === -1) return
-
     currentOrder.splice(draggedIdx, 1)
     currentOrder.splice(targetIdx, 0, draggedItemId)
-
     saveItemOrder(selectedCategoryId, currentOrder)
   }, [draggedItemId, selectedCategoryId, itemOrder, orderedMenuItems, saveItemOrder])
 
-  // Handle item drag end
   const handleItemDragEnd = useCallback(() => {
     setDraggedItemId(null)
   }, [])
 
-  // Save favorites (server-synced via useBartenderPreferences)
-  const saveFavorites = bartPrefs.setFavorites
+  // ---------------------------------------------------------------------------
+  // FAVORITES HANDLERS
+  // ---------------------------------------------------------------------------
 
-  // Add item to favorites
   const addToFavorites = useCallback((item: MenuItem) => {
     const existing = favorites.find(f => f.menuItemId === item.id)
-    if (existing) {
-      toast.info('Already in favorites')
-      return
-    }
-    const newFavorites = [...favorites, {
-      menuItemId: item.id,
-      name: item.name,
-      price: item.price,
-      hasModifiers: item.hasModifiers,
-    }]
-    saveFavorites(newFavorites)
+    if (existing) { toast.info('Already in favorites'); return }
+    saveFavorites([...favorites, {
+      menuItemId: item.id, name: item.name, price: item.price, hasModifiers: item.hasModifiers,
+    }])
     toast.success(`Added ${item.name} to favorites`)
   }, [favorites, saveFavorites])
 
-  // Remove item from favorites
   const removeFromFavorites = useCallback((menuItemId: string) => {
-    const newFavorites = favorites.filter(f => f.menuItemId !== menuItemId)
-    saveFavorites(newFavorites)
+    saveFavorites(favorites.filter(f => f.menuItemId !== menuItemId))
   }, [favorites, saveFavorites])
 
-  // Clear all favorites
   const clearFavorites = useCallback(() => {
     saveFavorites([])
     toast.success('Favorites cleared')
     setIsEditingFavorites(false)
   }, [saveFavorites])
 
-  // Filter items for all entertainment categories — instant client-side
+  // ---------------------------------------------------------------------------
+  // ENTERTAINMENT & SECTION CHANGE
+  // ---------------------------------------------------------------------------
+
   const loadEntertainmentItems = useCallback(() => {
-    if (filteredCategories.length === 0) {
-      setMenuItems([])
-      return
-    }
+    if (filteredCategories.length === 0) { setMenuItems([]); return }
     setMenuPage(1)
     const catIds = new Set(filteredCategories.map(c => c.id))
     setMenuItems(allMenuItemsRef.current.filter(item => catIds.has(item.categoryId)))
   }, [filteredCategories])
 
-  // Auto-select first category when section changes (or load all for entertainment)
   useEffect(() => {
     if (menuSection === 'entertainment') {
-      // Entertainment mode: show all entertainment items
       setSelectedCategoryId(null)
       loadEntertainmentItems()
     } else if (filteredCategories.length > 0) {
@@ -672,10 +514,11 @@ export function BartenderView({
     }
   }, [menuSection, filteredCategories, filterMenuItemsByCategory, loadEntertainmentItems])
 
-  // Track which tab ID we last loaded items for (to prevent overwriting local changes)
-  const loadedTabIdRef = useRef<string | null>(null)
+  // ---------------------------------------------------------------------------
+  // TAB MANAGEMENT
+  // ---------------------------------------------------------------------------
 
-  // Register deselect function so parent can trigger "Hide" (deselect current tab)
+  // Register deselect for parent
   useEffect(() => {
     if (onRegisterDeselectTab) {
       onRegisterDeselectTab(() => {
@@ -686,24 +529,19 @@ export function BartenderView({
     }
   }, [onRegisterDeselectTab])
 
-  // Load order into Zustand store when selecting a DIFFERENT tab via direct API fetch
+  // Load order into store when selecting a different tab
   useEffect(() => {
     if (selectedTabId) {
-      // Only reload if switching to a DIFFERENT tab
       if (loadedTabIdRef.current === selectedTabId) return
       loadedTabIdRef.current = selectedTabId
-
-      // Notify parent so savedOrderId stays in sync (fixes split pay-all in bar mode)
       onSelectedTabChange?.(selectedTabId)
 
-      // Fetch order details and load into store
       fetch(`/api/orders/${selectedTabId}?locationId=${locationId}`)
         .then(res => res.ok ? res.json() : null)
         .then(data => {
           if (!data) return
           const order = data.data || data
-          const store = useOrderStore.getState()
-          store.loadOrder({
+          useOrderStore.getState().loadOrder({
             id: order.id,
             orderNumber: order.orderNumber,
             orderType: order.orderType || 'bar_tab',
@@ -712,7 +550,6 @@ export function BartenderView({
             tabName: order.tabName || undefined,
             guestCount: order.guestCount || 1,
             status: order.status || 'open',
-            // store.loadOrder handles all item field mapping — one path, no duplication
             items: order.items || [],
             subtotal: Number(order.subtotal) || 0,
             discountTotal: Number(order.discountTotal) || 0,
@@ -731,16 +568,12 @@ export function BartenderView({
     }
   }, [selectedTabId, locationId])
 
-  // ---------------------------------------------------------------------------
-  // SOCKET: order:closed — dismiss stale panel when another terminal closes an order
-  // ---------------------------------------------------------------------------
+  // Socket: order:closed
   useEffect(() => {
     if (!socket || !isConnected) return
-
     const onOrderClosed = (data: any) => {
       const { orderId } = data || {}
       if (!orderId) return
-
       const currentTabId = selectedTabIdRef.current
       const storeOrderId = useOrderStore.getState().currentOrder?.id
       if (orderId === currentTabId || orderId === storeOrderId) {
@@ -751,7 +584,6 @@ export function BartenderView({
         toast.info('Order was closed on another terminal')
       }
     }
-
     socket.on('order:closed', onOrderClosed)
     return () => { socket.off('order:closed', onOrderClosed) }
   }, [socket, isConnected])
@@ -760,299 +592,40 @@ export function BartenderView({
   // HANDLERS
   // ---------------------------------------------------------------------------
 
-  // handleSwitchToFloorPlan removed — view switching now in UnifiedPOSHeader
-
   const handleSelectTab = useCallback((tabId: string) => {
-    setSelectedTabId(tabId)                    // immediate: highlights selected tab
+    setSelectedTabId(tabId)
     if (isTabPanelExpanded) {
-      startTabTransition(() => {
-        setIsTabPanelExpanded(false)           // non-urgent: unmounts list of order cards
-      })
+      startTabTransition(() => { setIsTabPanelExpanded(false) })
     }
   }, [isTabPanelExpanded])
 
   const handleCategoryClick = useCallback((categoryId: string) => {
-    // Grid re-render is non-urgent — button highlights + items update atomically
-    // when the transition commits, keeping tap interactions responsive meanwhile
     startCategoryTransition(() => {
       setSelectedCategoryId(categoryId)
       filterMenuItemsByCategory(categoryId)
     })
-    // W3-10: Clear search immediately (mode change, not a heavy render)
     if (searchQuery) {
       setSearchQuery('')
       setIsSearchExpanded(false)
     }
   }, [filterMenuItemsByCategory, searchQuery])
 
-  const handleMenuItemTap = useCallback((item: MenuItem) => {
-    // Convert local MenuItem to EngineMenuItem and delegate to engine
-    const engineItem: EngineMenuItem = {
-      id: item.id,
-      name: item.name,
-      price: item.price,
-      categoryId: item.categoryId,
-      categoryType: item.categoryType,
-      hasModifiers: item.hasModifiers,
-      itemType: item.itemType,
-    }
-    engine.handleMenuItemTap(engineItem)
-  }, [engine])
-
-  // Handle tapping a favorite item
-  const handleFavoriteTap = useCallback((fav: FavoriteItem) => {
-    const engineItem: EngineMenuItem = {
-      id: fav.menuItemId,
-      name: fav.name,
-      price: fav.price,
-      categoryId: '',
-      hasModifiers: fav.hasModifiers,
-    }
-    engine.handleMenuItemTap(engineItem)
-  }, [engine])
-
-  // Handle clicking a spirit tier button on a cocktail item
-  const handleSpiritTierClick = useCallback((item: MenuItem, tier: string) => {
-    const tierOptions = item.spiritTiers?.[tier as keyof SpiritTiers]
-    if (!tierOptions || tierOptions.length === 0) return
-
-    // If only one option in this tier, add it directly
-    if (tierOptions.length === 1) {
-      const spirit = tierOptions[0]
-      engine.addItemDirectly({
-        menuItemId: item.id,
-        name: item.name,
-        price: item.price,
-        modifiers: [{
-          id: spirit.id,
-          name: spirit.name,
-          price: spirit.price,
-          spiritTier: spirit.spiritTier || tier,
-          linkedBottleProductId: spirit.linkedBottleProductId || null,
-        }],
-      })
-      return
-    }
-
-    // Multiple options - show popup
-    setSpiritPopupItem(item)
-    setSelectedSpiritTier(tier)
-  }, [engine])
-
-  // Handle selecting a specific spirit from the popup
-  const handleSpiritSelect = useCallback((spirit: SpiritOption) => {
-    if (!spiritPopupItem) return
-
-    engine.addItemDirectly({
-      menuItemId: spiritPopupItem.id,
-      name: spiritPopupItem.name,
-      price: spiritPopupItem.price,
-      modifiers: [{
-        id: spirit.id,
-        name: spirit.name,
-        price: spirit.price,
-        spiritTier: spirit.spiritTier || selectedSpiritTier || null,
-        linkedBottleProductId: spirit.linkedBottleProductId || null,
-      }],
-    })
-
-    // Close popup
-    setSpiritPopupItem(null)
-    setSelectedSpiritTier(null)
-  }, [spiritPopupItem, selectedSpiritTier, engine])
-
-  // Close spirit popup
-  const handleCloseSpiritPopup = useCallback(() => {
-    setSpiritPopupItem(null)
-    setSelectedSpiritTier(null)
-  }, [])
-
-  // Handle pricing option quick pick tap
-  const handlePricingOptionClick = useCallback((item: MenuItem, option: { id: string; label: string; price: number | null; color: string | null }) => {
-    const isVariant = option.price !== null
-    const itemName = isVariant ? `${item.name} (${option.label})` : item.name
-    const itemPrice = isVariant ? option.price! : item.price
-    const pricingOptionLabel = isVariant ? undefined : option.label
-
-    if (item.hasModifiers || item.hasOtherModifiers) {
-      // Has modifiers — send through engine with pricing option pre-applied
-      engine.handleMenuItemTap({
-        id: item.id,
-        name: itemName,
-        price: itemPrice,
-        categoryId: item.categoryId,
-        hasModifiers: item.hasModifiers,
-        hasPricingOptions: false, // Prevent re-triggering pricing option picker
-      } as EngineMenuItem)
-    } else {
-      // No modifiers — add directly
-      engine.addItemDirectly({
-        menuItemId: item.id,
-        name: itemName,
-        price: itemPrice,
-        pricingOptionId: option.id,
-        pricingOptionLabel,
-      })
-    }
-  }, [engine])
-
-  // Stable edit toggle for MenuItemButton
   const handleEditToggle = useCallback((itemId: string | null) => {
     setEditingItemId(itemId)
   }, [])
 
-  // Stable callbacks for MenuItemButton (avoids inline closures in render)
-  const handlePourSizeClick = useCallback((item: MenuItem, _size: string, pourPrice: number) => {
-    const config = POUR_SIZE_CONFIG[_size]
-    if (!config) return
-    // Derive multiplier from pourSizes config
-    const pourConfig = item.pourSizes?.[_size]
-    const multiplier = typeof pourConfig === 'number'
-      ? pourConfig
-      : (pourConfig as any)?.multiplier ?? 1.0
-    engine.addItemDirectly({
-      menuItemId: item.id,
-      name: `${item.name} (${config.label})`,
-      price: pourPrice,
-      pourSize: _size,
-      pourMultiplier: multiplier,
-    })
-  }, [engine])
+  const resetCategoryOrder = useCallback(() => {
+    saveCategoryOrder([])
+    toast.success('Category order reset')
+  }, [saveCategoryOrder])
 
-  const handleHotModifierClick = useCallback((item: MenuItem, mod: { id: string; name: string; price: number }) => {
-    engine.addItemDirectly({
-      menuItemId: item.id,
-      name: item.name,
-      price: item.price,
-      modifiers: [{ id: mod.id, name: mod.name, price: mod.price }],
-    })
-  }, [engine])
+  const resetItemOrder = useCallback(() => {
+    if (!selectedCategoryId) return
+    bartPrefs.resetItemOrder(selectedCategoryId)
+    toast.success('Item order reset')
+  }, [selectedCategoryId, bartPrefs])
 
-  // Stable subset of itemSettings for MenuItemButton (avoids object identity change)
-  const itemSettingsForButton = useMemo(() => ({
-    showPrices: itemSettings.showPrices,
-    showQuickPours: itemSettings.showQuickPours,
-    showDualPricing: itemSettings.showDualPricing,
-  }), [itemSettings.showPrices, itemSettings.showQuickPours, itemSettings.showDualPricing])
-
-  // Stable sizeConfig for MenuItemButton
-  const sizeConfigForButton = useMemo(() => ({
-    height: currentItemSizeConfig.height,
-    text: currentItemSizeConfig.text,
-  }), [currentItemSizeConfig.height, currentItemSizeConfig.text])
-
-  // Ref guard: prevents double-tap from firing two concurrent send chains
-  const sendInProgressRef = useRef(false)
-
-  const sendItemsToTab = useCallback(async (orderId: string) => {
-    if (sendInProgressRef.current) {
-      toast.warning('Already sending')
-      return
-    }
-    sendInProgressRef.current = true
-
-    // Read items fresh from the store at call time to avoid stale closure
-    const freshItems = useOrderStore.getState().currentOrder?.items || []
-    const unsavedItems = freshItems.filter(i => !i.sentToKitchen)
-    if (unsavedItems.length === 0) {
-      sendInProgressRef.current = false
-      return
-    }
-
-    // Only POST items not yet in DB (temp IDs). Items already saved by autosave
-    // have real IDs and must NOT be re-POSTed (causes duplicates).
-    const itemsToCreate = unsavedItems.filter(i => isTempId(i.id))
-    const itemsPayload = itemsToCreate.map(item => ({
-      menuItemId: item.menuItemId,
-      name: item.name,
-      price: item.price,
-      quantity: item.quantity,
-      correlationId: item.id, // temp ID as correlation key for ID mapping
-      modifiers: item.modifiers?.map(m => ({
-        modifierId: m.id,
-        name: m.name,
-        price: m.price,
-      })) || [],
-      pricingOptionId: item.pricingOptionId || null,
-      pricingOptionLabel: item.pricingOptionLabel || null,
-    }))
-
-    // Clear items from UI instantly — keep tab selected so subsequent items
-    // can be added without re-selecting the tab or triggering NewTabModal.
-    toast.success('Order sent')
-    useOrderStore.getState().clearOrder()
-    // Keep selectedTabId and loadedTabIdRef — do NOT clear them.
-    // The background send will reload the tab order when complete.
-
-    // Fire-and-forget: append new items (if any) then send to kitchen in background
-    const tabIdForReload = orderId
-    void (async () => {
-      try {
-        // Only POST if there are items not yet in DB
-        if (itemsPayload.length > 0) {
-          const appendRes = await fetch(`/api/orders/${orderId}/items`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ items: itemsPayload }),
-          })
-
-          if (!appendRes.ok) {
-            const errorData = await appendRes.json().catch(() => ({}))
-            throw new Error(errorData.error || 'Failed to add items')
-          }
-        }
-
-        const sendRes = await fetch(`/api/orders/${orderId}/send`, { method: 'POST' })
-        if (!sendRes.ok) {
-          console.error('[BartenderView] Send to kitchen error:', await sendRes.json().catch(() => ({})))
-        }
-      } catch (error) {
-        console.error('[BartenderView] Background send failed:', error)
-        toast.error('Send failed — items may not have reached kitchen')
-      } finally {
-        sendInProgressRef.current = false
-        setTabRefreshTrigger(t => t + 1)
-        // Reload the tab order from server so the order panel shows the sent items
-        // and new items can be added to this tab without re-selecting it.
-        // Skip reload if user has already started adding new unsent items (don't clobber).
-        if (selectedTabIdRef.current === tabIdForReload) {
-          const freshStore = useOrderStore.getState()
-          const hasNewUnsent = (freshStore.currentOrder?.items || []).some(i => !i.sentToKitchen)
-          if (!hasNewUnsent) {
-            try {
-              const res = await fetch(`/api/orders/${tabIdForReload}?locationId=${locationId}`)
-              if (res.ok) {
-                const data = await res.json()
-                const order = data.data || data
-                useOrderStore.getState().loadOrder({
-                  id: order.id,
-                  orderNumber: order.orderNumber,
-                  orderType: order.orderType || 'bar_tab',
-                  tableId: order.tableId || undefined,
-                  tableName: order.tableName || order.table?.name || undefined,
-                  tabName: order.tabName || undefined,
-                  guestCount: order.guestCount || 1,
-                  status: order.status || 'open',
-                  items: order.items || [],
-                  subtotal: Number(order.subtotal) || 0,
-                  discountTotal: Number(order.discountTotal) || 0,
-                  taxTotal: Number(order.taxTotal) || 0,
-                  tipTotal: Number(order.tipTotal) || 0,
-                  total: Number(order.total) || 0,
-                })
-                loadedTabIdRef.current = tabIdForReload
-              }
-            } catch (reloadErr) {
-              console.error('[BartenderView] Failed to reload tab after send:', reloadErr)
-            }
-          }
-        }
-      }
-    })()
-   
-  }, [])
-
-  // --- Tab creation hook (replaces handleCreateTab + handleQuickTab) ---
+  // Tab creation hook
   const {
     handleCreateTab,
     handleQuickTab,
@@ -1067,22 +640,12 @@ export function BartenderView({
     locationId,
     employeeId,
     requireNameWithoutCard,
-    onSendToTab: sendItemsToTab,
+    onSendToTab: ordering.sendItemsToTab,
     onTabCreated: useCallback((tab) => {
-      const store = useOrderStore.getState()
-      store.loadOrder({
-        id: tab.id,
-        orderNumber: tab.orderNumber,
-        orderType: 'bar_tab',
-        tabName: tab.tabName || undefined,
-        guestCount: 1,
-        status: tab.status || 'open',
-        items: [],
-        subtotal: 0,
-        discountTotal: 0,
-        taxTotal: 0,
-        tipTotal: 0,
-        total: 0,
+      useOrderStore.getState().loadOrder({
+        id: tab.id, orderNumber: tab.orderNumber, orderType: 'bar_tab',
+        tabName: tab.tabName || undefined, guestCount: 1, status: tab.status || 'open',
+        items: [], subtotal: 0, discountTotal: 0, taxTotal: 0, tipTotal: 0, total: 0,
       })
       loadedTabIdRef.current = tab.id
       setSelectedTabId(tab.id)
@@ -1092,32 +655,23 @@ export function BartenderView({
   })
 
   const handleSend = useCallback(async () => {
-    // Read fresh from store to avoid stale closure
     const freshItems = useOrderStore.getState().currentOrder?.items || []
     const unsavedItems = freshItems.filter(i => !i.sentToKitchen)
     if (unsavedItems.length === 0) return
 
-    // If no tab selected, auto-create one (1-tap speed) and send items
     if (!selectedTabId) {
       const tab = await handleAutoCreateTab()
-      if (tab?.id) {
-        await sendItemsToTab(tab.id)
-      }
+      if (tab?.id) await ordering.sendItemsToTab(tab.id)
       return
     }
-
-    // sendItemsToTab clears UI instantly and sends in background
-    await sendItemsToTab(selectedTabId)
-  }, [selectedTabId, sendItemsToTab, handleAutoCreateTab])
+    await ordering.sendItemsToTab(selectedTabId)
+  }, [selectedTabId, ordering.sendItemsToTab, handleAutoCreateTab])
 
   const handlePay = useCallback(() => {
-    if (selectedTabId && onOpenPayment) {
-      onOpenPayment(selectedTabId)
-    }
+    if (selectedTabId && onOpenPayment) onOpenPayment(selectedTabId)
   }, [selectedTabId, onOpenPayment])
 
-  // --- Long press hooks ---
-  // Only allow category/item layout editing for managers/admins
+  // Long press hooks
   const categoryLongPress = useLongPress(
     useCallback(() => { if (canEditLayout) setIsEditingCategories(true) }, [canEditLayout]),
     { onTap: useCallback(() => categoryScrollRef.current?.scrollTo({ left: 0, behavior: 'smooth' }), []) },
@@ -1134,18 +688,10 @@ export function BartenderView({
     useCallback(() => { if (canEditLayout) setIsEditingItems(prev => !prev) }, [canEditLayout]),
   )
 
-  // Reset category order
-  const resetCategoryOrder = useCallback(() => {
-    saveCategoryOrder([])
-    toast.success('Category order reset')
-  }, [saveCategoryOrder])
-
-  // Reset item order for current category (server-synced)
-  const resetItemOrder = useCallback(() => {
-    if (!selectedCategoryId) return
-    bartPrefs.resetItemOrder(selectedCategoryId)
-    toast.success('Item order reset')
-  }, [selectedCategoryId, bartPrefs])
+  const handleClearSearch = useCallback(() => {
+    setSearchQuery('')
+    setIsSearchExpanded(false)
+  }, [])
 
   // ---------------------------------------------------------------------------
   // RENDER
@@ -1153,13 +699,11 @@ export function BartenderView({
 
   return (
     <div className="flex-1 min-h-0 bg-slate-900 flex flex-col overflow-hidden">
-      {/* Header removed — now rendered by UnifiedPOSHeader in orders/page.tsx */}
-
       {/* BAR / FOOD / ENT sub-navigation + Search */}
       <div className="flex-shrink-0 bg-slate-800/50 border-b border-white/10 px-4 py-2 flex items-center justify-center gap-3">
         <ModeSelector value={menuSection} onChange={setMenuSection} />
 
-        {/* W3-10: Search input */}
+        {/* Search input */}
         <div className="flex items-center">
           {isSearchExpanded ? (
             <div className="flex items-center gap-1 bg-slate-700/80 rounded-lg px-2 py-1 border border-white/10">
@@ -1210,282 +754,63 @@ export function BartenderView({
 
       {/* ====== MAIN CONTENT (row-reverse: OrderPanel left, Menu center, Tabs right) ====== */}
       <div className="flex-1 flex flex-row-reverse overflow-hidden">
-        {/* ====== RIGHT: TABS PANEL (Unified OpenOrdersPanel) ====== */}
-        <motion.div
-          key={isTabPanelExpanded ? 'expanded' : 'collapsed'}
-          initial={false}
-          animate={{ width: isTabPanelExpanded ? '100%' : 288 }}
-          transition={{ duration: 0.2, ease: 'easeOut' }}
-          className="flex-shrink-0 flex flex-col"
-        >
-          <SilentErrorBoundary name="OpenOrders">
-          <OpenOrdersPanel
-            locationId={locationId}
-            employeeId={employeeId}
-            employeePermissions={employeePermissions}
-            isExpanded={isTabPanelExpanded}
-            onToggleExpand={() => setIsTabPanelExpanded(!isTabPanelExpanded)}
-            forceDark={true}
-            currentOrderId={selectedTabId || undefined}
-            onSelectOrder={(order) => { handleSelectTab(order.id) }}
-            onViewOrder={(order) => { handleSelectTab(order.id) }}
-            onNewTab={handleQuickTab}
-            onClosedOrderAction={() => setTabRefreshTrigger(t => t + 1)}
-            refreshTrigger={tabRefreshTrigger + (externalRefreshTrigger || 0)}
-            lastCallEnabled={true}
-          />
-          </SilentErrorBoundary>
-        </motion.div>
+        {/* ====== RIGHT: TABS PANEL ====== */}
+        <BartenderTabPanel
+          locationId={locationId}
+          employeeId={employeeId}
+          employeePermissions={employeePermissions}
+          isExpanded={isTabPanelExpanded}
+          onToggleExpand={() => setIsTabPanelExpanded(!isTabPanelExpanded)}
+          selectedTabId={selectedTabId}
+          onSelectOrder={(order) => handleSelectTab(order.id)}
+          onNewTab={handleQuickTab}
+          onClosedOrderAction={() => setTabRefreshTrigger(t => t + 1)}
+          refreshTrigger={tabRefreshTrigger + (externalRefreshTrigger || 0)}
+        />
 
         {/* ====== CENTER: MENU GRID (hidden when tabs expanded) ====== */}
         {!isTabPanelExpanded && (
           <div className="flex-1 flex flex-col overflow-hidden">
-            {/* Categories Section - Hidden in Entertainment mode */}
+            {/* Categories - Hidden in Entertainment mode */}
             {menuSection !== 'entertainment' && (
-              <div className="flex-shrink-0 bg-slate-800/30 border-b border-white/10 p-2">
-                {/* Settings Panel - shown when editing */}
-                {isEditingCategories && (
-                  <div className="mb-2 p-2 bg-slate-700/30 rounded-lg flex items-center gap-4 flex-wrap">
-                    {/* Rows */}
-                    <div className="flex items-center gap-2">
-                      <span className="text-slate-400 text-xs">Rows:</span>
-                      <div className="flex gap-1">
-                        {[1, 2].map(r => (
-                          <button
-                            key={r}
-                            onClick={() => saveCategorySettings({ ...categorySettings, rows: r as CategoryRows })}
-                            className={`w-8 h-8 rounded text-sm font-bold transition-all ${
-                              categorySettings.rows === r
-                                ? 'bg-indigo-600 text-white'
-                                : 'bg-slate-600 text-slate-300 hover:bg-slate-500'
-                            }`}
-                          >
-                            {r}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Size */}
-                    <div className="flex items-center gap-2">
-                      <span className="text-slate-400 text-xs">Size:</span>
-                      <div className="flex gap-1">
-                        {CATEGORY_SIZES.map(s => (
-                          <button
-                            key={s.value}
-                            onClick={() => saveCategorySettings({ ...categorySettings, size: s.value })}
-                            className={`px-2 h-8 rounded text-xs font-bold transition-all ${
-                              categorySettings.size === s.value
-                                ? 'bg-indigo-600 text-white'
-                                : 'bg-slate-600 text-slate-300 hover:bg-slate-500'
-                            }`}
-                          >
-                            {s.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Reset Order */}
-                    {categoryOrder.length > 0 && (
-                      <button
-                        onClick={resetCategoryOrder}
-                        className="px-2 h-8 rounded text-xs font-bold bg-orange-600 text-white hover:bg-orange-500 transition-all"
-                      >
-                        Reset Order
-                      </button>
-                    )}
-
-                    <span className="text-slate-500 text-xs italic">Drag categories to reorder</span>
-
-                    <button
-                      onClick={() => setIsEditingCategories(false)}
-                      className="ml-auto px-3 py-1 bg-green-600 text-white text-xs font-bold rounded hover:bg-green-500"
-                    >
-                      Done
-                    </button>
-                  </div>
-                )}
-
-                <div className="flex items-center gap-2">
-                  {/* Vertical Label - Long press to edit */}
-                  <div
-                    className="flex-shrink-0 w-6 flex items-center justify-center cursor-pointer select-none"
-                    {...categoryLongPress}
-                    title="Long-press to edit display"
-                  >
-                    <span
-                      className="text-slate-500 text-[10px] font-bold tracking-wider"
-                      style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}
-                    >
-                      {menuSection === 'bar' ? 'BAR' : 'FOOD'}
-                    </span>
-                  </div>
-
-                  {/* Categories Grid - Horizontal scroll with dynamic rows */}
-                  <div
-                    ref={categoryScrollRef}
-                    className="flex-1 grid grid-flow-col gap-2 overflow-x-auto overflow-y-hidden scroll-smooth [&::-webkit-scrollbar]:hidden"
-                    style={{
-                      gridTemplateRows: `repeat(${categorySettings.rows}, 1fr)`,
-                      gridAutoColumns: `${currentSizeConfig.px}px`,
-                      scrollbarWidth: 'none',
-                    }}
-                  >
-                    {orderedCategories.map(cat => (
-                      <button
-                        key={cat.id}
-                        onClick={() => !isEditingCategories && handleCategoryClick(cat.id)}
-                        draggable={isEditingCategories}
-                        onDragStart={() => handleCategoryDragStart(cat.id)}
-                        onDragOver={(e) => {
-                          e.preventDefault()
-                          handleCategoryDragOver(cat.id)
-                        }}
-                        onDragEnd={handleCategoryDragEnd}
-                        onTouchStart={(e) => {
-                          if (isEditingCategories) {
-                            // Start drag on touch for mobile
-                            handleCategoryDragStart(cat.id)
-                          }
-                        }}
-                        onTouchMove={(e) => {
-                          if (isEditingCategories && draggedCategoryId) {
-                            // Find element under touch
-                            const touch = e.touches[0]
-                            const element = document.elementFromPoint(touch.clientX, touch.clientY)
-                            const catButton = element?.closest('[data-category-id]') as HTMLElement
-                            if (catButton) {
-                              const targetId = catButton.dataset.categoryId
-                              if (targetId) handleCategoryDragOver(targetId)
-                            }
-                          }
-                        }}
-                        onTouchEnd={() => {
-                          if (isEditingCategories) {
-                            handleCategoryDragEnd()
-                          }
-                        }}
-                        data-category-id={cat.id}
-                        className={`relative rounded-xl font-bold flex items-center justify-center text-center leading-tight p-2 transition-all duration-200 border-2 ${currentSizeConfig.text} ${
-                          isEditingCategories
-                            ? draggedCategoryId === cat.id
-                              ? 'opacity-50 ring-2 ring-indigo-400 scale-95'
-                              : 'ring-1 ring-dashed ring-slate-500 cursor-grab'
-                            : selectedCategoryId === cat.id
-                              ? 'scale-110 ring-4 ring-white/50 shadow-2xl border-white'
-                              : 'hover:scale-105 hover:brightness-110 border-black/20 shadow-lg'
-                        }`}
-                        style={{
-                          width: `${currentSizeConfig.px}px`,
-                          height: `${currentSizeConfig.px}px`,
-                          backgroundColor: cat.color || '#475569',
-                          color: isLightColor(cat.color || '') ? '#1e293b' : '#ffffff',
-                          textShadow: isLightColor(cat.color || '') ? 'none' : '0 1px 2px rgba(0,0,0,0.5)',
-                          ...(selectedCategoryId === cat.id && !isEditingCategories ? {
-                            boxShadow: `0 0 20px ${cat.color || '#6366f1'}, 0 0 40px ${cat.color || '#6366f1'}50`,
-                          } : {})
-                        }}
-                      >
-                        {isEditingCategories && (
-                          <span className="absolute top-0.5 left-0.5 text-[8px] text-slate-400">⋮⋮</span>
-                        )}
-                        <span className="line-clamp-2">{cat.name}</span>
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Right Arrow - scrolls right */}
-                  {orderedCategories.length > 3 && (
-                    <button
-                      onClick={() => {
-                        if (categoryScrollRef.current) {
-                          const scrollAmount = currentSizeConfig.px * 3
-                          categoryScrollRef.current.scrollBy({ left: scrollAmount, behavior: 'smooth' })
-                        }
-                      }}
-                      className="flex-shrink-0 w-8 h-full rounded-lg flex items-center justify-center transition-all bg-slate-700/60 text-white hover:bg-slate-600 active:scale-95"
-                    >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                      </svg>
-                    </button>
-                  )}
-                </div>
-
-                {filteredCategories.length === 0 && (
-                  <div className="text-center py-3 text-slate-500 text-sm">
-                    No {menuSection === 'bar' ? 'bar' : 'food'} categories configured
-                  </div>
-                )}
-              </div>
+              <BartenderCategoryNav
+                categories={orderedCategories}
+                selectedCategoryId={selectedCategoryId}
+                categorySettings={categorySettings}
+                categoryOrder={categoryOrder}
+                isEditing={isEditingCategories}
+                draggedCategoryId={draggedCategoryId}
+                menuSection={menuSection}
+                scrollRef={categoryScrollRef}
+                onCategoryClick={handleCategoryClick}
+                onDragStart={handleCategoryDragStart}
+                onDragOver={handleCategoryDragOver}
+                onDragEnd={handleCategoryDragEnd}
+                onSaveCategorySettings={saveCategorySettings}
+                onResetCategoryOrder={resetCategoryOrder}
+                onStopEditing={() => setIsEditingCategories(false)}
+                categoryLongPressProps={categoryLongPress}
+              />
             )}
 
-            {/* My Favorites Bar */}
+            {/* Favorites Bar */}
             {showFavorites && menuSection !== 'entertainment' && (
-              <div className="flex-shrink-0 bg-gradient-to-r from-amber-900/20 to-orange-900/20 border-b border-amber-500/20 p-2">
-                <div className="flex items-center gap-2">
-                  {/* Vertical Label - Long press to edit */}
-                  <div
-                    className="flex-shrink-0 w-6 flex items-center justify-center cursor-pointer select-none"
-                    {...favoritesLongPress}
-                    title={favorites.length > 0 ? 'Long-press to edit favorites' : ''}
-                  >
-                    <span
-                      className={`text-[10px] font-bold tracking-wider ${isEditingFavorites ? 'text-red-400' : 'text-amber-400'}`}
-                      style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}
-                    >
-                      {isEditingFavorites ? 'EDIT' : 'MY BAR'}
-                    </span>
-                  </div>
-
-                  {/* Favorites Items */}
-                  {favorites.length === 0 ? (
-                    <div className="flex-1 text-slate-500 text-sm italic">
-                      Long-press menu items to add favorites
-                    </div>
-                  ) : (
-                    <div className="flex-1 flex gap-2 overflow-x-auto">
-                      {favorites.map(fav => (
-                        <FavoriteItem
-                          key={fav.menuItemId}
-                          fav={fav}
-                          isEditingFavorites={isEditingFavorites}
-                          onTap={handleFavoriteTap}
-                          onRemove={removeFromFavorites}
-                        />
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Edit mode buttons */}
-                  {isEditingFavorites && (
-                    <div className="flex items-center gap-2">
-                      {favorites.length > 0 && (
-                        <button
-                          onClick={clearFavorites}
-                          className="text-xs px-2 py-1 bg-red-600/50 text-red-200 rounded hover:bg-red-600 transition-colors"
-                        >
-                          Clear All
-                        </button>
-                      )}
-                      <button
-                        onClick={() => setIsEditingFavorites(false)}
-                        className="text-xs px-3 py-1 bg-green-600 text-white font-bold rounded hover:bg-green-500 transition-colors"
-                      >
-                        Done
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
+              <BartenderFavorites
+                favorites={favorites}
+                isEditing={isEditingFavorites}
+                onFavoriteTap={ordering.handleFavoriteTap}
+                onRemoveFavorite={removeFromFavorites}
+                onClearAll={clearFavorites}
+                onStopEditing={() => setIsEditingFavorites(false)}
+                favoritesLongPressProps={favoritesLongPress}
+              />
             )}
 
             {/* Entertainment Mode Header */}
             {menuSection === 'entertainment' && (
               <div className="flex-shrink-0 bg-purple-900/30 border-b border-purple-500/20 p-3">
                 <div className="flex items-center gap-2 text-purple-300">
-                  <span className="text-xl">🎱</span>
+                  <span className="text-xl">{'🎱'}</span>
                   <span className="font-bold">Entertainment</span>
                   <span className="text-purple-400 text-sm ml-auto">{filteredCategories.length} categories</span>
                 </div>
@@ -1493,375 +818,49 @@ export function BartenderView({
             )}
 
             {/* Menu Items Grid */}
-            <div className="flex-1 overflow-hidden p-3 flex flex-col">
-              {/* Item Settings Panel - shown when editing */}
-              {isEditingItems && (
-                <div className="flex-shrink-0 mb-2 p-3 bg-slate-700/50 rounded-lg border border-indigo-500/30">
-                  <div className="flex items-center gap-4 flex-wrap">
-                    {/* Size */}
-                    <div className="flex items-center gap-2">
-                      <span className="text-slate-400 text-xs">Size:</span>
-                      <div className="flex gap-1">
-                        {ITEM_SIZES.map(s => (
-                          <button
-                            key={s.value}
-                            onClick={() => saveItemSettings({ ...itemSettings, size: s.value })}
-                            className={`px-2 h-7 rounded text-xs font-bold transition-all ${
-                              itemSettings.size === s.value
-                                ? 'bg-indigo-600 text-white'
-                                : 'bg-slate-600 text-slate-300 hover:bg-slate-500'
-                            }`}
-                          >
-                            {s.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Items Per Row */}
-                    <div className="flex items-center gap-2">
-                      <span className="text-slate-400 text-xs">Per Row:</span>
-                      <div className="flex gap-1">
-                        {(['auto', 3, 4, 5, 6] as ItemsPerRow[]).map(n => (
-                          <button
-                            key={n}
-                            onClick={() => saveItemSettings({ ...itemSettings, itemsPerRow: n })}
-                            className={`w-8 h-7 rounded text-xs font-bold transition-all ${
-                              itemSettings.itemsPerRow === n
-                                ? 'bg-indigo-600 text-white'
-                                : 'bg-slate-600 text-slate-300 hover:bg-slate-500'
-                            }`}
-                          >
-                            {n === 'auto' ? 'A' : n}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Show Prices Toggle */}
-                    <button
-                      onClick={() => saveItemSettings({ ...itemSettings, showPrices: !itemSettings.showPrices })}
-                      className={`px-2 h-7 rounded text-xs font-bold transition-all ${
-                        itemSettings.showPrices
-                          ? 'bg-green-600 text-white'
-                          : 'bg-slate-600 text-slate-300'
-                      }`}
-                    >
-                      {itemSettings.showPrices ? '$ On' : '$ Off'}
-                    </button>
-
-                    {/* Show Dual Pricing Toggle (Cash/Card from system settings) */}
-                    {dualPricing.enabled && (
-                      <button
-                        onClick={() => saveItemSettings({ ...itemSettings, showDualPricing: !itemSettings.showDualPricing })}
-                        className={`px-2 h-7 rounded text-xs font-bold transition-all flex items-center gap-1 ${
-                          itemSettings.showDualPricing
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-slate-600 text-slate-300'
-                        }`}
-                        title={`Cash discount: ${dualPricing.cashDiscountPercent}%`}
-                      >
-                        💵/💳 {itemSettings.showDualPricing ? 'On' : 'Off'}
-                      </button>
-                    )}
-
-                    {/* Quick Pour Buttons Toggle */}
-                    <button
-                      onClick={() => saveItemSettings({ ...itemSettings, showQuickPours: !itemSettings.showQuickPours })}
-                      className={`px-2 h-7 rounded text-xs font-bold transition-all ${
-                        itemSettings.showQuickPours
-                          ? 'bg-purple-600 text-white'
-                          : 'bg-slate-600 text-slate-300'
-                      }`}
-                      title="Show quick pour size buttons on liquor items"
-                    >
-                      🥃 Pours {itemSettings.showQuickPours ? 'On' : 'Off'}
-                    </button>
-
-                    {/* Scrolling vs Pagination Toggle */}
-                    <button
-                      onClick={() => saveItemSettings({ ...itemSettings, useScrolling: !itemSettings.useScrolling })}
-                      className={`px-2 h-7 rounded text-xs font-bold transition-all ${
-                        itemSettings.useScrolling
-                          ? 'bg-cyan-600 text-white'
-                          : 'bg-slate-600 text-slate-300'
-                      }`}
-                      title="Toggle between scrolling and pagination"
-                    >
-                      {itemSettings.useScrolling ? '📜 Scroll' : '📄 Pages'}
-                    </button>
-
-                    {/* Reset Customizations */}
-                    {Object.keys(itemCustomizations).length > 0 && (
-                      <button
-                        onClick={() => {
-                          bartPrefs.resetAllItemCustomizations()
-                          toast.success('Item styles reset')
-                        }}
-                        className="px-2 h-7 rounded text-xs font-bold bg-orange-600 text-white hover:bg-orange-500 transition-all"
-                      >
-                        Reset Styles
-                      </button>
-                    )}
-
-                    {/* Reset Order for current category */}
-                    {selectedCategoryId && itemOrder[selectedCategoryId]?.length > 0 && (
-                      <button
-                        onClick={resetItemOrder}
-                        className="px-2 h-7 rounded text-xs font-bold bg-orange-600 text-white hover:bg-orange-500 transition-all"
-                      >
-                        Reset Order
-                      </button>
-                    )}
-
-                    <span className="text-slate-500 text-xs italic">Tap item to customize • Drag to reorder</span>
-
-                    <button
-                      onClick={() => {
-                        setIsEditingItems(false)
-                        setEditingItemId(null)
-                      }}
-                      className="ml-auto px-3 py-1 bg-green-600 text-white text-xs font-bold rounded hover:bg-green-500"
-                    >
-                      Done
-                    </button>
-                  </div>
-
-                  {/* Individual Item Customization Panel */}
-                  {editingItemId && (() => {
-                    const editingItem = menuItems.find(i => i.id === editingItemId)
-                    const currentCustomization = itemCustomizations[editingItemId] || {}
-                    if (!editingItem) return null
-                    return (
-                      <div className="mt-3 pt-3 border-t border-slate-600 space-y-2">
-                        {/* Row 1: Item name & Colors */}
-                        <div className="flex items-center gap-3 flex-wrap">
-                          <span className="text-white font-medium text-sm">{editingItem.name}</span>
-                          <div className="flex items-center gap-1">
-                            <span className="text-slate-500 text-[10px]">BG</span>
-                            <input
-                              type="color"
-                              value={currentCustomization.backgroundColor || '#334155'}
-                              onChange={(e) => saveItemCustomization(editingItemId, { ...currentCustomization, backgroundColor: e.target.value })}
-                              className="w-6 h-6 rounded cursor-pointer"
-                            />
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <span className="text-slate-500 text-[10px]">Text</span>
-                            <input
-                              type="color"
-                              value={currentCustomization.textColor || '#ffffff'}
-                              onChange={(e) => saveItemCustomization(editingItemId, { ...currentCustomization, textColor: e.target.value })}
-                              className="w-6 h-6 rounded cursor-pointer"
-                            />
-                          </div>
-                          <button
-                            onClick={() => {
-                              saveItemCustomization(editingItemId, null)
-                              setEditingItemId(null)
-                            }}
-                            className="ml-auto px-2 h-5 rounded text-[9px] font-bold bg-red-600/40 text-red-300 hover:bg-red-600"
-                          >
-                            Clear All
-                          </button>
-                        </div>
-
-                        {/* Row 2: Font Style & Family */}
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-slate-500 text-[10px]">Font:</span>
-                          {(['normal', 'bold', 'italic', 'boldItalic'] as const).map(style => (
-                            <button
-                              key={style}
-                              onClick={() => saveItemCustomization(editingItemId, { ...currentCustomization, fontStyle: style })}
-                              className={`px-1.5 h-5 rounded text-[9px] transition-all ${
-                                (currentCustomization.fontStyle || 'normal') === style
-                                  ? 'bg-indigo-600 text-white'
-                                  : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
-                              } ${style === 'bold' || style === 'boldItalic' ? 'font-bold' : ''} ${style === 'italic' || style === 'boldItalic' ? 'italic' : ''}`}
-                            >
-                              {style === 'boldItalic' ? 'B+I' : style.charAt(0).toUpperCase() + style.slice(1)}
-                            </button>
-                          ))}
-                          <span className="text-slate-600">|</span>
-                          {FONT_FAMILIES.map(font => (
-                            <button
-                              key={font.value}
-                              onClick={() => saveItemCustomization(editingItemId, { ...currentCustomization, fontFamily: font.value as ItemCustomization['fontFamily'] })}
-                              className={`px-1.5 h-5 rounded text-[9px] transition-all ${font.className} ${
-                                (currentCustomization.fontFamily || 'default') === font.value
-                                  ? 'bg-indigo-600 text-white'
-                                  : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
-                              }`}
-                            >
-                              {font.label}
-                            </button>
-                          ))}
-                        </div>
-
-                        {/* Row 3: Highlight & Glow Color */}
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-slate-500 text-[10px]">Pop:</span>
-                          {(['none', 'glow', 'border', 'larger'] as const).map(effect => (
-                            <button
-                              key={effect}
-                              onClick={() => saveItemCustomization(editingItemId, { ...currentCustomization, highlight: effect })}
-                              className={`px-1.5 h-5 rounded text-[9px] font-medium transition-all ${
-                                (currentCustomization.highlight || 'none') === effect
-                                  ? 'bg-indigo-600 text-white'
-                                  : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
-                              }`}
-                            >
-                              {effect}
-                            </button>
-                          ))}
-                          {(currentCustomization.highlight === 'glow' || currentCustomization.highlight === 'border') && (
-                            <>
-                              <span className="text-slate-600">|</span>
-                              <span className="text-slate-500 text-[10px]">Color:</span>
-                              {GLOW_COLORS.map(gc => (
-                                <button
-                                  key={gc.color}
-                                  onClick={() => saveItemCustomization(editingItemId, {
-                                    ...currentCustomization,
-                                    glowColor: currentCustomization.highlight === 'glow' ? gc.color : currentCustomization.glowColor,
-                                    borderColor: currentCustomization.highlight === 'border' ? gc.color : currentCustomization.borderColor
-                                  })}
-                                  className={`w-5 h-5 rounded-full border-2 transition-all ${
-                                    (currentCustomization.highlight === 'glow' ? currentCustomization.glowColor : currentCustomization.borderColor) === gc.color
-                                      ? 'border-white scale-110'
-                                      : 'border-transparent hover:scale-110'
-                                  }`}
-                                  style={{ backgroundColor: gc.color }}
-                                  title={gc.label}
-                                />
-                              ))}
-                            </>
-                          )}
-                        </div>
-
-                        {/* Row 4: Animation Effects */}
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-slate-500 text-[10px]">Animate:</span>
-                          {EFFECT_PRESETS.map(effect => (
-                            <button
-                              key={effect.value}
-                              onClick={() => saveItemCustomization(editingItemId, { ...currentCustomization, effect: effect.value as ItemCustomization['effect'] })}
-                              className={`px-1.5 h-5 rounded text-[9px] transition-all flex items-center gap-0.5 ${
-                                (currentCustomization.effect || 'none') === effect.value
-                                  ? 'bg-indigo-600 text-white'
-                                  : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
-                              }`}
-                            >
-                              <span>{effect.emoji}</span>
-                              <span>{effect.label}</span>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )
-                  })()}
-                </div>
-              )}
-
-              {/* W3-10: Search results indicator */}
-              {searchQuery.trim() && (
-                <div className="flex-shrink-0 mb-2 flex items-center gap-2 text-sm">
-                  <span className="text-slate-400">
-                    {searchFilteredItems?.length ?? 0} result{(searchFilteredItems?.length ?? 0) !== 1 ? 's' : ''} for &ldquo;{searchQuery.trim()}&rdquo;
-                  </span>
-                  <button
-                    onClick={() => { setSearchQuery(''); setIsSearchExpanded(false) }}
-                    className="text-indigo-400 hover:text-indigo-300 text-xs font-medium"
-                  >
-                    Clear
-                  </button>
-                </div>
-              )}
-
-              {isLoadingMenu ? (
-                <div className="flex-1 flex items-center justify-center text-slate-500">Loading...</div>
-              ) : finalDisplayedItems.length === 0 ? (
-                <div className="flex-1 flex items-center justify-center text-slate-500">
-                  {searchQuery.trim() ? 'No items match your search' : selectedCategoryId ? 'No items in this category' : 'Select a category'}
-                </div>
-              ) : (
-                <>
-                  {/* Items Grid - Dynamic based on settings */}
-                  <div
-                    className={`flex-1 grid gap-2 min-h-0 transition-opacity ${isCategoryPending ? 'opacity-50' : ''} ${itemSettings.useScrolling || searchQuery.trim() ? 'overflow-y-auto content-start scrollbar-hide' : 'auto-rows-fr'}`}
-                    style={{ gridTemplateColumns: `repeat(${effectiveItemsPerRow}, 1fr)` }}
-                  >
-                    {finalDisplayedItems.map(item => (
-                      <MenuItemButton
-                        key={item.id}
-                        item={item as MenuItemButtonMenuItem}
-                        customization={itemCustomizations[item.id] || EMPTY_CUSTOMIZATION}
-                        isFavorite={favorites.some(f => f.menuItemId === item.id)}
-                        isEditingItems={isEditingItems}
-                        isEditingThisItem={editingItemId === item.id}
-                        onTap={handleMenuItemTap as (item: MenuItemButtonMenuItem) => void}
-                        onEditToggle={handleEditToggle}
-                        onContextMenu={addToFavorites as (item: MenuItemButtonMenuItem) => void}
-                        onDragStart={handleItemDragStart}
-                        onDragOver={handleItemDragOver}
-                        onDragEnd={handleItemDragEnd}
-                        sizeConfig={sizeConfigForButton}
-                        itemSettings={itemSettingsForButton}
-                        dualPricing={dualPricing}
-                        onPourSizeClick={handlePourSizeClick as (item: MenuItemButtonMenuItem, pourSize: string, pourPrice: number) => void}
-                        onSpiritTierClick={handleSpiritTierClick as (item: MenuItemButtonMenuItem, tier: string) => void}
-                        hotModifiers={hotModifierCache[item.id]}
-                        onHotModifierClick={handleHotModifierClick as (item: MenuItemButtonMenuItem, mod: { id: string; name: string; price: number }) => void}
-                        onPricingOptionClick={handlePricingOptionClick as (item: MenuItemButtonMenuItem, option: { id: string; label: string; price: number | null; color: string | null }) => void}
-                      />
-                    ))}
-                  </div>
-
-                  {/* Pagination & Items Button */}
-                  <div className="flex-shrink-0 flex items-center justify-between pt-2">
-                    {/* Items Edit Button - Subtle, long press to activate */}
-                    <div
-                      {...itemsLongPress}
-                      className={`px-2 py-1 rounded text-[10px] transition-all select-none cursor-pointer ${
-                        isEditingItems
-                          ? 'bg-indigo-600/80 text-white'
-                          : 'text-slate-600 hover:text-slate-400'
-                      }`}
-                    >
-                      items
-                    </div>
-
-                    {/* Pagination - Center (hidden during search) */}
-                    {totalMenuPages > 1 && !searchQuery.trim() && (
-                      <div className="flex items-center gap-2">
-                        {Array.from({ length: totalMenuPages }, (_, i) => i + 1).map(page => (
-                          <button
-                            key={page}
-                            onClick={() => setMenuPage(page)}
-                            className={`w-10 h-10 rounded-xl font-bold text-lg transition-colors ${
-                              menuPage === page
-                                ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30'
-                                : 'bg-slate-700/50 text-slate-400 hover:bg-slate-700'
-                            }`}
-                          >
-                            {page}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Spacer for balance */}
-                    <div className="w-20" />
-                  </div>
-                </>
-              )}
-            </div>
+            <BartenderMenuGrid
+              items={finalDisplayedItems}
+              isLoading={isLoadingMenu}
+              isCategoryPending={isCategoryPending}
+              searchQuery={searchQuery}
+              hasSelectedCategory={!!selectedCategoryId}
+              selectedCategoryId={selectedCategoryId}
+              itemSettings={itemSettings}
+              effectiveItemsPerRow={effectiveItemsPerRow}
+              itemCustomizations={itemCustomizations}
+              favorites={favorites}
+              hotModifierCache={hotModifierCache}
+              dualPricing={dualPricing}
+              isEditingItems={isEditingItems}
+              editingItemId={editingItemId}
+              allCategoryItems={menuItems}
+              itemOrderForCategory={selectedCategoryId ? (itemOrder[selectedCategoryId] || []) : []}
+              menuPage={menuPage}
+              totalMenuPages={totalMenuPages}
+              onSetMenuPage={setMenuPage}
+              onMenuItemTap={ordering.handleMenuItemTap}
+              onEditToggle={handleEditToggle}
+              onAddToFavorites={addToFavorites}
+              onItemDragStart={handleItemDragStart}
+              onItemDragOver={handleItemDragOver}
+              onItemDragEnd={handleItemDragEnd}
+              onPourSizeClick={ordering.handlePourSizeClick}
+              onSpiritTierClick={ordering.handleSpiritTierClick}
+              onHotModifierClick={ordering.handleHotModifierClick}
+              onPricingOptionClick={ordering.handlePricingOptionClick}
+              onClearSearch={handleClearSearch}
+              onSaveItemSettings={saveItemSettings}
+              onSaveItemCustomization={saveItemCustomization}
+              onResetAllItemCustomizations={bartPrefs.resetAllItemCustomizations}
+              onResetItemOrder={resetItemOrder}
+              onStopEditing={() => { setIsEditingItems(false); setEditingItemId(null) }}
+              itemsLongPressProps={itemsLongPress}
+            />
           </div>
         )}
 
         {/* OrderPanel slot — rendered by parent */}
         {!isTabPanelExpanded && children}
-
       </div>
 
       {/* ====== NEW TAB MODAL ====== */}
@@ -1877,28 +876,20 @@ export function BartenderView({
 
       {/* ====== SPIRIT SELECTION POPUP ====== */}
       <SpiritSelectionModal
-        item={spiritPopupItem}
-        selectedTier={selectedSpiritTier}
+        item={ordering.spiritPopupItem}
+        selectedTier={ordering.selectedSpiritTier}
         dualPricing={dualPricing}
-        onSelect={handleSpiritSelect}
-        onClose={handleCloseSpiritPopup}
+        onSelect={ordering.handleSpiritSelect}
+        onClose={ordering.handleCloseSpiritPopup}
       />
 
       {/* ====== PRICING OPTION PICKER ====== */}
       <PricingOptionPicker
-        item={pricingPickerItem}
+        item={ordering.pricingPickerItem}
         dualPricing={dualPricing}
-        onSelect={(option) => {
-          pricingPickerCallbackRef.current?.(option)
-          setPricingPickerItem(null)
-          pricingPickerCallbackRef.current = null
-        }}
-        onClose={() => {
-          setPricingPickerItem(null)
-          pricingPickerCallbackRef.current = null
-        }}
+        onSelect={ordering.handlePricingPickerSelect}
+        onClose={ordering.handlePricingPickerClose}
       />
-
     </div>
   )
 }
