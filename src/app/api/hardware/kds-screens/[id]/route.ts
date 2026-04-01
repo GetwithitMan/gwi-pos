@@ -206,6 +206,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
 
     // Reset any items forwarded to this screen back to unforwarded state
     // so they return to their source screen's view instead of becoming invisible
+    // eslint-disable-next-line no-restricted-syntax -- bulk orphan cleanup, no repository equivalent
     await db.orderItem.updateMany({
       where: { kdsForwardedToScreenId: id, deletedAt: null },
       data: { kdsForwardedToScreenId: null },

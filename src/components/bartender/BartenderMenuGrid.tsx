@@ -1,6 +1,6 @@
 'use client'
 
-import { memo, useMemo, useCallback } from 'react'
+import { memo, useMemo } from 'react'
 import { toast } from '@/stores/toast-store'
 import { MenuItemButton } from '@/components/bartender/MenuItemButton'
 import type { MenuItemButtonMenuItem } from '@/components/bartender/MenuItemButton'

@@ -1,7 +1,6 @@
 'use client'
 
 import Link from 'next/link'
-import { toast } from '@/stores/toast-store'
 
 export interface ModifierTemplatesPanelProps {
   modifierGroups: any[]

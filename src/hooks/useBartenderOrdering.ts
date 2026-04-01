@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useRef, useState, useMemo } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { toast } from '@/stores/toast-store'
 import { useOrderStore } from '@/stores/order-store'
 import { useOrderingEngine } from '@/hooks/useOrderingEngine'
