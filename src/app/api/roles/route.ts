@@ -56,6 +56,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         permissions: getPermissionsArray(role.permissions),
         roleType: role.roleType ?? 'FOH',
         accessLevel: role.accessLevel ?? 'STAFF',
+        sessionTimeoutMinutes: role.sessionTimeoutMinutes ?? null,
         isTipped: role.isTipped,
         tipWeight: Number(role.tipWeight),
         cashHandlingMode: role.cashHandlingMode,
@@ -89,7 +90,7 @@ export const POST = withVenue(withAuth('STAFF_MANAGE_ROLES', async function POST
 ) {
   try {
     const body = await request.json()
-    const { name, permissions, cashHandlingMode, trackLaborCost, isTipped, tipWeight, roleType, accessLevel } = body as {
+    const { name, permissions, cashHandlingMode, trackLaborCost, isTipped, tipWeight, roleType, accessLevel, sessionTimeoutMinutes } = body as {
       name: string
       permissions: string[]
       cashHandlingMode?: string
@@ -98,6 +99,7 @@ export const POST = withVenue(withAuth('STAFF_MANAGE_ROLES', async function POST
       tipWeight?: number
       roleType?: string
       accessLevel?: string
+      sessionTimeoutMinutes?: number | null
     }
 
     // Use verified locationId from session — ignore client-supplied locationId
@@ -105,6 +107,13 @@ export const POST = withVenue(withAuth('STAFF_MANAGE_ROLES', async function POST
 
     if (!name) {
       return err('Role name is required')
+    }
+
+    // Validate sessionTimeoutMinutes: must be null, 0, or positive integer
+    if (sessionTimeoutMinutes !== undefined && sessionTimeoutMinutes !== null) {
+      if (!Number.isInteger(sessionTimeoutMinutes) || sessionTimeoutMinutes < 0) {
+        return err('sessionTimeoutMinutes must be null, 0, or a positive integer')
+      }
     }
 
     // Check for duplicate role name
@@ -130,6 +139,7 @@ export const POST = withVenue(withAuth('STAFF_MANAGE_ROLES', async function POST
         ...(trackLaborCost !== undefined ? { trackLaborCost } : {}),
         ...(isTipped !== undefined ? { isTipped } : {}),
         ...(tipWeight !== undefined ? { tipWeight: Number(tipWeight) } : {}),
+        ...(sessionTimeoutMinutes !== undefined ? { sessionTimeoutMinutes } : {}),
       },
     })
 
@@ -142,6 +152,7 @@ export const POST = withVenue(withAuth('STAFF_MANAGE_ROLES', async function POST
       permissions: getPermissionsArray(role.permissions),
       roleType: role.roleType ?? 'FOH',
       accessLevel: role.accessLevel ?? 'STAFF',
+      sessionTimeoutMinutes: role.sessionTimeoutMinutes ?? null,
       isTipped: role.isTipped,
       tipWeight: Number(role.tipWeight),
       cashHandlingMode: role.cashHandlingMode,

@@ -8,6 +8,7 @@ import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { getClientIp } from '@/lib/get-client-ip'
 import { createChildLogger } from '@/lib/logger'
 import { err, ok, unauthorized } from '@/lib/api-response'
+import { refreshSessionToken } from '@/lib/auth-session'
 const log = createChildLogger('hardware-terminals-heartbeat-native')
 // POST terminal heartbeat for native apps (Android/iOS) - Bearer token auth
 // NO withAuth — this route does its own token validation against the Terminal table.
@@ -26,15 +27,17 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       return unauthorized('Not authenticated. Provide Authorization: Bearer {token}')
     }
 
-    // Parse optional body for version info
+    // Parse optional body for version info + session token
     let appVersion: string | undefined
     let datacapSdkVersion: string | undefined
     let connectedHardware: Record<string, unknown> | undefined
+    let sessionToken: string | undefined
     try {
       const body = await request.json()
       appVersion = body?.appVersion
       datacapSdkVersion = body?.datacapSdkVersion
       connectedHardware = body?.connectedHardware
+      sessionToken = body?.sessionToken
     } catch {
       // No body or invalid JSON — fine, heartbeat still works
     }
@@ -164,6 +167,43 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
+    // ── Session token refresh (Android terminals) ──────────────────────────
+    // Android apps send their session JWT in the heartbeat body. We refresh it
+    // here so the 30-minute idle timeout never fires — the heartbeat IS activity.
+    // Backward-compatible: old apps that don't send sessionToken still work fine.
+    let refreshedSessionToken: string | undefined
+    let sessionRevoked = false
+    let sessionRevokedReason: string | undefined
+
+    if (sessionToken) {
+      try {
+        const freshToken = await refreshSessionToken(sessionToken)
+        if (freshToken) {
+          refreshedSessionToken = freshToken
+
+          // Check if the session was revoked in the DB (e.g. remote logout by manager)
+          const mobileSession = await db.mobileSession.findFirst({
+            where: {
+              sessionToken,
+              deletedAt: null,
+            },
+            select: { revokedAt: true },
+          })
+
+          if (mobileSession?.revokedAt) {
+            sessionRevoked = true
+            sessionRevokedReason = 'Session was revoked by a manager or admin'
+            refreshedSessionToken = undefined // Don't return a refreshed token for revoked sessions
+          }
+        }
+        // If freshToken is null, the token was expired/invalid — don't crash,
+        // just don't include refreshedSessionToken in the response
+      } catch (e) {
+        log.warn({ err: e }, 'Session token refresh failed during heartbeat — ignoring')
+        // Non-fatal: heartbeat still succeeds even if session refresh fails
+      }
+    }
+
     return ok({
       success: true,
       terminal: {
@@ -174,6 +214,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         forceAllPrints: terminal.forceAllPrints,
         receiptPrinter: terminal.receiptPrinter,
       },
+      ...(refreshedSessionToken ? { refreshedSessionToken } : {}),
+      ...(sessionRevoked ? { sessionRevoked, sessionRevokedReason } : {}),
     })
   } catch (error) {
     console.error('Terminal heartbeat (native) failed:', error)

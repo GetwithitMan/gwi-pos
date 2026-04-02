@@ -108,7 +108,7 @@ export async function createSessionToken(payload: Omit<PosSessionPayload, 'iat' 
 
 // ─── Token verification ─────────────────────────────────────────────────
 
-export async function verifySessionToken(token: string): Promise<PosSessionPayload | null> {
+export async function verifySessionToken(token: string, options?: { skipIdleCheck?: boolean }): Promise<PosSessionPayload | null> {
   try {
     const parts = token.split('.')
     if (parts.length !== 3) return null
@@ -144,7 +144,8 @@ export async function verifySessionToken(token: string): Promise<PosSessionPaylo
     if (!payload.exp || payload.exp < now) return null
 
     // Check idle timeout (30 min since last activity)
-    if (payload.lastActivity && (now - payload.lastActivity) > (SESSION_IDLE_TIMEOUT_MS / 1000)) {
+    // Skipped when refreshing from heartbeat — the heartbeat IS proof of activity
+    if (!options?.skipIdleCheck && payload.lastActivity && (now - payload.lastActivity) > (SESSION_IDLE_TIMEOUT_MS / 1000)) {
       return null
     }
 
@@ -155,6 +156,34 @@ export async function verifySessionToken(token: string): Promise<PosSessionPaylo
   } catch {
     return null
   }
+}
+
+/**
+ * Refresh a session token for Android terminals via heartbeat.
+ *
+ * Unlike cookie-based refresh, this skips the idle timeout check because
+ * the Android heartbeat itself is proof of activity. The token is refreshable
+ * as long as its signature is valid and it hasn't hit the 8-hour hard expiry.
+ *
+ * Returns a fresh token with updated iat/exp/lastActivity but the SAME sessionId,
+ * or null if the token is invalid/expired.
+ */
+export async function refreshSessionToken(existingToken: string): Promise<string | null> {
+  // Verify with skipIdleCheck — heartbeat IS the activity proof
+  const payload = await verifySessionToken(existingToken, { skipIdleCheck: true })
+  if (!payload) return null
+
+  // Mint a fresh token with updated timestamps but same sessionId
+  const freshToken = await createSessionToken({
+    employeeId: payload.employeeId,
+    locationId: payload.locationId,
+    roleId: payload.roleId,
+    roleName: payload.roleName,
+    permissions: payload.permissions,
+    sessionId: payload.sessionId, // SAME session — not a new login
+  })
+
+  return freshToken
 }
 
 // ─── Cookie helpers (for use in API routes) ──────────────────────────────
