@@ -101,31 +101,11 @@ async function main() {
   console.log('[vercel-build] Running next build...')
   execSync('npx next build', { stdio: 'inherit' })
 
-  // 7. Compile custom server (server.ts → server.js) for NUC artifact
-  // Vercel itself doesn't use the custom server, but the NUC artifact does.
-  // Must run AFTER next build so standalone output exists.
-  console.log('[vercel-build] Building custom server for NUC artifact...')
-  execSync('node scripts/build-server.mjs', { stdio: 'inherit' })
-
-  // 8. Build NUC release artifact (pre-built, self-contained, signed)
-  // Packages .next/standalone + server.js + Prisma CLI + migrations into a
-  // compressed, signed artifact. NUCs download this instead of running npm ci + build.
-  // FAIL-CLOSED: If artifact build fails, the entire Vercel build fails.
-  // A release without a valid fleet artifact is not a valid release.
-  console.log('[vercel-build] Building NUC release artifact...')
-  execSync('bash scripts/build-nuc-artifact.sh', { stdio: 'inherit' })
-
-  // 9. Remove static manifest so Vercel rewrite to R2 takes effect.
-  // build-nuc-artifact.sh writes public/artifacts/manifest.json with the Vercel
-  // build's SHA, but the REAL artifact is built by GitHub Actions with a different
-  // SHA. The vercel.json rewrite proxies /artifacts/manifest.json to R2's
-  // latest/manifest.json (which has the correct SHA). Static files override
-  // rewrites, so we must delete it.
-  const manifestPath = require('path').join(__dirname, '..', 'public', 'artifacts', 'manifest.json')
-  if (require('fs').existsSync(manifestPath)) {
-    require('fs').unlinkSync(manifestPath)
-    console.log('[vercel-build] Removed static manifest.json — rewrite to R2 will serve the authoritative copy')
-  }
+  // Steps 7-8 (custom server + NUC artifact) removed from Vercel build.
+  // GitHub Actions build-release.yml is the single release authority.
+  // It builds server.js, creates the NUC artifact, computes the real SHA,
+  // and uploads to R2. Vercel's rewrite proxies /artifacts/manifest.json
+  // to R2's latest/manifest.json.
 
   console.log('[vercel-build] Build complete!')
 }
