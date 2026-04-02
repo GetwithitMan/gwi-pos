@@ -84,11 +84,6 @@ async function main() {
     }
   }
 
-  // 4c. Generate immutable versioned artifacts for fleet rollouts
-  // MC pins rollouts to a specific artifact version instead of "whatever is live"
-  console.log('[vercel-build] Generating versioned artifacts...')
-  execSync('node scripts/generate-artifacts.mjs', { stdio: 'inherit' })
-
   // 4c. Build deploy-tools artifact (standalone migration runner, pg-only)
   // Ships as a separate artifact alongside the app. Contains migrate.js,
   // apply-schema.js, all migration files, schema.sql, and pg as sole dep.

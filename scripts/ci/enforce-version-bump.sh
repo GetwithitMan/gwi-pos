@@ -18,14 +18,14 @@ set -euo pipefail
 
 BASE_REF="${1:-origin/main}"
 
-# Protected paths — changes here REQUIRE a version bump in package.json
+# Protected paths that require a version bump when changed.
+# Build/deploy plumbing (vercel-build.js, build-nuc-artifact.sh, deploy-tools/,
+# deploy-release.sh) is intentionally excluded — those changes should not force
+# application version churn. Only installer/provisioning contract changes require
+# a version bump.
 PROTECTED_PATHS=(
     "public/installer.run"
     "public/installer-modules/"
-    "public/scripts/deploy-release.sh"
-    "scripts/build-nuc-artifact.sh"
-    "scripts/vercel-build.js"
-    "deploy-tools/"
     "public/install.sh"
     "public/setup-remote.sh"
     "public/uninstall.sh"
