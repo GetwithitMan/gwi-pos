@@ -76,7 +76,8 @@ const manifest = {
   artifactUrl: `/artifacts/version-contract-${version}.json`,
   artifactSha256: contractSha256,
   artifactFormatVersion: 3,
-  // Structured fields
+  // Structured fields (MC requires 'version' field)
+  version: appVersion,
   currentVersion: version,
   appVersion,
   schemaVersion,
