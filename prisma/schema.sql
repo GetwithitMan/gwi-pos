@@ -340,6 +340,7 @@ CREATE TABLE "Role" (
     "trackLaborCost" BOOLEAN NOT NULL DEFAULT true,
     "roleType" TEXT NOT NULL DEFAULT 'FOH',
     "accessLevel" TEXT NOT NULL DEFAULT 'STAFF',
+    "sessionTimeoutMinutes" INTEGER,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "deletedAt" TIMESTAMP(3),
