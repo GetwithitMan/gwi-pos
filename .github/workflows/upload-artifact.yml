@@ -43,9 +43,18 @@ jobs:
         id: meta
         run: |
           MANIFEST="public/artifacts/manifest.json"
-          echo "release_id=$(jq -r ".releaseId" $MANIFEST)" >> $GITHUB_OUTPUT
-          echo "version=$(jq -r '.version' $MANIFEST)" >> $GITHUB_OUTPUT
+          # build-nuc-artifact.sh uses version-gitSha, Vercel uses version-schemaVersion.
+          # We need BOTH: the actual file uses gitSha, the Vercel manifest uses schemaVersion.
+          BUILD_RELEASE_ID=$(jq -r ".releaseId" $MANIFEST)
+          VERSION=$(jq -r '.version' $MANIFEST)
+          SCHEMA_VERSION=$(jq -r '.schemaVersion' $MANIFEST)
+          VERCEL_RELEASE_ID="${VERSION}-${SCHEMA_VERSION}"
+          echo "release_id=${BUILD_RELEASE_ID}" >> $GITHUB_OUTPUT
+          echo "vercel_release_id=${VERCEL_RELEASE_ID}" >> $GITHUB_OUTPUT
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "artifact_file=$(ls public/artifacts/pos-release-*.tar.zst | head -1)" >> $GITHUB_OUTPUT
+          echo "Build release ID: ${BUILD_RELEASE_ID}"
+          echo "Vercel release ID: ${VERCEL_RELEASE_ID}"
 
       - name: Install AWS CLI
         run: |
@@ -76,6 +85,19 @@ jobs:
             fi
           done
 
+          # Upload to Vercel release ID path too (version-schemaVersion format)
+          VERCEL_ID="${{ steps.meta.outputs.vercel_release_id }}"
+          if [ "$VERCEL_ID" != "$RELEASE_ID" ]; then
+            VPREFIX="releases/${VERCEL_ID}"
+            echo "Also uploading to ${VPREFIX} (Vercel manifest format)..."
+            aws s3 cp "${ARTIFACT}" "s3://gwi-pos-artifacts/${VPREFIX}/pos-release-${VERCEL_ID}.tar.zst" \
+              --endpoint-url "$R2_ENDPOINT" --no-progress
+            for f in public/artifacts/manifest.json public/artifacts/manifest.json.minisig; do
+              [ -f "$f" ] && aws s3 cp "$f" "s3://gwi-pos-artifacts/${VPREFIX}/$(basename $f)" \
+                --endpoint-url "$R2_ENDPOINT" --no-progress
+            done
+          fi
+
           # Also upload as "latest" for easy discovery
           aws s3 cp "${ARTIFACT}" "s3://gwi-pos-artifacts/latest/pos-release-latest.tar.zst" \
             --endpoint-url "$R2_ENDPOINT" --no-progress
@@ -87,10 +109,10 @@ jobs:
 
       - name: Verify upload
         run: |
-          RELEASE_ID="${{ steps.meta.outputs.release_id }}"
-          HTTP_CODE=$(curl -sI "https://pub-15bf4245be0e4c05b570d31988004d09.r2.dev/releases/${RELEASE_ID}/pos-release-${RELEASE_ID}.tar.zst" -o /dev/null -w "%{http_code}")
+          VERCEL_ID="${{ steps.meta.outputs.vercel_release_id }}"
+          HTTP_CODE=$(curl -sI "https://pub-15bf4245be0e4c05b570d31988004d09.r2.dev/releases/${VERCEL_ID}/pos-release-${VERCEL_ID}.tar.zst" -o /dev/null -w "%{http_code}")
           if [ "$HTTP_CODE" != "200" ]; then
-            echo "❌ Verification failed: HTTP ${HTTP_CODE}"
+            echo "❌ Verification failed for ${VERCEL_ID}: HTTP ${HTTP_CODE}"
             exit 1
           fi
-          echo "✅ Verified: artifact accessible at R2"
+          echo "✅ Verified: artifact accessible at R2 (${VERCEL_ID})"
