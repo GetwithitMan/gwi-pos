@@ -116,13 +116,13 @@ if (existsSync(keyPath)) {
     if (process.env.MINISIGN_SECRET_KEY) {
       try {
         const tmpKeyFile = path.join(artifactsDir, '.minisign-tmp-key')
-        // Vercel env vars may store multi-line values with literal \n or spaces — normalize
+        // Vercel env vars may store multi-line values with spaces instead of newlines.
+        // minisign key format: line 1 = "untrusted comment: ...", line 2 = base64 key data
         let keyContent = process.env.MINISIGN_SECRET_KEY
         if (!keyContent.includes('\n')) {
-          // Single line — reconstruct 3-line format: comment + base64 key
-          keyContent = keyContent
-            .replace(/^(untrusted comment:[^ ]*) /, '$1\n')
-            .replace(/(encrypted secret key) /, '$1\n')
+          // Single line — split after the base64 key marker (the space before RW is the split point)
+          // Format: "untrusted comment: minisign encrypted secret key RWQ..."
+          keyContent = keyContent.replace(/ (RW)/, '\n$1')
         }
         writeFileSync(tmpKeyFile, keyContent + '\n', 'utf-8')
         execSync(
