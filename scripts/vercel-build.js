@@ -115,6 +115,18 @@ async function main() {
   console.log('[vercel-build] Building NUC release artifact...')
   execSync('bash scripts/build-nuc-artifact.sh', { stdio: 'inherit' })
 
+  // 9. Remove static manifest so Vercel rewrite to R2 takes effect.
+  // build-nuc-artifact.sh writes public/artifacts/manifest.json with the Vercel
+  // build's SHA, but the REAL artifact is built by GitHub Actions with a different
+  // SHA. The vercel.json rewrite proxies /artifacts/manifest.json to R2's
+  // latest/manifest.json (which has the correct SHA). Static files override
+  // rewrites, so we must delete it.
+  const manifestPath = require('path').join(__dirname, '..', 'public', 'artifacts', 'manifest.json')
+  if (require('fs').existsSync(manifestPath)) {
+    require('fs').unlinkSync(manifestPath)
+    console.log('[vercel-build] Removed static manifest.json — rewrite to R2 will serve the authoritative copy')
+  }
+
   console.log('[vercel-build] Build complete!')
 }
 
