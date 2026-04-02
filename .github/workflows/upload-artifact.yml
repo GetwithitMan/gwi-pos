@@ -1,0 +1,95 @@
+name: Upload NUC Artifact to R2
+
+on:
+  # Runs after the Vercel production deploy completes
+  push:
+    branches: [main]
+
+# Only one upload at a time
+concurrency:
+  group: upload-artifact
+  cancel-in-progress: true
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Build Next.js
+        run: npm run build
+        env:
+          DATABASE_URL: "postgresql://placeholder:placeholder@localhost:5432/placeholder"
+          SKIP_DB_PUSH: "true"
+
+      - name: Build NUC artifact
+        run: bash scripts/build-nuc-artifact.sh
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+
+      - name: Read manifest metadata
+        id: meta
+        run: |
+          MANIFEST="public/artifacts/manifest.json"
+          echo "release_id=$(jq -r '.releaseId' $MANIFEST)" >> $GITHUB_OUTPUT
+          echo "version=$(jq -r '.version' $MANIFEST)" >> $GITHUB_OUTPUT
+          echo "artifact_file=$(ls public/artifacts/pos-release-*.tar.zst | head -1)" >> $GITHUB_OUTPUT
+
+      - name: Install AWS CLI
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq awscli
+
+      - name: Upload to R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+        run: |
+          RELEASE_ID="${{ steps.meta.outputs.release_id }}"
+          ARTIFACT="${{ steps.meta.outputs.artifact_file }}"
+          PREFIX="releases/${RELEASE_ID}"
+
+          echo "Uploading ${ARTIFACT} to R2 (${PREFIX})..."
+          aws s3 cp "${ARTIFACT}" "s3://gwi-pos-artifacts/${PREFIX}/pos-release-${RELEASE_ID}.tar.zst" \
+            --endpoint-url "$R2_ENDPOINT" --no-progress
+
+          # Upload manifest + signatures
+          for f in public/artifacts/manifest.json public/artifacts/manifest.json.minisig public/artifacts/version-contract-*.json public/artifacts/version-contract-*.json.minisig public/artifacts/schema-*.sql; do
+            if [ -f "$f" ]; then
+              aws s3 cp "$f" "s3://gwi-pos-artifacts/${PREFIX}/$(basename $f)" \
+                --endpoint-url "$R2_ENDPOINT" --no-progress
+            fi
+          done
+
+          # Also upload as "latest" for easy discovery
+          aws s3 cp "${ARTIFACT}" "s3://gwi-pos-artifacts/latest/pos-release-latest.tar.zst" \
+            --endpoint-url "$R2_ENDPOINT" --no-progress
+          aws s3 cp "public/artifacts/manifest.json" "s3://gwi-pos-artifacts/latest/manifest.json" \
+            --endpoint-url "$R2_ENDPOINT" --no-progress
+
+          echo "✅ Uploaded ${RELEASE_ID} to R2"
+          echo "   URL: https://pub-15bf4245be0e4c05b570d31988004d09.r2.dev/${PREFIX}/pos-release-${RELEASE_ID}.tar.zst"
+
+      - name: Verify upload
+        run: |
+          RELEASE_ID="${{ steps.meta.outputs.release_id }}"
+          HTTP_CODE=$(curl -sI "https://pub-15bf4245be0e4c05b570d31988004d09.r2.dev/releases/${RELEASE_ID}/pos-release-${RELEASE_ID}.tar.zst" -o /dev/null -w "%{http_code}")
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "❌ Verification failed: HTTP ${HTTP_CODE}"
+            exit 1
+          fi
+          echo "✅ Verified: artifact accessible at R2"

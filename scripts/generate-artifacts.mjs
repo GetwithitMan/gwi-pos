@@ -70,11 +70,15 @@ const contractSha256 = sha256(contractContent)
 // Manifest includes both legacy fields (releaseId, artifactUrl) for deploy-release.sh
 // and structured artifact fields for MC fleet management.
 const gitSha = contract.gitSha || 'unknown'
+const R2_BASE = 'https://pub-15bf4245be0e4c05b570d31988004d09.r2.dev'
 const manifest = {
   // Legacy fields required by deploy-release.sh
   releaseId: version,
-  artifactUrl: `/artifacts/version-contract-${version}.json`,
-  artifactSha256: contractSha256,
+  // Point to R2 for the tar.zst artifact (Vercel can't serve 641MB files).
+  // deploy-release.sh reads this URL to download the release artifact.
+  // The version-contract is also available as a fallback for MC/schema-only ops.
+  artifactUrl: `${R2_BASE}/releases/${version}/pos-release-${version}.tar.zst`,
+  artifactSha256: '__PENDING_R2_UPLOAD__',
   artifactFormatVersion: 3,
   // Structured fields (MC requires 'version' field)
   version: appVersion,
