@@ -66,10 +66,20 @@ writeFileSync(contractArtifactPath, contractContent, 'utf-8')
 const contractSha256 = sha256(contractContent)
 
 // ── 3. Generate manifest.json ──────────────────────────────────────────────
+// Manifest includes both legacy fields (releaseId, artifactUrl) for deploy-release.sh
+// and structured artifact fields for MC fleet management.
+const gitSha = contract.gitSha || 'unknown'
 const manifest = {
+  // Legacy fields required by deploy-release.sh
+  releaseId: version,
+  artifactUrl: `/artifacts/version-contract-${version}.json`,
+  artifactSha256: contractSha256,
+  artifactFormatVersion: 3,
+  // Structured fields
   currentVersion: version,
   appVersion,
   schemaVersion,
+  gitSha,
   artifacts: {
     schema: {
       version,
