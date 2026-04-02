@@ -355,7 +355,9 @@ async function performRollingRestart(targetVersion: string): Promise<boolean> {
 // ── Artifact-based deploy (v3.1 — replaces git+build flow) ────────────────
 
 const DEPLOY_SCRIPT = '/opt/gwi-pos/deploy-release.sh'
-const MANIFEST_URL = `https://${process.env.POS_DOMAIN || 'www.ordercontrolcenter.com'}/artifacts/manifest.json`
+const R2_ARTIFACT_ORIGIN = process.env.R2_ARTIFACT_ORIGIN || 'https://pub-15bf4245be0e4c05b570d31988004d09.r2.dev'
+const FALLBACK_ORIGIN = `https://${process.env.POS_DOMAIN || 'www.ordercontrolcenter.com'}`
+const MANIFEST_URL = `${R2_ARTIFACT_ORIGIN}/latest/manifest.json`
 
 /**
  * Check if artifact-based deployment is available.
@@ -392,7 +394,7 @@ async function performArtifactDeploy(targetVersion: string, commandId?: string):
         encoding: 'utf8',
         timeout: 600_000, // 10 min max (download + extract + schema + restart + health)
         stdio: 'pipe',
-        env: { ...process.env, PATH: process.env.PATH },
+        env: { ...process.env, PATH: process.env.PATH, FALLBACK_ARTIFACT_ORIGIN: FALLBACK_ORIGIN },
       }
     )
 
