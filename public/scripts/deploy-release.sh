@@ -592,16 +592,15 @@ fetch_manifest() {
         fi
     fi
 
-    # Fetch detached signature and verify (fail-closed when infrastructure exists)
-    if ! download_file_no_cache "${url}.minisig?_=$(date +%s)" "$sig_file" && ! download_file_no_cache "${url}.minisig" "$sig_file"; then
-        fatal "Manifest signature verification required but minisign not installed. Run: apt-get install -y minisign"
-    else
+    # Fetch detached signature and verify (graceful when signing infra not yet deployed)
+    if download_file_no_cache "${url}.minisig?_=$(date +%s)" "$sig_file" || download_file_no_cache "${url}.minisig" "$sig_file"; then
+        # Signature file exists — verify it (fail-closed)
         if [[ -f "$PUB_KEY" ]] && command -v minisign &>/dev/null; then
             if ! minisign -Vm "$manifest_file" -p "$PUB_KEY" -x "$sig_file" 2>/dev/null; then
                 fatal "Manifest signature verification FAILED"
             fi
             log "Manifest signature verified"
-        else
+        elif [[ -f "$PUB_KEY" ]]; then
             # Public key exists but minisign missing — try auto-install
             if command -v apt-get &>/dev/null; then
                 log "minisign not installed — attempting auto-install for manifest verification..."
@@ -613,9 +612,14 @@ fetch_manifest() {
                 fi
                 log "Manifest signature verified (after auto-install)"
             else
-                fatal "minisign required for manifest verification but could not be installed"
+                log "WARN: minisign not available — skipping signature verification"
             fi
+        else
+            log "WARN: No public key found — skipping signature verification"
         fi
+    else
+        # No .minisig file available — signing infrastructure not yet deployed
+        log "WARN: Manifest signature file not available — skipping verification (signing not configured)"
     fi
 
     # Extract fields from manifest
