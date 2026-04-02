@@ -67,10 +67,8 @@ jobs:
           echo "release_id=$(jq -r '.releaseId' $MANIFEST)" >> $GITHUB_OUTPUT
           echo "version=$(jq -r '.version' $MANIFEST)" >> $GITHUB_OUTPUT
 
-      - name: Install AWS CLI
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq awscli
+      - name: Verify AWS CLI
+        run: aws --version
 
       - name: Upload artifacts to R2
         env:
