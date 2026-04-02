@@ -116,7 +116,15 @@ if (existsSync(keyPath)) {
     if (process.env.MINISIGN_SECRET_KEY) {
       try {
         const tmpKeyFile = path.join(artifactsDir, '.minisign-tmp-key')
-        writeFileSync(tmpKeyFile, process.env.MINISIGN_SECRET_KEY, 'utf-8')
+        // Vercel env vars may store multi-line values with literal \n or spaces — normalize
+        let keyContent = process.env.MINISIGN_SECRET_KEY
+        if (!keyContent.includes('\n')) {
+          // Single line — reconstruct 3-line format: comment + base64 key
+          keyContent = keyContent
+            .replace(/^(untrusted comment:[^ ]*) /, '$1\n')
+            .replace(/(encrypted secret key) /, '$1\n')
+        }
+        writeFileSync(tmpKeyFile, keyContent + '\n', 'utf-8')
         execSync(
           `minisign -Sm "${manifestPath}" -s "${tmpKeyFile}" -x "${sigPath}" -t "GWI POS manifest ${version}"`,
           { stdio: 'pipe' }
