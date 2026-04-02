@@ -11,8 +11,11 @@
  */
 
 module.exports.up = async function up(prisma) {
+  // The DB column uses a PostgreSQL enum — 'void' was never a valid enum value,
+  // so no rows can exist with that status. Cast to text to avoid PG enum validation
+  // error in the WHERE clause, making this a safe no-op.
   const result = await prisma.$executeRawUnsafe(`
-    UPDATE "Order" SET "status" = 'voided' WHERE "status" = 'void'
+    UPDATE "Order" SET "status" = 'voided' WHERE "status"::text = 'void'
   `)
   if (result > 0) {
     console.log(`[121] Updated ${result} orders from status 'void' to 'voided'`)
