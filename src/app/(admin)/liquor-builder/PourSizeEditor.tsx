@@ -9,7 +9,6 @@ export interface PourSizeEditorProps {
   editingDrinkPrice: string
   enabledPourSizes: Record<string, PourSizeConfig>
   defaultPourSize: string
-  applyPourToModifiers: boolean
   hideDefaultOnPos: boolean
   isDualPricingEnabled: boolean
   cashDiscountPct: number
@@ -18,7 +17,6 @@ export interface PourSizeEditorProps {
   onUpdateMultiplier: (size: string, multiplier: number) => void
   onUpdateCustomPrice: (size: string, customPrice: number | null) => void
   onSetDefaultPourSize: (size: string) => void
-  onSetApplyPourToModifiers: (value: boolean) => void
   onSetHideDefaultOnPos: (value: boolean) => void
   onSetEnabledPourSizes: React.Dispatch<React.SetStateAction<Record<string, PourSizeConfig>>>
 }
@@ -27,7 +25,6 @@ export function PourSizeEditor({
   editingDrinkPrice,
   enabledPourSizes,
   defaultPourSize,
-  applyPourToModifiers,
   hideDefaultOnPos,
   isDualPricingEnabled,
   cashDiscountPct,
@@ -36,7 +33,6 @@ export function PourSizeEditor({
   onUpdateMultiplier,
   onUpdateCustomPrice,
   onSetDefaultPourSize,
-  onSetApplyPourToModifiers,
   onSetHideDefaultOnPos,
   onSetEnabledPourSizes,
 }: PourSizeEditorProps) {
@@ -365,17 +361,6 @@ export function PourSizeEditor({
           />
           <span className="text-xs text-gray-900">Hide default pour button on POS</span>
           <span className="text-[10px] text-gray-500">(tapping the item already uses the default)</span>
-        </label>
-      )}
-      {Object.keys(enabledPourSizes).length > 0 && (
-        <label className="flex items-center gap-2 cursor-pointer mt-2">
-          <input
-            type="checkbox"
-            checked={applyPourToModifiers}
-            onChange={e => onSetApplyPourToModifiers(e.target.checked)}
-            className="w-4 h-4 text-purple-600"
-          />
-          <span className="text-xs text-gray-900">Apply multiplier to spirit upgrade charges too</span>
         </label>
       )}
       {Object.keys(enabledPourSizes).length > 0 && (
