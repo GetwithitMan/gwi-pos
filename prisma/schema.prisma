@@ -1025,6 +1025,8 @@ model Role {
   roleType    String @default("FOH") // FOH | BOH | ADMIN
   accessLevel String @default("STAFF") // STAFF | MANAGER | OWNER_ADMIN
 
+  sessionTimeoutMinutes  Int?  // Idle timeout for this role (minutes). 0 = no timeout. null = use venue default.
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)

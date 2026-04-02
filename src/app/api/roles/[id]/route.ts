@@ -60,6 +60,7 @@ export const GET = withVenue(async function GET(
         permissions: getPermissionsArray(role.permissions),
         roleType: role.roleType ?? 'FOH',
         accessLevel: role.accessLevel ?? 'STAFF',
+        sessionTimeoutMinutes: role.sessionTimeoutMinutes ?? null,
         isTipped: role.isTipped,
         tipWeight: Number(role.tipWeight),
         cashHandlingMode: role.cashHandlingMode,
@@ -83,7 +84,7 @@ export const PUT = withVenue(async function PUT(
   try {
     const { id } = await params
     const body = await request.json()
-    const { name, permissions, cashHandlingMode, trackLaborCost, isTipped, tipWeight, roleType, accessLevel, requestingEmployeeId } = body as {
+    const { name, permissions, cashHandlingMode, trackLaborCost, isTipped, tipWeight, roleType, accessLevel, sessionTimeoutMinutes, requestingEmployeeId } = body as {
       name?: string
       permissions?: string[]
       cashHandlingMode?: string
@@ -92,7 +93,15 @@ export const PUT = withVenue(async function PUT(
       tipWeight?: number
       roleType?: string
       accessLevel?: string
+      sessionTimeoutMinutes?: number | null
       requestingEmployeeId?: string
+    }
+
+    // Validate sessionTimeoutMinutes: must be null, 0, or positive integer
+    if (sessionTimeoutMinutes !== undefined && sessionTimeoutMinutes !== null) {
+      if (!Number.isInteger(sessionTimeoutMinutes) || sessionTimeoutMinutes < 0) {
+        return err('sessionTimeoutMinutes must be null, 0, or a positive integer')
+      }
     }
 
     // Check role exists
@@ -135,6 +144,7 @@ export const PUT = withVenue(async function PUT(
         ...(trackLaborCost !== undefined && { trackLaborCost }),
         ...(isTipped !== undefined && { isTipped }),
         ...(tipWeight !== undefined && { tipWeight: Number(tipWeight) }),
+        ...(sessionTimeoutMinutes !== undefined && { sessionTimeoutMinutes }),
       },
     })
 
@@ -175,6 +185,7 @@ export const PUT = withVenue(async function PUT(
         permissions: getPermissionsArray(role.permissions),
         roleType: role.roleType ?? 'FOH',
         accessLevel: role.accessLevel ?? 'STAFF',
+        sessionTimeoutMinutes: role.sessionTimeoutMinutes ?? null,
         isTipped: role.isTipped,
         tipWeight: Number(role.tipWeight),
         cashHandlingMode: role.cashHandlingMode,
