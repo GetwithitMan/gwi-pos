@@ -93,7 +93,6 @@ const manifest = {
       sha256: contractSha256,
     },
   },
-  generatedAt: new Date().toISOString(),
 }
 
 const manifestPath = path.join(artifactsDir, 'manifest.json')

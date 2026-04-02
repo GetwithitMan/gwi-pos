@@ -355,7 +355,7 @@ async function performRollingRestart(targetVersion: string): Promise<boolean> {
 // ── Artifact-based deploy (v3.1 — replaces git+build flow) ────────────────
 
 const DEPLOY_SCRIPT = '/opt/gwi-pos/deploy-release.sh'
-const MANIFEST_URL = `https://${process.env.POS_DOMAIN || 'ordercontrolcenter.com'}/artifacts/manifest.json`
+const MANIFEST_URL = `https://${process.env.POS_DOMAIN || 'www.ordercontrolcenter.com'}/artifacts/manifest.json`
 
 /**
  * Check if artifact-based deployment is available.
@@ -1583,7 +1583,7 @@ async function updateDashboard(): Promise<void> {
   // Method 2: Fallback to POS base URL (Vercel)
   if (!downloaded) {
     try {
-      const baseUrl = process.env.POS_BASE_URL || 'https://ordercontrolcenter.com'
+      const baseUrl = process.env.POS_BASE_URL || 'https://www.ordercontrolcenter.com'
       const res = await fetch(`${baseUrl}/gwi-nuc-dashboard.deb`, {
         signal: AbortSignal.timeout(60_000),
       })
