@@ -406,7 +406,7 @@ fi
 ARTIFACT_FILENAME="pos-release-${RELEASE_ID}.${COMPRESS_EXT}"
 
 # Discover deploy-tools artifact (built by deploy-tools/build.sh in vercel-build step 4c)
-DT_ARTIFACT=$(ls -t "$ARTIFACTS_DIR"/deploy-tools-*.tar.* 2>/dev/null | head -1)
+DT_ARTIFACT=$(ls -t "$ARTIFACTS_DIR"/deploy-tools-*.tar.* 2>/dev/null | head -1 || true)
 if [ -n "$DT_ARTIFACT" ]; then
     DT_ARTIFACT_FILENAME=$(basename "$DT_ARTIFACT")
     DT_ARTIFACT_SHA256=$(shasum -a 256 "$DT_ARTIFACT" | cut -d' ' -f1)
