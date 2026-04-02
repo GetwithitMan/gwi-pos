@@ -2,6 +2,12 @@
   "buildCommand": "node scripts/vercel-build.js",
   "framework": "nextjs",
   "installCommand": "npm install",
+  "rewrites": [
+    {
+      "source": "/artifacts/manifest.json",
+      "destination": "https://pub-15bf4245be0e4c05b570d31988004d09.r2.dev/latest/manifest.json"
+    }
+  ],
   "headers": [
     {
       "source": "/artifacts/manifest.json",
