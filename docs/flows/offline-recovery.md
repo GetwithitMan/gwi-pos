@@ -6,11 +6,11 @@
 
 ## 1. Purpose
 
-**Trigger:** An Android register or web POS terminal reconnects to the NUC after a period of being offline (NUC unreachable, network disruption, or device sleep/wake cycle).
+**Trigger:** An Android register or PAX device reconnects to the NUC after a period of being offline (NUC unreachable, network disruption, or device sleep/wake cycle).
 
 **Why it matters:** Sync integrity — mutations queued during the offline period must reach the NUC in the correct order, get server-assigned `serverSequence` values, and project into `OrderSnapshot`. The POS must never lose a mutation, reorder events, or block staff operations while recovery runs in the background.
 
-**Scope:** `gwi-android-register` (primary offline client), `gwi-pos` NUC API + Socket.io (recovery authority), web POS kiosk (secondary), Neon cloud sync (separate concern — does NOT block recovery).
+**Scope:** `gwi-android-register` (primary offline client), `gwi-pos` NUC API + Socket.io (recovery authority), Neon cloud sync (separate concern — does NOT block recovery). The web POS register was removed in April 2026.
 
 ---
 
@@ -28,7 +28,7 @@
 
 ## 3. Sequence (Happy Path)
 
-**"Offline" in this system means:** Android (or web POS) cannot reach the NUC at `http://{NUC_IP}:3005`. This is distinct from the NUC losing its Neon cloud connection — NUC-to-Neon is a background sync concern and NEVER blocks POS operations.
+**"Offline" in this system means:** Android (or PAX device) cannot reach the NUC at `http://{NUC_IP}:3005`. This is distinct from the NUC losing its Neon cloud connection — NUC-to-Neon is a background sync concern and NEVER blocks POS operations.
 
 ```
 1. [CLIENT]     Connectivity state during offline period:

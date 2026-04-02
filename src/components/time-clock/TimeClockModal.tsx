@@ -517,9 +517,9 @@ export function TimeClockModal({
     return `${h}:${m.toString().padStart(2, '0')}`
   }
 
-  const goToOrders = () => {
+  const goToDashboard = () => {
     onClose()
-    router.push('/orders')
+    router.push('/admin/dashboard')
   }
 
   return (
@@ -638,9 +638,9 @@ export function TimeClockModal({
                 <Button
                   variant="primary"
                   className="w-full"
-                  onClick={goToOrders}
+                  onClick={goToDashboard}
                 >
-                  Go to Orders
+                  Go to Dashboard
                 </Button>
 
                 {managers.length > 0 && selectedManagerId && (

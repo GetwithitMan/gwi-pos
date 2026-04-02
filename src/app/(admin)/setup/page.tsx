@@ -214,10 +214,10 @@ export default function SetupPage() {
         {/* Skip Setup Link */}
         <div className="mt-8 text-center">
           <Link
-            href="/orders"
+            href="/admin/dashboard"
             className="text-sm text-gray-900 hover:text-gray-600 transition-colors"
           >
-            Skip setup and go to orders &rarr;
+            Skip setup and go to dashboard &rarr;
           </Link>
         </div>
       </div>

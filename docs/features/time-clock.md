@@ -23,9 +23,6 @@ Employee clock-in/out system with break tracking, overtime calculation (8-hour t
 
 | Interface | Path / Screen | Who Accesses |
 |-----------|--------------|--------------|
-| POS Web | `/crew` (clock page) | All staff |
-| POS Web | `/crew/tip-group` | All staff |
-| POS Web | `/crew/shift` | All staff |
 | Admin | Dashboard (clock status indicators) | Managers |
 
 ---
@@ -40,9 +37,6 @@ Employee clock-in/out system with break tracking, overtime calculation (8-hour t
 | `src/app/api/breaks/route.ts` | GET/POST/PUT break management |
 | `src/app/api/shifts/route.ts` | GET/POST shift lifecycle |
 | `src/app/api/tips/group-templates/eligible/route.ts` | GET eligible tip groups for clock-in |
-| `src/app/(pos)/crew/page.tsx` | Main clock-in/out page |
-| `src/app/(pos)/crew/tip-group/page.tsx` | Tip group management |
-| `src/app/(pos)/crew/shift/page.tsx` | Shift report view |
 | `src/lib/domain/tips/tip-groups.ts` | `findLastMemberGroup()` — clock-out guard |
 | `src/lib/domain/tips/tip-group-templates.ts` | `assignEmployeeToTemplateGroup()` |
 

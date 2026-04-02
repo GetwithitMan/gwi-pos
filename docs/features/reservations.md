@@ -22,7 +22,7 @@ Full reservation management system with online booking, deposit collection, cust
 | Admin | `/reservations` → `src/app/(admin)/reservations/page.tsx` | Managers, Hosts |
 | Admin Settings | `/settings/reservations` → `src/app/(admin)/settings/reservations/page.tsx` | Managers |
 | Integration Settings | `/settings/integrations/reservations` → `src/app/(admin)/settings/integrations/reservations/page.tsx` | Managers |
-| POS Host Stand | `/host` → `src/app/(pos)/host/page.tsx` | Hosts |
+| Android Host Stand | Android `HostStandScreen.kt` | Hosts (web POS host page removed April 2026) |
 | Public Booking | `/reserve/[slug]` → `src/app/(public)/reserve/[slug]/page.tsx` | Guests |
 | Public Manage | `/reserve/manage/[token]` → `src/app/(public)/reserve/manage/[token]/page.tsx` | Guests |
 | Public Deposit | `/reserve/pay-deposit/[depositToken]` → `src/app/(public)/reserve/pay-deposit/[depositToken]/page.tsx` | Guests |
@@ -102,7 +102,7 @@ Full reservation management system with online booking, deposit collection, cust
 | `/reservations` | `(admin)` | Reservation management calendar/list |
 | `/settings/reservations` | `(admin)` | Reservation engine settings |
 | `/settings/integrations/reservations` | `(admin)` | Third-party integration config |
-| `/host` | `(pos)` | POS host stand view |
+| `/host` | `(pos)` | **REMOVED (April 2026)** — host stand is now Android only |
 | `/reserve/[slug]` | `(public)` | Public booking widget |
 | `/reserve/manage/[token]` | `(public)` | Guest manage/cancel/modify |
 | `/reserve/pay-deposit/[depositToken]` | `(public)` | Guest deposit payment |

@@ -114,13 +114,13 @@ PM Mode: Entertainment
 |-----------|------|---------|
 | EntertainmentVisual | `/src/components/floor-plan/entertainment-visuals.tsx` | 12 SVG visual types |
 | AddEntertainmentPalette | `/src/components/floor-plan/AddEntertainmentPalette.tsx` | Place items on floor plan |
-| FloorPlanEntertainment | `/src/components/floor-plan/FloorPlanEntertainment.tsx` | Render on FOH floor plan |
+| FloorPlanEntertainment | `/src/components/floor-plan/FloorPlanEntertainment.tsx` | **REMOVED (April 2026)** — was part of FOH floor plan view |
 | EntertainmentProperties | `/src/domains/floor-plan/admin/EntertainmentProperties.tsx` | Editor properties panel |
 
 ### Order Components
 | Component | File | Purpose |
 |-----------|------|---------|
-| EntertainmentSessionControls | `/src/components/orders/EntertainmentSessionControls.tsx` | Start/extend/stop buttons |
+| EntertainmentSessionControls | `/src/components/orders/EntertainmentSessionControls.tsx` | **REMOVED (April 2026)** — was part of web POS order panel |
 
 ---
 

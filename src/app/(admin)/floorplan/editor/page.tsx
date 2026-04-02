@@ -22,7 +22,7 @@ export default function FloorPlanEditorPage() {
 
   const handleExit = () => {
     // Navigate back to orders (production FOH view)
-    window.location.href = '/orders';
+    window.location.href = '/admin/dashboard';
   };
 
   if (!hydrated) {

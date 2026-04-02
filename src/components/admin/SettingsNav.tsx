@@ -522,11 +522,11 @@ export function SettingsNav() {
               Mission Control
             </a>
           ) : (
-            <Link href="/orders" className="flex items-center gap-2 text-sm text-gray-900 hover:text-gray-900 mb-1">
+            <Link href="/admin/dashboard" className="flex items-center gap-2 text-sm text-gray-900 hover:text-gray-900 mb-1">
               <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
-              Back to POS
+              Back to Dashboard
             </Link>
           )}
           <h2 className="text-sm font-bold text-gray-900">Settings</h2>

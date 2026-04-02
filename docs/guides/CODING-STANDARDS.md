@@ -245,7 +245,6 @@ gwi-pos/
 ├── src/
 │   ├── app/
 │   │   ├── (auth)/      # Login pages
-│   │   ├── (pos)/       # POS interface
 │   │   ├── (admin)/     # Admin pages
 │   │   ├── (kds)/       # Kitchen Display System
 │   │   └── api/         # API routes (all wrapped with withVenue)
@@ -277,11 +276,12 @@ gwi-pos/
 
 ## Application Routes
 
-### POS Routes
+### Web Routes
+> **Note:** The web POS register has been removed (April 2026). All ordering, tab management, and payment happens on Android registers and PAX devices. The web UI serves admin/settings, KDS, and CFD only.
+
 | Route | Description |
 |-------|-------------|
 | `/login` | PIN-based login |
-| `/orders` | Main POS order screen |
 | `/kds` | Kitchen Display System |
 | `/kds/entertainment` | Entertainment KDS |
 

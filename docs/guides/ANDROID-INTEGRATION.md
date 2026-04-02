@@ -4,9 +4,9 @@
 
 ---
 
-## Android is the PRIMARY Client
+## Android is the ONLY Register Client
 
-The native Android app is the primary POS interface. The web/browser UI (Chromium kiosk) is a functional fallback only.
+The native Android app (and PAX devices) are the only register clients. The web POS register UI was removed in April 2026.
 
 | Rule | Detail |
 |------|--------|
@@ -15,7 +15,7 @@ The native Android app is the primary POS interface. The web/browser UI (Chromiu
 | Performance target | Sub-50ms for all POS actions (tap → visual response) |
 | Network baseline | WiFi to NUC — if it works here, it works everywhere |
 
-When building features, verify Android behavior over WiFi to the NUC before considering web parity.
+When building features, verify Android behavior over WiFi to the NUC. There is no web POS register to maintain parity with.
 
 ---
 
@@ -93,7 +93,7 @@ cashTotal = order.total          // stored price IS the cash price
 cardTotal = order.total + surcharge
 ```
 
-The web POS `PaymentModal` sends `amount: remainingBeforeTip` for cash — that equals `order.total` (the cash price). Android must match this exactly.
+Android (and PAX) must send `amount: remainingBeforeTip` for cash — that equals `order.total` (the cash price). The web POS PaymentModal was removed in April 2026; Android and PAX are the only payment clients.
 
 **Wrong pattern (do not do this):**
 ```kotlin

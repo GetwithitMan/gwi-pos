@@ -29,7 +29,7 @@
 ## 3. Sequence (Happy Path)
 
 ```
-1. [CLIENT]     ORDER_SENT event arrives at NUC (from Android Register, PAX, or web POS)
+1. [CLIENT]     ORDER_SENT event arrives at NUC (from Android Register or PAX device)
                 → socket-dispatch.ts: emitToTags(locationId, item.routeTags, 'kds:order-received', ticket)
                 → KDS screens subscribed to matching tag:{tagName} rooms receive kds:order-received
                 → Android KDS app (or web fallback) renders ticket in active queue

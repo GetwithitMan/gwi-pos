@@ -23,8 +23,6 @@ Tabs are open-ended orders with a special lifecycle for bar service. A tab begin
 
 | Interface | Path / Screen | Who Accesses |
 |-----------|--------------|--------------|
-| POS Web | `/tabs` → `src/app/(pos)/tabs/page.tsx` | Bartenders, Servers |
-| POS Web | Tab panel in order view | Bartenders, Servers |
 | Mobile | `/mobile/tabs` → `src/app/(mobile)/mobile/tabs/page.tsx` | Bartenders |
 | Android | `NewTabDialog.kt` — Tab open flow | All staff |
 | Android | `TabListSheet.kt` — Tab list with nickname-first display | All staff |
@@ -36,7 +34,6 @@ Tabs are open-ended orders with a special lifecycle for bar service. A tab begin
 ### gwi-pos
 | File / Directory | Purpose |
 |-----------------|---------|
-| `src/app/(pos)/tabs/page.tsx` | Tab management POS page |
 | `src/app/(mobile)/mobile/tabs/page.tsx` | Mobile tab management |
 | `src/app/api/tabs/route.ts` | GET/POST tabs (list/create) |
 | `src/app/api/tabs/[id]/route.ts` | GET/PUT tab details/close/update; accepts `tabNickname` |

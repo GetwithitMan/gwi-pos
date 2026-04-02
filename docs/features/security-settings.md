@@ -4,7 +4,7 @@
 
 ## Summary
 
-Security Settings govern how POS terminals behave with respect to access control, idle lockout, and approval requirements for high-risk actions. Configurable options include: idle screen lock (PIN re-entry after inactivity), require-PIN-after-payment for high-volume terminals, buddy-punch detection for time clock fraud prevention, and SMS manager approval (2-factor) for large refunds and voids above configurable dollar thresholds. A set of hardcoded policies — PIN lockout after 3 failed attempts, one-time approval codes valid for 5 minutes, approval links valid for 30 minutes — are enforced at the system level and are not user-configurable. These settings apply uniformly to web POS terminals and the Android register.
+Security Settings govern how POS terminals behave with respect to access control, idle lockout, and approval requirements for high-risk actions. Configurable options include: idle screen lock (PIN re-entry after inactivity), require-PIN-after-payment for high-volume terminals, buddy-punch detection for time clock fraud prevention, and SMS manager approval (2-factor) for large refunds and voids above configurable dollar thresholds. A set of hardcoded policies — PIN lockout after 3 failed attempts, one-time approval codes valid for 5 minutes, approval links valid for 30 minutes — are enforced at the system level and are not user-configurable. These settings apply uniformly to Android registers and PAX devices.
 
 ## Status
 
@@ -84,7 +84,7 @@ SecuritySettings {
 
 - When `idleLockMinutes > 0`, the POS terminal locks the screen after the configured number of minutes of inactivity.
 - On lock, the terminal requires PIN re-entry before any further action.
-- Applies to both web POS and Android (`PinLoginViewModel` reads `idleLockMinutes` from bootstrapped settings).
+- Applies to Android registers and PAX devices (`PinLoginViewModel` reads `idleLockMinutes` from bootstrapped settings). Web POS register was removed April 2026.
 - The lock must not interrupt an active transaction in progress (payment flow, open order panel, etc.).
 - Valid values: `0` (disabled), `1`, `3`, `5`, `10`, `15`, `30` minutes. These are enforced in the UI via the `IDLE_LOCK_OPTIONS` constant; the API stores whatever integer is sent.
 
@@ -184,7 +184,7 @@ Business Day end-of-day rules were previously on this page but have been moved t
 ## Android-Specific Notes
 
 - `idleLockMinutes` is read from the bootstrap response and consumed by `PinLoginViewModel` to determine when to enter the `isUnavailablePhase` idle-lock state.
-- The Android terminal pings the server every 3 seconds to assess connectivity and enforces the idle lock independently of the web POS.
+- The Android terminal pings the server every 3 seconds to assess connectivity and enforces the idle lock independently.
 - `requirePinAfterPayment` is consumed by the Android payment flow to prompt PIN re-entry after a successful tender.
 
 ---

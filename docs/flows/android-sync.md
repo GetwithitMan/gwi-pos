@@ -10,7 +10,7 @@
 
 **Why it matters:** Sync integrity — the Android device is the PRIMARY POS client. Every mutation it makes must be reliably received by the NUC, assigned a canonical `serverSequence`, projected into `OrderSnapshot`, and broadcast to all connected clients. Loss or reordering of events corrupts order state and financial data.
 
-**Scope:** `gwi-android-register` (initiator), `gwi-pos` NUC API + Socket.io (authority), web POS kiosk (secondary receiver), KDS screens (downstream receiver).
+**Scope:** `gwi-android-register` (initiator), `gwi-pos` NUC API + Socket.io (authority), KDS screens (downstream receiver). The web POS register was removed in April 2026.
 
 ---
 
@@ -96,7 +96,7 @@
 | `order:event` | `{ eventId, orderId, serverSequence, type, payload, deviceId }` | POS API (`emitter.ts`) | All clients at location, Android, KDS | Must follow OrderEvent DB write (step 5) |
 | `order:created` | `{ orderId, orderNumber, orderType, tableName, employeeName }` | POS API | All clients, KDS | On ORDER_CREATED event type only |
 | `kds:order-received` | Full order event, tag-routed | POS API (`socket-dispatch.ts`) | KDS screens matching route tags | On ORDER_SENT event type only |
-| `kds:item-status` | `{ orderId, itemId, kitchenStatus }` | POS API | Android, web POS | On COMP_VOID_APPLIED |
+| `kds:item-status` | `{ orderId, itemId, kitchenStatus }` | POS API | Android, PAX | On COMP_VOID_APPLIED |
 
 ---
 
