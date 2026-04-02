@@ -69,7 +69,22 @@ async function main() {
     console.log('[vercel-build] No DATABASE_URL — skipping migrations, db push, and schema regeneration (preview deployment)')
   }
 
-  // 4b. Generate immutable versioned artifacts for fleet rollouts
+  // 4b. Install minisign for artifact signing (small static binary, ~200KB)
+  // Required so generate-artifacts.mjs can sign manifest.json for NUC deploy verification.
+  try {
+    execSync('which minisign', { stdio: 'pipe' })
+    console.log('[vercel-build] minisign already available')
+  } catch {
+    console.log('[vercel-build] Installing minisign for artifact signing...')
+    try {
+      execSync('curl -fsSL https://github.com/jedisct1/minisign/releases/download/0.11/minisign-0.11-linux.tar.gz | tar xz -C /tmp && cp /tmp/minisign-linux/x86_64/minisign /usr/local/bin/minisign && chmod +x /usr/local/bin/minisign', { stdio: 'pipe' })
+      console.log('[vercel-build] minisign installed')
+    } catch (err) {
+      console.warn('[vercel-build] WARN: Could not install minisign — manifest will be unsigned:', err.message)
+    }
+  }
+
+  // 4c. Generate immutable versioned artifacts for fleet rollouts
   // MC pins rollouts to a specific artifact version instead of "whatever is live"
   console.log('[vercel-build] Generating versioned artifacts...')
   execSync('node scripts/generate-artifacts.mjs', { stdio: 'inherit' })
