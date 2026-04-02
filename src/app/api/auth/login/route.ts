@@ -90,6 +90,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
             id: true,
             name: true,
             cashHandlingMode: true,
+            sessionTimeoutMinutes: true,
           },
         },
       },
@@ -100,6 +101,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       id: er.role.id,
       name: er.role.name,
       cashHandlingMode: er.role.cashHandlingMode,
+      sessionTimeoutMinutes: er.role.sessionTimeoutMinutes ?? null,
       isPrimary: er.isPrimary,
     }))
 
@@ -152,6 +154,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         role: {
           id: matchedEmployee.role.id,
           name: matchedEmployee.role.name,
+          sessionTimeoutMinutes: matchedEmployee.role.sessionTimeoutMinutes ?? null,
         },
         location: {
           id: matchedEmployee.location.id,
