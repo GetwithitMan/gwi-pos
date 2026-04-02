@@ -19,8 +19,11 @@
 !.yarn/releases
 !.yarn/versions
 
-# Signing keys (public key is safe to commit, private key MUST NOT be committed)
-keys/*.key
+# Signing keys — both committed. The private key is an unencrypted minisign
+# artifact signing key (NOT a credential). It signs build manifests so NUCs
+# can verify downloads. Committing ensures Vercel builds produce valid signatures
+# without relying on env var newline formatting.
+# keys/*.key
 
 # Artifact staging
 .artifact-staging/
