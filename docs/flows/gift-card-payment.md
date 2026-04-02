@@ -6,7 +6,7 @@
 
 ## 1. Purpose
 
-**Trigger:** A server selects "Gift Card" as the payment method in the PaymentSheet (web POS or Android), then enters or scans a card number. The system validates the card, deducts the redemption amount atomically, and records the payment against the order.
+**Trigger:** A server selects "Gift Card" as the payment method in the PaymentSheet (Android register or PAX device), then enters or scans a card number. The system validates the card, deducts the redemption amount atomically, and records the payment against the order.
 
 **Why it matters:** Money integrity. A gift card balance is a liability the venue owes the cardholder. If the balance is decremented without a `GiftCardTransaction` record, or decremented twice for the same order (TOCTOU race), the venue either over-pays or leaves an invalid balance — both damage trust and revenue accuracy.
 

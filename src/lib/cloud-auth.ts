@@ -186,15 +186,10 @@ export async function verifyOwnerToken(token: string, secret: string): Promise<O
 /** Routes blocked in cloud mode (POS front-of-house only) */
 const CLOUD_BLOCKED_PATHS = [
   '/login',
-  '/orders',
   '/kds',
   '/entertainment',
   '/cfd',
   '/mobile',
-  '/tabs',
-  '/crew',
-  '/pay-at-table', // Intentionally public: iPad kiosk flow — access controlled by possession of valid orderId/readerId/employeeId query params
-  '/tips',
   '/approve-void',
 ]
 

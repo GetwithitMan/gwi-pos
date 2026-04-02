@@ -6,7 +6,6 @@ import { PinPad } from '@/components/ui/pin-pad'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { useDevStore } from '@/stores/dev-store'
-import { hasPermission, PERMISSIONS } from '@/lib/auth-utils'
 import { TimeClockModal } from '@/components/time-clock/TimeClockModal'
 import type { LoginMessage } from '@/lib/settings'
 
@@ -82,21 +81,12 @@ function LoginContent() {
     const redirectParam = searchParams.get('redirect')
     if (redirectParam) return redirectParam
 
-    // Non-POS employees go to Crew Hub
-    if (employee.permissions && !hasPermission(employee.permissions, PERMISSIONS.POS_ACCESS)) {
-      return '/crew'
-    }
-
     const defaultScreen = employee.defaultScreen || 'orders'
     switch (defaultScreen) {
       case 'kds':
         return '/kds'
-      case 'crew':
-        return '/crew'
-      case 'bar':
-      case 'orders':
       default:
-        return '/orders'
+        return '/admin/dashboard'
     }
   }, [searchParams])
 

@@ -3,7 +3,7 @@
 > **Before editing this feature:** Read `_CROSS-REF-MATRIX.md` → find Barcode Scanning → read every listed dependency doc.
 
 ## Summary
-Barcode scanning lets staff scan product barcodes (UPC/EAN) to look up menu items and add them to orders. Supports multi-pack pricing (single, 6-pack, 12-pack, case) via an `ItemBarcode` join table that maps multiple barcodes to a single MenuItem with per-pack pricing. Works on PAX A6650 (built-in scanner) and web POS (USB/Bluetooth scanner as keyboard input).
+Barcode scanning lets staff scan product barcodes (UPC/EAN) to look up menu items and add them to orders. Supports multi-pack pricing (single, 6-pack, 12-pack, case) via an `ItemBarcode` join table that maps multiple barcodes to a single MenuItem with per-pack pricing. Works on PAX A6650 (built-in scanner) and Android registers. The web POS register was removed in April 2026.
 
 ## Status
 `Phase 1 — Schema + API + Admin UI`

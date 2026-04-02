@@ -39,7 +39,7 @@ The `/pay-at-table` route is listed in `cloud-auth.ts` as a public (unauthentica
 
 | File | Purpose |
 |------|---------|
-| `src/app/(pos)/pay-at-table/page.tsx` | iPad page component. 6-state machine: `loading → summary → split → tip → processing → done/error`. Socket listener for `pat:pay-result`. Calls `POST /api/datacap/sale` and `POST /api/orders/[id]/pat-complete`. |
+| `src/app/(pos)/pay-at-table/page.tsx` | **REMOVED (April 2026)** — iPad page was part of the web POS register UI. Pay-at-table functionality is now handled via Android register and PAX devices. |
 | `src/components/pay-at-table/TablePayment.tsx` | Order summary screen — displays items, subtotal, tax, total. Two actions: "Pay" and "Split". |
 | `src/components/pay-at-table/SplitSelector.tsx` | Split count selection screen. |
 | `src/components/pay-at-table/TipScreen.tsx` | Tip selection screen. Supports percentage chips and custom amount entry. |

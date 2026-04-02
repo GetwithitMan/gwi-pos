@@ -122,16 +122,6 @@ supporting code and utilities last. Check off each file as you review it.
 
 ## TIER 3 — CORE POS PAGES (What staff use every shift)
 
-### POS Interface Pages
-- [ ] `src/app/(pos)/orders/page.tsx` — Main POS ordering screen
-- [ ] `src/app/(pos)/tabs/page.tsx` — Open tabs management
-- [ ] `src/app/(pos)/pay-at-table/page.tsx` — Pay-at-table terminal
-- [ ] `src/app/(pos)/tips/page.tsx` — Tip entry
-- [ ] `src/app/(pos)/crew/page.tsx` — Crew/employee hub
-- [ ] `src/app/(pos)/crew/shift/page.tsx` — Shift management
-- [ ] `src/app/(pos)/crew/tip-bank/page.tsx` — Tip bank
-- [ ] `src/app/(pos)/crew/commission/page.tsx` — Commission tracking
-
 ### Authentication Pages
 - [ ] `src/app/(auth)/login/page.tsx` — PIN-based employee login
 - [ ] `src/app/auth/cloud/page.tsx` — Cloud token validation
@@ -146,24 +136,6 @@ supporting code and utilities last. Check off each file as you review it.
 
 ### Customer Facing Display
 - [ ] `src/app/(cfd)/cfd/page.tsx` — Customer Facing Display
-
-### Core POS Components
-- [ ] `src/components/orders/OrderPanel.tsx` — Order display panel
-- [ ] `src/components/orders/OpenOrdersPanel.tsx` — Open orders list
-- [ ] `src/components/orders/UnifiedPOSHeader.tsx` — POS top header
-- [ ] `src/components/payment/PaymentModal.tsx` — Payment entry
-- [ ] `src/components/payment/DatacapPaymentProcessor.tsx` — Datacap UI integration
-- [ ] `src/components/payment/steps/PaymentMethodStep.tsx` — Payment method selection
-- [ ] `src/components/payment/steps/CardProcessingStep.tsx` — Card processing UI
-- [ ] `src/components/payment/steps/CashEntryStep.tsx` — Cash entry UI
-- [ ] `src/components/payment/steps/TipEntryStep.tsx` — Tip entry UI
-- [ ] `src/components/modifiers/ModifierModal.tsx` — Modifier selection
-- [ ] `src/components/orders/SplitCheckScreen.tsx` — Split check UI
-- [ ] `src/components/orders/RemoteVoidApprovalModal.tsx` — Void approval
-- [ ] `src/components/orders/CompVoidModal.tsx` — Comp/void item
-- [ ] `src/components/tabs/TabsPanel.tsx` — Open tabs list
-- [ ] `src/components/tabs/CardFirstTabFlow.tsx` — Card-first tab flow
-- [ ] `src/stores/auth-store.ts` — Auth state (login, user, roles)
 
 ### Core Hooks
 - [ ] `src/hooks/useOrderingEngine.ts` — Main ordering logic
@@ -377,7 +349,6 @@ supporting code and utilities last. Check off each file as you review it.
 - [ ] `src/lib/settings.ts` — Settings access layer
 
 ### Contexts & Dev
-- [ ] `src/contexts/TerminalContext.tsx` — Terminal/device pairing context
 - [ ] `src/stores/toast-store.ts` — Toast notification state
 - [ ] `src/stores/dev-store.ts` — Dev/debug mode state
 - [ ] `src/lib/perf-timing.ts` — Performance timing

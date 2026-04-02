@@ -20,13 +20,13 @@ export default function FoodInventoryPage() {
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div>
             <Link
-              href="/orders"
+              href="/admin/dashboard"
               className="text-sm text-slate-400 hover:text-white mb-1 inline-flex items-center gap-1"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
-              Back to POS
+              Back to Dashboard
             </Link>
             <h1 className="text-2xl font-bold text-white">Food Inventory</h1>
           </div>

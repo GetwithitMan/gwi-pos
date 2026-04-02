@@ -226,10 +226,10 @@ function PairContent() {
         {/* Back Button */}
         <div className="mt-8 text-center">
           <button
-            onClick={() => router.push('/orders')}
+            onClick={() => router.push('/admin/dashboard')}
             className="text-gray-400 hover:text-white transition-colors"
           >
-            ← Back to POS
+            ← Back to Dashboard
           </button>
         </div>
       </div>

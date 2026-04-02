@@ -932,11 +932,11 @@ export function ShiftCloseoutModal({
                         <button
                           onClick={() => {
                             onClose()
-                            router.push('/orders')
+                            router.push('/admin/dashboard')
                           }}
                           className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white text-xs font-medium rounded transition-colors"
                         >
-                          Go to Open Orders
+                          Go to Dashboard
                         </button>
                         <button
                           onClick={async () => {

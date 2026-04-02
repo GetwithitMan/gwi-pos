@@ -6,11 +6,11 @@
 
 ## 1. Purpose
 
-**Trigger:** An employee approaches a POS terminal (web browser kiosk or Android register) and enters their 4-digit PIN to begin a shift.
+**Trigger:** An employee approaches an Android register or PAX device and enters their 4-digit PIN to begin a shift.
 
 **Why it matters:** Reporting integrity and security — login establishes the `locationId` scope for all subsequent queries, loads the employee's permission set that gates every sensitive action, and registers the terminal in `connectedTerminals` for connectivity tracking. A login defect can either lock out staff or grant unauthorized access.
 
-**Scope:** `gwi-pos` NUC API (authority), web POS kiosk and `gwi-android-register` (both initiators), `gwi-pos` Socket.io (terminal registration).
+**Scope:** `gwi-pos` NUC API (authority), `gwi-android-register` and PAX (initiators), `gwi-pos` Socket.io (terminal registration). The web POS register was removed in April 2026.
 
 ---
 
@@ -29,7 +29,7 @@
 ## 3. Sequence (Happy Path)
 
 ```
-1. [CLIENT]     Employee taps PIN digits on web POS PIN pad or Android PinLoginScreen.kt
+1. [CLIENT]     Employee taps PIN digits on Android PinLoginScreen.kt (or PAX device)
                 → 4-digit PIN assembled locally (never persisted, never logged)
 
 2. [CLIENT]     Android only: Check connectivity state

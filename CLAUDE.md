@@ -187,17 +187,17 @@ Only after Steps 1–5:
 ### Migrations (dual-script unified)
 - Add new migrations to `scripts/migrations/NNN-*.js` ONLY. Use `prisma.$executeRawUnsafe()`. Include `columnExists`/`tableExists` guards. NEVER add SQL to `vercel-build.js` or `nuc-pre-migrate.js` directly — they are orchestrators only.
 
-### Android
-- Android is PRIMARY client, web is secondary fallback
+### Android & PAX (Only Register Clients)
+- Android and PAX are the ONLY register clients — **web POS register UI has been removed** (April 2026)
+- The `src/app/(pos)/` route group, all POS web components (orders, tabs, crew, host, bartender, floor-plan FOH, payment modal, pay-at-table) have been deleted
 - Touch targets min 48x48dp, no hover interactions
 - Event-sourced orders: Android sends events → POS assigns `serverSequence`
 - **Full rules:** `docs/guides/ANDROID-INTEGRATION.md`
 
-### Web UI & Kiosk
-- **Web UI is for settings/admin only** — Android tablets are the primary ordering client
-- **Chromium kiosk removed from server role** — servers have no locked-down kiosk; POS accessed via normal web browser
-- **Terminals still use Chromium kiosk** — dedicated display stations pointing at the server retain kiosk mode
-- Chromium is only installed on terminal role NUCs (not servers)
+### Web UI
+- **Web UI is for admin/settings, KDS, and CFD only** — no register/ordering pages exist
+- All ordering, tab management, and payment happens on Android registers and PAX devices
+- API routes (`/api/orders`, `/api/tabs`, `/api/payments`, etc.) remain — they serve Android and PAX
 
 ## Quick Reference
 
@@ -312,7 +312,7 @@ Tech: Kotlin, Jetpack Compose, Hilt DI, Retrofit 2, Socket.IO, Room DB, Moshi. M
 | Time clock | `docs/features/time-clock.md` | `docs/domains/EMPLOYEES-DOMAIN.md` | `src/app/api/time-clock/` |
 | Hardware / printers | `docs/features/hardware.md` | `docs/domains/HARDWARE-DOMAIN.md` | `src/lib/escpos/` |
 | CFD / customer display | `docs/features/cfd.md` | `docs/domains/CUSTOMER-DISPLAY-DOMAIN.md` | `src/app/api/cfd/` |
-| Floor plan | `docs/features/floor-plan.md` | `docs/domains/FLOOR-PLAN-DOMAIN.md` | `src/components/floor-plan/` |
+| Floor plan | `docs/features/floor-plan.md` | `docs/domains/FLOOR-PLAN-DOMAIN.md` | `src/domains/floor-plan/` (admin editor only — FOH view removed) |
 | Reports | `docs/features/reports.md` | `docs/domains/REPORTS-DOMAIN.md` | `src/app/(admin)/reports/` |
 | Settings | `docs/features/settings.md` | `docs/domains/SETTINGS-DOMAIN.md` | `src/app/(admin)/settings/` |
 | Entertainment | `docs/features/entertainment.md` | `docs/domains/ENTERTAINMENT-DOMAIN.md` | `src/app/(admin)/timed-rentals/` |
@@ -347,7 +347,7 @@ Tech: Kotlin, Jetpack Compose, Hilt DI, Retrofit 2, Socket.IO, Room DB, Moshi. M
 | EOD Reset | `docs/features/eod-reset.md` | — | `src/app/api/eod/reset/` |
 | Print routing | `docs/features/print-routing.md` | — | `src/lib/print-template-factory.ts`, `src/lib/print-factory.ts` |
 | Customer receipts | `docs/features/customer-receipts.md` | — | `src/lib/print-factory.ts` (`buildReceiptWithSettings`), `src/app/api/receipts/` |
-| Commissioned items | `docs/features/commissioned-items.md` | — | `src/components/menu/ItemSettingsModal.tsx`, `src/app/api/reports/commission/`, `src/app/(pos)/crew/commission/` |
+| Commissioned items | `docs/features/commissioned-items.md` | — | `src/components/menu/ItemSettingsModal.tsx`, `src/app/api/reports/commission/` |
 | Paid in / out | `docs/features/paid-in-out.md` | — | `src/app/api/paid-in-out/`, `src/app/(admin)/cash-drawer/paid-in-out/` |
 | Live dashboard | `docs/features/live-dashboard.md` | — | `src/app/api/dashboard/live/`, `src/app/(admin)/dashboard/` |
 | Online ordering | `docs/features/online-ordering.md` | — | `src/app/(admin)/settings/online-ordering/` — uses Datacap PayAPI |

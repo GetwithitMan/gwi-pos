@@ -6,7 +6,7 @@
 
 ## 1. Purpose
 
-**Trigger:** A server (web POS or Android) taps "Send Order" — selected items on the register screen must reach the kitchen display.
+**Trigger:** A server (Android register or PAX device) taps "Send Order" — selected items on the register screen must reach the kitchen display.
 
 **Why it matters:** Kitchen integrity. If this flow breaks, cooks never see the ticket, food is never prepared, and guests go unserved. Every item sent must appear on the correct KDS station; every send must be recorded as an immutable event.
 

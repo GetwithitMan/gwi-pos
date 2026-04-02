@@ -22,8 +22,6 @@ Orders are the central transaction entity in GWI POS. Every sale, bar tab, takeo
 
 | Interface | Path / Screen | Who Accesses |
 |-----------|--------------|--------------|
-| POS Web | `/orders` | All FOH staff |
-| POS Web | Floor plan → table tap → order | Servers, Bartenders |
 | Android | `OrderScreen` / `OrderViewModel` | All FOH staff |
 | Admin | `/reports` (order history) | Managers |
 

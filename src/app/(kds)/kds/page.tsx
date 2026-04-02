@@ -1077,7 +1077,7 @@ function KDSContent() {
         onToggleFullscreen={toggleFullscreen}
         onShowClock={() => setShowKdsClockModal(true)}
         onRefresh={loadOrders}
-        onNavigateBack={() => router.push('/orders')}
+        onNavigateBack={() => router.push('/admin/dashboard')}
         onStationChange={(newStation) => {
           if (newStation) {
             router.push(`/kds?station=${newStation}`)

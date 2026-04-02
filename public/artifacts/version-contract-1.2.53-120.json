@@ -1,0 +1,54 @@
+{
+  "schemaVersion": "120",
+  "seedVersion": "v1",
+  "provisionerVersion": "1",
+  "migrationCount": 122,
+  "schemaSha256": "d1ca2f5ce450f7340ba2fff9044a5251c9ad9e35eb1bdc7b77d0dbd40aea1c0f",
+  "installerVersion": "1.2.53",
+  "version": "1.2.53",
+  "dashboardVersion": "0.3.0",
+  "syncAgentVersion": "1.2.53",
+  "monitoringVersion": "1.2.53",
+  "ansibleBaselineVersion": "2026.03.20.1",
+  "buildDate": "2026-03-31T14:53:43.403Z",
+  "gitSha": "1bde25ba",
+  "generatedAt": "2026-03-31T14:53:43.404Z",
+  "components": {
+    "pos": {
+      "version": "1.2.53",
+      "artifact": "app"
+    },
+    "dashboard": {
+      "version": "0.3.0",
+      "artifact": "gwi-nuc-dashboard.deb",
+      "url": "/gwi-nuc-dashboard.deb"
+    },
+    "installer": {
+      "version": "1.2.53",
+      "artifact": "installer.run"
+    },
+    "syncAgent": {
+      "version": "1.2.53",
+      "artifact": "sync-agent.js"
+    },
+    "monitoring": {
+      "version": "1.2.53",
+      "artifact": "scripts/"
+    },
+    "ansibleBaseline": {
+      "version": "2026.03.20.1",
+      "artifact": "installer/"
+    }
+  },
+  "contractVersion": 2,
+  "schemaContractHash": null,
+  "previousContractHash": null,
+  "compatibleWith": [],
+  "riskScore": 0,
+  "riskClassification": "low",
+  "compatibilityClass": "forward_compatible",
+  "migrationHints": {
+    "requiresBackfill": false
+  },
+  "contractSignature": null
+}

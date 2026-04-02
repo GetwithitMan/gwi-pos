@@ -328,7 +328,7 @@ export default function Quick86Page() {
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
             <Link
-              href="/orders"
+              href="/admin/dashboard"
               className="p-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-900"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

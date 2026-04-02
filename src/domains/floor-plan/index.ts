@@ -60,9 +60,6 @@ export {
   getTablesForSection,
   updateTablePosition,
   updateTableStatus,
-  toTableRect,
-  toTableRectArray,
-  getTotalSeats,
 } from './services/table-service'
 
 // Seat Service (L3)
