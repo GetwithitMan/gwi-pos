@@ -107,6 +107,9 @@ PREFLIGHT_RESULT="skipped"
 ENV_VALIDATION_RESULT="skipped"
 SCHEMA_RESULT="skipped"
 SCHEMA_FAILURE_CLASS="null"
+FALLBACK_ARTIFACT_ORIGIN="${FALLBACK_ARTIFACT_ORIGIN:-}"
+FALLBACK_ARTIFACT_URL=""
+FALLBACK_DEPLOY_TOOLS_URL=""
 RESTART_RESULT="skipped"
 READINESS_RESULT="skipped"
 ROLLBACK_RESULT="null"
@@ -637,16 +640,26 @@ fetch_manifest() {
     local base_origin
     base_origin="$(echo "$url" | sed 's|^\(https\?://[^/]*\).*|\1|')"
     if [[ "$ARTIFACT_URL" == /* ]]; then
-        ARTIFACT_URL="${base_origin}${ARTIFACT_URL}"
-        log "Resolved artifact URL: $ARTIFACT_URL"
+        local relative_path="$ARTIFACT_URL"
+        ARTIFACT_URL="${base_origin}${relative_path}"
+        log "Resolved artifact URL (primary): $ARTIFACT_URL"
+        if [[ -n "$FALLBACK_ARTIFACT_ORIGIN" ]] && [[ "$FALLBACK_ARTIFACT_ORIGIN" != "$base_origin" ]]; then
+            FALLBACK_ARTIFACT_URL="${FALLBACK_ARTIFACT_ORIGIN}${relative_path}"
+            log "Fallback artifact URL: $FALLBACK_ARTIFACT_URL"
+        fi
     fi
 
     # Extract deploy-tools artifact fields (format version 3+)
     DEPLOY_TOOLS_URL="$(json_get "$manifest_file" "deployToolsUrl")"
     DEPLOY_TOOLS_SHA256="$(json_get "$manifest_file" "deployToolsSha256")"
     if [[ -n "$DEPLOY_TOOLS_URL" ]] && [[ "$DEPLOY_TOOLS_URL" == /* ]]; then
-        DEPLOY_TOOLS_URL="${base_origin}${DEPLOY_TOOLS_URL}"
-        log "Deploy-tools artifact available: $DEPLOY_TOOLS_URL"
+        local dt_relative_path="$DEPLOY_TOOLS_URL"
+        DEPLOY_TOOLS_URL="${base_origin}${dt_relative_path}"
+        log "Deploy-tools artifact available (primary): $DEPLOY_TOOLS_URL"
+        if [[ -n "$FALLBACK_ARTIFACT_ORIGIN" ]] && [[ "$FALLBACK_ARTIFACT_ORIGIN" != "$base_origin" ]]; then
+            FALLBACK_DEPLOY_TOOLS_URL="${FALLBACK_ARTIFACT_ORIGIN}${dt_relative_path}"
+            log "Fallback deploy-tools URL: $FALLBACK_DEPLOY_TOOLS_URL"
+        fi
     fi
 
     log "Manifest parsed: releaseId=$RELEASE_ID"
@@ -926,6 +939,7 @@ download_file() {
 
 download_artifact() {
     local url="$1"
+    local fallback_url="${2:-}"
     local dest="${CACHE_DIR}/${RELEASE_ID}.tar.zst"
 
     mkdir -p "$CACHE_DIR"
@@ -937,12 +951,25 @@ download_artifact() {
         return 0
     fi
 
-    if ! download_file "$url" "$dest"; then
-        fatal "Failed to download artifact from $url"
+    # Try primary (R2)
+    if download_file "$url" "$dest"; then
+        ARTIFACT_PATH="$dest"
+        log "Artifact downloaded (primary): $dest ($(du -sh "$dest" 2>/dev/null | cut -f1))"
+        return 0
     fi
 
-    ARTIFACT_PATH="$dest"
-    log "Artifact downloaded: $dest ($(du -sh "$dest" 2>/dev/null | cut -f1))"
+    # Try fallback (Vercel)
+    if [[ -n "$fallback_url" ]]; then
+        warn "Primary download failed — trying fallback: $fallback_url"
+        rm -f "$dest" 2>/dev/null
+        if download_file "$fallback_url" "$dest"; then
+            ARTIFACT_PATH="$dest"
+            log "Artifact downloaded (fallback): $dest ($(du -sh "$dest" 2>/dev/null | cut -f1))"
+            return 0
+        fi
+    fi
+
+    fatal "Failed to download artifact from all sources"
 }
 
 # ---------------------------------------------------------------------------
@@ -1026,9 +1053,13 @@ verify_signature() {
     fi
 
     if [[ ! -f "$sig_file" ]]; then
-        # Try downloading the signature
+        # Try downloading the signature from primary
         if [[ -n "$ARTIFACT_URL" ]]; then
             download_file "${ARTIFACT_URL}.minisig" "$sig_file" 1 || true
+        fi
+        # Try fallback if primary didn't produce the file
+        if [[ ! -f "$sig_file" ]] && [[ -n "$FALLBACK_ARTIFACT_URL" ]]; then
+            download_file "${FALLBACK_ARTIFACT_URL}.minisig" "$sig_file" 1 || true
         fi
     fi
 
@@ -2179,7 +2210,7 @@ do_deploy() {
 
     # Step 9: Download artifact (if URL, not local path)
     if [[ -z "$ARTIFACT_PATH" ]] && [[ -n "$ARTIFACT_URL" ]]; then
-        download_artifact "$ARTIFACT_URL"
+        download_artifact "$ARTIFACT_URL" "$FALLBACK_ARTIFACT_URL"
     fi
     set_state "downloaded"
 
@@ -2220,7 +2251,20 @@ do_deploy() {
         dt_cache="${CACHE_DIR}/deploy-tools-${RELEASE_ID}.tar.${dt_ext}"
 
         if [[ ! -f "$dt_cache" ]]; then
+            local dt_downloaded=false
+            # Try primary (R2)
             if download_file_no_cache "$DEPLOY_TOOLS_URL" "$dt_cache"; then
+                dt_downloaded=true
+            fi
+            # Try fallback (Vercel) if primary failed
+            if [[ "$dt_downloaded" != "true" ]] && [[ -n "$FALLBACK_DEPLOY_TOOLS_URL" ]]; then
+                warn "Primary deploy-tools download failed — trying fallback: $FALLBACK_DEPLOY_TOOLS_URL"
+                rm -f "$dt_cache" 2>/dev/null
+                if download_file_no_cache "$FALLBACK_DEPLOY_TOOLS_URL" "$dt_cache"; then
+                    dt_downloaded=true
+                fi
+            fi
+            if [[ "$dt_downloaded" == "true" ]]; then
                 # Verify checksum if available
                 if [[ -n "$DEPLOY_TOOLS_SHA256" ]]; then
                     local actual_sha
@@ -2231,7 +2275,7 @@ do_deploy() {
                     fi
                 fi
             else
-                warn "Failed to download deploy-tools artifact — will use legacy migration path"
+                warn "Failed to download deploy-tools artifact from all sources — will use legacy migration path"
             fi
         fi
 

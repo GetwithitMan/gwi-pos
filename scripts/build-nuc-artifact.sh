@@ -464,7 +464,9 @@ cat > "$STAGING/artifact-metadata.json" << METAJSON
     fi
   )],
   "schemaExpansionOnly": true,
-  "requiredEnvKeys": ["DATABASE_URL", "LOCATION_ID"]
+  "requiredEnvKeys": ["DATABASE_URL", "LOCATION_ID"],
+  "primaryArtifactOrigin": "https://pub-15bf4245be0e4c05b570d31988004d09.r2.dev",
+  "fallbackArtifactOrigin": "https://ordercontrolcenter.com"
 }
 METAJSON
 
