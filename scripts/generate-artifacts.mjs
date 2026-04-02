@@ -99,56 +99,58 @@ const manifest = {
 const manifestPath = path.join(artifactsDir, 'manifest.json')
 writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n', 'utf-8')
 
-// ── 4. Sign manifest with minisign (if key available) ─────────────────────
+// ── 4. Sign artifacts with minisign (if key available) ────────────────────
 const keyPath = path.join(root, 'keys/gwi-pos-release.key')
-const sigPath = path.join(artifactsDir, 'manifest.json.minisig')
 let signed = false
 
-if (existsSync(keyPath)) {
-  try {
-    execSync(
-      `minisign -Sm "${manifestPath}" -s "${keyPath}" -x "${sigPath}" -t "GWI POS manifest ${version}"`,
-      { stdio: 'pipe' }
-    )
-    signed = true
-  } catch {
-    // minisign not installed — try MINISIGN_SECRET_KEY env var (Vercel)
-    if (process.env.MINISIGN_SECRET_KEY) {
-      try {
-        const tmpKeyFile = path.join(artifactsDir, '.minisign-tmp-key')
-        // ALWAYS normalize the key to exactly 2 lines: comment + base64 data.
-        // Vercel env vars may mangle newlines (spaces, \r\n, trailing whitespace).
-        const rawKey = process.env.MINISIGN_SECRET_KEY.trim()
-        // Extract the comment (everything up to and including "secret key") and the base64 data (starts with RW)
-        const rwMatch = rawKey.match(/(.*?)\s+(RW\S+)/)
-        let keyContent
-        if (rwMatch) {
-          keyContent = rwMatch[1] + '\n' + rwMatch[2] + '\n'
-        } else {
-          // Fallback: write as-is and hope minisign can parse it
-          keyContent = rawKey + '\n'
-        }
-        writeFileSync(tmpKeyFile, keyContent, 'utf-8')
-        execSync(
-          `minisign -Sm "${manifestPath}" -s "${tmpKeyFile}" -x "${sigPath}" -t "GWI POS manifest ${version}"`,
-          { stdio: 'pipe' }
-        )
-        signed = true
-        // Clean up temp key
-        try { execSync(`rm -f "${tmpKeyFile}"`, { stdio: 'pipe' }) } catch {}
-      } catch {
-        console.warn('[generate-artifacts] WARN: minisign not available and key env failed — manifest unsigned')
-      }
-    } else {
-      console.warn('[generate-artifacts] WARN: minisign not installed — manifest unsigned')
-    }
+/**
+ * Sign a file with minisign. Tries local key file first, then
+ * MINISIGN_SECRET_KEY env var (Vercel). Returns true if signed.
+ */
+function signFile(filePath, sigOutputPath, comment) {
+  if (existsSync(keyPath)) {
+    try {
+      execSync(
+        `minisign -Sm "${filePath}" -s "${keyPath}" -x "${sigOutputPath}" -t "${comment}"`,
+        { stdio: 'pipe' }
+      )
+      return true
+    } catch { /* fall through to env var */ }
   }
-} else {
-  console.warn('[generate-artifacts] WARN: Signing key not found at keys/gwi-pos-release.key — manifest unsigned')
+  if (process.env.MINISIGN_SECRET_KEY) {
+    try {
+      const tmpKeyFile = path.join(artifactsDir, '.minisign-tmp-key')
+      const rawKey = process.env.MINISIGN_SECRET_KEY.trim()
+      const rwMatch = rawKey.match(/(.*?)\s+(RW\S+)/)
+      const keyContent = rwMatch
+        ? rwMatch[1] + '\n' + rwMatch[2] + '\n'
+        : rawKey + '\n'
+      writeFileSync(tmpKeyFile, keyContent, 'utf-8')
+      execSync(
+        `minisign -Sm "${filePath}" -s "${tmpKeyFile}" -x "${sigOutputPath}" -t "${comment}"`,
+        { stdio: 'pipe' }
+      )
+      try { execSync(`rm -f "${tmpKeyFile}"`, { stdio: 'pipe' }) } catch {}
+      return true
+    } catch { /* fall through */ }
+  }
+  return false
 }
+
+// Sign manifest
+const manifestSigPath = path.join(artifactsDir, 'manifest.json.minisig')
+const manifestSigned = signFile(manifestPath, manifestSigPath, `GWI POS manifest ${version}`)
+
+// Sign version-contract (deploy-release.sh verifies this)
+const contractSigPath = path.join(artifactsDir, `${contractFilename}.minisig`)
+const contractSigned = signFile(contractArtifactPath, contractSigPath, `GWI POS contract ${version}`)
+
+signed = manifestSigned && contractSigned
+if (!manifestSigned) console.warn('[generate-artifacts] WARN: manifest unsigned — minisign not available')
+if (!contractSigned) console.warn('[generate-artifacts] WARN: version-contract unsigned — minisign not available')
 
 console.log(`[generate-artifacts] Version: ${version}`)
 console.log(`[generate-artifacts]   schema:   ${schemaFilename} (sha256: ${schemaSha256.substring(0, 16)}...)`)
 console.log(`[generate-artifacts]   contract: ${contractFilename} (sha256: ${contractSha256.substring(0, 16)}...)`)
-console.log(`[generate-artifacts]   manifest: public/artifacts/manifest.json${signed ? ' (SIGNED)' : ' (unsigned)'}`)
-console.log(`[generate-artifacts]   signature: ${signed ? sigPath : 'NONE'}`)
+console.log(`[generate-artifacts]   manifest: public/artifacts/manifest.json${manifestSigned ? ' (SIGNED)' : ' (unsigned)'}`)
+console.log(`[generate-artifacts]   contract sig: ${contractSigned ? contractSigPath : 'NONE'}`)
