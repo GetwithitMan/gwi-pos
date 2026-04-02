@@ -49,8 +49,9 @@ jobs:
 
       - name: Install AWS CLI
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq awscli
+          curl -sL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
+          unzip -q /tmp/awscliv2.zip -d /tmp
+          sudo /tmp/aws/install --update
 
       - name: Upload to R2
         env:
