@@ -6,8 +6,8 @@
 /server.mjs
 /ws-server.js
 /src/generated/prisma
-# Artifacts are committed (manifest.json + .minisig must be served by Vercel)
-# /public/artifacts/
+# Artifacts generated at build time (manifest + signature + versioned files)
+/public/artifacts/
 
 # Dependencies
 /node_modules
