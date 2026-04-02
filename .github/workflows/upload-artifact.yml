@@ -43,7 +43,7 @@ jobs:
         id: meta
         run: |
           MANIFEST="public/artifacts/manifest.json"
-          echo "release_id=$(jq -r '.releaseId' $MANIFEST)" >> $GITHUB_OUTPUT
+          echo "release_id=$(jq -r ".releaseId" $MANIFEST)" >> $GITHUB_OUTPUT
           echo "version=$(jq -r '.version' $MANIFEST)" >> $GITHUB_OUTPUT
           echo "artifact_file=$(ls public/artifacts/pos-release-*.tar.zst | head -1)" >> $GITHUB_OUTPUT
 
