@@ -188,12 +188,15 @@ async function handleForceUpdate(payload, cmdId) {
     }
   }
 
-  // ── Artifact-first deploy path (v3.1) ──────────────────────────────────
-  // If deploy-release.sh is available, use it directly. This bypasses the POS
-  // update agent entirely — deploy-release.sh handles download, verify, extract,
-  // schema, swap, restart, health check, and rollback.
-  var DEPLOY_SCRIPT = '/opt/gwi-pos/deploy-release.sh'
-  var MANIFEST_URL = 'https://' + (env.POS_DOMAIN || 'ordercontrolcenter.com') + '/artifacts/manifest.json'
+  // ── Deploy path selection: Docker (preferred) or tarball (legacy) ────────
+  // Docker mode: docker-deploy.sh pulls image, migrates, swaps container.
+  // Tarball mode: deploy-release.sh downloads tarball, extracts, migrates, swaps symlink.
+  var DOCKER_DEPLOY_SCRIPT = '/opt/gwi-pos/docker-deploy.sh'
+  var TARBALL_DEPLOY_SCRIPT = '/opt/gwi-pos/deploy-release.sh'
+  var DOCKER_MODE = fs.existsSync(DOCKER_DEPLOY_SCRIPT) && fs.existsSync('/opt/gwi-pos/.docker-mode')
+  var DEPLOY_SCRIPT = DOCKER_MODE ? DOCKER_DEPLOY_SCRIPT : TARBALL_DEPLOY_SCRIPT
+  var R2_ORIGIN = env.R2_ARTIFACT_ORIGIN || 'https://pub-15bf4245be0e4c05b570d31988004d09.r2.dev'
+  var MANIFEST_URL = R2_ORIGIN + '/latest/manifest.json'
 
   if (fs.existsSync(DEPLOY_SCRIPT)) {
     log('[Update] Artifact deploy available — using deploy-release.sh')
