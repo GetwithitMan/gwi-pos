@@ -170,6 +170,64 @@ run_deploy_app() {
 
   header "Installing POS Application"
 
+  # Detect deployment method: Docker (preferred) or tarball (legacy)
+  local use_docker=false
+  if command -v docker &>/dev/null && [[ "${DEPLOYMENT_METHOD:-}" == "docker" || -f "$APP_BASE/.docker-mode" ]]; then
+      use_docker=true
+      log "Docker deployment mode detected"
+  fi
+
+  if [[ "$use_docker" == "true" ]]; then
+    # ── Docker-based deployment ──
+    log "Installing Docker if needed..."
+    if ! command -v docker &>/dev/null; then
+        curl -fsSL https://get.docker.com | sh
+        usermod -aG docker "$POSUSER"
+        systemctl enable docker
+        systemctl start docker
+        log "Docker installed"
+    fi
+
+    # Ensure docker-deploy.sh is in place
+    if [[ -f "$APP_BASE/current/public/scripts/docker-deploy.sh" ]]; then
+        cp "$APP_BASE/current/public/scripts/docker-deploy.sh" "$APP_BASE/docker-deploy.sh"
+        chmod +x "$APP_BASE/docker-deploy.sh"
+    elif [[ -f "${INSTALLER_MODULES_DIR}/docker-deploy.sh" ]]; then
+        cp "${INSTALLER_MODULES_DIR}/docker-deploy.sh" "$APP_BASE/docker-deploy.sh"
+        chmod +x "$APP_BASE/docker-deploy.sh"
+    fi
+
+    # Create shared dirs (Docker still needs these for volume mounts)
+    mkdir -p "$APP_BASE/shared/logs/deploys" "$APP_BASE/shared/data" "$APP_BASE/shared/state"
+    chown -R "$POSUSER:$POSUSER" "$APP_BASE/shared"
+
+    # Run Docker deploy
+    local manifest_url="https://${POS_DOMAIN:-ordercontrolcenter.com}/artifacts/manifest.json"
+    log "Deploying via docker-deploy.sh: $manifest_url"
+    if bash "$APP_BASE/docker-deploy.sh" --manifest-url "$manifest_url" --force; then
+        log "Docker deployment successful"
+        touch "$APP_BASE/.docker-mode"
+    else
+        err "Docker deployment failed"
+        # Parse deploy log for error details (same format as tarball)
+        local latest_log
+        latest_log=$(ls -t "$APP_BASE/shared/logs/deploys/"*.json 2>/dev/null | head -1)
+        if [[ -n "$latest_log" ]]; then
+            local status errors
+            status=$(python3 -c "import json; m=json.load(open('$latest_log')); print(m.get('finalStatus','unknown'))" 2>/dev/null)
+            errors=$(python3 -c "import json; m=json.load(open('$latest_log')); print('; '.join(m.get('errors',[])))" 2>/dev/null)
+            err "Deploy status: $status"
+            [[ -n "$errors" ]] && err "Errors: $errors"
+        fi
+        return 1
+    fi
+
+    # Refresh installer modules from the deployed release (shared by all paths)
+    _refresh_modules_from_checkout
+
+  else
+  # ── Existing tarball/artifact-based deployment (unchanged) ──
+
   # ── Offline install mode -- app already deployed ──
   if [[ "${SKIP_GIT_CLONE:-}" == "1" ]]; then
     log "Offline mode: Skipping deploy (app pre-deployed)"
@@ -333,6 +391,8 @@ run_deploy_app() {
     chmod +x "$APP_BASE/deploy-release.sh"
     log "Updated deploy-release.sh from deployed release"
   fi
+
+  fi  # end Docker vs tarball/artifact branch
 
   log "Stage: deploy_app -- completed in $(( $(date +%s) - _start ))s"
   return 0
