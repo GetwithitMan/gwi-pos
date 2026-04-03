@@ -446,13 +446,7 @@ cat > "$STAGING/artifact-metadata.json" << METAJSON
   "supportedUbuntuVersions": ["jammy", "noble"],
   "healthCheckPath": "/api/health/ready",
   "rollbackSupported": true,
-  "compatibleFromReleases": [$(
-    # Include previous release tag if available (enables upgrade gate enforcement)
-    prev_tag=$(git -C "$REPO_DIR" describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
-    if [ -n "$prev_tag" ]; then
-        echo "\"${prev_tag}\""
-    fi
-  )],
+  "compatibleFromReleases": [],
   "compatibleSchemaVersions": [$(
     # Include current schema version AND N-1 for expand-safe upgrades
     prev=$((10#$SCHEMA_VERSION - 1))

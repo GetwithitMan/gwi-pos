@@ -597,9 +597,14 @@ fetch_manifest() {
         # Signature file exists — verify it (fail-closed)
         if [[ -f "$PUB_KEY" ]] && command -v minisign &>/dev/null; then
             if ! minisign -Vm "$manifest_file" -p "$PUB_KEY" -x "$sig_file" 2>/dev/null; then
-                fatal "Manifest signature verification FAILED"
+                if [[ "$FORCE" == "true" ]]; then
+                    warn "Manifest signature verification FAILED — overriding (--force)"
+                else
+                    fatal "Manifest signature verification FAILED"
+                fi
+            else
+                log "Manifest signature verified"
             fi
-            log "Manifest signature verified"
         elif [[ -f "$PUB_KEY" ]]; then
             # Public key exists but minisign missing — try auto-install
             if command -v apt-get &>/dev/null; then
@@ -608,9 +613,14 @@ fetch_manifest() {
             fi
             if command -v minisign &>/dev/null; then
                 if ! minisign -Vm "$manifest_file" -p "$PUB_KEY" -x "$sig_file" 2>/dev/null; then
-                    fatal "Manifest signature verification FAILED"
+                    if [[ "$FORCE" == "true" ]]; then
+                        warn "Manifest signature verification FAILED — overriding (--force)"
+                    else
+                        fatal "Manifest signature verification FAILED"
+                    fi
+                else
+                    log "Manifest signature verified (after auto-install)"
                 fi
-                log "Manifest signature verified (after auto-install)"
             else
                 log "WARN: minisign not available — skipping signature verification"
             fi
@@ -746,7 +756,11 @@ check_manifest_compatibility() {
             local current_version
             current_version="$(json_get "${CURRENT_LINK}/package.json" "version" 2>/dev/null)" || true
             if [[ -n "$current_version" ]] && ! grep -q "$current_version" "$compat_releases_file"; then
-                fatal "Current release '$current_release_id' (v$current_version) not in compatibleFromReleases: $(cat "$compat_releases_file" | tr '\n' ', ')"
+                if [[ "$FORCE" == "true" ]]; then
+                    warn "Current release '$current_release_id' (v$current_version) not in compatibleFromReleases — overriding (--force)"
+                else
+                    fatal "Current release '$current_release_id' (v$current_version) not in compatibleFromReleases: $(cat "$compat_releases_file" | tr '\n' ', ')"
+                fi
             fi
         fi
     fi
