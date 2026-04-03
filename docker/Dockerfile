@@ -6,17 +6,13 @@
 # ==============================================================================
 FROM node:22-alpine AS deps
 
-# Check https://github.com/nodejs/docker-node/tree/main#nodealpine to understand
-# why libc6-compat might be needed.
 RUN apk add --no-cache libc6-compat
 
 WORKDIR /app
 
-# Copy package files
 COPY package.json package-lock.json* ./
 COPY prisma ./prisma/
 
-# Install dependencies
 RUN npm ci
 
 # ==============================================================================
@@ -26,14 +22,13 @@ FROM node:22-alpine AS builder
 
 WORKDIR /app
 
-# Copy dependencies from deps stage
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# Generate Prisma client
+# Generate Prisma client (outputs to src/generated/prisma/ per schema config)
 RUN npx prisma generate
 
-# Build Next.js only — CI handles version bumps, schema SQL, artifacts, etc.
+# Build Next.js + custom server (CI handles version bumps, schema SQL, artifacts)
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
 
@@ -46,51 +41,46 @@ FROM node:22-alpine AS runner
 
 WORKDIR /app
 
-# Create non-root user for security
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
-# Install runtime dependencies
-RUN apk add --no-cache \
-    # For database operations (pg_dump/psql)
-    postgresql-client \
-    # For healthchecks
-    curl \
-    # For timezone support
-    tzdata
+RUN apk add --no-cache postgresql-client curl tzdata
 
-# Set timezone (can be overridden via TZ env var)
 ENV TZ=America/New_York
 
-# Copy built application
-COPY --from=builder /app/public ./public
+# Copy standalone Next.js build
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
+COPY --from=builder /app/public ./public
 
-# Copy Prisma files for migrations
-COPY --from=builder /app/prisma ./prisma
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+# Copy custom server (compiled from server.ts by build-server.mjs)
+COPY --from=builder /app/server.js ./server.js
+COPY --from=builder /app/preload.js ./preload.js
+
+# Copy Prisma client (generated to src/generated/prisma/)
+COPY --from=builder /app/src/generated/prisma ./src/generated/prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 
-# Create directories
+# Copy Prisma schema + migrations for deploy-tools
+COPY --from=builder /app/prisma ./prisma
+
+# Copy deploy-tools for schema migrations
+COPY --from=builder /app/deploy-tools ./deploy-tools
+COPY --from=builder /app/scripts/migrations ./scripts/migrations
+
 RUN mkdir -p /app/uploads
 RUN chown -R nextjs:nodejs /app
 
-# Switch to non-root user
 USER nextjs
 
-# Environment variables
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
-# Expose port
 EXPOSE 3000
 
-# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:3000/api/health || exit 1
 
-# Start the server
-CMD ["node", "server.js"]
+CMD ["node", "-r", "./preload.js", "server.js"]
