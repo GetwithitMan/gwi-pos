@@ -188,258 +188,98 @@ async function handleForceUpdate(payload, cmdId) {
     }
   }
 
-  // ── Explicit deploy mode routing ─────────────────────────────────────────
-  // Deploy mode is determined by the .docker-mode marker file:
-  //   - .docker-mode EXISTS  → Docker only, fail if docker-deploy.sh missing
-  //   - .docker-mode ABSENT  → Tarball only, fail if deploy-release.sh missing
-  // No silent cross-mode fallback.
-  var DOCKER_MODE_MARKER = '/opt/gwi-pos/.docker-mode'
-  var DOCKER_DEPLOY_SCRIPT = '/opt/gwi-pos/docker-deploy.sh'
-  var TARBALL_DEPLOY_SCRIPT = '/opt/gwi-pos/deploy-release.sh'
-  var IS_DOCKER_MODE = fs.existsSync(DOCKER_MODE_MARKER)
-  var DEPLOY_SCRIPT = IS_DOCKER_MODE ? DOCKER_DEPLOY_SCRIPT : TARBALL_DEPLOY_SCRIPT
-  var R2_ORIGIN = env.R2_ARTIFACT_ORIGIN || 'https://pub-15bf4245be0e4c05b570d31988004d09.r2.dev'
-  var MANIFEST_URL = R2_ORIGIN + '/latest/manifest.json'
+  // ── Deploy via gwi-node (single bootstrap agent) ────────────────────────
+  var GWI_NODE = '/opt/gwi-pos/gwi-node.sh'
 
-  if (IS_DOCKER_MODE && !fs.existsSync(DOCKER_DEPLOY_SCRIPT)) {
-    log('[Update] ERROR: Docker mode enabled (.docker-mode marker present) but docker-deploy.sh not found')
-    var dockerMissingResult = {
-      ok: false,
-      error: 'FAILED_DEPLOY_SCRIPT: Docker mode enabled but docker-deploy.sh not found — run installer to provision',
-      steps: ['docker-deploy-script-missing']
+  // Self-update gwi-node from the running image before deploy
+  try {
+    run('bash "' + GWI_NODE + '" self-update', APP_DIR, 30)
+  } catch (e) {
+    log('[Update] gwi-node self-update warning: ' + e.message)
+  }
+
+  if (!fs.existsSync(GWI_NODE)) {
+    // Bootstrap: extract gwi-node from current release if it exists
+    var bootstrapPath = path.join(APP_DIR, 'public', 'scripts', 'gwi-node.sh')
+    if (fs.existsSync(bootstrapPath)) {
+      try {
+        fs.copyFileSync(bootstrapPath, GWI_NODE)
+        fs.chmodSync(GWI_NODE, 0o755)
+        log('[Update] Bootstrapped gwi-node.sh from release')
+      } catch (e) {
+        log('[Update] Bootstrap failed: ' + e.message)
+      }
     }
+  }
+
+  if (!fs.existsSync(GWI_NODE)) {
+    // Fatal: no gwi-node.sh anywhere
+    var result = { ok: false, error: 'gwi-node.sh not found — run installer', steps: ['missing-agent'] }
+    if (cmdId) ackProgress(cmdId, 'FAILED', { step: 'missing-agent', error: result.error })
+    return result
+  }
+
+  log('[Update] Deploying via gwi-node...')
+  if (cmdId) ackProgress(cmdId, 'IN_PROGRESS', { step: 'gwi-node-deploy', targetVersion: targetVersion })
+
+  try {
+    execSync('bash "' + GWI_NODE + '" deploy', {
+      cwd: APP_DIR,
+      encoding: 'utf-8',
+      timeout: 600000,
+      stdio: 'pipe'
+    })
+    log('[Update] gwi-node deploy completed')
+
+    // Read deploy result
+    var newVersion = previousVersion
+    try {
+      var vf = JSON.parse(fs.readFileSync('/opt/gwi-pos/shared/state/running-version.json', 'utf-8'))
+      newVersion = vf.version || previousVersion
+    } catch (e) {}
+
+    // Self-update sync-agent from new image
+    try { selfUpdateSyncAgent() } catch (e) {}
+
+    if (cmdId) ackProgress(cmdId, 'COMPLETED', {
+      step: 'gwi-node-deploy-done',
+      version: newVersion
+    })
+    return { ok: true, version: newVersion, steps: ['gwi-node-deploy OK'], _acked: true }
+  } catch (deployErr) {
+    log('[Update] gwi-node deploy FAILED: ' + (deployErr.message || '').slice(0, 300))
+
+    // Read deploy log for failure details
+    var failError = (deployErr.message || '').slice(0, 200)
     if (cmdId) ackProgress(cmdId, 'FAILED', {
-      step: 'docker-deploy-script-missing',
-      failureClass: 'FAILED_DEPLOY_SCRIPT',
-      error: dockerMissingResult.error,
-      version: previousVersion
+      step: 'gwi-node-deploy-failed',
+      error: failError
     })
-    writeUpdateState({
-      status: 'FAILED',
-      attemptId: currentAttemptId,
-      targetVersion: targetVersion || 'latest',
-      previousVersion: previousVersion,
-      attemptedAt: new Date().toISOString(),
-      completedAt: new Date().toISOString(),
-      method: 'docker',
-      failureClass: 'FAILED_DEPLOY_SCRIPT',
-      error: dockerMissingResult.error
-    })
-    return Object.assign(dockerMissingResult, { _acked: true })
+    return { ok: false, error: failError, steps: ['gwi-node-deploy-failed'], _acked: true }
   }
-
-  if (fs.existsSync(DEPLOY_SCRIPT)) {
-    log('[Update] Deploy via ' + (IS_DOCKER_MODE ? 'Docker' : 'tarball'))
-    if (cmdId) ackProgress(cmdId, 'IN_PROGRESS', { step: 'artifact-deploy', targetVersion: targetVersion })
-
-    // Self-heal keys directory permissions before deploy (legacy code may re-lock to root:root 700)
-    try {
-      var keysDir = '/opt/gwi-pos/keys'
-      var pubKey = keysDir + '/gwi-pos-release.pub'
-      if (fs.existsSync(keysDir)) {
-        try { fs.accessSync(pubKey, fs.constants.R_OK) } catch (e) {
-          run('sudo chmod 750 ' + keysDir + ' && sudo chown root:gwipos ' + keysDir, '/opt/gwi-pos', 5)
-          log('[Update] Fixed keys directory permissions')
-        }
-      }
-    } catch (e) { log('[Update] Keys permission fix warning: ' + e.message) }
-
-    // Check maintenance mode — another deploy may be in progress
-    var maintenanceFlagPath = '/opt/gwi-pos/shared/state/deploy-in-progress'
-    if (fs.existsSync(maintenanceFlagPath)) {
-      var flagIsStale = false
-      try {
-        var flagContent = fs.readFileSync(maintenanceFlagPath, 'utf-8').trim().split('\n')
-        var flagPid = flagContent[1] ? flagContent[1].trim() : ''
-
-        // Check 1: If a PID is recorded, see if that process is still alive
-        if (flagPid) {
-          try {
-            process.kill(parseInt(flagPid, 10), 0) // signal 0 = existence check
-            // Process is alive — flag is legitimate
-          } catch (e) {
-            // Process is dead — flag is stale
-            flagIsStale = true
-            log('[Update] Maintenance flag owner PID ' + flagPid + ' is dead — removing stale flag')
-          }
-        }
-
-        // Check 2: If no PID or PID check inconclusive, fall back to age check (10 min)
-        if (!flagIsStale && !flagPid) {
-          var flagStat = fs.statSync(maintenanceFlagPath)
-          var flagAgeMs = Date.now() - flagStat.mtimeMs
-          var STALE_THRESHOLD_MS = 10 * 60 * 1000 // 10 minutes
-          if (flagAgeMs > STALE_THRESHOLD_MS) {
-            flagIsStale = true
-            log('[Update] Maintenance flag is ' + Math.round(flagAgeMs / 1000) + 's old (>' + (STALE_THRESHOLD_MS / 1000) + 's) with no PID — removing stale flag')
-          }
-        }
-      } catch (e) {
-        // If we can't read/stat the flag, treat it as stale (file may be corrupted)
-        flagIsStale = true
-        log('[Update] Could not read maintenance flag (' + e.message + ') — removing stale flag')
-      }
-
-      if (flagIsStale) {
-        try {
-          fs.unlinkSync(maintenanceFlagPath)
-          log('[Update] Stale maintenance flag removed — proceeding with deploy')
-        } catch (e) {
-          log('[Update] Failed to remove stale flag: ' + e.message + ' — skipping deploy')
-          if (cmdId) ackProgress(cmdId, 'COMPLETED', { step: 'skipped-deploy-in-progress', version: previousVersion })
-          return { ok: true, version: previousVersion, steps: ['deploy-in-progress — skipped'], _acked: true }
-        }
-      } else {
-        log('[Update] Deploy already in progress (maintenance mode flag set, owner alive) — skipping')
-        if (cmdId) ackProgress(cmdId, 'COMPLETED', { step: 'skipped-deploy-in-progress', version: previousVersion })
-        return { ok: true, version: previousVersion, steps: ['deploy-in-progress — skipped'], _acked: true }
-      }
-    }
-
-    try {
-      execSync('bash "' + DEPLOY_SCRIPT + '" --manifest-url "' + MANIFEST_URL + '"', {
-        encoding: 'utf-8',
-        timeout: 600000, // 10 min
-        stdio: 'pipe'
-      })
-      log('[Update] Artifact deploy completed successfully')
-
-      // Read new version from the deployed release
-      var newVersion = previousVersion
-      try {
-        var currentLink = fs.readlinkSync('/opt/gwi-pos/current')
-        var pkgPath = path.join(currentLink, 'package.json')
-        if (!fs.existsSync(pkgPath)) pkgPath = '/opt/gwi-pos/current/package.json'
-        newVersion = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')).version || previousVersion
-      } catch (e) {}
-
-      // Self-update sync-agent + components from new release
-      try { selfUpdateSyncAgent() } catch (e) { log('[Update] Self-update warning: ' + e.message) }
-
-      // Stage deploy scripts from the new release for next run
-      try {
-        var newDeployScript = '/opt/gwi-pos/current/public/scripts/deploy-release.sh'
-        if (fs.existsSync(newDeployScript)) {
-          fs.copyFileSync(newDeployScript, TARBALL_DEPLOY_SCRIPT + '.staged')
-          fs.renameSync(TARBALL_DEPLOY_SCRIPT + '.staged', TARBALL_DEPLOY_SCRIPT)
-          try { execSync('chmod 755 "' + TARBALL_DEPLOY_SCRIPT + '"', { timeout: 5000, stdio: 'pipe' }) } catch (e) {}
-          log('[Update] Staged deploy-release.sh from release')
-        }
-        var newDockerScript = '/opt/gwi-pos/current/public/scripts/docker-deploy.sh'
-        if (fs.existsSync(newDockerScript)) {
-          fs.copyFileSync(newDockerScript, DOCKER_DEPLOY_SCRIPT + '.staged')
-          fs.renameSync(DOCKER_DEPLOY_SCRIPT + '.staged', DOCKER_DEPLOY_SCRIPT)
-          try { execSync('chmod 755 "' + DOCKER_DEPLOY_SCRIPT + '"', { timeout: 5000, stdio: 'pipe' }) } catch (e) {}
-          log('[Update] Staged docker-deploy.sh from release')
-        }
-      } catch (e) {
-        log('[Update] Deploy script staging warning: ' + e.message)
-      }
-
-      var compResult = null
-      try { compResult = updateComponentsFromCheckout() } catch (e) {}
-
-      if (cmdId) ackProgress(cmdId, 'COMPLETED', {
-        step: 'artifact-deploy-done',
-        version: newVersion,
-        steps: ['artifact-download', 'artifact-verify', 'artifact-extract', 'schema-push', 'restart', 'health-ok'],
-        componentUpdates: compResult
-      })
-      return { ok: true, version: newVersion, steps: ['artifact-deploy OK'], _acked: true }
-    } catch (deployErr) {
-      log('[Update] Artifact deploy FAILED: ' + (deployErr.message || '').slice(0, 300))
-      log('[Update] deploy-release.sh handles its own rollback — checking state...')
-
-      // deploy-release.sh handles rollback internally. Check what state we're in.
-      var deployState = 'unknown'
-      try {
-        var stateData = JSON.parse(fs.readFileSync('/opt/gwi-pos/shared/state/deploy-state.json', 'utf-8'))
-        deployState = stateData.state || 'unknown'
-      } catch (e) {}
-
-      if (deployState === 'rolled_back') {
-        log('[Update] deploy-release.sh rolled back to previous release — POS should be running')
-        if (cmdId) ackProgress(cmdId, 'FAILED', { step: 'artifact-deploy-rolled-back', error: (deployErr.message || '').slice(0, 200) })
-        return { ok: false, error: 'Artifact deploy failed (rolled back)', steps: ['artifact-deploy-failed', 'rollback-ok'], _acked: true }
-      } else if (deployState === 'rollback_failed') {
-        log('[Update] CRITICAL: deploy-release.sh rollback also failed — manual intervention needed')
-        if (cmdId) ackProgress(cmdId, 'FAILED', { step: 'artifact-deploy-rollback-failed', error: 'Both deploy and rollback failed' })
-        return { ok: false, error: 'Artifact deploy AND rollback failed', steps: ['artifact-deploy-failed', 'rollback-failed'], _acked: true }
-      }
-
-      // Artifact deploy failed — report structured failure to MC (no legacy fallback)
-      var failReason = classifyDeployFailure(deployState, (deployErr.message || ''))
-      log('[Update] Deploy FAILED — reason: ' + failReason + ', state: ' + deployState)
-
-      if (cmdId) {
-        ackProgress(cmdId, 'FAILED', {
-          step: 'artifact-deploy-failed',
-          failureClass: failReason,
-          deployState: deployState,
-          error: (deployErr.message || '').slice(0, 300),
-          version: previousVersion
-        })
-      }
-      writeUpdateState({
-        status: 'FAILED',
-        attemptId: currentAttemptId,
-        targetVersion: targetVersion || 'latest',
-        previousVersion: previousVersion,
-        attemptedAt: new Date().toISOString(),
-        completedAt: new Date().toISOString(),
-        method: 'artifact',
-        failureClass: failReason,
-        deployState: deployState,
-        error: (deployErr.message || '').slice(0, 300)
-      })
-      return { ok: false, error: failReason + ': ' + (deployErr.message || '').slice(0, 200), steps: ['artifact-deploy-failed'], _acked: true }
-    }
-  }
-
-  // Deploy script not found for the configured mode.
-  // Report a structured failure — no cross-mode fallback.
-  log('[Update] FAILED — ' + (IS_DOCKER_MODE ? 'docker-deploy.sh' : 'deploy-release.sh') + ' not found at ' + DEPLOY_SCRIPT)
-  var missingResult = {
-    ok: false,
-    error: 'FAILED_DEPLOY_SCRIPT: ' + path.basename(DEPLOY_SCRIPT) + ' not found — run installer to provision this NUC',
-    steps: ['deploy-script-missing']
-  }
-  if (cmdId) ackProgress(cmdId, 'FAILED', {
-    step: 'deploy-script-missing',
-    failureClass: 'FAILED_DEPLOY_SCRIPT',
-    error: missingResult.error,
-    version: previousVersion
-  })
-  writeUpdateState({
-    status: 'FAILED',
-    attemptId: currentAttemptId,
-    targetVersion: targetVersion || 'latest',
-    previousVersion: previousVersion,
-    attemptedAt: new Date().toISOString(),
-    completedAt: new Date().toISOString(),
-    method: 'none',
-    failureClass: 'FAILED_DEPLOY_SCRIPT',
-    error: missingResult.error
-  })
-  return Object.assign(missingResult, { _acked: true })
 }
 
-// ── Self-update sync agent from repo ──────────────────────────────────────
+// ── Self-update sync agent from container image ──────────────────────────
 function selfUpdateSyncAgent() {
   try {
-    var newAgentPath = path.join(APP_DIR, 'public', 'sync-agent.js')
-    if (fs.existsSync(newAgentPath)) {
-      fs.copyFileSync(newAgentPath, '/opt/gwi-pos/sync-agent.js')
-      log('[Update] Sync agent self-updated from repo')
-      // Restart pulse-sync 15s after ACK is sent (gives time for ACK delivery)
-      setTimeout(function() {
-        log('[Update] Restarting sync agent with updated version...')
-        var syncOk = run('sudo systemctl restart thepasspos-sync', APP_DIR, 30)
-        if (!syncOk) run('sudo systemctl restart pulse-sync', APP_DIR, 30)
-      }, 15000)
+    // Extract latest sync-agent from running container image
+    var image = ''
+    try {
+      image = execSync('docker inspect --format="{{.Config.Image}}" gwi-pos', { encoding: 'utf8', timeout: 5000 }).trim()
+    } catch (e) {}
+
+    if (image) {
+      execSync('docker run --rm "' + image + '" cat /app/public/sync-agent.js > /tmp/sync-agent-new.js', { timeout: 15000 })
+      if (fs.existsSync('/tmp/sync-agent-new.js') && fs.statSync('/tmp/sync-agent-new.js').size > 1000) {
+        fs.copyFileSync('/tmp/sync-agent-new.js', '/opt/gwi-pos/sync-agent.js')
+        log('[Update] Sync agent self-updated from container image')
+        setTimeout(function() {
+          run('sudo systemctl restart thepasspos-sync', APP_DIR, 30)
+        }, 15000)
+      }
     }
   } catch (e) {
-    log('[Update] WARNING: Could not self-update sync agent: ' + e.message)
+    log('[Update] Sync agent self-update warning: ' + e.message)
   }
 }
 
