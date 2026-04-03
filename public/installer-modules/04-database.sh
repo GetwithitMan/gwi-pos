@@ -136,7 +136,11 @@ MEM_TOTAL=$(free -m 2>/dev/null | awk '/Mem:/{print $2}' || echo 1)
 MEM_USED=$(free -m 2>/dev/null | awk '/Mem:/{print $3}' || echo 0)
 DISK_TOTAL=$(df -BG / 2>/dev/null | awk 'NR==2{gsub("G",""); print $2+0}' || echo 1)
 DISK_USED=$(df -BG / 2>/dev/null | awk 'NR==2{gsub("G",""); print $3+0}' || echo 0)
-VERSION=$(jq -r '.version // "unknown"' /opt/gwi-pos/app/package.json 2>/dev/null || echo "unknown")
+# Read version: running-version.json (authoritative) → current/package.json → app/package.json (legacy)
+VERSION=$(jq -r '.version // empty' /opt/gwi-pos/shared/state/running-version.json 2>/dev/null \
+  || jq -r '.version // empty' /opt/gwi-pos/current/package.json 2>/dev/null \
+  || jq -r '.version // "unknown"' /opt/gwi-pos/app/package.json 2>/dev/null \
+  || echo "unknown")
 LOCAL_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "")
 
 # Read last batch info (from file written at batch close time)
@@ -249,7 +253,7 @@ fi
 DASHBOARD_JSON=$(jq -nc --argjson running "$DASHBOARD_RUNNING" --arg version "$DASHBOARD_VERSION" '{running:$running,version:$version}')
 
 # ── Component versions for fleet-wide visibility ──
-SYNC_AGENT_VERSION=$(node -e "try{const p=require('/opt/gwi-pos/app/package.json');console.log(p.version)}catch{console.log('unknown')}" 2>/dev/null || echo "unknown")
+SYNC_AGENT_VERSION=$(node -e "try{const p=require('/opt/gwi-pos/current/package.json');console.log(p.version)}catch{try{const q=require('/opt/gwi-pos/app/package.json');console.log(q.version)}catch{console.log('unknown')}}" 2>/dev/null || echo "unknown")
 WATCHDOG_STATUS=$(systemctl is-active gwi-watchdog.timer 2>/dev/null || echo "inactive")
 INSTALLER_VERSION=$(node -e "try{const c=require('/opt/gwi-pos/app/public/version-contract.json');console.log(c.installerVersion||c.version||'unknown')}catch{console.log('unknown')}" 2>/dev/null || echo "unknown")
 COMPONENT_VERSIONS_JSON=$(jq -nc \
