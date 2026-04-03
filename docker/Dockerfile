@@ -51,7 +51,7 @@ RUN apk add --no-cache postgresql-client curl tzdata
 
 ENV TZ=America/New_York
 
-# Copy standalone Next.js build
+# Copy standalone Next.js build (includes traced node_modules)
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
@@ -59,6 +59,10 @@ COPY --from=builder /app/public ./public
 # Copy custom server (compiled from server.ts by build-server.mjs)
 COPY --from=builder /app/server.js ./server.js
 COPY --from=builder /app/preload.js ./preload.js
+
+# Copy full next package — standalone trace misses imports from custom server.js
+# (next/headers, next/navigation, etc. used by API routes loaded at runtime)
+COPY --from=builder /app/node_modules/next ./node_modules/next
 
 # Copy Prisma client (generated to src/generated/prisma/)
 COPY --from=builder /app/src/generated/prisma ./src/generated/prisma
