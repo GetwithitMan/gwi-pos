@@ -209,7 +209,7 @@ run_deploy_app() {
     # Run Docker deploy
     local manifest_url="https://${POS_DOMAIN:-ordercontrolcenter.com}/artifacts/manifest.json"
     log "Deploying via docker-deploy.sh: $manifest_url"
-    if bash "$APP_BASE/docker-deploy.sh" --manifest-url "$manifest_url" --force; then
+    if bash "$APP_BASE/docker-deploy.sh" --manifest-url "$manifest_url"; then
         log "Docker deployment successful"
         touch "$APP_BASE/.docker-mode"
     else
