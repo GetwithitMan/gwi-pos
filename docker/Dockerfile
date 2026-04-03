@@ -24,6 +24,9 @@ RUN npm ci
 # ==============================================================================
 FROM node:22-alpine AS builder
 
+# bash + git needed by build scripts (bump-version.sh, build-installer-bundle.sh)
+RUN apk add --no-cache bash git
+
 WORKDIR /app
 
 # Copy dependencies from deps stage
