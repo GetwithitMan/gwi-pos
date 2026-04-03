@@ -1552,7 +1552,7 @@ run_schema_step() {
         log "Running migrations on venue Neon..."
         local neon_migrate_exit=0
         timeout "$SCHEMA_TIMEOUT_SECONDS" \
-            env DATABASE_URL="$neon_url" NEON_MIGRATE=true \
+            env NEON_DATABASE_URL="$neon_url" NEON_MIGRATE=true \
             node "${DEPLOY_TOOLS_DIR}/src/migrate.js" \
             > >(tee -a "${DEPLOY_LOG_DIR}/schema-neon-${RELEASE_ID}.log") 2>&1 \
             || neon_migrate_exit=$?
@@ -1562,7 +1562,7 @@ run_schema_step() {
             sleep 3
             neon_migrate_exit=0
             timeout "$SCHEMA_TIMEOUT_SECONDS" \
-                env DATABASE_URL="$neon_url" NEON_MIGRATE=true \
+                env NEON_DATABASE_URL="$neon_url" NEON_MIGRATE=true \
                 node "${DEPLOY_TOOLS_DIR}/src/migrate.js" \
                 > >(tee -a "${DEPLOY_LOG_DIR}/schema-neon-${RELEASE_ID}.log") 2>&1 \
                 || neon_migrate_exit=$?
