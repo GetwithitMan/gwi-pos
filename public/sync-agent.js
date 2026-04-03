@@ -188,18 +188,16 @@ async function handleForceUpdate(payload, cmdId) {
     }
   }
 
-  // ── Deploy path selection: Docker (preferred) or tarball (legacy) ────────
-  // Docker mode: docker-deploy.sh pulls image, migrates, swaps container.
-  // Tarball mode: deploy-release.sh downloads tarball, extracts, migrates, swaps symlink.
+  // ── Docker-only deploy path ─────────────────────────────────────────────
+  // All deploys use docker-deploy.sh. No tarball fallback.
   var DOCKER_DEPLOY_SCRIPT = '/opt/gwi-pos/docker-deploy.sh'
   var TARBALL_DEPLOY_SCRIPT = '/opt/gwi-pos/deploy-release.sh'
-  var DOCKER_MODE = fs.existsSync(DOCKER_DEPLOY_SCRIPT) && fs.existsSync('/opt/gwi-pos/.docker-mode')
-  var DEPLOY_SCRIPT = DOCKER_MODE ? DOCKER_DEPLOY_SCRIPT : TARBALL_DEPLOY_SCRIPT
+  var DEPLOY_SCRIPT = fs.existsSync(DOCKER_DEPLOY_SCRIPT) ? DOCKER_DEPLOY_SCRIPT : TARBALL_DEPLOY_SCRIPT
   var R2_ORIGIN = env.R2_ARTIFACT_ORIGIN || 'https://pub-15bf4245be0e4c05b570d31988004d09.r2.dev'
   var MANIFEST_URL = R2_ORIGIN + '/latest/manifest.json'
 
   if (fs.existsSync(DEPLOY_SCRIPT)) {
-    log('[Update] Artifact deploy available — using deploy-release.sh')
+    log('[Update] Deploy via ' + (DEPLOY_SCRIPT.includes('docker') ? 'Docker' : 'tarball (legacy)'))
     if (cmdId) ackProgress(cmdId, 'IN_PROGRESS', { step: 'artifact-deploy', targetVersion: targetVersion })
 
     // Self-heal keys directory permissions before deploy (legacy code may re-lock to root:root 700)
