@@ -358,6 +358,7 @@ const DEPLOY_SCRIPT = '/opt/gwi-pos/deploy-release.sh'
 const R2_ARTIFACT_ORIGIN = process.env.R2_ARTIFACT_ORIGIN || 'https://pub-15bf4245be0e4c05b570d31988004d09.r2.dev'
 const FALLBACK_ORIGIN = `https://${process.env.POS_DOMAIN || 'www.ordercontrolcenter.com'}`
 const MANIFEST_URL = `${R2_ARTIFACT_ORIGIN}/latest/manifest.json`
+const DOCKER_DEPLOY_SCRIPT = '/opt/gwi-pos/docker-deploy.sh'
 
 /**
  * Check if artifact-based deployment is available.
@@ -365,6 +366,10 @@ const MANIFEST_URL = `${R2_ARTIFACT_ORIGIN}/latest/manifest.json`
  */
 function isArtifactDeployAvailable(): boolean {
   return existsSync(DEPLOY_SCRIPT)
+}
+
+function isDockerDeployAvailable(): boolean {
+  return existsSync(DOCKER_DEPLOY_SCRIPT) && existsSync('/opt/gwi-pos/.docker-mode')
 }
 
 /**
@@ -375,6 +380,12 @@ function isArtifactDeployAvailable(): boolean {
  * Returns the deploy result or null if artifact deploy is not available.
  */
 async function performArtifactDeploy(targetVersion: string, commandId?: string): Promise<UpdateResult | null> {
+  // Prefer Docker deploy if available
+  if (isDockerDeployAvailable()) {
+    log.info('[UpdateAgent] Docker mode detected — using docker-deploy.sh')
+    return performContainerDeploy(targetVersion, commandId)
+  }
+
   if (!isArtifactDeployAvailable()) {
     log.info('[UpdateAgent] deploy-release.sh not found — falling back to legacy git-based deploy')
     return null
@@ -482,6 +493,97 @@ async function performArtifactDeploy(targetVersion: string, commandId?: string):
       preflightResult: { passed: true, checks: [] },
       error: `Artifact deploy failed: ${msg.slice(0, 200)}`,
       durationMs: Date.now() - startTime,
+    }
+  }
+}
+
+async function performContainerDeploy(targetVersion: string, commandId?: string): Promise<UpdateResult | null> {
+  const startTime = Date.now()
+  const previousVersion = getCurrentVersion()
+
+  log.info(`[UpdateAgent] Container deploy: ${previousVersion} → ${targetVersion}`)
+
+  try {
+    const output = execSync(
+      `bash "${DOCKER_DEPLOY_SCRIPT}" --manifest-url "${MANIFEST_URL}"`,
+      {
+        encoding: 'utf8',
+        timeout: 600_000,
+        stdio: 'pipe',
+        env: { ...process.env, PATH: process.env.PATH },
+      }
+    )
+
+    log.info('[UpdateAgent] Container deploy completed successfully')
+
+    let deployLog: Record<string, unknown> = {}
+    try {
+      const logsDir = '/opt/gwi-pos/shared/logs/deploys'
+      if (existsSync(logsDir)) {
+        const logs = readdirSync(logsDir).filter(f => f.endsWith('.json')).sort()
+        if (logs.length > 0) {
+          deployLog = JSON.parse(readFileSync(path.join(logsDir, logs[logs.length - 1]), 'utf8'))
+        }
+      }
+    } catch {}
+
+    const finalState: UpdateState = {
+      attemptId: (deployLog.deployId as string) || randomUUID(),
+      commandId,
+      attemptedAt: new Date(startTime).toISOString(),
+      targetVersion,
+      previousVersion,
+      gitShaBefore: 'n/a-container',
+      gitShaAfter: (deployLog.releaseId as string) || targetVersion,
+      status: 'COMPLETED',
+      backupStatus: 'CONTAINER_DEPLOY',
+      rollbackAttempted: false,
+      manualInterventionRequired: false,
+      proceededWithoutBackup: false,
+      duration: Date.now() - startTime,
+      steps: ['image-pull', 'digest-verify', 'schema-migrate', 'container-swap', 'health-ok'],
+    }
+    writeUpdateState(finalState)
+
+    return {
+      success: true,
+      previousVersion,
+      targetVersion,
+      preflightResult: { passed: true, checks: [] },
+      durationMs: Date.now() - startTime,
+    }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    const stderr = (err as { stderr?: string }).stderr || ''
+    log.error(`[UpdateAgent] Container deploy failed: ${msg.slice(0, 500)}`)
+    if (stderr) log.error(`[UpdateAgent] stderr: ${stderr.slice(0, 500)}`)
+
+    // Same error handling pattern as artifact deploy
+    writeUpdateState({
+      attemptId: randomUUID(),
+      commandId,
+      attemptedAt: new Date(startTime).toISOString(),
+      targetVersion,
+      previousVersion,
+      gitShaBefore: 'n/a-container',
+      gitShaAfter: 'failed',
+      status: 'FAILED',
+      backupStatus: 'CONTAINER_DEPLOY',
+      rollbackAttempted: false,
+      manualInterventionRequired: false,
+      proceededWithoutBackup: false,
+      duration: Date.now() - startTime,
+      steps: [],
+      error: msg.slice(0, 500),
+    })
+
+    return {
+      success: false,
+      previousVersion,
+      targetVersion,
+      preflightResult: { passed: true, checks: [] },
+      durationMs: Date.now() - startTime,
+      error: msg,
     }
   }
 }
