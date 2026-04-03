@@ -401,7 +401,7 @@ async function handleForceUpdate(payload, cmdId) {
   log('[Update] FAILED — ' + (IS_DOCKER_MODE ? 'docker-deploy.sh' : 'deploy-release.sh') + ' not found at ' + DEPLOY_SCRIPT)
   var missingResult = {
     ok: false,
-    error: 'FAILED_DEPLOY_SCRIPT: deploy-release.sh not found — run installer to provision this NUC',
+    error: 'FAILED_DEPLOY_SCRIPT: ' + path.basename(DEPLOY_SCRIPT) + ' not found — run installer to provision this NUC',
     steps: ['deploy-script-missing']
   }
   if (cmdId) ackProgress(cmdId, 'FAILED', {
