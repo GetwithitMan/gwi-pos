@@ -109,6 +109,7 @@ jobs:
           # ── Latest pointers (no-cache, always fresh) ──
           echo "Uploading latest/ pointers..."
           upload_file "public/artifacts/manifest.json" "latest/manifest.json" "application/json" "no-cache, no-store, must-revalidate"
+          upload_file "public/artifacts/manifest.json.minisig" "latest/manifest.json.minisig" "application/octet-stream" "no-cache, no-store, must-revalidate"
           upload_file "public/version-contract.json" "latest/version-contract.json" "application/json" "no-cache, no-store, must-revalidate"
           upload_file "public/schema.sql" "latest/schema.sql" "application/sql" "no-cache, no-store, must-revalidate"
 

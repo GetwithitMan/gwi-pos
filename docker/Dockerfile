@@ -24,9 +24,6 @@ RUN npm ci
 # ==============================================================================
 FROM node:22-alpine AS builder
 
-# bash + git needed by build scripts (bump-version.sh, build-installer-bundle.sh)
-RUN apk add --no-cache bash git
-
 WORKDIR /app
 
 # Copy dependencies from deps stage
@@ -36,11 +33,11 @@ COPY . .
 # Generate Prisma client
 RUN npx prisma generate
 
-# Build the application
+# Build Next.js only — CI handles version bumps, schema SQL, artifacts, etc.
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
 
-RUN npm run build
+RUN npx next build && node scripts/build-server.mjs
 
 # ==============================================================================
 # Stage 3: Runner (Production)
