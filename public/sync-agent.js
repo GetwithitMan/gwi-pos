@@ -201,6 +201,28 @@ async function handleForceUpdate(payload, cmdId) {
   var R2_ORIGIN = env.R2_ARTIFACT_ORIGIN || 'https://pub-15bf4245be0e4c05b570d31988004d09.r2.dev'
   var MANIFEST_URL = R2_ORIGIN + '/latest/manifest.json'
 
+  // Before Docker deploy: extract the LATEST docker-deploy.sh from the image
+  // about to be deployed. This ensures the deploy script always matches the
+  // release being deployed — no stale script from a previous version.
+  if (IS_DOCKER_MODE) {
+    try {
+      var manifestRes = run('curl -sf "' + MANIFEST_URL + '"', APP_DIR, 15)
+      if (manifestRes) {
+        var mfData = JSON.parse(manifestRes)
+        var imgRef = mfData.imageRef
+        if (imgRef) {
+          log('[Update] Extracting docker-deploy.sh from ' + imgRef)
+          var extractOk = run('docker run --rm "' + imgRef + '" cat /app/public/scripts/docker-deploy.sh > /tmp/docker-deploy-new.sh 2>/dev/null && chmod 755 /tmp/docker-deploy-new.sh && mv /tmp/docker-deploy-new.sh ' + DOCKER_DEPLOY_SCRIPT, APP_DIR, 60)
+          if (extractOk !== false) {
+            log('[Update] docker-deploy.sh extracted from image')
+          }
+        }
+      }
+    } catch (e) {
+      log('[Update] docker-deploy.sh extraction warning (non-fatal): ' + e.message)
+    }
+  }
+
   if (IS_DOCKER_MODE && !fs.existsSync(DOCKER_DEPLOY_SCRIPT)) {
     log('[Update] ERROR: Docker mode enabled (.docker-mode marker present) but docker-deploy.sh not found')
     var dockerMissingResult = {
@@ -230,6 +252,20 @@ async function handleForceUpdate(payload, cmdId) {
 
   if (fs.existsSync(DEPLOY_SCRIPT)) {
     log('[Update] Deploy via ' + (IS_DOCKER_MODE ? 'Docker' : 'tarball'))
+
+    // In Docker mode: stop systemd POS service to free the port BEFORE deploy.
+    // This is the sync-agent's responsibility because docker-deploy.sh on the
+    // NUC may be a stale version that doesn't have the systemd stop code.
+    if (IS_DOCKER_MODE) {
+      try {
+        run('sudo systemctl stop thepasspos 2>/dev/null || true', APP_DIR, 15)
+        run('sudo systemctl disable thepasspos 2>/dev/null || true', APP_DIR, 15)
+        log('[Update] Stopped systemd thepasspos (Docker owns the port)')
+      } catch (e) {
+        log('[Update] systemd stop warning: ' + e.message)
+      }
+    }
+
     if (cmdId) ackProgress(cmdId, 'IN_PROGRESS', { step: 'artifact-deploy', targetVersion: targetVersion })
 
     // Self-heal keys directory permissions before deploy (legacy code may re-lock to root:root 700)

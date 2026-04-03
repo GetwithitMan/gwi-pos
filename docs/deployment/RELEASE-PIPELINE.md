@@ -62,6 +62,25 @@ NUC update-agent receives FleetCommand
 
 ---
 
+## IMPORTANT: Deploy Sequencing
+
+**Do not deploy from MC while Build & Release is still running.**
+
+The GitHub Actions `build-release.yml` workflow runs ~10 minutes and produces artifacts in this order:
+
+1. Build tarball → upload to R2 → upload initial `latest/manifest.json` (NO imageRef yet)
+2. Build Docker image → push to GHCR
+3. Smoke test Docker image (boot + MODULE_NOT_FOUND check)
+4. Cosign sign image
+5. Inject `imageRef` + `imageDigest` into manifest → re-upload `latest/manifest.json`
+6. Verify uploaded manifest has ALL required fields
+
+**`latest/manifest.json` is only complete after step 5.** If you deploy before that, Docker venues will fail with "Manifest missing imageRef."
+
+**Rule:** Wait for the Build & Release workflow to show green in GitHub Actions before creating a release in MC.
+
+---
+
 ## Build Orchestration: vercel-build.js vs package.json build
 
 There are **two build entry points**. They are NOT the same.

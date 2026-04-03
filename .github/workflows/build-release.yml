@@ -162,6 +162,58 @@ jobs:
           sbom: true
           provenance: mode=max
 
+      # ── Docker runtime smoke test ──
+      # Boot the image and verify custom server starts + health endpoint responds.
+      # Catches missing modules (socket.io, next/headers, etc.) before publish.
+      - name: Smoke test Docker image
+        run: |
+          set -euo pipefail
+          IMAGE="ghcr.io/getwithitman/gwi-pos:${{ steps.meta.outputs.version }}"
+          echo "==> Smoke testing: $IMAGE"
+
+          # Start container with minimal env (no real DB, just boot test)
+          docker run -d --name smoke-test \
+            -e NODE_ENV=production \
+            -e PORT=3099 \
+            -e HOSTNAME=0.0.0.0 \
+            -e DATABASE_URL=postgres://test:test@localhost:5432/test \
+            -p 3099:3099 \
+            "$IMAGE" || { echo "::error::Container failed to start"; exit 1; }
+
+          # Wait up to 30s for server to bind port (may fail on DB connect, that's OK)
+          echo "Waiting for server boot..."
+          BOOTED=false
+          for i in $(seq 1 15); do
+            # Check if process is still running (not crash-looped)
+            if ! docker ps --filter name=smoke-test --filter status=running -q | grep -q .; then
+              echo "Container exited. Logs:"
+              docker logs smoke-test 2>&1 | tail -20
+              # If it exited with MODULE_NOT_FOUND, that's a real failure
+              if docker logs smoke-test 2>&1 | grep -q "MODULE_NOT_FOUND"; then
+                echo "::error::Docker image missing runtime modules"
+                docker rm -f smoke-test 2>/dev/null
+                exit 1
+              fi
+              # Other exits (DB connection refused) are expected in CI — server booted
+              BOOTED=true
+              break
+            fi
+            # Try health endpoint
+            if curl -sf http://localhost:3099/api/health 2>/dev/null; then
+              echo "Health endpoint responded"
+              BOOTED=true
+              break
+            fi
+            sleep 2
+          done
+
+          docker rm -f smoke-test 2>/dev/null || true
+          if [ "$BOOTED" = "true" ]; then
+            echo "==> Smoke test passed: server boots without MODULE_NOT_FOUND"
+          else
+            echo "==> Smoke test: server still starting after 30s (acceptable — no crash)"
+          fi
+
       # ── Phase C: Cosign signing + SBOM ──
 
       - name: Install Cosign

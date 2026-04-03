@@ -378,7 +378,7 @@ EOF
 chmod 644 "$RUNNING_VERSION_FILE" 2>/dev/null || true
 log "Version truth written: $IMAGE_REF"
 
-# Step 11: Clean up old images (keep last 3 tags for this repo)
+# Step 11: Clean up dangling images (old tags cleaned manually if needed)
 log "Cleaning up old images..."
 docker image prune -f --filter "dangling=true" 2>/dev/null || true
 
