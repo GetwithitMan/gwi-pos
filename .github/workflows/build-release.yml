@@ -130,14 +130,47 @@ jobs:
 
           echo "Upload complete: ${RELEASE_ID}"
 
-      - name: Verify upload
+      - name: Verify release manifest
+        env:
+          R2_PUBLIC_URL: https://pub-15bf4245be0e4c05b570d31988004d09.r2.dev
         run: |
-          HTTP_CODE=$(curl -sI "https://pub-15bf4245be0e4c05b570d31988004d09.r2.dev/latest/release-descriptor.json" -o /dev/null -w "%{http_code}")
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "Verification failed: HTTP ${HTTP_CODE} for latest/release-descriptor.json"
+          set -euo pipefail
+          echo "==> Verifying R2 release manifest..."
+
+          MANIFEST=$(curl -sf --max-time 15 "${R2_PUBLIC_URL}/latest/manifest.json") || {
+            echo "::error::Failed to fetch latest/manifest.json from R2"
+            exit 1
+          }
+
+          # Validate ALL required fields exist and are non-empty
+          REQUIRED_FIELDS="version releaseId artifactUrl artifactSha256 imageRef imageDigest"
+          MISSING=""
+          for field in $REQUIRED_FIELDS; do
+            VALUE=$(echo "$MANIFEST" | python3 -c "import json,sys; m=json.load(sys.stdin); v=m.get('$field',''); print(v if v else '')")
+            if [ -z "$VALUE" ]; then
+              MISSING="$MISSING $field"
+            fi
+          done
+
+          if [ -n "$MISSING" ]; then
+            echo "::error::Release manifest missing required fields:$MISSING"
+            echo "$MANIFEST" | python3 -m json.tool
             exit 1
           fi
-          echo "Verified: latest/release-descriptor.json accessible at R2"
+
+          # Print summary
+          echo "$MANIFEST" | python3 -c "
+          import json,sys
+          m = json.load(sys.stdin)
+          print('Version:', m['version'])
+          print('Release:', m['releaseId'])
+          print('Image:', m['imageRef'])
+          print('Digest:', m['imageDigest'][:30] + '...')
+          print('Tarball SHA:', m['artifactSha256'][:20] + '...')
+          print('Signed:', m.get('signatureMethod', 'none'))
+          print('SBOM:', m.get('sbom', False))
+          "
+          echo "==> Release manifest verified: all required fields present"
 
       # ── Docker image build & push (additive — tarball artifacts preserved above) ──
 

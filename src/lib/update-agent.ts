@@ -16,7 +16,7 @@ import { createChildLogger } from '@/lib/logger'
 
 const log = createChildLogger('update-agent')
 
-const APP_DIR = process.env.APP_DIR || '/opt/gwi-pos/app'
+const APP_DIR = process.env.APP_DIR || '/opt/gwi-pos/current'
 const UPDATE_LOCK_FILE = path.join(APP_DIR, '..', '.update-lock')
 
 interface ComponentUpdateResult {
@@ -305,12 +305,12 @@ async function checkVersionCompatibility(currentVersion: string, targetVersion: 
   // After git pull, pre-start.sh will run again with the NEW schema.
   try {
     log.info('[UpdateAgent] Ensuring local schema is current...')
-    execSync('cd /opt/gwi-pos/app && npx prisma db push --accept-data-loss=false 2>&1 | tail -3', {
+    execSync(`cd "${APP_DIR}" && npx prisma db push --accept-data-loss=false 2>&1 | tail -3`, {
       encoding: 'utf8',
       timeout: 120_000,
     })
-    if (existsSync('/opt/gwi-pos/app/scripts/nuc-pre-migrate.js')) {
-      execSync('cd /opt/gwi-pos/app && node scripts/nuc-pre-migrate.js 2>&1 | tail -5', {
+    if (existsSync(path.join(APP_DIR, 'scripts/nuc-pre-migrate.js'))) {
+      execSync(`cd "${APP_DIR}" && node scripts/nuc-pre-migrate.js 2>&1 | tail -5`, {
         encoding: 'utf8',
         timeout: 300_000,
       })
@@ -376,21 +376,10 @@ function isDockerDeployAvailable(): boolean {
  * Perform an artifact-based deploy using deploy-release.sh.
  * This is the preferred path — no git, no npm ci, no build on the NUC.
  * deploy-release.sh handles everything: download, verify, extract, schema, swap, restart, health check.
- *
- * Returns the deploy result or null if artifact deploy is not available.
  */
-async function performArtifactDeploy(targetVersion: string, commandId?: string): Promise<UpdateResult | null> {
-  // Prefer Docker deploy if available
-  if (isDockerDeployAvailable()) {
-    log.info('[UpdateAgent] Docker mode detected — using docker-deploy.sh')
-    return performContainerDeploy(targetVersion, commandId)
-  }
-
-  if (!isArtifactDeployAvailable()) {
-    log.info('[UpdateAgent] deploy-release.sh not found — falling back to legacy git-based deploy')
-    return null
-  }
-
+async function performArtifactDeploy(targetVersion: string, commandId?: string): Promise<UpdateResult> {
+  // Caller (executeUpdate) already verified isArtifactDeployAvailable() and
+  // routed Docker mode separately. This function handles tarball artifacts only.
   const startTime = Date.now()
   const previousVersion = getCurrentVersion()
 
@@ -497,7 +486,7 @@ async function performArtifactDeploy(targetVersion: string, commandId?: string):
   }
 }
 
-async function performContainerDeploy(targetVersion: string, commandId?: string): Promise<UpdateResult | null> {
+async function performContainerDeploy(targetVersion: string, commandId?: string): Promise<UpdateResult> {
   const startTime = Date.now()
   const previousVersion = getCurrentVersion()
 
@@ -712,20 +701,22 @@ export async function executeUpdate(targetVersion: string, options?: { rollingRe
   log.info(`[UpdateAgent] Starting update: ${previousVersion} → ${targetVersion}`)
 
   try {
-    // ── Artifact-first deploy path (v3.1) ──────────────────────────────
-    // If deploy-release.sh is available, use it instead of the legacy
-    // git fetch → npm ci → build flow. deploy-release.sh handles its own
-    // locking, maintenance mode, health checks, rollback, and quarantine.
+    // ── Explicit deploy mode routing (no silent cross-mode fallback) ──
+    // Docker mode and artifact mode are checked independently.
+    // If a mode is detected and its deploy fails, we do NOT silently fall
+    // through to legacy git-based deploy — we return the failure.
+    if (isDockerDeployAvailable()) {
+      log.info('[UpdateAgent] Docker mode detected — using docker-deploy.sh')
+      const dockerResult = await performContainerDeploy(targetVersion, options?.commandId)
+      isUpdating = false
+      return dockerResult
+    }
+
     if (isArtifactDeployAvailable()) {
       log.info('[UpdateAgent] Artifact deploy path available — using deploy-release.sh')
       const artifactResult = await performArtifactDeploy(targetVersion, options?.commandId)
-      if (artifactResult) {
-        isUpdating = false
-        return artifactResult
-      }
-      // If performArtifactDeploy returned null, it means the script wasn't found
-      // (shouldn't happen since we checked, but defensive). Fall through to legacy.
-      log.warn('[UpdateAgent] Artifact deploy returned null — falling through to legacy path')
+      isUpdating = false
+      return artifactResult
     }
 
     // ── Legacy git-based deploy path ──────────────────────────────────
@@ -744,7 +735,7 @@ export async function executeUpdate(targetVersion: string, options?: { rollingRe
     try {
       log.info('[UpdateAgent] Starting update transaction (backup + snapshot)...')
       const txOutput = execSync(
-        'bash -c "export APP_DIR=\\"' + APP_DIR + '\\" && export APP_BASE=\\"/opt/gwi-pos\\" && source /opt/gwi-pos/app/public/installer-modules/lib/atomic-update.sh && start_update_transaction"',
+        'bash -c "export APP_DIR=\\"' + APP_DIR + '\\" && export APP_BASE=\\"/opt/gwi-pos\\" && source \\"' + APP_DIR + '/public/installer-modules/lib/atomic-update.sh\\" && start_update_transaction"',
         { encoding: 'utf8', timeout: 120_000 }
       )
       try { backupInfo = JSON.parse(txOutput.trim().split('\n').pop() || '{}') } catch {}
@@ -1131,7 +1122,7 @@ export async function executeUpdate(targetVersion: string, options?: { rollingRe
 
               // Restore code from snapshot if available
               if (existsSync('/opt/gwi-pos/app.last-good')) {
-                execSync('bash -c "export APP_DIR=\\"' + APP_DIR + '\\" && source /opt/gwi-pos/app/public/installer-modules/lib/atomic-update.sh && rollback_transaction"', { timeout: 60_000 })
+                execSync('bash -c "export APP_DIR=\\"' + APP_DIR + '\\" && source \\"' + APP_DIR + '/public/installer-modules/lib/atomic-update.sh\\" && rollback_transaction"', { timeout: 60_000 })
                 log.info('[UpdateAgent] Code restored from snapshot')
                 rollbackReport.method = 'full'
                 rollbackReport.codeRestored = true
@@ -1607,7 +1598,7 @@ fi
         env: {
           ...process.env,
           APP_BASE: '/opt/gwi-pos',
-          APP_DIR: '/opt/gwi-pos/app',
+          APP_DIR,
           POSUSER: process.env.POSUSER || 'gwipos',
           STATION_ROLE: process.env.STATION_ROLE || 'server',
         },

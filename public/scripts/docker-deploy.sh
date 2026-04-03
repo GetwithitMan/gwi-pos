@@ -212,10 +212,10 @@ fi
 log "Running schema migration (local PG)..."
 if docker run --rm --env-file "$ENV_FILE" --network=host "$IMAGE_REF" \
   node deploy-tools/src/migrate.js; then
-  SCHEMA_RESULT="success"
+  SCHEMA_RESULT="pass"
   log "Local schema migration complete"
 else
-  SCHEMA_RESULT="failed"
+  SCHEMA_RESULT="fail"
   die "Local schema migration failed"
 fi
 
@@ -319,13 +319,13 @@ if [[ $consecutive_ok -lt $HEALTH_CONSECUTIVE_REQUIRED ]]; then
       done
 
       if [[ $rollback_consecutive_ok -ge $HEALTH_CONSECUTIVE_REQUIRED ]]; then
-        ROLLBACK_RESULT="success"
-        ROLLBACK_READINESS="healthy"
+        ROLLBACK_RESULT="pass"
+        ROLLBACK_READINESS="pass"
         FINAL_STATUS="rolled_back"
         log "Rollback healthy — previous image restored"
       else
-        ROLLBACK_RESULT="started"
-        ROLLBACK_READINESS="unhealthy"
+        ROLLBACK_RESULT="fail"
+        ROLLBACK_READINESS="fail"
         FINAL_STATUS="rollback_failed"
         err "Rollback container started but health check failed"
         # Both new and rollback failed — re-enable systemd as last resort
@@ -333,7 +333,7 @@ if [[ $consecutive_ok -lt $HEALTH_CONSECUTIVE_REQUIRED ]]; then
         sudo systemctl start thepasspos 2>/dev/null || true
       fi
     else
-      ROLLBACK_RESULT="container_start_failed"
+      ROLLBACK_RESULT="fail"
       ROLLBACK_READINESS="not_attempted"
       FINAL_STATUS="rollback_failed"
       err "Failed to start rollback container"
@@ -342,7 +342,7 @@ if [[ $consecutive_ok -lt $HEALTH_CONSECUTIVE_REQUIRED ]]; then
       sudo systemctl start thepasspos 2>/dev/null || true
     fi
   else
-    ROLLBACK_RESULT="no_previous_image"
+    ROLLBACK_RESULT="not_attempted"
     ROLLBACK_READINESS="not_attempted"
     FINAL_STATUS="rollback_failed"
     # No rollback target — re-enable systemd as last resort
@@ -378,19 +378,11 @@ EOF
 chmod 644 "$RUNNING_VERSION_FILE" 2>/dev/null || true
 log "Version truth written: $IMAGE_REF"
 
-# Step 11: Prune old images (keep last 3 tags for this repo)
-log "Pruning old images..."
-repo="${IMAGE_REF%%:*}"
-# Use image ID + CreatedAt with proper ISO timestamp sorting
-docker image ls --filter="reference=${repo}" --format '{{.ID}} {{.CreatedAt}}' \
-  | sort -k2,3 -r \
-  | tail -n +4 \
-  | awk '{print $1}' \
-  | xargs -r docker rmi 2>/dev/null || true
-# Also prune any dangling images from this build
-docker image prune -f --filter "label=maintainer=gwi-pos" 2>/dev/null || true
+# Step 11: Clean up old images (keep last 3 tags for this repo)
+log "Cleaning up old images..."
+docker image prune -f --filter "dangling=true" 2>/dev/null || true
 
 # Step 12: Write deploy log
-FINAL_STATUS="success"
+FINAL_STATUS="healthy"
 write_deploy_log
 log "Deploy $DEPLOY_ID complete: $IMAGE_REF"
