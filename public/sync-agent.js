@@ -188,16 +188,48 @@ async function handleForceUpdate(payload, cmdId) {
     }
   }
 
-  // ── Docker-only deploy path ─────────────────────────────────────────────
-  // All deploys use docker-deploy.sh. No tarball fallback.
+  // ── Explicit deploy mode routing ─────────────────────────────────────────
+  // Deploy mode is determined by the .docker-mode marker file:
+  //   - .docker-mode EXISTS  → Docker only, fail if docker-deploy.sh missing
+  //   - .docker-mode ABSENT  → Tarball only, fail if deploy-release.sh missing
+  // No silent cross-mode fallback.
+  var DOCKER_MODE_MARKER = '/opt/gwi-pos/.docker-mode'
   var DOCKER_DEPLOY_SCRIPT = '/opt/gwi-pos/docker-deploy.sh'
   var TARBALL_DEPLOY_SCRIPT = '/opt/gwi-pos/deploy-release.sh'
-  var DEPLOY_SCRIPT = fs.existsSync(DOCKER_DEPLOY_SCRIPT) ? DOCKER_DEPLOY_SCRIPT : TARBALL_DEPLOY_SCRIPT
+  var IS_DOCKER_MODE = fs.existsSync(DOCKER_MODE_MARKER)
+  var DEPLOY_SCRIPT = IS_DOCKER_MODE ? DOCKER_DEPLOY_SCRIPT : TARBALL_DEPLOY_SCRIPT
   var R2_ORIGIN = env.R2_ARTIFACT_ORIGIN || 'https://pub-15bf4245be0e4c05b570d31988004d09.r2.dev'
   var MANIFEST_URL = R2_ORIGIN + '/latest/manifest.json'
 
+  if (IS_DOCKER_MODE && !fs.existsSync(DOCKER_DEPLOY_SCRIPT)) {
+    log('[Update] ERROR: Docker mode enabled (.docker-mode marker present) but docker-deploy.sh not found')
+    var dockerMissingResult = {
+      ok: false,
+      error: 'FAILED_DEPLOY_SCRIPT: Docker mode enabled but docker-deploy.sh not found — run installer to provision',
+      steps: ['docker-deploy-script-missing']
+    }
+    if (cmdId) ackProgress(cmdId, 'FAILED', {
+      step: 'docker-deploy-script-missing',
+      failureClass: 'FAILED_DEPLOY_SCRIPT',
+      error: dockerMissingResult.error,
+      version: previousVersion
+    })
+    writeUpdateState({
+      status: 'FAILED',
+      attemptId: currentAttemptId,
+      targetVersion: targetVersion || 'latest',
+      previousVersion: previousVersion,
+      attemptedAt: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+      method: 'docker',
+      failureClass: 'FAILED_DEPLOY_SCRIPT',
+      error: dockerMissingResult.error
+    })
+    return Object.assign(dockerMissingResult, { _acked: true })
+  }
+
   if (fs.existsSync(DEPLOY_SCRIPT)) {
-    log('[Update] Deploy via ' + (DEPLOY_SCRIPT.includes('docker') ? 'Docker' : 'tarball (legacy)'))
+    log('[Update] Deploy via ' + (IS_DOCKER_MODE ? 'Docker' : 'tarball'))
     if (cmdId) ackProgress(cmdId, 'IN_PROGRESS', { step: 'artifact-deploy', targetVersion: targetVersion })
 
     // Self-heal keys directory permissions before deploy (legacy code may re-lock to root:root 700)
@@ -364,9 +396,9 @@ async function handleForceUpdate(payload, cmdId) {
     }
   }
 
-  // deploy-release.sh is the only supported deploy path.
-  // If it does not exist, report a structured failure — no legacy git clone fallback.
-  log('[Update] FAILED — deploy-release.sh not found at ' + DEPLOY_SCRIPT)
+  // Deploy script not found for the configured mode.
+  // Report a structured failure — no cross-mode fallback.
+  log('[Update] FAILED — ' + (IS_DOCKER_MODE ? 'docker-deploy.sh' : 'deploy-release.sh') + ' not found at ' + DEPLOY_SCRIPT)
   var missingResult = {
     ok: false,
     error: 'FAILED_DEPLOY_SCRIPT: deploy-release.sh not found — run installer to provision this NUC',
@@ -502,7 +534,7 @@ function updateComponentsFromCheckout() {
       log('[Components] Running Ansible baseline enforcement...')
       var hardenEnv = Object.assign({}, process.env, {
         APP_BASE: '/opt/gwi-pos',
-        APP_DIR: '/opt/gwi-pos/app',
+        APP_DIR: APP_DIR,
         POSUSER: process.env.POSUSER || 'gwipos',
         STATION_ROLE: process.env.STATION_ROLE || 'server'
       })
@@ -562,7 +594,7 @@ function writeUpdateState(data) {
 function getCurrentSchemaVersion() {
   try {
     // Read from _gwi_migrations table count, or from last migration file
-    var migrationsDir = '/opt/gwi-pos/app/scripts/migrations'
+    var migrationsDir = path.join(APP_DIR, 'scripts', 'migrations')
     if (fs.existsSync(migrationsDir)) {
       var files = fs.readdirSync(migrationsDir).filter(function(f) { return /^\d{3}-/.test(f) }).sort()
       return files.length > 0 ? (files[files.length - 1].match(/^(\d{3})/) || [])[1] || '000' : '000'
@@ -1124,7 +1156,7 @@ function checkInterruptedUpdate(done) {
         log('[Boot] Stale update transaction detected (' + Math.round(ageMs / 60000) + 'min old)')
         // Try rollback
         try {
-          var rollbackOk = run('source /opt/gwi-pos/app/public/installer-modules/lib/atomic-update.sh && rollback_transaction', '/opt/gwi-pos', 60)
+          var rollbackOk = run('source "' + APP_DIR + '/public/installer-modules/lib/atomic-update.sh" && rollback_transaction', '/opt/gwi-pos', 60)
           log('[Boot] Rollback ' + (rollbackOk ? 'succeeded' : 'failed'))
         } catch (e) {
           log('[Boot] Rollback error: ' + e.message)

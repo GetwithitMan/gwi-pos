@@ -22,7 +22,12 @@ readonly BASE_DIR="/opt/gwi-pos"
 readonly SHARED_DIR="${BASE_DIR}/shared"
 readonly STATE_DIR="${SHARED_DIR}/state"
 readonly DEPLOY_LOG_DIR="${SHARED_DIR}/logs/deploys"
-readonly ENV_FILE="${BASE_DIR}/.env"
+# Prefer shared .env (Docker layout), fall back to legacy path
+ENV_FILE="${SHARED_DIR}/.env"
+if [ ! -f "$ENV_FILE" ]; then
+  ENV_FILE="${BASE_DIR}/.env"
+fi
+readonly ENV_FILE
 readonly LOCKFILE="${STATE_DIR}/docker-deploy.lock"
 readonly MAINTENANCE_FLAG="${STATE_DIR}/deploy-in-progress"
 readonly PREVIOUS_IMAGE_FILE="${STATE_DIR}/previous-image.txt"
@@ -53,6 +58,10 @@ MANIFEST_URL=""
 FORCE=false
 ROLLBACK=false
 FINAL_STATUS="pending"
+SCHEMA_RESULT=""           # populated after migration steps
+ROLLBACK_RESULT=""         # populated if rollback attempted
+ROLLBACK_READINESS=""      # populated after rollback health check
+DIAGNOSTICS_FILE=""        # path to diagnostics capture
 ERRORS=()
 LOCK_FD=""
 current_image=""  # filled later, used in deploy log
@@ -78,6 +87,12 @@ write_deploy_log() {
     errors_json="$(printf '%s\n' "${ERRORS[@]}" | jq -R . 2>/dev/null | jq -s . 2>/dev/null || echo "[]")"
   fi
 
+  # Read diagnostics file content if it exists
+  local diagnostics_json="null"
+  if [[ -n "${DIAGNOSTICS_FILE:-}" ]] && [[ -f "${DIAGNOSTICS_FILE:-}" ]]; then
+    diagnostics_json="$(jq -Rs . < "$DIAGNOSTICS_FILE" 2>/dev/null || echo "null")"
+  fi
+
   local log_file="${DEPLOY_LOG_DIR}/${now//[:.]/-}.json"
   cat > "$log_file" <<DEOF
 {
@@ -89,6 +104,10 @@ write_deploy_log() {
   "previousImage": "${current_image:-}",
   "manifestUrl": "${MANIFEST_URL:-}",
   "finalStatus": "${FINAL_STATUS}",
+  "schemaResult": "${SCHEMA_RESULT:-}",
+  "rollbackResult": "${ROLLBACK_RESULT:-}",
+  "rollbackReadinessResult": "${ROLLBACK_READINESS:-}",
+  "diagnostics": ${diagnostics_json},
   "durationMs": ${duration_ms},
   "errors": ${errors_json},
   "deployMethod": "docker"
@@ -108,6 +127,8 @@ while [[ $# -gt 0 ]]; do
     --image-ref)     IMAGE_REF="$2"; shift 2 ;;
     --image-digest)  IMAGE_DIGEST="$2"; shift 2 ;;
     --manifest-url)  MANIFEST_URL="$2"; shift 2 ;;
+    # NOTE: Callers should NOT pass --force by default. It bypasses digest
+    # verification and should only be used for emergency manual deploys.
     --force)         FORCE=true; shift ;;
     --rollback)      ROLLBACK=true; shift ;;
     *) die "Unknown argument: $1" ;;
@@ -189,9 +210,14 @@ fi
 
 # Step 4a: Run schema migration on local PG
 log "Running schema migration (local PG)..."
-docker run --rm --env-file "$ENV_FILE" --network=host "$IMAGE_REF" \
-  node deploy-tools/src/migrate.js || die "Local schema migration failed"
-log "Local schema migration complete"
+if docker run --rm --env-file "$ENV_FILE" --network=host "$IMAGE_REF" \
+  node deploy-tools/src/migrate.js; then
+  SCHEMA_RESULT="success"
+  log "Local schema migration complete"
+else
+  SCHEMA_RESULT="failed"
+  die "Local schema migration failed"
+fi
 
 # Step 4b: Run schema migration on Neon (self-healing — brings Neon up to local schema)
 if grep -q "^NEON_DATABASE_URL=" "$ENV_FILE" 2>/dev/null; then
@@ -211,6 +237,13 @@ fi
 log "Stopping old container..."
 docker stop "$CONTAINER_NAME" 2>/dev/null || true
 docker rm "$CONTAINER_NAME" 2>/dev/null || true
+
+# Step 5b: Stop systemd POS service — Docker owns the port now
+if systemctl is-active --quiet thepasspos 2>/dev/null; then
+  log "Stopping systemd POS service (Docker takes over port)..."
+  sudo systemctl stop thepasspos 2>/dev/null || true
+  sudo systemctl disable thepasspos 2>/dev/null || true
+fi
 
 # Step 6: Start new container
 log "Starting new container: $IMAGE_REF"
@@ -238,25 +271,83 @@ for attempt in $(seq 1 "$HEALTH_MAX_ATTEMPTS"); do
   sleep "$HEALTH_INTERVAL"
 done
 
-# Step 8: On health failure — automatic rollback
+# Step 8: On health failure — capture diagnostics and automatic rollback
 if [[ $consecutive_ok -lt $HEALTH_CONSECUTIVE_REQUIRED ]]; then
   err "Health check failed after $HEALTH_MAX_ATTEMPTS attempts"
+
+  # Capture docker-specific diagnostics for post-mortem
+  DIAGNOSTICS_FILE="${DEPLOY_LOG_DIR}/diag-${DEPLOY_ID}.txt"
+  {
+    echo "=== Docker containers ==="
+    docker ps -a --format '{{.Names}} {{.Image}} {{.Status}}' 2>/dev/null || true
+    echo ""
+    echo "=== Container logs (last 50 lines) ==="
+    docker logs "$CONTAINER_NAME" 2>&1 | tail -50 || true
+    echo ""
+    echo "=== systemd thepasspos status ==="
+    systemctl is-active thepasspos 2>/dev/null || true
+  } > "$DIAGNOSTICS_FILE" 2>/dev/null || true
+
   docker stop "$CONTAINER_NAME" 2>/dev/null || true
   docker rm "$CONTAINER_NAME" 2>/dev/null || true
 
   if [[ -f "$PREVIOUS_IMAGE_FILE" ]] && [[ "$ROLLBACK" != true ]]; then
     prev_image="$(cat "$PREVIOUS_IMAGE_FILE")"
     log "Auto-rolling back to: $prev_image"
-    docker run -d \
+    if docker run -d \
       --name "$CONTAINER_NAME" \
       --restart=unless-stopped \
       --env-file "$ENV_FILE" \
       --network=host \
       -v "${SHARED_DIR}:${SHARED_DIR}" \
-      "$prev_image" || { FINAL_STATUS="rollback_failed"; write_deploy_log; exit 1; }
-    FINAL_STATUS="rollback_success"
+      "$prev_image"; then
+
+      # Verify rollback health (same criteria: 30 attempts, 2s apart, 3 consecutive OK)
+      log "Verifying rollback health..."
+      rollback_consecutive_ok=0
+      for rollback_attempt in $(seq 1 "$HEALTH_MAX_ATTEMPTS"); do
+        rb_http_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$HEALTH_URL" 2>/dev/null || echo "000")"
+        if [[ "$rb_http_code" == "200" ]]; then
+          rollback_consecutive_ok=$((rollback_consecutive_ok + 1))
+          log "Rollback health OK ($rollback_consecutive_ok/$HEALTH_CONSECUTIVE_REQUIRED) [attempt $rollback_attempt/$HEALTH_MAX_ATTEMPTS]"
+          [[ $rollback_consecutive_ok -ge $HEALTH_CONSECUTIVE_REQUIRED ]] && break
+        else
+          rollback_consecutive_ok=0
+          log "Rollback health not ready (HTTP $rb_http_code) [attempt $rollback_attempt/$HEALTH_MAX_ATTEMPTS]"
+        fi
+        sleep "$HEALTH_INTERVAL"
+      done
+
+      if [[ $rollback_consecutive_ok -ge $HEALTH_CONSECUTIVE_REQUIRED ]]; then
+        ROLLBACK_RESULT="success"
+        ROLLBACK_READINESS="healthy"
+        FINAL_STATUS="rolled_back"
+        log "Rollback healthy — previous image restored"
+      else
+        ROLLBACK_RESULT="started"
+        ROLLBACK_READINESS="unhealthy"
+        FINAL_STATUS="rollback_failed"
+        err "Rollback container started but health check failed"
+        # Both new and rollback failed — re-enable systemd as last resort
+        sudo systemctl enable thepasspos 2>/dev/null || true
+        sudo systemctl start thepasspos 2>/dev/null || true
+      fi
+    else
+      ROLLBACK_RESULT="container_start_failed"
+      ROLLBACK_READINESS="not_attempted"
+      FINAL_STATUS="rollback_failed"
+      err "Failed to start rollback container"
+      # Docker completely failed — re-enable systemd as last resort
+      sudo systemctl enable thepasspos 2>/dev/null || true
+      sudo systemctl start thepasspos 2>/dev/null || true
+    fi
   else
+    ROLLBACK_RESULT="no_previous_image"
+    ROLLBACK_READINESS="not_attempted"
     FINAL_STATUS="rollback_failed"
+    # No rollback target — re-enable systemd as last resort
+    sudo systemctl enable thepasspos 2>/dev/null || true
+    sudo systemctl start thepasspos 2>/dev/null || true
   fi
 
   rm -f "$MAINTENANCE_FLAG"
@@ -290,12 +381,14 @@ log "Version truth written: $IMAGE_REF"
 # Step 11: Prune old images (keep last 3 tags for this repo)
 log "Pruning old images..."
 repo="${IMAGE_REF%%:*}"
-docker images --format '{{.Repository}}:{{.Tag}} {{.CreatedAt}}' \
-  | grep "^${repo}:" \
-  | sort -k2 -r \
+# Use image ID + CreatedAt with proper ISO timestamp sorting
+docker image ls --filter="reference=${repo}" --format '{{.ID}} {{.CreatedAt}}' \
+  | sort -k2,3 -r \
   | tail -n +4 \
   | awk '{print $1}' \
   | xargs -r docker rmi 2>/dev/null || true
+# Also prune any dangling images from this build
+docker image prune -f --filter "label=maintainer=gwi-pos" 2>/dev/null || true
 
 # Step 12: Write deploy log
 FINAL_STATUS="success"
