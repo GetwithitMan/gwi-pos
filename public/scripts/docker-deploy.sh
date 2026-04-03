@@ -187,11 +187,25 @@ if [[ -n "$IMAGE_DIGEST" ]]; then
   log "Digest verified: $actual_digest"
 fi
 
-# Step 4: Run schema migration (ephemeral container)
-log "Running schema migration..."
+# Step 4a: Run schema migration on local PG
+log "Running schema migration (local PG)..."
 docker run --rm --env-file "$ENV_FILE" --network=host "$IMAGE_REF" \
-  node deploy-tools/src/migrate.js || die "Schema migration failed"
-log "Schema migration complete"
+  node deploy-tools/src/migrate.js || die "Local schema migration failed"
+log "Local schema migration complete"
+
+# Step 4b: Run schema migration on Neon (self-healing — brings Neon up to local schema)
+if grep -q "^NEON_DATABASE_URL=" "$ENV_FILE" 2>/dev/null; then
+  log "Running schema migration (Neon)..."
+  if docker run --rm --env-file "$ENV_FILE" --network=host \
+    -e NEON_MIGRATE=true "$IMAGE_REF" \
+    node deploy-tools/src/migrate.js; then
+    log "Neon schema migration complete"
+  else
+    log "WARNING: Neon migration failed — local deploy continues, Neon will catch up on next deploy"
+  fi
+else
+  log "NEON_DATABASE_URL not set — skipping Neon migrations"
+fi
 
 # Step 5: Stop old container
 log "Stopping old container..."

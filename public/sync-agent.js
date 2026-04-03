@@ -286,14 +286,21 @@ async function handleForceUpdate(payload, cmdId) {
       // Self-update sync-agent + components from new release
       try { selfUpdateSyncAgent() } catch (e) { log('[Update] Self-update warning: ' + e.message) }
 
-      // Stage deploy-release.sh from the new release for next run
+      // Stage deploy scripts from the new release for next run
       try {
         var newDeployScript = '/opt/gwi-pos/current/public/scripts/deploy-release.sh'
         if (fs.existsSync(newDeployScript)) {
-          fs.copyFileSync(newDeployScript, DEPLOY_SCRIPT + '.staged')
-          fs.renameSync(DEPLOY_SCRIPT + '.staged', DEPLOY_SCRIPT)
-          try { execSync('chmod 755 "' + DEPLOY_SCRIPT + '"', { timeout: 5000, stdio: 'pipe' }) } catch (e) {}
-          log('[Update] Staged deploy-release.sh from release for next run')
+          fs.copyFileSync(newDeployScript, TARBALL_DEPLOY_SCRIPT + '.staged')
+          fs.renameSync(TARBALL_DEPLOY_SCRIPT + '.staged', TARBALL_DEPLOY_SCRIPT)
+          try { execSync('chmod 755 "' + TARBALL_DEPLOY_SCRIPT + '"', { timeout: 5000, stdio: 'pipe' }) } catch (e) {}
+          log('[Update] Staged deploy-release.sh from release')
+        }
+        var newDockerScript = '/opt/gwi-pos/current/public/scripts/docker-deploy.sh'
+        if (fs.existsSync(newDockerScript)) {
+          fs.copyFileSync(newDockerScript, DOCKER_DEPLOY_SCRIPT + '.staged')
+          fs.renameSync(DOCKER_DEPLOY_SCRIPT + '.staged', DOCKER_DEPLOY_SCRIPT)
+          try { execSync('chmod 755 "' + DOCKER_DEPLOY_SCRIPT + '"', { timeout: 5000, stdio: 'pipe' }) } catch (e) {}
+          log('[Update] Staged docker-deploy.sh from release')
         }
       } catch (e) {
         log('[Update] Deploy script staging warning: ' + e.message)

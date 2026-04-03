@@ -1558,8 +1558,20 @@ run_schema_step() {
             || neon_migrate_exit=$?
 
         if [[ $neon_migrate_exit -ne 0 ]]; then
-            warn "Neon migration had issues (exit $neon_migrate_exit) — local deploy continues"
-            warn "Check: ${DEPLOY_LOG_DIR}/schema-neon-${RELEASE_ID}.log"
+            warn "Neon migration failed (exit $neon_migrate_exit) — retrying once..."
+            sleep 3
+            neon_migrate_exit=0
+            timeout "$SCHEMA_TIMEOUT_SECONDS" \
+                env DATABASE_URL="$neon_url" NEON_MIGRATE=true \
+                node "${DEPLOY_TOOLS_DIR}/src/migrate.js" \
+                > >(tee -a "${DEPLOY_LOG_DIR}/schema-neon-${RELEASE_ID}.log") 2>&1 \
+                || neon_migrate_exit=$?
+            if [[ $neon_migrate_exit -ne 0 ]]; then
+                warn "Neon migration failed on retry — local deploy continues, Neon will self-heal on next deploy"
+                warn "Check: ${DEPLOY_LOG_DIR}/schema-neon-${RELEASE_ID}.log"
+            else
+                log "Venue Neon migrations complete (on retry)"
+            fi
         else
             log "Venue Neon migrations complete"
         fi
