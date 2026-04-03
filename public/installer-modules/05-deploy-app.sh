@@ -170,11 +170,16 @@ run_deploy_app() {
 
   header "Installing POS Application"
 
-  # Detect deployment method: Docker (preferred) or tarball (legacy)
-  local use_docker=false
-  if command -v docker &>/dev/null && [[ "${DEPLOYMENT_METHOD:-}" == "docker" || -f "$APP_BASE/.docker-mode" ]]; then
-      use_docker=true
-      log "Docker deployment mode detected"
+  # Docker is the default for all new installs.
+  # Set DEPLOYMENT_METHOD=tarball to force the legacy tarball path.
+  local use_docker=true
+  if [[ "${DEPLOYMENT_METHOD:-}" == "tarball" ]]; then
+      use_docker=false
+      log "Tarball deployment mode (forced via DEPLOYMENT_METHOD)"
+  elif [[ -f "$APP_BASE/.docker-mode" ]]; then
+      log "Docker deployment mode (existing .docker-mode marker)"
+  else
+      log "Docker deployment mode (default for new installs)"
   fi
 
   if [[ "$use_docker" == "true" ]]; then
