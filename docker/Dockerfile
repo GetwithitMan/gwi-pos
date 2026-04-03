@@ -28,6 +28,9 @@ COPY . .
 # Generate Prisma client (outputs to src/generated/prisma/ per schema config)
 RUN npx prisma generate
 
+# Install deploy-tools dependencies (pg only, for schema migrations)
+RUN cd deploy-tools && npm install --omit=dev && cd ..
+
 # Build Next.js + custom server (CI handles version bumps, schema SQL, artifacts)
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
@@ -64,7 +67,7 @@ COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 # Copy Prisma schema + migrations for deploy-tools
 COPY --from=builder /app/prisma ./prisma
 
-# Copy deploy-tools for schema migrations
+# Copy deploy-tools with its own node_modules (pg dependency for migrations)
 COPY --from=builder /app/deploy-tools ./deploy-tools
 COPY --from=builder /app/scripts/migrations ./scripts/migrations
 

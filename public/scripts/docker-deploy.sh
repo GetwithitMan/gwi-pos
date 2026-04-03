@@ -190,7 +190,7 @@ fi
 # Step 4: Run schema migration (ephemeral container)
 log "Running schema migration..."
 docker run --rm --env-file "$ENV_FILE" --network=host "$IMAGE_REF" \
-  node deploy-tools/migrate.js || die "Schema migration failed"
+  node deploy-tools/src/migrate.js || die "Schema migration failed"
 log "Schema migration complete"
 
 # Step 5: Stop old container
