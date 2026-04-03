@@ -157,249 +157,69 @@ _refresh_modules_from_checkout() {
 
 # ── Main entry ──────────────────────────────────────────────────────────────
 run_deploy_app() {
-  local _start=$(date +%s)
-  log "Stage: deploy_app -- starting"
-
-  source "$(dirname "${BASH_SOURCE[0]}")/lib/error-codes.sh" 2>/dev/null || true
-
-  # Only server + backup roles need the app
-  if [[ "$STATION_ROLE" != "server" && "$STATION_ROLE" != "backup" ]]; then
-    log "Stage: deploy_app -- skipped (terminal role)"
+  # Only server/backup roles deploy the app
+  if [[ "$STATION_ROLE" != "server" ]] && [[ "$STATION_ROLE" != "backup" ]]; then
+    log "Skipping app deploy for role: $STATION_ROLE"
     return 0
   fi
 
-  header "Installing POS Application"
+  header "Installing POS Application via gwi-node"
 
-  # Docker is the default for all new installs.
-  # Set DEPLOYMENT_METHOD=tarball to force the legacy tarball path.
-  local use_docker=true
-  if [[ "${DEPLOYMENT_METHOD:-}" == "tarball" ]]; then
-      use_docker=false
-      log "Tarball deployment mode (forced via DEPLOYMENT_METHOD)"
-  elif [[ -f "$APP_BASE/.docker-mode" ]]; then
-      log "Docker deployment mode (existing .docker-mode marker)"
-  else
-      log "Docker deployment mode (default for new installs)"
+  # Install Docker if not present
+  if ! command -v docker &>/dev/null; then
+    log "Installing Docker..."
+    curl -fsSL https://get.docker.com | sh
+    usermod -aG docker "$POSUSER" 2>/dev/null || true
+    systemctl enable docker
+    systemctl start docker
+    log "Docker installed"
   fi
 
-  if [[ "$use_docker" == "true" ]]; then
-    # ── Docker-based deployment ──
-    log "Installing Docker if needed..."
-    if ! command -v docker &>/dev/null; then
-        curl -fsSL https://get.docker.com | sh
-        usermod -aG docker "$POSUSER"
-        systemctl enable docker
-        systemctl start docker
-        log "Docker installed"
-    fi
+  # Create required directories
+  mkdir -p "$APP_BASE/shared/state" "$APP_BASE/shared/logs/deploys" "$APP_BASE/shared/data"
+  chown -R "$POSUSER:$POSUSER" "$APP_BASE/shared"
 
-    # Ensure docker-deploy.sh is in place
-    if [[ -f "$APP_BASE/current/public/scripts/docker-deploy.sh" ]]; then
-        cp "$APP_BASE/current/public/scripts/docker-deploy.sh" "$APP_BASE/docker-deploy.sh"
-        chmod +x "$APP_BASE/docker-deploy.sh"
-    elif [[ -f "${INSTALLER_MODULES_DIR}/docker-deploy.sh" ]]; then
-        cp "${INSTALLER_MODULES_DIR}/docker-deploy.sh" "$APP_BASE/docker-deploy.sh"
-        chmod +x "$APP_BASE/docker-deploy.sh"
-    fi
-
-    # Create shared dirs (Docker still needs these for volume mounts)
-    mkdir -p "$APP_BASE/shared/logs/deploys" "$APP_BASE/shared/data" "$APP_BASE/shared/state"
-    chown -R "$POSUSER:$POSUSER" "$APP_BASE/shared"
-
-    # Run Docker deploy
-    local manifest_url="https://${POS_DOMAIN:-ordercontrolcenter.com}/artifacts/manifest.json"
-    log "Deploying via docker-deploy.sh: $manifest_url"
-    if bash "$APP_BASE/docker-deploy.sh" --manifest-url "$manifest_url"; then
-        log "Docker deployment successful"
-        touch "$APP_BASE/.docker-mode"
-    else
-        err "Docker deployment failed"
-        # Parse deploy log for error details (same format as tarball)
-        local latest_log
-        latest_log=$(ls -t "$APP_BASE/shared/logs/deploys/"*.json 2>/dev/null | head -1)
-        if [[ -n "$latest_log" ]]; then
-            local status errors
-            status=$(python3 -c "import json; m=json.load(open('$latest_log')); print(m.get('finalStatus','unknown'))" 2>/dev/null)
-            errors=$(python3 -c "import json; m=json.load(open('$latest_log')); print('; '.join(m.get('errors',[])))" 2>/dev/null)
-            err "Deploy status: $status"
-            [[ -n "$errors" ]] && err "Errors: $errors"
-        fi
-        return 1
-    fi
-
-    # Refresh installer modules from the deployed release (shared by all paths)
-    _refresh_modules_from_checkout
-
+  # Install gwi-node.sh (the single bootstrap agent)
+  local gwi_node="$APP_BASE/gwi-node.sh"
+  if [[ -f "${INSTALLER_MODULES_DIR}/gwi-node.sh" ]]; then
+    cp "${INSTALLER_MODULES_DIR}/gwi-node.sh" "$gwi_node"
+  elif [[ -f "$APP_BASE/current/public/scripts/gwi-node.sh" ]]; then
+    cp "$APP_BASE/current/public/scripts/gwi-node.sh" "$gwi_node"
   else
-  # ── Existing tarball/artifact-based deployment (unchanged) ──
-
-  # ── Offline install mode -- app already deployed ──
-  if [[ "${SKIP_GIT_CLONE:-}" == "1" ]]; then
-    log "Offline mode: Skipping deploy (app pre-deployed)"
-    [[ "${SKIP_NPM_INSTALL:-}" == "1" ]] && log "Offline mode: Skipping npm install (dependencies pre-bundled)"
-    [[ "${SKIP_BUILD:-}" == "1" ]] && log "Offline mode: Skipping build (pre-built)"
-    ln -sf "$ENV_FILE" "$APP_DIR/.env" 2>/dev/null || true
-    ln -sf "$ENV_FILE" "$APP_DIR/.env.local" 2>/dev/null || true
-    if [[ "${SKIP_NPM_INSTALL:-}" == "1" ]] && [[ "${SKIP_BUILD:-}" == "1" ]]; then
-      log "Offline deploy stage complete"
-      log "Stage: deploy_app -- completed in $(( $(date +%s) - _start ))s"
-      return 0
-    fi
-  fi
-
-  # Disk space check -- artifact deploy needs ~2 GB
-  local _disk_path="$APP_BASE"
-  [[ ! -d "$_disk_path" ]] && _disk_path=$(dirname "$APP_BASE")
-  AVAIL_KB=$(df -k "$_disk_path" 2>/dev/null | awk 'NR==2 {print $4}' || echo 0)
-  if [[ "$AVAIL_KB" -lt 2000000 ]]; then
-    err_code "ERR-INST-003" "$(( AVAIL_KB / 1024 ))MB free in $APP_BASE, need 2GB for artifact deploy"
-    err "Insufficient disk space: $(( AVAIL_KB / 1024 )) MB free in $APP_BASE (need ~2 GB)"
+    err "gwi-node.sh not found in installer bundle or current release"
     return 1
   fi
+  chmod 755 "$gwi_node"
+  chown "$POSUSER:$POSUSER" "$gwi_node"
 
-  # ── LEGACY PATH ────────────────────────────────────────────────────────────
-  if [[ "${LEGACY_DEPLOY:-}" == "1" ]]; then
-    log "LEGACY_DEPLOY=1 -- using git clone + npm ci flow"
-    if ! _run_legacy_deploy; then
-      return 1
-    fi
-    _refresh_modules_from_checkout
-    log "Stage: deploy_app -- completed in $(( $(date +%s) - _start ))s"
-    return 0
-  fi
-
-  # ── ARTIFACT PATH (default) ────────────────────────────────────────────────
-
-  # Step 1: Bootstrap prerequisites
-  _bootstrap_artifact_dirs
-
-  # Step 2: Install deploy-release.sh
-  _install_deploy_script
-
-  # Step 3: Sync .env to shared/.env for deploy-release.sh
-  # deploy-release.sh validates against /opt/gwi-pos/shared/.env.
-  # ALWAYS copy -- stale shared/.env from failed installs causes validation failures.
-  if [[ -f "$ENV_FILE" ]]; then
-    mkdir -p "$APP_BASE/shared"
-    cp "$ENV_FILE" "$APP_BASE/shared/.env"
-    chown gwipos:gwipos "$APP_BASE/shared/.env" 2>/dev/null || true
+  # Ensure shared/.env exists (copied from canonical .env)
+  if [[ -f "$APP_BASE/.env" ]] && [[ ! -f "$APP_BASE/shared/.env" ]]; then
+    cp "$APP_BASE/.env" "$APP_BASE/shared/.env"
+    chown "$POSUSER:$POSUSER" "$APP_BASE/shared/.env"
     chmod 640 "$APP_BASE/shared/.env"
-    log "Synced .env to shared directory for deploy-release.sh"
   fi
 
-  # Step 4: Deploy artifact
-  local _pos_domain="${POS_DOMAIN:-ordercontrolcenter.com}"
-  local _manifest_url="https://${_pos_domain}/artifacts/manifest.json"
-
-  log "Deploying artifact from ${_manifest_url}..."
-  local _deploy_exit=0
-  "$APP_BASE/deploy-release.sh" --manifest-url "$_manifest_url" --force || _deploy_exit=$?
-
-  if [[ $_deploy_exit -ne 0 ]]; then
-    # Parse the structured deploy log to determine ACTUAL failure cause
-    local _latest_log=""
-    _latest_log=$(ls -1t "$APP_BASE/shared/logs/deploys/"*.json 2>/dev/null | head -1)
-
-    local _final_status="" _readiness_result="" _rollback_result="" _release_id="" _prev_release=""
-    if [[ -n "$_latest_log" ]] && command -v jq &>/dev/null; then
-      _final_status=$(jq -r '.finalStatus // empty' "$_latest_log" 2>/dev/null)
-      _readiness_result=$(jq -r '.readinessResult // empty' "$_latest_log" 2>/dev/null)
-      _rollback_result=$(jq -r '.rollbackResult // empty' "$_latest_log" 2>/dev/null)
-      _release_id=$(jq -r '.releaseId // empty' "$_latest_log" 2>/dev/null)
-      _prev_release=$(jq -r '.previousReleaseId // empty' "$_latest_log" 2>/dev/null)
-    elif [[ -n "$_latest_log" ]]; then
-      # Fallback without jq
-      _final_status=$(sed -n 's/.*"finalStatus"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$_latest_log" 2>/dev/null | head -1)
-      _readiness_result=$(sed -n 's/.*"readinessResult"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$_latest_log" 2>/dev/null | head -1)
-      _rollback_result=$(sed -n 's/.*"rollbackResult"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$_latest_log" 2>/dev/null | head -1)
-      _release_id=$(sed -n 's/.*"releaseId"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$_latest_log" 2>/dev/null | head -1)
-      _prev_release=$(sed -n 's/.*"previousReleaseId"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$_latest_log" 2>/dev/null | head -1)
+  # Run gwi-node install (pulls image, migrates, starts container)
+  log "Running gwi-node install..."
+  if bash "$gwi_node" install; then
+    log "gwi-node install successful"
+  else
+    err "gwi-node install failed"
+    local latest_log
+    latest_log=$(ls -t "$APP_BASE/shared/logs/deploys/"*.json 2>/dev/null | head -1)
+    if [[ -n "$latest_log" ]]; then
+      local errors
+      errors=$(python3 -c "import json; m=json.load(open('$latest_log')); print('; '.join(m.get('errors',[])))" 2>/dev/null)
+      [[ -n "$errors" ]] && err "Errors: $errors"
     fi
-
-    # Rolled back = the deploy pipeline worked correctly, old release is running
-    if [[ "$_final_status" == "rolled_back" ]]; then
-      warn "Release ${_release_id:-unknown} failed readiness and was safely rolled back to ${_prev_release:-unknown}"
-      warn "The previous release is running normally. Investigate the new release before retrying."
-      if [[ -n "$_latest_log" ]]; then
-        local _debug_file="${_latest_log%.json}"
-        _debug_file="${APP_BASE}/shared/logs/deploys/$(basename "$_latest_log" .json | sed 's/\.json$//')"
-        warn "Debug bundle: ${APP_BASE}/shared/logs/deploys/ (check *-readiness-debug.txt)"
-      fi
-      # Treat as success -- old release is healthy, installer can continue
-      log "Continuing installation with previous release (rolled_back is acceptable)"
-    elif [[ "$_final_status" == "rollback_failed" ]]; then
-      err_code "ERR-INST-150" "Release ${_release_id:-unknown} failed readiness AND rollback failed"
-      err "CRITICAL: Both the new release and rollback failed."
-      err "  The system may be in a broken state. Check deploy logs at: $_latest_log"
-      err "  Manual intervention required."
-      return 1
-    elif [[ "$_readiness_result" == "fail" ]]; then
-      err_code "ERR-INST-150" "Release ${_release_id:-unknown} failed readiness (rollback: ${_rollback_result:-unknown})"
-      err "Artifact deployed but the new release did not become ready."
-      err "  Deploy log: $_latest_log"
-      return 1
-    elif [[ "$_final_status" == "failed" ]]; then
-      # Parse more specific cause from the log
-      local _schema_result=""
-      if command -v jq &>/dev/null && [[ -n "$_latest_log" ]]; then
-        _schema_result=$(jq -r '.schemaResult // empty' "$_latest_log" 2>/dev/null)
-      fi
-      if [[ "$_schema_result" == "fail" ]]; then
-        err_code "ERR-INST-150" "Schema migration failed for release ${_release_id:-unknown}"
-        err "Database schema migration failed. Check: ${APP_BASE}/shared/logs/deploys/schema-*.log"
-      else
-        err_code "ERR-INST-150" "Artifact deploy failed (status: ${_final_status:-unknown})"
-        err "Deploy log: ${_latest_log:-no log found}"
-      fi
-      return 1
-    else
-      # Generic fallback only when we truly can't parse
-      err_code "ERR-INST-150" "Artifact deploy failed from $_manifest_url (exit code: $_deploy_exit)"
-      err "Could not parse deploy log. Check: ${APP_BASE}/shared/logs/deploys/"
-      err "  To fall back to git clone: LEGACY_DEPLOY=1 installer.run --resume-from=05-deploy-app"
-      return 1
-    fi
-  fi
-
-  # Step 5: Verify current symlink exists
-  if [[ ! -L "$APP_BASE/current" ]]; then
-    err_code "ERR-INST-150" "deploy-release.sh succeeded but /opt/gwi-pos/current symlink missing"
-    err "FATAL: Deploy reported success but current symlink is missing."
     return 1
   fi
 
-  # Step 6: Update APP_DIR for downstream stages and create compat symlink
-  APP_DIR="$APP_BASE/current"
-  export APP_DIR
-  # Compat symlink: /opt/gwi-pos/app -> /opt/gwi-pos/current
-  # So any hardcoded references to /opt/gwi-pos/app still work
-  rm -f "$APP_BASE/app" 2>/dev/null || true
-  ln -sfn "$APP_BASE/current" "$APP_BASE/app"
-  log "APP_DIR updated to $APP_DIR (compat symlink at $APP_BASE/app)"
+  # Stop/disable systemd POS service (Docker owns the runtime now)
+  systemctl stop thepasspos 2>/dev/null || true
+  systemctl disable thepasspos 2>/dev/null || true
 
-  # Step 7: Verify .env symlink inside the release
-  if [[ ! -e "$APP_DIR/.env" ]]; then
-    # deploy-release.sh should have wired this, but belt-and-suspenders
-    ln -sf "$APP_BASE/shared/.env" "$APP_DIR/.env" 2>/dev/null || true
-    ln -sf "$APP_BASE/shared/.env" "$APP_DIR/.env.local" 2>/dev/null || true
-    log "Wired .env symlinks manually (deploy-release.sh may not have done it)"
-  fi
-
-  log "App deployed at $APP_DIR ($(readlink -f "$APP_BASE/current" 2>/dev/null || echo '?'))"
-
-  # Step 8: Refresh installer modules from the deployed release
-  _refresh_modules_from_checkout
-
-  # Step 9: Copy deploy-release.sh from the deployed release (for future updates)
-  if [[ -f "$APP_DIR/public/scripts/deploy-release.sh" ]]; then
-    cp "$APP_DIR/public/scripts/deploy-release.sh" "$APP_BASE/deploy-release.sh"
-    chmod +x "$APP_BASE/deploy-release.sh"
-    log "Updated deploy-release.sh from deployed release"
-  fi
-
-  fi  # end Docker vs tarball/artifact branch
-
-  log "Stage: deploy_app -- completed in $(( $(date +%s) - _start ))s"
+  log "App deployed via Docker container"
   return 0
 }
 

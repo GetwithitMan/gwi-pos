@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
-# =============================================================================
 # GWI POS Installer -- installer.run (Orchestrator)
-# =============================================================================
 #
 # Provisions Ubuntu 22.04+ NUCs as POS stations.
 #
@@ -22,7 +20,6 @@
 #
 # Re-running is idempotent: detects existing registration, backs up data,
 # pulls latest code, restarts services.
-# =============================================================================
 
 # ── AUTHORITY MODEL ──────────────────────────────────────────────────
 # MC/Neon = sole authority for schema version, provisioning state, rollout
@@ -40,7 +37,8 @@ export DEBCONF_NONINTERACTIVE_SEEN=true
 # ─────────────────────────────────────────────────────────────────────────────
 # Installer Version (stamped at build time by build-installer-bundle.sh)
 # ─────────────────────────────────────────────────────────────────────────────
-INSTALLER_VERSION="1.2.98"
+INSTALLER_VERSION="2.0.0"
+INSTALLER_VERSION="2.0.0"
 INSTALLER_BUILD_DATE="2026-04-02T19:52:52Z"
 INSTALLER_GIT_SHA="__INSTALLER_GIT_SHA__"
 
