@@ -8,14 +8,13 @@ services:
     container_name: gwi-pos
     restart: unless-stopped
     network_mode: host
-    env_file: /opt/gwi-pos/.env
+    env_file: /opt/gwi-pos/shared/.env
     environment:
       - NODE_ENV=production
       - PORT=${PORT:-3005}
       - HOSTNAME=0.0.0.0
     volumes:
       - /opt/gwi-pos/shared:/opt/gwi-pos/shared
-      - /opt/gwi-pos/.env:/opt/gwi-pos/.env:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:${PORT:-3005}/api/health/ready"]
       interval: 30s
