@@ -51,29 +51,19 @@ RUN apk add --no-cache postgresql-client curl tzdata
 
 ENV TZ=America/New_York
 
-# Copy standalone Next.js build (includes traced node_modules)
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static ./.next/static
+# Copy the full built app. The custom server.ts imports socket.io, pg, pino,
+# and dozens of other packages that Next.js standalone tracing doesn't capture.
+# Larger image (~400MB vs ~150MB) but guaranteed to have everything.
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/public ./public
-
-# Copy custom server (compiled from server.ts by build-server.mjs)
 COPY --from=builder /app/server.js ./server.js
 COPY --from=builder /app/preload.js ./preload.js
-
-# Copy full next package — standalone trace misses imports from custom server.js
-# (next/headers, next/navigation, etc. used by API routes loaded at runtime)
-COPY --from=builder /app/node_modules/next ./node_modules/next
-
-# Copy Prisma client (generated to src/generated/prisma/)
-COPY --from=builder /app/src/generated/prisma ./src/generated/prisma
-COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
-
-# Copy Prisma schema + migrations for deploy-tools
+COPY --from=builder /app/src/generated ./src/generated
 COPY --from=builder /app/prisma ./prisma
-
-# Copy deploy-tools with its own node_modules (pg dependency for migrations)
 COPY --from=builder /app/deploy-tools ./deploy-tools
 COPY --from=builder /app/scripts/migrations ./scripts/migrations
+COPY --from=builder /app/package.json ./package.json
 
 RUN mkdir -p /app/uploads
 RUN chown -R nextjs:nodejs /app
