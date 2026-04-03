@@ -9,7 +9,7 @@ const fs = require('fs')
 const path = require('path')
 
 const ENV_FILE         = '/opt/gwi-pos/.env'
-const APP_DIR          = '/opt/gwi-pos/app'
+const APP_DIR          = fs.existsSync('/opt/gwi-pos/current') ? '/opt/gwi-pos/current' : '/opt/gwi-pos/app'
 const LOG_FILE         = '/opt/gwi-pos/sync-agent.log'
 const PRIVATE_KEY_PATH = '/opt/gwi-pos/keys/private.pem'
 
