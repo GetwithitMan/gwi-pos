@@ -34,6 +34,15 @@ Vercel auto-deploys (runs vercel-build.js -- see vercel.json buildCommand)
           -> smoke tests (require chain + boot test)
           -> minisign signature (mandatory on CI)
   |
+GitHub Actions: build-release.yml (triggered on push to main)
+  +-- Builds tarball pos-release-<releaseId>.tar.zst
+  +-- Builds Docker image (docker/Dockerfile)
+  +-- Pushes Docker image to GHCR (ghcr.io/gwi-pos)
+  +-- Signs image with Cosign (keyless, OIDC)
+  +-- Generates SBOM (software bill of materials)
+  +-- Uploads tarball to Cloudflare R2
+  +-- Updates release descriptor (v3: includes imageRef + imageDigest)
+  |
 Vercel deploy webhook -> POST /api/webhooks/vercel-deploy (MC)
   |
 MC checkAndRolloutSchema()
@@ -53,11 +62,11 @@ MC admin deploys Release to locations
   +-- Sets ServerNode.targetVersion
   |
 NUC update-agent receives FleetCommand
-  +-- Downloads artifact from MC proxy (HMAC-authed)
-  +-- Extracts pos-release-<releaseId>.tar.zst
-  +-- Runs deploy-tools: migrate.js + apply-schema.js
-  +-- Restarts services
-  +-- ACKs back to MC with deploy result
+  +-- Detects deployment mode (.docker-mode marker or tarball)
+  +-- TARBALL PATH: Downloads artifact, extracts tar.zst, runs deploy-tools, restarts services
+  +-- DOCKER PATH:  Pulls image from GHCR, verifies Cosign signature, runs docker-deploy.sh
+  +-- Both paths: run deploy-tools (migrate.js + apply-schema.js)
+  +-- ACKs back to MC with deploy result + deployment method
 ```
 
 ---
@@ -299,6 +308,75 @@ This replaced the previous approach of bundling Prisma CLI + tsx in the app arti
 
 ---
 
+## Build & Release Workflow (`build-release.yml`)
+
+GitHub Actions workflow triggered on push to `main`. Runs in parallel with Vercel auto-deploy.
+
+**Steps:**
+1. Build tarball (`pos-release-<releaseId>.tar.zst`) — same artifact as `build-nuc-artifact.sh`
+2. Build Docker image from `docker/Dockerfile`
+3. Push Docker image to GHCR (`ghcr.io/gwi-pos/pos:<version>`)
+4. Sign image with Cosign (keyless OIDC via GitHub Actions identity)
+5. Generate SBOM (software bill of materials)
+6. Upload tarball to Cloudflare R2
+7. Update release descriptor v3 (adds `imageRef` and `imageDigest` fields alongside existing tarball URL)
+
+Docker images go to GHCR. Tarballs, manifests, and deploy-tools go to Cloudflare R2. These are separate artifact stores for separate deployment paths.
+
+---
+
+## Docker-Based NUC Deployment
+
+New installs default to Docker. Existing tarball NUCs continue using the tarball path unless explicitly migrated.
+
+### Mode Detection
+
+A `.docker-mode` marker file at `/opt/gwi-pos/.docker-mode` determines the deployment path:
+- **Present:** NUC uses Docker deployment (`docker-deploy.sh`)
+- **Absent:** NUC uses tarball deployment (`deploy-release.sh`)
+
+The installer creates this marker on new installs (Stage 05). Set `DEPLOYMENT_METHOD=tarball` to force the legacy path.
+
+### docker-deploy.sh
+
+Replaces `deploy-release.sh` for Docker NUCs. Called by `update-agent.ts` when `.docker-mode` is detected.
+
+**Steps:**
+1. Pull image from GHCR using tag/digest from FleetCommand
+2. Verify Cosign signature (fail-closed)
+3. Run deploy-tools container (migrations + schema push against local PG)
+4. Stop existing containers via `docker-compose -f docker/docker-compose.prod.yml down`
+5. Start new containers via `docker-compose -f docker/docker-compose.prod.yml up -d`
+6. Health check (wait for POS to bind port 3005)
+7. Report result back to update-agent
+
+### update-agent.ts Routing
+
+`update-agent.ts` checks for `.docker-mode` on startup and when processing `FORCE_UPDATE` commands:
+- Docker mode: calls `docker-deploy.sh` with image ref + digest
+- Tarball mode: calls `deploy-release.sh` with artifact URL (existing behavior)
+
+### docker-compose.prod.yml
+
+Production compose file for Docker NUCs. Defines:
+- `pos` service: GWI POS app container (port 3005, env from `/opt/gwi-pos/.env`)
+- `sync-agent` service: SSE listener for cloud commands
+- Shared volume mounts for `/opt/gwi-pos/.env`, `/opt/gwi-pos/keys/`, `/opt/gwi-pos/state/`
+- Restart policy: `always`
+- Network: host mode (required for local PG access and LAN device discovery)
+
+### Migration from Tarball to Docker
+
+To migrate an existing tarball NUC to Docker:
+1. Install Docker on the NUC
+2. Run `docker-deploy.sh` manually with the current release image
+3. Verify POS is healthy on port 3005
+4. Create `.docker-mode` marker: `touch /opt/gwi-pos/.docker-mode`
+5. Disable systemd services: `systemctl disable thepasspos thepasspos-sync`
+6. Future FleetCommands will use the Docker path automatically
+
+---
+
 ## Installer Bundle (`scripts/build-installer-bundle.sh`)
 
 **Input:** `public/installer.run` (orchestrator) + `public/installer-modules/*.sh` (11 stage modules)
@@ -355,12 +433,25 @@ Releases are separate from schema rollouts:
 
 1. Sync-agent polls `/api/fleet/commands/stream` (or receives push via cloud relay)
 2. Receives `FORCE_UPDATE` command
-3. Downloads artifact from MC proxy (MC adds HMAC auth, proxies to POS Vercel)
-4. Verifies minisign signature (fail-closed)
-5. Extracts `pos-release-<releaseId>.tar.zst`
-6. Runs deploy-tools: `migrate.js` (pending migrations) + `apply-schema.js` (prisma db push equivalent)
-7. Restarts POS services
-8. ACKs back to MC with deploy path and result
+3. `update-agent.ts` checks for `.docker-mode` marker
+
+**Tarball Path** (legacy, existing NUCs):
+
+4a. Downloads artifact from MC proxy (MC adds HMAC auth, proxies to POS Vercel)
+5a. Verifies minisign signature (fail-closed)
+6a. Extracts `pos-release-<releaseId>.tar.zst`
+7a. Runs deploy-tools: `migrate.js` (pending migrations) + `apply-schema.js` (prisma db push equivalent)
+8a. Restarts systemd POS services
+9a. ACKs back to MC with deploy path and result
+
+**Docker Path** (new installs, `.docker-mode` present):
+
+4b. Calls `docker-deploy.sh` with image ref + digest from FleetCommand
+5b. Pulls image from GHCR, verifies Cosign signature (fail-closed)
+6b. Runs deploy-tools container (migrations + schema push)
+7b. Rolls containers via `docker-compose.prod.yml` (down + up)
+8b. Health check on port 3005
+9b. ACKs back to MC with deploy path, result, and `deploymentMethod: "docker"`
 
 ---
 
@@ -477,7 +568,11 @@ If deploying to NUCs, create a Release in MC admin and deploy to target location
 | `scripts/ci/check-version-stamps.sh` | CI gate: installer stamps match package.json |
 | `scripts/nuc-pre-migrate.js` | Migration runner (shared: NUC local PG + Vercel master Neon) |
 | `scripts/migrations/NNN-*.js` | Individual migration files |
+| `.github/workflows/build-release.yml` | GitHub Actions: Docker build + GHCR push + Cosign + SBOM + R2 upload |
+| `docker/Dockerfile` | Production Docker image for NUC deployment |
+| `docker/docker-compose.prod.yml` | Production compose file for Docker NUCs |
+| `docker-deploy.sh` | Docker deployment script (replaces deploy-release.sh for Docker NUCs) |
 
 ---
 
-*Last updated: 2026-03-31*
+*Last updated: 2026-04-03*

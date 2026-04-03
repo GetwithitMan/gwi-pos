@@ -79,15 +79,29 @@ curl installer.run | sudo bash
         ├─── Server branch ──────────────────
         │    ├─ Install PostgreSQL
         │    ├─ Create DB + user (idempotent)
-        │    ├─ Clone/pull repo → /opt/gwi-pos/app
-        │    ├─ npm ci + prisma generate + db push + build
-        │    ├─ Create pre-start.sh (runs on every boot/restart)
+        │    │
+        │    ├─── Stage 05: Deploy App ──────────────────
+        │    │    NEW INSTALLS default to Docker (unless DEPLOYMENT_METHOD=tarball):
+        │    │    ├─ Install Docker Engine + docker-compose (if not present)
+        │    │    ├─ Call docker-deploy.sh (pull image from GHCR, verify, start)
+        │    │    ├─ Stamp .docker-mode marker at /opt/gwi-pos/.docker-mode
+        │    │    LEGACY / TARBALL PATH (DEPLOYMENT_METHOD=tarball or re-run):
+        │    │    ├─ Clone/pull repo → /opt/gwi-pos/app
+        │    │    ├─ npm ci + prisma generate + db push + build
+        │    │
+        │    ├─ Create pre-start.sh (runs on every boot/restart, tarball only)
         │    │    1. prisma generate (regenerate client)
         │    │    2. prisma db push (sync schema)
         │    │    3. nuc-pre-migrate.js (custom migrations)
-        │    ├─ Create thepasspos.service (ExecStartPre=pre-start.sh)
-        │    ├─ Create thepasspos-kiosk.service (→ localhost:3005)
-        │    ├─ Create thepasspos-sync.service (sync agent)
+        │    │
+        │    ├─── Stage 07: Services ──────────────────
+        │    │    DOCKER NUCs: app runs as containers (docker-compose.prod.yml),
+        │    │      NOT systemd services. Kiosk service still uses systemd.
+        │    │    TARBALL NUCs: systemd services as before (thepasspos, thepasspos-sync)
+        │    │
+        │    ├─ Create thepasspos.service (tarball only; ExecStartPre=pre-start.sh)
+        │    ├─ Create thepasspos-kiosk.service (→ localhost:3005, both paths)
+        │    ├─ Create thepasspos-sync.service (tarball only; Docker runs sync in container)
         │    ├─ Install heartbeat.sh + cron (every 60s)
         │    ├─ Install backup-pos.sh + cron (4 AM)
         │    └─ Start services (wait for health check)
@@ -390,6 +404,22 @@ sudo bash /opt/gwi-pos/installer.run
 | 12 | Stage 11 offline | MC unreachable → baseline runs, reports queue, support bundle works |
 | 13 | Drift detection | Manual config change → `baseline-diff` detects and classifies correctly |
 | 14 | Support bundle | `generate-support-bundle.sh` → tarball with redacted secrets, valid manifest |
+
+---
+
+## Docker Prerequisites (New Installs)
+
+Stage 05 installs Docker Engine and docker-compose plugin automatically for new installs. Requirements:
+- Ubuntu 22.04+ (same as base installer)
+- Internet access to `ghcr.io` (GitHub Container Registry) for image pulls
+- ~2GB disk for Docker images (in addition to existing POS requirements)
+
+Docker NUCs do not require Node.js installed on the host for the POS app (it runs inside the container). Node.js is still installed for deploy-tools and the sync-agent bootstrap.
+
+To force the legacy tarball path on a new install, set `DEPLOYMENT_METHOD=tarball` before running the installer:
+```bash
+DEPLOYMENT_METHOD=tarball sudo ./installer.run
+```
 
 ---
 

@@ -131,7 +131,7 @@ Only after Steps 1–5:
 - **Installer is pointer-only and modular:** Registration gives the NUC its venue identity + Neon URL. `.env.local` is a symlink to `/opt/gwi-pos/.env` (never a copy). Installer never writes `_venue_schema_state` (MC-only), never uses `--accept-data-loss`, never hardcodes URLs. Schema updates follow MC rollout → Neon → NUC downstream sync. The installer is a thin orchestrator (`public/installer.run`) + 11 independently callable modules under `public/installer-modules/`. Supports `--resume-from=STAGE` for resumable installs. Each stage returns 0/non-zero; orchestrator halts on failure (hard stop, no silent continue). Stage 11 (`11-system-hardening.sh`) bootstraps Ansible and runs the baseline enforcement playbook from `installer/site.yml` with 16 roles.
 - **Installer modules: each stage is independently callable, resumable on failure.** Never add new functionality inline to the orchestrator; create a new module under `public/installer-modules/`.
 - **Installer must not hardcode schema versions, deployment tags, or app versions.** Desired app version comes from rollout policy (MC → fleet command). The installer is a runtime executor, not a version pinning mechanism.
-- **Deploy pipeline is pointer-only:** MC creates a release → fleet command → sync agent on NUC pulls from git (prefers pinned git tags like `v1.0.60`, falls back to `origin/main`), runs `prisma generate` → `nuc-pre-migrate.js` → `prisma db push` → `npm run build` → restart → ACKs back to MC with deploy path (pinned vs fallback). No hardcoded schema, URLs, or secrets in the pipeline. `version-contract.json` verified after checkout.
+- **Deploy pipeline is pointer-only:** MC creates a release → fleet command → update-agent on NUC detects deployment mode (`.docker-mode` marker). **Docker path** (new installs): pulls image from GHCR, verifies Cosign signature, runs `docker-deploy.sh`, rolls containers via `docker-compose.prod.yml`. **Tarball path** (legacy): downloads artifact, extracts tar.zst, runs deploy-tools, restarts systemd services. Both paths run migrations + schema push and ACK back to MC. No hardcoded schema, URLs, or secrets in the pipeline. `version-contract.json` verified after deploy.
 - **All infrastructure tables in Prisma schema:** `SyncWatermark`, `SocketEventLog`, `_gwi_sync_state`, `_local_schema_state`, `_local_install_state`, and similar operational tables MUST be defined in `prisma/schema.prisma` so that `prisma db push` never blocks or drops them.
 - **Universal outage queue:** ALL upstream model writes MUST use outage queue protection (`OutageQueueEntry`). No upstream write may silently fail during an internet outage.
 - **Canonical authority doc:** `docs/architecture/LOCAL-CORE-CELLULAR-EDGE-HA.md` (Phases 6-8)
@@ -238,6 +238,14 @@ HARDENING_TAGS=firewall,os_hardening              # Tag filtering (optional)
 ```
 
 ```bash
+# Docker (NUC deployment)
+docker build -f docker/Dockerfile -t gwi-pos:test .         # Build image locally
+docker-compose -f docker/docker-compose.prod.yml up          # Run production stack
+docker-compose -f docker/docker-compose.prod.yml down        # Stop production stack
+# New installs default to Docker. Set DEPLOYMENT_METHOD=tarball to force legacy path.
+```
+
+```bash
 # KDS Android (gwi-kds-android)
 cd /path/to/gwi-kds-android
 ./gradlew :app:assembleFoodkdsDebug    # Build FoodKDS debug APK
@@ -282,6 +290,7 @@ Tech: Kotlin, Jetpack Compose, Hilt DI, Retrofit 2, Socket.IO, Room DB, Moshi. M
 | Timed rentals | Block time (fixed) or per-minute billing, timer auto-start on send |
 | KDS | Android-native (primary) at `gwi-kds-android`. Two flavors: FoodKDS (`com.gwi.kds.foodkds`) + PitBoss (`com.gwi.kds.pitboss`). Web fallback at `/kds`. |
 | Tip sharing | Auto tip-outs at shift close → payroll. See `docs/domains/TIPS-DOMAIN.md` |
+| Docker deployment | New NUC installs default to Docker. `.docker-mode` marker selects path. `docker-deploy.sh` replaces `deploy-release.sh`. Images on GHCR, tarballs on R2. |
 
 ## Doc Routing Table
 
@@ -390,8 +399,8 @@ Tech: Kotlin, Jetpack Compose, Hilt DI, Retrofit 2, Socket.IO, Room DB, Moshi. M
 | Socket / real-time | `docs/guides/SOCKET-REALTIME.md` | `src/lib/socket-server.ts`, `shared-socket.ts`, `socket-event-buffer.ts` |
 | Socket / cloud relay | `docs/guides/SOCKET-REALTIME.md` | `src/lib/cloud-relay-client.ts`, `socket-event-buffer.ts` |
 | Android interop | `docs/guides/ANDROID-INTEGRATION.md` | `src/app/api/sync/` |
-| NUC deployment / installer | `docs/guides/NUC-OPERATIONS.md`, `docs/deployment/INSTALLER-SPEC.md` | `public/installer.run` (thin orchestrator) + `public/installer-modules/` (11 stage modules) + `installer/` (Ansible baseline enforcement) — MC proxies installer from POS deployment, no copy needed |
-| Release pipeline (full) | `docs/deployment/RELEASE-PIPELINE.md` — canonical end-to-end: commit -> Vercel -> MC -> NUC | `scripts/vercel-build.js`, `scripts/bump-version.sh`, `scripts/build-nuc-artifact.sh`, `scripts/ci/` |
+| NUC deployment / installer | `docs/guides/NUC-OPERATIONS.md`, `docs/deployment/INSTALLER-SPEC.md` | `public/installer.run` (thin orchestrator) + `public/installer-modules/` (11 stage modules) + `installer/` (Ansible baseline enforcement) + `docker-deploy.sh` (Docker NUCs) + `docker/docker-compose.prod.yml` — MC proxies installer from POS deployment, no copy needed |
+| Release pipeline (full) | `docs/deployment/RELEASE-PIPELINE.md` — canonical end-to-end: commit -> Vercel -> MC -> NUC | `scripts/vercel-build.js`, `scripts/bump-version.sh`, `scripts/build-nuc-artifact.sh`, `.github/workflows/build-release.yml`, `docker/Dockerfile`, `docker-deploy.sh`, `scripts/ci/` |
 | Node baseline / Ansible | `installer/site.yml`, `docs/schemas/` | `installer/roles/`, `bin/`, `public/installer-modules/11-system-hardening.sh` |
 | Database / schema | `docs/guides/ARCHITECTURE-RULES.md` | `prisma/schema.prisma` |
 | UI / components | `docs/guides/CODING-STANDARDS.md` | `src/stores/` |
