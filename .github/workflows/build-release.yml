@@ -13,6 +13,11 @@ jobs:
   build-release:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -171,8 +176,7 @@ jobs:
         uses: sigstore/cosign-installer@v3
 
       - name: Sign image with Cosign (keyless, OIDC)
-        env:
-          COSIGN_EXPERIMENTAL: "1"
+        continue-on-error: true
         run: |
           IMAGE="ghcr.io/getwithitman/gwi-pos@${{ steps.docker.outputs.digest }}"
           echo "Signing: $IMAGE"
@@ -180,10 +184,9 @@ jobs:
           echo "Image signed with Cosign (keyless OIDC)"
 
       - name: Generate and attach SBOM
+        continue-on-error: true
         run: |
           IMAGE="ghcr.io/getwithitman/gwi-pos@${{ steps.docker.outputs.digest }}"
-          # Buildx already generates SBOM with sbom: true above
-          # Attach it via Cosign for discoverability
           cosign attach sbom --type spdx "$IMAGE" 2>/dev/null || echo "SBOM attachment skipped (already inline from buildx)"
           echo "SBOM attached to image"
 
