@@ -38,9 +38,6 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /opt/gwi-pos/shared:/opt/gwi-pos/shared
-      - /opt/gwi-pos/gwi-node.sh:/opt/gwi-pos/gwi-node.sh:ro
-    environment:
-      - GWI_NODE_PATH=/opt/gwi-pos/gwi-node.sh
     logging:
       driver: json-file
       options:

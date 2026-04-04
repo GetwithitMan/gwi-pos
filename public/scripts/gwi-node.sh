@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# gwi-node.sh — GWI POS node agent (install | deploy | rollback | status | self-update)
+# gwi-node.sh — GWI POS node agent (install | deploy | rollback | status | self-update | watch)
 # One agent. One runtime. One flow. Install and update are the same operation.
 set -euo pipefail
 
@@ -10,6 +10,8 @@ readonly LOG_DIR="${SHARED_DIR}/logs/deploys"
 readonly LOCK_FILE="${STATE_DIR}/gwi-node.lock"
 readonly VERSION_FILE="${STATE_DIR}/running-version.json"
 readonly PREVIOUS_IMAGE_FILE="${STATE_DIR}/previous-image.txt"
+readonly REQUESTS_DIR="${STATE_DIR}/deploy-requests"
+readonly RESULTS_DIR="${STATE_DIR}/deploy-results"
 readonly CONTAINER_NAME="gwi-pos"
 readonly AGENT_CONTAINER_NAME="gwi-agent"
 readonly R2_ORIGIN="https://pub-15bf4245be0e4c05b570d31988004d09.r2.dev"
@@ -19,6 +21,7 @@ ENV_FILE="${SHARED_DIR}/.env"; [[ -f "$ENV_FILE" ]] || ENV_FILE="${BASE_DIR}/.en
 DEPLOY_ID="" DEPLOY_START=0 IMAGE_REF="" IMAGE_DIGEST="" PREVIOUS_IMAGE=""
 MANIFEST_URL="${R2_ORIGIN}/latest/manifest.json" FORCE=false FINAL_STATUS="pending"
 SCHEMA_RESULT="" ROLLBACK_RESULT="" ROLLBACK_READINESS="" LOCK_FD="" ERRORS=()
+WATCH_MODE=false WATCH_DIE_FIRED=false
 
 log() { echo "[gwi-node] $(date -u +%FT%TZ) $*"; }
 err() { echo "[gwi-node] $(date -u +%FT%TZ) ERROR: $*" >&2; ERRORS+=("$*"); }
@@ -76,7 +79,16 @@ DEOF
   log "Deploy log: $log_file"
 }
 
-die() { err "$*"; FINAL_STATUS="failed"; write_deploy_log; exit 1; }
+die() {
+  err "$*"; FINAL_STATUS="failed"; write_deploy_log
+  if [[ "$WATCH_MODE" == true ]]; then
+    # Return 0 so set -e does not kill the watch loop.
+    # Watch loop reads FINAL_STATUS to detect failure.
+    WATCH_DIE_FIRED=true; return 0
+  else
+    exit 1
+  fi
+}
 
 health_check() {
   local port label url consecutive=0
@@ -127,8 +139,6 @@ start_agent() {
     --env-file "$ENV_FILE" \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -v "${SHARED_DIR}:${SHARED_DIR}" \
-    -v "${BASE_DIR}/gwi-node.sh:${BASE_DIR}/gwi-node.sh:ro" \
-    -e GWI_NODE_PATH="${BASE_DIR}/gwi-node.sh" \
     "$1" \
     node public/sync-agent.js
   log "gwi-agent started"
@@ -154,14 +164,19 @@ deploy() {
   mkdir -p "$STATE_DIR" "$LOG_DIR"
   exec {LOCK_FD}>"$LOCK_FILE"
   flock -w "$LOCK_TIMEOUT" "$LOCK_FD" || die "Could not acquire lock (another deploy running?)"
-  trap 'cleanup' EXIT
+  [[ "$WATCH_DIE_FIRED" == true ]] && return 1
+  # In watch mode, skip the EXIT trap — watch_loop manages its own lifecycle.
+  # Cleanup (lock release) happens via reset_deploy_state between dispatches.
+  [[ "$WATCH_MODE" != true ]] && trap 'cleanup' EXIT
   log "Deploy $DEPLOY_ID starting"
   if [[ -z "$IMAGE_REF" ]]; then
     log "Fetching manifest: $MANIFEST_URL"
     local manifest
     manifest="$(curl -fsSL --max-time 30 "$MANIFEST_URL")" || die "Failed to fetch manifest"
+    [[ "$WATCH_DIE_FIRED" == true ]] && return 1
     IMAGE_REF="$(echo "$manifest" | jq -r '.imageRef // empty')"
     [[ -n "$IMAGE_REF" ]] || die "Manifest missing imageRef"
+    [[ "$WATCH_DIE_FIRED" == true ]] && return 1
     [[ -z "$IMAGE_DIGEST" ]] && IMAGE_DIGEST="$(echo "$manifest" | jq -r '.imageDigest // empty' || true)"
     log "Manifest resolved: image=$IMAGE_REF digest=${IMAGE_DIGEST:-none}"
   fi
@@ -170,6 +185,7 @@ deploy() {
   [[ -n "$PREVIOUS_IMAGE" ]] && echo "$PREVIOUS_IMAGE" > "$PREVIOUS_IMAGE_FILE"
   log "Pulling: $IMAGE_REF"
   docker pull "$IMAGE_REF" || die "Failed to pull: $IMAGE_REF"
+  [[ "$WATCH_DIE_FIRED" == true ]] && return 1
   if [[ -n "$IMAGE_DIGEST" ]]; then
     local actual expected
     actual="$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE_REF" 2>/dev/null \
@@ -179,6 +195,7 @@ deploy() {
       [[ "$FORCE" == true ]] \
         && log "WARN: Digest mismatch (forced): expected=$expected actual=$actual" \
         || die "Digest mismatch: expected=$expected actual=$actual"
+      [[ "$WATCH_DIE_FIRED" == true ]] && return 1
     fi
     log "Digest verified: $actual"
   fi
@@ -190,6 +207,7 @@ deploy() {
   else
     SCHEMA_RESULT="fail"
     die "Local schema migration failed"
+    [[ "$WATCH_DIE_FIRED" == true ]] && return 1
   fi
   if grep -q "^NEON_DATABASE_URL=" "$ENV_FILE" 2>/dev/null; then
     log "Running schema migration (Neon)..."
@@ -210,6 +228,7 @@ deploy() {
   systemctl disable thepasspos-sync 2>/dev/null || true
   log "Starting: $IMAGE_REF"
   start_container "$IMAGE_REF" || die "Failed to start container"
+  [[ "$WATCH_DIE_FIRED" == true ]] && return 1
   log "Waiting for health..."
   health_check ""
   [[ "$healthy" == true ]] && { deploy_success; return; }
@@ -267,7 +286,9 @@ deploy_failure() {
     systemd_last_resort
   fi
   write_deploy_log
-  exit 1
+  # In watch mode, return so the watch loop can write the result file.
+  # deploy_failure sets FINAL_STATUS; watch_loop reads it.
+  if [[ "$WATCH_MODE" == true ]]; then return 1; else exit 1; fi
 }
 
 install() {
@@ -284,7 +305,10 @@ install() {
 }
 
 rollback() {
-  [[ -f "$PREVIOUS_IMAGE_FILE" ]] || { echo "No previous image to roll back to"; exit 1; }
+  if [[ ! -f "$PREVIOUS_IMAGE_FILE" ]]; then
+    echo "No previous image to roll back to"
+    if [[ "$WATCH_MODE" == true ]]; then FINAL_STATUS="failed"; return 1; else exit 1; fi
+  fi
   IMAGE_REF="$(cat "$PREVIOUS_IMAGE_FILE")"
   log "Rollback requested: $IMAGE_REF"
   deploy
@@ -314,6 +338,204 @@ self_update() {
   fi
 }
 
+# ---------------------------------------------------------------------------
+#  watch mode — long-running dispatcher that polls for trigger files
+# ---------------------------------------------------------------------------
+
+readonly WATCH_POLL_INTERVAL=3
+readonly STALE_THRESHOLD_MIN=30
+
+# Reset per-deploy globals so each dispatch starts clean.
+reset_deploy_state() {
+  DEPLOY_ID="" DEPLOY_START=0 IMAGE_REF="" IMAGE_DIGEST="" PREVIOUS_IMAGE=""
+  MANIFEST_URL="${R2_ORIGIN}/latest/manifest.json" FORCE=false FINAL_STATUS="pending"
+  SCHEMA_RESULT="" ROLLBACK_RESULT="" ROLLBACK_READINESS="" LOCK_FD="" ERRORS=()
+  WATCH_DIE_FIRED=false
+}
+
+# Write a result JSON atomically into RESULTS_DIR.
+# Usage: write_result <attemptId> <commandId> <action> <status> <targetVersion> <error>
+write_result() {
+  local attempt_id="$1" command_id="$2" action="$3" status="$4" target_version="$5" error_msg="$6"
+  local result_version="${target_version}"
+  local completed_at started_at deploy_log_path
+
+  completed_at="$(date -u +%FT%TZ)"
+  started_at="${WATCH_STARTED_AT:-$completed_at}"
+
+  # If the deploy succeeded, read the actual running version
+  if [[ "$status" == "COMPLETED" ]] && [[ -f "$VERSION_FILE" ]]; then
+    result_version="$(jq -r '.version // empty' "$VERSION_FILE" 2>/dev/null || echo "$target_version")"
+  fi
+
+  # Find the most recent deploy log
+  deploy_log_path="$(ls -t "$LOG_DIR"/*.json 2>/dev/null | head -1 || echo "")"
+
+  # Encode error as proper JSON (null or escaped string)
+  local error_json="null"
+  if [[ -n "$error_msg" ]]; then
+    error_json="$(echo "$error_msg" | jq -Rs . 2>/dev/null || echo "\"$error_msg\"")"
+  fi
+
+  local tmp_file="${RESULTS_DIR}/${attempt_id}.json.tmp"
+  cat > "$tmp_file" <<REOF
+{
+  "attemptId": "${attempt_id}",
+  "commandId": "${command_id}",
+  "action": "${action}",
+  "status": "${status}",
+  "targetVersion": "${target_version}",
+  "resultVersion": "${result_version}",
+  "startedAt": "${started_at}",
+  "completedAt": "${completed_at}",
+  "finalStatus": "${FINAL_STATUS}",
+  "error": ${error_json},
+  "deployId": "${DEPLOY_ID}",
+  "imageRef": "${IMAGE_REF}",
+  "deployLogPath": "${deploy_log_path}"
+}
+REOF
+  mv "$tmp_file" "${RESULTS_DIR}/${attempt_id}.json"
+  log "Result written: ${RESULTS_DIR}/${attempt_id}.json (status=$status)"
+}
+
+# Clean up trigger files older than STALE_THRESHOLD_MIN minutes.
+cleanup_stale_triggers() {
+  local stale_files
+  stale_files="$(find "$REQUESTS_DIR" -name '*.json' -mmin +${STALE_THRESHOLD_MIN} 2>/dev/null || true)"
+  [[ -z "$stale_files" ]] && return
+
+  # Only clean up if no deploy lock is active
+  if flock -n "$LOCK_FILE" true 2>/dev/null; then
+    while IFS= read -r stale_file; do
+      [[ -z "$stale_file" ]] && continue
+      local stale_attempt stale_command stale_action
+      stale_attempt="$(jq -r '.attemptId // "unknown"' "$stale_file" 2>/dev/null || echo "unknown")"
+      stale_command="$(jq -r '.commandId // "unknown"' "$stale_file" 2>/dev/null || echo "unknown")"
+      stale_action="$(jq -r '.action // "unknown"' "$stale_file" 2>/dev/null || echo "unknown")"
+      log "Stale trigger: $stale_attempt (age > ${STALE_THRESHOLD_MIN}m)"
+      reset_deploy_state
+      FINAL_STATUS="stale"
+      write_result "$stale_attempt" "$stale_command" "$stale_action" "FAILED" "" "Trigger file exceeded ${STALE_THRESHOLD_MIN}m age limit"
+      rm -f "$stale_file"
+    done <<< "$stale_files"
+  fi
+}
+
+# Dispatch a single trigger file.
+dispatch_trigger() {
+  local trigger_file="$1"
+  local attempt_id command_id action payload_version payload_image payload_digest payload_manifest
+
+  # Parse the trigger JSON
+  attempt_id="$(jq -r '.attemptId // empty' "$trigger_file" 2>/dev/null)"
+  command_id="$(jq -r '.commandId // empty' "$trigger_file" 2>/dev/null)"
+  action="$(jq -r '.action // empty' "$trigger_file" 2>/dev/null)"
+  payload_version="$(jq -r '.payload.version // empty' "$trigger_file" 2>/dev/null)"
+  payload_image="$(jq -r '.payload.imageRef // empty' "$trigger_file" 2>/dev/null)"
+  payload_digest="$(jq -r '.payload.imageDigest // empty' "$trigger_file" 2>/dev/null)"
+  payload_manifest="$(jq -r '.payload.manifestUrl // empty' "$trigger_file" 2>/dev/null)"
+
+  # Validate required fields
+  if [[ -z "$attempt_id" ]] || [[ -z "$action" ]]; then
+    log "Invalid trigger file (missing attemptId or action): $trigger_file"
+    rm -f "$trigger_file"
+    return
+  fi
+
+  log "Dispatching: attemptId=$attempt_id action=$action version=${payload_version:-none}"
+
+  # Single-flight check: if deploy lock is held, reject immediately
+  if ! flock -n "$LOCK_FILE" true 2>/dev/null; then
+    log "Deploy lock held — rejecting $attempt_id"
+    reset_deploy_state
+    FINAL_STATUS="rejected"
+    write_result "$attempt_id" "$command_id" "$action" "REJECTED" "$payload_version" "Another deploy is in progress"
+    rm -f "$trigger_file"
+    return
+  fi
+
+  # Reset state and set up for this dispatch
+  reset_deploy_state
+  WATCH_STARTED_AT="$(date -u +%FT%TZ)"
+
+  # Set globals from payload for deploy/rollback
+  [[ -n "$payload_image" ]] && IMAGE_REF="$payload_image"
+  [[ -n "$payload_digest" ]] && IMAGE_DIGEST="$payload_digest"
+  [[ -n "$payload_manifest" ]] && MANIFEST_URL="$payload_manifest"
+
+  local dispatch_rc=0
+  case "$action" in
+    deploy)
+      deploy || dispatch_rc=$?
+      ;;
+    rollback)
+      rollback || dispatch_rc=$?
+      ;;
+    self-update)
+      self_update || dispatch_rc=$?
+      # self_update does not set FINAL_STATUS; mark healthy on success
+      [[ $dispatch_rc -eq 0 ]] && FINAL_STATUS="healthy"
+      ;;
+    *)
+      log "Unknown action: $action"
+      FINAL_STATUS="failed"
+      write_result "$attempt_id" "$command_id" "$action" "FAILED" "$payload_version" "Unknown action: $action"
+      rm -f "$trigger_file"
+      return
+      ;;
+  esac
+
+  # Release deploy lock if held (in watch mode, no EXIT trap does this)
+  [[ -n "${LOCK_FD:-}" ]] && flock -u "$LOCK_FD" 2>/dev/null || true
+
+  # Determine result status from FINAL_STATUS (set by deploy/rollback/die)
+  local result_status="FAILED"
+  local error_msg=""
+  if [[ "$FINAL_STATUS" == "healthy" ]]; then
+    result_status="COMPLETED"
+  else
+    result_status="FAILED"
+    # Collect error messages
+    if [[ ${#ERRORS[@]} -gt 0 ]]; then
+      error_msg="${ERRORS[*]}"
+    else
+      error_msg="Action '$action' finished with status: $FINAL_STATUS"
+    fi
+  fi
+
+  write_result "$attempt_id" "$command_id" "$action" "$result_status" "$payload_version" "$error_msg"
+  rm -f "$trigger_file"
+}
+
+watch_loop() {
+  WATCH_MODE=true
+  mkdir -p "$REQUESTS_DIR" "$RESULTS_DIR" "$STATE_DIR" "$LOG_DIR"
+  log "Watch mode started — polling $REQUESTS_DIR every ${WATCH_POLL_INTERVAL}s"
+
+  # Graceful shutdown on SIGTERM/SIGINT
+  local watch_running=true
+  trap 'log "Watch mode shutting down (signal received)"; watch_running=false' SIGTERM SIGINT
+
+  while [[ "$watch_running" == true ]]; do
+    # Pick the oldest trigger file (FIFO by filename sort)
+    local oldest
+    oldest="$(ls -1 "$REQUESTS_DIR"/*.json 2>/dev/null | sort | head -1 || true)"
+
+    if [[ -n "$oldest" ]] && [[ -f "$oldest" ]]; then
+      dispatch_trigger "$oldest"
+    fi
+
+    # Stale trigger cleanup
+    cleanup_stale_triggers
+
+    sleep "$WATCH_POLL_INTERVAL" &
+    wait $! 2>/dev/null || true  # wait is interruptible by signals
+  done
+
+  log "Watch mode exited"
+}
+
 SUBCOMMAND="${1:-deploy}"
 shift 2>/dev/null || true
 while [[ $# -gt 0 ]]; do
@@ -332,5 +554,6 @@ case "$SUBCOMMAND" in
   rollback)    rollback ;;
   status)      status ;;
   self-update) self_update ;;
-  *)           echo "Usage: gwi-node.sh {install|deploy|rollback|status|self-update}"; exit 1 ;;
+  watch)       watch_loop ;;
+  *)           echo "Usage: gwi-node.sh {install|deploy|rollback|status|self-update|watch}"; exit 1 ;;
 esac

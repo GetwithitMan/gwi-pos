@@ -701,6 +701,62 @@ SVCEOF
     fi
 
     # ───────────────────────────────────────────────────────────────────────────
+    # gwi-node.service — Docker deploy agent (replaces thepasspos + thepasspos-sync)
+    # Container signals, host executes. gwi-node.sh watch polls for trigger files.
+    # ───────────────────────────────────────────────────────────────────────────
+
+    header "Installing gwi-node Deploy Service"
+
+    # Copy gwi-node.sh to host location
+    GWI_NODE_SRC="$APP_DIR/public/scripts/gwi-node.sh"
+    GWI_NODE_DEST="$APP_BASE/gwi-node.sh"
+    if [[ -f "$GWI_NODE_SRC" ]]; then
+      cp "$GWI_NODE_SRC" "$GWI_NODE_DEST"
+      chown root:root "$GWI_NODE_DEST"
+      chmod 755 "$GWI_NODE_DEST"
+      log "gwi-node.sh installed at $GWI_NODE_DEST"
+    else
+      track_warn "gwi-node.sh not found at $GWI_NODE_SRC"
+    fi
+
+    # Install gwi-node.service systemd unit
+    GWI_NODE_SVC_SRC="$APP_DIR/public/scripts/gwi-node.service"
+    if [[ -f "$GWI_NODE_SVC_SRC" ]]; then
+      cp "$GWI_NODE_SVC_SRC" /etc/systemd/system/gwi-node.service
+      systemctl daemon-reload
+      systemctl enable gwi-node.service
+      log "gwi-node.service installed and enabled"
+    else
+      track_warn "gwi-node.service not found at $GWI_NODE_SVC_SRC"
+    fi
+
+    # Create trigger file directories with correct ownership
+    # Agent container (root user) writes to deploy-requests/
+    # gwi-node.sh (root) reads requests and writes to deploy-results/
+    mkdir -p "$APP_BASE/shared/state/deploy-requests"
+    mkdir -p "$APP_BASE/shared/state/deploy-results"
+    chmod 777 "$APP_BASE/shared/state/deploy-requests"
+    chmod 755 "$APP_BASE/shared/state/deploy-results"
+    log "Trigger file directories created"
+
+    # Mask legacy services — Docker containers replace them permanently
+    # thepasspos.service → replaced by gwi-pos container
+    # thepasspos-sync.service → replaced by gwi-agent container
+    systemctl stop thepasspos 2>/dev/null || true
+    systemctl disable thepasspos 2>/dev/null || true
+    systemctl mask thepasspos 2>/dev/null || true
+    systemctl stop thepasspos-sync 2>/dev/null || true
+    systemctl disable thepasspos-sync 2>/dev/null || true
+    systemctl mask thepasspos-sync 2>/dev/null || true
+    log "Legacy services masked (thepasspos, thepasspos-sync)"
+
+    # Start gwi-node.service (this will poll for deploy triggers)
+    if [[ -f "$GWI_NODE_DEST" ]]; then
+      systemctl restart gwi-node.service || { err_code "ERR-INST-215" "gwi-node.service failed to start"; track_warn "gwi-node.service failed — check journalctl -u gwi-node"; }
+      log "gwi-node.service started"
+    fi
+
+    # ───────────────────────────────────────────────────────────────────────────
     # Server + Backup Roles: Boot Diagnostic (post-boot forensic snapshot)
     # ───────────────────────────────────────────────────────────────────────────
 
