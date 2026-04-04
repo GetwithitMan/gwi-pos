@@ -14,6 +14,8 @@ const ENV_FILE         = fs.existsSync('/opt/gwi-pos/shared/.env') ? '/opt/gwi-p
 const APP_DIR          = fs.existsSync('/opt/gwi-pos/current') ? '/opt/gwi-pos/current' : '/opt/gwi-pos/app'
 const LOG_FILE         = '/opt/gwi-pos/sync-agent.log'
 const PRIVATE_KEY_PATH = '/opt/gwi-pos/keys/private.pem'
+const REQUESTS_DIR = '/opt/gwi-pos/shared/state/deploy-requests'
+const RESULTS_DIR  = '/opt/gwi-pos/shared/state/deploy-results'
 
 // ── Load config from .env ──────────────────────────────────────────────────
 const env = {}
@@ -148,10 +150,95 @@ function classifyDeployFailure(deployState, exitMessage) {
   return reason
 }
 
+// ── UUID helper ───────────────────────────────────────────────────────────
+function generateUUID() {
+  return crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(16).toString('hex')
+}
+
+// ── Trigger-file deploy request ───────────────────────────────────────────
+// Writes a trigger file to REQUESTS_DIR and polls RESULTS_DIR for the host
+// service (gwi-node watch) to produce a result.  Container signals, host executes.
+function requestHostAction(action, commandId, payload, timeoutMs) {
+  var attemptId = generateUUID()
+  var triggerFile = path.join(REQUESTS_DIR, attemptId + '.json')
+  var triggerTmp  = path.join(REQUESTS_DIR, attemptId + '.tmp')
+  var resultFile  = path.join(RESULTS_DIR, attemptId + '.json')
+  var timeout = timeoutMs || 600000  // default 10 min
+
+  var trigger = {
+    attemptId: attemptId,
+    commandId: commandId || null,
+    action: action,
+    requestedAt: new Date().toISOString(),
+    requestedBy: 'gwi-agent',
+    payload: payload || {}
+  }
+
+  // Ensure request directory exists
+  fs.mkdirSync(REQUESTS_DIR, { recursive: true })
+
+  // Atomic write: tmp → rename
+  fs.writeFileSync(triggerTmp, JSON.stringify(trigger, null, 2))
+  fs.renameSync(triggerTmp, triggerFile)
+  log('[Trigger] Wrote ' + action + ' request ' + attemptId)
+
+  // Poll for result
+  var deadline = Date.now() + timeout
+
+  function poll() {
+    return new Promise(function(resolve) {
+      function tick() {
+        if (Date.now() >= deadline) {
+          // Clean up trigger file on timeout
+          try { fs.unlinkSync(triggerFile) } catch (e) {}
+          return resolve({ status: 'FAILED', error: 'timeout waiting for host (' + (timeout / 1000) + 's)' })
+        }
+
+        if (!fs.existsSync(resultFile)) {
+          return setTimeout(tick, 2000)
+        }
+
+        // Result file appeared — read it
+        var raw
+        try {
+          raw = fs.readFileSync(resultFile, 'utf-8')
+          var result = JSON.parse(raw)
+
+          // Cleanup both files
+          try { fs.unlinkSync(triggerFile) } catch (e) {}
+          try { fs.unlinkSync(resultFile) } catch (e) {}
+
+          log('[Trigger] Got result for ' + attemptId + ': ' + result.status)
+          return resolve(result)
+        } catch (parseErr) {
+          // Corrupted JSON — retry once after 1s
+          log('[Trigger] Result parse error, retrying in 1s: ' + parseErr.message)
+          setTimeout(function() {
+            try {
+              raw = fs.readFileSync(resultFile, 'utf-8')
+              var result = JSON.parse(raw)
+              try { fs.unlinkSync(triggerFile) } catch (e) {}
+              try { fs.unlinkSync(resultFile) } catch (e) {}
+              return resolve(result)
+            } catch (retryErr) {
+              log('[Trigger] Result still unreadable: ' + retryErr.message)
+              try { fs.unlinkSync(triggerFile) } catch (e) {}
+              try { fs.unlinkSync(resultFile) } catch (e) {}
+              return resolve({ status: 'FAILED', error: 'corrupt result file' })
+            }
+          }, 1000)
+        }
+      }
+      tick()
+    })
+  }
+
+  return poll()
+}
+
 // ── FORCE_UPDATE handler ───────────────────────────────────────────────────
-// Phase 8.2: First tries version-targeted update via local update agent
-// (preflight checks, payment safety, cloud event reporting).
-// Falls back to direct update if local POS server is unreachable.
+// Writes a deploy trigger file and waits for gwi-node (host service) to
+// execute the deploy and write back a result.  Container signals, host executes.
 async function handleForceUpdate(payload, cmdId) {
   var targetVersion = (payload && payload.version) || null
   currentAttemptId = generateAttemptId()
@@ -190,92 +277,40 @@ async function handleForceUpdate(payload, cmdId) {
     }
   }
 
-  // ── Deploy via gwi-node (single bootstrap agent) ────────────────────────
-  var GWI_NODE = process.env.GWI_NODE_PATH || '/opt/gwi-pos/gwi-node.sh'
+  // ── Deploy via trigger file → gwi-node host service ─────────────────────
+  // Build payload for trigger file
+  var triggerPayload = {}
+  if (targetVersion) triggerPayload.version = targetVersion
+  if (payload && payload.imageRef) triggerPayload.imageRef = payload.imageRef
+  if (payload && payload.imageDigest) triggerPayload.imageDigest = payload.imageDigest
+  if (payload && payload.manifestUrl) triggerPayload.manifestUrl = payload.manifestUrl
 
-  // Self-update gwi-node from the running image before deploy
-  try {
-    run('bash "' + GWI_NODE + '" self-update', APP_DIR, 30)
-  } catch (e) {
-    log('[Update] gwi-node self-update warning: ' + e.message)
+  log('[Update] Writing deploy trigger...')
+  if (cmdId) ackProgress(cmdId, 'IN_PROGRESS', { step: 'trigger-written', targetVersion: targetVersion })
+
+  var result = await requestHostAction('deploy', cmdId, triggerPayload, 600000)
+
+  if (result.status === 'COMPLETED') {
+    var newVersion = result.resultVersion || result.targetVersion || previousVersion
+    if (cmdId) ackProgress(cmdId, 'COMPLETED', { step: 'deploy-done', version: newVersion })
+    return { ok: true, version: newVersion, steps: ['trigger-deploy OK'], _acked: true }
+  } else if (result.status === 'REJECTED') {
+    if (cmdId) ackProgress(cmdId, 'FAILED', { step: 'deploy-rejected', error: result.error || 'busy' })
+    return { ok: false, error: result.error || 'Deploy in progress', steps: ['trigger-rejected'], _acked: true }
+  } else {
+    var failError = result.error || 'Deploy failed'
+    if (cmdId) ackProgress(cmdId, 'FAILED', { step: 'deploy-failed', error: failError })
+    return { ok: false, error: failError, steps: ['trigger-deploy-failed'], _acked: true }
   }
-
-  if (!fs.existsSync(GWI_NODE)) {
-    // Bootstrap: extract gwi-node from current release if it exists
-    var bootstrapPath = path.join(APP_DIR, 'public', 'scripts', 'gwi-node.sh')
-    if (fs.existsSync(bootstrapPath)) {
-      try {
-        fs.copyFileSync(bootstrapPath, GWI_NODE)
-        fs.chmodSync(GWI_NODE, 0o755)
-        log('[Update] Bootstrapped gwi-node.sh from release')
-      } catch (e) {
-        log('[Update] Bootstrap failed: ' + e.message)
-      }
-    }
-  }
-
-  if (!fs.existsSync(GWI_NODE)) {
-    // Fatal: no gwi-node.sh anywhere
-    var result = { ok: false, error: 'gwi-node.sh not found — run installer', steps: ['missing-agent'] }
-    if (cmdId) ackProgress(cmdId, 'FAILED', { step: 'missing-agent', error: result.error })
-    return result
-  }
-
-  log('[Update] Deploying via gwi-node...')
-  if (cmdId) ackProgress(cmdId, 'IN_PROGRESS', { step: 'gwi-node-deploy', targetVersion: targetVersion })
-
-  try {
-    execSync('bash "' + GWI_NODE + '" deploy', {
-      cwd: APP_DIR,
-      encoding: 'utf-8',
-      timeout: 600000,
-      stdio: 'pipe'
-    })
-    log('[Update] gwi-node deploy completed')
-
-    // Read deploy result
-    var newVersion = previousVersion
-    try {
-      var vf = JSON.parse(fs.readFileSync('/opt/gwi-pos/shared/state/running-version.json', 'utf-8'))
-      newVersion = vf.version || previousVersion
-    } catch (e) {}
-
-    // Self-update sync-agent from new image
-    try { selfUpdateSyncAgent() } catch (e) {}
-
-    if (cmdId) ackProgress(cmdId, 'COMPLETED', {
-      step: 'gwi-node-deploy-done',
-      version: newVersion
-    })
-    return { ok: true, version: newVersion, steps: ['gwi-node-deploy OK'], _acked: true }
-  } catch (deployErr) {
-    log('[Update] gwi-node deploy FAILED: ' + (deployErr.message || '').slice(0, 300))
-
-    // Read deploy log for failure details
-    var failError = (deployErr.message || '').slice(0, 200)
-    if (cmdId) ackProgress(cmdId, 'FAILED', {
-      step: 'gwi-node-deploy-failed',
-      error: failError
-    })
-    return { ok: false, error: failError, steps: ['gwi-node-deploy-failed'], _acked: true }
-  }
-}
-
-// ── Self-update sync agent ────────────────────────────────────────────────
-// No-op: sync-agent runs in a container (gwi-agent) and updates automatically
-// when gwi-node deploys a new image and restarts the gwi-agent container.
-function selfUpdateSyncAgent() {
-  log('[Update] Sync agent is containerized — self-update is automatic')
 }
 
 // ── Component updates from checkout ────────────────────────────────────────
-// When running in container (gwi-agent), host-level component updates
+// gwi-agent is always containerized — host-level component updates
 // (dashboard, watchdog, monitoring) are handled by gwi-node, not the agent.
 function updateComponentsFromCheckout() {
-  if (process.env.GWI_NODE_PATH) {
-    log('[Components] Running in container — host component updates handled by gwi-node')
-    return { _updated: false }
-  }
+  log('[Components] Running in container — host component updates handled by gwi-node')
+  return { _updated: false }
+  // Legacy host-mode code below retained for reference but never reached
   var result = { _updated: false, dashboard: null, monitoring: false, watchdog: false }
 
   // Dashboard .deb update (version-aware)
