@@ -25,20 +25,23 @@ The primary NUC at each venue. Runs the full POS stack locally for offline opera
 
 **Installs:**
 - PostgreSQL 14+ (local database)
-- Docker Engine (container runtime — the ONLY app runtime as of v2.0.0)
+- Docker Engine (container runtime — the ONLY app runtime as of v2.0.0, current v2.0.10)
 - gwi-node.sh (single deploy agent — manages Docker lifecycle)
 - Chromium kiosk (full-screen browser)
 - Daily backup cron job
 - RealVNC (optional, for remote support)
 
 **Systemd Services:**
-- `gwi-pos` — Docker container managed by gwi-node.sh (POS server on port 3005)
+- `gwi-node.service` — Host-level deploy agent. Runs `gwi-node.sh watch`, polling trigger directories for deploy requests from the gwi-agent container. Manages Docker lifecycle for both gwi-pos and gwi-agent containers.
 - `thepasspos-kiosk` — Chromium in kiosk mode pointing to `http://localhost:3005`
-- `thepasspos-sync` — Sync agent (SSE listener for cloud commands, calls `gwi-node deploy` for FORCE_UPDATE)
+
+**Docker Containers (managed by gwi-node.sh, not systemd):**
+- `gwi-pos` — POS server on port 3005 (same Docker image as gwi-agent, different CMD)
+- `gwi-agent` — Sync agent running `sync-agent.js` (SSE listener for MC fleet commands, writes trigger files for deploy requests)
 
 **Port:** 3005 (configured unquoted in `.env` — systemd `EnvironmentFile` treats quoted values as literal)
 
-**Note:** There is no bare Node.js process, no tarball path, no mode markers. Docker is the only runtime.
+**Runtime model:** Docker is the only runtime. There is no bare Node.js process, no tarball path, no mode markers. The legacy `thepasspos.service` and `thepasspos-sync.service` systemd units are masked by the installer and will never start.
 
 ### Terminal
 
@@ -83,12 +86,18 @@ curl installer.run | sudo bash
         │    ├─ Create DB + user (idempotent)
         │    ├─ Install Docker Engine (if not present)
         │    ├─ Copy gwi-node.sh to /opt/gwi-pos/gwi-node.sh
-        │    ├─ Stage 05 calls `gwi-node install`
-        │    │    → gwi-node pulls Docker image from GHCR
-        │    │    → Runs migrations + schema push inside container
-        │    │    → Starts container on port 3005
+        │    ├─ Stage 05: `gwi-node.sh install`
+        │    │    → Pulls Docker image from Cloudflare R2
+        │    │    → Runs deploy-tools (migrate.js + apply-schema.js) inside container
+        │    │    → Starts gwi-pos container on port 3005
+        │    │    → Starts gwi-agent container (sync-agent.js)
+        │    │    → Stops/disables legacy thepasspos.service
         │    ├─ Create thepasspos-kiosk.service (→ localhost:3005)
-        │    ├─ Create thepasspos-sync.service (sync agent)
+        │    ├─ Stage 07: Install gwi-node.service + trigger dirs
+        │    │    → Copies gwi-node.sh + gwi-node.service to host
+        │    │    → Creates deploy-requests/ and deploy-results/ dirs
+        │    │    → Masks legacy services (thepasspos, thepasspos-sync)
+        │    │    → Starts gwi-node.service (watch mode)
         │    ├─ Install heartbeat.sh + cron (every 60s)
         │    ├─ Install backup-pos.sh + cron (4 AM)
         │    └─ Start services (wait for health check)
@@ -117,14 +126,23 @@ curl installer.run | sudo bash
 ```
 /opt/gwi-pos/
 ├── .env                    # Environment variables (chmod 600, unquoted values)
-├── gwi-node.sh             # Single deploy agent (v2.0.0) — install/update/status
+├── gwi-node.sh             # Single deploy agent (v2.0.10) — install/deploy/status/watch
 ├── backup-pos.sh           # Daily PostgreSQL backup script (server only)
 ├── heartbeat.sh            # 60s HMAC-signed metrics to Mission Control (server only)
-├── sync-agent.js           # SSE listener for cloud commands (calls gwi-node deploy)
+├── sync-agent.js           # SSE listener for cloud commands (runs inside gwi-agent container, writes trigger files)
 ├── kiosk-control.sh        # Stops kiosk service + kills Chromium (sudoers-allowed)
 ├── wait-for-pos.sh         # Waits for POS health endpoint before starting kiosk
 ├── clear-kiosk-session.sh  # Clears stale Chromium session data
 ├── exit-kiosk-server.py    # Terminal-only: localhost:3006 kiosk exit micro-service
+├── shared/                 # Shared state between host and containers (bind-mounted)
+│   ├── .env                    # Environment file (copied from /opt/gwi-pos/.env)
+│   ├── state/
+│   │   ├── deploy-requests/    # Trigger files: gwi-agent writes, gwi-node reads (chmod 777)
+│   │   ├── deploy-results/     # Outcome files: gwi-node writes, gwi-agent reads (chmod 755)
+│   │   ├── running-version.json # Current deployed image tag + digest
+│   │   └── gwi-node.lock       # Deploy mutex
+│   └── logs/
+│       └── deploys/            # Per-deploy JSON logs
 ├── backups/                # pg_dump .sql.gz files (7-day retention)
 │   └── baseline-snapshot-*.tar.gz  # Config snapshots before reboot (last 3 kept)
 ├── keys/                   # RSA keypair (server_key.pem, server_key_pub.pem)
@@ -187,25 +205,34 @@ curl installer.run | sudo bash
 
 ## Systemd Services
 
-### gwi-pos container (Server only, v2.0.0)
+### gwi-node.service (Server only, v2.0.10)
 
-The POS app runs as a Docker container managed by `gwi-node.sh`. There is no systemd unit file for the app itself -- Docker manages the container lifecycle. `gwi-node deploy` handles pulling the image, running migrations, and swapping the container with a health check gate.
+The host-level deploy agent. Runs `gwi-node.sh watch` which polls the trigger directory (`shared/state/deploy-requests/`) for deploy requests written by the gwi-agent container. When a trigger file appears, gwi-node executes the deploy: pulls the Docker image, runs migrations, swaps the container, and writes the result to `shared/state/deploy-results/`.
+
+This is the **only** systemd service for the POS application stack. Both the `gwi-pos` and `gwi-agent` Docker containers are managed by gwi-node.sh, not by individual systemd units.
 
 ```bash
-# Container is managed by gwi-node, not systemd directly
-gwi-node.sh deploy    # Pull image, migrate, swap container
-gwi-node.sh status    # Show running container info
-docker logs gwi-pos   # View app logs
+# gwi-node manages all Docker containers
+gwi-node.sh deploy    # Pull image, migrate, swap containers
+gwi-node.sh status    # Show running containers, image tag, uptime
+gwi-node.sh watch     # Poll trigger dir (this is what gwi-node.service runs)
+
+# Container logs
+docker logs gwi-pos       # POS server logs
+docker logs gwi-agent     # Sync agent logs
+docker ps                 # Check running containers
 ```
 
-**Legacy note:** The `thepasspos.service` systemd unit (bare Node.js process) is no longer used. Docker is the only runtime.
+**Trigger-file deploy protocol:** The gwi-agent container (running sync-agent.js) receives fleet commands from Mission Control via SSE. When a FORCE_UPDATE command arrives, gwi-agent writes a JSON trigger file to `shared/state/deploy-requests/`. gwi-node.service (on the host) detects the file, executes the deploy, and writes the outcome to `shared/state/deploy-results/`. The agent reads the result and ACKs back to MC. This container-signals-host-executes pattern avoids giving the container Docker socket access.
+
+**Legacy services:** `thepasspos.service` (bare Node.js process) and `thepasspos-sync.service` (bare Node.js sync agent) are masked by Stage 07. They will never start, even after reboot. Docker containers are the only runtime.
 
 ### thepasspos-kiosk.service (Both roles)
 
 ```ini
 [Unit]
 Description=GWI POS Kiosk
-After=graphical.target [thepasspos.service for server]
+After=graphical.target
 
 [Service]
 User=<posuser>
@@ -294,9 +321,9 @@ Re-running `installer.run` on an existing installation:
 2. Runs `backup-pos.sh` (snapshot before changes)
 3. Prompts for registration (can use new code)
 4. Overwrites `.env` with new values
-5. Calls `gwi-node deploy` (pulls latest Docker image, runs migrations, swaps container)
-6. Overwrites kiosk/sync systemd services
-7. Restarts kiosk and sync services
+5. Calls `gwi-node deploy` (pulls latest Docker image, runs migrations, swaps gwi-pos + gwi-agent containers)
+6. Refreshes gwi-node.service, kiosk service, and trigger directories
+7. Masks legacy services, restarts gwi-node.service and kiosk
 
 ### Terminal Re-run
 1. Overwrites kiosk service with new URL
@@ -305,10 +332,11 @@ Re-running `installer.run` on an existing installation:
 ### Factory Reset
 
 ```bash
-docker stop gwi-pos && docker rm gwi-pos
-sudo systemctl stop thepasspos-kiosk thepasspos-sync thepasspos-exit-kiosk
+docker stop gwi-pos gwi-agent 2>/dev/null; docker rm gwi-pos gwi-agent 2>/dev/null
+sudo systemctl stop gwi-node thepasspos-kiosk thepasspos-exit-kiosk 2>/dev/null
+sudo systemctl disable gwi-node 2>/dev/null
 sudo rm -rf /opt/gwi-pos
-sudo rm -f /etc/systemd/system/thepasspos-kiosk.service /etc/systemd/system/thepasspos-sync.service /etc/systemd/system/thepasspos-exit-kiosk.service
+sudo rm -f /etc/systemd/system/gwi-node.service /etc/systemd/system/thepasspos-kiosk.service /etc/systemd/system/thepasspos-exit-kiosk.service
 sudo rm -f /etc/sudoers.d/gwi-pos
 sudo systemctl daemon-reload
 docker image prune -af  # Remove cached images
@@ -347,24 +375,33 @@ The MC route at `src/app/installer.run/route.ts` reads from `scripts/installer.r
 ## Useful Commands After Installation
 
 ```bash
-# gwi-node (single deploy agent)
-gwi-node.sh deploy                     # Pull latest image, migrate, swap container
-gwi-node.sh status                     # Show running container, image tag, uptime
+# gwi-node (single deploy agent on host)
+gwi-node.sh deploy                     # Pull latest image, migrate, swap containers
+gwi-node.sh status                     # Show running containers, image tag, uptime
+gwi-node.sh watch                      # Poll trigger dirs (what gwi-node.service runs)
 
 # Docker container management
-docker logs gwi-pos                    # Tail POS logs
+docker ps                              # Check running containers (gwi-pos + gwi-agent)
+docker logs gwi-pos                    # Tail POS server logs
 docker logs gwi-pos --tail 100 -f      # Follow last 100 lines
-docker ps                              # Check running container
+docker logs gwi-agent                  # Tail sync agent logs
+docker logs gwi-agent --tail 100 -f    # Follow sync agent logs
 
-# Kiosk / sync services
+# gwi-node.service (host watcher)
+sudo systemctl status gwi-node             # Check host deploy watcher
+sudo journalctl -u gwi-node -f            # Tail gwi-node logs
+
+# Kiosk service
 sudo systemctl status thepasspos-kiosk     # Check kiosk
-sudo systemctl status thepasspos-sync      # Check sync agent
 sudo journalctl -u thepasspos-kiosk -f     # Tail kiosk logs
-sudo journalctl -u thepasspos-sync -f      # Tail sync agent logs
 
 # Manual restart
-gwi-node.sh deploy                     # Redeploy (same image = restart)
+gwi-node.sh deploy                     # Redeploy (same image = restart both containers)
 sudo systemctl restart thepasspos-kiosk
+
+# Trigger directory inspection
+ls -la /opt/gwi-pos/shared/state/deploy-requests/   # Pending deploy requests
+ls -la /opt/gwi-pos/shared/state/deploy-results/     # Deploy outcomes
 
 # Manual backup
 sudo -u <posuser> /opt/gwi-pos/backup-pos.sh
@@ -376,6 +413,63 @@ ls -lh /opt/gwi-pos/backups/
 sudo bash /opt/gwi-pos/installer.run
 ```
 
+## Troubleshooting
+
+### Container won't start
+
+```bash
+# Check container status and recent logs
+docker ps -a                                     # See all containers (including stopped)
+docker logs gwi-pos --tail 50                    # Last 50 lines of POS logs
+docker inspect gwi-pos | jq '.[0].State'         # Container state details
+
+# Check if port 3005 is in use by something else
+ss -tlnp | grep 3005
+
+# Force redeploy (pulls image again)
+gwi-node.sh deploy --force
+```
+
+### Deploy stuck or failed
+
+```bash
+# Check deploy logs
+ls -lt /opt/gwi-pos/shared/logs/deploys/         # List deploy logs by time
+cat /opt/gwi-pos/shared/logs/deploys/<latest>.json | jq .
+
+# Check for stale lock
+cat /opt/gwi-pos/shared/state/gwi-node.lock
+
+# Check gwi-node.service is running
+sudo systemctl status gwi-node
+sudo journalctl -u gwi-node --since "10 min ago"
+```
+
+### Sync agent not connecting to MC
+
+```bash
+# Check gwi-agent container
+docker logs gwi-agent --tail 50
+docker ps | grep gwi-agent                       # Is it running?
+
+# Check trigger file flow
+ls -la /opt/gwi-pos/shared/state/deploy-requests/
+ls -la /opt/gwi-pos/shared/state/deploy-results/
+```
+
+### Legacy services still running (should be masked)
+
+```bash
+# Verify legacy services are masked
+systemctl is-enabled thepasspos 2>/dev/null       # Should be "masked"
+systemctl is-enabled thepasspos-sync 2>/dev/null  # Should be "masked"
+
+# If not masked, re-run Stage 07 or mask manually
+sudo systemctl stop thepasspos thepasspos-sync 2>/dev/null
+sudo systemctl disable thepasspos thepasspos-sync 2>/dev/null
+sudo systemctl mask thepasspos thepasspos-sync 2>/dev/null
+```
+
 ## Verification Checklist
 
 | # | Test | How to Verify |
@@ -385,15 +479,20 @@ sudo bash /opt/gwi-pos/installer.run
 | 3 | Idempotent re-run | Run installer again → DB backed up, code updated, no data loss |
 | 4 | Offline operation | Disconnect network after install → POS works with local Postgres |
 | 5 | RealVNC | NUC appears in RealVNC account |
-| 6 | Service recovery | `sudo reboot` → all services auto-start |
+| 6 | Service recovery | `sudo reboot` → gwi-node.service starts, containers come up, kiosk opens |
 | 7 | Backup rotation | Check `/opt/gwi-pos/backups/` for daily .sql.gz, 7-day retention |
 | 8 | MC registration | POST with valid code → 200; POST with bad code → 400/401 |
-| 9 | Stage 11 baseline | `cat /opt/gwi-pos/state/stage11-result.json` → outcome not `failed_required` |
-| 10 | Stage 11 idempotency | Re-run Stage 11 → `changed_count: 0` for non-observational roles |
-| 11 | Stage 11 reboot recovery | Pending reboot persisted, reboots once, verify fires, lock not stranded |
-| 12 | Stage 11 offline | MC unreachable → baseline runs, reports queue, support bundle works |
-| 13 | Drift detection | Manual config change → `baseline-diff` detects and classifies correctly |
-| 14 | Support bundle | `generate-support-bundle.sh` → tarball with redacted secrets, valid manifest |
+| 9 | Docker containers running | `docker ps` shows both `gwi-pos` and `gwi-agent` containers healthy |
+| 10 | gwi-node.service active | `systemctl is-active gwi-node` → `active` |
+| 11 | Legacy services masked | `systemctl is-enabled thepasspos` and `thepasspos-sync` → `masked` |
+| 12 | Trigger dirs exist | `ls /opt/gwi-pos/shared/state/deploy-requests/` and `deploy-results/` exist |
+| 13 | MC-triggered deploy | MC sends FORCE_UPDATE → trigger file written → deploy executes → ACK |
+| 14 | Stage 11 baseline | `cat /opt/gwi-pos/state/stage11-result.json` → outcome not `failed_required` |
+| 15 | Stage 11 idempotency | Re-run Stage 11 → `changed_count: 0` for non-observational roles |
+| 16 | Stage 11 reboot recovery | Pending reboot persisted, reboots once, verify fires, lock not stranded |
+| 17 | Stage 11 offline | MC unreachable → baseline runs, reports queue, support bundle works |
+| 18 | Drift detection | Manual config change → `baseline-diff` detects and classifies correctly |
+| 19 | Support bundle | `generate-support-bundle.sh` → tarball with redacted secrets, valid manifest |
 
 ---
 
@@ -663,10 +762,11 @@ On install, reinstall, and boot, the node converges to the **latest approved app
 
 ### What Reinstall Re-applies
 
-- App deployment via `gwi-node deploy` (pulls Docker image for approved version)
+- App deployment via `gwi-node deploy` (pulls Docker image for approved version, starts gwi-pos + gwi-agent containers)
 - Schema migrations (deploy-tools inside container: `migrate.js` + `apply-schema.js`)
 - All 16 Ansible baseline roles (idempotent — only changes what drifted)
-- Systemd service files for kiosk/sync (`07-services.sh` recreates idempotently)
+- gwi-node.service, trigger directories, legacy service masking (`07-services.sh` recreates idempotently)
+- Kiosk service file (`07-services.sh`)
 - Support tools (`bin/*`)
 
 ### Safety Guarantees

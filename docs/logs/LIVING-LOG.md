@@ -5,6 +5,42 @@
 
 ---
 
+## 2026-04-04 — v2.0.5 → v2.0.10: Trigger-File Deploy Architecture
+
+### Commits
+- v2.0.5 (PR #131): Trigger-file protocol — container signals, host executes
+- v2.0.6 (PR #132): deploy_success() bootstrap for existing venues
+- v2.0.7 (PR #133): deploy() self-updates before deploy cycle
+- v2.0.8 (PR #134): Manifest-first resolution, array re-exec, full bootstrap
+- v2.0.9 (PR #135): Precise observability, handler map, extraction helper
+- v2.0.10 (PR #136): Deploy preflight — port check, state writability, manifest retry
+
+### Architecture Change
+Replaced direct execSync('bash gwi-node.sh deploy') from gwi-agent container
+with attempt-scoped trigger-file protocol:
+- Agent writes deploy-requests/<attemptId>.json
+- Host gwi-node.service polls every 3s, executes deploy, writes result
+- Agent reads result, ACKs to MC
+
+### Key Features
+- gwi-node.sh self-updates from target image before every deploy (re-exec)
+- Idempotent bootstrap in deploy_success() refreshes host script + service
+- Deploy preflight: port availability, state dir writability, manifest retry
+- Granular observability: selfUpdated, bootstrap.scriptUpdated/serviceUpdated/degraded
+- sync-agent.js refactored to commandHandlers map, dead code removed
+
+### Venues Deployed
+- Shaunels: v2.0.10 (trigger-file MC deploy proven end-to-end)
+- Zoya's: v2.0.10 (Neon ETIMEDOUT — venue network, separate issue)
+- Monument: v2.0.10 (bootstrapped from v2.0.2)
+- Falcon: not yet upgraded
+
+### Blockers
+- Falcon needs manual bootstrap (no SSH access during session)
+- Zoya's Neon connectivity is a venue network issue, not deploy-related
+
+---
+
 ## 2026-03-26 — Gift Card System Enhancement (Full Build)
 
 ### Summary

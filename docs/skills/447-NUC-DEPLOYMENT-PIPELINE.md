@@ -11,21 +11,19 @@ End-to-end NUC fleet deployment via Mission Control. Covers the full FORCE_UPDAT
 ## Architecture
 
 ```
-MC "Deploy" button
+MC "Deploy" button (or trigger-file protocol for automated deploys)
   → Creates FORCE_UPDATE FleetCommand (DB)
-  → NUC sync agent receives via SSE stream
-  → handleForceUpdate() runs:
-      1. git fetch origin + git reset --hard origin/main
-      2. cp /opt/gwi-pos/.env → app/.env + .env.local
-      3. npm install --production=false
-      4. npx prisma generate
-      5. node scripts/nuc-pre-migrate.js  ← pre-flight DB migrations
-      6. npx prisma migrate deploy        ← soft fail (P3005 expected)
-      7. npx prisma db push --accept-data-loss
-      8. npm run build
-      9. sudo systemctl restart thepasspos
-     10. Self-update: copy new sync-agent.js from repo
-     11. ACK COMPLETED → MC updates deployment status
+  → gwi-agent container receives via SSE stream
+  → handleForceUpdate() calls gwi-node.sh deploy:
+      1. Pull Docker image from GHCR (Cosign-verified)
+      2. Run deploy-tools inside container:
+         a. node scripts/migrate.js       ← pre-flight DB migrations
+         b. node scripts/apply-schema.js   ← schema alignment
+      3. Swap running gwi-pos container with new image
+      4. Health check (HTTP /api/health on port 3005)
+      5. Verify version-contract.json matches expected
+      6. gwi-agent container also swapped (new sync-agent.js in new image)
+      7. ACK COMPLETED → MC updates deployment status
 ```
 
 ## Key Files
@@ -64,10 +62,10 @@ When a schema change would fail `prisma db push` on tables with existing data:
 
 | Command | Handler | Action |
 |---------|---------|--------|
-| `FORCE_UPDATE` | `handleForceUpdate()` | Full deploy cycle (see architecture above) |
+| `FORCE_UPDATE` | `handleForceUpdate()` | Calls `gwi-node.sh deploy` (see architecture above) |
 | `RE_PROVISION` | Aliases to `handleForceUpdate()` | Same as FORCE_UPDATE |
-| `RELOAD_TERMINALS` | Service restart | `systemctl restart thepasspos` (forces client reconnect) |
-| `RELOAD_TERMINAL` | Service restart | Same as RELOAD_TERMINALS on NUC |
+| `RELOAD_TERMINALS` | Container restart | `docker restart gwi-pos` (forces client reconnect) |
+| `RELOAD_TERMINAL` | Container restart | Same as RELOAD_TERMINALS on NUC |
 | `RESTART_KIOSK` | Service restart | `systemctl restart thepasspos-kiosk` |
 | `DATA_CHANGED` | Domain sync | Fetches settings from MC, pushes to local POS |
 | `UPDATE_PAYMENT_CONFIG` | RSA decrypt + push | Decrypts payload with private key, pushes to local API |
@@ -76,50 +74,42 @@ When a schema change would fail `prisma db push` on tables with existing data:
 | `CANCEL_REBOOT` | Cancel reboot | `sudo shutdown -c` |
 | `REPAIR_GIT_CREDENTIALS` | Credential update | Writes deploy token to .git-credentials, validates with fetch |
 
-### Service Name Resolution
+### Container Name Resolution
 
-NUC services may have different names depending on installer version:
-- **Current:** `thepasspos`, `thepasspos-sync`, `thepasspos-kiosk`
-- **Legacy:** `thepasspos`, `thepasspos-sync`, `thepasspos-kiosk`
-
-Sync agent tries current name first, falls back to legacy.
+NUC runs Docker containers managed by `gwi-node.sh`:
+- **gwi-pos** — POS application container (port 3005)
+- **gwi-agent** — Sync agent container (SSE listener, fleet command handler)
+- **thepasspos-kiosk** — Chromium kiosk (still a systemd service)
 
 ## Self-Update Mechanism
 
-The sync agent updates itself on two occasions:
-
-1. **Boot self-update** (`checkBootUpdate()`): On every startup, downloads latest sync-agent.js from GitHub API. If content differs, writes new file and exits (systemd restarts with new code).
-
-2. **Post-deploy self-update**: After successful FORCE_UPDATE, copies `public/sync-agent.js` from freshly pulled repo to `/opt/gwi-pos/sync-agent.js`, then schedules `systemctl restart thepasspos-sync` after 15s (allows ACK to send first).
+The sync agent is containerized inside the `gwi-agent` Docker container. It updates automatically when `gwi-node.sh deploy` pulls a new image -- both `gwi-pos` and `gwi-agent` containers are swapped together, so the sync agent always matches the deployed app version.
 
 ### Chicken-and-Egg Recovery
 
 If the sync agent has a bug that prevents deployment:
-1. Push fix to GitHub repo
-2. Reboot NUC (or `systemctl restart thepasspos-sync`)
-3. Boot self-update downloads fixed code from GitHub
+1. Push fix to GitHub repo (triggers new Docker image build)
+2. SSH into NUC and run `gwi-node.sh deploy` manually
+3. Both containers are swapped with the fixed image
 4. Next FORCE_UPDATE works with corrected handler
 
 ## Debugging NUC Deploys
 
 ```bash
 # SSH into NUC
-ssh smarttab@<nuc-ip>
+ssh gwipos@<nuc-ip>
 
 # Watch sync agent logs (real-time)
-sudo journalctl -u thepasspos-sync -f
+docker logs gwi-agent -f
 
 # Watch POS service logs
-sudo journalctl -u thepasspos -f -n 100
+docker logs gwi-pos -f --tail 100
 
-# Check current deployed version
-cat /opt/gwi-pos/app/package.json | grep version
+# Check container status
+gwi-node.sh status
 
-# Check sync agent version matches repo
-diff /opt/gwi-pos/sync-agent.js /opt/gwi-pos/app/public/sync-agent.js
-
-# Manually trigger pre-migrate
-cd /opt/gwi-pos/app && node scripts/nuc-pre-migrate.js
+# Manually trigger deploy
+gwi-node.sh deploy
 
 # Check database state
 psql thepasspos -c "SELECT data_type FROM information_schema.columns WHERE table_name='Payment' AND column_name='paymentMethod'"

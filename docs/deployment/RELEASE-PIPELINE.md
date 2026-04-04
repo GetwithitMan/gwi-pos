@@ -54,20 +54,25 @@ MC admin deploys Release to locations
   +-- Creates FleetCommand (FORCE_UPDATE) per server
   +-- Sets ServerNode.targetVersion
   |
-NUC: sync-agent receives FleetCommand → calls `gwi-node deploy`
+NUC: sync-agent receives FleetCommand → writes trigger file
+  +-- sync-agent writes deploy-requests/<attemptId>.json (trigger file)
+  +-- gwi-node.service polls every 3s, picks up trigger
+  +-- gwi-node self-updates from target image before deploy (re-exec)
   +-- gwi-node pulls Docker image from GHCR (Cosign-verified)
   +-- Runs deploy-tools: migrate.js + apply-schema.js (inside container)
   +-- Swaps container (old → new) with health check
-  +-- ACKs back to MC with deploy result
+  +-- gwi-node writes deploy-results/<attemptId>.json
+  +-- sync-agent reads result, ACKs back to MC
+  +-- deploy_success() runs idempotent bootstrap (refreshes host script + service)
 ```
 
-### Deploy Agent: gwi-node.sh (v2.0.0)
+### Deploy Agent: gwi-node.sh (v2.0.10)
 
-`gwi-node.sh` (312 lines) is the **single deploy agent** on every NUC. There is no tarball extraction path, no systemd app service, no mode markers.
+`gwi-node.sh` is the **single deploy agent** on every NUC. There is no tarball extraction path, no systemd app service, no mode markers.
 
 - **Install and update are the same operation:** `gwi-node deploy`
 - **Docker-only runtime.** The app runs as a Docker container, not a bare Node.js process.
-- **sync-agent.js** calls `gwi-node deploy` when it receives a FORCE_UPDATE fleet command.
+- **sync-agent.js** writes trigger files (not execSync) when it receives a FORCE_UPDATE fleet command.
 - **update-agent.ts** calls `gwi-node deploy` via API routes for self-service updates.
 - **Installer stage 05** calls `gwi-node install` (which delegates to `gwi-node deploy` after initial setup).
 
@@ -76,6 +81,39 @@ Key commands:
 gwi-node.sh deploy   # Pull image, run migrations, swap container, health check
 gwi-node.sh status   # Show running container, image tag, uptime
 ```
+
+### Trigger-File Protocol (v2.0.5+)
+
+The sync-agent container does NOT call `gwi-node deploy` directly (no `execSync`). Instead, communication uses an attempt-scoped trigger-file protocol:
+
+1. **sync-agent** writes `deploy-requests/<attemptId>.json` with the deploy payload
+2. **gwi-node.service** (systemd) polls the `deploy-requests/` directory every 3 seconds
+3. When a trigger file is found, gwi-node.sh executes the deploy
+4. **gwi-node.sh** writes `deploy-results/<attemptId>.json` with the outcome
+5. **sync-agent** reads the result file and ACKs back to MC
+
+This decoupling means the container never needs host-level execution privileges. The host service is the only actor that runs Docker commands.
+
+### Self-Update Before Deploy (v2.0.7+)
+
+Before every deploy cycle, `gwi-node.sh` self-updates from the target Docker image:
+
+1. Pulls the target image (if not already cached)
+2. Extracts the latest `gwi-node.sh` from the image
+3. If the extracted script differs from the running one, replaces itself and **re-execs** with the same arguments
+4. The deploy then proceeds using the up-to-date script
+
+This ensures the deploy logic always matches the version being deployed, even if the host script is outdated.
+
+### Idempotent Bootstrap in deploy_success() (v2.0.6+)
+
+After a successful deploy, `deploy_success()` runs an idempotent bootstrap that refreshes host-level infrastructure:
+
+- **scriptUpdated:** Copies the latest `gwi-node.sh` from the running container to the host path
+- **serviceUpdated:** Regenerates the `gwi-node.service` systemd unit file if it differs
+- **degraded:** Reported (but non-fatal) if bootstrap encounters errors — the deploy itself still succeeded
+
+Observability fields (`selfUpdated`, `bootstrap.scriptUpdated`, `bootstrap.serviceUpdated`, `bootstrap.degraded`) are included in the deploy result ACK to MC.
 
 ---
 
@@ -152,7 +190,7 @@ If the version does NOT match `^1\.1\.` (e.g., `1.2.62`), bump-version.sh **pres
 
 **This means: for 1.2.X, 2.0.X, or any non-1.1.X version, YOU must bump manually in package.json before committing.**
 
-The current version is `2.0.0`.
+The current version is `2.0.10`.
 
 ### Skip conditions
 
@@ -368,17 +406,22 @@ Releases are separate from schema rollouts:
 }
 ```
 
-### NUC Update Flow (v2.0.0 — gwi-node)
+### NUC Update Flow (v2.0.10 — gwi-node + trigger-file protocol)
 
 1. Sync-agent polls `/api/fleet/commands/stream` (or receives push via cloud relay)
 2. Receives `FORCE_UPDATE` command with `imageTag`
-3. Sync-agent calls `gwi-node deploy` (the single deploy agent on every NUC)
-4. gwi-node pulls Docker image from GHCR, verifies Cosign signature (fail-closed)
-5. Runs deploy-tools inside the container: `migrate.js` (pending migrations) + `apply-schema.js` (prisma db push equivalent)
-6. Swaps the running container (old -> new) with health check gate
-7. ACKs back to MC with deploy result
+3. Sync-agent writes `deploy-requests/<attemptId>.json` (trigger file — no execSync)
+4. gwi-node.service (polling every 3s) picks up the trigger
+5. gwi-node self-updates from target image, re-execs if script changed
+6. gwi-node pulls Docker image from GHCR, verifies Cosign signature (fail-closed)
+7. Deploy preflight: port availability check, state directory writability, manifest retry
+8. Runs deploy-tools inside the container: `migrate.js` (pending migrations) + `apply-schema.js` (prisma db push equivalent)
+9. Swaps the running container (old -> new) with health check gate
+10. `deploy_success()` runs idempotent bootstrap (refreshes host script + service)
+11. gwi-node writes `deploy-results/<attemptId>.json`
+12. Sync-agent reads result, ACKs back to MC with observability fields
 
-There is no tarball extraction, no `deploy-release.sh`, no systemd app restart. gwi-node manages the full container lifecycle.
+There is no tarball extraction, no `deploy-release.sh`, no systemd app restart, no execSync from containers. gwi-node manages the full container lifecycle. The trigger-file protocol ensures clean separation between container (signal) and host (execute).
 
 ---
 
@@ -483,7 +526,7 @@ If deploying to NUCs, create a Release in MC admin and deploy to target location
 
 | File | Purpose |
 |------|---------|
-| **`gwi-node.sh`** | **Single deploy agent on every NUC (v2.0.0). Install and update are the same operation.** |
+| **`gwi-node.sh`** | **Single deploy agent on every NUC (v2.0.10). Install and update are the same operation. Self-updates before each deploy.** |
 | `vercel.json` | Vercel config: `buildCommand: "node scripts/vercel-build.js"` |
 | `scripts/vercel-build.js` | Production build orchestrator (Vercel) — builds tarball + Docker image + Cosign |
 | `package.json` (`build` script) | Local/NUC build chain |
