@@ -47,7 +47,7 @@ WORKDIR /app
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
-RUN apk add --no-cache postgresql-client curl tzdata
+RUN apk add --no-cache postgresql-client curl tzdata docker-cli bash
 
 ENV TZ=America/New_York
 
