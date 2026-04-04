@@ -26,3 +26,23 @@ services:
       options:
         max-size: "50m"
         max-file: "3"
+
+  gwi-agent:
+    image: ${IMAGE_REF:-ghcr.io/getwithitman/gwi-pos:latest}
+    container_name: gwi-agent
+    restart: unless-stopped
+    network_mode: host
+    user: root
+    command: ["node", "public/sync-agent.js"]
+    env_file: /opt/gwi-pos/shared/.env
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /opt/gwi-pos/shared:/opt/gwi-pos/shared
+      - /opt/gwi-pos/gwi-node.sh:/opt/gwi-pos/gwi-node.sh:ro
+    environment:
+      - GWI_NODE_PATH=/opt/gwi-pos/gwi-node.sh
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
