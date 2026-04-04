@@ -1,5 +1,7 @@
 // GWI POS Sync Agent — receives fleet commands from Mission Control
-// Runs as systemd service (pulse-sync). No npm dependencies — native Node.js only.
+// Runs as the gwi-agent container (same image as gwi-pos, different CMD).
+// Updates atomically with gwi-pos when gwi-node deploys a new image.
+// No npm dependencies — native Node.js only.
 'use strict'
 const https = require('https')
 const http = require('http')
@@ -8,7 +10,7 @@ const { execSync } = require('child_process')
 const fs = require('fs')
 const path = require('path')
 
-const ENV_FILE         = '/opt/gwi-pos/.env'
+const ENV_FILE         = fs.existsSync('/opt/gwi-pos/shared/.env') ? '/opt/gwi-pos/shared/.env' : '/opt/gwi-pos/.env'
 const APP_DIR          = fs.existsSync('/opt/gwi-pos/current') ? '/opt/gwi-pos/current' : '/opt/gwi-pos/app'
 const LOG_FILE         = '/opt/gwi-pos/sync-agent.log'
 const PRIVATE_KEY_PATH = '/opt/gwi-pos/keys/private.pem'
@@ -189,11 +191,11 @@ async function handleForceUpdate(payload, cmdId) {
   }
 
   // ── Deploy via gwi-node (single bootstrap agent) ────────────────────────
-  var GWI_NODE = '/opt/gwi-pos/gwi-node.sh'
+  var GWI_NODE = process.env.GWI_NODE_PATH || '/opt/gwi-pos/gwi-node.sh'
 
   // Self-update gwi-node from the running image before deploy
   try {
-    run('sudo bash "' + GWI_NODE + '" self-update', APP_DIR, 30)
+    run('bash "' + GWI_NODE + '" self-update', APP_DIR, 30)
   } catch (e) {
     log('[Update] gwi-node self-update warning: ' + e.message)
   }
@@ -223,7 +225,7 @@ async function handleForceUpdate(payload, cmdId) {
   if (cmdId) ackProgress(cmdId, 'IN_PROGRESS', { step: 'gwi-node-deploy', targetVersion: targetVersion })
 
   try {
-    execSync('sudo bash "' + GWI_NODE + '" deploy', {
+    execSync('bash "' + GWI_NODE + '" deploy', {
       cwd: APP_DIR,
       encoding: 'utf-8',
       timeout: 600000,
@@ -259,35 +261,21 @@ async function handleForceUpdate(payload, cmdId) {
   }
 }
 
-// ── Self-update sync agent from container image ──────────────────────────
+// ── Self-update sync agent ────────────────────────────────────────────────
+// No-op: sync-agent runs in a container (gwi-agent) and updates automatically
+// when gwi-node deploys a new image and restarts the gwi-agent container.
 function selfUpdateSyncAgent() {
-  try {
-    // Extract latest sync-agent from running container image
-    var image = ''
-    try {
-      image = execSync('sudo docker inspect --format="{{.Config.Image}}" gwi-pos', { encoding: 'utf8', timeout: 5000 }).trim()
-    } catch (e) {}
-
-    if (image) {
-      execSync('sudo docker run --rm "' + image + '" cat /app/public/sync-agent.js > /tmp/sync-agent-new.js', { timeout: 15000 })
-      if (fs.existsSync('/tmp/sync-agent-new.js') && fs.statSync('/tmp/sync-agent-new.js').size > 1000) {
-        fs.copyFileSync('/tmp/sync-agent-new.js', '/opt/gwi-pos/sync-agent.js')
-        log('[Update] Sync agent self-updated from container image')
-        setTimeout(function() {
-          run('sudo systemctl restart thepasspos-sync', APP_DIR, 30)
-        }, 15000)
-      }
-    }
-  } catch (e) {
-    log('[Update] Sync agent self-update warning: ' + e.message)
-  }
+  log('[Update] Sync agent is containerized — self-update is automatic')
 }
 
 // ── Component updates from checkout ────────────────────────────────────────
-// After a successful POS update, deploy all bundled components (dashboard,
-// monitoring scripts, watchdog) so every FORCE_UPDATE brings the full stack
-// to the target version — not just the POS app.
+// When running in container (gwi-agent), host-level component updates
+// (dashboard, watchdog, monitoring) are handled by gwi-node, not the agent.
 function updateComponentsFromCheckout() {
+  if (process.env.GWI_NODE_PATH) {
+    log('[Components] Running in container — host component updates handled by gwi-node')
+    return { _updated: false }
+  }
   var result = { _updated: false, dashboard: null, monitoring: false, watchdog: false }
 
   // Dashboard .deb update (version-aware)
@@ -302,11 +290,11 @@ function updateComponentsFromCheckout() {
     var debPath = path.join(APP_DIR, 'public', 'gwi-nuc-dashboard.deb')
     if (installedVer !== availableVer && availableVer !== '0.0.0' && fs.existsSync(debPath)) {
       log('[Components] Dashboard update: ' + installedVer + ' -> ' + availableVer)
-      var ok = run('sudo dpkg -i "' + debPath + '" 2>/dev/null || sudo apt-get install -f -y', APP_DIR, 60)
+      var ok = run('dpkg -i "' + debPath + '" 2>/dev/null || apt-get install -f -y', APP_DIR, 60)
       if (ok) {
         run('pkill -f gwi-dashboard || true', APP_DIR, 5)
         // Restart dashboard via systemd (if service exists) or direct launch
-        run('sudo -u ' + (process.env.POSUSER || 'gwipos') + ' bash -c "export XDG_RUNTIME_DIR=/run/user/$(id -u); export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus; systemctl --user restart gwi-dashboard.service 2>/dev/null || DISPLAY=:0 nohup $(which gwi-dashboard 2>/dev/null || which gwi-nuc-dashboard 2>/dev/null || echo /usr/bin/gwi-dashboard) >/dev/null 2>&1 &"', APP_DIR, 10)
+        run('su - ' + (process.env.POSUSER || 'gwipos') + ' -c "export XDG_RUNTIME_DIR=/run/user/$(id -u); export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus; systemctl --user restart gwi-dashboard.service 2>/dev/null || DISPLAY=:0 nohup $(which gwi-dashboard 2>/dev/null || which gwi-nuc-dashboard 2>/dev/null || echo /usr/bin/gwi-dashboard) >/dev/null 2>&1 &"', APP_DIR, 10)
         result.dashboard = { from: installedVer, to: availableVer, updated: true }
         result._updated = true
         log('[Components] Dashboard updated and restarted')
@@ -587,10 +575,9 @@ async function processCommand(dataStr) {
           try { fs.copyFileSync(ENV_FILE, path.join(APP_DIR, '.env')) } catch (e) {}
           try { fs.copyFileSync(ENV_FILE, path.join(APP_DIR, '.env.local')) } catch (e) {}
 
-          // Restart POS service to pick up new config
-          log('[Sync] CONFIGURE_SYNC: restarting POS service...')
-          var csOk = run('sudo systemctl restart thepasspos', APP_DIR, 30)
-          if (!csOk) csOk = run('sudo systemctl restart pulse-pos', APP_DIR, 30)
+          // Restart POS container to pick up new config
+          log('[Sync] CONFIGURE_SYNC: restarting POS container...')
+          var csOk = run('docker restart gwi-pos', APP_DIR, 30)
 
           // Update in-memory env so heartbeat picks up the change immediately
           env.NEON_DATABASE_URL = neonDatabaseUrl
@@ -608,21 +595,19 @@ async function processCommand(dataStr) {
       // Re-provision = full update cycle (same as FORCE_UPDATE)
       result = await handleForceUpdate(cmd.payload || {}, cmd.id)
     } else if (cmd.type === 'RELOAD_TERMINALS') {
-      // Restart POS service to force all connected terminals to reconnect
-      log('[Sync] RELOAD_TERMINALS — restarting POS service...')
-      var rlOk = run('sudo systemctl restart thepasspos', APP_DIR, 30)
-      if (!rlOk) rlOk = run('sudo systemctl restart pulse-pos', APP_DIR, 30)
+      // Restart POS container to force all connected terminals to reconnect
+      log('[Sync] RELOAD_TERMINALS — restarting POS container...')
+      var rlOk = run('docker restart gwi-pos', APP_DIR, 30)
       result = { ok: rlOk }
     } else if (cmd.type === 'RELOAD_TERMINAL') {
       // Single terminal reload — same effect as RELOAD_TERMINALS on NUC
-      log('[Sync] RELOAD_TERMINAL — restarting POS service...')
-      var rtOk = run('sudo systemctl restart thepasspos', APP_DIR, 30)
-      if (!rtOk) rtOk = run('sudo systemctl restart pulse-pos', APP_DIR, 30)
+      log('[Sync] RELOAD_TERMINAL — restarting POS container...')
+      var rtOk = run('docker restart gwi-pos', APP_DIR, 30)
       result = { ok: rtOk }
     } else if (cmd.type === 'RESTART_KIOSK') {
-      log('[Sync] RESTART_KIOSK — restarting kiosk service...')
-      var rkOk = run('sudo systemctl restart thepasspos-kiosk', APP_DIR, 30)
-      if (!rkOk) rkOk = run('sudo systemctl restart pulse-kiosk', APP_DIR, 30)
+      log('[Sync] RESTART_KIOSK — restarting kiosk container...')
+      var rkOk = run('docker restart thepasspos-kiosk', APP_DIR, 30)
+      if (!rkOk) rkOk = run('docker restart pulse-kiosk', APP_DIR, 30)
       result = { ok: rkOk }
     } else if (cmd.type === 'KILL_SWITCH') {
       log('[Sync] KILL_SWITCH received — acknowledged')
@@ -630,11 +615,11 @@ async function processCommand(dataStr) {
     } else if (cmd.type === 'SCHEDULE_REBOOT') {
       var delayMin = (cmd.payload && cmd.payload.delayMinutes) || 15
       log('[Sync] Scheduling reboot in ' + delayMin + ' minutes')
-      var ok = run('sudo shutdown -r +' + delayMin, APP_DIR, 30)
+      var ok = run('shutdown -r +' + delayMin, APP_DIR, 30)
       result = { ok: ok, scheduledRebootIn: delayMin }
     } else if (cmd.type === 'CANCEL_REBOOT') {
       log('[Sync] Cancelling scheduled reboot')
-      run('sudo shutdown -c', APP_DIR, 10)
+      run('shutdown -c', APP_DIR, 10)
       result = { ok: true }
     } else if (cmd.type === 'RUN_BASELINE') {
       // MC sends RUN_BASELINE command to run Ansible hardening baseline

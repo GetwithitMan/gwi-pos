@@ -11,6 +11,7 @@ readonly LOCK_FILE="${STATE_DIR}/gwi-node.lock"
 readonly VERSION_FILE="${STATE_DIR}/running-version.json"
 readonly PREVIOUS_IMAGE_FILE="${STATE_DIR}/previous-image.txt"
 readonly CONTAINER_NAME="gwi-pos"
+readonly AGENT_CONTAINER_NAME="gwi-agent"
 readonly R2_ORIGIN="https://pub-15bf4245be0e4c05b570d31988004d09.r2.dev"
 readonly LOCK_TIMEOUT=300 HEALTH_MAX_ATTEMPTS=30 HEALTH_INTERVAL=2 HEALTH_CONSECUTIVE=3
 ENV_FILE="${SHARED_DIR}/.env"; [[ -f "$ENV_FILE" ]] || ENV_FILE="${BASE_DIR}/.env"; readonly ENV_FILE
@@ -115,6 +116,24 @@ start_container() {
     --network=host --env-file "$ENV_FILE" -v "${SHARED_DIR}:${SHARED_DIR}" "$1"
 }
 
+start_agent() {
+  log "Starting gwi-agent..."
+  docker stop "$AGENT_CONTAINER_NAME" 2>/dev/null || true
+  docker rm "$AGENT_CONTAINER_NAME" 2>/dev/null || true
+  docker run -d --name "$AGENT_CONTAINER_NAME" \
+    --restart=unless-stopped \
+    --network=host \
+    --user root \
+    --env-file "$ENV_FILE" \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    -v "${SHARED_DIR}:${SHARED_DIR}" \
+    -v "${BASE_DIR}/gwi-node.sh:${BASE_DIR}/gwi-node.sh:ro" \
+    -e GWI_NODE_PATH="${BASE_DIR}/gwi-node.sh" \
+    "$1" \
+    node public/sync-agent.js
+  log "gwi-agent started"
+}
+
 systemd_last_resort() {
   log "Last resort: attempting systemd thepasspos..."
   systemctl enable thepasspos 2>/dev/null || true
@@ -180,11 +199,15 @@ deploy() {
       && log "Neon migration complete" \
       || log "WARNING: Neon migration failed — continuing"
   fi
-  log "Stopping old container..."
+  log "Stopping old runtime..."
   docker stop "$CONTAINER_NAME" 2>/dev/null || true
   docker rm "$CONTAINER_NAME" 2>/dev/null || true
+  docker stop "$AGENT_CONTAINER_NAME" 2>/dev/null || true
+  docker rm "$AGENT_CONTAINER_NAME" 2>/dev/null || true
   systemctl stop thepasspos 2>/dev/null || true
   systemctl disable thepasspos 2>/dev/null || true
+  systemctl stop thepasspos-sync 2>/dev/null || true
+  systemctl disable thepasspos-sync 2>/dev/null || true
   log "Starting: $IMAGE_REF"
   start_container "$IMAGE_REF" || die "Failed to start container"
   log "Waiting for health..."
@@ -207,6 +230,7 @@ deploy_success() {
 EOF
   chmod 644 "$VERSION_FILE" 2>/dev/null || true
   docker image prune -f --filter "dangling=true" 2>/dev/null || true
+  start_agent "$IMAGE_REF" || log "WARN: gwi-agent failed to start (non-fatal)"
   FINAL_STATUS="healthy"
   write_deploy_log
   log "Deploy $DEPLOY_ID complete: $IMAGE_REF"
