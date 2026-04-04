@@ -38,7 +38,7 @@ The installer will prompt you for:
 SERVER role:
     - PostgreSQL (local database for offline operation)
     - Node.js 20 + GWI POS application
-    - Chromium kiosk (full-screen POS at localhost:3000)
+    - Chromium kiosk (full-screen POS at localhost:3005)
     - Daily backup cron job (4 AM)
     - RealVNC (if token provided)
 
@@ -50,8 +50,8 @@ TERMINAL role:
 --------------------------------------------------------------------------------
 The POS is running at:
 
-    http://localhost:3000          (on the server NUC)
-    http://SERVER-IP:3000         (from other devices on the network)
+    http://localhost:3005          (on the server NUC)
+    http://SERVER-IP:3005         (from other devices on the network)
 
 Demo login PINs:
     Manager:   1234
@@ -65,38 +65,41 @@ PART 2: MANAGING THE NUC
 
 CHECK SERVICE STATUS
 --------------------------------------------------------------------------------
-    sudo systemctl status thepasspos        # POS server (server role)
+    docker ps                               # Show running containers (gwi-pos, gwi-agent)
+    gwi-node.sh status                      # Show container state, image tag, uptime
     sudo systemctl status thepasspos-kiosk      # Kiosk browser (both roles)
 
 VIEW LOGS
 --------------------------------------------------------------------------------
-    sudo journalctl -u thepasspos -f        # Tail POS server logs
+    docker logs gwi-pos -f                  # Tail POS server logs
+    docker logs gwi-agent -f               # Tail sync agent logs
     sudo journalctl -u thepasspos-kiosk -f      # Tail kiosk logs
 
 RESTART SERVICES
 --------------------------------------------------------------------------------
-    sudo systemctl restart thepasspos       # Restart POS server
+    docker restart gwi-pos                  # Restart POS server container
+    gwi-node.sh deploy                      # Full redeploy (pull image, migrate, swap)
     sudo systemctl restart thepasspos-kiosk     # Restart kiosk browser
 
 STOP SERVICES
 --------------------------------------------------------------------------------
     sudo systemctl stop thepasspos-kiosk        # Stop kiosk only
-    sudo systemctl stop thepasspos          # Stop POS server
+    docker stop gwi-pos                     # Stop POS server container
 
 
 ================================================================================
 PART 3: UPDATES
 ================================================================================
 
-Re-run the installer to update to the latest version:
+Updates are deployed via Mission Control or by running gwi-node directly:
 
-    sudo bash /opt/gwi-pos/installer.run
+    gwi-node.sh deploy
 
 This will:
-    1. Back up the database automatically
-    2. Pull the latest code from GitHub
-    3. Rebuild the application
-    4. Restart all services
+    1. Pull the latest Docker image from GHCR
+    2. Run database migrations inside the container
+    3. Swap the running container with a health check
+    4. ACK back to Mission Control
 
 No data is lost during updates.
 
@@ -125,10 +128,10 @@ LIST BACKUPS
 
 RESTORE FROM BACKUP
 --------------------------------------------------------------------------------
-    sudo systemctl stop thepasspos
+    docker stop gwi-pos
     gunzip < /opt/gwi-pos/backups/pos-YYYYMMDD-HHMMSS.sql.gz | \
       sudo -u postgres psql thepasspos
-    sudo systemctl start thepasspos
+    docker start gwi-pos
 
 
 ================================================================================
@@ -138,18 +141,18 @@ PART 5: TROUBLESHOOTING
 POS WON'T START
 --------------------------------------------------------------------------------
 Check logs:
-    sudo journalctl -u thepasspos --lines 50
+    docker logs gwi-pos --tail 50
 
 Check PostgreSQL:
     sudo systemctl status postgresql
 
-Check if port 3000 is in use:
-    sudo lsof -i :3000
+Check if port 3005 is in use:
+    sudo lsof -i :3005
 
 KIOSK WON'T LAUNCH
 --------------------------------------------------------------------------------
 Check if POS is ready:
-    curl -s http://localhost:3000/api/health
+    curl -s http://localhost:3005/api/health
 
 Check kiosk logs:
     sudo journalctl -u thepasspos-kiosk --lines 20
@@ -173,9 +176,10 @@ FACTORY RESET
 --------------------------------------------------------------------------------
 WARNING: This deletes ALL data including the database.
 
-    sudo systemctl stop thepasspos thepasspos-kiosk
+    docker stop gwi-pos gwi-agent
+    docker rm gwi-pos gwi-agent
+    sudo systemctl stop thepasspos-kiosk
     sudo rm -rf /opt/gwi-pos
-    sudo rm -f /etc/systemd/system/thepasspos.service
     sudo rm -f /etc/systemd/system/thepasspos-kiosk.service
     sudo systemctl daemon-reload
 
@@ -186,12 +190,13 @@ Then re-run the installer.
 PART 6: FILE LOCATIONS
 ================================================================================
 
-Application:        /opt/gwi-pos/app/
+Application:        Docker container "gwi-pos" (GHCR image)
+Sync agent:         Docker container "gwi-agent"
+Deploy agent:       /opt/gwi-pos/gwi-node.sh
 Environment:        /opt/gwi-pos/.env
 Backups:            /opt/gwi-pos/backups/
 Backup script:      /opt/gwi-pos/backup-pos.sh
 Installer copy:     /opt/gwi-pos/installer.run
-POS service:        /etc/systemd/system/thepasspos.service
 Kiosk service:      /etc/systemd/system/thepasspos-kiosk.service
 Desktop launcher:   /usr/share/applications/gwi-pos.desktop
 
@@ -203,7 +208,7 @@ QUICK REFERENCE
 Server IP:          ___________________________
 Venue Domain:       ___________________________.ordercontrolcenter.com
 Station Role:       Server / Terminal
-App Port:           3000
+App Port:           3005
 Manager PIN:        1234
 Server PIN:         2345
 Bartender PIN:      3456

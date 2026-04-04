@@ -8,13 +8,15 @@
 
 ## Overview
 
-On every startup of the `thepasspos-sync` systemd service, the sync agent now checks GitHub for a newer version of itself. If the file has changed, it replaces itself atomically and immediately exits — causing systemd to restart it with the new code. If content is identical or any check fails, startup continues normally.
+**Note:** The sync agent is now containerized as the `gwi-agent` Docker container. Boot self-update is largely superseded by `gwi-node.sh deploy`, which swaps the entire container image (including sync-agent.js). The mechanism described below is historical context from the pre-Docker architecture.
+
+Previously, on every startup of the `thepasspos-sync` systemd service, the sync agent checked GitHub for a newer version of itself. If the file had changed, it replaced itself atomically and exited -- causing systemd to restart it with the new code. In the current Docker model, the agent gets a new sync-agent.js automatically whenever `gwi-node.sh deploy` pulls a new image and swaps the `gwi-agent` container.
 
 ---
 
 ## Problem and Motivation
 
-Skill 399 introduced a self-copy mechanism inside `FORCE_UPDATE`: after a successful deploy, the handler copies the freshly-built `public/sync-agent.js` to `/opt/gwi-pos/sync-agent.js` and restarts `thepasspos-sync`. This covers the happy path — the NUC is online and receives the fleet command.
+Skill 399 introduced a self-copy mechanism inside `FORCE_UPDATE`: after a successful deploy, the handler copied the freshly-built `public/sync-agent.js` to `/opt/gwi-pos/sync-agent.js` and restarted the sync agent. This covered the happy path -- the NUC is online and receives the fleet command. (In the current Docker architecture, `gwi-node.sh deploy` swaps the `gwi-agent` container instead, eliminating the file-copy mechanism.)
 
 Two gaps remained:
 
@@ -97,7 +99,7 @@ The function `checkBootUpdate(done)` runs at the very start of the sync agent, b
 | Credentials file missing | ~0ms (skips immediately) |
 | GitHub returns non-200 or tiny body | < 1 second to receive error, then normal startup |
 
-The worst case is a 15-second delay before `connectStream()` runs. This is acceptable on boot — systemd does not mark the service as failed during this window, and the NUC's POS app starts independently under the `thepasspos` service.
+The worst case is a 15-second delay before `connectStream()` runs. This is acceptable on boot -- the NUC's POS app starts independently in the `gwi-pos` container.
 
 ---
 
@@ -110,7 +112,7 @@ The worst case is a 15-second delay before `connectStream()` runs. This is accep
 | Database schema | No |
 | Any other file on the NUC | No |
 
-POS app updates remain intentional — they are delivered exclusively via `FORCE_UPDATE` fleet commands from Mission Control, which trigger `git pull`, `npm ci`, `prisma db push`, and `npm run build`. The boot self-update is a narrow, targeted mechanism for the sync agent only.
+POS app updates remain intentional -- they are delivered exclusively via `FORCE_UPDATE` fleet commands from Mission Control, which trigger `gwi-node.sh deploy` (pull Docker image, migrate in container, swap container, health check). In the current architecture, both `gwi-pos` and `gwi-agent` containers are swapped together, making the boot self-update a legacy fallback.
 
 ---
 
@@ -120,16 +122,10 @@ These are two independent update paths. Either can update the sync agent:
 
 | Path | Trigger | When it fires |
 |------|---------|---------------|
-| FORCE_UPDATE self-copy (Skill 399) | Fleet command delivered via SSE | When NUC is online and MC sends the command |
-| Boot self-update (this skill) | Every `thepasspos-sync` startup | On every reboot, crash-restart, or manual `systemctl restart thepasspos-sync` |
+| FORCE_UPDATE container swap (Skill 399) | Fleet command delivered via SSE | `gwi-node.sh deploy` swaps both `gwi-pos` and `gwi-agent` containers |
+| Boot self-update (this skill) | Every `gwi-agent` container startup | On every container restart (legacy fallback, mostly a no-op now) |
 
-If both fire in sequence (e.g., FORCE_UPDATE restarts thepasspos-sync, which then runs checkBootUpdate on the new agent), the boot check compares the already-updated file to GitHub and finds them identical — no-op.
-
-The FORCE_UPDATE handler for reference (Skill 399):
-```javascript
-fs.copyFileSync(newAgentPath, '/opt/gwi-pos/sync-agent.js')
-setTimeout(() => run('sudo systemctl restart thepasspos-sync', ...), 15000)
-```
+In the Docker architecture, `gwi-node.sh deploy` swaps both containers with the new image. If the boot self-update still runs inside the container, it compares the baked-in agent to GitHub and finds them identical -- no-op.
 
 ---
 
@@ -137,13 +133,13 @@ setTimeout(() => run('sudo systemctl restart thepasspos-sync', ...), 15000)
 
 | Edge case | Behavior |
 |-----------|----------|
-| NUC was offline during all FORCE_UPDATE commands | Boot self-update fetches from GitHub on next reboot; NUC gets current agent |
+| NUC was offline during all FORCE_UPDATE commands | Boot self-update fetches from GitHub on next container start; NUC gets current agent |
 | `.git-credentials` file missing (freshly provisioned NUC before creds written) | Skips update check entirely, starts normally |
 | GitHub API rate-limited (403) | Non-200 status → skips, starts normally |
 | GitHub returns a redirect | Treated as non-200 unless followed; download skipped |
 | Response body is a GitHub error JSON (small payload) | < 100 byte guard rejects it |
 | `fs.renameSync` fails (e.g., cross-device) | Error caught, `done()` called, agent starts normally |
-| `process.exit(0)` fires but systemd doesn't restart | Unlikely given `Restart=always`, but in that case the NUC simply has the new agent on disk ready for the next manual start |
+| `process.exit(0)` fires but container doesn't restart | Unlikely given Docker restart policy, but in that case the NUC simply has the new agent in the image ready for the next manual start |
 | Two rapid reboots while update is in flight | Second boot runs checkBootUpdate again — GitHub now returns same content as newly written file, no-op |
 
 ---

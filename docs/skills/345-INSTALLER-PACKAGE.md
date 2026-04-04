@@ -8,7 +8,7 @@
 
 ## Summary
 
-Production-ready installer script (`public/installer.run`, ~1,454 lines) that provisions Ubuntu 22.04+ / Kubuntu 24.04+ NUCs as dedicated POS stations. One curl command, a few prompts, and the NUC is a registered POS device in kiosk mode with RealVNC remote access, heartbeat telemetry, and sync agent.
+Production-ready modular installer (11 stages under `public/installer-modules/`) that provisions Ubuntu 22.04+ / Kubuntu 24.04+ NUCs as dedicated POS stations. One curl command, a few prompts, and the NUC is a registered POS device in kiosk mode with RealVNC remote access, heartbeat telemetry, and sync agent. POS runs as Docker containers (`gwi-pos` + `gwi-agent`) managed by `gwi-node.sh`.
 
 ## Deliverables
 
@@ -50,10 +50,10 @@ NUC (installer.run)                     Cloud (app.thepasspos.com)
         ├── RSA-decrypt secrets with private key  │
         ├── Write /opt/gwi-pos/.env              │
         ├── Install PostgreSQL + create DB       │
-        ├── Clone repo + npm ci + build          │
-        ├── Create systemd services              │
+        ├── Install gwi-node.sh deploy agent       │
+        ├── Pull Docker image + deploy container │
         ├── Configure heartbeat cron             │
-        ├── Install sync agent                   │
+        ├── Start gwi-agent container            │
         ├── Start kiosk                          │
         └── DONE                                 │
 ```
@@ -91,12 +91,11 @@ NUC (installer.run)                     Cloud (app.thepasspos.com)
 - Configures password from encrypted secrets
 
 ### 4. POS Application Install (lines ~450-700, server role only)
-- Git clone → `/opt/gwi-pos/app`
-- Writes `.env.local` from decrypted env + copies to app dir
-- `npm ci --production`
-- `npx prisma generate` + `npx prisma db push`
-- `npm run build`
-- Creates `thepasspos.service` (Node.js: `node -r ./preload.js server.js`)
+- Installs `gwi-node.sh` deploy agent to `/opt/gwi-pos/gwi-node.sh`
+- Pulls Docker image from GHCR (Cosign-verified)
+- Writes `.env` from decrypted env
+- Runs `gwi-node.sh deploy` (migrate in container, swap container, health check)
+- POS runs as Docker container `gwi-pos` (port 3005)
 
 ### 5. Kiosk Setup (lines ~700-820, both roles)
 - Desktop launcher (`.desktop` file) for KDE Plasma
@@ -106,13 +105,13 @@ NUC (installer.run)                     Cloud (app.thepasspos.com)
 - Auto-login configuration for `posuser`
 
 ### 6. Sudoers Rules (lines 822-834)
-Allows POS Node.js process to manage kiosk:
+Allows gwipos user to manage containers and kiosk:
 ```
-posuser ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart thepasspos
-posuser ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop thepasspos-kiosk
-posuser ALL=(ALL) NOPASSWD: /usr/bin/systemctl start thepasspos-kiosk
-posuser ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart thepasspos-kiosk
-posuser ALL=(ALL) NOPASSWD: /usr/bin/pkill -f chromium*
+gwipos ALL=(ALL) NOPASSWD: /usr/bin/docker restart gwi-pos
+gwipos ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop thepasspos-kiosk
+gwipos ALL=(ALL) NOPASSWD: /usr/bin/systemctl start thepasspos-kiosk
+gwipos ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart thepasspos-kiosk
+gwipos ALL=(ALL) NOPASSWD: /usr/bin/pkill -f chromium*
 ```
 
 ### 7. Heartbeat Script + Cron (lines 839-941, server role only)
@@ -125,10 +124,11 @@ posuser ALL=(ALL) NOPASSWD: /usr/bin/pkill -f chromium*
 - Error logging captures HTTP code + response body (first 200 chars)
 
 ### 8. Sync Agent (lines ~945-1100, server role only)
-- `sync-agent.js` at `/opt/gwi-pos/sync-agent.js`
+- `sync-agent.js` runs inside the `gwi-agent` Docker container
 - Connects to MC SSE stream (`/api/fleet/commands/stream`)
 - Receives FORCE_UPDATE, UPDATE_CONFIG, FORCE_SYNC commands
-- Runs as `thepasspos-sync.service` systemd unit
+- On FORCE_UPDATE: calls `gwi-node.sh deploy` to pull new image, migrate, swap container
+- Updates automatically when `gwi-node.sh deploy` pulls a new image (agent container also swapped)
 - Auto-reconnects with exponential backoff (1s → 30s)
 
 ### 9. Backup Script (lines ~1100-1200, server role only)
