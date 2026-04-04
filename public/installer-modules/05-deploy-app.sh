@@ -181,8 +181,8 @@ run_deploy_app() {
 
   # Install gwi-node.sh (the single bootstrap agent)
   local gwi_node="$APP_BASE/gwi-node.sh"
-  if [[ -f "${INSTALLER_MODULES_DIR}/gwi-node.sh" ]]; then
-    cp "${INSTALLER_MODULES_DIR}/gwi-node.sh" "$gwi_node"
+  if [[ -f "${MODULES_DIR:-}/gwi-node.sh" ]]; then
+    cp "${MODULES_DIR}/gwi-node.sh" "$gwi_node"
   elif [[ -f "$APP_BASE/current/public/scripts/gwi-node.sh" ]]; then
     cp "$APP_BASE/current/public/scripts/gwi-node.sh" "$gwi_node"
   else
