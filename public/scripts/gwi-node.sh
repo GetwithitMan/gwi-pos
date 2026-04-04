@@ -808,6 +808,14 @@ watch_loop() {
   log "Watch mode exited"
 }
 
+# ── Source guard ────────────────────────────────────────────────────────────
+# When sourced by the installer (source installer-modules/gwi-node.sh), only
+# define functions — do not parse args or run commands. The installer calls
+# gwi-node.sh functions directly (e.g., via "bash gwi-node.sh install").
+if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
+  return 0 2>/dev/null || true
+fi
+
 SUBCOMMAND="${1:-deploy}"
 shift 2>/dev/null || true
 while [[ $# -gt 0 ]]; do
