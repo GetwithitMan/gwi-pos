@@ -138,18 +138,6 @@ function run(cmd, cwd, timeoutSec) {
   }
 }
 
-// ── Deploy failure classifier ─────────────────────────────────────────────
-// Maps deploy-release.sh exit state to a structured failure reason for MC.
-function classifyDeployFailure(deployState, exitMessage) {
-  var reason = 'FAILED_DEPLOY_SCRIPT'
-  if (deployState === 'rolled_back') reason = 'FAILED_DEPLOY_SCRIPT'
-  else if (deployState === 'rollback_failed') reason = 'FAILED_DEPLOY_SCRIPT'
-  else if (/schema|migrat/i.test(exitMessage || '')) reason = 'FAILED_SCHEMA'
-  else if (/readiness|health/i.test(exitMessage || '')) reason = 'FAILED_READINESS'
-  else if (/verify|checksum|signature|minisign/i.test(exitMessage || '')) reason = 'FAILED_ARTIFACT_VERIFY'
-  return reason
-}
-
 // ── UUID helper ───────────────────────────────────────────────────────────
 function generateUUID() {
   return crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(16).toString('hex')
@@ -310,109 +298,6 @@ async function handleForceUpdate(payload, cmdId) {
 function updateComponentsFromCheckout() {
   log('[Components] Running in container — host component updates handled by gwi-node')
   return { _updated: false }
-  // Legacy host-mode code below retained for reference but never reached
-  var result = { _updated: false, dashboard: null, monitoring: false, watchdog: false }
-
-  // Dashboard .deb update (version-aware)
-  try {
-    var installedVer = ''
-    try { installedVer = execSync('dpkg-query -W -f="${Version}" gwi-nuc-dashboard 2>/dev/null || echo "0.0.0"', { encoding: 'utf-8', timeout: 5000, stdio: 'pipe' }).trim() } catch (e) { installedVer = '0.0.0' }
-    var availableVer = '0.0.0'
-    var versionFile = path.join(APP_DIR, 'public', 'dashboard-version.txt')
-    if (fs.existsSync(versionFile)) {
-      availableVer = fs.readFileSync(versionFile, 'utf-8').trim()
-    }
-    var debPath = path.join(APP_DIR, 'public', 'gwi-nuc-dashboard.deb')
-    if (installedVer !== availableVer && availableVer !== '0.0.0' && fs.existsSync(debPath)) {
-      log('[Components] Dashboard update: ' + installedVer + ' -> ' + availableVer)
-      var ok = run('dpkg -i "' + debPath + '" 2>/dev/null || apt-get install -f -y', APP_DIR, 60)
-      if (ok) {
-        run('pkill -f gwi-dashboard || true', APP_DIR, 5)
-        // Restart dashboard via systemd (if service exists) or direct launch
-        run('su - ' + (process.env.POSUSER || 'gwipos') + ' -c "export XDG_RUNTIME_DIR=/run/user/$(id -u); export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus; systemctl --user restart gwi-dashboard.service 2>/dev/null || DISPLAY=:0 nohup $(which gwi-dashboard 2>/dev/null || which gwi-nuc-dashboard 2>/dev/null || echo /usr/bin/gwi-dashboard) >/dev/null 2>&1 &"', APP_DIR, 10)
-        result.dashboard = { from: installedVer, to: availableVer, updated: true }
-        result._updated = true
-        log('[Components] Dashboard updated and restarted')
-      }
-    } else {
-      result.dashboard = { from: installedVer, to: installedVer, updated: false }
-    }
-  } catch (e) {
-    log('[Components] Dashboard update failed: ' + (e.message || '').slice(0, 200))
-  }
-
-  // Monitoring scripts
-  try {
-    var scripts = [
-      { src: 'public/watchdog.sh', dest: '/opt/gwi-pos/watchdog.sh' },
-      { src: 'public/scripts/hardware-inventory.sh', dest: '/opt/gwi-pos/scripts/hardware-inventory.sh' },
-      { src: 'public/scripts/disk-pressure-monitor.sh', dest: '/opt/gwi-pos/scripts/disk-pressure-monitor.sh' },
-      { src: 'public/scripts/version-compat.sh', dest: '/opt/gwi-pos/scripts/version-compat.sh' },
-      { src: 'public/scripts/rolling-restart.sh', dest: '/opt/gwi-pos/scripts/rolling-restart.sh' }
-    ]
-    scripts.forEach(function(s) {
-      var srcPath = path.join(APP_DIR, s.src)
-      if (fs.existsSync(srcPath)) {
-        run('sudo mkdir -p "$(dirname ' + s.dest + ')" && sudo cp "' + srcPath + '" "' + s.dest + '" && sudo chmod +x "' + s.dest + '"', APP_DIR, 10)
-        result.monitoring = true
-        result._updated = true
-      }
-    })
-
-    // Deploy installer libraries
-    var libDir = path.join(APP_DIR, 'public', 'installer-modules', 'lib')
-    if (fs.existsSync(libDir)) {
-      run('sudo mkdir -p /opt/gwi-pos/installer-modules/lib && sudo cp "' + libDir + '"/*.sh /opt/gwi-pos/installer-modules/lib/ && sudo chmod +x /opt/gwi-pos/installer-modules/lib/*.sh', APP_DIR, 10)
-    }
-    log('[Components] Monitoring scripts updated')
-  } catch (e) {
-    log('[Components] Script update failed: ' + (e.message || '').slice(0, 200))
-  }
-
-  // Watchdog timer activation
-  try {
-    var timerStatus = ''
-    try { timerStatus = execSync('systemctl is-active gwi-watchdog.timer 2>/dev/null || echo inactive', { encoding: 'utf-8', timeout: 5000, stdio: 'pipe' }).trim() } catch (e) { timerStatus = 'inactive' }
-    if (timerStatus !== 'active' && fs.existsSync('/opt/gwi-pos/watchdog.sh')) {
-      var svcSrc = path.join(APP_DIR, 'public', 'watchdog.service')
-      var timerSrc = path.join(APP_DIR, 'public', 'watchdog.timer')
-      if (fs.existsSync(svcSrc) && fs.existsSync(timerSrc)) {
-        run('sudo cp "' + svcSrc + '" /etc/systemd/system/gwi-watchdog.service; sudo cp "' + timerSrc + '" /etc/systemd/system/gwi-watchdog.timer; sudo systemctl daemon-reload; sudo systemctl enable --now gwi-watchdog.timer', APP_DIR, 15)
-        result.watchdog = true
-        result._updated = true
-        log('[Components] Watchdog timer activated')
-      }
-    } else {
-      result.watchdog = timerStatus === 'active'
-    }
-  } catch (e) {
-    log('[Components] Watchdog activation failed: ' + (e.message || '').slice(0, 200))
-  }
-
-  // Ansible baseline enforcement — ensures hardening is current after every update
-  // Non-fatal — direct hardening fallback in the script covers critical items
-  try {
-    var hardeningScript = path.join(APP_DIR, 'public', 'installer-modules', '11-system-hardening.sh')
-    if (fs.existsSync(hardeningScript)) {
-      log('[Components] Running Ansible baseline enforcement...')
-      var hardenEnv = Object.assign({}, process.env, {
-        APP_BASE: '/opt/gwi-pos',
-        APP_DIR: APP_DIR,
-        POSUSER: process.env.POSUSER || 'gwipos',
-        STATION_ROLE: process.env.STATION_ROLE || 'server'
-      })
-      execSync('bash "' + hardeningScript + '"', {
-        encoding: 'utf-8',
-        timeout: 600000,  // 10 min
-        env: hardenEnv
-      })
-      log('[Components] Ansible baseline completed')
-    }
-  } catch (e) {
-    log('[Components] Ansible baseline failed (non-fatal): ' + (e.message || '').slice(0, 200))
-  }
-
-  return result
 }
 
 // ── Command ACK ────────────────────────────────────────────────────────────
@@ -481,318 +366,355 @@ function getCurrentAppVersion() {
   return 'unknown'
 }
 
+// ── Command handlers ──────────────────────────────────────────────────────
+var commandHandlers = {
+  FORCE_UPDATE: async function(cmd) {
+    return await handleForceUpdate(cmd.payload || {}, cmd.id)
+  },
+
+  DATA_CHANGED: async function(cmd) {
+    var domain = (cmd.payload && cmd.payload.domain) || 'unknown'
+    var models = (cmd.payload && Array.isArray(cmd.payload.models)) ? cmd.payload.models : null
+    log('[Sync] DATA_CHANGED for domain: ' + domain + (models ? ' models: ' + models.join(',') : ''))
+
+    var result
+    if (domain === 'settings') {
+      try {
+        var settingsRes = await getJson('/api/fleet/sync/settings')
+        if (settingsRes.status === 200) {
+          var data = JSON.parse(settingsRes.body)
+          var payload = data.data || data  // MC wraps in { data: ... }
+          var settings = payload.settings
+          var version = payload.settingsVersion || 'unknown'
+          // Push settings to local POS
+          var localRes = await putJsonLocal('/api/settings', { settings: settings })
+          if (localRes.status === 200) {
+            log('[Sync] Settings applied locally, version ' + version)
+            result = { ok: true, settingsVersion: version }
+          } else {
+            log('[Sync] Local settings update failed: HTTP ' + localRes.status)
+            result = { ok: false, error: 'local-update-failed' }
+          }
+        } else {
+          log('[Sync] Failed to fetch settings from MC: HTTP ' + settingsRes.status)
+          result = { ok: false, error: 'fetch-failed' }
+        }
+      } catch (err) {
+        log('[Sync] Settings sync error: ' + err.message)
+        result = { ok: false, error: err.message }
+      }
+    } else {
+      log('[Sync] Unhandled DATA_CHANGED domain: ' + domain)
+      result = { ok: true }
+    }
+
+    // Trigger immediate downstream sync for any DATA_CHANGED event
+    // If models are specified, pass them for targeted model-specific sync
+    try {
+      var triggerPayload = { domain: domain }
+      if (models) {
+        triggerPayload.models = models
+      }
+      await postJsonLocal('/api/internal/trigger-sync', triggerPayload)
+      log('[Sync] Triggered immediate downstream sync for domain: ' + domain + (models ? ' (' + models.length + ' models)' : ''))
+    } catch (triggerErr) {
+      log('[Sync] Failed to trigger downstream sync: ' + triggerErr.message)
+    }
+
+    return result
+  },
+
+  UPDATE_PAYMENT_CONFIG: async function(cmd) {
+    try {
+      var encryptedPayload = cmd.payload && cmd.payload.encrypted
+      if (!encryptedPayload) {
+        log('[Sync] UPDATE_PAYMENT_CONFIG: missing encrypted payload')
+        return { ok: false, error: 'missing-payload' }
+      }
+      // RSA-OAEP decrypt using server private key (matches MC's rsaEncrypt)
+      var privateKey = fs.readFileSync(PRIVATE_KEY_PATH, 'utf-8')
+      var decryptedBuf = crypto.privateDecrypt(
+        { key: privateKey, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' },
+        Buffer.from(encryptedPayload, 'base64')
+      )
+      var paymentConfig = JSON.parse(decryptedBuf.toString('utf-8'))
+      // Push decrypted credentials to local POS
+      var pcRes = await putJsonLocal('/api/payment-config', paymentConfig)
+      if (pcRes.status === 200) {
+        log('[Sync] Payment config updated — processor=' + paymentConfig.processor + ' env=' + paymentConfig.environment)
+        return { ok: true }
+      } else {
+        log('[Sync] Local payment-config update failed: HTTP ' + pcRes.status)
+        return { ok: false, error: 'local-update-failed' }
+      }
+    } catch (err) {
+      log('[Sync] UPDATE_PAYMENT_CONFIG error: ' + err.message)
+      return { ok: false, error: err.message }
+    }
+  },
+
+  CONFIGURE_SYNC: async function(cmd) {
+    try {
+      var encNeonUrl = cmd.payload && cmd.payload.encryptedNeonDatabaseUrl
+      var encNeonDirect = cmd.payload && cmd.payload.encryptedNeonDirectUrl
+      if (!encNeonUrl || !encNeonDirect) {
+        log('[Sync] CONFIGURE_SYNC: missing encrypted payload fields')
+        return { ok: false, error: 'missing-payload' }
+      }
+      // RSA-OAEP decrypt using server private key (same pattern as UPDATE_PAYMENT_CONFIG)
+      var privKey = fs.readFileSync(PRIVATE_KEY_PATH, 'utf-8')
+      var decryptOpts = { key: privKey, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' }
+      var neonDatabaseUrl = crypto.privateDecrypt(decryptOpts, Buffer.from(encNeonUrl, 'base64')).toString('utf-8')
+      var neonDirectUrl = crypto.privateDecrypt(decryptOpts, Buffer.from(encNeonDirect, 'base64')).toString('utf-8')
+
+      // Read current .env
+      var envContent = ''
+      try { envContent = fs.readFileSync(ENV_FILE, 'utf-8') } catch (e) {}
+      var envLines = envContent.split('\n')
+
+      // Helper: replace existing key or append
+      function setEnvVar(lines, key, value) {
+        var found = false
+        for (var i = 0; i < lines.length; i++) {
+          if (lines[i].indexOf(key + '=') === 0) {
+            lines[i] = key + '=' + value
+            found = true
+            break
+          }
+        }
+        if (!found) lines.push(key + '=' + value)
+        return lines
+      }
+
+      envLines = setEnvVar(envLines, 'NEON_DATABASE_URL', neonDatabaseUrl)
+      envLines = setEnvVar(envLines, 'NEON_DIRECT_URL', neonDirectUrl)
+      envLines = setEnvVar(envLines, 'SYNC_ENABLED', 'true')
+
+      // Write updated .env
+      fs.writeFileSync(ENV_FILE, envLines.join('\n'))
+      log('[Sync] CONFIGURE_SYNC: .env updated with Neon URLs + SYNC_ENABLED=true')
+
+      // Copy .env to app directory (same as handleForceUpdate)
+      try { fs.copyFileSync(ENV_FILE, path.join(APP_DIR, '.env')) } catch (e) {}
+      try { fs.copyFileSync(ENV_FILE, path.join(APP_DIR, '.env.local')) } catch (e) {}
+
+      // Restart POS container to pick up new config
+      log('[Sync] CONFIGURE_SYNC: restarting POS container...')
+      var csOk = run('docker restart gwi-pos', APP_DIR, 30)
+
+      // Update in-memory env so heartbeat picks up the change immediately
+      env.NEON_DATABASE_URL = neonDatabaseUrl
+      env.NEON_DIRECT_URL = neonDirectUrl
+      env.SYNC_ENABLED = 'true'
+
+      log('[Sync] CONFIGURE_SYNC: complete (restart=' + (csOk ? 'OK' : 'FAIL') + ')')
+      return { ok: true }
+    } catch (err) {
+      log('[Sync] CONFIGURE_SYNC error: ' + err.message)
+      return { ok: false, error: err.message }
+    }
+  },
+
+  RE_PROVISION: async function(cmd) {
+    // Re-provision = full update cycle (same as FORCE_UPDATE)
+    return await handleForceUpdate(cmd.payload || {}, cmd.id)
+  },
+
+  RELOAD_TERMINALS: async function(cmd) {
+    // Restart POS container to force all connected terminals to reconnect
+    log('[Sync] RELOAD_TERMINALS — restarting POS container...')
+    var rlOk = run('docker restart gwi-pos', APP_DIR, 30)
+    return { ok: rlOk }
+  },
+
+  RELOAD_TERMINAL: async function(cmd) {
+    // Single terminal reload — same effect as RELOAD_TERMINALS on NUC
+    log('[Sync] RELOAD_TERMINAL — restarting POS container...')
+    var rtOk = run('docker restart gwi-pos', APP_DIR, 30)
+    return { ok: rtOk }
+  },
+
+  RESTART_KIOSK: async function(cmd) {
+    log('[Sync] RESTART_KIOSK — restarting kiosk container...')
+    var rkOk = run('docker restart thepasspos-kiosk', APP_DIR, 30)
+    if (!rkOk) rkOk = run('docker restart pulse-kiosk', APP_DIR, 30)
+    return { ok: rkOk }
+  },
+
+  KILL_SWITCH: async function(cmd) {
+    log('[Sync] KILL_SWITCH received — acknowledged')
+    return { ok: true }
+  },
+
+  SCHEDULE_REBOOT: async function(cmd) {
+    var delayMin = (cmd.payload && cmd.payload.delayMinutes) || 15
+    log('[Sync] Scheduling reboot in ' + delayMin + ' minutes')
+    var ok = run('shutdown -r +' + delayMin, APP_DIR, 30)
+    return { ok: ok, scheduledRebootIn: delayMin }
+  },
+
+  CANCEL_REBOOT: async function(cmd) {
+    log('[Sync] Cancelling scheduled reboot')
+    run('shutdown -c', APP_DIR, 10)
+    return { ok: true }
+  },
+
+  RUN_BASELINE: async function(cmd) {
+    // MC sends RUN_BASELINE command to run Ansible hardening baseline
+    // This is Stage 11 (system-hardening.sh) from the installer
+    log('Received RUN_BASELINE command from MC')
+    currentAttemptId = generateAttemptId()
+    ackProgress(cmd.id, 'IN_PROGRESS', { step: 'baseline_start' })
+
+    try {
+      var baselinePath = '/opt/gwi-pos/installer-modules/11-system-hardening.sh'
+
+      if (!fs.existsSync(baselinePath)) {
+        throw new Error('Stage 11 script not found at ' + baselinePath)
+      }
+
+      // Optional: accept specific tags from MC command
+      var tags = (cmd.payload && cmd.payload.tags) || ''  // e.g., "kiosk_hardening,notification_suppression"
+      var skipTags = (cmd.payload && cmd.payload.skipTags) || ''
+      var dryRun = cmd.payload && cmd.payload.dryRun === true
+
+      var baselineEnv = Object.assign({}, process.env)
+      if (tags) baselineEnv.HARDENING_TAGS = tags
+      if (skipTags) baselineEnv.SKIP_HARDENING_TAGS = skipTags
+      if (dryRun) baselineEnv.HARDENING_DRY_RUN = 'true'
+
+      execSync('bash ' + baselinePath, {
+        encoding: 'utf-8',
+        timeout: 600000,  // 10 minute timeout for Ansible
+        env: baselineEnv,
+        cwd: '/opt/gwi-pos'
+      })
+
+      // Read result artifact
+      var baselineResult = {}
+      try {
+        baselineResult = JSON.parse(fs.readFileSync('/opt/gwi-pos/state/stage11-result.json', 'utf-8'))
+      } catch (e) { /* ignore */ }
+
+      ackProgress(cmd.id, 'COMPLETED', {
+        step: 'baseline_complete',
+        result: baselineResult,
+        dryRun: dryRun
+      })
+      log('RUN_BASELINE completed successfully')
+      return { ok: true, _acked: true }
+    } catch (err) {
+      ackProgress(cmd.id, 'FAILED', {
+        step: 'baseline_failed',
+        error: err.message,
+        stderr: (err.stderr || '').slice(-500)
+      })
+      log('RUN_BASELINE FAILED: ' + err.message)
+      return { ok: false, error: err.message, _acked: true }
+    }
+  },
+
+  DISK_CLEANUP: async function(cmd) {
+    log('Received DISK_CLEANUP command from MC')
+    currentAttemptId = generateAttemptId()
+    ackProgress(cmd.id, 'IN_PROGRESS', { step: 'cleanup_start' })
+
+    try {
+      execSync('bash /opt/gwi-pos/scripts/disk-pressure-monitor.sh', {
+        encoding: 'utf-8',
+        timeout: 120000
+      })
+
+      var diskState = {}
+      try {
+        diskState = JSON.parse(fs.readFileSync('/opt/gwi-pos/state/disk-pressure.json', 'utf-8'))
+      } catch (e) { /* ignore */ }
+
+      ackProgress(cmd.id, 'COMPLETED', { step: 'cleanup_complete', diskState: diskState })
+      log('DISK_CLEANUP completed')
+      return { ok: true, _acked: true }
+    } catch (err) {
+      ackProgress(cmd.id, 'FAILED', { step: 'cleanup_failed', error: err.message })
+      log('DISK_CLEANUP FAILED: ' + err.message)
+      return { ok: false, error: err.message, _acked: true }
+    }
+  },
+
+  PROMOTE: async function(cmd) {
+    // Promote this BACKUP NUC to PRIMARY
+    log('[Sync] Received PROMOTE command — promoting backup to primary')
+    currentAttemptId = generateAttemptId()
+    ackProgress(cmd.id, 'IN_PROGRESS', { step: 'promote_start' })
+
+    try {
+      // Run promote.sh if it exists (keepalived promote script)
+      var promoteScript = '/opt/gwi-pos/promote.sh'
+      if (fs.existsSync(promoteScript)) {
+        execSync('bash ' + promoteScript, { encoding: 'utf8', timeout: 60000 })
+        log('[Sync] promote.sh executed successfully')
+      }
+
+      // Update local role in .env
+      var envFile = '/opt/gwi-pos/.env'
+      if (fs.existsSync(envFile)) {
+        var envContent = fs.readFileSync(envFile, 'utf8')
+        envContent = envContent.replace(/STATION_ROLE=backup/i, 'STATION_ROLE=server')
+        fs.writeFileSync(envFile, envContent)
+        log('[Sync] Updated STATION_ROLE to server in .env')
+      }
+
+      // Enable POS service (backup role has it disabled to prevent stale-data sync)
+      // Must enable BEFORE restart so the service survives reboots after promotion.
+      try {
+        execSync('sudo systemctl enable thepasspos', { encoding: 'utf8', timeout: 10000 })
+        log('[Sync] POS service enabled for auto-start')
+      } catch (enableErr) {
+        log('[Sync] Warning: POS enable failed: ' + enableErr.message)
+      }
+
+      // Restart POS service to pick up new role
+      try {
+        execSync('sudo systemctl restart thepasspos', { encoding: 'utf8', timeout: 30000 })
+        log('[Sync] POS service restarted')
+      } catch (restartErr) {
+        log('[Sync] Warning: POS restart failed: ' + restartErr.message)
+      }
+
+      ackProgress(cmd.id, 'COMPLETED', {
+        step: 'promote_complete',
+        newRole: 'server',
+        previousPrimaryId: (cmd.payload && cmd.payload.previousPrimaryId) || null
+      })
+      log('[Sync] PROMOTE completed — this NUC is now PRIMARY')
+      return { ok: true, _acked: true }
+    } catch (err) {
+      ackProgress(cmd.id, 'FAILED', {
+        step: 'promote_failed',
+        error: err.message
+      })
+      log('[Sync] PROMOTE FAILED: ' + err.message)
+      return { ok: false, error: err.message, _acked: true }
+    }
+  },
+}
+
 // ── Process received command ───────────────────────────────────────────────
 async function processCommand(dataStr) {
   try {
     var cmd = JSON.parse(dataStr)
     log('[Sync] Command: ' + cmd.type + ' (' + cmd.id + ')')
 
+    var handler = commandHandlers[cmd.type]
     var result
-    if (cmd.type === 'FORCE_UPDATE') {
-      result = await handleForceUpdate(cmd.payload || {}, cmd.id)
-    } else if (cmd.type === 'DATA_CHANGED') {
-      var domain = (cmd.payload && cmd.payload.domain) || 'unknown'
-      var models = (cmd.payload && Array.isArray(cmd.payload.models)) ? cmd.payload.models : null
-      log('[Sync] DATA_CHANGED for domain: ' + domain + (models ? ' models: ' + models.join(',') : ''))
-
-      if (domain === 'settings') {
-        try {
-          var settingsRes = await getJson('/api/fleet/sync/settings')
-          if (settingsRes.status === 200) {
-            var data = JSON.parse(settingsRes.body)
-            var payload = data.data || data  // MC wraps in { data: ... }
-            var settings = payload.settings
-            var version = payload.settingsVersion || 'unknown'
-            // Push settings to local POS
-            var localRes = await putJsonLocal('/api/settings', { settings: settings })
-            if (localRes.status === 200) {
-              log('[Sync] Settings applied locally, version ' + version)
-              result = { ok: true, settingsVersion: version }
-            } else {
-              log('[Sync] Local settings update failed: HTTP ' + localRes.status)
-              result = { ok: false, error: 'local-update-failed' }
-            }
-          } else {
-            log('[Sync] Failed to fetch settings from MC: HTTP ' + settingsRes.status)
-            result = { ok: false, error: 'fetch-failed' }
-          }
-        } catch (err) {
-          log('[Sync] Settings sync error: ' + err.message)
-          result = { ok: false, error: err.message }
-        }
-      } else {
-        log('[Sync] Unhandled DATA_CHANGED domain: ' + domain)
-        result = { ok: true }
-      }
-
-      // Trigger immediate downstream sync for any DATA_CHANGED event
-      // If models are specified, pass them for targeted model-specific sync
-      try {
-        var triggerPayload = { domain: domain }
-        if (models) {
-          triggerPayload.models = models
-        }
-        await postJsonLocal('/api/internal/trigger-sync', triggerPayload)
-        log('[Sync] Triggered immediate downstream sync for domain: ' + domain + (models ? ' (' + models.length + ' models)' : ''))
-      } catch (triggerErr) {
-        log('[Sync] Failed to trigger downstream sync: ' + triggerErr.message)
-      }
-    } else if (cmd.type === 'UPDATE_PAYMENT_CONFIG') {
-      try {
-        var encryptedPayload = cmd.payload && cmd.payload.encrypted
-        if (!encryptedPayload) {
-          log('[Sync] UPDATE_PAYMENT_CONFIG: missing encrypted payload')
-          result = { ok: false, error: 'missing-payload' }
-        } else {
-          // RSA-OAEP decrypt using server private key (matches MC's rsaEncrypt)
-          var privateKey = fs.readFileSync(PRIVATE_KEY_PATH, 'utf-8')
-          var decryptedBuf = crypto.privateDecrypt(
-            { key: privateKey, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' },
-            Buffer.from(encryptedPayload, 'base64')
-          )
-          var paymentConfig = JSON.parse(decryptedBuf.toString('utf-8'))
-          // Push decrypted credentials to local POS
-          var pcRes = await putJsonLocal('/api/payment-config', paymentConfig)
-          if (pcRes.status === 200) {
-            log('[Sync] Payment config updated — processor=' + paymentConfig.processor + ' env=' + paymentConfig.environment)
-            result = { ok: true }
-          } else {
-            log('[Sync] Local payment-config update failed: HTTP ' + pcRes.status)
-            result = { ok: false, error: 'local-update-failed' }
-          }
-        }
-      } catch (err) {
-        log('[Sync] UPDATE_PAYMENT_CONFIG error: ' + err.message)
-        result = { ok: false, error: err.message }
-      }
-    } else if (cmd.type === 'CONFIGURE_SYNC') {
-      try {
-        var encNeonUrl = cmd.payload && cmd.payload.encryptedNeonDatabaseUrl
-        var encNeonDirect = cmd.payload && cmd.payload.encryptedNeonDirectUrl
-        if (!encNeonUrl || !encNeonDirect) {
-          log('[Sync] CONFIGURE_SYNC: missing encrypted payload fields')
-          result = { ok: false, error: 'missing-payload' }
-        } else {
-          // RSA-OAEP decrypt using server private key (same pattern as UPDATE_PAYMENT_CONFIG)
-          var privKey = fs.readFileSync(PRIVATE_KEY_PATH, 'utf-8')
-          var decryptOpts = { key: privKey, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' }
-          var neonDatabaseUrl = crypto.privateDecrypt(decryptOpts, Buffer.from(encNeonUrl, 'base64')).toString('utf-8')
-          var neonDirectUrl = crypto.privateDecrypt(decryptOpts, Buffer.from(encNeonDirect, 'base64')).toString('utf-8')
-
-          // Read current .env
-          var envContent = ''
-          try { envContent = fs.readFileSync(ENV_FILE, 'utf-8') } catch (e) {}
-          var envLines = envContent.split('\n')
-
-          // Helper: replace existing key or append
-          function setEnvVar(lines, key, value) {
-            var found = false
-            for (var i = 0; i < lines.length; i++) {
-              if (lines[i].indexOf(key + '=') === 0) {
-                lines[i] = key + '=' + value
-                found = true
-                break
-              }
-            }
-            if (!found) lines.push(key + '=' + value)
-            return lines
-          }
-
-          envLines = setEnvVar(envLines, 'NEON_DATABASE_URL', neonDatabaseUrl)
-          envLines = setEnvVar(envLines, 'NEON_DIRECT_URL', neonDirectUrl)
-          envLines = setEnvVar(envLines, 'SYNC_ENABLED', 'true')
-
-          // Write updated .env
-          fs.writeFileSync(ENV_FILE, envLines.join('\n'))
-          log('[Sync] CONFIGURE_SYNC: .env updated with Neon URLs + SYNC_ENABLED=true')
-
-          // Copy .env to app directory (same as handleForceUpdate)
-          try { fs.copyFileSync(ENV_FILE, path.join(APP_DIR, '.env')) } catch (e) {}
-          try { fs.copyFileSync(ENV_FILE, path.join(APP_DIR, '.env.local')) } catch (e) {}
-
-          // Restart POS container to pick up new config
-          log('[Sync] CONFIGURE_SYNC: restarting POS container...')
-          var csOk = run('docker restart gwi-pos', APP_DIR, 30)
-
-          // Update in-memory env so heartbeat picks up the change immediately
-          env.NEON_DATABASE_URL = neonDatabaseUrl
-          env.NEON_DIRECT_URL = neonDirectUrl
-          env.SYNC_ENABLED = 'true'
-
-          log('[Sync] CONFIGURE_SYNC: complete (restart=' + (csOk ? 'OK' : 'FAIL') + ')')
-          result = { ok: true }
-        }
-      } catch (err) {
-        log('[Sync] CONFIGURE_SYNC error: ' + err.message)
-        result = { ok: false, error: err.message }
-      }
-    } else if (cmd.type === 'RE_PROVISION') {
-      // Re-provision = full update cycle (same as FORCE_UPDATE)
-      result = await handleForceUpdate(cmd.payload || {}, cmd.id)
-    } else if (cmd.type === 'RELOAD_TERMINALS') {
-      // Restart POS container to force all connected terminals to reconnect
-      log('[Sync] RELOAD_TERMINALS — restarting POS container...')
-      var rlOk = run('docker restart gwi-pos', APP_DIR, 30)
-      result = { ok: rlOk }
-    } else if (cmd.type === 'RELOAD_TERMINAL') {
-      // Single terminal reload — same effect as RELOAD_TERMINALS on NUC
-      log('[Sync] RELOAD_TERMINAL — restarting POS container...')
-      var rtOk = run('docker restart gwi-pos', APP_DIR, 30)
-      result = { ok: rtOk }
-    } else if (cmd.type === 'RESTART_KIOSK') {
-      log('[Sync] RESTART_KIOSK — restarting kiosk container...')
-      var rkOk = run('docker restart thepasspos-kiosk', APP_DIR, 30)
-      if (!rkOk) rkOk = run('docker restart pulse-kiosk', APP_DIR, 30)
-      result = { ok: rkOk }
-    } else if (cmd.type === 'KILL_SWITCH') {
-      log('[Sync] KILL_SWITCH received — acknowledged')
-      result = { ok: true }
-    } else if (cmd.type === 'SCHEDULE_REBOOT') {
-      var delayMin = (cmd.payload && cmd.payload.delayMinutes) || 15
-      log('[Sync] Scheduling reboot in ' + delayMin + ' minutes')
-      var ok = run('shutdown -r +' + delayMin, APP_DIR, 30)
-      result = { ok: ok, scheduledRebootIn: delayMin }
-    } else if (cmd.type === 'CANCEL_REBOOT') {
-      log('[Sync] Cancelling scheduled reboot')
-      run('shutdown -c', APP_DIR, 10)
-      result = { ok: true }
-    } else if (cmd.type === 'RUN_BASELINE') {
-      // MC sends RUN_BASELINE command to run Ansible hardening baseline
-      // This is Stage 11 (system-hardening.sh) from the installer
-      log('Received RUN_BASELINE command from MC')
-      currentAttemptId = generateAttemptId()
-      ackProgress(cmd.id, 'IN_PROGRESS', { step: 'baseline_start' })
-
-      try {
-        var baselinePath = '/opt/gwi-pos/installer-modules/11-system-hardening.sh'
-
-        if (!fs.existsSync(baselinePath)) {
-          throw new Error('Stage 11 script not found at ' + baselinePath)
-        }
-
-        // Optional: accept specific tags from MC command
-        var tags = (cmd.payload && cmd.payload.tags) || ''  // e.g., "kiosk_hardening,notification_suppression"
-        var skipTags = (cmd.payload && cmd.payload.skipTags) || ''
-        var dryRun = cmd.payload && cmd.payload.dryRun === true
-
-        var baselineEnv = Object.assign({}, process.env)
-        if (tags) baselineEnv.HARDENING_TAGS = tags
-        if (skipTags) baselineEnv.SKIP_HARDENING_TAGS = skipTags
-        if (dryRun) baselineEnv.HARDENING_DRY_RUN = 'true'
-
-        execSync('bash ' + baselinePath, {
-          encoding: 'utf-8',
-          timeout: 600000,  // 10 minute timeout for Ansible
-          env: baselineEnv,
-          cwd: '/opt/gwi-pos'
-        })
-
-        // Read result artifact
-        var baselineResult = {}
-        try {
-          baselineResult = JSON.parse(fs.readFileSync('/opt/gwi-pos/state/stage11-result.json', 'utf-8'))
-        } catch (e) { /* ignore */ }
-
-        ackProgress(cmd.id, 'COMPLETED', {
-          step: 'baseline_complete',
-          result: baselineResult,
-          dryRun: dryRun
-        })
-        log('RUN_BASELINE completed successfully')
-        result = { ok: true, _acked: true }
-      } catch (err) {
-        ackProgress(cmd.id, 'FAILED', {
-          step: 'baseline_failed',
-          error: err.message,
-          stderr: (err.stderr || '').slice(-500)
-        })
-        log('RUN_BASELINE FAILED: ' + err.message)
-        result = { ok: false, error: err.message, _acked: true }
-      }
-    } else if (cmd.type === 'DISK_CLEANUP') {
-      log('Received DISK_CLEANUP command from MC')
-      currentAttemptId = generateAttemptId()
-      ackProgress(cmd.id, 'IN_PROGRESS', { step: 'cleanup_start' })
-
-      try {
-        execSync('bash /opt/gwi-pos/scripts/disk-pressure-monitor.sh', {
-          encoding: 'utf-8',
-          timeout: 120000
-        })
-
-        var diskState = {}
-        try {
-          diskState = JSON.parse(fs.readFileSync('/opt/gwi-pos/state/disk-pressure.json', 'utf-8'))
-        } catch (e) { /* ignore */ }
-
-        ackProgress(cmd.id, 'COMPLETED', { step: 'cleanup_complete', diskState: diskState })
-        log('DISK_CLEANUP completed')
-        result = { ok: true, _acked: true }
-      } catch (err) {
-        ackProgress(cmd.id, 'FAILED', { step: 'cleanup_failed', error: err.message })
-        log('DISK_CLEANUP FAILED: ' + err.message)
-        result = { ok: false, error: err.message, _acked: true }
-      }
-    } else if (cmd.type === 'PROMOTE') {
-      // Promote this BACKUP NUC to PRIMARY
-      log('[Sync] Received PROMOTE command — promoting backup to primary')
-      currentAttemptId = generateAttemptId()
-      ackProgress(cmd.id, 'IN_PROGRESS', { step: 'promote_start' })
-
-      try {
-        // Run promote.sh if it exists (keepalived promote script)
-        var promoteScript = '/opt/gwi-pos/promote.sh'
-        if (fs.existsSync(promoteScript)) {
-          execSync('bash ' + promoteScript, { encoding: 'utf8', timeout: 60000 })
-          log('[Sync] promote.sh executed successfully')
-        }
-
-        // Update local role in .env
-        var envFile = '/opt/gwi-pos/.env'
-        if (fs.existsSync(envFile)) {
-          var envContent = fs.readFileSync(envFile, 'utf8')
-          envContent = envContent.replace(/STATION_ROLE=backup/i, 'STATION_ROLE=server')
-          fs.writeFileSync(envFile, envContent)
-          log('[Sync] Updated STATION_ROLE to server in .env')
-        }
-
-        // Enable POS service (backup role has it disabled to prevent stale-data sync)
-        // Must enable BEFORE restart so the service survives reboots after promotion.
-        try {
-          execSync('sudo systemctl enable thepasspos', { encoding: 'utf8', timeout: 10000 })
-          log('[Sync] POS service enabled for auto-start')
-        } catch (enableErr) {
-          log('[Sync] Warning: POS enable failed: ' + enableErr.message)
-        }
-
-        // Restart POS service to pick up new role
-        try {
-          execSync('sudo systemctl restart thepasspos', { encoding: 'utf8', timeout: 30000 })
-          log('[Sync] POS service restarted')
-        } catch (restartErr) {
-          log('[Sync] Warning: POS restart failed: ' + restartErr.message)
-        }
-
-        ackProgress(cmd.id, 'COMPLETED', {
-          step: 'promote_complete',
-          newRole: 'server',
-          previousPrimaryId: (cmd.payload && cmd.payload.previousPrimaryId) || null
-        })
-        log('[Sync] PROMOTE completed — this NUC is now PRIMARY')
-        result = { ok: true, _acked: true }
-      } catch (err) {
-        ackProgress(cmd.id, 'FAILED', {
-          step: 'promote_failed',
-          error: err.message
-        })
-        log('[Sync] PROMOTE FAILED: ' + err.message)
-        result = { ok: false, error: err.message, _acked: true }
-      }
+    if (handler) {
+      result = await handler(cmd)
     } else {
       log('[Sync] Unknown command: ' + cmd.type + ', ACK OK')
       result = { ok: true }
     }
-    // FORCE_UPDATE, RE_PROVISION, and PROMOTE handle their own ACKs (two-phase progress)
+
+    // FORCE_UPDATE, RE_PROVISION, RUN_BASELINE, DISK_CLEANUP, and PROMOTE
+    // handle their own ACKs (two-phase progress)
     if (!result._acked) {
       ack(cmd.id, result)
     }

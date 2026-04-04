@@ -22,10 +22,40 @@ DEPLOY_ID="" DEPLOY_START=0 IMAGE_REF="" IMAGE_DIGEST="" PREVIOUS_IMAGE=""
 MANIFEST_URL="${R2_ORIGIN}/latest/manifest.json" FORCE=false FINAL_STATUS="pending"
 SCHEMA_RESULT="" ROLLBACK_RESULT="" ROLLBACK_READINESS="" LOCK_FD="" ERRORS=()
 WATCH_MODE=false WATCH_DIE_FIRED=false SKIP_SELF_UPDATE=false
-SELF_UPDATED=false BOOTSTRAPPED_WATCHER=false
+SELF_UPDATED=false
+BOOTSTRAP_SCRIPT_UPDATED=false BOOTSTRAP_SERVICE_UPDATED=false
+BOOTSTRAP_WATCHER_STARTED=false BOOTSTRAP_DEGRADED=false
 
 log() { echo "[gwi-node] $(date -u +%FT%TZ) $*"; }
 err() { echo "[gwi-node] $(date -u +%FT%TZ) ERROR: $*" >&2; ERRORS+=("$*"); }
+
+# Extract a file from a Docker image. Returns 0 on success, 1 on failure.
+# Usage: extract_from_image <image> <container-path> <host-dest>
+extract_from_image() {
+  local image="$1" src="$2" dest="$3"
+  local tmp="${dest}.tmp.$$"
+
+  docker run --rm "$image" cat "$src" > "$tmp" 2>/dev/null || {
+    log "Extract failed: $src from $image"
+    rm -f "$tmp"; return 1
+  }
+
+  if [[ ! -s "$tmp" ]]; then
+    log "Extract empty: $src from $image"
+    rm -f "$tmp"; return 1
+  fi
+
+  # For shell scripts, validate shebang
+  if [[ "$src" == *.sh ]]; then
+    if ! head -1 "$tmp" | grep -q "^#!/"; then
+      log "Extract invalid (no shebang): $src from $image"
+      rm -f "$tmp"; return 1
+    fi
+  fi
+
+  mv "$tmp" "$dest"
+  return 0
+}
 
 read_port() {
   local port=3005
@@ -75,7 +105,12 @@ write_deploy_log() {
   "errors": ${errors_json},
   "deployMethod": "docker",
   "selfUpdated": ${SELF_UPDATED},
-  "bootstrappedWatcher": ${BOOTSTRAPPED_WATCHER}
+  "bootstrap": {
+    "scriptUpdated": ${BOOTSTRAP_SCRIPT_UPDATED},
+    "serviceUpdated": ${BOOTSTRAP_SERVICE_UPDATED},
+    "watcherStarted": ${BOOTSTRAP_WATCHER_STARTED},
+    "degraded": ${BOOTSTRAP_DEGRADED}
+  }
 }
 DEOF
   chmod 644 "$log_file" 2>/dev/null || true
@@ -170,33 +205,36 @@ cleanup() {
 bootstrap_host_watcher() {
   local image="$1"
   [[ -z "$image" ]] && return 0
-  BOOTSTRAPPED_WATCHER=true
 
   # Refresh host script if changed
   local _sh_tmp="/tmp/gwi-node-bootstrap-$$.sh"
-  docker run --rm "$image" cat /app/public/scripts/gwi-node.sh > "$_sh_tmp" 2>/dev/null || true
-  if [[ -s "$_sh_tmp" ]]; then
+  if extract_from_image "$image" /app/public/scripts/gwi-node.sh "$_sh_tmp"; then
     if ! cmp -s "$_sh_tmp" "${BASE_DIR}/gwi-node.sh" 2>/dev/null; then
       cp "$_sh_tmp" "${BASE_DIR}/gwi-node.sh"
       chown root:root "${BASE_DIR}/gwi-node.sh"
       chmod 755 "${BASE_DIR}/gwi-node.sh"
+      BOOTSTRAP_SCRIPT_UPDATED=true
       log "Bootstrap: gwi-node.sh updated"
     fi
+  else
+    BOOTSTRAP_DEGRADED=true
+    log "WARN: Bootstrap degraded — could not extract gwi-node.sh from image"
   fi
   rm -f "$_sh_tmp"
 
   # Refresh service unit if changed
   local _svc_tmp="/tmp/gwi-node-bootstrap-$$.service"
-  docker run --rm "$image" cat /app/public/scripts/gwi-node.service > "$_svc_tmp" 2>/dev/null || true
-  if [[ -s "$_svc_tmp" ]]; then
+  if extract_from_image "$image" /app/public/scripts/gwi-node.service "$_svc_tmp"; then
     if ! cmp -s "$_svc_tmp" /etc/systemd/system/gwi-node.service 2>/dev/null; then
       cp "$_svc_tmp" /etc/systemd/system/gwi-node.service
       systemctl daemon-reload
+      BOOTSTRAP_SERVICE_UPDATED=true
       log "Bootstrap: gwi-node.service updated"
     fi
     systemctl enable gwi-node.service 2>/dev/null || true
   else
-    log "WARN: Could not extract gwi-node.service from image"
+    BOOTSTRAP_DEGRADED=true
+    log "WARN: Bootstrap degraded — could not extract gwi-node.service from image"
   fi
   rm -f "$_svc_tmp"
 
@@ -213,8 +251,13 @@ bootstrap_host_watcher() {
   if systemctl is-active gwi-node.service >/dev/null 2>&1; then
     systemctl reload-or-restart gwi-node.service 2>/dev/null || true
   else
-    systemctl start gwi-node.service 2>/dev/null || true
-    log "Bootstrap: gwi-node.service started"
+    if ! systemctl start gwi-node.service 2>/dev/null; then
+      BOOTSTRAP_DEGRADED=true
+      log "WARN: Bootstrap degraded — gwi-node.service failed to start"
+    else
+      BOOTSTRAP_WATCHER_STARTED=true
+      log "Bootstrap: gwi-node.service started"
+    fi
   fi
 }
 
@@ -230,15 +273,9 @@ self_update_and_reexec() {
   local old_sha new_sha
   old_sha="$(sha256sum "$0" 2>/dev/null | cut -d' ' -f1 || echo none)"
 
-  docker run --rm "$source_image" cat /app/public/scripts/gwi-node.sh > "$tmp" 2>/dev/null || {
+  if ! extract_from_image "$source_image" /app/public/scripts/gwi-node.sh "$tmp"; then
     log "Self-update: could not extract from $source_image — continuing with current script"
-    rm -f "$tmp"; return 0
-  }
-
-  # Validate extracted file
-  if [[ ! -s "$tmp" ]] || ! head -1 "$tmp" | grep -q "^#!/"; then
-    log "Self-update: extracted file invalid — continuing with current script"
-    rm -f "$tmp"; return 0
+    return 0
   fi
 
   new_sha="$(sha256sum "$tmp" 2>/dev/null | cut -d' ' -f1 || echo none)"
@@ -254,7 +291,7 @@ self_update_and_reexec() {
 
   # Re-exec with --skip-self-update to prevent loop, preserving all flags
   local -a reexec_args
-  reexec_args=("$SUBCOMMAND" "--skip-self-update")
+  reexec_args=("$SUBCOMMAND" "--skip-self-update" "--self-updated")
   [[ -n "$IMAGE_REF" ]]     && reexec_args+=("--image-ref" "$IMAGE_REF")
   [[ -n "$IMAGE_DIGEST" ]]  && reexec_args+=("--image-digest" "$IMAGE_DIGEST")
   [[ -n "$MANIFEST_URL" ]]  && reexec_args+=("--manifest-url" "$MANIFEST_URL")
@@ -296,7 +333,6 @@ deploy() {
     # If we get here, no update was needed (same SHA)
     log "Self-update: no change needed"
   fi
-  SELF_UPDATED=true
 
   exec {LOCK_FD}>"$LOCK_FILE"
   flock -w "$LOCK_TIMEOUT" "$LOCK_FD" || die "Could not acquire lock (another deploy running?)"
@@ -455,13 +491,11 @@ self_update() {
   local current_image tmp="/tmp/gwi-node-new.sh"
   current_image="$(docker inspect --format='{{.Config.Image}}' "$CONTAINER_NAME" 2>/dev/null)" || {
     echo "No running container to extract from"; return 0; }
-  docker run --rm "$current_image" cat /app/public/scripts/gwi-node.sh > "$tmp" 2>/dev/null || {
-    echo "Could not extract gwi-node.sh from image"; return 0; }
-  if [[ -s "$tmp" ]]; then
+  if extract_from_image "$current_image" /app/public/scripts/gwi-node.sh "$tmp"; then
     chmod 755 "$tmp"; mv "$tmp" "$0"
     log "Self-updated from $current_image"
   else
-    rm -f "$tmp"; echo "Extracted file was empty — skipping"
+    echo "Could not extract gwi-node.sh from image — skipping"
   fi
 }
 
@@ -477,7 +511,8 @@ reset_deploy_state() {
   DEPLOY_ID="" DEPLOY_START=0 IMAGE_REF="" IMAGE_DIGEST="" PREVIOUS_IMAGE=""
   MANIFEST_URL="${R2_ORIGIN}/latest/manifest.json" FORCE=false FINAL_STATUS="pending"
   SCHEMA_RESULT="" ROLLBACK_RESULT="" ROLLBACK_READINESS="" LOCK_FD="" ERRORS=()
-  WATCH_DIE_FIRED=false SELF_UPDATED=false BOOTSTRAPPED_WATCHER=false
+  WATCH_DIE_FIRED=false SELF_UPDATED=false BOOTSTRAP_SCRIPT_UPDATED=false BOOTSTRAP_SERVICE_UPDATED=false
+  BOOTSTRAP_WATCHER_STARTED=false BOOTSTRAP_DEGRADED=false
 }
 
 # Write a result JSON atomically into RESULTS_DIR.
@@ -672,6 +707,7 @@ while [[ $# -gt 0 ]]; do
     --image-ref)          IMAGE_REF="$2"; shift 2 ;;
     --image-digest)       IMAGE_DIGEST="$2"; shift 2 ;;
     --skip-self-update)   SKIP_SELF_UPDATE=true; shift ;;
+    --self-updated)       SELF_UPDATED=true; shift ;;
     *) echo "Unknown flag: $1"; exit 1 ;;
   esac
 done
