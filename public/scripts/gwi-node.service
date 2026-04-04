@@ -3,6 +3,8 @@ Description=GWI Node Deploy Agent
 Documentation=https://github.com/GetwithitMan/gwi-pos
 After=docker.service
 Requires=docker.service
+StartLimitBurst=5
+StartLimitIntervalSec=60
 
 [Service]
 Type=simple
@@ -10,8 +12,6 @@ ExecStart=/opt/gwi-pos/gwi-node.sh watch
 WorkingDirectory=/opt/gwi-pos
 Restart=always
 RestartSec=5
-StartLimitBurst=5
-StartLimitIntervalSec=60
 User=root
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 

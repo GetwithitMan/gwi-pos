@@ -21,7 +21,7 @@ ENV_FILE="${SHARED_DIR}/.env"; [[ -f "$ENV_FILE" ]] || ENV_FILE="${BASE_DIR}/.en
 DEPLOY_ID="" DEPLOY_START=0 IMAGE_REF="" IMAGE_DIGEST="" PREVIOUS_IMAGE=""
 MANIFEST_URL="${R2_ORIGIN}/latest/manifest.json" FORCE=false FINAL_STATUS="pending"
 SCHEMA_RESULT="" ROLLBACK_RESULT="" ROLLBACK_READINESS="" LOCK_FD="" ERRORS=()
-WATCH_MODE=false WATCH_DIE_FIRED=false
+WATCH_MODE=false WATCH_DIE_FIRED=false SKIP_SELF_UPDATE=false
 
 log() { echo "[gwi-node] $(date -u +%FT%TZ) $*"; }
 err() { echo "[gwi-node] $(date -u +%FT%TZ) ERROR: $*" >&2; ERRORS+=("$*"); }
@@ -160,7 +160,63 @@ cleanup() {
   fi
 }
 
+# ── Self-update and re-exec ─────────────────────────────────────────────────
+# Extract the latest gwi-node.sh from the running (or target) image, replace
+# this script on disk, then re-exec with the same arguments + --skip-self-update
+# so the rest of the deploy runs with the newest code (including bootstrap).
+self_update_and_reexec() {
+  local source_image="$1"
+  [[ -z "$source_image" ]] && return 0
+
+  local tmp="/tmp/gwi-node-update-$$.sh"
+  local old_sha new_sha
+  old_sha="$(sha256sum "$0" 2>/dev/null | cut -d' ' -f1 || echo none)"
+
+  docker run --rm "$source_image" cat /app/public/scripts/gwi-node.sh > "$tmp" 2>/dev/null || {
+    log "Self-update: could not extract from $source_image — continuing with current script"
+    rm -f "$tmp"; return 0
+  }
+
+  # Validate extracted file
+  if [[ ! -s "$tmp" ]] || ! head -1 "$tmp" | grep -q "^#!/"; then
+    log "Self-update: extracted file invalid — continuing with current script"
+    rm -f "$tmp"; return 0
+  fi
+
+  new_sha="$(sha256sum "$tmp" 2>/dev/null | cut -d' ' -f1 || echo none)"
+  if [[ "$old_sha" == "$new_sha" ]]; then
+    log "Self-update: script already current ($old_sha)"
+    rm -f "$tmp"; return 0
+  fi
+
+  # Atomic replace
+  chmod 755 "$tmp"
+  mv "$tmp" "$0"
+  log "Self-update: $old_sha → $new_sha (from $source_image)"
+
+  # Re-exec with --skip-self-update to prevent loop, preserving all flags
+  log "Re-executing with updated script..."
+  exec "$0" "$SUBCOMMAND" --skip-self-update \
+    ${IMAGE_REF:+--image-ref "$IMAGE_REF"} \
+    ${IMAGE_DIGEST:+--image-digest "$IMAGE_DIGEST"} \
+    ${MANIFEST_URL:+--manifest-url "$MANIFEST_URL"} \
+    ${FORCE:+--force}
+}
+
 deploy() {
+  # ── Self-update before deploy ───────────────��─────────────────────────────
+  # Ensures the host script is current before the deploy cycle runs.
+  # This closes the "old script runs full deploy and never upgrades itself" gap.
+  if [[ "$SKIP_SELF_UPDATE" != true ]]; then
+    local update_image
+    # Prefer target image if specified, fall back to currently running container
+    update_image="${IMAGE_REF:-$(docker inspect --format='{{.Config.Image}}' "$CONTAINER_NAME" 2>/dev/null || true)}"
+    if [[ -n "$update_image" ]]; then
+      self_update_and_reexec "$update_image"
+      # If we get here, no update was needed (same SHA) — continue deploy
+    fi
+  fi
+
   DEPLOY_ID="$(gen_deploy_id)"; DEPLOY_START="$(date +%s)"
   mkdir -p "$STATE_DIR" "$LOG_DIR"
   exec {LOCK_FD}>"$LOCK_FILE"
@@ -252,49 +308,44 @@ EOF
   docker image prune -f --filter "dangling=true" 2>/dev/null || true
   start_agent "$IMAGE_REF" || log "WARN: gwi-agent failed to start (non-fatal)"
 
-  # ── Self-bootstrap gwi-node.service for existing venue upgrades ───────────
-  # On venues that upgraded via the old execSync path (no installer re-run),
-  # gwi-node.service and trigger dirs don't exist yet. Bootstrap them here so
-  # the next deploy uses the trigger-file protocol instead of the dead old path.
-  if ! systemctl is-enabled gwi-node.service >/dev/null 2>&1 \
-    && ! systemctl is-active gwi-node.service >/dev/null 2>&1; then
-    log "Bootstrapping gwi-node.service (first trigger-file upgrade)..."
-    local _ok=true
+  # ── Idempotent bootstrap — runs every successful deploy ───────────────────
+  # Ensures gwi-node.service, trigger dirs, and host script are always current.
+  # Safe to run repeatedly. Matches stage 07 installer behavior.
+  bootstrap_host_watcher() {
+    local _svc_tmp="/tmp/gwi-node-bootstrap-$$.service"
+    docker run --rm "$IMAGE_REF" cat /app/public/scripts/gwi-node.service > "$_svc_tmp" 2>/dev/null || true
 
-    # Extract both host artifacts from the newly deployed image
-    local _sh_tmp="/tmp/gwi-node-bootstrap.sh"
-    local _svc_tmp="/tmp/gwi-node-bootstrap.service"
-    docker run --rm "$IMAGE_REF" cat /app/public/scripts/gwi-node.sh > "$_sh_tmp" 2>/dev/null || _ok=false
-    docker run --rm "$IMAGE_REF" cat /app/public/scripts/gwi-node.service > "$_svc_tmp" 2>/dev/null || _ok=false
-
-    if [[ "$_ok" == true ]] && [[ -s "$_sh_tmp" ]] && [[ -s "$_svc_tmp" ]]; then
-      # Install host script
-      cp "$_sh_tmp" "${BASE_DIR}/gwi-node.sh"
-      chown root:root "${BASE_DIR}/gwi-node.sh"
-      chmod 755 "${BASE_DIR}/gwi-node.sh"
-
-      # Install systemd unit
-      cp "$_svc_tmp" /etc/systemd/system/gwi-node.service
-      systemctl daemon-reload
-      systemctl enable gwi-node.service
-
-      # Create trigger directories (matches stage 07 permissions)
-      mkdir -p "${REQUESTS_DIR}" "${RESULTS_DIR}"
-      chmod 777 "${REQUESTS_DIR}"
-      chmod 755 "${RESULTS_DIR}"
-
-      # Mask legacy services
-      systemctl mask thepasspos 2>/dev/null || true
-      systemctl mask thepasspos-sync 2>/dev/null || true
-
-      # Start the watcher
-      systemctl start gwi-node.service
-      log "gwi-node.service bootstrapped and started"
+    if [[ -s "$_svc_tmp" ]]; then
+      # Install/update systemd unit if changed
+      if ! cmp -s "$_svc_tmp" /etc/systemd/system/gwi-node.service 2>/dev/null; then
+        cp "$_svc_tmp" /etc/systemd/system/gwi-node.service
+        systemctl daemon-reload
+        log "gwi-node.service updated"
+      fi
+      systemctl enable gwi-node.service 2>/dev/null || true
     else
-      log "WARN: Bootstrap extraction failed — venue needs installer re-run for trigger-file deploys"
+      log "WARN: Could not extract gwi-node.service from image"
     fi
-    rm -f "$_sh_tmp" "$_svc_tmp"
-  fi
+    rm -f "$_svc_tmp"
+
+    # Ensure trigger directories exist with correct permissions
+    mkdir -p "${REQUESTS_DIR}" "${RESULTS_DIR}"
+    chmod 777 "${REQUESTS_DIR}"
+    chmod 755 "${RESULTS_DIR}"
+
+    # Mask legacy services (idempotent)
+    systemctl mask thepasspos 2>/dev/null || true
+    systemctl mask thepasspos-sync 2>/dev/null || true
+
+    # Ensure watcher is running (restart picks up any updated unit)
+    if systemctl is-active gwi-node.service >/dev/null 2>&1; then
+      systemctl reload-or-restart gwi-node.service 2>/dev/null || true
+    else
+      systemctl start gwi-node.service 2>/dev/null || true
+      log "gwi-node.service started"
+    fi
+  }
+  bootstrap_host_watcher
 
   FINAL_STATUS="healthy"
   write_deploy_log
@@ -586,10 +637,11 @@ SUBCOMMAND="${1:-deploy}"
 shift 2>/dev/null || true
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --force)         FORCE=true; shift ;;
-    --manifest-url)  MANIFEST_URL="$2"; shift 2 ;;
-    --image-ref)     IMAGE_REF="$2"; shift 2 ;;
-    --image-digest)  IMAGE_DIGEST="$2"; shift 2 ;;
+    --force)              FORCE=true; shift ;;
+    --manifest-url)       MANIFEST_URL="$2"; shift 2 ;;
+    --image-ref)          IMAGE_REF="$2"; shift 2 ;;
+    --image-digest)       IMAGE_DIGEST="$2"; shift 2 ;;
+    --skip-self-update)   SKIP_SELF_UPDATE=true; shift ;;
     *) echo "Unknown flag: $1"; exit 1 ;;
   esac
 done
