@@ -10,6 +10,10 @@
     {
       "source": "/artifacts/manifest.json.minisig",
       "destination": "https://pub-15bf4245be0e4c05b570d31988004d09.r2.dev/latest/manifest.json.minisig"
+    },
+    {
+      "source": "/installer.run",
+      "destination": "https://pub-15bf4245be0e4c05b570d31988004d09.r2.dev/installer.run"
     }
   ],
   "headers": [
