@@ -40,7 +40,7 @@ export DEBCONF_NONINTERACTIVE_SEEN=true
 INSTALLER_VERSION="2.0.5"
 INSTALLER_VERSION="2.0.5"
 INSTALLER_BUILD_DATE="2026-04-04T17:22:51Z"
-INSTALLER_GIT_SHA="9ac98927"
+INSTALLER_GIT_SHA="__INSTALLER_GIT_SHA__"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # SELF-UPDATE -- ALWAYS download latest installer before doing ANYTHING
