@@ -193,7 +193,7 @@ async function handleForceUpdate(payload, cmdId) {
 
   // Self-update gwi-node from the running image before deploy
   try {
-    run('bash "' + GWI_NODE + '" self-update', APP_DIR, 30)
+    run('sudo bash "' + GWI_NODE + '" self-update', APP_DIR, 30)
   } catch (e) {
     log('[Update] gwi-node self-update warning: ' + e.message)
   }
@@ -223,7 +223,7 @@ async function handleForceUpdate(payload, cmdId) {
   if (cmdId) ackProgress(cmdId, 'IN_PROGRESS', { step: 'gwi-node-deploy', targetVersion: targetVersion })
 
   try {
-    execSync('bash "' + GWI_NODE + '" deploy', {
+    execSync('sudo bash "' + GWI_NODE + '" deploy', {
       cwd: APP_DIR,
       encoding: 'utf-8',
       timeout: 600000,
@@ -265,11 +265,11 @@ function selfUpdateSyncAgent() {
     // Extract latest sync-agent from running container image
     var image = ''
     try {
-      image = execSync('docker inspect --format="{{.Config.Image}}" gwi-pos', { encoding: 'utf8', timeout: 5000 }).trim()
+      image = execSync('sudo docker inspect --format="{{.Config.Image}}" gwi-pos', { encoding: 'utf8', timeout: 5000 }).trim()
     } catch (e) {}
 
     if (image) {
-      execSync('docker run --rm "' + image + '" cat /app/public/sync-agent.js > /tmp/sync-agent-new.js', { timeout: 15000 })
+      execSync('sudo docker run --rm "' + image + '" cat /app/public/sync-agent.js > /tmp/sync-agent-new.js', { timeout: 15000 })
       if (fs.existsSync('/tmp/sync-agent-new.js') && fs.statSync('/tmp/sync-agent-new.js').size > 1000) {
         fs.copyFileSync('/tmp/sync-agent-new.js', '/opt/gwi-pos/sync-agent.js')
         log('[Update] Sync agent self-updated from container image')
