@@ -63,6 +63,8 @@ COPY --from=builder /app/src/generated ./src/generated
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/deploy-tools ./deploy-tools
 COPY --from=builder /app/scripts/migrations ./scripts/migrations
+# migrate.js looks for migrations at deploy-tools/migrations (path.join(__dirname, '..', 'migrations'))
+COPY --from=builder /app/scripts/migrations ./deploy-tools/migrations
 COPY --from=builder /app/package.json ./package.json
 
 RUN mkdir -p /app/uploads
