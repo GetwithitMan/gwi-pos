@@ -131,7 +131,7 @@ Only after Steps 1–5:
 - **Installer is pointer-only and modular:** Registration gives the NUC its venue identity + Neon URL. `.env.local` is a symlink to `/opt/gwi-pos/.env` (never a copy). Installer never writes `_venue_schema_state` (MC-only), never uses `--accept-data-loss`, never hardcodes URLs. Schema updates follow MC rollout → Neon → NUC downstream sync. The installer is a thin orchestrator (`public/installer.run`) + 11 independently callable modules under `public/installer-modules/`. Supports `--resume-from=STAGE` for resumable installs. Each stage returns 0/non-zero; orchestrator halts on failure (hard stop, no silent continue). Stage 11 (`11-system-hardening.sh`) bootstraps Ansible and runs the baseline enforcement playbook from `installer/site.yml` with 16 roles.
 - **Installer modules: each stage is independently callable, resumable on failure.** Never add new functionality inline to the orchestrator; create a new module under `public/installer-modules/`.
 - **Installer must not hardcode schema versions, deployment tags, or app versions.** Desired app version comes from rollout policy (MC → fleet command). The installer is a runtime executor, not a version pinning mechanism.
-- **Deploy pipeline is pointer-only:** MC creates a release → fleet command → sync agent on NUC pulls from git (prefers pinned git tags like `v1.0.60`, falls back to `origin/main`), runs `prisma generate` → `nuc-pre-migrate.js` → `prisma db push` → `npm run build` → restart → ACKs back to MC with deploy path (pinned vs fallback). No hardcoded schema, URLs, or secrets in the pipeline. `version-contract.json` verified after checkout.
+- **Deploy pipeline (v2.0.0 — gwi-node appliance model):** MC creates a release → fleet command → sync-agent on NUC calls `gwi-node deploy` → gwi-node pulls Docker image from GHCR (Cosign-verified) → runs deploy-tools (migrate.js + apply-schema.js) inside the container → swaps container with health check → ACKs back to MC. `gwi-node.sh` (312 lines) is the **single deploy agent** on every NUC. Install and update are the same operation. Docker is the only runtime — no tarball path, no systemd app service, no mode markers. No hardcoded schema, URLs, or secrets in the pipeline. `version-contract.json` verified after deploy.
 - **All infrastructure tables in Prisma schema:** `SyncWatermark`, `SocketEventLog`, `_gwi_sync_state`, `_local_schema_state`, `_local_install_state`, and similar operational tables MUST be defined in `prisma/schema.prisma` so that `prisma db push` never blocks or drops them.
 - **Universal outage queue:** ALL upstream model writes MUST use outage queue protection (`OutageQueueEntry`). No upstream write may silently fail during an internet outage.
 - **Canonical authority doc:** `docs/architecture/LOCAL-CORE-CELLULAR-EDGE-HA.md` (Phases 6-8)
@@ -252,6 +252,15 @@ cd /path/to/gwi-kds-android
 node scripts/nuc-pre-migrate.js          # Run all pending from scripts/migrations/
 # Migration tracking: _gwi_migrations table — never re-runs applied migrations
 # New migration: create scripts/migrations/NNN-description.js exporting async function up(prisma)
+```
+
+```bash
+# NUC Deploy Agent (gwi-node — v2.0.0)
+gwi-node.sh deploy   # Pull Docker image, run migrations, swap container, health check
+gwi-node.sh status   # Show running container, image tag, uptime
+# gwi-node is the ONLY deploy agent. Docker is the ONLY runtime on NUCs.
+# sync-agent.js calls `gwi-node deploy` for FORCE_UPDATE fleet commands.
+# Installer stage 05 calls `gwi-node install`.
 ```
 
 ### Custom Server
@@ -390,8 +399,8 @@ Tech: Kotlin, Jetpack Compose, Hilt DI, Retrofit 2, Socket.IO, Room DB, Moshi. M
 | Socket / real-time | `docs/guides/SOCKET-REALTIME.md` | `src/lib/socket-server.ts`, `shared-socket.ts`, `socket-event-buffer.ts` |
 | Socket / cloud relay | `docs/guides/SOCKET-REALTIME.md` | `src/lib/cloud-relay-client.ts`, `socket-event-buffer.ts` |
 | Android interop | `docs/guides/ANDROID-INTEGRATION.md` | `src/app/api/sync/` |
-| NUC deployment / installer | `docs/guides/NUC-OPERATIONS.md`, `docs/deployment/INSTALLER-SPEC.md` | `public/installer.run` (thin orchestrator) + `public/installer-modules/` (11 stage modules) + `installer/` (Ansible baseline enforcement) — MC proxies installer from POS deployment, no copy needed |
-| Release pipeline (full) | `docs/deployment/RELEASE-PIPELINE.md` — canonical end-to-end: commit -> Vercel -> MC -> NUC | `scripts/vercel-build.js`, `scripts/bump-version.sh`, `scripts/build-nuc-artifact.sh`, `scripts/ci/` |
+| NUC deployment / installer | `docs/guides/NUC-OPERATIONS.md`, `docs/deployment/INSTALLER-SPEC.md` | **`gwi-node.sh`** (single deploy agent, v2.0.0) + `public/installer.run` (thin orchestrator) + `public/installer-modules/` (11 stage modules) + `installer/` (Ansible baseline enforcement) — Docker is the only NUC runtime |
+| Release pipeline (full) | `docs/deployment/RELEASE-PIPELINE.md` — canonical end-to-end: commit -> Vercel -> MC -> gwi-node -> Docker | `scripts/vercel-build.js`, `scripts/bump-version.sh`, `scripts/build-nuc-artifact.sh`, `gwi-node.sh`, `scripts/ci/` |
 | Node baseline / Ansible | `installer/site.yml`, `docs/schemas/` | `installer/roles/`, `bin/`, `public/installer-modules/11-system-hardening.sh` |
 | Database / schema | `docs/guides/ARCHITECTURE-RULES.md` | `prisma/schema.prisma` |
 | UI / components | `docs/guides/CODING-STANDARDS.md` | `src/stores/` |

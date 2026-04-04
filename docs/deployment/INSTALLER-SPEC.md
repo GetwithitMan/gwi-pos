@@ -25,18 +25,20 @@ The primary NUC at each venue. Runs the full POS stack locally for offline opera
 
 **Installs:**
 - PostgreSQL 14+ (local database)
-- Node.js 20+ (application runtime)
-- GWI POS application (cloned from GitHub)
+- Docker Engine (container runtime — the ONLY app runtime as of v2.0.0)
+- gwi-node.sh (single deploy agent — manages Docker lifecycle)
 - Chromium kiosk (full-screen browser)
 - Daily backup cron job
 - RealVNC (optional, for remote support)
 
 **Systemd Services:**
-- `thepasspos` — Node.js POS server (`node -r ./preload.js server.js`)
+- `gwi-pos` — Docker container managed by gwi-node.sh (POS server on port 3005)
 - `thepasspos-kiosk` — Chromium in kiosk mode pointing to `http://localhost:3005`
-- `thepasspos-sync` — Sync agent (SSE listener for cloud commands)
+- `thepasspos-sync` — Sync agent (SSE listener for cloud commands, calls `gwi-node deploy` for FORCE_UPDATE)
 
 **Port:** 3005 (configured unquoted in `.env` — systemd `EnvironmentFile` treats quoted values as literal)
+
+**Note:** There is no bare Node.js process, no tarball path, no mode markers. Docker is the only runtime.
 
 ### Terminal
 
@@ -79,13 +81,12 @@ curl installer.run | sudo bash
         ├─── Server branch ──────────────────
         │    ├─ Install PostgreSQL
         │    ├─ Create DB + user (idempotent)
-        │    ├─ Clone/pull repo → /opt/gwi-pos/app
-        │    ├─ npm ci + prisma generate + db push + build
-        │    ├─ Create pre-start.sh (runs on every boot/restart)
-        │    │    1. prisma generate (regenerate client)
-        │    │    2. prisma db push (sync schema)
-        │    │    3. nuc-pre-migrate.js (custom migrations)
-        │    ├─ Create thepasspos.service (ExecStartPre=pre-start.sh)
+        │    ├─ Install Docker Engine (if not present)
+        │    ├─ Copy gwi-node.sh to /opt/gwi-pos/gwi-node.sh
+        │    ├─ Stage 05 calls `gwi-node install`
+        │    │    → gwi-node pulls Docker image from GHCR
+        │    │    → Runs migrations + schema push inside container
+        │    │    → Starts container on port 3005
         │    ├─ Create thepasspos-kiosk.service (→ localhost:3005)
         │    ├─ Create thepasspos-sync.service (sync agent)
         │    ├─ Install heartbeat.sh + cron (every 60s)
@@ -116,9 +117,10 @@ curl installer.run | sudo bash
 ```
 /opt/gwi-pos/
 ├── .env                    # Environment variables (chmod 600, unquoted values)
+├── gwi-node.sh             # Single deploy agent (v2.0.0) — install/update/status
 ├── backup-pos.sh           # Daily PostgreSQL backup script (server only)
 ├── heartbeat.sh            # 60s HMAC-signed metrics to Mission Control (server only)
-├── sync-agent.js           # SSE listener for cloud commands (server only)
+├── sync-agent.js           # SSE listener for cloud commands (calls gwi-node deploy)
 ├── kiosk-control.sh        # Stops kiosk service + kills Chromium (sudoers-allowed)
 ├── wait-for-pos.sh         # Waits for POS health endpoint before starting kiosk
 ├── clear-kiosk-session.sh  # Clears stale Chromium session data
@@ -185,26 +187,18 @@ curl installer.run | sudo bash
 
 ## Systemd Services
 
-### thepasspos.service (Server only)
+### gwi-pos container (Server only, v2.0.0)
 
-```ini
-[Unit]
-Description=GWI POS Server
-After=network-online.target postgresql.service
-Wants=network-online.target postgresql.service
+The POS app runs as a Docker container managed by `gwi-node.sh`. There is no systemd unit file for the app itself -- Docker manages the container lifecycle. `gwi-node deploy` handles pulling the image, running migrations, and swapping the container with a health check gate.
 
-[Service]
-User=<posuser>
-WorkingDirectory=/opt/gwi-pos/app
-EnvironmentFile=/opt/gwi-pos/.env
-Environment=NODE_ENV=production
-ExecStart=/usr/bin/node -r ./preload.js server.js
-Restart=always
-RestartSec=3
-
-[Install]
-WantedBy=multi-user.target
+```bash
+# Container is managed by gwi-node, not systemd directly
+gwi-node.sh deploy    # Pull image, migrate, swap container
+gwi-node.sh status    # Show running container info
+docker logs gwi-pos   # View app logs
 ```
+
+**Legacy note:** The `thepasspos.service` systemd unit (bare Node.js process) is no longer used. Docker is the only runtime.
 
 ### thepasspos-kiosk.service (Both roles)
 
@@ -300,10 +294,9 @@ Re-running `installer.run` on an existing installation:
 2. Runs `backup-pos.sh` (snapshot before changes)
 3. Prompts for registration (can use new code)
 4. Overwrites `.env` with new values
-5. `git fetch --all && git reset --hard origin/main`
-6. `npm ci && prisma generate && prisma db push && npm run build`
-7. Overwrites systemd services
-8. Restarts all services
+5. Calls `gwi-node deploy` (pulls latest Docker image, runs migrations, swaps container)
+6. Overwrites kiosk/sync systemd services
+7. Restarts kiosk and sync services
 
 ### Terminal Re-run
 1. Overwrites kiosk service with new URL
@@ -312,11 +305,13 @@ Re-running `installer.run` on an existing installation:
 ### Factory Reset
 
 ```bash
-sudo systemctl stop thepasspos thepasspos-kiosk thepasspos-sync thepasspos-exit-kiosk
+docker stop gwi-pos && docker rm gwi-pos
+sudo systemctl stop thepasspos-kiosk thepasspos-sync thepasspos-exit-kiosk
 sudo rm -rf /opt/gwi-pos
-sudo rm -f /etc/systemd/system/thepasspos.service /etc/systemd/system/thepasspos-kiosk.service /etc/systemd/system/thepasspos-sync.service /etc/systemd/system/thepasspos-exit-kiosk.service
+sudo rm -f /etc/systemd/system/thepasspos-kiosk.service /etc/systemd/system/thepasspos-sync.service /etc/systemd/system/thepasspos-exit-kiosk.service
 sudo rm -f /etc/sudoers.d/gwi-pos
 sudo systemctl daemon-reload
+docker image prune -af  # Remove cached images
 ```
 
 Then re-run `installer.run`.
@@ -352,14 +347,23 @@ The MC route at `src/app/installer.run/route.ts` reads from `scripts/installer.r
 ## Useful Commands After Installation
 
 ```bash
-# Service management
-sudo systemctl status thepasspos       # Check POS server
+# gwi-node (single deploy agent)
+gwi-node.sh deploy                     # Pull latest image, migrate, swap container
+gwi-node.sh status                     # Show running container, image tag, uptime
+
+# Docker container management
+docker logs gwi-pos                    # Tail POS logs
+docker logs gwi-pos --tail 100 -f      # Follow last 100 lines
+docker ps                              # Check running container
+
+# Kiosk / sync services
 sudo systemctl status thepasspos-kiosk     # Check kiosk
-sudo journalctl -u thepasspos -f       # Tail POS logs
+sudo systemctl status thepasspos-sync      # Check sync agent
 sudo journalctl -u thepasspos-kiosk -f     # Tail kiosk logs
+sudo journalctl -u thepasspos-sync -f      # Tail sync agent logs
 
 # Manual restart
-sudo systemctl restart thepasspos
+gwi-node.sh deploy                     # Redeploy (same image = restart)
 sudo systemctl restart thepasspos-kiosk
 
 # Manual backup
@@ -659,11 +663,10 @@ On install, reinstall, and boot, the node converges to the **latest approved app
 
 ### What Reinstall Re-applies
 
-- App code (`git fetch` + checkout approved version for rollout channel)
-- npm dependencies (`npm ci`)
-- Prisma client generation + schema migrations (via `pre-start.sh`)
+- App deployment via `gwi-node deploy` (pulls Docker image for approved version)
+- Schema migrations (deploy-tools inside container: `migrate.js` + `apply-schema.js`)
 - All 16 Ansible baseline roles (idempotent — only changes what drifted)
-- Systemd service files (`07-services.sh` recreates idempotently)
+- Systemd service files for kiosk/sync (`07-services.sh` recreates idempotently)
 - Support tools (`bin/*`)
 
 ### Safety Guarantees

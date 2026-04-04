@@ -12,27 +12,29 @@ Developer pushes to main
   |
 Vercel auto-deploys (runs vercel-build.js -- see vercel.json buildCommand)
   |
-  +-- 1. prisma generate
-  +-- 2. generate-schema-sql.mjs  (pre-pass for migrations)
-  +-- 3. nuc-pre-migrate.js       (runs migrations on master Neon)
-  +-- 4. prisma db push            (push full schema to master Neon)
-  +-- 5. generate-schema-sql.mjs  (REGENERATE -- post-push = final truth)
-  |      -> prisma/schema.sql -> public/schema.sql
-  +-- 6. generate-version-contract.mjs
-  |      -> src/generated/version-contract.json -> public/version-contract.json
-  +-- 7. generate-artifacts.mjs
-  |      -> public/artifacts/manifest.json + versioned files
-  +-- 8. deploy-tools/build.sh
-  |      -> public/artifacts/deploy-tools-<releaseId>.tar.gz
-  +-- 9. build-installer-bundle.sh
-  |      -> public/installer.run (stamps version/sha, embeds modules)
-  +-- 10. next build
-  +-- 11. build-server.mjs        (server.ts -> server.js via esbuild)
-  +-- 12. build-nuc-artifact.sh
-          -> public/artifacts/pos-release-<releaseId>.tar.zst
-          -> public/artifacts/manifest.json (artifact-metadata.json)
-          -> smoke tests (require chain + boot test)
-          -> minisign signature (mandatory on CI)
+  +-- Build & Release pipeline:
+  |   +-- 1. prisma generate
+  |   +-- 2. generate-schema-sql.mjs  (pre-pass for migrations)
+  |   +-- 3. nuc-pre-migrate.js       (runs migrations on master Neon)
+  |   +-- 4. prisma db push            (push full schema to master Neon)
+  |   +-- 5. generate-schema-sql.mjs  (REGENERATE -- post-push = final truth)
+  |   |      -> prisma/schema.sql -> public/schema.sql
+  |   +-- 6. generate-version-contract.mjs
+  |   |      -> src/generated/version-contract.json -> public/version-contract.json
+  |   +-- 7. generate-artifacts.mjs
+  |   |      -> public/artifacts/manifest.json + versioned files
+  |   +-- 8. deploy-tools/build.sh
+  |   |      -> public/artifacts/deploy-tools-<releaseId>.tar.gz
+  |   +-- 9. build-installer-bundle.sh
+  |   |      -> public/installer.run (stamps version/sha, embeds modules)
+  |   +-- 10. next build
+  |   +-- 11. build-server.mjs        (server.ts -> server.js via esbuild)
+  |   +-- 12. build-nuc-artifact.sh
+  |           -> public/artifacts/pos-release-<releaseId>.tar.zst
+  |           -> Docker image build + push to GHCR (ghcr.io/getwithitman/gwi-pos)
+  |           -> Cosign signature on Docker image
+  |           -> smoke tests (require chain + boot test)
+  |           -> minisign signature on tarball (mandatory on CI)
   |
 Vercel deploy webhook -> POST /api/webhooks/vercel-deploy (MC)
   |
@@ -52,12 +54,27 @@ MC admin deploys Release to locations
   +-- Creates FleetCommand (FORCE_UPDATE) per server
   +-- Sets ServerNode.targetVersion
   |
-NUC update-agent receives FleetCommand
-  +-- Downloads artifact from MC proxy (HMAC-authed)
-  +-- Extracts pos-release-<releaseId>.tar.zst
-  +-- Runs deploy-tools: migrate.js + apply-schema.js
-  +-- Restarts services
+NUC: sync-agent receives FleetCommand → calls `gwi-node deploy`
+  +-- gwi-node pulls Docker image from GHCR (Cosign-verified)
+  +-- Runs deploy-tools: migrate.js + apply-schema.js (inside container)
+  +-- Swaps container (old → new) with health check
   +-- ACKs back to MC with deploy result
+```
+
+### Deploy Agent: gwi-node.sh (v2.0.0)
+
+`gwi-node.sh` (312 lines) is the **single deploy agent** on every NUC. There is no tarball extraction path, no systemd app service, no mode markers.
+
+- **Install and update are the same operation:** `gwi-node deploy`
+- **Docker-only runtime.** The app runs as a Docker container, not a bare Node.js process.
+- **sync-agent.js** calls `gwi-node deploy` when it receives a FORCE_UPDATE fleet command.
+- **update-agent.ts** calls `gwi-node deploy` via API routes for self-service updates.
+- **Installer stage 05** calls `gwi-node install` (which delegates to `gwi-node deploy` after initial setup).
+
+Key commands:
+```bash
+gwi-node.sh deploy   # Pull image, run migrations, swap container, health check
+gwi-node.sh status   # Show running container, image tag, uptime
 ```
 
 ---
@@ -135,7 +152,7 @@ If the version does NOT match `^1\.1\.` (e.g., `1.2.62`), bump-version.sh **pres
 
 **This means: for 1.2.X, 2.0.X, or any non-1.1.X version, YOU must bump manually in package.json before committing.**
 
-The current version is `1.2.62`.
+The current version is `2.0.0`.
 
 ### Skip conditions
 
@@ -351,16 +368,17 @@ Releases are separate from schema rollouts:
 }
 ```
 
-### NUC Update Flow
+### NUC Update Flow (v2.0.0 — gwi-node)
 
 1. Sync-agent polls `/api/fleet/commands/stream` (or receives push via cloud relay)
-2. Receives `FORCE_UPDATE` command
-3. Downloads artifact from MC proxy (MC adds HMAC auth, proxies to POS Vercel)
-4. Verifies minisign signature (fail-closed)
-5. Extracts `pos-release-<releaseId>.tar.zst`
-6. Runs deploy-tools: `migrate.js` (pending migrations) + `apply-schema.js` (prisma db push equivalent)
-7. Restarts POS services
-8. ACKs back to MC with deploy path and result
+2. Receives `FORCE_UPDATE` command with `imageTag`
+3. Sync-agent calls `gwi-node deploy` (the single deploy agent on every NUC)
+4. gwi-node pulls Docker image from GHCR, verifies Cosign signature (fail-closed)
+5. Runs deploy-tools inside the container: `migrate.js` (pending migrations) + `apply-schema.js` (prisma db push equivalent)
+6. Swaps the running container (old -> new) with health check gate
+7. ACKs back to MC with deploy result
+
+There is no tarball extraction, no `deploy-release.sh`, no systemd app restart. gwi-node manages the full container lifecycle.
 
 ---
 
@@ -389,16 +407,16 @@ git show origin/main:package.json | grep '"version"'
 ```
 
 ### 2. Bump version
-Since the repo is at `1.2.X`, auto-bump does NOT apply. You must manually edit `package.json`:
+Since the repo is at `2.0.X`, auto-bump does NOT apply. You must manually edit `package.json`:
 ```
-"version": "1.2.63"   // was 1.2.62
+"version": "2.0.1"   // was 2.0.0
 ```
 
 ### 3. If installer.run changed
 Stamp the version and use placeholder SHA:
 ```bash
 # Set version to match package.json
-perl -pi -e 's/^INSTALLER_VERSION="[^"]*"/INSTALLER_VERSION="1.2.63"/' public/installer.run
+perl -pi -e 's/^INSTALLER_VERSION="[^"]*"/INSTALLER_VERSION="2.0.1"/' public/installer.run
 # Always use placeholder SHA in commits
 perl -pi -e 's/^INSTALLER_GIT_SHA="[^"]*"/INSTALLER_GIT_SHA="__INSTALLER_GIT_SHA__"/' public/installer.run
 ```
@@ -442,7 +460,10 @@ If deploying to NUCs, create a Release in MC admin and deploy to target location
 ### NUC didn't update
 - Check if a Release was created in MC
 - Check if FleetCommand was sent (MC admin -> server detail -> commands)
-- Check sync-agent logs on NUC: `journalctl -u gwi-sync-agent -f`
+- Check sync-agent logs on NUC: `journalctl -u thepasspos-sync -f`
+- Check gwi-node status: `gwi-node.sh status`
+- Check Docker logs: `docker logs gwi-pos --tail 50`
+- Verify image was pulled: `docker images | grep gwi-pos`
 - Verify artifact exists: `curl -sL https://app-domain.vercel.app/artifacts/manifest.json | jq .`
 
 ### Build fails on artifact smoke test
@@ -462,22 +483,25 @@ If deploying to NUCs, create a Release in MC admin and deploy to target location
 
 | File | Purpose |
 |------|---------|
+| **`gwi-node.sh`** | **Single deploy agent on every NUC (v2.0.0). Install and update are the same operation.** |
 | `vercel.json` | Vercel config: `buildCommand: "node scripts/vercel-build.js"` |
-| `scripts/vercel-build.js` | Production build orchestrator (Vercel) |
+| `scripts/vercel-build.js` | Production build orchestrator (Vercel) — builds tarball + Docker image + Cosign |
 | `package.json` (`build` script) | Local/NUC build chain |
 | `scripts/bump-version.sh` | Auto-bump for 1.1.X; preserves MC-managed versions |
 | `scripts/generate-schema-sql.mjs` | Prisma schema -> SQL + SHA-256 hash |
 | `scripts/generate-version-contract.mjs` | Version contract with schema introspection |
 | `scripts/generate-artifacts.mjs` | Immutable versioned artifacts |
 | `scripts/build-installer-bundle.sh` | Self-contained installer.run with embedded modules |
-| `scripts/build-nuc-artifact.sh` | NUC release artifact (.tar.zst) + smoke tests + signing |
+| `scripts/build-nuc-artifact.sh` | NUC release artifact (.tar.zst) + Docker image + smoke tests + signing |
 | `scripts/build-server.mjs` | server.ts -> server.js (esbuild CJS) |
 | `deploy-tools/build.sh` | Lightweight migration runner artifact |
 | `scripts/ci/enforce-version-bump.sh` | CI gate: protected paths require version bump |
 | `scripts/ci/check-version-stamps.sh` | CI gate: installer stamps match package.json |
 | `scripts/nuc-pre-migrate.js` | Migration runner (shared: NUC local PG + Vercel master Neon) |
 | `scripts/migrations/NNN-*.js` | Individual migration files |
+| ~~`deploy-release.sh`~~ | **LEGACY** — replaced by gwi-node.sh in v2.0.0 |
+| ~~`docker-deploy.sh`~~ | **LEGACY** — replaced by gwi-node.sh in v2.0.0 |
 
 ---
 
-*Last updated: 2026-03-31*
+*Last updated: 2026-04-04*
