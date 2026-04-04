@@ -145,9 +145,10 @@ start_agent() {
 }
 
 systemd_last_resort() {
-  log "Last resort: attempting systemd thepasspos..."
-  systemctl enable thepasspos 2>/dev/null || true
-  systemctl start thepasspos 2>/dev/null || true
+  # Legacy services are masked — no fallback runtime exists.
+  # Log the failure state so it surfaces in deploy logs and MC.
+  log "CRITICAL: Deploy and rollback both failed. No fallback runtime available."
+  log "CRITICAL: Venue may be down. Check journalctl -u gwi-node and docker ps."
 }
 
 cleanup() {
@@ -250,6 +251,51 @@ EOF
   chmod 644 "$VERSION_FILE" 2>/dev/null || true
   docker image prune -f --filter "dangling=true" 2>/dev/null || true
   start_agent "$IMAGE_REF" || log "WARN: gwi-agent failed to start (non-fatal)"
+
+  # ── Self-bootstrap gwi-node.service for existing venue upgrades ───────────
+  # On venues that upgraded via the old execSync path (no installer re-run),
+  # gwi-node.service and trigger dirs don't exist yet. Bootstrap them here so
+  # the next deploy uses the trigger-file protocol instead of the dead old path.
+  if ! systemctl is-enabled gwi-node.service >/dev/null 2>&1 \
+    && ! systemctl is-active gwi-node.service >/dev/null 2>&1; then
+    log "Bootstrapping gwi-node.service (first trigger-file upgrade)..."
+    local _ok=true
+
+    # Extract both host artifacts from the newly deployed image
+    local _sh_tmp="/tmp/gwi-node-bootstrap.sh"
+    local _svc_tmp="/tmp/gwi-node-bootstrap.service"
+    docker run --rm "$IMAGE_REF" cat /app/public/scripts/gwi-node.sh > "$_sh_tmp" 2>/dev/null || _ok=false
+    docker run --rm "$IMAGE_REF" cat /app/public/scripts/gwi-node.service > "$_svc_tmp" 2>/dev/null || _ok=false
+
+    if [[ "$_ok" == true ]] && [[ -s "$_sh_tmp" ]] && [[ -s "$_svc_tmp" ]]; then
+      # Install host script
+      cp "$_sh_tmp" "${BASE_DIR}/gwi-node.sh"
+      chown root:root "${BASE_DIR}/gwi-node.sh"
+      chmod 755 "${BASE_DIR}/gwi-node.sh"
+
+      # Install systemd unit
+      cp "$_svc_tmp" /etc/systemd/system/gwi-node.service
+      systemctl daemon-reload
+      systemctl enable gwi-node.service
+
+      # Create trigger directories (matches stage 07 permissions)
+      mkdir -p "${REQUESTS_DIR}" "${RESULTS_DIR}"
+      chmod 777 "${REQUESTS_DIR}"
+      chmod 755 "${RESULTS_DIR}"
+
+      # Mask legacy services
+      systemctl mask thepasspos 2>/dev/null || true
+      systemctl mask thepasspos-sync 2>/dev/null || true
+
+      # Start the watcher
+      systemctl start gwi-node.service
+      log "gwi-node.service bootstrapped and started"
+    else
+      log "WARN: Bootstrap extraction failed — venue needs installer re-run for trigger-file deploys"
+    fi
+    rm -f "$_sh_tmp" "$_svc_tmp"
+  fi
+
   FINAL_STATUS="healthy"
   write_deploy_log
   log "Deploy $DEPLOY_ID complete: $IMAGE_REF"
