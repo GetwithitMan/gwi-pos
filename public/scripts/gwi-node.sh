@@ -152,18 +152,96 @@ health_check() {
 capture_diagnostics() {
   DIAG_FILE="${LOG_DIR}/diag-${DEPLOY_ID}.txt"
   {
+    local port; port="$(read_port)"
     echo "=== Docker containers ==="
     docker ps -a --format '{{.Names}} {{.Image}} {{.Status}}' 2>/dev/null || true
     echo "=== Container logs (last 50 lines) ==="
     docker logs "$CONTAINER_NAME" 2>&1 | tail -50 || true
-    echo "=== systemd thepasspos ==="
-    systemctl is-active thepasspos 2>/dev/null || echo "inactive"
+    echo "=== Port $port listeners ==="
+    ss -tlnp "sport = :$port" 2>/dev/null || true
+    echo "=== Runtime dirs ==="
+    ls -ld /opt/gwi-pos/state /opt/gwi-pos/shared/state 2>/dev/null || true
+    echo "=== systemd services ==="
+    systemctl is-active thepasspos gwi-node 2>/dev/null || true
   } > "$DIAG_FILE" 2>/dev/null || true
+}
+
+# ── Deploy preflight checks ────────────────────────────────────────────────
+# Run before starting containers to prevent crash loops.
+
+# Kill any process holding the app port. If it's a stale gwi-pos container or
+# old systemd process, clean it up. If it's something unrelated, fail clearly.
+ensure_port_available() {
+  local port; port="$(read_port)"
+  local listener_pid listener_name
+  listener_pid="$(ss -tlnp "sport = :$port" 2>/dev/null | grep -oP 'pid=\K\d+' | head -1 || true)"
+  [[ -z "$listener_pid" ]] && { log "Preflight: port $port is free"; return 0; }
+
+  listener_name="$(ps -p "$listener_pid" -o comm= 2>/dev/null || echo unknown)"
+  log "Preflight: port $port held by PID $listener_pid ($listener_name)"
+
+  # If it's a Docker process or node server from the old runtime, kill it
+  if [[ "$listener_name" == "node" ]] || [[ "$listener_name" == "docker-proxy" ]]; then
+    log "Preflight: killing stale listener PID $listener_pid ($listener_name)"
+    kill "$listener_pid" 2>/dev/null || true
+    sleep 2
+    # Verify port is now free
+    if ss -tlnp "sport = :$port" 2>/dev/null | grep -q "LISTEN"; then
+      kill -9 "$listener_pid" 2>/dev/null || true
+      sleep 1
+    fi
+    if ss -tlnp "sport = :$port" 2>/dev/null | grep -q "LISTEN"; then
+      die "Preflight: port $port still occupied after cleanup (PID $listener_pid)"
+    fi
+    log "Preflight: port $port cleared"
+  else
+    die "Preflight: port $port in use by unrelated process $listener_name (PID $listener_pid)"
+  fi
+}
+
+# Create host-mounted directories the app needs at runtime.
+# The gwi-pos container runs as nextjs (uid 1001) and needs writable paths.
+ensure_runtime_dirs() {
+  local dirs=(
+    "/opt/gwi-pos/state"
+    "${SHARED_DIR}/state"
+    "${REQUESTS_DIR}"
+    "${RESULTS_DIR}"
+    "${LOG_DIR}"
+  )
+  for d in "${dirs[@]}"; do
+    mkdir -p "$d" 2>/dev/null || true
+  done
+  # /opt/gwi-pos/state must be writable by container user (nextjs, uid 1001)
+  chown 1001:1001 /opt/gwi-pos/state 2>/dev/null || true
+  chmod 755 /opt/gwi-pos/state 2>/dev/null || true
+  # shared/state dirs stay root-writable (host watcher + container root agent)
+  chmod 777 "${REQUESTS_DIR}" 2>/dev/null || true
+  chmod 755 "${RESULTS_DIR}" 2>/dev/null || true
+  log "Preflight: runtime dirs verified"
+}
+
+# Verify host state paths are writable before deploy operations that need them.
+# Catches the Falcon/Monument class of failures early with clear diagnostics.
+ensure_host_state_writable() {
+  local test_file
+  local dirs=("${STATE_DIR}" "${LOG_DIR}" "${REQUESTS_DIR}" "${RESULTS_DIR}")
+  for d in "${dirs[@]}"; do
+    mkdir -p "$d" 2>/dev/null || true
+    test_file="${d}/.write-test-$$"
+    if ! touch "$test_file" 2>/dev/null; then
+      die "Preflight: directory not writable: $d (check permissions/ownership)"
+    fi
+    rm -f "$test_file"
+  done
+  log "Preflight: host state dirs writable"
 }
 
 start_container() {
   docker run -d --name "$CONTAINER_NAME" --restart=unless-stopped \
-    --network=host --env-file "$ENV_FILE" -v "${SHARED_DIR}:${SHARED_DIR}" "$1"
+    --network=host --env-file "$ENV_FILE" -v "${SHARED_DIR}:${SHARED_DIR}" \
+    -v /opt/gwi-pos/state:/opt/gwi-pos/state \
+    "$1"
 }
 
 start_agent() {
@@ -247,9 +325,17 @@ bootstrap_host_watcher() {
   systemctl mask thepasspos 2>/dev/null || true
   systemctl mask thepasspos-sync 2>/dev/null || true
 
-  # Ensure watcher is running
+  # Ensure watcher is enabled and running
+  if ! systemctl enable gwi-node.service 2>/dev/null; then
+    BOOTSTRAP_DEGRADED=true
+    log "WARN: Bootstrap degraded — gwi-node.service enable failed"
+  fi
+
   if systemctl is-active gwi-node.service >/dev/null 2>&1; then
-    systemctl reload-or-restart gwi-node.service 2>/dev/null || true
+    if ! systemctl reload-or-restart gwi-node.service 2>/dev/null; then
+      BOOTSTRAP_DEGRADED=true
+      log "WARN: Bootstrap degraded — gwi-node.service reload-or-restart failed"
+    fi
   else
     if ! systemctl start gwi-node.service 2>/dev/null; then
       BOOTSTRAP_DEGRADED=true
@@ -305,11 +391,25 @@ self_update_and_reexec() {
 resolve_target_image() {
   [[ -n "$IMAGE_REF" ]] && return 0
   log "Fetching manifest: $MANIFEST_URL"
-  local manifest
-  manifest="$(curl -fsSL --max-time 30 "$MANIFEST_URL")" || die "Failed to fetch manifest"
-  [[ "$WATCH_DIE_FIRED" == true ]] && return 1
-  IMAGE_REF="$(echo "$manifest" | jq -r '.imageRef // empty')"
-  [[ -n "$IMAGE_REF" ]] || die "Manifest missing imageRef"
+  local manifest attempt
+  for attempt in 1 2 3; do
+    manifest="$(curl -fsSL --max-time 30 "$MANIFEST_URL" 2>/dev/null)" || {
+      [[ $attempt -lt 3 ]] && { log "Manifest fetch failed (attempt $attempt/3), retrying in 10s..."; sleep 10; continue; }
+      die "Failed to fetch manifest after 3 attempts"
+    }
+    [[ "$WATCH_DIE_FIRED" == true ]] && return 1
+    IMAGE_REF="$(echo "$manifest" | jq -r '.imageRef // empty')"
+    if [[ -n "$IMAGE_REF" ]]; then
+      break
+    fi
+    # Manifest fetched but imageRef missing — release may still be building
+    if [[ $attempt -lt 3 ]]; then
+      log "Manifest fetched but imageRef missing (Docker image not ready yet), retrying in 30s..."
+      sleep 30
+    else
+      die "Manifest missing imageRef after 3 attempts — Docker image may not be built yet"
+    fi
+  done
   [[ "$WATCH_DIE_FIRED" == true ]] && return 1
   [[ -z "$IMAGE_DIGEST" ]] && IMAGE_DIGEST="$(echo "$manifest" | jq -r '.imageDigest // empty' || true)"
   log "Manifest resolved: image=$IMAGE_REF digest=${IMAGE_DIGEST:-none}"
@@ -333,6 +433,10 @@ deploy() {
     # If we get here, no update was needed (same SHA)
     log "Self-update: no change needed"
   fi
+
+  # ── Verify host state is writable before anything else ────────────────────
+  ensure_host_state_writable
+  [[ "$WATCH_DIE_FIRED" == true ]] && return 1
 
   exec {LOCK_FD}>"$LOCK_FILE"
   flock -w "$LOCK_TIMEOUT" "$LOCK_FD" || die "Could not acquire lock (another deploy running?)"
@@ -386,6 +490,12 @@ deploy() {
   systemctl disable thepasspos 2>/dev/null || true
   systemctl stop thepasspos-sync 2>/dev/null || true
   systemctl disable thepasspos-sync 2>/dev/null || true
+
+  # Preflight: ensure port is free and runtime dirs exist before starting
+  ensure_port_available
+  [[ "$WATCH_DIE_FIRED" == true ]] && return 1
+  ensure_runtime_dirs
+
   log "Starting: $IMAGE_REF"
   start_container "$IMAGE_REF" || die "Failed to start container"
   [[ "$WATCH_DIE_FIRED" == true ]] && return 1
