@@ -22,6 +22,7 @@ DEPLOY_ID="" DEPLOY_START=0 IMAGE_REF="" IMAGE_DIGEST="" PREVIOUS_IMAGE=""
 MANIFEST_URL="${R2_ORIGIN}/latest/manifest.json" FORCE=false FINAL_STATUS="pending"
 SCHEMA_RESULT="" ROLLBACK_RESULT="" ROLLBACK_READINESS="" LOCK_FD="" ERRORS=()
 WATCH_MODE=false WATCH_DIE_FIRED=false SKIP_SELF_UPDATE=false
+SELF_UPDATED=false BOOTSTRAPPED_WATCHER=false
 
 log() { echo "[gwi-node] $(date -u +%FT%TZ) $*"; }
 err() { echo "[gwi-node] $(date -u +%FT%TZ) ERROR: $*" >&2; ERRORS+=("$*"); }
@@ -72,7 +73,9 @@ write_deploy_log() {
   "diagnostics": ${diag_json},
   "durationMs": ${duration_ms},
   "errors": ${errors_json},
-  "deployMethod": "docker"
+  "deployMethod": "docker",
+  "selfUpdated": ${SELF_UPDATED},
+  "bootstrappedWatcher": ${BOOTSTRAPPED_WATCHER}
 }
 DEOF
   chmod 644 "$log_file" 2>/dev/null || true
@@ -160,10 +163,65 @@ cleanup() {
   fi
 }
 
+# ── Idempotent host watcher bootstrap ──────────────────────────────────────
+# Ensures gwi-node.sh, gwi-node.service, trigger dirs, and legacy masking
+# are all current after every successful deploy. Safe to run repeatedly.
+# Matches stage 07 installer behavior.
+bootstrap_host_watcher() {
+  local image="$1"
+  [[ -z "$image" ]] && return 0
+  BOOTSTRAPPED_WATCHER=true
+
+  # Refresh host script if changed
+  local _sh_tmp="/tmp/gwi-node-bootstrap-$$.sh"
+  docker run --rm "$image" cat /app/public/scripts/gwi-node.sh > "$_sh_tmp" 2>/dev/null || true
+  if [[ -s "$_sh_tmp" ]]; then
+    if ! cmp -s "$_sh_tmp" "${BASE_DIR}/gwi-node.sh" 2>/dev/null; then
+      cp "$_sh_tmp" "${BASE_DIR}/gwi-node.sh"
+      chown root:root "${BASE_DIR}/gwi-node.sh"
+      chmod 755 "${BASE_DIR}/gwi-node.sh"
+      log "Bootstrap: gwi-node.sh updated"
+    fi
+  fi
+  rm -f "$_sh_tmp"
+
+  # Refresh service unit if changed
+  local _svc_tmp="/tmp/gwi-node-bootstrap-$$.service"
+  docker run --rm "$image" cat /app/public/scripts/gwi-node.service > "$_svc_tmp" 2>/dev/null || true
+  if [[ -s "$_svc_tmp" ]]; then
+    if ! cmp -s "$_svc_tmp" /etc/systemd/system/gwi-node.service 2>/dev/null; then
+      cp "$_svc_tmp" /etc/systemd/system/gwi-node.service
+      systemctl daemon-reload
+      log "Bootstrap: gwi-node.service updated"
+    fi
+    systemctl enable gwi-node.service 2>/dev/null || true
+  else
+    log "WARN: Could not extract gwi-node.service from image"
+  fi
+  rm -f "$_svc_tmp"
+
+  # Ensure trigger directories exist with correct permissions
+  mkdir -p "${REQUESTS_DIR}" "${RESULTS_DIR}"
+  chmod 777 "${REQUESTS_DIR}"
+  chmod 755 "${RESULTS_DIR}"
+
+  # Mask legacy services (idempotent)
+  systemctl mask thepasspos 2>/dev/null || true
+  systemctl mask thepasspos-sync 2>/dev/null || true
+
+  # Ensure watcher is running
+  if systemctl is-active gwi-node.service >/dev/null 2>&1; then
+    systemctl reload-or-restart gwi-node.service 2>/dev/null || true
+  else
+    systemctl start gwi-node.service 2>/dev/null || true
+    log "Bootstrap: gwi-node.service started"
+  fi
+}
+
 # ── Self-update and re-exec ─────────────────────────────────────────────────
-# Extract the latest gwi-node.sh from the running (or target) image, replace
-# this script on disk, then re-exec with the same arguments + --skip-self-update
-# so the rest of the deploy runs with the newest code (including bootstrap).
+# Extract the latest gwi-node.sh from the target image, replace this script
+# on disk, then re-exec with the same arguments + --skip-self-update so the
+# rest of the deploy runs with the newest code (including bootstrap).
 self_update_and_reexec() {
   local source_image="$1"
   [[ -z "$source_image" ]] && return 0
@@ -185,58 +243,67 @@ self_update_and_reexec() {
 
   new_sha="$(sha256sum "$tmp" 2>/dev/null | cut -d' ' -f1 || echo none)"
   if [[ "$old_sha" == "$new_sha" ]]; then
-    log "Self-update: script already current ($old_sha)"
+    log "Self-update: script already current (${old_sha:0:12})"
     rm -f "$tmp"; return 0
   fi
 
   # Atomic replace
   chmod 755 "$tmp"
   mv "$tmp" "$0"
-  log "Self-update: $old_sha → $new_sha (from $source_image)"
+  log "Self-update: ${old_sha:0:12} → ${new_sha:0:12} (from $source_image)"
 
   # Re-exec with --skip-self-update to prevent loop, preserving all flags
+  local -a reexec_args
+  reexec_args=("$SUBCOMMAND" "--skip-self-update")
+  [[ -n "$IMAGE_REF" ]]     && reexec_args+=("--image-ref" "$IMAGE_REF")
+  [[ -n "$IMAGE_DIGEST" ]]  && reexec_args+=("--image-digest" "$IMAGE_DIGEST")
+  [[ -n "$MANIFEST_URL" ]]  && reexec_args+=("--manifest-url" "$MANIFEST_URL")
+  [[ "$FORCE" == true ]]    && reexec_args+=("--force")
   log "Re-executing with updated script..."
-  exec "$0" "$SUBCOMMAND" --skip-self-update \
-    ${IMAGE_REF:+--image-ref "$IMAGE_REF"} \
-    ${IMAGE_DIGEST:+--image-digest "$IMAGE_DIGEST"} \
-    ${MANIFEST_URL:+--manifest-url "$MANIFEST_URL"} \
-    ${FORCE:+--force}
+  exec "$0" "${reexec_args[@]}"
+}
+
+# ── Resolve target image from manifest ─────────────────────────────────────
+# Called early in deploy() so IMAGE_REF is known before self-update.
+resolve_target_image() {
+  [[ -n "$IMAGE_REF" ]] && return 0
+  log "Fetching manifest: $MANIFEST_URL"
+  local manifest
+  manifest="$(curl -fsSL --max-time 30 "$MANIFEST_URL")" || die "Failed to fetch manifest"
+  [[ "$WATCH_DIE_FIRED" == true ]] && return 1
+  IMAGE_REF="$(echo "$manifest" | jq -r '.imageRef // empty')"
+  [[ -n "$IMAGE_REF" ]] || die "Manifest missing imageRef"
+  [[ "$WATCH_DIE_FIRED" == true ]] && return 1
+  [[ -z "$IMAGE_DIGEST" ]] && IMAGE_DIGEST="$(echo "$manifest" | jq -r '.imageDigest // empty' || true)"
+  log "Manifest resolved: image=$IMAGE_REF digest=${IMAGE_DIGEST:-none}"
 }
 
 deploy() {
-  # ── Self-update before deploy ───────────────��─────────────────────────────
-  # Ensures the host script is current before the deploy cycle runs.
-  # This closes the "old script runs full deploy and never upgrades itself" gap.
-  if [[ "$SKIP_SELF_UPDATE" != true ]]; then
-    local update_image
-    # Prefer target image if specified, fall back to currently running container
-    update_image="${IMAGE_REF:-$(docker inspect --format='{{.Config.Image}}' "$CONTAINER_NAME" 2>/dev/null || true)}"
-    if [[ -n "$update_image" ]]; then
-      self_update_and_reexec "$update_image"
-      # If we get here, no update was needed (same SHA) — continue deploy
-    fi
-  fi
-
   DEPLOY_ID="$(gen_deploy_id)"; DEPLOY_START="$(date +%s)"
   mkdir -p "$STATE_DIR" "$LOG_DIR"
+
+  # ── Resolve target BEFORE self-update ─────────────────────────────────────
+  # Manifest fetch must happen first so self-update always pulls from the
+  # TARGET image, not the currently running old image.
+  resolve_target_image
+  [[ "$WATCH_DIE_FIRED" == true ]] && return 1
+
+  # ── Self-update from target image ─────────────────────────────────────────
+  # Ensures the host script is current before the deploy cycle runs.
+  # On re-exec, the updated script re-enters deploy() with --skip-self-update.
+  if [[ "$SKIP_SELF_UPDATE" != true ]]; then
+    self_update_and_reexec "$IMAGE_REF"
+    # If we get here, no update was needed (same SHA)
+    log "Self-update: no change needed"
+  fi
+  SELF_UPDATED=true
+
   exec {LOCK_FD}>"$LOCK_FILE"
   flock -w "$LOCK_TIMEOUT" "$LOCK_FD" || die "Could not acquire lock (another deploy running?)"
   [[ "$WATCH_DIE_FIRED" == true ]] && return 1
   # In watch mode, skip the EXIT trap — watch_loop manages its own lifecycle.
-  # Cleanup (lock release) happens via reset_deploy_state between dispatches.
   [[ "$WATCH_MODE" != true ]] && trap 'cleanup' EXIT
   log "Deploy $DEPLOY_ID starting"
-  if [[ -z "$IMAGE_REF" ]]; then
-    log "Fetching manifest: $MANIFEST_URL"
-    local manifest
-    manifest="$(curl -fsSL --max-time 30 "$MANIFEST_URL")" || die "Failed to fetch manifest"
-    [[ "$WATCH_DIE_FIRED" == true ]] && return 1
-    IMAGE_REF="$(echo "$manifest" | jq -r '.imageRef // empty')"
-    [[ -n "$IMAGE_REF" ]] || die "Manifest missing imageRef"
-    [[ "$WATCH_DIE_FIRED" == true ]] && return 1
-    [[ -z "$IMAGE_DIGEST" ]] && IMAGE_DIGEST="$(echo "$manifest" | jq -r '.imageDigest // empty' || true)"
-    log "Manifest resolved: image=$IMAGE_REF digest=${IMAGE_DIGEST:-none}"
-  fi
 
   PREVIOUS_IMAGE="$(docker inspect --format='{{.Config.Image}}' "$CONTAINER_NAME" 2>/dev/null || true)"
   [[ -n "$PREVIOUS_IMAGE" ]] && echo "$PREVIOUS_IMAGE" > "$PREVIOUS_IMAGE_FILE"
@@ -308,44 +375,7 @@ EOF
   docker image prune -f --filter "dangling=true" 2>/dev/null || true
   start_agent "$IMAGE_REF" || log "WARN: gwi-agent failed to start (non-fatal)"
 
-  # ── Idempotent bootstrap — runs every successful deploy ───────────────────
-  # Ensures gwi-node.service, trigger dirs, and host script are always current.
-  # Safe to run repeatedly. Matches stage 07 installer behavior.
-  bootstrap_host_watcher() {
-    local _svc_tmp="/tmp/gwi-node-bootstrap-$$.service"
-    docker run --rm "$IMAGE_REF" cat /app/public/scripts/gwi-node.service > "$_svc_tmp" 2>/dev/null || true
-
-    if [[ -s "$_svc_tmp" ]]; then
-      # Install/update systemd unit if changed
-      if ! cmp -s "$_svc_tmp" /etc/systemd/system/gwi-node.service 2>/dev/null; then
-        cp "$_svc_tmp" /etc/systemd/system/gwi-node.service
-        systemctl daemon-reload
-        log "gwi-node.service updated"
-      fi
-      systemctl enable gwi-node.service 2>/dev/null || true
-    else
-      log "WARN: Could not extract gwi-node.service from image"
-    fi
-    rm -f "$_svc_tmp"
-
-    # Ensure trigger directories exist with correct permissions
-    mkdir -p "${REQUESTS_DIR}" "${RESULTS_DIR}"
-    chmod 777 "${REQUESTS_DIR}"
-    chmod 755 "${RESULTS_DIR}"
-
-    # Mask legacy services (idempotent)
-    systemctl mask thepasspos 2>/dev/null || true
-    systemctl mask thepasspos-sync 2>/dev/null || true
-
-    # Ensure watcher is running (restart picks up any updated unit)
-    if systemctl is-active gwi-node.service >/dev/null 2>&1; then
-      systemctl reload-or-restart gwi-node.service 2>/dev/null || true
-    else
-      systemctl start gwi-node.service 2>/dev/null || true
-      log "gwi-node.service started"
-    fi
-  }
-  bootstrap_host_watcher
+  bootstrap_host_watcher "$IMAGE_REF"
 
   FINAL_STATUS="healthy"
   write_deploy_log
@@ -447,7 +477,7 @@ reset_deploy_state() {
   DEPLOY_ID="" DEPLOY_START=0 IMAGE_REF="" IMAGE_DIGEST="" PREVIOUS_IMAGE=""
   MANIFEST_URL="${R2_ORIGIN}/latest/manifest.json" FORCE=false FINAL_STATUS="pending"
   SCHEMA_RESULT="" ROLLBACK_RESULT="" ROLLBACK_READINESS="" LOCK_FD="" ERRORS=()
-  WATCH_DIE_FIRED=false
+  WATCH_DIE_FIRED=false SELF_UPDATED=false BOOTSTRAPPED_WATCHER=false
 }
 
 # Write a result JSON atomically into RESULTS_DIR.
@@ -615,7 +645,7 @@ watch_loop() {
   trap 'log "Watch mode shutting down (signal received)"; watch_running=false' SIGTERM SIGINT
 
   while [[ "$watch_running" == true ]]; do
-    # Pick the oldest trigger file (FIFO by filename sort)
+    # Pick first trigger file by filename sort (UUID-based, not chronological)
     local oldest
     oldest="$(ls -1 "$REQUESTS_DIR"/*.json 2>/dev/null | sort | head -1 || true)"
 
