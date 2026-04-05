@@ -55,24 +55,18 @@ run_finalize() {
       echo -e "  ${GREEN}keepalived:${NC} $(systemctl is-active keepalived 2>/dev/null || echo 'not installed')"
     fi
     echo -e "  ${GREEN}Heartbeat:${NC} Every 60 seconds -> Mission Control"
-    # Only show sync status if agent was actually installed
-    SYNC_STATUS=$(systemctl is-active thepasspos-sync 2>/dev/null || echo "not installed")
-    if [[ "$SYNC_STATUS" == "active" ]]; then
+    # Check gwi-agent container for sync/deploy status
+    AGENT_STATUS=$(docker inspect --format='{{.State.Status}}' gwi-agent 2>/dev/null || echo "not running")
+    if [[ "$AGENT_STATUS" == "running" ]]; then
       echo -e "  ${GREEN}Sync:${NC}     Listening for deploy commands"
     else
-      echo -e "  ${YELLOW}Sync:${NC}     $SYNC_STATUS"
+      echo -e "  ${YELLOW}Sync:${NC}     gwi-agent $AGENT_STATUS"
     fi
     echo ""
     echo -e "  ${CYAN}Services:${NC}"
-    echo "    thepasspos        -- $(systemctl is-active thepasspos 2>/dev/null || echo 'unknown')"
-    # Only show kiosk if it was enabled (not skipped by preflight)
-    KIOSK_STATUS=$(systemctl is-enabled thepasspos-kiosk 2>/dev/null || echo "disabled")
-    if [[ "$KIOSK_STATUS" != "disabled" ]]; then
-      echo "    thepasspos-kiosk  -- $(systemctl is-active thepasspos-kiosk 2>/dev/null || echo 'unknown')"
-    else
-      echo "    thepasspos-kiosk  -- skipped (preflight failed)"
-    fi
-    echo "    thepasspos-sync   -- $SYNC_STATUS"
+    echo "    gwi-node.service  -- $(systemctl is-active gwi-node.service 2>/dev/null || echo 'unknown')"
+    echo "    gwi-pos (Docker)  -- $(docker inspect --format='{{.State.Status}}' gwi-pos 2>/dev/null || echo 'not running')"
+    echo "    gwi-agent (Docker)-- $AGENT_STATUS"
     echo "    postgresql        -- $(systemctl is-active postgresql 2>/dev/null || echo 'unknown')"
     if [[ -n "${VIRTUAL_IP:-}" ]]; then
       echo "    keepalived        -- $(systemctl is-active keepalived 2>/dev/null || echo 'unknown')"
@@ -82,11 +76,12 @@ run_finalize() {
     echo -e "  ${GREEN}Primary:${NC}  ${PRIMARY_NUC_IP:-unknown}"
     echo -e "  ${GREEN}Database:${NC} PostgreSQL (streaming replica)"
     echo -e "  ${GREEN}Heartbeat:${NC} Every 60 seconds -> Mission Control"
-    SYNC_STATUS=$(systemctl is-active thepasspos-sync 2>/dev/null || echo "not installed")
+    AGENT_STATUS=$(docker inspect --format='{{.State.Status}}' gwi-agent 2>/dev/null || echo "not running")
     echo ""
     echo -e "  ${CYAN}Services:${NC}"
-    echo "    thepasspos        -- $(systemctl is-active thepasspos 2>/dev/null || echo 'standby (not started)')"
-    echo "    thepasspos-sync   -- $SYNC_STATUS"
+    echo "    gwi-node.service  -- $(systemctl is-active gwi-node.service 2>/dev/null || echo 'unknown')"
+    echo "    gwi-pos (Docker)  -- $(docker inspect --format='{{.State.Status}}' gwi-pos 2>/dev/null || echo 'standby (not started)')"
+    echo "    gwi-agent (Docker)-- $AGENT_STATUS"
     echo "    postgresql        -- $(systemctl is-active postgresql 2>/dev/null || echo 'unknown') (standby)"
     echo "    keepalived        -- $(systemctl is-active keepalived 2>/dev/null || echo 'unknown')"
   else
@@ -100,11 +95,12 @@ run_finalize() {
   echo ""
   echo -e "  ${CYAN}Useful commands:${NC}"
   if [[ "$STATION_ROLE" == "server" ]]; then
-    echo "    sudo systemctl status thepasspos        -- Check POS status"
-    echo "    sudo systemctl status thepasspos-sync   -- Check sync agent"
-    echo "    sudo journalctl -u thepasspos -f        -- View POS logs"
-    echo "    sudo journalctl -u thepasspos-sync -f   -- View sync agent logs"
-    echo "    sudo systemctl restart thepasspos       -- Restart POS"
+    echo "    sudo systemctl status gwi-node           -- Check host launcher"
+    echo "    docker ps --filter name=gwi-pos         -- Check POS container"
+    echo "    docker ps --filter name=gwi-agent       -- Check agent container"
+    echo "    docker logs gwi-pos --tail 100 -f       -- View POS logs"
+    echo "    docker logs gwi-agent --tail 100 -f     -- View agent logs"
+    echo "    sudo systemctl restart gwi-node         -- Restart host launcher"
     if [[ "$USE_LOCAL_PG" == "true" ]]; then
       echo "    sudo bash $BACKUP_SCRIPT               -- Run manual backup"
       echo "    sudo /opt/gwi-pos/scripts/nuc-backup-upload.sh -- Upload backup to S3"
@@ -403,34 +399,56 @@ _run_verification() {
   fi
 
   # ── 6. Services (role-aware) ───────────────────────────────────────────────
-  local svc_list=()
-  local skip_svc_list=()
-  if [[ "$STATION_ROLE" == "server" ]]; then
-    svc_list=(thepasspos thepasspos-sync)
-    skip_svc_list=(thepasspos-kiosk thepasspos-exit-kiosk)
-  elif [[ "$STATION_ROLE" == "backup" ]]; then
-    svc_list=(thepasspos thepasspos-sync)
-    skip_svc_list=(thepasspos-kiosk thepasspos-exit-kiosk)
-  else
-    svc_list=(thepasspos-kiosk)
-    skip_svc_list=(thepasspos thepasspos-sync)
-  fi
-
-  for svc in "${svc_list[@]}"; do
-    local svc_state
-    svc_state=$(systemctl is-active "$svc" 2>/dev/null || echo "MISSING")
-    if [[ "$svc_state" == "active" ]]; then
-      _record "Svc:$svc" "active" "$svc_state" "PASS"
-    elif [[ "$svc_state" == "MISSING" ]]; then
-      _record "Svc:$svc" "active" "MISSING" "MISSING"
+  if [[ "$STATION_ROLE" == "server" || "$STATION_ROLE" == "backup" ]]; then
+    # Check gwi-node.service (host launcher)
+    local gwi_node_state
+    gwi_node_state="$(systemctl is-active gwi-node.service 2>/dev/null || echo 'inactive')"
+    if [[ "$gwi_node_state" == "active" ]]; then
+      _record "Svc:gwi-node" "active" "$gwi_node_state" "PASS"
     else
-      _record "Svc:$svc" "active" "$svc_state" "FAIL"
+      _record "Svc:gwi-node" "active" "$gwi_node_state" "FAIL"
     fi
-  done
 
-  for svc in "${skip_svc_list[@]}"; do
-    _record "Svc:$svc" "N/A" "N/A" "SKIPPED" "$STATION_ROLE role"
-  done
+    # Check Docker containers
+    for cname in gwi-pos gwi-agent; do
+      local cstate
+      cstate="$(docker inspect --format='{{.State.Status}}' "$cname" 2>/dev/null || echo 'missing')"
+      if [[ "$cstate" == "running" ]]; then
+        _record "Container:$cname" "running" "$cstate" "PASS"
+      else
+        _record "Container:$cname" "running" "$cstate" "FAIL"
+      fi
+    done
+
+    # Verify legacy services are masked (not just inactive)
+    for legacy_svc in thepasspos thepasspos-sync; do
+      local legacy_state
+      legacy_state="$(systemctl is-enabled "$legacy_svc" 2>/dev/null || echo 'not-found')"
+      if [[ "$legacy_state" == "masked" ]] || [[ "$legacy_state" == "not-found" ]]; then
+        _record "Legacy:$legacy_svc" "masked" "$legacy_state" "PASS"
+      else
+        _record "Legacy:$legacy_svc" "masked" "$legacy_state" "WARN"
+      fi
+    done
+
+    # Kiosk/exit-kiosk not applicable for server/backup
+    _record "Svc:thepasspos-kiosk" "N/A" "N/A" "SKIPPED" "$STATION_ROLE role"
+    _record "Svc:thepasspos-exit-kiosk" "N/A" "N/A" "SKIPPED" "$STATION_ROLE role"
+  else
+    # Terminal role -- kiosk service only
+    local svc_state
+    svc_state=$(systemctl is-active thepasspos-kiosk 2>/dev/null || echo "MISSING")
+    if [[ "$svc_state" == "active" ]]; then
+      _record "Svc:thepasspos-kiosk" "active" "$svc_state" "PASS"
+    elif [[ "$svc_state" == "MISSING" ]]; then
+      _record "Svc:thepasspos-kiosk" "active" "MISSING" "MISSING"
+    else
+      _record "Svc:thepasspos-kiosk" "active" "$svc_state" "FAIL"
+    fi
+    _record "Svc:gwi-node" "N/A" "N/A" "SKIPPED" "terminal role"
+    _record "Container:gwi-pos" "N/A" "N/A" "SKIPPED" "terminal role"
+    _record "Container:gwi-agent" "N/A" "N/A" "SKIPPED" "terminal role"
+  fi
 
   # ── 7. PostgreSQL Service ──────────────────────────────────────────────────
   if [[ "$STATION_ROLE" == "server" || "$STATION_ROLE" == "backup" ]]; then
