@@ -86,6 +86,11 @@ let immediateRunning = false
 let pendingImmediateModels: string[] | null = null
 /** Guard against overlapping sync cycles */
 let cycleRunning = false
+/** Consecutive cycles with zero rows synced — drives idle backoff */
+let consecutiveIdleCycles = 0
+/** Idle backoff: after 3 consecutive no-op cycles, switch to 15s polling */
+const IDLE_BACKOFF_THRESHOLD = 3
+const IDLE_INTERVAL_MS = 15_000
 
 /** Batched menu-update locations — collected per sync cycle, emitted once after all tables complete. */
 const menuUpdateLocations = new Set<string>()
@@ -1255,6 +1260,23 @@ async function runDownstreamCycle(): Promise<void> {
 
     if (totalSynced > 0) {
       log.info({ cycleId, rows: totalSynced }, 'Cycle complete')
+      // Activity detected — reset idle backoff to fast polling
+      if (consecutiveIdleCycles >= IDLE_BACKOFF_THRESHOLD && timer) {
+        clearInterval(timer)
+        timer = setInterval(() => void runDownstreamCycle(), DOWNSTREAM_INTERVAL_MS)
+        timer.unref()
+        log.info({ intervalMs: DOWNSTREAM_INTERVAL_MS }, 'Idle backoff reset — activity detected')
+      }
+      consecutiveIdleCycles = 0
+    } else {
+      consecutiveIdleCycles++
+      // Switch to slow polling after N consecutive no-op cycles
+      if (consecutiveIdleCycles === IDLE_BACKOFF_THRESHOLD && timer) {
+        clearInterval(timer)
+        timer = setInterval(() => void runDownstreamCycle(), IDLE_INTERVAL_MS)
+        timer.unref()
+        log.info({ intervalMs: IDLE_INTERVAL_MS, afterIdleCycles: IDLE_BACKOFF_THRESHOLD }, 'Idle backoff engaged')
+      }
     }
 
     // Emit batched menu:updated — one event per location per cycle instead of per-row
@@ -1701,6 +1723,14 @@ export function clearColumnCache(): void {
  * @param modelNames - Optional specific model names to sync (e.g., ['Order', 'Payment'])
  */
 export async function triggerImmediateDownstreamSync(_domain?: string, modelNames?: string[]): Promise<void> {
+  // Reset idle backoff — something changed upstream
+  if (consecutiveIdleCycles >= IDLE_BACKOFF_THRESHOLD && timer) {
+    clearInterval(timer)
+    timer = setInterval(() => void runDownstreamCycle(), DOWNSTREAM_INTERVAL_MS)
+    timer.unref()
+  }
+  consecutiveIdleCycles = 0
+
   if (immediateRunning) {
     // Buffer the request — will replay after current cycle completes
     if (modelNames && modelNames.length > 0) {
