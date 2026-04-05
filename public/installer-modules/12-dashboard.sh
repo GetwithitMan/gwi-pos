@@ -237,11 +237,13 @@ DESKTOP
   local SUDOERS_FILE="/etc/sudoers.d/gwi-dashboard"
   if [[ ! -f "$SUDOERS_FILE" ]]; then
     cat > "$SUDOERS_FILE" << SUDOERS
-# GWI NUC Dashboard -- allow service restarts without password
-${POSUSER} ALL=(root) NOPASSWD: /usr/bin/systemctl restart thepasspos
-${POSUSER} ALL=(root) NOPASSWD: /usr/bin/systemctl restart thepasspos-kiosk
-${POSUSER} ALL=(root) NOPASSWD: /usr/bin/systemctl restart thepasspos-sync
+# GWI NUC Dashboard -- allow service/container restarts without password
+${POSUSER} ALL=(root) NOPASSWD: /usr/bin/systemctl restart gwi-node.service
 ${POSUSER} ALL=(root) NOPASSWD: /usr/bin/systemctl restart postgresql
+${POSUSER} ALL=(root) NOPASSWD: /usr/bin/docker restart gwi-pos
+${POSUSER} ALL=(root) NOPASSWD: /usr/bin/docker restart gwi-agent
+${POSUSER} ALL=(root) NOPASSWD: /usr/bin/docker ps *
+${POSUSER} ALL=(root) NOPASSWD: /usr/bin/docker logs *
 SUDOERS
     chmod 440 "$SUDOERS_FILE"
     log "Sudoers rules installed at ${SUDOERS_FILE}"
@@ -311,11 +313,13 @@ SVCEOF
   local SUDOERS_FILE="/etc/sudoers.d/gwi-dashboard"
   if [[ ! -f "$SUDOERS_FILE" ]]; then
     cat > "$SUDOERS_FILE" << SUDOERS
-# GWI NUC Dashboard -- allow service restarts without password
-${POSUSER} ALL=(root) NOPASSWD: /usr/bin/systemctl restart thepasspos
-${POSUSER} ALL=(root) NOPASSWD: /usr/bin/systemctl restart thepasspos-kiosk
-${POSUSER} ALL=(root) NOPASSWD: /usr/bin/systemctl restart thepasspos-sync
+# GWI NUC Dashboard -- allow service/container restarts without password
+${POSUSER} ALL=(root) NOPASSWD: /usr/bin/systemctl restart gwi-node.service
 ${POSUSER} ALL=(root) NOPASSWD: /usr/bin/systemctl restart postgresql
+${POSUSER} ALL=(root) NOPASSWD: /usr/bin/docker restart gwi-pos
+${POSUSER} ALL=(root) NOPASSWD: /usr/bin/docker restart gwi-agent
+${POSUSER} ALL=(root) NOPASSWD: /usr/bin/docker ps *
+${POSUSER} ALL=(root) NOPASSWD: /usr/bin/docker logs *
 SUDOERS
     chmod 440 "$SUDOERS_FILE"
     log "Dashboard sudoers rules installed"

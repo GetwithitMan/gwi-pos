@@ -5,7 +5,7 @@
 
 ---
 
-## 2026-04-04 — v2.0.5 → v2.0.10: Trigger-File Deploy Architecture
+## 2026-04-04 — v2.0.5 → v2.0.12: Trigger-File Deploy Architecture
 
 ### Commits
 - v2.0.5 (PR #131): Trigger-file protocol — container signals, host executes
@@ -14,6 +14,8 @@
 - v2.0.8 (PR #134): Manifest-first resolution, array re-exec, full bootstrap
 - v2.0.9 (PR #135): Precise observability, handler map, extraction helper
 - v2.0.10 (PR #136): Deploy preflight — port check, state writability, manifest retry
+- v2.0.11 (PR #138): Source guard for gwi-node.sh (prevents crash when sourced by installer)
+- v2.0.12 (PR #139): Fix stage 05 unbound INSTALLER_MODULES_DIR → MODULES_DIR
 
 ### Architecture Change
 Replaced direct execSync('bash gwi-node.sh deploy') from gwi-agent container
@@ -33,11 +35,11 @@ with attempt-scoped trigger-file protocol:
 - Shaunels: v2.0.10 (trigger-file MC deploy proven end-to-end)
 - Zoya's: v2.0.10 (Neon ETIMEDOUT — venue network, separate issue)
 - Monument: v2.0.10 (bootstrapped from v2.0.2)
-- Falcon: not yet upgraded
+- Falcon: v2.0.12 (installer re-run from v1.2.91, full clean install)
 
 ### Blockers
-- Falcon needs manual bootstrap (no SSH access during session)
 - Zoya's Neon connectivity is a venue network issue, not deploy-related
+- Post-install verification checklist needs updating for Docker (shows false FAILs)
 
 ---
 
