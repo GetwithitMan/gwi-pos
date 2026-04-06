@@ -37,8 +37,8 @@ export DEBCONF_NONINTERACTIVE_SEEN=true
 # ─────────────────────────────────────────────────────────────────────────────
 # Installer Version (stamped at build time by build-installer-bundle.sh)
 # ─────────────────────────────────────────────────────────────────────────────
-INSTALLER_VERSION="2.0.14"
-INSTALLER_VERSION="2.0.14"
+INSTALLER_VERSION="2.0.15"
+INSTALLER_VERSION="2.0.15"
 INSTALLER_BUILD_DATE="2026-04-06T00:27:33Z"
 INSTALLER_GIT_SHA="__INSTALLER_GIT_SHA__"
 

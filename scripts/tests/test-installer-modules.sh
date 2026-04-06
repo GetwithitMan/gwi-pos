@@ -217,6 +217,8 @@ done
 # Check for orphan module files (files without a matching STAGES entry)
 for mod in "$MODULES_DIR"/*.sh; do
   mod_name=$(basename "$mod" .sh)
+  # Skip non-stage files bundled in installer-modules (e.g., gwi-node.sh)
+  [[ "$mod_name" == "gwi-node" ]] && continue
   # Strip leading number and dash: "01-preflight" -> "preflight"
   stage_name="${mod_name#[0-9][0-9]-}"
   # Convert hyphens to underscores for matching: "deploy-app" -> "deploy_app"
