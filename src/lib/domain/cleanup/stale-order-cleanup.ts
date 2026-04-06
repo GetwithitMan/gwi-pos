@@ -30,7 +30,13 @@ export interface CleanupResult {
 export interface CleanupOptions {
   locationId: string
   maxAgeHours?: number
+  /** Use minutes instead of hours for the stale threshold. Takes precedence over maxAgeHours. */
+  maxAgeMinutes?: number
   dryRun?: boolean
+  /** Clear tableId on cancelled orders to unblock tables. Default: false. */
+  clearTable?: boolean
+  /** Override the notes/reason string on closed orders. */
+  reason?: string
 }
 
 /**
@@ -39,10 +45,14 @@ export interface CleanupOptions {
  * @returns The count and IDs of cancelled orders
  */
 export async function cleanupStaleOrders(opts: CleanupOptions): Promise<CleanupResult> {
-  const { locationId, maxAgeHours = 4, dryRun = false } = opts
+  const { locationId, maxAgeHours = 4, maxAgeMinutes, dryRun = false, clearTable = false } = opts
 
   const cutoff = new Date()
-  cutoff.setHours(cutoff.getHours() - maxAgeHours)
+  if (maxAgeMinutes !== undefined) {
+    cutoff.setMinutes(cutoff.getMinutes() - maxAgeMinutes)
+  } else {
+    cutoff.setHours(cutoff.getHours() - maxAgeHours)
+  }
 
   // Find stale draft orders: status='draft' or 'open', total=$0, no items sent, older than cutoff
   // Read from OrderSnapshot (event-sourced projection) — cents-based fields
@@ -78,21 +88,27 @@ export async function cleanupStaleOrders(opts: CleanupOptions): Promise<CleanupR
 
   const now = new Date()
   const ids = emptyStaleOrders.map(o => o.id)
-  const reason = `Auto-cancelled: stale $0 draft (older than ${maxAgeHours}h)`
+  const ageLabel = maxAgeMinutes !== undefined ? `${maxAgeMinutes}m` : `${maxAgeHours}h`
+  const reason = opts.reason ?? `Auto-cancelled: stale $0 draft (older than ${ageLabel})`
 
   // Dual-channel emission via unified wrapper: socket outbox (transactional)
   // + order events (post-commit). See emit-order-and-socket.ts for contract.
   const flushFns: Array<() => Promise<void>> = []
 
   const result = await db.$transaction(async (tx) => {
+    const updateData: Record<string, unknown> = {
+      status: 'cancelled',
+      closedAt: now,
+      deletedAt: now,
+      notes: reason,
+    }
+    if (clearTable) {
+      updateData.tableId = null
+    }
+
     const updated = await tx.order.updateMany({
       where: { id: { in: ids } },
-      data: {
-        status: 'cancelled',
-        closedAt: now,
-        deletedAt: now,
-        notes: reason,
-      },
+      data: updateData as any,
     })
 
     for (const id of ids) {
@@ -108,7 +124,7 @@ export async function cleanupStaleOrders(opts: CleanupOptions): Promise<CleanupR
     return updated
   })
 
-  logger.log(`[cleanup-stale-orders] Closed ${result.count} stale draft orders for location ${locationId}`)
+  logger.log(`[cleanup-stale-orders] Closed ${result.count} stale draft orders (threshold: ${ageLabel}) for location ${locationId}`)
 
   // Post-commit: flush socket outbox + emit domain events
   for (const flush of flushFns) {
