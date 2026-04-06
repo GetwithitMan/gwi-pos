@@ -113,14 +113,14 @@ jobs:
           done
 
           # ── Latest pointers (no-cache, always fresh) ──
-          echo "Uploading latest/ pointers..."
-          upload_file "public/artifacts/manifest.json" "latest/manifest.json" "application/json" "no-cache, no-store, must-revalidate"
+          # NOTE: manifest.json is NOT uploaded here. It is uploaded AFTER the Docker
+          # build step enriches it with imageRef/imageDigest. Uploading it here without
+          # those fields causes "Manifest missing imageRef" failures during the 10-15 min
+          # Docker build window. See "Update release descriptor with image fields" step.
+          echo "Uploading latest/ pointers (manifest deferred until Docker build completes)..."
           upload_file "public/artifacts/manifest.json.minisig" "latest/manifest.json.minisig" "application/octet-stream" "no-cache, no-store, must-revalidate"
           upload_file "public/version-contract.json" "latest/version-contract.json" "application/json" "no-cache, no-store, must-revalidate"
           upload_file "public/schema.sql" "latest/schema.sql" "application/sql" "no-cache, no-store, must-revalidate"
-
-          # Also upload release-descriptor if it exists (alias for manifest at latest/)
-          upload_file "public/artifacts/manifest.json" "latest/release-descriptor.json" "application/json" "no-cache, no-store, must-revalidate"
 
           # ── Root-level files (no-cache) ──
           echo "Uploading root-level files..."
@@ -213,8 +213,11 @@ jobs:
           aws s3 cp "$MANIFEST" "s3://${BUCKET}/latest/manifest.json" \
             --endpoint-url "$ENDPOINT" --content-type "application/json" \
             --cache-control "no-cache, no-store, must-revalidate" --no-progress
+          aws s3 cp "$MANIFEST" "s3://${BUCKET}/latest/release-descriptor.json" \
+            --endpoint-url "$ENDPOINT" --content-type "application/json" \
+            --cache-control "no-cache, no-store, must-revalidate" --no-progress
 
-          echo "Release descriptor v3 updated: imageDigest=$DIGEST, cosign-signed, SBOM=true"
+          echo "Release descriptor v3 uploaded: imageRef=$VERSION, imageDigest=$DIGEST"
 
       # ── Final manifest verification (AFTER Docker fields injected + uploaded) ──
       - name: Verify release manifest
