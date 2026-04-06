@@ -1017,10 +1017,81 @@ try {
   }
 } catch (e) { /* non-fatal */ }
 
+// ── Orphaned deploy result ACK ────────────────────────────────────────────
+// After a deploy, gwi-node kills the old gwi-agent and starts a new one.
+// The old agent was polling for the result file but got killed before reading
+// it. On boot, check for orphaned result files and ACK them to MC so the
+// fleet status updates correctly (clears stale "Failed" entries).
+function ackOrphanedResults(done) {
+  try {
+    if (!fs.existsSync(RESULTS_DIR)) return done()
+    var files = fs.readdirSync(RESULTS_DIR).filter(function(f) { return f.endsWith('.json') })
+    if (files.length === 0) return done()
+
+    log('[Boot] Found ' + files.length + ' orphaned deploy result(s) — ACKing to MC')
+    var pending = files.length
+
+    files.forEach(function(file) {
+      var resultPath = path.join(RESULTS_DIR, file)
+      try {
+        var result = JSON.parse(fs.readFileSync(resultPath, 'utf-8'))
+        var commandId = result.commandId
+        var status = result.status
+
+        if (commandId && status) {
+          // Build ACK body matching what handleForceUpdate would send
+          var ackStatus = status === 'COMPLETED' ? 'COMPLETED' : 'FAILED'
+          var body = {
+            status: ackStatus,
+            resultPayload: {
+              step: 'orphan-ack',
+              version: result.resultVersion || result.targetVersion || 'unknown',
+              attemptId: result.attemptId || null,
+              finalStatus: result.finalStatus || status,
+              deployId: result.deployId || null,
+              orphanedResult: true
+            }
+          }
+          if (status !== 'COMPLETED') {
+            body.errorMessage = result.error || 'Deploy failed (orphaned result)'
+          }
+
+          postJson('/api/fleet/commands/' + commandId + '/ack', body)
+            .then(function(r) {
+              log('[Boot] Orphan ACK ' + ackStatus + ' for ' + commandId + ' (HTTP ' + r.status + ')')
+            })
+            .catch(function(e) {
+              log('[Boot] Orphan ACK failed for ' + commandId + ': ' + e.message)
+            })
+            .then(function() {
+              // Clean up result file (and matching trigger if it exists)
+              try { fs.unlinkSync(resultPath) } catch (e) {}
+              var triggerPath = path.join(REQUESTS_DIR, file)
+              try { fs.unlinkSync(triggerPath) } catch (e) {}
+            })
+        } else {
+          log('[Boot] Orphan result missing commandId/status, removing: ' + file)
+          try { fs.unlinkSync(resultPath) } catch (e) {}
+        }
+      } catch (e) {
+        log('[Boot] Orphan result parse error (' + file + '): ' + e.message)
+        try { fs.unlinkSync(resultPath) } catch (e2) {}
+      }
+
+      if (--pending === 0) done()
+    })
+  } catch (e) {
+    log('[Boot] Orphan result scan error: ' + e.message)
+    done()
+  }
+}
+
 checkBootUpdate(function() {
   checkInterruptedUpdate(function() {
-    backfillCloudIdentity().then(function() {
-      connectStream()
+    ackOrphanedResults(function() {
+      backfillCloudIdentity().then(function() {
+        connectStream()
+      })
     })
   })
 })
