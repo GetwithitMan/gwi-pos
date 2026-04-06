@@ -23,6 +23,9 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
+
+# Cache bust: changes every commit so COPY and next build are never stale
+ARG CACHE_BUST
 COPY . .
 
 # Generate Prisma client (outputs to src/generated/prisma/ per schema config)
