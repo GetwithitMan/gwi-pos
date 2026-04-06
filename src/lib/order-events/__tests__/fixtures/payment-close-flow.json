@@ -43,8 +43,8 @@
     "paidAmountCents": 2600,
     "isClosed": true,
     "items": {
-      "i1": { "name": "Pasta", "priceCents": 1800, "totalCents": 1800, "kitchenStatus": "FIRED" },
-      "i2": { "name": "Bread", "priceCents": 500, "totalCents": 500, "kitchenStatus": "FIRED" }
+      "i1": { "name": "Pasta", "priceCents": 1800, "totalCents": 1800, "kitchenStatus": "sent" },
+      "i2": { "name": "Bread", "priceCents": 500, "totalCents": 500, "kitchenStatus": "sent" }
     }
   }
 }
