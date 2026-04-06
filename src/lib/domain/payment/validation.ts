@@ -63,9 +63,10 @@ export const PaymentRequestSchema = z.object({
   payments: z.array(PaymentInputSchema).min(1, 'At least one payment is required'),
   employeeId: z.string().optional(),
   terminalId: z.string().optional(),
-  // REQUIRED — all clients (POS, Android Register, PAX) must generate a UUID on button press
-  // and resend the same key on retries. This prevents double-charges on network retries/timeouts.
-  idempotencyKey: z.string().uuid('idempotencyKey must be a valid UUID'),
+  // Optional in body — Android/PAX send it via Idempotency-Key HTTP header instead.
+  // The pay route falls back to the header if the body field is absent (line 420-422).
+  // When present in body, must be a valid UUID.
+  idempotencyKey: z.string().uuid('idempotencyKey must be a valid UUID').optional(),
 })
 
 // ─── Idempotency Check ─────────────────────────────────────────────────────
