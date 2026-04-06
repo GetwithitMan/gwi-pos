@@ -356,6 +356,51 @@ export const GET = withVenue(async function GET(): Promise<NextResponse> {
     }
   }
 
+  // ── Docker container status (replaces legacy systemd service checks) ────────
+  const containers: Array<{
+    name: string
+    type: 'container' | 'service'
+    status: string
+    image?: string
+    healthy?: boolean
+  }> = []
+
+  try {
+    const { execSync } = await import('child_process')
+
+    // Check Docker containers
+    for (const cname of ['gwi-pos', 'gwi-agent']) {
+      try {
+        const info = JSON.parse(
+          execSync(`docker inspect ${cname} --format='{{json .}}'`, { encoding: 'utf-8', timeout: 5000 }).trim()
+        )
+        containers.push({
+          name: cname,
+          type: 'container',
+          status: info.State?.Running ? 'running' : info.State?.Status || 'stopped',
+          image: info.Config?.Image || 'unknown',
+          healthy: info.State?.Health?.Status === 'healthy',
+        })
+      } catch {
+        containers.push({ name: cname, type: 'container', status: 'not found' })
+      }
+    }
+
+    // Check gwi-node.service
+    try {
+      const nodeStatus = execSync('systemctl is-active gwi-node.service 2>/dev/null || echo inactive', { encoding: 'utf-8', timeout: 3000 }).trim()
+      containers.push({
+        name: 'gwi-node',
+        type: 'service',
+        status: nodeStatus,
+      })
+    } catch {
+      containers.push({ name: 'gwi-node', type: 'service', status: 'unknown' })
+    }
+  } catch {
+    // Docker not available (e.g., running on Vercel)
+  }
+
   // ── Assemble response ───────────────────────────────────────────────────────
   return ok({
       generatedAt,
@@ -389,5 +434,6 @@ export const GET = withVenue(async function GET(): Promise<NextResponse> {
       readiness,
       connectionPool,
       lastUpdate,
+      containers,
     })
 })
