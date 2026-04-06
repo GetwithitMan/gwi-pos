@@ -10,16 +10,16 @@
   "syncAgentVersion": "2.0.17",
   "monitoringVersion": "2.0.17",
   "ansibleBaselineVersion": "2026.03.20.1",
-  "buildDate": "2026-04-05T13:47:14.285Z",
-  "gitSha": "0936dea2",
-  "generatedAt": "2026-04-05T13:47:14.286Z",
+  "buildDate": "2026-04-06T16:28:34.822Z",
+  "gitSha": "e8484668",
+  "generatedAt": "2026-04-06T16:28:34.823Z",
   "components": {
     "pos": {
       "version": "2.0.17",
       "artifact": "app"
     },
     "dashboard": {
-      "version": "2.0.17",
+      "version": "0.3.0",
       "artifact": "gwi-nuc-dashboard.deb",
       "url": "/gwi-nuc-dashboard.deb"
     },
@@ -36,7 +36,7 @@
       "artifact": "scripts/"
     },
     "ansibleBaseline": {
-      "version": "2.0.17",
+      "version": "2026.03.20.1",
       "artifact": "installer/"
     }
   },
