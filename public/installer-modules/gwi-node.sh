@@ -117,6 +117,25 @@ DEOF
   log "Deploy log: $log_file"
 }
 
+write_deploy_state() {
+  local state="$1"  # healthy, failed, rolled_back, rollback_failed, in_progress
+  local target_version="${IMAGE_REF##*:}"
+  local previous_version=""
+  [[ -f "$VERSION_FILE" ]] && previous_version="$(jq -r '.version // empty' "$VERSION_FILE" 2>/dev/null || true)"
+
+  cat > "${STATE_DIR}/deploy-state.json" <<DSEOF
+{
+  "state": "${state}",
+  "releaseId": "${target_version}",
+  "previousReleaseId": "${previous_version}",
+  "updatedAt": "$(date -u +%FT%TZ)",
+  "deployId": "${DEPLOY_ID}",
+  "deployMethod": "docker"
+}
+DSEOF
+  chmod 644 "${STATE_DIR}/deploy-state.json" 2>/dev/null || true
+}
+
 die() {
   err "$*"; FINAL_STATUS="failed"; write_deploy_log
   if [[ "$WATCH_MODE" == true ]]; then
@@ -321,9 +340,15 @@ bootstrap_host_watcher() {
   chmod 777 "${REQUESTS_DIR}"
   chmod 755 "${RESULTS_DIR}"
 
-  # Mask legacy services (idempotent)
-  systemctl mask thepasspos 2>/dev/null || true
-  systemctl mask thepasspos-sync 2>/dev/null || true
+  # Mask legacy services — delete unit files first so mask symlink can be created.
+  # Without rm, systemctl mask fails silently if the .service file already exists.
+  for _legacy in thepasspos thepasspos-sync; do
+    systemctl stop "$_legacy" 2>/dev/null || true
+    systemctl disable "$_legacy" 2>/dev/null || true
+    rm -f "/etc/systemd/system/${_legacy}.service"
+  done
+  systemctl daemon-reload 2>/dev/null || true
+  systemctl mask thepasspos thepasspos-sync 2>/dev/null || true
 
   # Ensure watcher is enabled
   if ! systemctl enable gwi-node.service 2>/dev/null; then
@@ -417,6 +442,7 @@ resolve_target_image() {
 deploy() {
   DEPLOY_ID="$(gen_deploy_id)"; DEPLOY_START="$(date +%s)"
   mkdir -p "$STATE_DIR" "$LOG_DIR"
+  write_deploy_state "in_progress"
 
   # ── Resolve target BEFORE self-update ─────────────────────────────────────
   # Manifest fetch must happen first so self-update always pulls from the
@@ -481,14 +507,19 @@ deploy() {
       || log "WARNING: Neon migration failed — continuing"
   fi
   log "Stopping old runtime..."
-  docker stop "$CONTAINER_NAME" 2>/dev/null || true
-  docker rm "$CONTAINER_NAME" 2>/dev/null || true
-  docker stop "$AGENT_CONTAINER_NAME" 2>/dev/null || true
-  docker rm "$AGENT_CONTAINER_NAME" 2>/dev/null || true
-  systemctl stop thepasspos 2>/dev/null || true
-  systemctl disable thepasspos 2>/dev/null || true
-  systemctl stop thepasspos-sync 2>/dev/null || true
-  systemctl disable thepasspos-sync 2>/dev/null || true
+  docker rm -f "$CONTAINER_NAME" 2>/dev/null || true
+  docker rm -f "$AGENT_CONTAINER_NAME" 2>/dev/null || true
+  # Kill legacy services and delete unit files so mask symlink works
+  for _legacy in thepasspos thepasspos-sync; do
+    systemctl stop "$_legacy" 2>/dev/null || true
+    systemctl disable "$_legacy" 2>/dev/null || true
+    rm -f "/etc/systemd/system/${_legacy}.service"
+  done
+  systemctl daemon-reload 2>/dev/null || true
+  systemctl mask thepasspos thepasspos-sync 2>/dev/null || true
+  # Kill any bare node process left by old services
+  pkill -f "preload.js server.js" 2>/dev/null || true
+  sleep 1
 
   # Preflight: ensure port is free and runtime dirs exist before starting
   ensure_port_available
@@ -505,6 +536,7 @@ deploy() {
 }
 
 deploy_success() {
+  write_deploy_state "healthy"
   local tag="${IMAGE_REF##*:}"
   cat > "$VERSION_FILE" <<EOF
 {
@@ -541,19 +573,23 @@ deploy_failure() {
       health_check "Rollback: "
       if [[ "$healthy" == true ]]; then
         ROLLBACK_RESULT="pass"; ROLLBACK_READINESS="pass"; FINAL_STATUS="rolled_back"
+        write_deploy_state "rolled_back"
         log "Rollback healthy — previous image restored"
       else
         ROLLBACK_RESULT="pass"; ROLLBACK_READINESS="fail"; FINAL_STATUS="rollback_failed"
+        write_deploy_state "rollback_failed"
         err "Rollback container started but health check failed"
         systemd_last_resort
       fi
     else
       ROLLBACK_RESULT="fail"; ROLLBACK_READINESS="not_attempted"; FINAL_STATUS="rollback_failed"
+      write_deploy_state "rollback_failed"
       err "Failed to start rollback container"
       systemd_last_resort
     fi
   else
     ROLLBACK_RESULT="not_attempted"; ROLLBACK_READINESS="not_attempted"; FINAL_STATUS="rollback_failed"
+    write_deploy_state "rollback_failed"
     err "No previous image for rollback"
     systemd_last_resort
   fi
