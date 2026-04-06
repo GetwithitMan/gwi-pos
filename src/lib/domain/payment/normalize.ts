@@ -18,7 +18,22 @@
  * Transform the flat shape so both formats are accepted.
  */
 export function normalizePaymentInput(body: Record<string, unknown>): Record<string, unknown> {
-  if (body.payments || !(body.paymentMethodId || body.paymentMethod || body.method || body.amount)) {
+  // If payments array exists, normalize field names inside each entry.
+  // Android sends { paymentMethod: "cash" } but schema expects { method: "cash" }.
+  if (Array.isArray(body.payments)) {
+    body.payments = (body.payments as Record<string, unknown>[]).map(p => {
+      if (p.paymentMethod && !p.method) {
+        return { ...p, method: p.paymentMethod, paymentMethod: undefined }
+      }
+      if (p.paymentMethodId && !p.method) {
+        return { ...p, method: p.paymentMethodId, paymentMethodId: undefined }
+      }
+      return p
+    })
+    return body
+  }
+
+  if (!(body.paymentMethodId || body.paymentMethod || body.method || body.amount)) {
     return body
   }
 
