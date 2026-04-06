@@ -34,13 +34,12 @@ RUN npx prisma generate
 # Install deploy-tools dependencies (pg only, for schema migrations)
 RUN cd deploy-tools && npm install --omit=dev && cd ..
 
-# Build Next.js + custom server (CI handles version bumps, schema SQL, artifacts)
+# CI pre-builds Next.js (npx next build) and the output is included via COPY.
+# Docker only builds the custom server.ts → server.js.
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
 
-# CACHE_BUST is set to git SHA — forces fresh build on every commit.
-# Without this, BuildX content-addressable cache can reuse stale next build output.
-RUN echo "build:${CACHE_BUST:-dev}" && npx next build && node scripts/build-server.mjs
+RUN node scripts/build-server.mjs
 
 # ==============================================================================
 # Stage 3: Runner (Production)
