@@ -68,5 +68,34 @@ export async function authenticateTerminal(
     }
   }
 
+  // Fallback: verify as POS session token (employee JWT sent by Android/PAX)
+  // After login, native clients send the session JWT as Bearer. The session
+  // contains employeeId + locationId — resolve the terminal from the device
+  // token header or find any active terminal for that location.
+  const { verifySessionToken } = await import('./auth-session')
+  const sessionPayload = await verifySessionToken(token)
+  if (sessionPayload?.locationId) {
+    // Session-authenticated: use x-terminal-id header if provided, else find any terminal
+    const terminalId = request.headers.get('x-terminal-id')
+    const sessionTerminal = terminalId
+      ? await db.terminal.findFirst({
+          where: { id: terminalId, locationId: sessionPayload.locationId, deletedAt: null },
+          select: { id: true, locationId: true, name: true, cfdTerminalId: true, defaultMode: true, receiptPrinterId: true, kitchenPrinterId: true, barPrinterId: true, scaleId: true },
+        })
+      : null
+    return {
+      terminal: sessionTerminal || {
+        id: `session-${sessionPayload.employeeId.slice(-8)}`,
+        locationId: sessionPayload.locationId,
+        name: `Session-${sessionPayload.roleName || 'Employee'}`,
+        cfdTerminalId: null,
+        defaultMode: null,
+        receiptPrinterId: null,
+        kitchenPrinterId: null,
+        barPrinterId: null,
+      },
+    }
+  }
+
   return { error: NextResponse.json({ error: 'Invalid token' }, { status: 401 }) }
 }
