@@ -416,8 +416,9 @@ export const POST = withVenue(withTiming(async function POST(
     }
 
     const { payments, employeeId, terminalId, idempotencyKey: bodyKey } = validation.data
-    // X-Idempotency-Key header takes precedence over body field
-    const headerKey = request.headers.get('x-idempotency-key')
+    // Idempotency-Key header takes precedence over body field.
+    // Android sends as "Idempotency-Key", normalize both header variants.
+    const headerKey = request.headers.get('idempotency-key') || request.headers.get('x-idempotency-key')
     const idempotencyKey = headerKey || bodyKey
     const finalIdempotencyKey = idempotencyKey || crypto.randomUUID()
 
