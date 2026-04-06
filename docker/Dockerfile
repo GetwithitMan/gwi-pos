@@ -58,6 +58,8 @@ ENV TZ=America/New_York
 # Copy the full built app. The custom server.ts imports socket.io, pg, pino,
 # and dozens of other packages that Next.js standalone tracing doesn't capture.
 # Larger image (~400MB vs ~150MB) but guaranteed to have everything.
+# Cache bust: ARG changes per commit → invalidates all COPY layers below
+ARG CACHE_BUST
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/public ./public
