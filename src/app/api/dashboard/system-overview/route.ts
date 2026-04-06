@@ -357,7 +357,7 @@ export const GET = withVenue(async function GET(): Promise<NextResponse> {
   }
 
   // ── Docker container status (replaces legacy systemd service checks) ────────
-  let containers: Array<{
+  const containers: Array<{
     name: string
     type: 'container' | 'service'
     status: string
@@ -366,7 +366,7 @@ export const GET = withVenue(async function GET(): Promise<NextResponse> {
   }> = []
 
   try {
-    const { execSync } = require('child_process')
+    const { execSync } = await import('child_process')
 
     // Check Docker containers
     for (const cname of ['gwi-pos', 'gwi-agent']) {
