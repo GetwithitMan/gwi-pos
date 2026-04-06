@@ -321,9 +321,15 @@ bootstrap_host_watcher() {
   chmod 777 "${REQUESTS_DIR}"
   chmod 755 "${RESULTS_DIR}"
 
-  # Mask legacy services (idempotent)
-  systemctl mask thepasspos 2>/dev/null || true
-  systemctl mask thepasspos-sync 2>/dev/null || true
+  # Mask legacy services — delete unit files first so mask symlink can be created.
+  # Without rm, systemctl mask fails silently if the .service file already exists.
+  for _legacy in thepasspos thepasspos-sync; do
+    systemctl stop "$_legacy" 2>/dev/null || true
+    systemctl disable "$_legacy" 2>/dev/null || true
+    rm -f "/etc/systemd/system/${_legacy}.service"
+  done
+  systemctl daemon-reload 2>/dev/null || true
+  systemctl mask thepasspos thepasspos-sync 2>/dev/null || true
 
   # Ensure watcher is enabled
   if ! systemctl enable gwi-node.service 2>/dev/null; then
@@ -481,14 +487,19 @@ deploy() {
       || log "WARNING: Neon migration failed — continuing"
   fi
   log "Stopping old runtime..."
-  docker stop "$CONTAINER_NAME" 2>/dev/null || true
-  docker rm "$CONTAINER_NAME" 2>/dev/null || true
-  docker stop "$AGENT_CONTAINER_NAME" 2>/dev/null || true
-  docker rm "$AGENT_CONTAINER_NAME" 2>/dev/null || true
-  systemctl stop thepasspos 2>/dev/null || true
-  systemctl disable thepasspos 2>/dev/null || true
-  systemctl stop thepasspos-sync 2>/dev/null || true
-  systemctl disable thepasspos-sync 2>/dev/null || true
+  docker rm -f "$CONTAINER_NAME" 2>/dev/null || true
+  docker rm -f "$AGENT_CONTAINER_NAME" 2>/dev/null || true
+  # Kill legacy services and delete unit files so mask symlink works
+  for _legacy in thepasspos thepasspos-sync; do
+    systemctl stop "$_legacy" 2>/dev/null || true
+    systemctl disable "$_legacy" 2>/dev/null || true
+    rm -f "/etc/systemd/system/${_legacy}.service"
+  done
+  systemctl daemon-reload 2>/dev/null || true
+  systemctl mask thepasspos thepasspos-sync 2>/dev/null || true
+  # Kill any bare node process left by old services
+  pkill -f "preload.js server.js" 2>/dev/null || true
+  sleep 1
 
   # Preflight: ensure port is free and runtime dirs exist before starting
   ensure_port_available

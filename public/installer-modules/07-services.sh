@@ -740,14 +740,16 @@ SVCEOF
     log "Trigger file directories created"
 
     # Mask legacy services — Docker containers replace them permanently
-    # thepasspos.service → replaced by gwi-pos container
-    # thepasspos-sync.service → replaced by gwi-agent container
-    systemctl stop thepasspos 2>/dev/null || true
-    systemctl disable thepasspos 2>/dev/null || true
-    systemctl mask thepasspos 2>/dev/null || true
-    systemctl stop thepasspos-sync 2>/dev/null || true
-    systemctl disable thepasspos-sync 2>/dev/null || true
-    systemctl mask thepasspos-sync 2>/dev/null || true
+    # Delete unit files first so systemctl mask can create /dev/null symlinks.
+    # Without rm, mask fails silently if the .service file already exists.
+    for _legacy in thepasspos thepasspos-sync; do
+      systemctl stop "$_legacy" 2>/dev/null || true
+      systemctl disable "$_legacy" 2>/dev/null || true
+      rm -f "/etc/systemd/system/${_legacy}.service"
+    done
+    systemctl daemon-reload 2>/dev/null || true
+    systemctl mask thepasspos thepasspos-sync 2>/dev/null || true
+    pkill -f "preload.js server.js" 2>/dev/null || true
     log "Legacy services masked (thepasspos, thepasspos-sync)"
 
     # Start gwi-node.service (this will poll for deploy triggers)
