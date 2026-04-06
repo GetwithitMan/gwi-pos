@@ -117,6 +117,25 @@ DEOF
   log "Deploy log: $log_file"
 }
 
+write_deploy_state() {
+  local state="$1"  # healthy, failed, rolled_back, rollback_failed, in_progress
+  local target_version="${IMAGE_REF##*:}"
+  local previous_version=""
+  [[ -f "$VERSION_FILE" ]] && previous_version="$(jq -r '.version // empty' "$VERSION_FILE" 2>/dev/null || true)"
+
+  cat > "${STATE_DIR}/deploy-state.json" <<DSEOF
+{
+  "state": "${state}",
+  "releaseId": "${target_version}",
+  "previousReleaseId": "${previous_version}",
+  "updatedAt": "$(date -u +%FT%TZ)",
+  "deployId": "${DEPLOY_ID}",
+  "deployMethod": "docker"
+}
+DSEOF
+  chmod 644 "${STATE_DIR}/deploy-state.json" 2>/dev/null || true
+}
+
 die() {
   err "$*"; FINAL_STATUS="failed"; write_deploy_log
   if [[ "$WATCH_MODE" == true ]]; then
@@ -423,6 +442,7 @@ resolve_target_image() {
 deploy() {
   DEPLOY_ID="$(gen_deploy_id)"; DEPLOY_START="$(date +%s)"
   mkdir -p "$STATE_DIR" "$LOG_DIR"
+  write_deploy_state "in_progress"
 
   # ── Resolve target BEFORE self-update ─────────────────────────────────────
   # Manifest fetch must happen first so self-update always pulls from the
@@ -516,6 +536,7 @@ deploy() {
 }
 
 deploy_success() {
+  write_deploy_state "healthy"
   local tag="${IMAGE_REF##*:}"
   cat > "$VERSION_FILE" <<EOF
 {
@@ -552,19 +573,23 @@ deploy_failure() {
       health_check "Rollback: "
       if [[ "$healthy" == true ]]; then
         ROLLBACK_RESULT="pass"; ROLLBACK_READINESS="pass"; FINAL_STATUS="rolled_back"
+        write_deploy_state "rolled_back"
         log "Rollback healthy — previous image restored"
       else
         ROLLBACK_RESULT="pass"; ROLLBACK_READINESS="fail"; FINAL_STATUS="rollback_failed"
+        write_deploy_state "rollback_failed"
         err "Rollback container started but health check failed"
         systemd_last_resort
       fi
     else
       ROLLBACK_RESULT="fail"; ROLLBACK_READINESS="not_attempted"; FINAL_STATUS="rollback_failed"
+      write_deploy_state "rollback_failed"
       err "Failed to start rollback container"
       systemd_last_resort
     fi
   else
     ROLLBACK_RESULT="not_attempted"; ROLLBACK_READINESS="not_attempted"; FINAL_STATUS="rollback_failed"
+    write_deploy_state "rollback_failed"
     err "No previous image for rollback"
     systemd_last_resort
   fi
