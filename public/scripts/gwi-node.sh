@@ -325,18 +325,17 @@ bootstrap_host_watcher() {
   systemctl mask thepasspos 2>/dev/null || true
   systemctl mask thepasspos-sync 2>/dev/null || true
 
-  # Ensure watcher is enabled and running
+  # Ensure watcher is enabled
   if ! systemctl enable gwi-node.service 2>/dev/null; then
     BOOTSTRAP_DEGRADED=true
     log "WARN: Bootstrap degraded — gwi-node.service enable failed"
   fi
 
-  if systemctl is-active gwi-node.service >/dev/null 2>&1; then
-    if ! systemctl reload-or-restart gwi-node.service 2>/dev/null; then
-      BOOTSTRAP_DEGRADED=true
-      log "WARN: Bootstrap degraded — gwi-node.service reload-or-restart failed"
-    fi
-  else
+  # If watcher is already running (trigger-file deploy path), do NOT restart
+  # it here — the watch loop detects the script SHA change after dispatch and
+  # re-execs itself. Restarting mid-deploy would kill this process.
+  # Only start if not running (fresh install or manual deploy path).
+  if ! systemctl is-active gwi-node.service >/dev/null 2>&1; then
     if ! systemctl start gwi-node.service 2>/dev/null; then
       BOOTSTRAP_DEGRADED=true
       log "WARN: Bootstrap degraded — gwi-node.service failed to start"
@@ -785,6 +784,10 @@ watch_loop() {
   mkdir -p "$REQUESTS_DIR" "$RESULTS_DIR" "$STATE_DIR" "$LOG_DIR"
   log "Watch mode started — polling $REQUESTS_DIR every ${WATCH_POLL_INTERVAL}s"
 
+  # Snapshot our own SHA so we can detect when bootstrap updates us on disk
+  local _self_sha
+  _self_sha="$(sha256sum "$0" 2>/dev/null | cut -d' ' -f1 || echo none)"
+
   # Graceful shutdown on SIGTERM/SIGINT
   local watch_running=true
   trap 'log "Watch mode shutting down (signal received)"; watch_running=false' SIGTERM SIGINT
@@ -796,6 +799,16 @@ watch_loop() {
 
     if [[ -n "$oldest" ]] && [[ -f "$oldest" ]]; then
       dispatch_trigger "$oldest"
+
+      # After dispatch, check if the host script was updated on disk by
+      # deploy_success() → bootstrap_host_watcher(). If so, re-exec so
+      # the watcher runs the new code (with preflight, new features, etc.)
+      local _new_sha
+      _new_sha="$(sha256sum "$0" 2>/dev/null | cut -d' ' -f1 || echo none)"
+      if [[ "$_new_sha" != "$_self_sha" ]]; then
+        log "Watch: host script updated on disk (${_self_sha:0:12} → ${_new_sha:0:12}), re-execing..."
+        exec "$0" watch
+      fi
     fi
 
     # Stale trigger cleanup
