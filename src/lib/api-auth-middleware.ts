@@ -354,7 +354,34 @@ export function withAuth(
           return handler(request, { auth: authCtx, params: context?.params ?? {} })
         }
 
-        // 3b. Try WiFi device token (opaque token stored in Terminal.deviceToken)
+        // 3b. Try POS session token (employee session JWT sent by Android/PAX)
+        // After login, native clients store the session token and send it as
+        // a Bearer token. This is distinct from cellular JWT — it's the same
+        // token that's set as the pos-session cookie for web clients.
+        {
+          const { verifySessionToken } = await import('./auth-session')
+          const sessionPayload = await verifySessionToken(token)
+          if (sessionPayload?.employeeId) {
+            if (resolvedPermission && !hasPermission(sessionPayload.permissions, resolvedPermission)) {
+              log.warn(`[withAuth] Permission denied: employee ${sessionPayload.employeeId} lacks ${resolvedPermission}`)
+              return NextResponse.json(
+                { error: 'You do not have permission to perform this action' },
+                { status: 403 }
+              )
+            }
+            const authCtx: AuthContext = {
+              employeeId: sessionPayload.employeeId,
+              locationId: sessionPayload.locationId,
+              permissions: sessionPayload.permissions,
+              roleId: sessionPayload.roleId,
+              roleName: sessionPayload.roleName,
+              source: 'session',
+            }
+            return handler(request, { auth: authCtx, params: context?.params ?? {} })
+          }
+        }
+
+        // 3c. Try WiFi device token (opaque token stored in Terminal.deviceToken)
         // WiFi-paired Android terminals (Register, PAX, KDS) authenticate with a
         // stored device token, not a cellular JWT. Without this fallback, withAuth
         // rejects valid WiFi terminals with 401 — breaking order entry, payments,

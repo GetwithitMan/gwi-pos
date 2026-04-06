@@ -134,7 +134,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const isDevAccess = permissions.includes('all') || permissions.includes('dev.access')
 
     // ── Set signed httpOnly session cookie (W1-S3) ─────────────
-    await setSessionCookie({
+    const sessionToken = await setSessionCookie({
       employeeId: matchedEmployee.id,
       locationId: matchedEmployee.locationId,
       roleId: matchedEmployee.role.id,
@@ -146,6 +146,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     recordLoginSuccess(ip, matchedEmployee.id)
 
     return ok({
+      sessionToken,
       employee: {
         id: matchedEmployee.id,
         firstName: matchedEmployee.firstName,
