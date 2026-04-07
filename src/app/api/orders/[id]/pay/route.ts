@@ -343,6 +343,7 @@ export const POST = withVenue(withTiming(async function POST(
     })
 
     timing.end('db-fetch', 'Fetch order')
+    console.log(`[PAY-TRACE] order=${orderId} status=${order?.status} total=${order?.total} items=${order?.items?.length} payments=${order?.payments?.length}`)
 
     if (!order) {
       return { earlyReturn: NextResponse.json(
@@ -405,8 +406,10 @@ export const POST = withVenue(withTiming(async function POST(
     body = normalizePaymentInput(body)
 
     // Validate request body with Zod
+    console.log('[PAY-DEBUG] normalized body:', JSON.stringify(body).substring(0, 500))
     const validation = PaymentRequestSchema.safeParse(body)
     if (!validation.success) {
+      console.error('[PAY-400] Validation failed for', orderId, ':', JSON.stringify(validation.error.format()).substring(0, 500))
       return { earlyReturn: NextResponse.json(
         {
           error: 'Invalid payment request data',
