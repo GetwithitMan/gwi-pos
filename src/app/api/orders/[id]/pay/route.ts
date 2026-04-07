@@ -713,7 +713,10 @@ export const POST = withVenue(withTiming(async function POST(
     const perMinuteItems = order.items.filter(
       (item: any) => item.menuItem?.itemType === 'timed_rental' && item.blockTimeStartedAt && !item.blockTimeExpiresAt
     )
-    if (perMinuteItems.length > 0) {
+    // Skip entertainment settlement for allocation split children — they have no items
+    // (all items stay on the parent). Their totals were set during split creation.
+    const isAllocationSplitChild = order.parentOrderId && (order as any).splitClass === 'allocation'
+    if (perMinuteItems.length > 0 && !isAllocationSplitChild) {
       const now = new Date()
       const payLocSettings = order.location.settings as { tax?: { defaultRate?: number; inclusiveTaxRate?: number } } | null
       // Prefer order-level exclusive tax rate snapshot; fall back to live rate
