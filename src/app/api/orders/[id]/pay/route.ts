@@ -1,3 +1,4 @@
+// build-bust: v2.0.25
 import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
@@ -2533,6 +2534,7 @@ export const POST = withVenue(withTiming(async function POST(
       )
     }
 
+    console.error(`[PAY-500] Order ${orderId} payment failed:`, error instanceof Error ? error.stack : String(error))
     void errorCapture.critical('PAYMENT', 'Payment processing failed', {
       category: 'payment-processing-error',
       action: `Processing payment for Order ${orderId}`,
