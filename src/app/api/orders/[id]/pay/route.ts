@@ -884,8 +884,11 @@ export const POST = withVenue(withTiming(async function POST(
     //   2. cashRounding (legacy) — named modes ('nickel', 'quarter', etc.)
     // priceRounding takes precedence when enabled.
     const hasCashPayment = payments.some(p => p.method === 'cash')
+    const isAllocationChild = order.parentOrderId && (order as any).splitClass === 'allocation'
     let validationRemaining = remaining
-    if (hasCashPayment) {
+    // Skip cash rounding for allocation split children — their totals were set
+    // during split creation without rounding, so the client sends the exact split amount.
+    if (hasCashPayment && !isAllocationChild) {
       // Dual pricing: order.total IS the cash price (stored price model).
       // Card price = order.total * (1 + cashDiscountPercent/100).
       // Cash payments must match the stored total — do NOT call calculateCashPrice()
@@ -904,6 +907,7 @@ export const POST = withVenue(withTiming(async function POST(
       }
     }
 
+    console.log(`[PAY-VALIDATION] paymentBaseTotal=${paymentBaseTotal} validationRemaining=${validationRemaining} remaining=${remaining} isAllocationChild=${isAllocationChild}`)
     if (paymentBaseTotal < validationRemaining - 0.01) {
       return { earlyReturn: NextResponse.json(
         { error: `Payment amount ($${paymentBaseTotal.toFixed(2)}) is less than remaining balance ($${validationRemaining.toFixed(2)})` },
