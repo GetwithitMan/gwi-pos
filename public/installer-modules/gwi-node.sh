@@ -188,34 +188,59 @@ capture_diagnostics() {
 # ── Deploy preflight checks ────────────────────────────────────────────────
 # Run before starting containers to prevent crash loops.
 
-# Kill any process holding the app port. If it's a stale gwi-pos container or
-# old systemd process, clean it up. If it's something unrelated, fail clearly.
+# Wait for the app port to become free, with retries.  After docker rm -f the
+# kernel may hold the port in TIME_WAIT briefly.  We poll for up to 10 seconds,
+# then force-kill as a last resort.
 ensure_port_available() {
   local port; port="$(read_port)"
+  local attempt max_attempts=10
+
+  # Fast path: port already free
+  if ! ss -tlnp "sport = :$port" 2>/dev/null | grep -q "LISTEN"; then
+    log "Preflight: port $port is free"
+    return 0
+  fi
+
+  # Port is occupied — wait up to 10 seconds for it to release
+  log "Preflight: port $port still in use, waiting up to ${max_attempts}s for release..."
+  for (( attempt=1; attempt<=max_attempts; attempt++ )); do
+    sleep 1
+    if ! ss -tlnp "sport = :$port" 2>/dev/null | grep -q "LISTEN"; then
+      log "Preflight: port $port freed after ${attempt}s"
+      return 0
+    fi
+    log "Preflight: port $port still occupied (attempt ${attempt}/${max_attempts})"
+  done
+
+  # Still occupied — identify and try to kill the holder
   local listener_pid listener_name
   listener_pid="$(ss -tlnp "sport = :$port" 2>/dev/null | grep -oP 'pid=\K\d+' | head -1 || true)"
-  [[ -z "$listener_pid" ]] && { log "Preflight: port $port is free"; return 0; }
+  listener_name="$(ps -p "${listener_pid:-0}" -o comm= 2>/dev/null || echo unknown)"
+  log "Preflight: port $port held by PID ${listener_pid:-?} ($listener_name) after ${max_attempts}s wait"
 
-  listener_name="$(ps -p "$listener_pid" -o comm= 2>/dev/null || echo unknown)"
-  log "Preflight: port $port held by PID $listener_pid ($listener_name)"
-
-  # If it's a Docker process or node server from the old runtime, kill it
+  # Kill known stale processes (node, docker-proxy)
   if [[ "$listener_name" == "node" ]] || [[ "$listener_name" == "docker-proxy" ]]; then
     log "Preflight: killing stale listener PID $listener_pid ($listener_name)"
     kill "$listener_pid" 2>/dev/null || true
     sleep 2
-    # Verify port is now free
     if ss -tlnp "sport = :$port" 2>/dev/null | grep -q "LISTEN"; then
       kill -9 "$listener_pid" 2>/dev/null || true
       sleep 1
     fi
-    if ss -tlnp "sport = :$port" 2>/dev/null | grep -q "LISTEN"; then
-      die "Preflight: port $port still occupied after cleanup (PID $listener_pid)"
-    fi
-    log "Preflight: port $port cleared"
-  else
-    die "Preflight: port $port in use by unrelated process $listener_name (PID $listener_pid)"
   fi
+
+  # Last resort: fuser -k to free the port regardless of who holds it
+  if ss -tlnp "sport = :$port" 2>/dev/null | grep -q "LISTEN"; then
+    log "Preflight: last resort — running fuser -k $port/tcp"
+    fuser -k "$port/tcp" 2>/dev/null || true
+    sleep 2
+  fi
+
+  # Final check
+  if ss -tlnp "sport = :$port" 2>/dev/null | grep -q "LISTEN"; then
+    die "Preflight: port $port still occupied after all cleanup attempts"
+  fi
+  log "Preflight: port $port cleared"
 }
 
 # Create host-mounted directories the app needs at runtime.

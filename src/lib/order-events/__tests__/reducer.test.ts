@@ -478,7 +478,7 @@ describe('OrderReducer — Unit tests', () => {
     ]
     const state = replay('send-all-test', events)
     expect(state.status).toBe('sent')
-    expect(state.items['i1'].kitchenStatus).toBe('FIRED')
+    expect(state.items['i1'].kitchenStatus).toBe('sent')
     // Held item stays held — sendAll doesn't fire held items
     expect(state.items['i2'].kitchenStatus).toBeNull()
     expect(state.items['i2'].isHeld).toBe(true)

@@ -39,8 +39,8 @@
     "itemCount": 2,
     "isClosed": true,
     "items": {
-      "i1": { "name": "Pizza", "kitchenStatus": "FIRED", "isHeld": false },
-      "i2": { "name": "Wine", "kitchenStatus": "FIRED", "isHeld": false }
+      "i1": { "name": "Pizza", "kitchenStatus": "sent", "isHeld": false },
+      "i2": { "name": "Wine", "kitchenStatus": "sent", "isHeld": false }
     }
   }
 }

@@ -38,8 +38,8 @@
     "itemCount": 3,
     "isClosed": false,
     "items": {
-      "i1": { "name": "Steak", "priceCents": 2500, "totalCents": 2500, "kitchenStatus": "FIRED" },
-      "i2": { "name": "Wine", "priceCents": 1200, "quantity": 2, "totalCents": 2400, "kitchenStatus": "FIRED" }
+      "i1": { "name": "Steak", "priceCents": 2500, "totalCents": 2500, "kitchenStatus": "sent" },
+      "i2": { "name": "Wine", "priceCents": 1200, "quantity": 2, "totalCents": 2400, "kitchenStatus": "sent" }
     }
   }
 }
