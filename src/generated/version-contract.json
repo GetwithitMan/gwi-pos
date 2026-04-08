@@ -50,5 +50,6 @@
   "migrationHints": {
     "requiresBackfill": false
   },
-  "contractSignature": null
+  "contractSignature": null,
+  "appVersion": "2.0.29"
 }
