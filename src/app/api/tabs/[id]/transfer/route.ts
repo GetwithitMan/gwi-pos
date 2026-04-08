@@ -96,8 +96,8 @@ export const POST = withVenue(async function POST(
       const result = await OrderRepository.updateOrderAndReturn(tabId, locationId, {
         employeeId: toEmployeeId,
         notes: tab.notes
-          ? `${tab.notes}\n[Transferred from ${tab.employee.displayName || tab.employee.firstName} to ${toEmployee.displayName || toEmployee.firstName}${reason ? `: ${reason}` : ''}]`
-          : `[Transferred from ${tab.employee.displayName || tab.employee.firstName} to ${toEmployee.displayName || toEmployee.firstName}${reason ? `: ${reason}` : ''}]`,
+          ? `${tab.notes}\n[Transferred from ${tab.employee?.displayName || tab.employee?.firstName || 'Unknown'} to ${toEmployee.displayName || toEmployee.firstName}${reason ? `: ${reason}` : ''}]`
+          : `[Transferred from ${tab.employee?.displayName || tab.employee?.firstName || 'Unknown'} to ${toEmployee.displayName || toEmployee.firstName}${reason ? `: ${reason}` : ''}]`,
       } as any, {
         employee: {
           select: { id: true, displayName: true, firstName: true, lastName: true },
@@ -154,11 +154,11 @@ export const POST = withVenue(async function POST(
         id: updatedTab.id,
         orderNumber: updatedTab.orderNumber,
         tabName: updatedTab.tabName,
-        newEmployee: {
+        newEmployee: updatedTab.employee ? {
           id: updatedTab.employee.id,
           name: updatedTab.employee.displayName ||
             `${updatedTab.employee.firstName} ${updatedTab.employee.lastName}`,
-        },
+        } : null,
       },
     })
   } catch (error) {

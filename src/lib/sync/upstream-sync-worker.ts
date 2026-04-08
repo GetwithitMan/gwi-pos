@@ -515,6 +515,37 @@ async function runSyncCycle(): Promise<void> {
       lastConnectivityCheck = 0
       const locId = process.env.POS_LOCATION_ID || process.env.LOCATION_ID
       if (locId) void dispatchOutageStatus(locId, false).catch((err) => log.error({ err }, 'Failed to dispatch outage-cleared status'))
+
+      // Outage recovery: detect Payment records created during outage that were
+      // never queued to OutageQueueEntry (e.g., PAT, retry-capture routes create
+      // Payment rows directly without outage queue awareness). These rows have
+      // syncedAt IS NULL and will be picked up by the normal sync cycle below.
+      // Also reset syncedAt on any Payment rows that may have been partially
+      // synced (Neon tx committed but local stamp failed, then outage hit) —
+      // the idempotent ON CONFLICT upsert makes re-sync safe.
+      void (async () => {
+        try {
+          const [{ count }] = await masterClient.$queryRawUnsafe<{ count: number }[]>(
+            `SELECT COUNT(*)::int as count FROM "Payment"
+             WHERE "syncedAt" IS NULL
+               AND "updatedAt" > NOW() - INTERVAL '24 hours'`
+          )
+          if (count > 0) {
+            log.info({ count }, 'Unsynced Payment records detected after outage recovery — will sync in this cycle')
+          }
+          // Also check for Order records that may have been created during outage
+          const [{ count: orderCount }] = await masterClient.$queryRawUnsafe<{ count: number }[]>(
+            `SELECT COUNT(*)::int as count FROM "Order"
+             WHERE "syncedAt" IS NULL
+               AND "updatedAt" > NOW() - INTERVAL '24 hours'`
+          )
+          if (orderCount > 0) {
+            log.info({ count: orderCount }, 'Unsynced Order records detected after outage recovery — will sync in this cycle')
+          }
+        } catch (err) {
+          log.warn({ err }, 'Failed to check for unsynced records after outage recovery')
+        }
+      })().catch((err) => log.error({ err }, 'Outage recovery scan failed'))
     }
     outageState.consecutiveFailures = 0
 

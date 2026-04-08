@@ -480,7 +480,7 @@ function buildKitchenTicket(
     orderType: string
     tabName: string | null
     table: { name: string } | null
-    employee: { displayName: string | null; firstName: string; lastName: string }
+    employee: { displayName: string | null; firstName: string; lastName: string } | null
     createdAt: Date
     notes?: string | null
     // Delivery customer info
@@ -693,7 +693,7 @@ function buildKitchenTicket(
   content.push(NORMAL)
   if (hasRed && useRedHeaders) content.push(BLACK)
 
-  const serverName = order.employee.displayName || `${order.employee.firstName} ${order.employee.lastName}`
+  const serverName = order.employee?.displayName || `${order.employee?.firstName ?? ''} ${order.employee?.lastName ?? ''}`.trim() || 'Unknown'
   content.push(line(`Server: ${serverName}`))
   content.push(line(new Date().toLocaleTimeString()))
 

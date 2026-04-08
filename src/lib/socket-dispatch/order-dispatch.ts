@@ -10,7 +10,7 @@ import { invalidateSnapshotCache } from '@/lib/snapshot-cache'
 import { invalidateOpenOrdersCache } from '@/app/api/orders/open/route'
 import {
   log,
-  crypto,
+  randomUUID,
   emitToLocation,
   emitToTags,
   emitCriticalToLocation,
@@ -213,7 +213,7 @@ export async function dispatchSplitCreated(
   try {
     await emitCriticalToLocation(locationId, 'order:split-created', {
       ...data,
-      _dedupKey: crypto.randomUUID(),
+      _dedupKey: randomUUID(),
     })
     return true
   } catch (error) {
@@ -363,7 +363,7 @@ export async function dispatchOrderClosed(
     try {
       // QoS 1: critical financial event — acknowledged delivery with retry
       // _dedupKey allows clients to dedup if they receive the same event twice (e.g., QoS retry)
-      await emitCriticalToLocation(locationId, 'order:closed', { ...payload, _dedupKey: crypto.randomUUID() })
+      await emitCriticalToLocation(locationId, 'order:closed', { ...payload, _dedupKey: randomUUID() })
       return true
     } catch (error) {
       log.error({ err: error }, 'Failed to dispatch order:closed')

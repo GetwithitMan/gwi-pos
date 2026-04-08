@@ -129,9 +129,9 @@ const IDLE_TIMEOUT_MS = 2 * 60 * 60 * 1000
  * - Signature MUST still be valid (HMAC-SHA256)
  * - Device MUST NOT be revoked/quarantined (both L1 + L2 checks)
  * - Device fingerprint MUST match
- * - Grace period is narrow (4h) — beyond this, device must re-pair
+ * - Grace period is narrow (15min) — beyond this, device must re-pair
  */
-const EXPIRED_GRACE_PERIOD_S = 4 * 60 * 60 // 4 hours in seconds
+const EXPIRED_GRACE_PERIOD_S = 15 * 60 // 15 minutes — limits exposure window for revoked tokens
 
 /** Rate limit: max requests per second per terminal */
 const RATE_LIMIT_PER_SECOND = 10

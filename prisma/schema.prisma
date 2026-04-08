@@ -57,6 +57,7 @@ enum OrderItemStatus {
 enum KitchenStatus {
   pending
   sent
+  fired
   cooking
   ready
   delivered
@@ -143,6 +144,7 @@ enum TerminalCategory {
   FIXED_STATION
   HANDHELD
   CFD_DISPLAY
+  CELLULAR
 }
 
 enum HandheldMode {
@@ -2440,8 +2442,8 @@ model Order {
   id         String   @id @default(cuid())
   locationId String
   location   Location @relation(fields: [locationId], references: [id])
-  employeeId String
-  employee   Employee @relation(fields: [employeeId], references: [id])
+  employeeId String?
+  employee   Employee? @relation(fields: [employeeId], references: [id])
 
   // Customer tracking (Skill 51)
   customerId String?
@@ -2699,6 +2701,7 @@ model Order {
   @@index([splitFamilyRootId])
   @@index([splitResolution])
   @@index([locationId, updatedAt])
+  @@index([locationId, status, deletedAt])
 }
 
 /// ACTIVE: Primary order item table — all reads and writes go here.
@@ -2852,6 +2855,7 @@ model OrderItem {
   @@index([menuItemId, pricingOptionId]) // PMIX/Sales: group by item + size variant
   @@index([locationId, status, updatedAt])
   @@index([kdsForwardedToScreenId, kdsFinalCompleted]) // KDS Overhaul: Expo query index
+  @@index([locationId, orderId])
 }
 
 model OrderItemModifier {
@@ -2859,7 +2863,7 @@ model OrderItemModifier {
   locationId  String
   location    Location  @relation(fields: [locationId], references: [id])
   orderItemId String
-  orderItem   OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
+  orderItem   OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
   modifierId  String? // Optional: null for combo component selections
   modifier    Modifier? @relation(fields: [modifierId], references: [id])
 
@@ -3076,6 +3080,7 @@ model Payment {
   @@index([orderId, status])
   @@index([employeeId, processedAt])
   @@index([locationId, updatedAt])
+  @@index([locationId, employeeId, createdAt])
 }
 
 // Sync Audit Entry - Tracks all sync events for idempotency audit log
@@ -3452,6 +3457,7 @@ model VoidLog {
   @@index([createdAt])
   @@index([locationId, createdAt])
   @@index([locationId, updatedAt])
+  @@index([locationId, itemId, createdAt])
 }
 
 // ============================================
@@ -3517,6 +3523,7 @@ model RemoteVoidApproval {
   @@index([managerPhone, status])
   @@index([managerId])
   @@index([requestedById])
+  @@index([requestingTerminalId, status])
 }
 
 model AuditLog {
@@ -6208,7 +6215,7 @@ model OrderItemIngredient {
   locationId  String
   location    Location  @relation(fields: [locationId], references: [id])
   orderItemId String
-  orderItem   OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
+  orderItem   OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
 
   ingredientId   String
   ingredient     Ingredient @relation(fields: [ingredientId], references: [id])
@@ -7812,7 +7819,7 @@ model OrderCard {
   locationId String
   location   Location @relation(fields: [locationId], references: [id])
   orderId    String
-  order      Order    @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   // Reader that processed this card
   readerId String
@@ -8327,9 +8334,9 @@ model OrderItemDiscount {
   locationId     String
   location       Location      @relation(fields: [locationId], references: [id])
   orderId        String
-  order          Order         @relation(fields: [orderId], references: [id])
+  order          Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
   orderItemId    String
-  orderItem      OrderItem     @relation(fields: [orderItemId], references: [id])
+  orderItem      OrderItem     @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
   discountRuleId String?
   discountRule   DiscountRule? @relation(fields: [discountRuleId], references: [id])
   amount         Decimal       @db.Decimal(10, 2)
@@ -8346,6 +8353,7 @@ model OrderItemDiscount {
   @@index([orderId])
   @@index([orderItemId])
   @@index([locationId, createdAt])
+  @@index([orderId, orderItemId])
 }
 
 // ============================================

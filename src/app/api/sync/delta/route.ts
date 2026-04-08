@@ -1,11 +1,12 @@
 import { NextRequest } from 'next/server'
 import { db, adminDb } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { buildSpiritTiersFromItem } from '@/lib/spirit-tiers'
 import { authenticateTerminal } from '@/lib/terminal-auth'
 import { err, ok } from '@/lib/api-response'
 
-export const GET = withVenue(async function GET(request: NextRequest) {
+export const GET = withVenue(withAuth({ allowCellular: true }, async function GET(request: NextRequest) {
   const auth = await authenticateTerminal(request)
   if (auth.error) return auth.error
   const { locationId } = auth.terminal
@@ -149,4 +150,4 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   }))
 
   return ok({ menuItems: mappedMenuItems, categories, employees, tables, orderTypes, orders: mappedOrders, pricingOptionGroups: mappedPricingOptionGroups, sharedModifierGroups, modifierGroups: mappedModifierGroups, syncVersion: Date.now(), hasMore: orders.length >= 100 })
-})
+}))

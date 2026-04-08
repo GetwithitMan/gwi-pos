@@ -108,6 +108,17 @@ export const POST = withVenue(async function POST(
       return err(authResult.error, authResult.status ?? 403)
     }
 
+    // PAY-P2-2: Advisory lock on orderId to coordinate with refund-payment.
+    // Uses the same key derivation as refund-payment so void and refund block each other.
+    const voidLockKey = parseInt(orderId.replace(/-/g, '').slice(0, 12), 16)
+    const [{ acquired: voidLockAcquired }] = await db.$queryRaw<[{ acquired: boolean }]>`
+      SELECT pg_try_advisory_lock(${voidLockKey}::bigint) as acquired
+    `
+    if (!voidLockAcquired) {
+      return err('Another void or refund is already in progress for this order', 409)
+    }
+
+    try {
     // Phase 1: Read order + validate under FOR UPDATE lock on Order row.
     // This contends with pay/route.ts which also holds FOR UPDATE on Order.
     const lockedRead = await db.$transaction(async (tx) => {
@@ -699,6 +710,10 @@ export const POST = withVenue(async function POST(
         },
         refundAmount: Number(payment.totalAmount),
       })
+    } finally {
+      // PAY-P2-2: Release advisory lock after all phases complete (success or failure)
+      await db.$queryRaw`SELECT pg_advisory_unlock(${voidLockKey}::bigint)`.catch(err => log.warn({ err }, 'Advisory lock release failed'))
+    }
   } catch (error) {
     // SECURITY: Log only safe fields — never managerPinHash or full request body
     console.error('Failed to void payment:', { error, orderId: (await params)?.id })

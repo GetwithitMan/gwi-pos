@@ -154,6 +154,10 @@ function recordReconnection(): void {
 // Reverse mapping: cfdTerminalId → registerTerminalId (cached from auth middleware)
 // Used by CFD-to-register relay to avoid DB lookups during payment flow
 const cfdToRegisterMap = new Map<string, string>()
+
+// Dedup map for mobile tab close requests: orderId → timestamp
+// Prevents duplicate close attempts within 30s (e.g., double-tap on mobile)
+const pendingTabCloses = new Map<string, number>()
 const CFD_MAP_MAX_SIZE = 100
 
 /**
@@ -364,11 +368,20 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
         if (kdsScreen) {
           socket.data.terminalId = `kds-${kdsScreen.id}`
           socket.data.terminalName = kdsScreen.name
-          socket.data.platform = 'kds'
+          // Check for cellular terminal connecting through KDS path:
+          // Cellular devices send x-cellular-terminal header or cellularToken auth param.
+          // They should be identified as ANDROID, not KDS.
+          const isCellular =
+            socket.handshake.headers?.['x-cellular-terminal'] === 'true' ||
+            !!socket.handshake.auth?.cellularToken
+          socket.data.platform = isCellular ? 'ANDROID' : 'kds'
           socket.data.locationId = kdsScreen.locationId
           socket.data.authenticated = true
           socket.data.kdsScreenId = kdsScreen.id
           socket.data.kdsScreenType = kdsScreen.screenType
+          if (isCellular) {
+            log.info({ terminalId: kdsScreen.id, locationId: kdsScreen.locationId }, 'Cellular terminal authenticated via KDS path — platform set to ANDROID')
+          }
           return next()
         }
 
@@ -496,6 +509,7 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
         const joinedRooms = socket.data.joinedRooms as Set<string>
         if (!joinedRooms.has(channelName) && joinedRooms.size >= MAX_ROOMS_PER_SOCKET) {
           log.warn(`Rejected subscribe — socket ${socket.id} at max rooms (${MAX_ROOMS_PER_SOCKET}): ${channelName}`)
+          socket.emit('subscribe-error', { room: channelName, error: 'Maximum room limit reached' })
           return
         }
         // Validate location rooms against authenticated context
@@ -813,6 +827,15 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
         socket.emit(MOBILE_EVENTS.TAB_CLOSED, { orderId, success: false, amount: 0, error: 'Missing orderId or employeeId' })
         return
       }
+
+      // Dedup: skip if there's already a pending close for this orderId within 30s
+      const pendingTs = pendingTabCloses.get(orderId)
+      if (pendingTs && Date.now() - pendingTs < 30_000) {
+        log.info({ orderId, socketId: socket.id }, 'Duplicate tab close request ignored — already in progress')
+        return
+      }
+      pendingTabCloses.set(orderId, Date.now())
+
       // NOTE: Uses HTTP loopback to reuse close-tab API logic including Datacap interaction.
       // The 30s timeout is appropriate for hardware payment processing.
       // Future optimization: extract close-tab business logic into a shared function.
@@ -826,6 +849,7 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
         body: JSON.stringify({ employeeId, tipMode }),
         signal: AbortSignal.timeout(30_000), // Datacap can take time
       }).then(async (res) => {
+        pendingTabCloses.delete(orderId)
         const json = await res.json().catch(() => ({}))
         if (res.ok && json.data?.success) {
           socket.emit(MOBILE_EVENTS.TAB_CLOSED, {
@@ -843,6 +867,7 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
           })
         }
       }).catch((err: unknown) => {
+        pendingTabCloses.delete(orderId)
         log.error({ err }, 'tab:close-request internal call failed')
         socket.emit(MOBILE_EVENTS.TAB_CLOSED, { orderId, success: false, amount: 0, error: 'Failed to close tab' })
       })
@@ -1059,21 +1084,44 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
           // Try cached mapping first (no DB query needed)
           const cachedRegisterId = cfdToRegisterMap.get(myTerminalId)
           if (cachedRegisterId) {
+            // Check if the target register is online (has sockets in its terminal room)
+            const room = `terminal:${cachedRegisterId}`
+            const roomSockets = globalForSocket.socketServer?.sockets.adapter.rooms.get(room)
+            if (!roomSockets || roomSockets.size === 0) {
+              socket.emit('cfd:error', { event: cfdEvent, error: 'Paired register is offline' })
+              return
+            }
             void emitToTerminal(cachedRegisterId, cfdEvent, data)
             return
           }
 
-          // Cache miss — fall back to DB lookup
-          void db.terminal.findFirst({
-            where: { cfdTerminalId: myTerminalId, deletedAt: null },
-            select: { id: true },
-          }).then(register => {
-            if (!register) return
+          // Cache miss — fall back to DB lookup with 5s timeout
+          void Promise.race([
+            db.terminal.findFirst({
+              where: { cfdTerminalId: myTerminalId, deletedAt: null },
+              select: { id: true },
+            }),
+            new Promise<null>((_, reject) =>
+              setTimeout(() => reject(new Error('CFD-to-register DB lookup timed out (5s)')), 5000)
+            ),
+          ]).then(register => {
+            if (!register) {
+              socket.emit('cfd:error', { event: cfdEvent, error: 'No paired register found' })
+              return
+            }
             // Populate cache for future relays
             setCfdMapping(myTerminalId, register.id)
+            // Check if the target register is online
+            const room = `terminal:${register.id}`
+            const roomSockets = globalForSocket.socketServer?.sockets.adapter.rooms.get(room)
+            if (!roomSockets || roomSockets.size === 0) {
+              socket.emit('cfd:error', { event: cfdEvent, error: 'Paired register is offline' })
+              return
+            }
             void emitToTerminal(register.id, cfdEvent, data)
           }).catch((err: unknown) => {
             log.error({ err, event: cfdEvent }, 'CFD-to-register lookup failed')
+            socket.emit('cfd:error', { event: cfdEvent, error: 'Register lookup failed' })
           })
         } catch (err) {
           log.error({ err, socketId: socket.id, event: cfdEvent }, 'CFD cfd-to-register relay error')
@@ -1358,8 +1406,12 @@ export async function emitToLocation(locationId: string, event: string, data: un
     const eid = recordEvent(locationId, event, data, room)
     const enriched = data && typeof data === 'object' && !Array.isArray(data) ? { ...data as Record<string, unknown>, _eid: eid } : data
     globalForSocket.socketServer.to(room).emit(event, enriched)
-    // Relay to Neon for cellular terminals (fire-and-forget)
-    relayCellularEvent(locationId, event, enriched)
+    // Relay to Neon for cellular terminals (fire-and-forget, sync — errors must not propagate)
+    try {
+      relayCellularEvent(locationId, event, enriched)
+    } catch (err) {
+      log.error({ err, event, locationId }, 'Cellular event relay failed')
+    }
     return true
   }
   return emitViaIPC({ type: 'location', target: locationId, event, data })
@@ -1403,11 +1455,15 @@ export async function emitCriticalToLocation(
     const enriched = { ...payload, _eid: eid }
     try {
       globalForSocket.socketServer.to(room).emit(event, enriched)
-      // Relay to Neon for cellular terminals (fire-and-forget)
-      relayCellularEvent(locationId, event, enriched)
     } catch (err) {
       log.error({ err, event, room }, 'Critical emit failed — leaving in ack queue for retry')
       return  // Don't mark as sent — ack queue will retry
+    }
+    // Relay to Neon for cellular terminals (fire-and-forget, separate from critical emit)
+    try {
+      relayCellularEvent(locationId, event, enriched)
+    } catch (err) {
+      log.error({ err, event, locationId }, 'Cellular event relay failed')
     }
   } else {
     void emitViaIPC({ type: 'location', target: locationId, event, data: payload })

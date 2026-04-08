@@ -245,6 +245,7 @@ export async function generatePayrollData(
 
   // Commission
   for (const o of commissionOrders) {
+    if (!o.employeeId) continue
     const rec = records.get(o.employeeId)
     if (rec) {
       rec.commissionEarned += Number(o.commissionTotal)

@@ -74,10 +74,10 @@ export const GET = withVenue(async function GET(
       tabName: tab.tabName || `Tab #${tab.orderNumber}`,
       orderNumber: tab.orderNumber,
       status: tab.status,
-      employee: {
+      employee: tab.employee ? {
         id: tab.employee.id,
         name: tab.employee.displayName || `${tab.employee.firstName} ${tab.employee.lastName}`,
-      },
+      } : null,
       items: tab.items.map(item => ({
         id: item.id,
         name: item.name,
@@ -264,10 +264,10 @@ export const PUT = withVenue(async function PUT(
       tabNickname: updated.tabNickname || null,
       orderNumber: updated.orderNumber,
       status: updated.status,
-      employee: {
+      employee: updated.employee ? {
         id: updated.employee.id,
         name: updated.employee.displayName || `${updated.employee.firstName} ${updated.employee.lastName}`,
-      },
+      } : null,
       hasPreAuth: !!updated.preAuthId,
       preAuth: updated.preAuthId ? {
         cardBrand: updated.preAuthCardBrand,

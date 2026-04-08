@@ -61,6 +61,11 @@ export const PUT = withVenue(async function PUT(
       return notFound('Order not found')
     }
 
+    // Fast-path guard: reject modifications on terminal order statuses
+    if (['paid', 'closed', 'voided'].includes(order.status)) {
+      return err('Cannot modify items on a completed order', 400)
+    }
+
     // Status + payment guard via domain
     const modCheck = validateOrderModifiable(order.status, order.payments)
     if (!modCheck.valid) {
@@ -106,22 +111,41 @@ export const PUT = withVenue(async function PUT(
 
         case 'fire_course':
           // Fire this item's course (mark as fired)
-          const fired = await OrderItemRepository.updateItemAndReturn(itemId, locationId, {
+          const fireUpdateData: Record<string, unknown> = {
             courseStatus: 'fired',
             firedAt: new Date(),
             isHeld: false,
-          })
+          }
+          // If item hasn't been sent to kitchen yet, mark it as sent when course fires
+          if (item.kitchenStatus === 'pending') {
+            fireUpdateData.kitchenStatus = 'sent'
+          }
+          const fired = await OrderItemRepository.updateItemAndReturn(itemId, locationId, fireUpdateData)
 
           // Also fire all other items with the same course number in this order
           if (updateData.fireAllInCourse && item.courseNumber) {
-            await OrderItemRepository.updateItemsWhere(orderId, locationId, {
-              courseNumber: item.courseNumber,
-              id: { not: itemId },
-            }, {
+            const batchFireData: Record<string, unknown> = {
               courseStatus: 'fired',
               firedAt: new Date(),
               isHeld: false,
+            }
+            // Batch update: also set kitchenStatus to 'sent' for items still pending
+            // Note: updateItemsWhere applies the same data to all matched rows, so we
+            // handle the conditional kitchenStatus by running two updates when needed
+            await OrderItemRepository.updateItemsWhere(orderId, locationId, {
+              courseNumber: item.courseNumber,
+              id: { not: itemId },
+              kitchenStatus: 'pending',
+            }, {
+              ...batchFireData,
+              kitchenStatus: 'sent',
             })
+            // Fire items that already have a non-pending kitchenStatus (don't regress them)
+            await OrderItemRepository.updateItemsWhere(orderId, locationId, {
+              courseNumber: item.courseNumber,
+              id: { not: itemId },
+              kitchenStatus: { not: 'pending' },
+            }, batchFireData)
           }
 
           await OrderRepository.incrementVersion(orderId, locationId)

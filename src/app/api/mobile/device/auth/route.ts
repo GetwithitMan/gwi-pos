@@ -1,6 +1,7 @@
-import { NextRequest } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { getLocationId } from '@/lib/location-cache'
 import { err, ok, unauthorized } from '@/lib/api-response'
 
 // GET: validate mobile session token → return employee data
@@ -33,6 +34,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     if (!session || session.expiresAt < new Date()) {
       return unauthorized('Session expired or invalid')
+    }
+
+    // Verify session belongs to this venue's location
+    const locationId = await getLocationId()
+    if (locationId && session.locationId !== locationId) {
+      return NextResponse.json({ error: 'Session does not match this venue' }, { status: 403 })
     }
 
     return ok({
