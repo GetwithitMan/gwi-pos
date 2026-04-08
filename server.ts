@@ -35,6 +35,7 @@ import { listPendingRetries, processWalkoutRetry } from './src/lib/domain/dataca
 import { sendSMS, isTwilioConfigured } from './src/lib/twilio'
 import { runBootstrap, startSchemaRecheckIfBlocked, stopSchemaRecheck } from './src/lib/venue-bootstrap'
 import { computeReadiness, setReadinessState, getReadinessState, advanceToOrders, isReadyForSync, type ReadinessInputs } from './src/lib/readiness'
+import { runEntertainmentPriceUpdate } from './src/lib/domain/entertainment-price-updater'
 
 // Normalize POS_LOCATION_ID early — some NUC .env files only set LOCATION_ID.
 // This ensures all downstream code reading process.env.POS_LOCATION_ID gets the value.
@@ -180,6 +181,36 @@ function startWalkoutRetryScheduler() {
   timer.unref()
   // Run first sweep 5 minutes after boot (let Datacap client initialize)
   const startupTimer = setTimeout(sweepWalkoutRetries, 5 * 60 * 1000)
+  startupTimer.unref()
+}
+
+// ============================================================================
+// Entertainment Price Update Scheduler — updates live charges every 60 seconds
+//
+// Queries all active timed rental sessions and sends real-time price updates
+// to connected clients (web admin, Android registers, floor plan). Updates
+// the OrderItem.price in the DB so that order total queries return accurate
+// numbers. Fire-and-forget socket dispatch. NUC-only (requires POS_LOCATION_ID).
+// ============================================================================
+
+function startEntertainmentPriceUpdateScheduler() {
+  const INTERVAL_MS = 60 * 1000 // 60 seconds
+
+  async function sweepEntertainmentPrices() {
+    const locationId = config.posLocationId
+    if (!locationId) return // Cloud/dev mode — skip
+
+    try {
+      await runEntertainmentPriceUpdate(locationId)
+    } catch (err) {
+      logger.warn({ err }, 'Entertainment price update sweep failed (non-critical)')
+    }
+  }
+
+  const timer = setInterval(sweepEntertainmentPrices, INTERVAL_MS)
+  timer.unref()
+  // Run first sweep 1 minute after boot (let server stabilize)
+  const startupTimer = setTimeout(sweepEntertainmentPrices, 1 * 60 * 1000)
   startupTimer.unref()
 }
 
@@ -638,6 +669,10 @@ async function main() {
     )
     registerWorker('notificationRetry', 'optional',
       () => startNotificationRetryScheduler(),
+      () => { /* interval-based, unref'd — exits with process */ }
+    )
+    registerWorker('entertainmentPriceUpdate', 'optional',
+      () => startEntertainmentPriceUpdateScheduler(),
       () => { /* interval-based, unref'd — exits with process */ }
     )
     registerWorker('scaleService', 'optional',

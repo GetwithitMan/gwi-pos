@@ -64,4 +64,6 @@ export {
   overrideSessionTime,
   expireSession,
   stopAllSessions,
+  cleanupOrphanSessions,
+  findStaleSessions,
 } from './session-operations'

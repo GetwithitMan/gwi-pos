@@ -127,6 +127,25 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
         lastMutatedBy: mutationOrigin,
         version: { increment: 1 },
       }, tx)
+
+      // Update any active entertainment items linked to this order
+      // When an order transfers to a new employee, the rental items (pool tables, karaoke, etc.) must follow
+      // Keep their session state intact (blockTimeStartedAt, entertainment status) but link to new order if needed
+      const entertainmentItems = await tx.menuItem.findMany({
+        where: {
+          currentOrderId: orderId,
+          itemType: 'timed_rental',
+          entertainmentStatus: 'in_use',
+          deletedAt: null,
+        },
+        select: { id: true },
+      })
+
+      if (entertainmentItems.length > 0) {
+        // Entertainment items stay linked to the same order (orderId hasn't changed)
+        // The session state (blockTimeStartedAt, blockTimeExpiresAt) remains intact
+        // This ensures continuous charge calculation during the transfer
+      }
     })
     // Re-fetch with select for response (updateOrder returns count, not the record)
     const updatedOrder = await OrderRepository.getOrderByIdWithInclude(

@@ -25,6 +25,8 @@ import {
 import type { ZeroTabReleaseResult, BottleServiceTier } from '@/lib/domain/tab-close'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
+import { settleEntertainmentPricing } from '@/lib/payments/entertainment-settlement'
+import { stopSession } from '@/lib/domain/entertainment'
 import { checkOrderClaim } from '@/lib/order-claim'
 import { isInOutageMode } from '@/lib/sync/upstream-sync-worker'
 import { pushUpstream, queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
@@ -599,23 +601,115 @@ export const POST = withVenue(async function POST(
       closedStatus: 'paid',
     })
 
-    // Clean up entertainment items after tab close
+    // Settle entertainment pricing BEFORE cleanup
+    // This finalizes any per-minute charges for timed rental items and recalculates totals
     try {
-      // TODO: Add MenuItemRepository.findByCurrentOrder() and FloorPlanElementRepository once those repositories exist
-      const entertainmentItems = await db.menuItem.findMany({
-        where: { currentOrderId: orderId, itemType: 'timed_rental' },
-        select: { id: true },
+      const orderForSettlement = await db.order.findUnique({
+        where: { id: orderId },
+        include: {
+          items: {
+            where: { deletedAt: null },
+            include: { modifiers: true, menuItem: { select: { itemType: true } } },
+          },
+          location: { select: { settings: true } },
+        },
       })
 
-      if (entertainmentItems.length > 0) {
-        // Clear blockTimeStartedAt on order items so Android stops showing timers
-        await db.orderItem.updateMany({
-          where: { orderId, menuItem: { itemType: 'timed_rental' }, blockTimeStartedAt: { not: null } },
-          data: { blockTimeStartedAt: null },
-        })
+      if (orderForSettlement) {
+        // Call settlement to finalize entertainment charges before clearing MenuItem links
+        // This ensures continuous time calculation from session start through payment
+        const settlementResult = await settleEntertainmentPricing(
+          db,
+          orderId,
+          locationId,
+          orderForSettlement,
+          (order as any).inclusiveTaxRate ?? undefined
+        )
 
+        if (settlementResult) {
+          console.info('[Close Tab] Entertainment pricing settled', {
+            orderId,
+            newSubtotal: settlementResult.subtotal,
+            newTotal: settlementResult.total,
+          })
+        }
+      }
+    } catch (settlementErr) {
+      console.error('[Close Tab] Failed to settle entertainment pricing:', settlementErr)
+      // Non-critical: if settlement fails, log and continue with cleanup
+      // The items will still be charged at their current state (session may not be fully settled,
+      // but it's better to close the tab than to block payment)
+    }
+
+    // Clean up entertainment sessions after tab close
+    // CRITICAL: Must call stopSession() for each active block-time session to ensure:
+    // 1. Final charges are properly calculated (not just left at initial price)
+    // 2. OrderItem price reflects actual usage
+    // 3. MenuItem.entertainmentStatus is reset to 'available'
+    // 4. FloorPlanElements are unlocked
+    // 5. Audit trail is created with proper stop reason
+    try {
+      const entertainmentOrderItems = await db.orderItem.findMany({
+        where: {
+          orderId,
+          menuItem: { itemType: 'timed_rental' },
+          blockTimeStartedAt: { not: null },
+        },
+        include: {
+          menuItem: {
+            select: {
+              id: true,
+              name: true,
+              price: true,
+              timedPricing: true,
+              ratePerMinute: true,
+              minimumCharge: true,
+              incrementMinutes: true,
+              graceMinutes: true,
+              blockTimeMinutes: true,
+              happyHourEnabled: true,
+              happyHourDiscount: true,
+              happyHourStart: true,
+              happyHourEnd: true,
+              happyHourDays: true,
+              overtimeEnabled: true,
+              overtimeMode: true,
+              overtimeMultiplier: true,
+              overtimePerMinuteRate: true,
+              overtimeFlatFee: true,
+              overtimeGraceMinutes: true,
+            },
+          },
+        },
+      })
+
+      const tabClosedAt = now
+
+      if (entertainmentOrderItems.length > 0) {
+        // Stop each active block-time session
+        // This ensures final charges are calculated and MenuItem is properly reset
+        for (const orderItem of entertainmentOrderItems) {
+          try {
+            await db.$transaction(async (tx) => {
+              return stopSession(tx, {
+                orderItemId: orderItem.id,
+                menuItemId: orderItem.menuItemId,
+                reason: 'normal',
+                now: tabClosedAt,
+                menuItem: orderItem.menuItem as any,
+              })
+            })
+          } catch (stopErr) {
+            // Log but don't fail the tab close — the session data is still being reset below
+            // This handles cases where stopSession fails due to idempotency (already processed)
+            log.warn({ err: stopErr, orderItemId: orderItem.id }, 'Failed to stop entertainment session during tab close (will reset state manually)')
+          }
+        }
+
+        // Safety cleanup: Reset any remaining MenuItem/FloorPlan state in case stopSession didn't complete
+        const entertainmentMenuItemIds = entertainmentOrderItems.map(oi => oi.menuItemId)
         await db.menuItem.updateMany({
-          where: { currentOrderId: orderId, itemType: 'timed_rental' },
+          where: { id: { in: entertainmentMenuItemIds }, currentOrderId: orderId },
           data: {
             entertainmentStatus: 'available',
             currentOrderId: null,
@@ -623,9 +717,9 @@ export const POST = withVenue(async function POST(
           },
         })
 
-        for (const item of entertainmentItems) {
+        for (const item of entertainmentOrderItems) {
           await db.floorPlanElement.updateMany({
-            where: { linkedMenuItemId: item.id, deletedAt: null, status: 'in_use' },
+            where: { linkedMenuItemId: item.menuItemId, deletedAt: null },
             data: {
               status: 'available',
               currentOrderId: null,
@@ -635,19 +729,20 @@ export const POST = withVenue(async function POST(
           })
         }
 
+        // Dispatch updates and notify next waitlist entries (fire-and-forget)
         void dispatchFloorPlanUpdate(locationId, { async: true }).catch(err => log.warn({ err }, 'floor plan dispatch failed'))
-        for (const item of entertainmentItems) {
+        for (const item of entertainmentOrderItems) {
           void dispatchEntertainmentStatusChanged(locationId, {
-            itemId: item.id,
+            itemId: item.menuItemId,
             entertainmentStatus: 'available',
             currentOrderId: null,
             expiresAt: null,
           }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.close-tab'))
-          void notifyNextWaitlistEntry(locationId, item.id).catch(err => log.warn({ err }, 'waitlist notify failed'))
+          void notifyNextWaitlistEntry(locationId, item.menuItemId).catch(err => log.warn({ err }, 'waitlist notify failed'))
         }
       }
     } catch (cleanupErr) {
-      console.error('[Close Tab] Failed to reset entertainment items:', cleanupErr)
+      console.error('[Close Tab] Failed to stop entertainment sessions during tab close:', cleanupErr)
     }
 
     // Deduct inventory via PendingDeduction outbox (retryable, with exponential backoff)

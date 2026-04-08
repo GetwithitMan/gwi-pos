@@ -85,7 +85,7 @@ export interface StartSessionResult {
 
 // ─── Session Stop ────────────────────────────────────────────────────────────
 
-export type StopReason = 'normal' | 'comp' | 'void' | 'force'
+export type StopReason = 'normal' | 'comp' | 'void' | 'force' | 'auto_expired_stale' | 'auto_expired_boot_recovery' | 'orphan_cleanup'
 
 export interface StopSessionInput {
   orderItemId: string

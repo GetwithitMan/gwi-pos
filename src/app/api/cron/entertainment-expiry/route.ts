@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server'
+import { db } from '@/lib/db'
 import { OrderRepository } from '@/lib/repositories'
 import {
   dispatchFloorPlanUpdate,
@@ -14,10 +15,13 @@ import { notifyNuc } from '@/lib/cron-nuc-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { ok } from '@/lib/api-response'
 
-import { expireSession } from '@/lib/domain/entertainment'
+import { expireSession, cleanupOrphanSessions, findStaleSessions } from '@/lib/domain/entertainment'
 import { recalculateOrderTotals } from '@/lib/domain/order-items'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('cron-entertainment-expiry')
+
+// Order statuses that indicate the order is closed and entertainment should be cleaned up
+const CLOSED_ORDER_STATUSES = ['paid', 'closed', 'voided', 'cancelled']
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
@@ -32,10 +36,59 @@ export async function GET(request: NextRequest) {
   const now = new Date()
   const allProcessed: Record<string, unknown> = {}
 
+  // Check if this is a boot recovery run (no completed entertainment session in past 5 minutes)
+  // This helps identify if we're recovering from a power outage
+  const isBootRecovery = (await (db as any).auditLog.findFirst({
+    where: {
+      action: { in: ['entertainment_session_auto_expired', 'entertainment_session_stopped'] },
+      createdAt: { gte: new Date(now.getTime() - 5 * 60 * 1000) },
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 1,
+  })) === null
+
   const summary = await forAllVenues(async (venueDb, slug) => {
     let expiredSessionCount = 0
     let expiredWaitlistCount = 0
     let staleNotifiedCount = 0
+    let orphanCleanedCount = 0
+    let staleStopped = 0
+
+    // ── Step 0: Cleanup orphaned sessions ──────────────────────
+    // These are MenuItem entries still marked 'in_use' but linked to closed orders.
+    // This happens when tab close didn't properly call stopSession().
+    try {
+      const orphanCleanupResult = await venueDb.$transaction(async (tx) => {
+        return cleanupOrphanSessions(tx, {
+          locationId: '', // empty string matches all locations in venue (query uses locationId differently)
+          now,
+          closedOrderStatuses: CLOSED_ORDER_STATUSES,
+        })
+      })
+
+      orphanCleanedCount = orphanCleanupResult.cleanedCount
+
+      // Audit trail: orphan sessions cleaned
+      for (const detail of orphanCleanupResult.details) {
+        void venueDb.auditLog.create({
+          data: {
+            locationId: detail.orderId === 'unknown' ? 'unknown' : detail.orderId,
+            employeeId: null,
+            action: 'entertainment_orphan_session_cleaned',
+            entityType: 'menu_item',
+            entityId: detail.menuItemId,
+            details: {
+              itemName: detail.itemName,
+              orderId: detail.orderId,
+              reason: detail.reason,
+              triggeredBy: 'cron:entertainment-expiry',
+            },
+          },
+        }).catch(err => log.warn({ err }, 'Audit log failed for orphan cleanup'))
+      }
+    } catch (orphanErr) {
+      log.warn({ err: orphanErr }, `Venue ${slug}: Failed to cleanup orphan sessions`)
+    }
 
     // ── Step 1: Find expired entertainment sessions ──────────────
     // Query uses venueDb (not adminDb) so it is correctly scoped to the
@@ -276,6 +329,154 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // ── Step 2b: Detect and stop stale sessions ──────────────────
+    // Sessions running for > 24 hours are likely abandoned (customer walked away).
+    // Auto-stop them with proper charge calculation and audit trail.
+    try {
+      const staleSessionsList = await findStaleSessions(venueDb, {
+        locationId: '', // matches all locations in venue
+        now,
+        maxSessionAgeMs: 24 * 60 * 60 * 1000, // 24 hours
+      })
+
+      for (const staleItem of staleSessionsList) {
+        try {
+          // Fetch full OrderItem and MenuItem for pricing calculation
+          const fullOrderItem = await venueDb.orderItem.findUnique({
+            where: { id: staleItem.orderItemId },
+            include: {
+              menuItem: {
+                select: {
+                  id: true,
+                  name: true,
+                  price: true,
+                  ratePerMinute: true,
+                  minimumCharge: true,
+                  incrementMinutes: true,
+                  graceMinutes: true,
+                  timedPricing: true,
+                  happyHourEnabled: true,
+                  happyHourDiscount: true,
+                  happyHourStart: true,
+                  happyHourEnd: true,
+                  happyHourDays: true,
+                  overtimeEnabled: true,
+                  overtimeMode: true,
+                  overtimeMultiplier: true,
+                  overtimePerMinuteRate: true,
+                  overtimeFlatFee: true,
+                  overtimeGraceMinutes: true,
+                },
+              },
+              order: { select: { id: true, locationId: true, status: true } },
+            },
+          })
+
+          if (!fullOrderItem || fullOrderItem.order.status === 'paid') continue
+
+          // Stop the stale session with proper charge calculation
+          const staleStopResult = await venueDb.$transaction(async (tx) => {
+            return expireSession(tx, {
+              id: staleItem.orderItemId,
+              menuItemId: staleItem.menuItemId,
+              orderStatus: fullOrderItem.order.status,
+              menuItemPrice: fullOrderItem.menuItem.price,
+              menuItemRatePerMinute: fullOrderItem.menuItem.ratePerMinute,
+              menuItemMinimumCharge: fullOrderItem.menuItem.minimumCharge,
+              menuItemIncrementMinutes: fullOrderItem.menuItem.incrementMinutes,
+              menuItemGraceMinutes: fullOrderItem.menuItem.graceMinutes,
+              menuItemTimedPricing: fullOrderItem.menuItem.timedPricing,
+              menuItemHappyHourEnabled: fullOrderItem.menuItem.happyHourEnabled,
+              menuItemHappyHourDiscount: fullOrderItem.menuItem.happyHourDiscount,
+              menuItemHappyHourStart: fullOrderItem.menuItem.happyHourStart,
+              menuItemHappyHourEnd: fullOrderItem.menuItem.happyHourEnd,
+              menuItemHappyHourDays: fullOrderItem.menuItem.happyHourDays,
+              menuItemOvertimeEnabled: fullOrderItem.menuItem.overtimeEnabled,
+              menuItemOvertimeMode: fullOrderItem.menuItem.overtimeMode,
+              menuItemOvertimeMultiplier: fullOrderItem.menuItem.overtimeMultiplier,
+              menuItemOvertimePerMinuteRate: fullOrderItem.menuItem.overtimePerMinuteRate,
+              menuItemOvertimeFlatFee: fullOrderItem.menuItem.overtimeFlatFee,
+              menuItemOvertimeGraceMinutes: fullOrderItem.menuItem.overtimeGraceMinutes,
+            }, now)
+          })
+
+          if (!staleStopResult.skipped) {
+            staleStopped++
+            locationIdsToRefresh.add(fullOrderItem.order.locationId)
+
+            // Audit trail: stale session auto-stopped
+            void venueDb.auditLog.create({
+              data: {
+                locationId: fullOrderItem.order.locationId,
+                employeeId: null,
+                action: isBootRecovery ? 'entertainment_session_auto_expired_boot_recovery' : 'entertainment_session_auto_expired_stale',
+                entityType: 'order_item',
+                entityId: staleItem.orderItemId,
+                details: {
+                  menuItemId: staleItem.menuItemId,
+                  itemName: fullOrderItem.menuItem.name,
+                  orderId: fullOrderItem.order.id,
+                  sessionAgeMs: staleItem.startedAtAge,
+                  finalCharge: staleStopResult.closedOrder ? 0 : staleStopResult.newPrice,
+                  closedOrder: staleStopResult.closedOrder,
+                  triggeredBy: isBootRecovery ? 'cron:entertainment-expiry:boot-recovery' : 'cron:entertainment-expiry',
+                  isBootRecovery,
+                },
+              },
+            }).catch(err => log.warn({ err }, 'Audit log failed for stale session'))
+
+            // Recalculate order totals if order is still open
+            if (!staleStopResult.closedOrder) {
+              void (async () => {
+                try {
+                  const order = await venueDb.order.findUnique({
+                    where: { id: fullOrderItem.order.id },
+                    include: { location: { select: { settings: true } } },
+                  })
+                  if (!order) return
+                  const totals = await recalculateOrderTotals(
+                    venueDb, fullOrderItem.order.id, (order as any).location.settings,
+                    Number(order.tipTotal) || 0, order.isTaxExempt
+                  )
+                  // Fire-and-forget dispatch
+                  if (process.env.VERCEL) {
+                    void notifyNuc(slug, 'ORDER_TOTALS_UPDATE', {
+                      locationId: fullOrderItem.order.locationId,
+                      orderId: fullOrderItem.order.id,
+                      subtotal: totals.subtotal,
+                      taxTotal: totals.taxTotal,
+                      tipTotal: Number(order.tipTotal) || 0,
+                      discountTotal: 0,
+                      total: totals.total,
+                      commissionTotal: totals.commissionTotal,
+                    }).catch(err => log.warn({ err }, 'Background task failed'))
+                  } else {
+                    void dispatchOrderTotalsUpdate(fullOrderItem.order.locationId, fullOrderItem.order.id, {
+                      subtotal: totals.subtotal,
+                      taxTotal: totals.taxTotal,
+                      tipTotal: Number(order.tipTotal) || 0,
+                      discountTotal: 0,
+                      total: totals.total,
+                      commissionTotal: totals.commissionTotal,
+                    }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
+                  }
+                } catch (err) {
+                  console.error('[cron:entertainment-expiry] Failed to recalculate stale session order totals:', err)
+                }
+              })()
+            }
+          }
+        } catch (staleErr) {
+          console.error(
+            `[cron:entertainment-expiry] Venue ${slug}: Failed to auto-stop stale session for OrderItem ${staleItem.orderItemId}:`,
+            staleErr
+          )
+        }
+      }
+    } catch (staleDetectionErr) {
+      log.warn({ err: staleDetectionErr }, `Venue ${slug}: Failed to detect stale sessions`)
+    }
+
     // ── Step 3: Expire stale waitlist entries ────────────────────
 
     // 3a: Waiting entries past their expiresAt
@@ -375,6 +576,8 @@ export async function GET(request: NextRequest) {
       expiredSessions: expiredSessionCount,
       expiredWaitlist: expiredWaitlistCount,
       staleNotified: staleNotifiedCount,
+      orphansCleaned: orphanCleanedCount,
+      staleStopped: staleStopped,
     }
   }, { label: 'cron:entertainment-expiry' })
 

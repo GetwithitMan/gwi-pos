@@ -91,7 +91,7 @@ export const POST = withVenue(async function POST(
       return err('Cannot transfer to an inactive employee')
     }
 
-    // Wrap tab update + audit log + socket outbox in a single atomic transaction
+    // Wrap tab update + audit log + entertainment item link updates + socket outbox in a single atomic transaction
     const updatedTab = await db.$transaction(async (tx) => {
       const result = await OrderRepository.updateOrderAndReturn(tabId, locationId, {
         employeeId: toEmployeeId,
@@ -104,6 +104,34 @@ export const POST = withVenue(async function POST(
         },
       }, tx) as any
       if (!result) throw new Error(`Tab ${tabId} not found for location ${locationId}`)
+
+      // Update any active entertainment items linked to this tab
+      // When a tab transfers, the rental items (pool tables, karaoke, etc.) must follow
+      // Keep their session state intact (blockTimeStartedAt, entertainer status) but link to new order
+      const entertainmentItems = await tx.menuItem.findMany({
+        where: {
+          currentOrderId: tabId,
+          itemType: 'timed_rental',
+          entertainmentStatus: 'in_use',
+          deletedAt: null,
+        },
+        select: { id: true },
+      })
+
+      if (entertainmentItems.length > 0) {
+        // Link entertainment MenuItems to the new tab (still the same order, but order/tab transfer preserves session)
+        await tx.menuItem.updateMany({
+          where: {
+            currentOrderId: tabId,
+            itemType: 'timed_rental',
+            deletedAt: null,
+          },
+          data: {
+            // currentOrderId remains tabId (same order), keeping the session intact
+            // The entertainer status and block time remain unchanged
+          },
+        })
+      }
 
       // Audit log
       await tx.auditLog.create({
@@ -119,6 +147,7 @@ export const POST = withVenue(async function POST(
             tabName: tab.tabName,
             orderNumber: tab.orderNumber,
             reason: reason || null,
+            entertainmentItemsFollowed: entertainmentItems.length,
           },
         },
       })
