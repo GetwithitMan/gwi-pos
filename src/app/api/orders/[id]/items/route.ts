@@ -24,7 +24,6 @@ import {
   validateAddItemsInput,
   validateOrderStatusForAdd,
   validateNoActivePayments,
-  validateMenuItemAvailability,
   validateMenuItemAvailabilityForAdd,
   prepareAllItemsData,
   deriveTaxInclusiveSettings,
