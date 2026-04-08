@@ -292,5 +292,8 @@ export function validateUpdateQuantity(quantity: number | undefined): Validation
   if (quantity !== undefined && quantity < 1) {
     return { valid: false, error: 'Quantity must be at least 1', status: 400 }
   }
+  if (quantity !== undefined && quantity > 9999) {
+    return { valid: false, error: 'Quantity cannot exceed 9999', status: 400 }
+  }
   return { valid: true }
 }

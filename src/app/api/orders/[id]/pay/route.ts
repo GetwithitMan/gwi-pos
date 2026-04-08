@@ -922,8 +922,24 @@ export const POST = withVenue(withTiming(async function POST(
       }
     }
 
-    console.log(`[PAY-VALIDATION] paymentBaseTotal=${paymentBaseTotal} validationRemaining=${validationRemaining} remaining=${remaining} isAllocationChild=${isAllocationChild}`)
-    if (paymentBaseTotal < validationRemaining - 0.01) {
+    // Compute validation tolerance: when cash rounding is active, the client's rounded
+    // amount may differ from the server's by up to a full rounding increment. This happens
+    // when the unrounded totals differ by even 1 cent (floating-point differences between
+    // Long-cents on Android vs Double-dollars on server) and land on different sides of a
+    // rounding boundary. E.g., $25.47 rounds to $25.45, but $25.48 rounds to $25.50.
+    // Using the full increment as tolerance is safe — it only relaxes the "minimum payment"
+    // check, and the order still must be fully paid before closing.
+    const validationTolerance = (hasCashPayment && settings.priceRounding?.enabled && settings.priceRounding.applyToCash)
+      ? roundToCents(parseFloat(settings.priceRounding.increment))
+      : (hasCashPayment && settings.payments?.cashRounding && settings.payments.cashRounding !== 'none')
+        ? (() => {
+            const legacyIncrements: Record<string, number> = { nickel: 0.05, dime: 0.10, quarter: 0.25, dollar: 1.00 }
+            return roundToCents(legacyIncrements[settings.payments.cashRounding as string] ?? 0.05)
+          })()
+        : 0.01
+
+    console.log(`[PAY-VALIDATION] paymentBaseTotal=${paymentBaseTotal} validationRemaining=${validationRemaining} remaining=${remaining} isAllocationChild=${isAllocationChild} tolerance=${validationTolerance}`)
+    if (paymentBaseTotal < validationRemaining - validationTolerance) {
       return { earlyReturn: NextResponse.json(
         { error: `Payment amount ($${paymentBaseTotal.toFixed(2)}) is less than remaining balance ($${validationRemaining.toFixed(2)})` },
         { status: 400 }

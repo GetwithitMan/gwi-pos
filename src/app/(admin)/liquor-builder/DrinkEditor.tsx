@@ -22,7 +22,6 @@ export interface DrinkEditorProps {
   hideDefaultOnPos: boolean
   isDualPricingEnabled: boolean
   cashDiscountPct: number
-  spiritMode: boolean
   spiritEntries: SpiritEntry[]
   savingSpirit: boolean
   bottles: BottleProduct[]
@@ -54,7 +53,6 @@ export interface DrinkEditorProps {
   setDefaultPourSize: (v: string) => void
   setApplyPourToModifiers: (v: boolean) => void
   setHideDefaultOnPos: (v: boolean) => void
-  setSpiritMode: (v: boolean) => void
   setSelectedModGroupId: (v: string | null) => void
   setModGroupRefreshKey: React.Dispatch<React.SetStateAction<number>>
   setEditingPourSize: (v: string) => void
@@ -99,7 +97,6 @@ export function DrinkEditor({
   hideDefaultOnPos,
   isDualPricingEnabled,
   cashDiscountPct,
-  spiritMode,
   spiritEntries,
   savingSpirit,
   bottles,
@@ -129,7 +126,6 @@ export function DrinkEditor({
   setDefaultPourSize,
   setApplyPourToModifiers,
   setHideDefaultOnPos,
-  setSpiritMode,
   setSelectedModGroupId,
   setModGroupRefreshKey,
   setEditingPourSize,
@@ -272,50 +268,53 @@ export function DrinkEditor({
         />
       )}
 
-      {/* Pour Sizes / Spirit Upgrades toggle card */}
+      {/* Pour Size Buttons */}
       <div className="bg-white rounded-lg border p-5">
-        {/* Mode toggle */}
-        <label className="flex items-center gap-2 cursor-pointer mb-4">
-          <input
-            type="checkbox"
-            checked={spiritMode}
-            onChange={e => setSpiritMode(e.target.checked)}
-            className="w-4 h-4 text-amber-600 rounded"
-          />
-          <span className="text-sm font-semibold text-gray-900">🥃 Spirit Upgrades</span>
-          <span className="text-xs text-gray-600">(for cocktails — Well/Call/Prem/Top tiers)</span>
-        </label>
-
-        {spiritMode ? (
-          <SpiritTierPanel
-            spiritEntries={spiritEntries}
-            bottles={bottles}
-            savingSpirit={savingSpirit}
-            onAddSpiritBottle={onAddSpiritBottle}
-            onUpdatePrice={onUpdateSpiritEntryPrice}
-            onRemoveEntry={onRemoveSpiritEntry}
-            onSetDefault={onSetSpiritEntryDefault}
-          />
-        ) : (
-          <PourSizeEditor
-            editingDrinkPrice={editingDrinkPrice}
-            enabledPourSizes={enabledPourSizes}
-            defaultPourSize={defaultPourSize}
-            applyPourToModifiers={applyPourToModifiers}
-            hideDefaultOnPos={hideDefaultOnPos}
-            isDualPricingEnabled={isDualPricingEnabled}
-            cashDiscountPct={cashDiscountPct}
-            onTogglePourSize={onTogglePourSize}
-            onUpdateLabel={onUpdatePourSizeLabel}
-            onUpdateMultiplier={onUpdatePourSizeMultiplier}
-            onUpdateCustomPrice={onUpdatePourSizeCustomPrice}
-            onSetDefaultPourSize={setDefaultPourSize}
-            onSetApplyPourToModifiers={setApplyPourToModifiers}
-            onSetHideDefaultOnPos={setHideDefaultOnPos}
-            onSetEnabledPourSizes={setEnabledPourSizes}
-          />
-        )}
+        <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide mb-4">Pour Size Buttons</h3>
+        <PourSizeEditor
+          editingDrinkPrice={editingDrinkPrice}
+          enabledPourSizes={enabledPourSizes}
+          defaultPourSize={defaultPourSize}
+          applyPourToModifiers={applyPourToModifiers}
+          hideDefaultOnPos={hideDefaultOnPos}
+          isDualPricingEnabled={isDualPricingEnabled}
+          cashDiscountPct={cashDiscountPct}
+          onTogglePourSize={onTogglePourSize}
+          onUpdateLabel={onUpdatePourSizeLabel}
+          onUpdateMultiplier={onUpdatePourSizeMultiplier}
+          onUpdateCustomPrice={onUpdatePourSizeCustomPrice}
+          onSetDefaultPourSize={setDefaultPourSize}
+          onSetApplyPourToModifiers={setApplyPourToModifiers}
+          onSetHideDefaultOnPos={setHideDefaultOnPos}
+          onSetEnabledPourSizes={setEnabledPourSizes}
+        />
       </div>
+
+      {/* Spirit Upgrades */}
+      <div className="bg-white rounded-lg border p-5">
+        <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide mb-4">Spirit Upgrades</h3>
+        <p className="text-xs text-gray-500 -mt-2 mb-3">For cocktails — Well / Call / Premium / Top Shelf tiers</p>
+        <SpiritTierPanel
+          spiritEntries={spiritEntries}
+          bottles={bottles}
+          savingSpirit={savingSpirit}
+          onAddSpiritBottle={onAddSpiritBottle}
+          onUpdatePrice={onUpdateSpiritEntryPrice}
+          onRemoveEntry={onRemoveSpiritEntry}
+          onSetDefault={onSetSpiritEntryDefault}
+        />
+      </div>
+
+      {/* Combined Pricing Preview — shown when both pour sizes and spirit upgrades are configured */}
+      <CombinedPricingPreview
+        enabledPourSizes={enabledPourSizes}
+        spiritEntries={spiritEntries}
+        editingDrinkPrice={editingDrinkPrice}
+        applyPourToModifiers={applyPourToModifiers}
+        isDualPricingEnabled={isDualPricingEnabled}
+        cashDiscountPct={cashDiscountPct}
+        setApplyPourToModifiers={setApplyPourToModifiers}
+      />
 
       {/* Modifier Groups */}
       <ModifierGroupsCard
@@ -723,6 +722,104 @@ function BottleLinkPicker({
             </div>
           )}
         </div>
+      )}
+    </div>
+  )
+}
+
+
+function CombinedPricingPreview({
+  enabledPourSizes,
+  spiritEntries,
+  editingDrinkPrice,
+  applyPourToModifiers,
+  isDualPricingEnabled,
+  cashDiscountPct,
+  setApplyPourToModifiers,
+}: {
+  enabledPourSizes: Record<string, PourSizeConfig>
+  spiritEntries: SpiritEntry[]
+  editingDrinkPrice: string
+  applyPourToModifiers: boolean
+  isDualPricingEnabled: boolean
+  cashDiscountPct: number
+  setApplyPourToModifiers: (v: boolean) => void
+}) {
+  const hasPourSizes = Object.keys(enabledPourSizes).length > 0
+  const hasSpiritUpgrades = spiritEntries.length > 0
+  if (!hasPourSizes || !hasSpiritUpgrades) return null
+
+  const basePrice = parseFloat(editingDrinkPrice) || 0
+
+  // Pick sample pour size — prefer "double", otherwise first available
+  const pourKeys = Object.keys(enabledPourSizes)
+  const samplePourKey = pourKeys.includes('double') ? 'double' : pourKeys[0]
+  const samplePour = enabledPourSizes[samplePourKey]
+
+  // Pick sample spirit — prefer first non-well entry with a price, otherwise first entry
+  const premiumEntries = spiritEntries.filter(e => e.tier !== 'well' && e.price > 0)
+  const sampleSpirit = premiumEntries[0] || spiritEntries[0]
+
+  if (!samplePour || !sampleSpirit) return null
+
+  const pourPrice = samplePour.customPrice != null ? samplePour.customPrice : basePrice * samplePour.multiplier
+  const spiritUpcharge = sampleSpirit.price
+  const adjustedUpcharge = applyPourToModifiers
+    ? (samplePour.customPrice != null ? spiritUpcharge : spiritUpcharge * samplePour.multiplier)
+    : spiritUpcharge
+  const totalPrice = pourPrice + adjustedUpcharge
+
+  return (
+    <div className="bg-amber-50 rounded-lg border border-amber-200 p-5">
+      <h3 className="text-sm font-semibold text-amber-800 uppercase tracking-wide mb-3">Combined Pricing Preview</h3>
+      <p className="text-xs text-amber-700 mb-3">
+        Example: <strong>{samplePour.label}</strong> with <strong>{sampleSpirit.bottleName}</strong> ({sampleSpirit.tier})
+      </p>
+
+      <div className="bg-white/70 rounded-lg border border-amber-200 p-3 space-y-1.5">
+        <div className="flex items-center justify-between text-xs">
+          <span className="text-gray-600">Base price</span>
+          <span className="font-medium">{formatCurrency(basePrice)}</span>
+        </div>
+        <div className="flex items-center justify-between text-xs">
+          <span className="text-gray-600">
+            {samplePour.label} pour
+            {samplePour.customPrice != null ? ' (custom price)' : ` (x${samplePour.multiplier})`}
+          </span>
+          <span className="font-medium">{formatCurrency(pourPrice)}</span>
+        </div>
+        <div className="flex items-center justify-between text-xs">
+          <span className="text-gray-600">
+            + {sampleSpirit.bottleName} upcharge
+            {applyPourToModifiers && samplePour.customPrice == null ? ` (x${samplePour.multiplier})` : ''}
+          </span>
+          <span className="font-medium">+{formatCurrency(adjustedUpcharge)}</span>
+        </div>
+        <div className="border-t border-amber-200 pt-1.5 flex items-center justify-between text-sm">
+          <span className="font-semibold text-amber-900">Total</span>
+          <span className="font-bold text-amber-900">{formatCurrency(totalPrice)}</span>
+        </div>
+        {isDualPricingEnabled && totalPrice > 0 && (
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-indigo-500">Card price</span>
+            <span className="text-indigo-500 font-medium">{formatCurrency(calculateCardPrice(totalPrice, cashDiscountPct))}</span>
+          </div>
+        )}
+      </div>
+
+      <label className="flex items-center gap-2 cursor-pointer mt-3">
+        <input
+          type="checkbox"
+          checked={applyPourToModifiers}
+          onChange={e => setApplyPourToModifiers(e.target.checked)}
+          className="w-4 h-4 text-amber-600 rounded"
+        />
+        <span className="text-xs text-gray-900">Apply pour multiplier to spirit upgrade charges too</span>
+      </label>
+      {applyPourToModifiers && (
+        <p className="text-[10px] text-amber-700 ml-6 mt-0.5">
+          Spirit upcharge is multiplied by the pour size multiplier (e.g. double = 2x the upcharge)
+        </p>
       )}
     </div>
   )

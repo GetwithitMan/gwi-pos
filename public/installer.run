@@ -37,13 +37,8 @@ export DEBCONF_NONINTERACTIVE_SEEN=true
 # ─────────────────────────────────────────────────────────────────────────────
 # Installer Version (stamped at build time by build-installer-bundle.sh)
 # ─────────────────────────────────────────────────────────────────────────────
-INSTALLER_VERSION="2.0.28"
-INSTALLER_VERSION="2.0.28"
-<<<<<<< HEAD
-INSTALLER_BUILD_DATE="2026-04-08T00:42:11Z"
-=======
-INSTALLER_BUILD_DATE="2026-04-08T00:42:11Z"
->>>>>>> __INSTALLER_GIT_SHA__ (chore: bump to v2.0.15 for terminal-auth deploy)
+INSTALLER_VERSION="2.0.29"
+INSTALLER_BUILD_DATE="2026-04-08T16:10:00Z"
 INSTALLER_GIT_SHA="__INSTALLER_GIT_SHA__"
 
 # ─────────────────────────────────────────────────────────────────────────────
