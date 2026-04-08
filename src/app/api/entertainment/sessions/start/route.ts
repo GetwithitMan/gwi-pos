@@ -1,6 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
-import { OrderItemRepository } from '@/lib/repositories'
 import { withVenue } from '@/lib/with-venue'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -10,7 +9,6 @@ import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { dispatchEntertainmentUpdate, dispatchEntertainmentStatusChanged } from '@/lib/socket-dispatch'
 import {
   validateStartRequest,
-  validateSessionStart,
   calculateInitialBlockPrice,
   buildOvertimeConfig,
   startSession,

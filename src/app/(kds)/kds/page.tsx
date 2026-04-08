@@ -176,6 +176,9 @@ function KDSContent() {
   // Debounce protection: track in-flight bump requests to prevent double-bumps
   const inFlightBumps = useRef(new Set<string>())
 
+  // Debounce for fallback full-refresh (500ms, much longer than dispatch debounce)
+  const fallbackRefreshDebounceRef = useRef<NodeJS.Timeout | null>(null)
+
   // Authenticate device on mount (after hydration so employee fallback works)
   useEffect(() => {
     if (hydrated) authenticateDevice()
@@ -322,12 +325,12 @@ function KDSContent() {
       })
     }
 
-    const loadOrdersDebounceRef = { current: null as NodeJS.Timeout | null }
-    const debouncedLoadOrders = () => {
-      if (loadOrdersDebounceRef.current) clearTimeout(loadOrdersDebounceRef.current)
-      loadOrdersDebounceRef.current = setTimeout(() => {
+    // Fallback full-refresh with 500ms debounce (only triggers if incremental update fails)
+    const debouncedFullRefresh = () => {
+      if (fallbackRefreshDebounceRef.current) clearTimeout(fallbackRefreshDebounceRef.current)
+      fallbackRefreshDebounceRef.current = setTimeout(() => {
         loadOrders()
-      }, 50)
+      }, 500)
     }
 
     const onOrderReceived = () => {
@@ -336,10 +339,12 @@ function KDSContent() {
         setFlashActive(true)
         setTimeout(() => setFlashActive(false), 500)
       }
-      debouncedLoadOrders()
+      // Fallback to full refresh if incremental update fails
+      debouncedFullRefresh()
     }
+
     const onItemStatus = (payload: { orderId?: string; itemId?: string; status?: string }) => {
-      // Show "VOIDED" / "COMPED" overlay for 5 seconds before refreshing
+      // Show "VOIDED" / "COMPED" overlay for 5 seconds before removing
       if (payload?.itemId && (payload.status === 'voided' || payload.status === 'comped')) {
         const status = payload.status as 'voided' | 'comped'
         setVoidingItems(prev => {
@@ -347,24 +352,76 @@ function KDSContent() {
           next.set(payload.itemId!, status)
           return next
         })
-        // After 5 seconds, clear the overlay and refresh
+        // After 5 seconds, clear the overlay
         setTimeout(() => {
           setVoidingItems(prev => {
             const next = new Map(prev)
             next.delete(payload.itemId!)
             return next
           })
-          debouncedLoadOrders()
+          // Incremental update: remove the voided/comped item
+          setOrders(prev =>
+            prev.map(order => ({
+              ...order,
+              items: order.items.filter(item => item.id !== payload.itemId),
+            }))
+          )
         }, 5000)
         return
       }
-      debouncedLoadOrders()
+
+      // Incremental update for status changes (not voided/comped)
+      if (payload?.itemId) {
+        setOrders(prev =>
+          prev.map(order => ({
+            ...order,
+            items: order.items.map(item =>
+              item.id === payload.itemId
+                ? { ...item, kitchenStatus: payload.status || item.kitchenStatus }
+                : item
+            ),
+          }))
+        )
+      }
+
+      // Fallback full refresh in case we missed something
+      debouncedFullRefresh()
     }
-    const onOrderBumped = () => debouncedLoadOrders()
-    const onOrderCreated = () => debouncedLoadOrders()
-    const onOrderClosed = () => debouncedLoadOrders()
-    const onListChanged = () => debouncedLoadOrders()
-    const onOrderUpdated = () => debouncedLoadOrders()
+
+    const onOrderBumped = (payload?: { orderId?: string; allItemsServed?: boolean }) => {
+      // Batch removal if all items in order are served
+      if (payload?.orderId && payload?.allItemsServed) {
+        setOrders(prev => prev.filter(o => o.id !== payload.orderId))
+      } else {
+        // Fallback to full refresh for partial bumps
+        debouncedFullRefresh()
+      }
+    }
+
+    const onOrderCreated = () => {
+      // Fallback to full refresh for new orders
+      debouncedFullRefresh()
+    }
+
+    const onOrderClosed = (payload?: { orderId?: string }) => {
+      // Remove closed order from display
+      if (payload?.orderId) {
+        setOrders(prev => prev.filter(o => o.id !== payload.orderId))
+      } else {
+        debouncedFullRefresh()
+      }
+    }
+
+    const onListChanged = () => {
+      // List changed: full refresh needed (ordering, filtering may have changed)
+      debouncedFullRefresh()
+    }
+
+    const onOrderUpdated = () => {
+      // Order details updated: full refresh to be safe
+      debouncedFullRefresh()
+    }
+
     const onDisconnect = () => setSocketConnected(false)
 
     // Entertainment timer expiry: when a timed rental expires, the cron emits
@@ -372,7 +429,8 @@ function KDSContent() {
     // entertainment-type stations reflect the updated item status.
     const onEntertainmentSessionUpdate = (payload: { action: string; tableName?: string }) => {
       if (payload.action === 'stopped' || payload.action === 'warning') {
-        debouncedLoadOrders()
+        // Fallback full refresh for entertainment session changes
+        debouncedFullRefresh()
       }
     }
 
@@ -392,7 +450,8 @@ function KDSContent() {
           setFlashActive(true)
           setTimeout(() => setFlashActive(false), 500)
         }
-        debouncedLoadOrders()
+        // Fallback refresh for forwarded orders
+        debouncedFullRefresh()
       }
     }
 
@@ -402,7 +461,8 @@ function KDSContent() {
       setTimeout(() => seenEventIds.delete(payload.eventId), 60000)
 
       if (screenConfig?.id && payload.targetScreenId === screenConfig.id) {
-        debouncedLoadOrders()
+        // Multi-clear: full refresh needed to rebuild accurate order list
+        debouncedFullRefresh()
       }
     }
 
@@ -425,7 +485,7 @@ function KDSContent() {
 
     socketRef.current = socket
     return () => {
-      if (loadOrdersDebounceRef.current) clearTimeout(loadOrdersDebounceRef.current)
+      if (fallbackRefreshDebounceRef.current) clearTimeout(fallbackRefreshDebounceRef.current)
       socket.off('connect', onConnect)
       socket.off('kds:order-received', onOrderReceived)
       socket.off('kds:item-status', onItemStatus)
@@ -728,7 +788,7 @@ function KDSContent() {
         return updated
       })
 
-      // ASYNC: Persist to server
+      // ASYNC: Persist to server (do NOT refetch — let socket event + incremental update handle it)
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       if (deviceToken) headers['x-device-token'] = deviceToken
 
@@ -744,7 +804,7 @@ function KDSContent() {
       })
 
       if (!res.ok) throw new Error(`Bump failed: ${res.status}`)
-      // Server will emit socket event; other KDS screens update via socket
+      // Server will emit socket event; incremental update handlers will update state efficiently
     } catch (error) {
       console.error('Bump failed, reverting:', error)
       // ROLLBACK: Revert optimistic update
@@ -761,7 +821,7 @@ function KDSContent() {
     } finally {
       inFlightBumps.current.delete(itemId)
     }
-  }, [deviceToken, loadOrders, expoMode, showCompleted, screenConfig?.id])
+  }, [deviceToken, expoMode, showCompleted, screenConfig?.id, loadOrders])
 
   const handleBumpOrder = useCallback(async (order: KDSOrder) => {
     const incompleteItemIds = order.items
@@ -799,7 +859,7 @@ function KDSContent() {
         return updated
       })
 
-      // ASYNC: Persist to server
+      // ASYNC: Persist to server (do NOT refetch — let socket event + incremental update handle it)
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       if (deviceToken) headers['x-device-token'] = deviceToken
 
@@ -817,6 +877,7 @@ function KDSContent() {
       })
 
       if (!res.ok) throw new Error(`Bump order failed: ${res.status}`)
+      // Server will emit socket event; incremental update handlers will update state efficiently
     } catch (error) {
       console.error('Bump order failed, reverting:', error)
       // ROLLBACK: Revert all items in this order
@@ -835,10 +896,23 @@ function KDSContent() {
     } finally {
       incompleteItemIds.forEach(id => inFlightBumps.current.delete(id))
     }
-  }, [deviceToken, loadOrders, expoMode, showCompleted, screenConfig?.id])
+  }, [deviceToken, expoMode, showCompleted, screenConfig?.id, loadOrders])
 
   const handleUncompleteItem = useCallback(async (itemId: string) => {
     try {
+      // OPTIMISTIC: Mark item as incomplete immediately
+      setOrders(prev =>
+        prev.map(order => ({
+          ...order,
+          items: order.items.map(item =>
+            item.id === itemId
+              ? { ...item, isCompleted: false, completedAt: null }
+              : item
+          ),
+        }))
+      )
+
+      // ASYNC: Persist to server
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       if (deviceToken) headers['x-device-token'] = deviceToken
 
@@ -864,11 +938,22 @@ function KDSContent() {
           }),
         })
       }
-      loadOrders()
+      // Server will emit socket event; incremental update handlers will sync state
     } catch (error) {
       console.error('Failed to uncomplete item:', error)
+      // ROLLBACK: Revert optimistic update
+      setOrders(prev =>
+        prev.map(order => ({
+          ...order,
+          items: order.items.map(item =>
+            item.id === itemId
+              ? { ...item, isCompleted: true, completedAt: new Date().toISOString() }
+              : item
+          ),
+        }))
+      )
     }
-  }, [deviceToken, loadOrders, expoMode])
+  }, [deviceToken, expoMode, screenConfig?.id])
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {

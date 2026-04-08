@@ -1,5 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { NextRequest } from 'next/server'
 import { OrderItemRepository } from '@/lib/repositories'
 import { withVenue } from '@/lib/with-venue'
 import { err, ok, notFound } from '@/lib/api-response'

@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { OrderItemRepository } from '@/lib/repositories'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
 import { dispatchPrintWithRetry } from '@/lib/print-retry'
-import { dispatchItemStatus, dispatchOrderBumped, dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
+import { dispatchItemStatus, dispatchItemsStatusChanged, dispatchOrderBumped, dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { parseSettings, DEFAULT_SPEED_OF_SERVICE } from '@/lib/settings'
@@ -616,6 +616,8 @@ const putHandler = async function PUT(request: NextRequest) {
       } else if (action === 'bump_order') {
         // K3: Always emit socket events with isIntermediate flag.
         // POS can filter on isIntermediate to suppress "order ready" for non-final bumps.
+        // Batch emit: one order-bumped event + one items-status-changed event for all items
+        // This eliminates the N+1 event flood from bumping 10+ item orders
         const dispatches: Promise<any>[] = [
           dispatchOrderBumped(locationId, {
             orderId,
@@ -626,20 +628,18 @@ const putHandler = async function PUT(request: NextRequest) {
           } as any, { async: true }).catch(err => {
             console.error('Failed to dispatch order bumped:', err)
           }),
-          // Also dispatch per-item kds:item-status so Android terminals (which listen
-          // for kds:item-status but not kds:order-bumped) update kitchen status
-          ...itemIds.map((iid: string) =>
-            dispatchItemStatus(locationId, {
-              orderId,
+          // Batch dispatch: send all item status changes in one event instead of N events
+          dispatchItemsStatusChanged(locationId, {
+            orderId,
+            stationId: body.stationId || '',
+            updatedBy: bumpedBy,
+            items: itemIds.map((iid: string) => ({
               itemId: iid,
               status: 'completed',
-              stationId: body.stationId || '',
-              updatedBy: bumpedBy,
-              ...(isIntermediateBump ? { isIntermediate: true } : {}),
-            } as any, { async: true }).catch(err => {
-              console.error('Failed to dispatch bump item status:', err)
-            })
-          ),
+            })),
+          } as any, { async: true }).catch(err => {
+            console.error('Failed to dispatch items status changed:', err)
+          }),
         ]
         void Promise.all(dispatches)
       } else if (action === 'resend') {

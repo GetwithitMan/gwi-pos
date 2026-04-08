@@ -1,9 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
-import { OrderItemRepository, OrderRepository } from '@/lib/repositories'
 import { withVenue } from '@/lib/with-venue'
-import { requirePermission } from '@/lib/api-auth'
-import { PERMISSIONS } from '@/lib/auth-utils'
 import { err, ok } from '@/lib/api-response'
 import { createChildLogger } from '@/lib/logger'
 

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { OrderItemRepository } from '@/lib/repositories'
 import { withVenue } from '@/lib/with-venue'
@@ -9,7 +9,6 @@ import { createChildLogger } from '@/lib/logger'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { dispatchEntertainmentUpdate, dispatchEntertainmentStatusChanged } from '@/lib/socket-dispatch'
 import {
-  validateExtendRequest,
   validateExtension,
   extendSession,
 } from '@/lib/domain/entertainment'

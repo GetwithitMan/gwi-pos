@@ -89,7 +89,9 @@ const AddItemSchema = z.object({
 
 const AddItemsBodySchema = z.object({
   items: z.array(AddItemSchema).min(1, 'At least one item is required'),
-  idempotencyKey: z.string().min(1, 'idempotencyKey is required to prevent duplicate items'),
+  // Accept idempotencyKey from body; Android sends it via HTTP header instead,
+  // so we fall back to the Idempotency-Key header below if body field is missing.
+  idempotencyKey: z.string().min(1).optional(),
   requestingEmployeeId: z.string().optional(),
 }).passthrough()
 
@@ -235,7 +237,17 @@ export const POST = withVenue(async function POST(
       )
     }
     const body = parseResult.data
-    const { items, idempotencyKey, requestingEmployeeId } = body as { items: AddItemInput[], idempotencyKey: string, requestingEmployeeId?: string }
+    const { items, requestingEmployeeId } = body as { items: AddItemInput[], idempotencyKey?: string, requestingEmployeeId?: string }
+
+    // Resolve idempotencyKey: prefer body field, fall back to HTTP header (Android sends it there).
+    // Android's AuthInterceptor always adds Idempotency-Key header on POST/PUT/PATCH/DELETE.
+    const idempotencyKey = body.idempotencyKey || request.headers.get('idempotency-key')
+    if (!idempotencyKey) {
+      return apiError.badRequest(
+        'idempotencyKey is required to prevent duplicate items. Send in body or Idempotency-Key header.',
+        ERROR_CODES.VALIDATION_ERROR,
+      )
+    }
 
     // Validate items input (count, prices, quantities, weights, modifiers, pizza)
     const inputValidation = validateAddItemsInput(items)

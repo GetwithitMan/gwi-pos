@@ -16,8 +16,8 @@
 
 import { db } from '@/lib/db'
 import { calculateCharge, type EntertainmentPricing } from '@/lib/entertainment-pricing'
-import { dispatchEntertainmentPriceUpdate } from '@/lib/socket-dispatch'
-import { toNumber, roundToCents } from '@/lib/pricing'
+import { dispatchEntertainmentPriceBatchUpdate } from '@/lib/socket-dispatch'
+import { toNumber } from '@/lib/pricing'
 import { createChildLogger } from '@/lib/logger'
 
 const log = createChildLogger('entertainment-price-updater')
@@ -178,6 +178,15 @@ export async function runEntertainmentPriceUpdate(locationId: string): Promise<v
 
     const now = new Date()
     const updates: Promise<unknown>[] = []
+    const batchSessionUpdates: Array<{
+      orderId: string
+      orderItemId: string
+      menuItemId: string
+      currentCharge: number
+      elapsedMinutes: number
+      isOvertime: boolean
+      nextIncrementAt: string
+    }> = []
 
     for (const session of sessions) {
       try {
@@ -217,21 +226,15 @@ export async function runEntertainmentPriceUpdate(locationId: string): Promise<v
           })
         )
 
-        // Fire-and-forget socket dispatch (async)
-        dispatchEntertainmentPriceUpdate(
-          locationId,
-          {
-            orderId: session.orderId,
-            orderItemId: session.orderItemId,
-            menuItemId: session.menuItemId,
-            currentCharge: chargeInCents,
-            elapsedMinutes,
-            isOvertime: breakdown.overtimeMinutes > 0,
-            nextIncrementAt: nextIncrementAt.toISOString(),
-          },
-          { async: true }
-        ).catch((err) => {
-          log.warn({ err, menuItemId: session.menuItemId }, 'Failed to dispatch price update')
+        // Collect session update for batch dispatch
+        batchSessionUpdates.push({
+          orderId: session.orderId,
+          orderItemId: session.orderItemId,
+          menuItemId: session.menuItemId,
+          currentCharge: chargeInCents,
+          elapsedMinutes,
+          isOvertime: breakdown.overtimeMinutes > 0,
+          nextIncrementAt: nextIncrementAt.toISOString(),
         })
       } catch (err) {
         log.warn({ err, menuItemId: session.menuItemId }, 'Failed to calculate price for session')
@@ -245,6 +248,17 @@ export async function runEntertainmentPriceUpdate(locationId: string): Promise<v
       } catch (err) {
         log.warn({ err }, 'Some order item price updates failed')
       }
+    }
+
+    // Dispatch a single batch event with all session updates instead of N individual events
+    if (batchSessionUpdates.length > 0) {
+      dispatchEntertainmentPriceBatchUpdate(
+        locationId,
+        { sessions: batchSessionUpdates },
+        { async: true }
+      ).catch((err) => {
+        log.warn({ err }, 'Failed to dispatch batch price update')
+      })
     }
   } catch (err) {
     log.error({ err, locationId }, 'Entertainment price updater failed')
