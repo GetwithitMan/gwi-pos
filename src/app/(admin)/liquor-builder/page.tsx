@@ -78,7 +78,6 @@ function LiquorBuilderContent() {
   const [creatingInlineBottle, setCreatingInlineBottle] = useState(false)
 
   // Spirit tier editor state
-  const [spiritMode, setSpiritMode] = useState(false)
   const [spiritGroupId, setSpiritGroupId] = useState<string | null>(null)
   const [spiritEntries, setSpiritEntries] = useState<Array<{
     id?: string
@@ -285,7 +284,6 @@ function LiquorBuilderContent() {
     setRecipeExpanded(false)
     const pourOz = selectedDrink.linkedPourSizeOz ?? selectedDrink.linkedBottlePourSizeOz ?? ''
     setEditingPourSize(pourOz ? String(pourOz) : '')
-    setSpiritMode(false)
     setSpiritGroupId(null)
     setSpiritEntries([])
     const loadAsync = async () => {
@@ -313,7 +311,6 @@ function LiquorBuilderContent() {
     const spiritGroup = drinkModifierGroups.find((mg: any) => mg.isSpiritGroup)
     if (spiritGroup) {
       setSpiritGroupId(spiritGroup.id)
-      setSpiritMode(true)
       setSpiritEntries(
         spiritGroup.modifiers.map((m: any) => ({
           id: m.id,
@@ -331,7 +328,6 @@ function LiquorBuilderContent() {
           const shared = data?.data?.[0]
           if (shared) {
             setSpiritGroupId(shared.id)
-            setSpiritMode(true)
             setSpiritEntries(
               shared.modifiers.map((m: any) => ({
                 id: m.id,
@@ -885,7 +881,6 @@ function LiquorBuilderContent() {
                 hideDefaultOnPos={hideDefaultOnPos}
                 isDualPricingEnabled={isDualPricingEnabled}
                 cashDiscountPct={cashDiscountPct}
-                spiritMode={spiritMode}
                 spiritEntries={spiritEntries}
                 savingSpirit={savingSpirit}
                 bottles={bottles}
@@ -915,7 +910,6 @@ function LiquorBuilderContent() {
                 setDefaultPourSize={setDefaultPourSize}
                 setApplyPourToModifiers={setApplyPourToModifiers}
                 setHideDefaultOnPos={setHideDefaultOnPos}
-                setSpiritMode={setSpiritMode}
                 setSelectedModGroupId={setSelectedModGroupId}
                 setModGroupRefreshKey={setModGroupRefreshKey}
                 setEditingPourSize={setEditingPourSize}

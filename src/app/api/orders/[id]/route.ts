@@ -273,7 +273,29 @@ export const PUT = withVenue(async function PUT(
         updateData.total = taxExemptTotals.total
       }
     }
-    if (tableId !== undefined) updateData.tableId = tableId
+    if (tableId !== undefined) {
+      // Check table occupancy before allowing transfer (same logic as POST /api/orders)
+      if (tableId && tableId !== existingOrder.tableId) {
+        const occupyingOrder = await db.order.findFirst({
+          where: {
+            tableId,
+            locationId: existingOrder.locationId,
+            status: { in: ['draft', 'open', 'in_progress', 'sent', 'split'] },
+            deletedAt: null,
+            id: { not: id },
+          },
+          select: { id: true, orderNumber: true, version: true },
+        })
+        if (occupyingOrder) {
+          return apiError.conflict(
+            'Table already has an active order',
+            ERROR_CODES.TABLE_OCCUPIED,
+            { existingOrderId: occupyingOrder.id, existingOrderNumber: occupyingOrder.orderNumber, existingOrderVersion: occupyingOrder.version }
+          )
+        }
+      }
+      updateData.tableId = tableId
+    }
     if (orderTypeId !== undefined) updateData.orderTypeId = orderTypeId
     if (customerId !== undefined) updateData.customerId = customerId
     if (employeeId !== undefined) updateData.employeeId = employeeId
