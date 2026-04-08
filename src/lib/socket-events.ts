@@ -78,6 +78,9 @@ export const SOCKET_EVENTS = {
 
   // ── Entertainment / Timed Rentals ──────────────────────────────────────
   ENTERTAINMENT_SESSION_UPDATE:    'entertainment:session-update',
+  ENTERTAINMENT_SESSION_STARTED:   'entertainment:session-started',
+  ENTERTAINMENT_SESSION_STOPPED:   'entertainment:session-stopped',
+  ENTERTAINMENT_SESSION_EXTENDED:  'entertainment:session-extended',
   ENTERTAINMENT_STATUS_CHANGED:    'entertainment:status-changed',
   ENTERTAINMENT_WAITLIST_NOTIFY:   'entertainment:waitlist-notify',
   ENTERTAINMENT_WAITLIST_CHANGED:  'entertainment:waitlist-changed',
@@ -157,7 +160,6 @@ export const SOCKET_EVENTS = {
 
   // ── Employees ─────────────────────────────────────────────────────────
   EMPLOYEES_CHANGED:       'employees:changed',
-  EMPLOYEES_UPDATED:       'employees:updated',
   EMPLOYEE_CLOCK_CHANGED:  'employee:clock-changed',
 
   // ── Shifts ────────────────────────────────────────────────────────────
@@ -937,6 +939,9 @@ export interface SocketEventPayloadMap {
 
   // Entertainment
   [SOCKET_EVENTS.ENTERTAINMENT_SESSION_UPDATE]: EntertainmentSessionUpdatePayload
+  [SOCKET_EVENTS.ENTERTAINMENT_SESSION_STARTED]: EntertainmentSessionUpdatePayload
+  [SOCKET_EVENTS.ENTERTAINMENT_SESSION_STOPPED]: EntertainmentSessionUpdatePayload
+  [SOCKET_EVENTS.ENTERTAINMENT_SESSION_EXTENDED]: EntertainmentSessionUpdatePayload
   [SOCKET_EVENTS.ENTERTAINMENT_STATUS_CHANGED]: EntertainmentStatusChangedPayload
   [SOCKET_EVENTS.ENTERTAINMENT_WAITLIST_NOTIFY]: EntertainmentWaitlistNotifyPayload
   [SOCKET_EVENTS.ENTERTAINMENT_WAITLIST_CHANGED]: EntertainmentWaitlistChangedPayload

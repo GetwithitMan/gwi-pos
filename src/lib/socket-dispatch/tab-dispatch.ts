@@ -43,3 +43,15 @@ export function dispatchTabStatusUpdate(locationId: string, data: { orderId: str
 export function dispatchTabItemsUpdated(locationId: string, data: { orderId: string; itemCount: number }): void {
   void emitToLocation(locationId, MOBILE_EVENTS.TAB_ITEMS_UPDATED, data).catch((err) => log.error({ err }, 'Failed to dispatch tab items updated'))
 }
+
+// Notify all terminals that a tab is starting to close
+// Emitted during Phase 1 of close-tab to give other terminals immediate feedback
+// about why item adds might fail
+export function dispatchTabClosingStarted(
+  locationId: string,
+  data: { orderId: string; closingEmployeeId: string; closingEmployeeName: string }
+): void {
+  void emitToLocation(locationId, 'tab:closing-started', data).catch((err) =>
+    log.error({ err }, 'Failed to dispatch tab:closing-started')
+  )
+}

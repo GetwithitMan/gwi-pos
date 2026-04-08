@@ -51,7 +51,7 @@ const MAX_RETRY_ATTEMPTS = 3
  * 3. INSERT INTO DeliveryNotificationAttempt (attemptNumber: 1, status: 'queued')
  * 4. Attempt send (Twilio stub for v1)
  * 5. Update attempt status to 'sent' or 'failed'
- * 6. If failed and retries remaining: schedule retry (TODO: implement retry worker)
+ * 6. If failed and retries remaining: mark as pending_retry for the cron worker to retry
  */
 export async function createDeliveryNotification(params: SendNotificationParams): Promise<void> {
   const { locationId, deliveryOrderId, event, channel, recipient, messageBody } = params
@@ -124,7 +124,7 @@ export async function createDeliveryNotification(params: SendNotificationParams)
       `, notification.id, sendResult.error || 'Unknown error')
 
       // 6. If failed and retries remaining, mark for retry
-      // TODO: Wire a retry worker (cron or queue) to pick up 'pending_retry' notifications
+      // A cron worker at GET /api/cron/notification-retry polls these pending_retry records every 5 minutes
       if (MAX_RETRY_ATTEMPTS > 1) {
         await db.$executeRawUnsafe(`
           UPDATE "DeliveryNotification"

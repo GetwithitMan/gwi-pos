@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
-import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchTabClosed, dispatchTabStatusUpdate, dispatchOrderClosed, dispatchEntertainmentStatusChanged, dispatchPaymentProcessed } from '@/lib/socket-dispatch'
+import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchTabClosed, dispatchTabStatusUpdate, dispatchOrderClosed, dispatchEntertainmentStatusChanged, dispatchPaymentProcessed, dispatchTabClosingStarted } from '@/lib/socket-dispatch'
 import { parseSettings } from '@/lib/settings'
 import { cleanupTemporarySeats } from '@/lib/cleanup-temp-seats'
 import { getLocationSettings } from '@/lib/location-cache'
@@ -25,6 +25,8 @@ import {
 import type { ZeroTabReleaseResult, BottleServiceTier } from '@/lib/domain/tab-close'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
+import { settleEntertainmentPricing } from '@/lib/payments/entertainment-settlement'
+import { stopSession } from '@/lib/domain/entertainment'
 import { checkOrderClaim } from '@/lib/order-claim'
 import { isInOutageMode } from '@/lib/sync/upstream-sync-worker'
 import { pushUpstream, queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
@@ -115,6 +117,25 @@ export const POST = withVenue(async function POST(
     // BETWEEN PHASES: Compute values that don't need a lock
     // ═══════════════════════════════════════════════════════════════════════════
     const locationId = order.locationId
+
+    // Emit socket event: tab is starting to close
+    // This notifies other terminals IMMEDIATELY that this tab is being closed,
+    // so they don't try to add items and get confused with "TAB_CLOSING" errors.
+    // Include the closing employee name so the UI can show "Sarah is closing this tab"
+    try {
+      const closingEmployee = await db.employee.findUnique({
+        where: { id: employeeId, deletedAt: null },
+        select: { id: true, firstName: true, lastName: true },
+      })
+      const closingEmployeeName = closingEmployee ? `${closingEmployee.firstName} ${closingEmployee.lastName}`.trim() : 'Unknown Employee'
+      dispatchTabClosingStarted(locationId, {
+        orderId,
+        closingEmployeeId: employeeId,
+        closingEmployeeName,
+      })
+    } catch (lookupErr) {
+      log.warn({ err: lookupErr, employeeId }, 'Failed to look up closing employee for socket event')
+    }
 
     // Load location settings
     const settings = await getLocationSettings(locationId)
@@ -580,56 +601,139 @@ export const POST = withVenue(async function POST(
       closedStatus: 'paid',
     })
 
-    // Clean up entertainment items after tab close
-    try {
-      // TODO: Add MenuItemRepository.findByCurrentOrder() and FloorPlanElementRepository once those repositories exist
-      const entertainmentItems = await db.menuItem.findMany({
-        where: { currentOrderId: orderId, itemType: 'timed_rental' },
-        select: { id: true },
-      })
+    // ═══════════════════════════════════════════════════════════════════════════
+    // Entertainment cleanup (AFTER payment recorded — Phase 3 complete)
+    // Batched into a SINGLE transaction to avoid connection pool exhaustion
+    // Fire-and-forget: runs in background after tab close response
+    // ═══════════════════════════════════════════════════════════════════════════
 
-      if (entertainmentItems.length > 0) {
-        // Clear blockTimeStartedAt on order items so Android stops showing timers
-        await db.orderItem.updateMany({
-          where: { orderId, menuItem: { itemType: 'timed_rental' }, blockTimeStartedAt: { not: null } },
-          data: { blockTimeStartedAt: null },
-        })
-
-        await db.menuItem.updateMany({
-          where: { currentOrderId: orderId, itemType: 'timed_rental' },
-          data: {
-            entertainmentStatus: 'available',
-            currentOrderId: null,
-            currentOrderItemId: null,
+    void (async () => {
+      try {
+        // Load entertainment items to be cleaned up
+        const entertainmentOrderItems = await db.orderItem.findMany({
+          where: {
+            orderId,
+            menuItem: { itemType: 'timed_rental' },
+            blockTimeStartedAt: { not: null },
+          },
+          include: {
+            menuItem: {
+              select: {
+                id: true,
+                name: true,
+                price: true,
+                timedPricing: true,
+                ratePerMinute: true,
+                minimumCharge: true,
+                incrementMinutes: true,
+                graceMinutes: true,
+                blockTimeMinutes: true,
+                happyHourEnabled: true,
+                happyHourDiscount: true,
+                happyHourStart: true,
+                happyHourEnd: true,
+                happyHourDays: true,
+                overtimeEnabled: true,
+                overtimeMode: true,
+                overtimeMultiplier: true,
+                overtimePerMinuteRate: true,
+                overtimeFlatFee: true,
+                overtimeGraceMinutes: true,
+              },
+            },
           },
         })
 
-        for (const item of entertainmentItems) {
-          await db.floorPlanElement.updateMany({
-            where: { linkedMenuItemId: item.id, deletedAt: null, status: 'in_use' },
-            data: {
-              status: 'available',
-              currentOrderId: null,
-              sessionStartedAt: null,
-              sessionExpiresAt: null,
-            },
-          })
-        }
+        const tabClosedAt = now
 
-        void dispatchFloorPlanUpdate(locationId, { async: true }).catch(err => log.warn({ err }, 'floor plan dispatch failed'))
-        for (const item of entertainmentItems) {
-          void dispatchEntertainmentStatusChanged(locationId, {
-            itemId: item.id,
-            entertainmentStatus: 'available',
-            currentOrderId: null,
-            expiresAt: null,
-          }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.close-tab'))
-          void notifyNextWaitlistEntry(locationId, item.id).catch(err => log.warn({ err }, 'waitlist notify failed'))
+        if (entertainmentOrderItems.length > 0) {
+          // SETTLEMENT: Finalize per-minute charges inside a transaction
+          // This ensures continuous time calculation from session start through payment
+          await db.$transaction(async (tx) => {
+            const orderForSettlement = await tx.order.findUnique({
+              where: { id: orderId },
+              include: {
+                items: {
+                  where: { deletedAt: null },
+                  include: { modifiers: true, menuItem: { select: { itemType: true } } },
+                },
+                location: { select: { settings: true } },
+              },
+            })
+
+            if (orderForSettlement) {
+              // Settle entertainment pricing inside the transaction
+              const settlementResult = await settleEntertainmentPricing(
+                tx,
+                orderId,
+                locationId,
+                orderForSettlement,
+                (order as any).inclusiveTaxRate ?? undefined
+              )
+
+              if (settlementResult) {
+                console.info('[Close Tab] Entertainment pricing settled (background)', {
+                  orderId,
+                  newSubtotal: settlementResult.subtotal,
+                  newTotal: settlementResult.total,
+                })
+              }
+            }
+
+            // CLEANUP: Stop all active block-time sessions in PARALLEL (all inside one transaction)
+            // This uses ONE connection instead of N sequential transactions
+            await Promise.all(
+              entertainmentOrderItems.map(orderItem =>
+                stopSession(tx, {
+                  orderItemId: orderItem.id,
+                  menuItemId: orderItem.menuItemId,
+                  reason: 'normal',
+                  now: tabClosedAt,
+                  menuItem: orderItem.menuItem as any,
+                })
+              )
+            )
+
+            // Safety cleanup: Reset any remaining MenuItem/FloorPlan state in case stopSession had issues
+            const entertainmentMenuItemIds = entertainmentOrderItems.map(oi => oi.menuItemId)
+            await tx.menuItem.updateMany({
+              where: { id: { in: entertainmentMenuItemIds }, currentOrderId: orderId },
+              data: {
+                entertainmentStatus: 'available',
+                currentOrderId: null,
+                currentOrderItemId: null,
+              },
+            })
+
+            for (const item of entertainmentOrderItems) {
+              await tx.floorPlanElement.updateMany({
+                where: { linkedMenuItemId: item.menuItemId, deletedAt: null },
+                data: {
+                  status: 'available',
+                  currentOrderId: null,
+                  sessionStartedAt: null,
+                  sessionExpiresAt: null,
+                },
+              })
+            }
+          })
+
+          // Dispatch updates and notify next waitlist entries (fire-and-forget, outside transaction)
+          void dispatchFloorPlanUpdate(locationId, { async: true }).catch(err => log.warn({ err }, 'floor plan dispatch failed'))
+          for (const item of entertainmentOrderItems) {
+            void dispatchEntertainmentStatusChanged(locationId, {
+              itemId: item.menuItemId,
+              entertainmentStatus: 'available',
+              currentOrderId: null,
+              expiresAt: null,
+            }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.close-tab'))
+            void notifyNextWaitlistEntry(locationId, item.menuItemId).catch(err => log.warn({ err }, 'waitlist notify failed'))
+          }
         }
+      } catch (cleanupErr) {
+        log.error({ err: cleanupErr, orderId }, 'Entertainment cleanup failed in background — will be caught by cron')
       }
-    } catch (cleanupErr) {
-      console.error('[Close Tab] Failed to reset entertainment items:', cleanupErr)
-    }
+    })()
 
     // Deduct inventory via PendingDeduction outbox (retryable, with exponential backoff)
     await db.pendingDeduction.upsert({

@@ -51,7 +51,7 @@ export async function POST(request: Request) {
         break
 
       case 'employees':
-        void emitToLocation(locId, 'employees:updated', { action, entityId })
+        void emitToLocation(locId, 'employees:changed', { action, entityId })
         break
 
       case 'order-types':

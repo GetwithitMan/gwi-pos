@@ -283,6 +283,81 @@ export async function dispatchEntertainmentWaitlistChanged(
   return doEmit()
 }
 
+/**
+ * Dispatch entertainment live price update
+ * Sent periodically (every 60s) to all connected clients showing real-time charges for active timed sessions.
+ * Replaces stale flat-rate prices with actual per-minute calculations.
+ */
+export async function dispatchEntertainmentPriceUpdate(
+  locationId: string,
+  payload: {
+    orderId: string
+    orderItemId: string
+    menuItemId: string
+    currentCharge: number // in cents
+    elapsedMinutes: number
+    isOvertime: boolean
+    nextIncrementAt: string // ISO 8601 timestamp
+  },
+  options: DispatchOptions = {}
+): Promise<boolean> {
+  const doEmit = async () => {
+    try {
+      await emitToLocation(locationId, 'entertainment:price-update', payload)
+      return true
+    } catch (error) {
+      log.error({ err: error }, 'Failed to dispatch entertainment price update')
+      return false
+    }
+  }
+
+  if (options.async) {
+    doEmit().catch((err) => log.error({ err }, 'Async dispatch failed'))
+    return true
+  }
+
+  return doEmit()
+}
+
+/**
+ * Dispatch batch entertainment price updates
+ * Sent periodically (every 60s) in a single event containing all active session updates.
+ * Reduces from N events per location (one per session) to 1 event with all sessions.
+ * This eliminates socket event flooding when 20+ entertainment sessions are active.
+ */
+export async function dispatchEntertainmentPriceBatchUpdate(
+  locationId: string,
+  payload: {
+    sessions: Array<{
+      orderId: string
+      orderItemId: string
+      menuItemId: string
+      currentCharge: number // in cents
+      elapsedMinutes: number
+      isOvertime: boolean
+      nextIncrementAt: string // ISO 8601 timestamp
+    }>
+  },
+  options: DispatchOptions = {}
+): Promise<boolean> {
+  const doEmit = async () => {
+    try {
+      await emitToLocation(locationId, 'entertainment:price-batch-update', payload)
+      return true
+    } catch (error) {
+      log.error({ err: error }, 'Failed to dispatch entertainment price batch update')
+      return false
+    }
+  }
+
+  if (options.async) {
+    doEmit().catch((err) => log.error({ err }, 'Async dispatch failed'))
+    return true
+  }
+
+  return doEmit()
+}
+
 // ==================== Location Alerts ====================
 
 /**

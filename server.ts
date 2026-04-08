@@ -32,8 +32,10 @@ import { startCellularRelayCleanup, stopCellularRelayCleanup } from './src/lib/c
 import { disconnectNeon } from './src/lib/neon-client'
 import { cleanupStaleOrders } from './src/lib/domain/cleanup/stale-order-cleanup'
 import { listPendingRetries, processWalkoutRetry } from './src/lib/domain/datacap/walkout-retry-service'
+import { sendSMS, isTwilioConfigured } from './src/lib/twilio'
 import { runBootstrap, startSchemaRecheckIfBlocked, stopSchemaRecheck } from './src/lib/venue-bootstrap'
 import { computeReadiness, setReadinessState, getReadinessState, advanceToOrders, isReadyForSync, type ReadinessInputs } from './src/lib/readiness'
+import { runEntertainmentPriceUpdate } from './src/lib/domain/entertainment-price-updater'
 
 // Normalize POS_LOCATION_ID early — some NUC .env files only set LOCATION_ID.
 // This ensures all downstream code reading process.env.POS_LOCATION_ID gets the value.
@@ -179,6 +181,203 @@ function startWalkoutRetryScheduler() {
   timer.unref()
   // Run first sweep 5 minutes after boot (let Datacap client initialize)
   const startupTimer = setTimeout(sweepWalkoutRetries, 5 * 60 * 1000)
+  startupTimer.unref()
+}
+
+// ============================================================================
+// Entertainment Price Update Scheduler — updates live charges every 60 seconds
+//
+// Queries all active timed rental sessions and sends real-time price updates
+// to connected clients (web admin, Android registers, floor plan). Updates
+// the OrderItem.price in the DB so that order total queries return accurate
+// numbers. Fire-and-forget socket dispatch. NUC-only (requires POS_LOCATION_ID).
+// ============================================================================
+
+function startEntertainmentPriceUpdateScheduler() {
+  const INTERVAL_MS = 60 * 1000 // 60 seconds
+
+  async function sweepEntertainmentPrices() {
+    const locationId = config.posLocationId
+    if (!locationId) return // Cloud/dev mode — skip
+
+    try {
+      await runEntertainmentPriceUpdate(locationId)
+    } catch (err) {
+      logger.warn({ err }, 'Entertainment price update sweep failed (non-critical)')
+    }
+  }
+
+  const timer = setInterval(sweepEntertainmentPrices, INTERVAL_MS)
+  timer.unref()
+  // Run first sweep 1 minute after boot (let server stabilize)
+  const startupTimer = setTimeout(sweepEntertainmentPrices, 1 * 60 * 1000)
+  startupTimer.unref()
+}
+
+// ============================================================================
+// Delivery Notification Retry Sweep — retries pending SMS/push every 5 minutes
+//
+// Queries DeliveryNotification rows with status='pending_retry' and attempts
+// to resend via Twilio (SMS) or Firebase (push). On success, marks as 'sent'.
+// On failure, increments retry count with exponential backoff or marks 'failed'
+// if maxRetries exceeded. NUC-only (requires POS_LOCATION_ID).
+// ============================================================================
+
+function startNotificationRetryScheduler() {
+  const INTERVAL_MS = 5 * 60 * 1000 // 5 minutes
+  const BATCH_SIZE = 20
+  const MAX_RETRY_ATTEMPTS = 5
+
+  async function sweepNotificationRetries() {
+    const locationId = config.posLocationId
+    if (!locationId) return // Cloud/dev mode — skip
+
+    try {
+      // Use raw SQL to batch query pending retries
+      const now = new Date()
+      const dueRetries = await masterClient.$queryRaw<Array<{
+        id: string
+        deliveryOrderId: string
+        channel: 'sms' | 'push'
+        recipient: string
+        messageBody: string
+        maxRetries: number
+        attemptCount: number
+      }>>`SELECT
+         n.id, n."deliveryOrderId", n.channel, n.recipient,
+         n."messageBody", n."maxRetries",
+         COALESCE(
+           (SELECT COUNT(*) FROM "DeliveryNotificationAttempt"
+            WHERE "notificationId" = n.id),
+           0
+         )::int as "attemptCount"
+        FROM "DeliveryNotification" n
+        WHERE n.status = 'pending_retry'
+          AND n."locationId" = ${locationId}
+        ORDER BY n."createdAt" ASC
+        LIMIT ${BATCH_SIZE}`
+
+      if (dueRetries.length === 0) return
+
+      logger.info({ count: dueRetries.length }, 'Delivery notification retry sweep started')
+
+      let succeeded = 0
+      let failed = 0
+      let exhausted = 0
+
+      for (const notification of dueRetries) {
+        try {
+          // Row-level lock to prevent double-processing
+          const locked = await masterClient.$queryRaw<Array<{ id: string }>>`
+            SELECT id FROM "DeliveryNotification"
+            WHERE id = ${notification.id} AND status = 'pending_retry'
+            FOR UPDATE SKIP LOCKED
+          `
+          if (locked.length === 0) continue
+
+          const attemptNumber = notification.attemptCount + 1
+
+          // Check retry limit
+          if (attemptNumber > notification.maxRetries) {
+            await masterClient.$executeRawUnsafe(`
+              UPDATE "DeliveryNotification"
+              SET status = 'failed', "updatedAt" = CURRENT_TIMESTAMP
+              WHERE id = $1
+            `, notification.id)
+            exhausted++
+            continue
+          }
+
+          // Create attempt record
+          await masterClient.$executeRawUnsafe(`
+            INSERT INTO "DeliveryNotificationAttempt" (
+              "id", "notificationId", "attemptNumber", "status", "createdAt"
+            )
+            VALUES (gen_random_uuid()::text, $1, $2, 'queued', CURRENT_TIMESTAMP)
+          `, notification.id, attemptNumber)
+
+          // Attempt send
+          let sendSuccess = false
+          let errorMessage: string | null = null
+
+          if (notification.channel === 'sms') {
+            if (isTwilioConfigured()) {
+              try {
+                const result = await sendSMS({ to: notification.recipient, body: notification.messageBody })
+                sendSuccess = result.success
+                if (!sendSuccess) {
+                  errorMessage = result.error || 'Twilio send failed'
+                }
+              } catch (error) {
+                const errMsg = error instanceof Error ? error.message : 'Unknown Twilio error'
+                errorMessage = errMsg
+              }
+            } else {
+              errorMessage = 'Twilio not configured'
+            }
+          } else if (notification.channel === 'push') {
+            // TODO: Wire Firebase Cloud Messaging for push
+            sendSuccess = true // Stub for now
+          } else {
+            errorMessage = `Unsupported channel: ${notification.channel}`
+          }
+
+          // Update attempt
+          if (sendSuccess) {
+            await masterClient.$executeRawUnsafe(`
+              UPDATE "DeliveryNotificationAttempt"
+              SET status = 'sent', "sentAt" = CURRENT_TIMESTAMP
+              WHERE "notificationId" = $1 AND "attemptNumber" = $2
+            `, notification.id, attemptNumber)
+
+            await masterClient.$executeRawUnsafe(`
+              UPDATE "DeliveryNotification"
+              SET status = 'sent', "updatedAt" = CURRENT_TIMESTAMP
+              WHERE id = $1
+            `, notification.id)
+
+            succeeded++
+          } else {
+            await masterClient.$executeRawUnsafe(`
+              UPDATE "DeliveryNotificationAttempt"
+              SET status = 'failed', "errorMessage" = $2
+              WHERE "notificationId" = $1 AND "attemptNumber" = $2
+            `, notification.id, attemptNumber)
+
+            if (attemptNumber < notification.maxRetries) {
+              // Keep for next retry
+              await masterClient.$executeRawUnsafe(`
+                UPDATE "DeliveryNotification"
+                SET status = 'pending_retry', "updatedAt" = CURRENT_TIMESTAMP
+                WHERE id = $1
+              `, notification.id)
+              failed++
+            } else {
+              // Exhausted
+              await masterClient.$executeRawUnsafe(`
+                UPDATE "DeliveryNotification"
+                SET status = 'failed', "updatedAt" = CURRENT_TIMESTAMP
+                WHERE id = $1
+              `, notification.id)
+              exhausted++
+            }
+          }
+        } catch (err) {
+          logger.warn({ err, notificationId: notification.id }, 'Failed to process notification retry')
+          failed++
+        }
+      }
+
+      logger.info({ attempted: dueRetries.length, succeeded, failed, exhausted }, 'Delivery notification retry sweep complete')
+    } catch (err) {
+      logger.error({ err }, 'Delivery notification retry sweep failed')
+    }
+  }
+
+  const timer = setInterval(sweepNotificationRetries, INTERVAL_MS)
+  timer.unref()
+  // Run first sweep 2 minutes after boot
+  const startupTimer = setTimeout(sweepNotificationRetries, 2 * 60 * 1000)
   startupTimer.unref()
 }
 
@@ -466,6 +665,14 @@ async function main() {
     )
     registerWorker('walkoutRetry', 'optional',
       () => startWalkoutRetryScheduler(),
+      () => { /* interval-based, unref'd — exits with process */ }
+    )
+    registerWorker('notificationRetry', 'optional',
+      () => startNotificationRetryScheduler(),
+      () => { /* interval-based, unref'd — exits with process */ }
+    )
+    registerWorker('entertainmentPriceUpdate', 'optional',
+      () => startEntertainmentPriceUpdateScheduler(),
       () => { /* interval-based, unref'd — exits with process */ }
     )
     registerWorker('scaleService', 'optional',

@@ -533,6 +533,145 @@ export async function expireSession(
   return { skipped: false, closedOrder: false, newPrice }
 }
 
+// ─── Cleanup Orphan Sessions ─────────────────────────────────────────────────
+/**
+ * Clean up orphaned entertainment sessions where MenuItem.entertainmentStatus === 'in_use'
+ * but MenuItem.currentOrderId points to a CLOSED or DELETED order.
+ * These are orphans from tab closes that didn't properly call stopSession().
+ *
+ * Returns the count of orphaned sessions cleaned up.
+ */
+export async function cleanupOrphanSessions(
+  tx: TxClient,
+  input: {
+    locationId: string
+    now: Date
+    closedOrderStatuses: string[]
+  }
+): Promise<{ cleanedCount: number; details: Array<{ menuItemId: string; itemName: string; orderId: string; reason: string }> }> {
+  const { locationId, now, closedOrderStatuses } = input
+
+  // Find MenuItem entries where:
+  // 1. entertainmentStatus === 'in_use'
+  // 2. currentOrderId points to an order with closed status
+  const orphanedItems = await tx.$queryRaw<Array<{
+    id: string
+    name: string
+    currentOrderId: string | null
+    currentOrderItemId: string | null
+    orderStatus: string
+  }>>`
+    SELECT
+      m."id",
+      m."name",
+      m."currentOrderId",
+      m."currentOrderItemId",
+      o."status" as "orderStatus"
+    FROM "MenuItem" m
+    LEFT JOIN "Order" o ON m."currentOrderId" = o."id"
+    WHERE m."locationId" = ${locationId}
+      AND m."entertainmentStatus" = 'in_use'
+      AND m."currentOrderId" IS NOT NULL
+      AND (
+        o."status" IN (${closedOrderStatuses.join(',')})
+        OR o."id" IS NULL
+      )
+  `
+
+  const cleanedDetails: Array<{ menuItemId: string; itemName: string; orderId: string; reason: string }> = []
+
+  for (const orphan of orphanedItems) {
+    try {
+      // Reset the MenuItem
+      await tx.menuItem.update({
+        where: { id: orphan.id },
+        data: {
+          entertainmentStatus: 'available',
+          currentOrderId: null,
+          currentOrderItemId: null,
+        },
+      })
+
+      // Reset associated OrderItem if it exists
+      if (orphan.currentOrderItemId) {
+        await tx.orderItem.update({
+          where: { id: orphan.currentOrderItemId },
+          data: {
+            blockTimeStartedAt: null,
+          },
+        })
+      }
+
+      // Reset FloorPlanElements
+      await tx.floorPlanElement.updateMany({
+        where: {
+          linkedMenuItemId: orphan.id,
+          deletedAt: null,
+          status: 'in_use',
+        },
+        data: {
+          status: 'available',
+          currentOrderId: null,
+          sessionStartedAt: null,
+          sessionExpiresAt: null,
+        },
+      })
+
+      cleanedDetails.push({
+        menuItemId: orphan.id,
+        itemName: orphan.name || 'Unknown',
+        orderId: orphan.currentOrderId || 'unknown',
+        reason: orphan.orderStatus ? `order_status_${orphan.orderStatus}` : 'order_not_found',
+      })
+    } catch (err) {
+      console.error(`[entertainment] Failed to cleanup orphan session for MenuItem ${orphan.id}:`, err)
+    }
+  }
+
+  return { cleanedCount: orphanedItems.length, details: cleanedDetails }
+}
+
+// ─── Detect Stale Sessions ───────────────────────────────────────────────────
+/**
+ * Find sessions that have been running for more than 24 hours.
+ * These are likely abandoned (e.g., customer never explicitly stopped the session).
+ *
+ * Returns items that should be auto-expired.
+ */
+export async function findStaleSessions(
+  tx: TxClient,
+  input: {
+    locationId: string
+    now: Date
+    maxSessionAgeMs?: number // default: 24 hours
+  }
+): Promise<Array<{ orderItemId: string; menuItemId: string; startedAtAge: number }>> {
+  const { locationId, now, maxSessionAgeMs = 24 * 60 * 60 * 1000 } = input
+
+  const staleItems = await tx.$queryRaw<Array<{
+    id: string
+    menuItemId: string
+    blockTimeStartedAt: Date
+  }>>`
+    SELECT
+      oi."id",
+      oi."menuItemId",
+      oi."blockTimeStartedAt"
+    FROM "OrderItem" oi
+    JOIN "MenuItem" mi ON oi."menuItemId" = mi."id"
+    WHERE mi."locationId" = ${locationId}
+      AND mi."entertainmentStatus" = 'in_use'
+      AND oi."blockTimeStartedAt" IS NOT NULL
+      AND (NOW() - oi."blockTimeStartedAt")::text::interval > CAST(${Math.floor(maxSessionAgeMs / 1000)} || ' seconds' AS interval)
+  `
+
+  return staleItems.map(item => ({
+    orderItemId: item.id,
+    menuItemId: item.menuItemId,
+    startedAtAge: now.getTime() - new Date(item.blockTimeStartedAt).getTime(),
+  }))
+}
+
 // ─── Stop All Sessions ───────────────────────────────────────────────────────
 
 /**

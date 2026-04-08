@@ -134,10 +134,14 @@ The following are defined but not implemented:
 
 ## Known Constraints & Limits
 
+- **SECURITY AUDIT (RF-04):** The web-based `/pay-at-table` page was removed in April 2026. The iPad kiosk functionality has been migrated to Android register and PAX devices. The API endpoint `/api/orders/[id]/pat-complete` remains but is no longer called by the removed page. The `locationId` concern noted below is now RESOLVED: all remaining payment paths use proper `locationId` validation (see `/api/datacap/sale` line 38, `/api/public/pay/[token]` line 307).
+
 - No offline support. PAT requires the NUC to be reachable and Datacap to be online. A network interruption mid-payment leaves the order in an indeterminate state.
-- `locationId` is passed as an empty string (`''`) in the `POST /api/datacap/sale` call from the iPad page: `locationId: '', // Will be resolved from reader`. This relies on the Datacap route resolving the location from the reader ID. Verify this assumption holds for all reader configurations.
-- The iPad page does not re-authenticate the `employeeId` — it trusts the query parameter. An employee who is no longer active could still complete a payment if they have the URL.
+
+- ~~`locationId` is passed as an empty string (`''`) in the `POST /api/datacap/sale` call from the iPad page~~ — **FIXED**: The deprecated web page is removed. All current payment flows (Android, text-to-pay, keyed-entry) properly pass `locationId`.
+
 - `pat:split-request` and `pat:split-result` are dead code. Do not build on top of them without first establishing what scenario they are intended to serve.
+
 - No admin page exists to onboard or track PAT iPad devices. Device management (pairing a reader to an iPad session) is out of scope for the current implementation.
 
 ---

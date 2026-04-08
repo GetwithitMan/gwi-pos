@@ -22,6 +22,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Auth check — require manager.close_day permission
+    // SECURITY AUDIT (RF-05): Permission check REQUIRED for EOD cleanup (high-risk operation)
+    // This ensures only authorized managers can trigger stale order cleanup, table resets, and order event emissions.
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.MGR_CLOSE_DAY)
     if (!auth.authorized) return err(auth.error, auth.status)
 

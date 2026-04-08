@@ -27,6 +27,7 @@ export interface KDSItem {
   // Coursing info (T013)
   courseNumber: number | null
   courseStatus: string
+  kitchenStatus: string
   isHeld: boolean
   firedAt: string | null
   // Weight-based item fields

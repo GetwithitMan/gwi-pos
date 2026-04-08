@@ -24,7 +24,7 @@ import {
   validateAddItemsInput,
   validateOrderStatusForAdd,
   validateNoActivePayments,
-  validateMenuItemAvailability,
+  validateMenuItemAvailabilityForAdd,
   prepareAllItemsData,
   deriveTaxInclusiveSettings,
   hasOpenPricedItems,
@@ -89,7 +89,9 @@ const AddItemSchema = z.object({
 
 const AddItemsBodySchema = z.object({
   items: z.array(AddItemSchema).min(1, 'At least one item is required'),
-  idempotencyKey: z.string().optional(),
+  // Accept idempotencyKey from body; Android sends it via HTTP header instead,
+  // so we fall back to the Idempotency-Key header below if body field is missing.
+  idempotencyKey: z.string().min(1).optional(),
   requestingEmployeeId: z.string().optional(),
 }).passthrough()
 
@@ -235,7 +237,17 @@ export const POST = withVenue(async function POST(
       )
     }
     const body = parseResult.data
-    const { items, idempotencyKey, requestingEmployeeId } = body as { items: AddItemInput[], idempotencyKey?: string, requestingEmployeeId?: string }
+    const { items, requestingEmployeeId } = body as { items: AddItemInput[], idempotencyKey?: string, requestingEmployeeId?: string }
+
+    // Resolve idempotencyKey: prefer body field, fall back to HTTP header (Android sends it there).
+    // Android's AuthInterceptor always adds Idempotency-Key header on POST/PUT/PATCH/DELETE.
+    const idempotencyKey = body.idempotencyKey || request.headers.get('idempotency-key')
+    if (!idempotencyKey) {
+      return apiError.badRequest(
+        'idempotencyKey is required to prevent duplicate items. Send in body or Idempotency-Key header.',
+        ERROR_CODES.VALIDATION_ERROR,
+      )
+    }
 
     // Validate items input (count, prices, quantities, weights, modifiers, pizza)
     const inputValidation = validateAddItemsInput(items)
@@ -287,6 +299,18 @@ export const POST = withVenue(async function POST(
         tipExempt: true,
       },
     })
+
+    // FAIL FAST: Validate menu item availability before any mutations.
+    // Rejects with 409 if ANY items are deleted, inactive, or 86'd.
+    // This prevents silent "[Deleted Item]" ghost orders when kitchen 86's mid-service.
+    const availabilityCheck = validateMenuItemAvailabilityForAdd(allMenuItemIds, prefetchedMenuItems)
+    if (!availabilityCheck.valid) {
+      return apiError.conflict(
+        availabilityCheck.error,
+        ERROR_CODES.ITEM_UNAVAILABLE,
+        availabilityCheck.details
+      )
+    }
 
     // Pre-fetch pricing options once (used for both permission validation AND price enforcement in transaction)
     const allPricableItems = items.filter((i: AddItemInput) => !i.soldByWeight && !i.pizzaConfig && !i.blockTimeMinutes)
@@ -340,26 +364,26 @@ export const POST = withVenue(async function POST(
     }
 
     // Idempotency check — if this key was already processed, return current order
-    if (idempotencyKey) {
-      const existing = await OrderItemRepository.getItemsForOrderWhere(orderId, locationId, {
-        idempotencyKey, deletedAt: null,
+    // This prevents duplicate item additions on retried requests (e.g., WiFi stutter → Android retry).
+    // The idempotencyKey must be unique per request attempt and remain stable across retries.
+    const existing = await OrderItemRepository.getItemsForOrderWhere(orderId, locationId, {
+      idempotencyKey, deletedAt: null,
+    })
+    if (existing.length > 0) {
+      const order = await OrderRepository.getOrderByIdWithInclude(orderId, locationId, {
+        employee: {
+          select: { id: true, displayName: true, firstName: true, lastName: true },
+        },
+        items: {
+          include: {
+            modifiers: true,
+            ingredientModifications: true,
+            pizzaData: true,
+          },
+        },
       })
-      if (existing.length > 0) {
-        const order = await OrderRepository.getOrderByIdWithInclude(orderId, locationId, {
-          employee: {
-            select: { id: true, displayName: true, firstName: true, lastName: true },
-          },
-          items: {
-            include: {
-              modifiers: true,
-              ingredientModifications: true,
-              pizzaData: true,
-            },
-          },
-        })
-        if (!order) return apiError.notFound('Order not found', ERROR_CODES.ORDER_NOT_FOUND)
-        return ok(mapOrderForResponse(order))
-      }
+      if (!order) return apiError.notFound('Order not found', ERROR_CODES.ORDER_NOT_FOUND)
+      return ok(mapOrderForResponse(order))
     }
 
     // Use a transaction to ensure atomic append
@@ -424,24 +448,13 @@ export const POST = withVenue(async function POST(
 
       // B6: Guard against deleted/missing MenuItems — populate fallback entries so downstream
       // code (event emission, response mapping) never crashes on null reference.
-      // Staff sees '[Deleted Item]' which is visually distinct.
+      // NOTE: All items should have been validated as available before entering this transaction,
+      // so this fallback should rarely/never execute. If it does, it indicates a race condition
+      // (item deleted between validation and transaction start).
       for (const id of menuItemIds) {
         if (!menuItemMap.has(id)) {
-          log.warn({ menuItemId: id, orderId }, 'MenuItem not found — using deleted item fallback')
-          menuItemMap.set(id, {
-            id,
-            name: '[Deleted Item]',
-            price: 0,
-            commissionType: null,
-            commissionValue: null,
-            itemType: null,
-            isAvailable: true,   // allow order to proceed — item data is already on the client
-            isActive: true,      // allow order to proceed — price comes from client
-            deletedAt: null,     // don't trigger ITEM_DELETED validation
-            categoryId: null,
-            category: null,
-            tipExempt: false,
-          } as any)
+          log.error({ menuItemId: id, orderId }, '[RACE CONDITION] MenuItem disappeared between validation and transaction — rejecting order')
+          throw new Error(`ITEM_RACE_CONDITION:${id}`)
         }
       }
 
@@ -451,9 +464,8 @@ export const POST = withVenue(async function POST(
         i => i.kitchenStatus === 'sent' || i.kitchenStatus === 'cooking' || i.kitchenStatus === 'ready'
       )
 
-      // Validate menu item availability (86 check) via domain
-      const availCheck = validateMenuItemAvailability(menuItemsWithCommission)
-      if (!availCheck.valid) throw new Error(availCheck.error)
+      // NOTE: Menu item availability was already validated outside the transaction (FAIL FAST).
+      // This includes checks for deleted, inactive, and 86'd items.
 
       // For combo items, validate component availability via domain
       const comboMenuItems = menuItemsWithCommission.filter(mi => mi.itemType === 'combo')
@@ -469,6 +481,13 @@ export const POST = withVenue(async function POST(
       // Server-side base item price enforcement: override client-sent prices with catalog prices.
       // Weight-based, pizza, and timed-rental items have inherently dynamic prices and are excluded.
       // Items with a pricingOptionId use that option's catalog price instead of the base menu item price.
+      // Track price corrections for audit log + socket event.
+      const priceCorrectionLog: Array<{
+        clientPrice: number
+        catalogPrice: number
+        menuItemId: string
+        menuItemName: string
+      }> = []
       {
         const pricableItems = items.filter(i => !i.soldByWeight && !i.pizzaConfig && !i.blockTimeMinutes)
         if (pricableItems.length > 0) {
@@ -497,7 +516,15 @@ export const POST = withVenue(async function POST(
               // If client price deviates from expected, enforce catalog price.
               // Permission check for open-priced items still happens above when requestingEmployeeId is present.
               if (Math.abs(Math.round(item.price * 100) - Math.round(expectedPrice * 100)) > 1) {
+                const clientPrice = item.price
                 item.price = expectedPrice
+                // Track the correction for audit log + socket event
+                priceCorrectionLog.push({
+                  clientPrice,
+                  catalogPrice: expectedPrice,
+                  menuItemId: item.menuItemId,
+                  menuItemName: item.name,
+                })
               }
             }
           }
@@ -541,7 +568,7 @@ export const POST = withVenue(async function POST(
             cashDiscountPct,
             requestingEmployeeId: requestingEmployeeId || null,
             hasSentItems,
-            idempotencyKey: idempotencyKey || null,
+            idempotencyKey, // Now mandatory, always present
             pricingRules,
             mutationOrigin,
           })
@@ -594,12 +621,32 @@ export const POST = withVenue(async function POST(
         },
       })
 
+      // Audit log: price corrections (if any occurred)
+      for (const correction of priceCorrectionLog) {
+        await tx.auditLog.create({
+          data: {
+            locationId: existingOrder.locationId,
+            employeeId: requestingEmployeeId || existingOrder.employeeId,
+            action: 'price_corrected',
+            entityType: 'order_item',
+            entityId: orderId,
+            details: {
+              menuItemId: correction.menuItemId,
+              menuItemName: correction.menuItemName,
+              clientPrice: correction.clientPrice,
+              catalogPrice: correction.catalogPrice,
+              reason: 'stale_client_menu',
+            },
+          },
+        })
+      }
+
       // BUG 3 FIX: If this is a split child order, recalculate parent totals via domain
       if (existingOrder.parentOrderId) {
         await recalculateParentOrderTotals(tx, existingOrder.parentOrderId)
       }
 
-      return { updatedOrder, createdItems, menuItemMap, hasSentItems }
+      return { updatedOrder, createdItems, menuItemMap, hasSentItems, priceCorrectionLog }
     })
 
     // Fire-and-forget: check if bar tab or bottle service tab needs auto-increment
@@ -709,12 +756,44 @@ export const POST = withVenue(async function POST(
       }
     })
 
+    // Build price correction metadata for client display (toast notifications)
+    const priceCorrectionMap = new Map<string, { clientPrice: number; catalogPrice: number; menuItemName: string }>()
+    result.priceCorrectionLog.forEach(correction => {
+      priceCorrectionMap.set(correction.menuItemId, {
+        clientPrice: correction.clientPrice,
+        catalogPrice: correction.catalogPrice,
+        menuItemName: correction.menuItemName,
+      })
+    })
+
     const response = {
       ...mapOrderForResponse(result.updatedOrder),
       // Map items with correlationId for newly created items
-      items: result.updatedOrder.items.map((item: any) =>
-        mapOrderItemForResponse(item, correlationMap.get(item.id))
-      ),
+      items: result.updatedOrder.items.map((item: any) => {
+        const mapped = mapOrderItemForResponse(item, correlationMap.get(item.id))
+        const correction = priceCorrectionMap.get(item.menuItemId)
+        if (correction) {
+          return {
+            ...mapped,
+            priceCorrected: true,
+            originalClientPrice: correction.clientPrice,
+          }
+        }
+        return mapped
+      }),
+      // Summary of price corrections for toast/alert
+      ...(result.priceCorrectionLog.length > 0 && {
+        priceCorrectionAlert: {
+          hasPriceCorrections: true,
+          correctionCount: result.priceCorrectionLog.length,
+          corrections: result.priceCorrectionLog.map(c => ({
+            menuItemName: c.menuItemName,
+            oldPrice: c.clientPrice,
+            newPrice: c.catalogPrice,
+            message: `${c.menuItemName} price updated from $${c.clientPrice.toFixed(2)} to $${c.catalogPrice.toFixed(2)}`,
+          })),
+        },
+      }),
     }
 
     // FIX-011: Dispatch real-time totals update (fire-and-forget)
@@ -749,6 +828,24 @@ export const POST = withVenue(async function POST(
       }).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
+    // Emit price correction alerts for managers (real-time visibility of stale menu issues)
+    if (result.priceCorrectionLog.length > 0) {
+      void emitToLocation(result.updatedOrder.locationId, 'order:price-corrected', {
+        orderId: result.updatedOrder.id,
+        employeeId: requestingEmployeeId || result.updatedOrder.employeeId,
+        employeeName: result.updatedOrder.employee?.displayName || 'Unknown',
+        corrections: result.priceCorrectionLog.map(c => ({
+          menuItemId: c.menuItemId,
+          menuItemName: c.menuItemName,
+          clientPrice: c.clientPrice,
+          catalogPrice: c.catalogPrice,
+          priceDifference: c.catalogPrice - c.clientPrice,
+        })),
+        correctionCount: result.priceCorrectionLog.length,
+        timestamp: new Date().toISOString(),
+      }).catch(err => log.warn({ err }, 'Background task failed'))
+    }
+
     // Evaluate auto-discount rules after items are added (fire-and-forget)
     void evaluateAutoDiscounts(result.updatedOrder.id, result.updatedOrder.locationId).catch(err => log.warn({ err }, 'Background task failed'))
     pushUpstream()
@@ -779,8 +876,31 @@ export const POST = withVenue(async function POST(
       return err('Order cannot be modified — it may have been paid or closed by another terminal', 409)
     }
     if (message === 'TAB_CLOSING') {
+      // Improve error context: find who is closing this tab
+      const { id: errorOrderId } = await params
+      let closingEmployeeName = 'Another bartender'
+      let closingEmployeeId: string | undefined = undefined
+      try {
+        const orderData = await db.order.findUnique({
+          where: { id: errorOrderId },
+          include: { employee: true },
+        })
+        if (orderData?.employee) {
+          closingEmployeeId = orderData.employee.id
+          closingEmployeeName = `${orderData.employee.firstName} ${orderData.employee.lastName}`.trim() || closingEmployeeName
+        }
+      } catch (lookupErr) {
+        log.warn({ err: lookupErr, orderId: errorOrderId }, 'Failed to look up employee for TAB_CLOSING error')
+      }
+
       return NextResponse.json(
-        { error: 'Cannot add items — tab is being closed', code: 'TAB_CLOSING' },
+        {
+          error: `Cannot add items — tab #${errorOrderId.slice(-3)} is being closed by ${closingEmployeeName}`,
+          code: 'TAB_CLOSING',
+          closingEmployeeId,
+          closingEmployeeName,
+          suggestion: 'Wait for the tab to close, then reopen it or start a new tab.',
+        },
         { status: 409 }
       )
     }
@@ -814,6 +934,14 @@ export const POST = withVenue(async function POST(
       return NextResponse.json(
         { error: `Menu items not found: ${missingIds}`, code: 'MENU_ITEM_NOT_FOUND' },
         { status: 400 }
+      )
+    }
+    if (message.startsWith('ITEM_RACE_CONDITION:')) {
+      const itemId = message.replace('ITEM_RACE_CONDITION:', '')
+      return apiError.conflict(
+        'Menu item became unavailable during processing. Please try again.',
+        ERROR_CODES.ITEM_UNAVAILABLE,
+        { menuItemId: itemId, reason: 'item_deleted_during_transaction' }
       )
     }
 

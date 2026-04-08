@@ -51,6 +51,48 @@ export async function dispatchItemStatus(
 }
 
 /**
+ * Dispatch batch item status changes
+ *
+ * Called when multiple items' statuses are updated in a single operation (e.g., bump entire order).
+ * Reduces from N events per order (one per item) to 1 event with all item updates.
+ * Propagates to expo and all other listening stations.
+ * Eliminates socket event flooding when bumping 10+ item orders.
+ */
+export async function dispatchItemsStatusChanged(
+  locationId: string,
+  payload: {
+    orderId: string
+    stationId: string
+    updatedBy: string
+    items: Array<{
+      itemId: string
+      status: string
+    }>
+  },
+  options: DispatchOptions = {}
+): Promise<boolean> {
+  const doEmit = async () => {
+    try {
+      await Promise.all([
+        emitToTags(['expo'], 'kds:items-status-changed', payload, locationId),
+        emitToLocation(locationId, 'kds:items-status-changed', payload),
+      ])
+      return true
+    } catch (error) {
+      log.error({ err: error }, 'Failed to dispatch')
+      return false
+    }
+  }
+
+  if (options.async) {
+    doEmit().catch((err) => log.error({ err }, 'Async dispatch failed'))
+    return true
+  }
+
+  return doEmit()
+}
+
+/**
  * Dispatch order bumped event
  *
  * Called when an order is bumped from a KDS station.

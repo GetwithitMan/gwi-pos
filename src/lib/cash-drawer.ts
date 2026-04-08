@@ -1,9 +1,37 @@
 import { db } from '@/lib/db'
 import { sendToPrinter } from '@/lib/printer-connection'
 import { ESCPOS } from '@/lib/escpos/commands'
+import { emitToLocation } from '@/lib/socket-server'
 import { createChildLogger } from '@/lib/logger'
 
 const log = createChildLogger('cash-drawer')
+
+type DrawerOpenReason = 'no_sale' | 'cash_payment' | 'paid_in' | 'paid_out' | 'manual'
+
+/**
+ * Emit a drawer:opened socket event to all managers at the location.
+ * Fire-and-forget safe: always resolves, never throws.
+ * Caller should call with `void emitDrawerOpenedEvent(...)`.
+ */
+export async function emitDrawerOpenedEvent(
+  locationId: string,
+  employeeId: string | null,
+  reason: DrawerOpenReason,
+  terminalId?: string,
+  drawerId?: string,
+): Promise<void> {
+  try {
+    void emitToLocation(locationId, 'drawer:opened', {
+      drawerId,
+      employeeId,
+      reason,
+      terminalId,
+      timestamp: new Date().toISOString(),
+    }).catch(err => log.warn({ err }, 'Socket emission failed'))
+  } catch (err) {
+    log.error({ err }, 'emitDrawerOpenedEvent failed')
+  }
+}
 
 /**
  * Trigger a cash drawer kick on the receipt printer for the given location.

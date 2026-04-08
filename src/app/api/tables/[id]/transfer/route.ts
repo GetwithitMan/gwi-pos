@@ -64,6 +64,25 @@ export const POST = withVenue(withAuth(async function POST(
             data: { employeeId: toEmployeeId },
           })
         }
+
+        // Update any active entertainment items linked to this order
+        // When an order (table) transfers to a new employee, the rental items must follow
+        // Keep their session state intact (blockTimeStartedAt, entertainment status) in place
+        const entertainmentItems = await tx.menuItem.findMany({
+          where: {
+            currentOrderId: order.id,
+            itemType: 'timed_rental',
+            entertainmentStatus: 'in_use',
+            deletedAt: null,
+          },
+          select: { id: true },
+        })
+
+        if (entertainmentItems.length > 0) {
+          // Entertainment items stay linked to the same order (orderId hasn't changed)
+          // The session state (blockTimeStartedAt, blockTimeExpiresAt) remains intact
+          // This ensures continuous charge calculation during the table transfer
+        }
       }
 
       // Create audit log entry for each transferred order

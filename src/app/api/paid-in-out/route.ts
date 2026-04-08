@@ -264,6 +264,27 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Audit trail for paid in/out
     console.log(`[AUDIT] PAID_${dbType.toUpperCase()}: $${Number(record.amount)} by employee ${employeeId} — reason: "${record.reason}", reference: "${record.reference || 'none'}", locationId: ${locationId}`)
 
+    // Audit log: DRAWER_OPENED with reason paid_in or paid_out (fire-and-forget)
+    const drawerOpenedReason = type === 'paid_in' ? 'paid_in' : 'paid_out'
+    const drawerOpenedReasonLabel = type === 'paid_in' ? 'Paid In' : 'Paid Out'
+    void db.auditLog.create({
+      data: {
+        locationId,
+        employeeId,
+        action: 'DRAWER_OPENED',
+        entityType: 'drawer',
+        entityId: resolvedDrawerId,
+        details: {
+          reason: drawerOpenedReason,
+          reasonLabel: drawerOpenedReasonLabel,
+          paidInOutId: record.id,
+          amount: Number(record.amount),
+          paidInOutReason: record.reason,
+          approvedBy: verifiedApprover || null,
+        },
+      },
+    }).catch(err => log.warn({ err }, 'Background task failed'))
+
     // Emit socket event for real-time updates
     void emitToLocation(locationId, 'drawer:paid_in_out', {
       id: record.id,

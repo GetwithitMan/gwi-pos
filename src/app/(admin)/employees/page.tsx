@@ -164,10 +164,8 @@ export default function EmployeesPage() {
     const socket = getSharedSocket()
     const handler = () => { loadData() }
     socket.on('employees:changed', handler)
-    socket.on('employees:updated', handler)
     return () => {
       socket.off('employees:changed', handler)
-      socket.off('employees:updated', handler)
     }
   }, [loadData])
 

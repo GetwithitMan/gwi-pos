@@ -253,6 +253,66 @@ export function validateMenuItemAvailability(menuItems: MenuItemInfo[]): Validat
   return { valid: true }
 }
 
+/**
+ * Validate menu item availability for item add operation.
+ * Returns structured error details about unavailable items for Android client.
+ * PURE — operates on fetched menu item data.
+ *
+ * Returns:
+ * - { valid: true } if all items are available
+ * - { valid: false, error, status, details } if any items are unavailable
+ *   where details.unavailableItems is an array of { menuItemId, name, reason }
+ */
+export function validateMenuItemAvailabilityForAdd(
+  requestedItemIds: string[],
+  menuItems: MenuItemInfo[]
+): ValidationResult & { details?: { unavailableItems: Array<{ menuItemId: string; name: string; reason: string }> } } {
+  const unavailable: Array<{ menuItemId: string; name: string; reason: string }> = []
+  const foundIds = new Set(menuItems.map(m => m.id))
+
+  // Check for missing menu items (deleted from DB)
+  for (const id of requestedItemIds) {
+    if (!foundIds.has(id)) {
+      unavailable.push({
+        menuItemId: id,
+        name: '[Menu item not found]',
+        reason: 'deleted',
+      })
+    }
+  }
+
+  // Check for inactive or unavailable items
+  for (const mi of menuItems) {
+    let reason = ''
+    if (mi.deletedAt) {
+      reason = 'deleted'
+    } else if (!mi.isActive) {
+      reason = 'inactive'
+    } else if (!mi.isAvailable) {
+      reason = 'unavailable'
+    }
+
+    if (reason) {
+      unavailable.push({
+        menuItemId: mi.id,
+        name: mi.name,
+        reason,
+      })
+    }
+  }
+
+  if (unavailable.length > 0) {
+    return {
+      valid: false,
+      error: `${unavailable.length} item${unavailable.length > 1 ? 's' : ''} ${unavailable.length > 1 ? 'are' : 'is'} no longer available`,
+      status: 409,
+      details: { unavailableItems: unavailable },
+    }
+  }
+
+  return { valid: true }
+}
+
 // ─── Delete Item Guards ─────────────────────────────────────────────────────
 
 /**

@@ -361,6 +361,8 @@ export const DELETE = withVenue(async function DELETE(
 ) {
   try {
     const { id: orderId, itemId } = await params
+    const body = await request.json().catch(() => ({}))
+    const { reason, managerApprovalEmployeeId } = body as { reason?: string; managerApprovalEmployeeId?: string }
 
     // HA cellular sync — detect mutation origin for downstream sync
     const isCellularDelete = request.headers.get('x-cellular-authenticated') === '1'
@@ -412,6 +414,9 @@ export const DELETE = withVenue(async function DELETE(
       const deleteAuth = await requirePermission(employeeId, order.locationId, PERMISSIONS.POS_ACCESS)
       if (!deleteAuth.authorized) return err(deleteAuth.error, deleteAuth.status)
 
+      // Check if item was already sent to kitchen
+      const wasSentToKitchen = item.kitchenStatus !== 'pending' && item.kitchenStatus !== null
+
       // Validate item is deletable (pending kitchen status, active status) via domain
       const delCheck = validateItemDeletable(item)
       if (!delCheck.valid) {
@@ -424,6 +429,10 @@ export const DELETE = withVenue(async function DELETE(
           }, { status: 403 })
         }
         // Manager with void permission — allow deletion of sent item
+        // If item was sent to kitchen and no reason provided, return 400
+        if (!reason || reason.trim().length === 0) {
+          return err('Reason is required to remove items already sent to kitchen', 400)
+        }
       }
 
       // W4-3: Audit log for item deletion before send (fire-and-forget)
@@ -440,6 +449,8 @@ export const DELETE = withVenue(async function DELETE(
             quantity: item.quantity,
             amount: Number(item.itemTotal),
             sentToKitchen: item.kitchenStatus !== 'pending',
+            reason: reason || null,
+            managerApprovalEmployeeId: managerApprovalEmployeeId || null,
           },
         },
       }).catch(err => console.error('[AuditLog] Failed to log item removal:', err))
@@ -447,11 +458,14 @@ export const DELETE = withVenue(async function DELETE(
       // Soft delete modifiers and the item via domain
       await softDeleteOrderItem(tx, itemId)
 
-      console.log(`[AUDIT] ORDER_ITEM_DELETED: orderId=${orderId}, itemId=${itemId}, itemName="${item.menuItem?.name || item.name}", qty=${item.quantity}, amount=$${Number(item.itemTotal)}, by employee ${employeeId}`)
+      console.log(`[AUDIT] ORDER_ITEM_DELETED: orderId=${orderId}, itemId=${itemId}, itemName="${item.menuItem?.name || item.name}", qty=${item.quantity}, amount=$${Number(item.itemTotal)}, by employee ${employeeId}, reason: "${reason || 'none'}", managerApproval: ${managerApprovalEmployeeId || 'none'}`)
 
-      // Emit ITEM_REMOVED event (fire-and-forget)
+      // Emit ITEM_REMOVED event with reason tracking (fire-and-forget)
       void emitOrderEvent(order.locationId, orderId, 'ITEM_REMOVED', {
         lineItemId: itemId,
+        reason: reason || null,
+        managerApprovalEmployeeId: managerApprovalEmployeeId || null,
+        removedAfterSend: wasSentToKitchen,
       })
 
       // Recalculate totals from remaining active items via domain (tenant-safe)
