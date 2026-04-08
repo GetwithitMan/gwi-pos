@@ -173,8 +173,8 @@ function LiquorBuilderContent() {
   const loadBottles = async () => {
     const res = await fetch(`/api/liquor/bottles?_t=${Date.now()}`, { cache: 'no-store' })
     if (res.ok) {
-      const data = await res.json()
-      setBottles(data)
+      const json = await res.json()
+      setBottles(Array.isArray(json) ? json : json.data ?? [])
     }
   }
 
