@@ -82,12 +82,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     for (const order of orders) {
       const empId = order.employeeId
+      if (!empId) continue
       const emp = order.employee
 
       if (!serverMap[empId]) {
         const name =
-          emp.displayName ||
-          `${emp.firstName} ${emp.lastName}`.trim()
+          emp?.displayName ||
+          `${emp?.firstName ?? ''} ${emp?.lastName ?? ''}`.trim() || 'Unknown'
 
         serverMap[empId] = {
           employeeId: empId,

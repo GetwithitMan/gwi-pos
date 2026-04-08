@@ -242,6 +242,44 @@ export const POST = withVenue(async function POST(
     // This is the slow part (500-3000ms). No other terminal is blocked.
     // ═══════════════════════════════════════════════════════════════════════════
 
+    // IDEMPOTENCY GUARD: If a previous attempt already captured successfully for this
+    // order (pending_capture record exists with status='completed', AND a completed Payment
+    // record exists), return early instead of re-calling Datacap and double-charging.
+    try {
+      const existingCaptures = await db.$queryRaw<Array<{ id: string; status: string; authCode: string | null; totalAmount: unknown; tipAmount: unknown; purchaseAmount: unknown }>>`
+        SELECT "id", "status", "authCode", "totalAmount", "tipAmount", "purchaseAmount"
+        FROM "_pending_captures"
+        WHERE "orderId" = ${orderId} AND "status" = 'completed'
+        LIMIT 1
+      `
+      if (existingCaptures.length > 0) {
+        // Verify there's a matching completed Payment in the DB
+        const existingPayment = await db.payment.findFirst({
+          where: { orderId, status: 'completed', deletedAt: null },
+          select: { id: true, amount: true, tipAmount: true, totalAmount: true },
+        })
+        if (existingPayment) {
+          log.info({ orderId, paymentId: existingPayment.id }, 'Idempotency guard: capture already completed, returning early')
+          return ok({
+            success: true,
+            captured: {
+              purchaseAmount: Number(existingCaptures[0].purchaseAmount),
+              tipAmount: Number(existingCaptures[0].tipAmount),
+              totalAmount: Number(existingCaptures[0].totalAmount),
+              authCode: existingCaptures[0].authCode,
+            },
+            tipMode,
+            pendingTipAdjust: tipMode === 'receipt',
+            idempotent: true,
+          })
+        }
+      }
+    } catch (idempotencyErr) {
+      // Non-fatal: if the safety-net table doesn't exist or query fails,
+      // proceed normally — this is a guard, not a gate.
+      log.warn({ err: idempotencyErr }, 'Idempotency check failed, proceeding with capture')
+    }
+
     // PAYMENT-SAFETY: Create a durable pending-capture record BEFORE calling Datacap.
     // If Datacap capture succeeds but the Phase 3 DB write fails, this record remains
     // with status='pending' for manual reconciliation. Updated to 'completed' after Phase 3.
@@ -429,23 +467,63 @@ export const POST = withVenue(async function POST(
       timestamp: now.toISOString(),
     })
 
-    const createdPaymentId = await db.$transaction(async (tx) => {
-      return recordCaptureSuccess(tx, {
-        orderId,
-        locationId,
-        employeeId,
-        sellingEmployeeId: order.employeeId,
-        capturedCard,
-        purchaseAmount,
-        tipAmount: finalTipAmount,
-        totalCaptured,
-        authCode: response.authCode || null,
-        cardType: capturedCard.cardType,
-        allCards: order.cards,
-        datacapResponse: response,
-        now,
-      })
-    })
+    // PAYMENT-SAFETY: Retry loop for Phase 3 DB write. Datacap capture already succeeded
+    // so we MUST record it. Retry up to 3 times with 500ms delay on transient DB failures.
+    let createdPaymentId: string | undefined
+    let phase3LastError: unknown = null
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        createdPaymentId = await db.$transaction(async (tx) => {
+          return recordCaptureSuccess(tx, {
+            orderId,
+            locationId,
+            employeeId,
+            sellingEmployeeId: order.employeeId,
+            capturedCard,
+            purchaseAmount,
+            tipAmount: finalTipAmount,
+            totalCaptured,
+            authCode: response.authCode || null,
+            cardType: capturedCard.cardType,
+            allCards: order.cards,
+            datacapResponse: response,
+            now,
+          })
+        })
+        phase3LastError = null
+        break // Success
+      } catch (phase3Err) {
+        phase3LastError = phase3Err
+        if (attempt < 3) {
+          log.warn({ err: phase3Err, attempt, orderId }, 'Phase 3 DB write failed, retrying...')
+          await new Promise(resolve => setTimeout(resolve, 500))
+        }
+      }
+    }
+
+    // CRITICAL: All 3 Phase 3 attempts failed — Datacap captured but DB has no record.
+    // Log everything needed for manual reconciliation.
+    if (phase3LastError || !createdPaymentId) {
+      console.error(
+        `[PAYMENT-SAFETY] CRITICAL: Datacap capture succeeded but ALL Phase 3 DB write attempts failed. ` +
+        `Manual reconciliation required. orderId=${orderId}, locationId=${locationId}, ` +
+        `cardLast4=${capturedCard.cardLast4}, recordNo=${capturedCard.recordNo}, ` +
+        `authCode=${response.authCode || 'none'}, purchaseAmount=${purchaseAmount}, ` +
+        `tipAmount=${finalTipAmount}, totalCaptured=${totalCaptured}, ` +
+        `timestamp=${now.toISOString()}, datacapResponse=${JSON.stringify(response)}`,
+        phase3LastError
+      )
+      return NextResponse.json(
+        {
+          error: 'CRITICAL: Card captured at processor but database write failed after 3 attempts. Manual reconciliation required.',
+          critical: true,
+          recordNo: capturedCard.recordNo,
+          authCode: response.authCode || null,
+          amount: totalCaptured,
+        },
+        { status: 500 }
+      )
+    }
 
     // PAYMENT-SAFETY: Phase 3 DB write succeeded — mark the pending capture as completed.
     // Fire-and-forget: if this update fails, the record stays 'pending' which is safe

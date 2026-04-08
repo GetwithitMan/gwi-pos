@@ -180,10 +180,10 @@ export const GET = withVenue(async function GET(
       tabName: order.tabName,
       tableName: order.table?.name || null,
       guestCount: order.guestCount,
-      employee: {
+      employee: order.employee ? {
         id: order.employee.id,
         name: order.employee.displayName || `${order.employee.firstName} ${order.employee.lastName}`,
-      },
+      } : null,
       location: {
         name: order.location.name,
         address: order.location.address,

@@ -199,10 +199,18 @@ async function initHighWaterMarks(): Promise<void> {
         // Full epoch reset would pull 100K+ rows and spike load for 30+ seconds
         const resetTo = new Date(provisionedAt.getTime() - 60 * 60 * 1000).toISOString()
         log.info({ provisionedAt, resetTo }, 'Recent reprovision detected — resetting downstream HWMs to 1 hour before provision')
-        await masterClient.$executeRawUnsafe(
-          `UPDATE "_gwi_sync_state" SET high_water_mark = $1`,
-          resetTo
-        )
+        // UPSERT pattern: if no watermark row exists for a table (reprovisioned
+        // venue with empty _gwi_sync_state), create one. Without this, the plain
+        // UPDATE is a no-op and tables start from epoch instead of the reset time.
+        const models = getDownstreamModels()
+        for (const [tblName] of models) {
+          await masterClient.$executeRawUnsafe(
+            `INSERT INTO "_gwi_sync_state" (table_name, high_water_mark, updated_at)
+             VALUES ($1, $2, NOW())
+             ON CONFLICT (table_name) DO UPDATE SET high_water_mark = $2, updated_at = NOW()`,
+            tblName, resetTo
+          )
+        }
       }
     }
   } catch {
@@ -450,6 +458,14 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
                 if (incomingUpdatedAt > maxSyncedAt) {
                   maxSyncedAt = incomingUpdatedAt
                 }
+                // Persist downstream watermark so this quarantined row doesn't
+                // re-sync infinitely on subsequent cycles. Without this, the
+                // watermark never advances past the quarantined row's timestamp.
+                if (rowLocationId) {
+                  void updateDownstreamWatermark(rowLocationId, incomingUpdatedAt).catch((wmErr) => {
+                    log.error({ err: wmErr, locationId: rowLocationId }, 'Failed to update watermark after quarantine')
+                  })
+                }
                 continue
               }
 
@@ -601,6 +617,33 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
               `DELETE FROM "${tableName}" WHERE "id" = $1`,
               local.id
             )
+          }
+        }
+      }
+
+      // FK ordering guard: skip child records whose parent hasn't arrived yet.
+      // They will be picked up on the next sync cycle when the parent is present.
+      // Only checked for known parent-child relationships to avoid unnecessary queries.
+      if (row.id) {
+        const orderId = row.orderId as string | undefined
+        if (orderId && (tableName === 'OrderItem' || tableName === 'OrderDiscount' || tableName === 'Payment')) {
+          try {
+            const parentExists = await masterClient.$queryRawUnsafe<{ id: string }[]>(
+              `SELECT id FROM "Order" WHERE id = $1 LIMIT 1`,
+              orderId
+            )
+            if (parentExists.length === 0) {
+              log.warn({ table: tableName, rowId: row.id, parentId: orderId }, 'Skipping child record — parent Order not yet synced')
+              // Track failed timestamp so HWM doesn't advance past this row
+              const skippedAt = row.updatedAt instanceof Date ? row.updatedAt : new Date(row.updatedAt as string)
+              if (!minFailedAt || skippedAt < minFailedAt) {
+                minFailedAt = skippedAt
+              }
+              continue
+            }
+          } catch (fkCheckErr) {
+            // FK check failed — proceed with upsert (PG will enforce FK if it exists)
+            log.warn({ err: fkCheckErr, table: tableName, rowId: row.id }, 'FK parent check failed — proceeding with upsert')
           }
         }
       }

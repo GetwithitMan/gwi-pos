@@ -7,7 +7,7 @@
 
 import {
   log,
-  crypto,
+  randomUUID,
   emitToLocation,
   emitCriticalToLocation,
   type DispatchOptions,
@@ -45,7 +45,17 @@ export async function dispatchPaymentProcessed(
   try {
     // QoS 1: critical financial event — acknowledged delivery with retry
     // _dedupKey allows clients to dedup if they receive the same event twice (e.g., QoS retry)
-    await emitCriticalToLocation(locationId, 'payment:processed', { ...data, _dedupKey: crypto.randomUUID() })
+    await emitCriticalToLocation(locationId, 'payment:processed', { ...data, _dedupKey: randomUUID() })
+
+    // When all split children are paid and parent auto-closes, emit order:closed for the parent
+    if (data.parentAutoClose && data.allSiblingsPaid && data.parentOrderId) {
+      await emitCriticalToLocation(locationId, 'order:closed', {
+        orderId: data.parentOrderId,
+        reason: 'all-splits-paid',
+        _dedupKey: randomUUID(),
+      })
+    }
+
     return true
   } catch (error) {
     log.error({ err: error }, 'Failed to dispatch payment:processed')

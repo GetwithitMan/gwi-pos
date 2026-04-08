@@ -114,10 +114,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           isBottleService: tabAny.isBottleService ?? false,
           bottleServiceTierName: tabAny.bottleServiceTierName ?? null,
           bottleServiceTierColor: tabAny.bottleServiceTierColor ?? null,
-          employee: {
+          employee: tab.employee ? {
             id: tab.employee.id,
             name: tab.employee.displayName || `${tab.employee.firstName} ${tab.employee.lastName}`,
-          },
+          } : null,
           itemCount: tab.items.reduce((sum, item) => sum + item.quantity, 0),
           items: tab.items
             .filter(item => !item.deletedAt)
@@ -320,10 +320,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       tabName: tab.tabName || `Tab #${tab.orderNumber}`,
       orderNumber: tab.orderNumber,
       status: tab.status,
-      employee: {
+      employee: tab.employee ? {
         id: tab.employee.id,
         name: tab.employee.displayName || `${tab.employee.firstName} ${tab.employee.lastName}`,
-      },
+      } : null,
       hasPreAuth: !!tab.preAuthId,
       preAuth: tab.preAuthId ? {
         cardBrand: tab.preAuthCardBrand,

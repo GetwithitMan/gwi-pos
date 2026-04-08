@@ -43,20 +43,20 @@ export const POST = withVenue(async function POST(
     try {
       validateCellularRefundFromHeaders(request)
     } catch (caughtErr) {
-      if (err instanceof CellularAuthError) {
-        return err(err.message, err.status)
+      if (caughtErr instanceof CellularAuthError) {
+        return err(caughtErr.message, caughtErr.status)
       }
-      throw err
+      throw caughtErr
     }
 
     // Cellular terminal: require manager PIN re-authentication for refund
     try {
       validateManagerReauthFromHeaders(request, managerId, managerPinHash)
     } catch (caughtErr) {
-      if (err instanceof CellularAuthError) {
-        return err(err.message, err.status)
+      if (caughtErr instanceof CellularAuthError) {
+        return err(caughtErr.message, caughtErr.status)
       }
-      throw err
+      throw caughtErr
     }
 
     // Fetch order (unlocked — lightweight check before acquiring lock)
@@ -96,13 +96,15 @@ export const POST = withVenue(async function POST(
     // is held for the entire 3-phase span (acquired before Phase 1, released after Phase 3).
     // Uses pg_try_advisory_lock to fail fast if another refund is already in progress.
 
-    // Derive a numeric lock key from paymentId (first 12 hex chars → safe integer)
-    const lockKey = parseInt(paymentId.replace(/-/g, '').slice(0, 12), 16)
+    // PAY-P2-2: Derive advisory lock key from orderId (not paymentId) so that refund
+    // and void operations on the same order block each other. Both refund-payment and
+    // void-payment use this same derivation to share the lock key space.
+    const lockKey = parseInt(id.replace(/-/g, '').slice(0, 12), 16)
     const [{ acquired }] = await db.$queryRaw<[{ acquired: boolean }]>`
       SELECT pg_try_advisory_lock(${lockKey}::bigint) as acquired
     `
     if (!acquired) {
-      return err('Another refund is already in progress for this payment', 409)
+      return err('Another refund or void is already in progress for this order', 409)
     }
 
     try {
@@ -356,10 +358,10 @@ export const POST = withVenue(async function POST(
     try {
       await queueIfOutageOrFail('RefundLog', order.locationId, refundLog.id, 'INSERT')
     } catch (caughtErr) {
-      if (err instanceof OutageQueueFullError) {
+      if (caughtErr instanceof OutageQueueFullError) {
         return err('Service temporarily unavailable — outage queue full', 507)
       }
-      throw err
+      throw caughtErr
     }
 
     // Emit PAYMENT_VOIDED event (fire-and-forget)
@@ -492,7 +494,7 @@ export const POST = withVenue(async function POST(
           })
         }
       } catch (caughtErr) {
-        console.error('[refund-payment] Failed to adjust tip proportionally:', err)
+        console.error('[refund-payment] Failed to adjust tip proportionally:', caughtErr)
       }
     })()
 
@@ -559,7 +561,7 @@ export const POST = withVenue(async function POST(
             "balanceBefore", "balanceAfter", "description", "employeeId", "createdAt"
           ) VALUES (${txnId}, ${orderWithCustomer.customerId}, ${order.locationId}, ${id}, 'adjust', ${-pointsToReverse}, 0, 0, ${desc}, ${mgrId}, NOW())`
       } catch (caughtErr) {
-        console.error('[refund-payment] Loyalty point reversal failed:', err)
+        console.error('[refund-payment] Loyalty point reversal failed:', caughtErr)
       }
     })()
 
@@ -624,7 +626,7 @@ export const POST = withVenue(async function POST(
         console.log(`[refund-payment] Gift card ${giftCardId} balance restored by $${refundAmount.toFixed(2)} for orderId=${id}`)
         void dispatchGiftCardBalanceChanged(order.locationId, { giftCardId, newBalance })
       } catch (caughtErr) {
-        console.error('[refund-payment] Gift card balance restoration failed:', err)
+        console.error('[refund-payment] Gift card balance restoration failed:', caughtErr)
       }
     })()
 
@@ -642,7 +644,7 @@ export const POST = withVenue(async function POST(
             await restoreInventoryForOrder(id, order.locationId)
           }
         } catch (caughtErr) {
-          console.error('[refund-payment] Failed to restore inventory:', err)
+          console.error('[refund-payment] Failed to restore inventory:', caughtErr)
         }
       })()
     }

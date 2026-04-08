@@ -1271,6 +1271,7 @@ export interface HardwareLimitsSettings {
   maxHandhelds: number                     // Max handheld devices (default: 4)
   maxCellularDevices: number               // Max cellular (LTE/5G) devices (default: 2)
   maxKDSScreens: number                    // Max KDS displays (default: 4)
+  maxCFDDisplays?: number                  // Max CFD displays (default: 4, falls back to maxPOSTerminals if unset)
   maxPrinters: number                      // Max printers (default: 6)
 
   // Transaction Limits

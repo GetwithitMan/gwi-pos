@@ -176,7 +176,7 @@ export const POST = withVenue(withAuth(async function POST(
             authCode: captureResponse!.authCode || null,
             datacapRecordNo: capturedCard!.recordNo,
             status: PAYMENT_STATES.COMPLETED,
-            lastMutatedBy: 'cloud',
+            lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
           },
         })
         // Void remaining authorized cards
@@ -277,7 +277,7 @@ export const POST = withVenue(withAuth(async function POST(
             status: PAYMENT_STATES.COMPLETED,
             amountTendered: paymentAmount + tipAmount,
             changeGiven: 0,
-            lastMutatedBy: 'cloud',
+            lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
           },
         })
         await OrderRepository.updateOrder(orderId, locationId, {

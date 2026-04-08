@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { authenticateTerminal } from '@/lib/terminal-auth'
 import { err, ok } from '@/lib/api-response'
 
@@ -17,7 +18,7 @@ import { err, ok } from '@/lib/api-response'
  *
  * Response: { events: [...], hasMore: boolean }
  */
-export const GET = withVenue(async function GET(request: NextRequest) {
+export const GET = withVenue(withAuth({ allowCellular: true }, async function GET(request: NextRequest) {
   const auth = await authenticateTerminal(request)
   if (auth.error) return auth.error
   const { locationId } = auth.terminal
@@ -75,4 +76,4 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   }))
 
   return ok({ events, hasMore })
-})
+}))

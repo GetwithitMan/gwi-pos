@@ -95,7 +95,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     // Map response
     const data = tabs.map(tab => {
-      const employeeName = tab.employee.displayName || `${tab.employee.firstName} ${tab.employee.lastName}`
+      const employeeName = tab.employee?.displayName || `${tab.employee?.firstName ?? ''} ${tab.employee?.lastName ?? ''}`.trim() || 'Unknown'
       const payments = tab.payments || []
       const tipTotal = payments.reduce((sum, p) => sum + Number(p.tipAmount || 0), 0)
       const paidTotal = payments.reduce((sum, p) => sum + Number(p.totalAmount || 0), 0)
@@ -106,7 +106,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         id: tab.id,
         tabName: tab.tabName,
         customerName,
-        employee: { id: tab.employee.id, name: employeeName },
+        employee: tab.employee ? { id: tab.employee.id, name: employeeName } : null,
         openedAt: tab.createdAt.toISOString(),
         closedAt: tab.closedAt?.toISOString() || null,
         subtotal: Number(tab.subtotal),

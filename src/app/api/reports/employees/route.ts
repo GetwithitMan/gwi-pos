@@ -148,7 +148,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Process orders
     orders.forEach(order => {
       const empId = order.employeeId
-      if (!employeeStats[empId]) return
+      if (!empId || !employeeStats[empId]) return
 
       const orderSubtotal = Number(order.subtotal)
       const orderTip = Number(order.tipTotal)
@@ -243,8 +243,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }>> = {}
 
     orders.forEach(order => {
-      const dateKey = tz ? order.createdAt.toLocaleDateString('en-CA', { timeZone: tz }) : order.createdAt.toISOString().split('T')[0]
       const empId = order.employeeId
+      if (!empId) return
+      const dateKey = tz ? order.createdAt.toLocaleDateString('en-CA', { timeZone: tz }) : order.createdAt.toISOString().split('T')[0]
       const empName = employeeStats[empId]?.name || 'Unknown'
       const key = `${dateKey}-${empId}`
 

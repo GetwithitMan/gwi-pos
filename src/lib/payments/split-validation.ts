@@ -53,6 +53,9 @@ export async function validateSplitChild(
 ): Promise<{ earlyReturn: NextResponse } | null> {
   if (!order.parentOrderId) return null
 
+  // Lock the parent order row to prevent concurrent split payments from racing
+  await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${order.parentOrderId} FOR UPDATE`
+
   const parentOrder = await OrderRepository.getOrderByIdWithSelect(
     order.parentOrderId, order.locationId, { status: true, total: true }, tx
   )
@@ -76,9 +79,10 @@ export async function validateSplitChild(
   const parentTotal = toNumber(parentOrder.total)
   const thisSplitPaymentTotal = payments.reduce((sum, p) => sum + p.amount, 0)
 
-  // Tolerance must account for cash rounding accumulation across multiple splits.
+  // Tolerance accounts for penny rounding accumulation across multiple splits.
+  // Each split can introduce at most ~$0.01 of rounding error.
   const siblingCount = await tx.order.count({ where: { parentOrderId: order.parentOrderId, deletedAt: null } })
-  const roundingTolerance = Math.max(0.01, siblingCount * 1.0)
+  const roundingTolerance = Math.max(0.01, siblingCount * 0.01)
   if (existingPaidTotal + thisSplitPaymentTotal > parentTotal + roundingTolerance) {
     return { earlyReturn: NextResponse.json(
       { error: `Total split payments ($${(existingPaidTotal + thisSplitPaymentTotal).toFixed(2)}) would exceed original order total ($${parentTotal.toFixed(2)})` },
