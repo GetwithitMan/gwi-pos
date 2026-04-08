@@ -1,7 +1,9 @@
 import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
-import { getActorFromRequest } from '@/lib/api-auth'
+import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { emitToLocation } from '@/lib/socket-server'
 import { createChildLogger } from '@/lib/logger'
 import { err, notFound, ok } from '@/lib/api-response'
@@ -50,7 +52,7 @@ export const GET = withVenue(async function GET(
 })
 
 // PUT /api/catering/[id] — update catering order (status changes, item edits)
-export const PUT = withVenue(async function PUT(
+export const PUT = withVenue(withAuth(async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -86,6 +88,13 @@ export const PUT = withVenue(async function PUT(
     const currentOrder = orders[0]
     const currentStatus = currentOrder.status as string
 
+    // Permission check: require admin permission for catering order mutations
+    const permCheck = await requirePermission(employeeId, currentOrder.locationId as string, PERMISSIONS.ADMIN)
+    if (!permCheck.authorized) return err(permCheck.error, permCheck.status)
+
+    // Track mutation origin for cloud sync
+    const lastMutatedBy = process.env.VERCEL ? 'cloud' : 'local'
+
     // Status transition validation
     if (status && status !== currentStatus) {
       const allowed = ALLOWED_TRANSITIONS[currentStatus] || []
@@ -105,7 +114,7 @@ export const PUT = withVenue(async function PUT(
     }
 
     // Build update SET clauses
-    const setClauses: string[] = ['"updatedAt" = CURRENT_TIMESTAMP']
+    const setClauses: string[] = ['"updatedAt" = CURRENT_TIMESTAMP', `"lastMutatedBy" = '${lastMutatedBy}'`]
     const updateParams: unknown[] = []
     let paramIdx = 1
 
@@ -237,7 +246,7 @@ export const PUT = withVenue(async function PUT(
 
         await tx.$executeRaw`UPDATE "CateringOrder" SET
             "subtotal" = ${discountedSubtotal}, "volumeDiscount" = ${totalVolumeDiscount}, "serviceFee" = ${serviceFee},
-            "taxTotal" = ${taxTotal}, "total" = ${total}, "updatedAt" = CURRENT_TIMESTAMP
+            "taxTotal" = ${taxTotal}, "total" = ${total}, "lastMutatedBy" = ${lastMutatedBy}, "updatedAt" = CURRENT_TIMESTAMP
            WHERE "id" = ${id}`
       }
     })
@@ -268,10 +277,10 @@ export const PUT = withVenue(async function PUT(
     console.error('Failed to update catering order:', error)
     return err('Failed to update catering order', 500)
   }
-})
+}))
 
 // DELETE /api/catering/[id] — cancel/soft-delete a catering order
-export const DELETE = withVenue(async function DELETE(
+export const DELETE = withVenue(withAuth(async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -291,6 +300,13 @@ export const DELETE = withVenue(async function DELETE(
 
     const currentOrder = orders[0]
     const currentStatus = currentOrder.status as string
+
+    // Permission check: require admin permission for catering order cancellation
+    const permCheck = await requirePermission(employeeId, currentOrder.locationId as string, PERMISSIONS.ADMIN)
+    if (!permCheck.authorized) return err(permCheck.error, permCheck.status)
+
+    // Track mutation origin for cloud sync
+    const lastMutatedBy = process.env.VERCEL ? 'cloud' : 'local'
 
     // Cannot cancel completed orders
     if (currentStatus === 'completed') {
@@ -313,6 +329,7 @@ export const DELETE = withVenue(async function DELETE(
         "status" = 'cancelled',
         "cancelledAt" = CURRENT_TIMESTAMP,
         "cancelReason" = ${cancelReason || 'Cancelled by staff'},
+        "lastMutatedBy" = ${lastMutatedBy},
         "updatedAt" = CURRENT_TIMESTAMP
        WHERE "id" = ${id}`
 
@@ -345,4 +362,4 @@ export const DELETE = withVenue(async function DELETE(
     console.error('Failed to cancel catering order:', error)
     return err('Failed to cancel catering order', 500)
   }
-})
+}))

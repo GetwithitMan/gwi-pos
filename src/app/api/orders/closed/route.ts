@@ -168,10 +168,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         tableId: order.tableId,
         guestCount: order.guestCount,
         status: order.status,
-        employee: {
+        employee: order.employee ? {
           id: order.employee.id,
           name: order.employee.displayName || `${order.employee.firstName} ${order.employee.lastName}`,
-        },
+        } : null,
         items: order.items.map(item => ({
           id: item.id,
           menuItemId: item.menuItemId,

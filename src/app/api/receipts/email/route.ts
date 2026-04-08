@@ -79,7 +79,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
       return forbidden('Order does not belong to this location')
     }
 
-    const serverName = escapeHtml(order.employee.displayName || `${order.employee.firstName} ${order.employee.lastName}`)
+    const serverName = escapeHtml(order.employee?.displayName || `${order.employee?.firstName ?? ''} ${order.employee?.lastName ?? ''}`.trim() || 'Unknown')
     const locationName = escapeHtml(order.location.name)
     const locationAddress = order.location.address ? escapeHtml(order.location.address) : ''
     const locationPhone = order.location.phone ? escapeHtml(order.location.phone) : ''

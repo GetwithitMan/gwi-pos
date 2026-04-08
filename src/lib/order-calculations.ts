@@ -106,6 +106,9 @@ export function calculateItemTotal(item: OrderItemForCalculation): number {
     ? (Number(item.unitPrice ?? 0) || 0) * (Number(item.weight ?? 0) || 0) * quantity
     : price * quantity
 
+  // mod.quantity is PER-ITEM (stacking count, e.g. "extra cheese x2" on a single burger).
+  // Outer * quantity scales the per-item modifier cost across all item instances.
+  // Formula: sum(mod.price * mod.stackCount) * itemQuantity
   const modifiersTotal = (item.modifiers || []).reduce((sum, mod) => {
     return sum + ((Number(mod.price ?? 0) || 0) * (Number(mod.quantity ?? 1) || 1))
   }, 0) * quantity

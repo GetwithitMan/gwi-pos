@@ -14,7 +14,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { pairingCode, deviceFingerprint, stableDeviceId, deviceInfo, appVersion, osVersion, pushToken } = body
-    const platform = VALID_PLATFORMS.includes(body.platform) ? body.platform : 'ANDROID'
+    if (!VALID_PLATFORMS.includes(body.platform)) {
+      return NextResponse.json(
+        { error: `Invalid platform '${body.platform}'. Must be one of: ${VALID_PLATFORMS.join(', ')}` },
+        { status: 400 }
+      )
+    }
+    const platform = body.platform
 
     if (!pairingCode) {
       return err('Pairing code is required')
@@ -41,7 +47,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Device count limit check — use location settings instead of hardcoded limit
     const locationId = terminal.locationId
     const { checkDeviceLimit } = await import('@/lib/device-limits')
-    const deviceType = terminal.category === 'HANDHELD' ? 'handheld' as const : 'terminal' as const
+    const deviceType = terminal.category === 'HANDHELD' ? 'handheld' as const
+      : terminal.category === 'CFD_DISPLAY' ? 'cfd' as const
+      : 'terminal' as const
     const limitCheck = await checkDeviceLimit(locationId, deviceType)
     if (!limitCheck.allowed) {
       return NextResponse.json(

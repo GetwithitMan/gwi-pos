@@ -14,7 +14,7 @@ CREATE TYPE "TabStatus" AS ENUM ('pending_auth', 'open', 'no_card', 'closed', 'c
 CREATE TYPE "OrderItemStatus" AS ENUM ('active', 'voided', 'comped', 'removed');
 
 -- CreateEnum
-CREATE TYPE "KitchenStatus" AS ENUM ('pending', 'sent', 'cooking', 'ready', 'delivered');
+CREATE TYPE "KitchenStatus" AS ENUM ('pending', 'sent', 'fired', 'cooking', 'ready', 'delivered');
 
 -- CreateEnum
 CREATE TYPE "CourseStatus" AS ENUM ('pending', 'fired', 'ready', 'served');
@@ -47,7 +47,7 @@ CREATE TYPE "ModifierPrinterRouting" AS ENUM ('follow', 'also', 'only');
 CREATE TYPE "TerminalPlatform" AS ENUM ('BROWSER', 'ANDROID', 'IOS');
 
 -- CreateEnum
-CREATE TYPE "TerminalCategory" AS ENUM ('FIXED_STATION', 'HANDHELD', 'CFD_DISPLAY');
+CREATE TYPE "TerminalCategory" AS ENUM ('FIXED_STATION', 'HANDHELD', 'CFD_DISPLAY', 'CELLULAR');
 
 -- CreateEnum
 CREATE TYPE "HandheldMode" AS ENUM ('TABLE_SERVICE', 'BAR_SERVICE', 'PAYMENT_ONLY');
@@ -996,7 +996,7 @@ CREATE TABLE "OrderType" (
 CREATE TABLE "Order" (
     "id" TEXT NOT NULL,
     "locationId" TEXT NOT NULL,
-    "employeeId" TEXT NOT NULL,
+    "employeeId" TEXT,
     "customerId" TEXT,
     "orderNumber" INTEGER NOT NULL,
     "displayNumber" TEXT,
@@ -5840,6 +5840,9 @@ CREATE INDEX "Order_splitResolution_idx" ON "Order"("splitResolution");
 CREATE INDEX "Order_locationId_updatedAt_idx" ON "Order"("locationId", "updatedAt");
 
 -- CreateIndex
+CREATE INDEX "Order_locationId_status_deletedAt_idx" ON "Order"("locationId", "status", "deletedAt");
+
+-- CreateIndex
 CREATE INDEX "OrderItem_locationId_idx" ON "OrderItem"("locationId");
 
 -- CreateIndex
@@ -5877,6 +5880,9 @@ CREATE INDEX "OrderItem_locationId_status_updatedAt_idx" ON "OrderItem"("locatio
 
 -- CreateIndex
 CREATE INDEX "OrderItem_kdsForwardedToScreenId_kdsFinalCompleted_idx" ON "OrderItem"("kdsForwardedToScreenId", "kdsFinalCompleted");
+
+-- CreateIndex
+CREATE INDEX "OrderItem_locationId_orderId_idx" ON "OrderItem"("locationId", "orderId");
 
 -- CreateIndex
 CREATE INDEX "OrderItemModifier_locationId_idx" ON "OrderItemModifier"("locationId");
@@ -5946,6 +5952,9 @@ CREATE INDEX "Payment_employeeId_processedAt_idx" ON "Payment"("employeeId", "pr
 
 -- CreateIndex
 CREATE INDEX "Payment_locationId_updatedAt_idx" ON "Payment"("locationId", "updatedAt");
+
+-- CreateIndex
+CREATE INDEX "Payment_locationId_employeeId_createdAt_idx" ON "Payment"("locationId", "employeeId", "createdAt");
 
 -- CreateIndex
 CREATE INDEX "SyncAuditEntry_orderId_idx" ON "SyncAuditEntry"("orderId");
@@ -6065,6 +6074,9 @@ CREATE INDEX "VoidLog_locationId_createdAt_idx" ON "VoidLog"("locationId", "crea
 CREATE INDEX "VoidLog_locationId_updatedAt_idx" ON "VoidLog"("locationId", "updatedAt");
 
 -- CreateIndex
+CREATE INDEX "VoidLog_locationId_itemId_createdAt_idx" ON "VoidLog"("locationId", "itemId", "createdAt");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "RemoteVoidApproval_approvalToken_key" ON "RemoteVoidApproval"("approvalToken");
 
 -- CreateIndex
@@ -6087,6 +6099,9 @@ CREATE INDEX "RemoteVoidApproval_managerId_idx" ON "RemoteVoidApproval"("manager
 
 -- CreateIndex
 CREATE INDEX "RemoteVoidApproval_requestedById_idx" ON "RemoteVoidApproval"("requestedById");
+
+-- CreateIndex
+CREATE INDEX "RemoteVoidApproval_requestingTerminalId_status_idx" ON "RemoteVoidApproval"("requestingTerminalId", "status");
 
 -- CreateIndex
 CREATE INDEX "AuditLog_locationId_idx" ON "AuditLog"("locationId");
@@ -7457,6 +7472,9 @@ CREATE INDEX "OrderItemDiscount_orderItemId_idx" ON "OrderItemDiscount"("orderIt
 CREATE INDEX "OrderItemDiscount_locationId_createdAt_idx" ON "OrderItemDiscount"("locationId", "createdAt");
 
 -- CreateIndex
+CREATE INDEX "OrderItemDiscount_orderId_orderItemId_idx" ON "OrderItemDiscount"("orderId", "orderItemId");
+
+-- CreateIndex
 CREATE INDEX "RegisteredDevice_locationId_idx" ON "RegisteredDevice"("locationId");
 
 -- CreateIndex
@@ -8120,7 +8138,7 @@ ALTER TABLE "OrderType" ADD CONSTRAINT "OrderType_locationId_fkey" FOREIGN KEY (
 ALTER TABLE "Order" ADD CONSTRAINT "Order_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Order" ADD CONSTRAINT "Order_employeeId_fkey" FOREIGN KEY ("employeeId") REFERENCES "Employee"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "Order" ADD CONSTRAINT "Order_employeeId_fkey" FOREIGN KEY ("employeeId") REFERENCES "Employee"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Order" ADD CONSTRAINT "Order_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES "Customer"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -8168,7 +8186,7 @@ ALTER TABLE "OrderItem" ADD CONSTRAINT "OrderItem_addedByEmployeeId_fkey" FOREIG
 ALTER TABLE "OrderItemModifier" ADD CONSTRAINT "OrderItemModifier_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "OrderItemModifier" ADD CONSTRAINT "OrderItemModifier_orderItemId_fkey" FOREIGN KEY ("orderItemId") REFERENCES "OrderItem"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "OrderItemModifier" ADD CONSTRAINT "OrderItemModifier_orderItemId_fkey" FOREIGN KEY ("orderItemId") REFERENCES "OrderItem"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "OrderItemModifier" ADD CONSTRAINT "OrderItemModifier_modifierId_fkey" FOREIGN KEY ("modifierId") REFERENCES "Modifier"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -8861,7 +8879,7 @@ ALTER TABLE "ModifierTemplate" ADD CONSTRAINT "ModifierTemplate_templateId_fkey"
 ALTER TABLE "OrderItemIngredient" ADD CONSTRAINT "OrderItemIngredient_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "OrderItemIngredient" ADD CONSTRAINT "OrderItemIngredient_orderItemId_fkey" FOREIGN KEY ("orderItemId") REFERENCES "OrderItem"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "OrderItemIngredient" ADD CONSTRAINT "OrderItemIngredient_orderItemId_fkey" FOREIGN KEY ("orderItemId") REFERENCES "OrderItem"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "OrderItemIngredient" ADD CONSTRAINT "OrderItemIngredient_ingredientId_fkey" FOREIGN KEY ("ingredientId") REFERENCES "Ingredient"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -9155,7 +9173,7 @@ ALTER TABLE "DailyPrepCountTransaction" ADD CONSTRAINT "DailyPrepCountTransactio
 ALTER TABLE "OrderCard" ADD CONSTRAINT "OrderCard_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "OrderCard" ADD CONSTRAINT "OrderCard_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "Order"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "OrderCard" ADD CONSTRAINT "OrderCard_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "Order"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "OrderCard" ADD CONSTRAINT "OrderCard_readerId_fkey" FOREIGN KEY ("readerId") REFERENCES "PaymentReader"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -9242,10 +9260,10 @@ ALTER TABLE "RefundLog" ADD CONSTRAINT "RefundLog_approvedById_fkey" FOREIGN KEY
 ALTER TABLE "OrderItemDiscount" ADD CONSTRAINT "OrderItemDiscount_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "OrderItemDiscount" ADD CONSTRAINT "OrderItemDiscount_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "Order"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "OrderItemDiscount" ADD CONSTRAINT "OrderItemDiscount_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "Order"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "OrderItemDiscount" ADD CONSTRAINT "OrderItemDiscount_orderItemId_fkey" FOREIGN KEY ("orderItemId") REFERENCES "OrderItem"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "OrderItemDiscount" ADD CONSTRAINT "OrderItemDiscount_orderItemId_fkey" FOREIGN KEY ("orderItemId") REFERENCES "OrderItem"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "OrderItemDiscount" ADD CONSTRAINT "OrderItemDiscount_discountRuleId_fkey" FOREIGN KEY ("discountRuleId") REFERENCES "DiscountRule"("id") ON DELETE SET NULL ON UPDATE CASCADE;

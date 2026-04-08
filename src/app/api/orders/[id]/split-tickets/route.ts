@@ -143,10 +143,10 @@ export const GET = withVenue(async function GET(
         itemCount: split.items.length,
         isPaid: split.status === 'paid',
         paidAmount: split.payments.reduce((sum, p) => sum + Number(p.totalAmount), 0),
-        employee: {
+        employee: split.employee ? {
           id: split.employee.id,
           name: split.employee.displayName || `${split.employee.firstName} ${split.employee.lastName}`,
-        },
+        } : null,
         card: split.cards[0] ? {
           last4: split.cards[0].cardLast4,
           brand: split.cards[0].cardType,

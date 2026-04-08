@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { db, adminDb } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { buildSpiritTiersFromItem, normalizeModifier } from '@/lib/spirit-tiers'
 import { parseSettings } from '@/lib/settings'
 import { authenticateTerminal } from '@/lib/terminal-auth'
@@ -780,7 +781,7 @@ function buildTerminalConfig(
 }
 
 // ─── Main GET handler ─────────────────────────────────────────────────────────
-export const GET = withVenue(async function GET(request: NextRequest) {
+export const GET = withVenue(withAuth({ allowCellular: true }, async function GET(request: NextRequest) {
   const auth = await authenticateTerminal(request)
   if (auth.error) return auth.error
   const { locationId } = auth.terminal
@@ -860,7 +861,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   // ─── Filtered/paginated path: no caching ──────────────────────────────────
   const responseData = await buildFullResponse(locationId, opts, auth.terminal, scaleConfig, isCellular, venueSlug)
   return ok(responseData)
-})
+}))
 
 // ─── Build the full response ──────────────────────────────────────────────────
 // Orchestrates all domain fetchers based on requested sections.

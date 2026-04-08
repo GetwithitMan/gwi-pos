@@ -11,7 +11,9 @@ import { z } from 'zod'
 export const PaymentInputSchema = z.object({
   method: z.enum(['cash', 'credit', 'debit', 'gift_card', 'house_account', 'loyalty_points', 'room_charge']),
   amount: z.number().positive('Amount must be positive').max(999999.99, 'Amount cannot exceed $999,999.99').finite('Amount must be a finite number'),
-  tipAmount: z.number().min(0, 'Tip amount cannot be negative').max(99999.99, 'Tip cannot exceed $99,999.99').finite('Tip must be a finite number').optional(),
+  // NOTE: Proportional tip validation (tip vs order total) is enforced server-side
+  // in validateTipBounds() — Zod schema lacks access to order context.
+  tipAmount: z.number().min(0, 'Tip amount cannot be negative').max(9999.99, 'Tip cannot exceed $9,999.99').finite('Tip must be a finite number').optional(),
   // Cash specific
   amountTendered: z.number().positive().optional(),
   // Card specific

@@ -161,8 +161,8 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
 
     // ── Build employee display name ──
     const employeeName =
-      order.employee.displayName ||
-      `${order.employee.firstName} ${order.employee.lastName || ''}`.trim()
+      order.employee?.displayName ||
+      `${order.employee?.firstName ?? ''} ${order.employee?.lastName ?? ''}`.trim() || 'Unknown'
 
     // ── Build receipt data ──
     const receiptData: CustomerReceiptData = {

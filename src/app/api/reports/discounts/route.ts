@@ -262,10 +262,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       byRule[ruleKey].orders.push(discount.order.orderNumber)
 
       // By employee who applied
-      const appliedById = discount.appliedBy || discount.order.employee.id
+      const appliedById = discount.appliedBy || discount.order.employee?.id || 'unknown'
       const appliedByName = employeeMap.get(appliedById) ||
-        (discount.order.employee.displayName ||
-          `${discount.order.employee.firstName} ${discount.order.employee.lastName}`)
+        (discount.order.employee?.displayName ||
+          `${discount.order.employee?.firstName ?? ''} ${discount.order.employee?.lastName ?? ''}`.trim() || 'Unknown')
 
       if (!byEmployee[appliedById]) {
         byEmployee[appliedById] = {
@@ -322,8 +322,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           percent: discount.percent ? Number(discount.percent) : null,
           reason: discount.reason,
           appliedBy: appliedByName,
-          orderEmployee: discount.order.employee.displayName ||
-            `${discount.order.employee.firstName} ${discount.order.employee.lastName}`,
+          orderEmployee: discount.order.employee?.displayName ||
+            `${discount.order.employee?.firstName ?? ''} ${discount.order.employee?.lastName ?? ''}`.trim() || 'Unknown',
           isPreset,
           createdAt: discount.createdAt.toISOString(),
         })
@@ -369,10 +369,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       byRule[ruleKey].orders.push(discount.order.orderNumber)
 
       // By employee who applied
-      const appliedById = discount.appliedById || discount.order.employee.id
+      const appliedById = discount.appliedById || discount.order.employee?.id || 'unknown'
       const appliedByName = employeeMap.get(appliedById) ||
-        (discount.order.employee.displayName ||
-          `${discount.order.employee.firstName} ${discount.order.employee.lastName}`)
+        (discount.order.employee?.displayName ||
+          `${discount.order.employee?.firstName ?? ''} ${discount.order.employee?.lastName ?? ''}`.trim() || 'Unknown')
 
       if (!byEmployee[appliedById]) {
         byEmployee[appliedById] = {
@@ -430,8 +430,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           percent: discount.percent ? Number(discount.percent) : null,
           reason: discount.reason,
           appliedBy: appliedByName,
-          orderEmployee: discount.order.employee.displayName ||
-            `${discount.order.employee.firstName} ${discount.order.employee.lastName}`,
+          orderEmployee: discount.order.employee?.displayName ||
+            `${discount.order.employee?.firstName ?? ''} ${discount.order.employee?.lastName ?? ''}`.trim() || 'Unknown',
           isPreset,
           createdAt: discount.createdAt.toISOString(),
         })

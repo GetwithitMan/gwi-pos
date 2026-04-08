@@ -5,13 +5,13 @@
  * so each domain dispatch file doesn't duplicate boilerplate.
  */
 
-import crypto from 'crypto'
+import { randomUUID } from 'crypto'
 import { emitToLocation, emitToTags, emitToRoom, emitToTerminal, emitCriticalToLocation } from '@/lib/socket-server'
 import { createChildLogger } from '@/lib/logger'
 
 export const log = createChildLogger('socket-dispatch')
 
-export { crypto, emitToLocation, emitToTags, emitToRoom, emitToTerminal, emitCriticalToLocation }
+export { randomUUID, emitToLocation, emitToTags, emitToRoom, emitToTerminal, emitCriticalToLocation }
 
 export interface DispatchOptions {
   /** Don't await the dispatch (fire and forget) */

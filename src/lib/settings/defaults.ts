@@ -590,6 +590,7 @@ export const DEFAULT_HARDWARE_LIMITS: HardwareLimitsSettings = {
   maxHandhelds: 4,
   maxCellularDevices: 2,
   maxKDSScreens: 4,
+  maxCFDDisplays: 4,
   maxPrinters: 6,
   maxSingleTransactionAmount: 9999.99,
   maxCashPaymentAmount: 500,

@@ -114,7 +114,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
             totalAmount: split.amount + (split.tipAmount ?? 0),
             status: 'completed',
             settledAt: new Date(),
-            lastMutatedBy: 'cloud',
+            lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
             ...(split.authCode ? { authCode: split.authCode } : {}),
             ...(split.readerId ? { paymentReaderId: split.readerId } : {}),
           },
@@ -134,7 +134,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
           totalAmount: totalPaid,
           status: 'completed',
           settledAt: new Date(),
-          lastMutatedBy: 'cloud',
+          lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
         },
       })
     }

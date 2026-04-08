@@ -388,8 +388,8 @@ export const GET = withVenue(async function GET(
       status: order.status,
       total: Number(order.total),
       itemCount: order._count.items,
-      employeeName: order.employee.displayName ||
-        `${order.employee.firstName} ${order.employee.lastName}`,
+      employeeName: order.employee?.displayName ||
+        `${order.employee?.firstName ?? ''} ${order.employee?.lastName ?? ''}`.trim() || 'Unknown',
       createdAt: order.createdAt.toISOString(),
     }))
 

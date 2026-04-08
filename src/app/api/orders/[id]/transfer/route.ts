@@ -188,11 +188,11 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
           orderNumber: updatedOrder.orderNumber,
           tabName: updatedOrder.tabName,
           status: updatedOrder.status,
-          newEmployee: {
+          newEmployee: updatedOrder.employee ? {
             id: updatedOrder.employee.id,
             name: updatedOrder.employee.displayName ||
               `${updatedOrder.employee.firstName} ${updatedOrder.employee.lastName}`,
-          },
+          } : null,
         },
       })
   } catch (error) {

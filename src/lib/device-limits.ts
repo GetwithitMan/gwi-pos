@@ -2,7 +2,7 @@ import { db } from '@/lib/db'
 import { parseSettings } from '@/lib/settings'
 import type { PrismaClient } from '@/generated/prisma/client'
 
-export type DeviceType = 'terminal' | 'handheld' | 'cellular' | 'kds' | 'printer'
+export type DeviceType = 'terminal' | 'handheld' | 'cellular' | 'kds' | 'printer' | 'cfd'
 
 export interface DeviceLimitCheck {
   allowed: boolean
@@ -75,6 +75,15 @@ export async function checkDeviceLimit(
       // Use a generous approach: count is 0 until KDS tracking is formalized.
       current = 0
       deviceLabel = 'KDS screens'
+      break
+    }
+    case 'cfd': {
+      // CFD displays: use explicit cfd limit if defined, otherwise fall back to terminal limit
+      limit = limits.maxCFDDisplays ?? limits.maxPOSTerminals
+      current = await prisma.terminal.count({
+        where: { locationId, category: 'CFD_DISPLAY', deletedAt: null, isPaired: true },
+      })
+      deviceLabel = 'CFD displays'
       break
     }
     case 'printer': {
