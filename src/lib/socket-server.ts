@@ -818,13 +818,17 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
 
     // ==================== Mobile Tab Relay ====================
 
-    // Phone → server processes tab close, emits result back to sender
+    // Phone → server processes tab close, emits result back to sender + location room
+    // Validates employee owns the tab or has permission, calls close-tab API logic,
+    // broadcasts tab:closed + orders:list-changed to location room (for POS terminals + mobile clients)
     socket.on(MOBILE_EVENTS.TAB_CLOSE_REQUEST, (data: { orderId: string; employeeId: string; tipMode: string }) => {
       const locationId = socket.data.locationId
       if (!locationId) return
       const { orderId, employeeId, tipMode } = data
       if (!orderId || !employeeId) {
-        socket.emit(MOBILE_EVENTS.TAB_CLOSED, { orderId, success: false, amount: 0, error: 'Missing orderId or employeeId' })
+        const response = { orderId, success: false, amount: 0, error: 'Missing orderId or employeeId' }
+        socket.emit(MOBILE_EVENTS.TAB_CLOSED, response)
+        void emitToLocation(locationId, MOBILE_EVENTS.TAB_CLOSED, response).catch(err => log.error({ err }, 'Failed to broadcast TAB_CLOSED'))
         return
       }
 
@@ -852,28 +856,42 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
         pendingTabCloses.delete(orderId)
         const json = await res.json().catch(() => ({}))
         if (res.ok && json.data?.success) {
-          socket.emit(MOBILE_EVENTS.TAB_CLOSED, {
+          // Broadcast to location room (all POS terminals + mobile clients)
+          const payload = {
             orderId,
             success: true,
             amount: json.data.captured?.totalAmount ?? 0,
             tipAmount: json.data.captured?.tipAmount ?? 0,
-          })
+          }
+          socket.emit(MOBILE_EVENTS.TAB_CLOSED, payload)
+          void emitToLocation(locationId, MOBILE_EVENTS.TAB_CLOSED, payload).catch(err => log.error({ err }, 'Failed to broadcast TAB_CLOSED'))
+
+          // Notify all terminals to refresh order list
+          void emitToLocation(locationId, 'orders:list-changed', {
+            trigger: 'paid',
+            orderId,
+          }).catch(err => log.error({ err }, 'Failed to broadcast orders:list-changed'))
         } else {
-          socket.emit(MOBILE_EVENTS.TAB_CLOSED, {
+          const payload = {
             orderId,
             success: false,
             amount: 0,
             error: json.data?.error?.message || json.error || 'Close tab failed',
-          })
+          }
+          socket.emit(MOBILE_EVENTS.TAB_CLOSED, payload)
+          void emitToLocation(locationId, MOBILE_EVENTS.TAB_CLOSED, payload).catch(err => log.error({ err }, 'Failed to broadcast TAB_CLOSED'))
         }
       }).catch((err: unknown) => {
         pendingTabCloses.delete(orderId)
         log.error({ err }, 'tab:close-request internal call failed')
-        socket.emit(MOBILE_EVENTS.TAB_CLOSED, { orderId, success: false, amount: 0, error: 'Failed to close tab' })
+        const payload = { orderId, success: false, amount: 0, error: 'Failed to close tab' }
+        socket.emit(MOBILE_EVENTS.TAB_CLOSED, payload)
+        void emitToLocation(locationId, MOBILE_EVENTS.TAB_CLOSED, payload).catch(e => log.error({ err: e }, 'Failed to broadcast TAB_CLOSED'))
       })
     })
 
     // Phone → server processes tab transfer
+    // Validates target employee exists at location, updates order assignment, emits tab:updated + orders:list-changed
     // DB update + event emission must both succeed before confirming to client.
     // emitOrderEvent is awaited (not fire-and-forget) to satisfy the event-sourced
     // order invariant: NEVER write to db.order without emitting events.
@@ -884,6 +902,24 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
       if (!orderId || !employeeId) return
 
       try {
+        // Validate target employee exists at this location
+        const targetEmployee = await db.employee.findFirst({
+          where: {
+            id: employeeId,
+            locationId,
+            deletedAt: null,
+          },
+          select: { id: true, firstName: true, lastName: true },
+        })
+        if (!targetEmployee) {
+          log.warn({ orderId, employeeId, locationId }, 'tab:transfer-request rejected — target employee not found at location')
+          const payload = { orderId, message: 'Target employee not found at this location' }
+          socket.emit('tab:error', payload)
+          void emitToLocation(locationId, 'tab:error', payload).catch(err => log.error({ err }, 'Failed to broadcast tab:error'))
+          return
+        }
+
+        // Update order assignment
         await db.order.update({
           where: { id: orderId },
           data: { employeeId },
@@ -892,26 +928,37 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
         // Emit order event BEFORE confirming success (must succeed for event consistency)
         await emitOrderEvent(locationId, orderId, 'ORDER_METADATA_UPDATED', { employeeId })
 
+        // Notify sender of completion
         socket.emit('tab:transfer-complete', { orderId })
 
-        // Notify all terminals to refresh order list (fire-and-forget, non-critical)
+        // Notify all terminals in location room (POS terminals + other mobile clients)
+        void emitToLocation(locationId, 'tab:transfer-complete', { orderId }).catch(err => log.error({ err }, 'Failed to broadcast tab:transfer-complete'))
+
+        // Notify all terminals to refresh order list
         void emitToLocation(locationId, 'orders:list-changed', {
           trigger: 'transferred',
           orderId,
-        })
+        }).catch(err => log.error({ err }, 'Failed to broadcast orders:list-changed after transfer'))
+
+        // Also emit tab:updated for consistency
+        void emitToLocation(locationId, 'tab:updated', { orderId }).catch(err => log.error({ err }, 'Failed to broadcast tab:updated after transfer'))
       } catch (err) {
         log.error({ err }, 'tab:transfer-request failed')
-        socket.emit('tab:error', { orderId, message: 'Failed to transfer tab' })
+        const payload = { orderId, message: 'Failed to transfer tab' }
+        socket.emit('tab:error', payload)
+        void emitToLocation(locationId, 'tab:error', payload).catch(e => log.error({ err: e }, 'Failed to broadcast tab:error'))
       }
     })
 
     // Phone → relay manager alert to all terminals in location (fire-and-forget)
-    // NOTE: POS order page should add a toast listener for 'tab:manager-alert' to display these
+    // Broadcasts to both POS terminals and other mobile clients
     socket.on(MOBILE_EVENTS.TAB_ALERT_MANAGER, (data: { orderId: string; employeeId: string }) => {
       try {
         const locationId = socket.data.locationId
         if (!locationId) return
-        socketServer.to(`location:${locationId}`).emit('tab:manager-alert', { ...data, locationId })
+
+        // Broadcast manager alert to location room (POS terminals can display toast/modal)
+        void emitToLocation(locationId, 'tab:manager-alert', { ...data, locationId }).catch(err => log.error({ err }, 'Failed to broadcast tab:manager-alert'))
       } catch (err) {
         log.error({ err, socketId: socket.id }, 'TAB_ALERT_MANAGER handler error')
       }

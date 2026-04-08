@@ -148,11 +148,12 @@ export const POST = withVenue(async function POST(
       data: {
         locationId: drawer.locationId,
         employeeId: body.employeeId,
-        action: 'drawer_opened_no_sale',
+        action: 'DRAWER_OPENED',
         entityType: 'drawer',
         entityId: drawerId,
         details: {
-          reason: reasonLabel,
+          reason: 'no_sale',
+          reasonLabel,
           drawerId,
           drawerName: drawer.name,
         },
@@ -192,11 +193,13 @@ export const POST = withVenue(async function POST(
     })()
 
     // ── Socket event (fire-and-forget) ───────────────────────────────
-    void emitToLocation(drawer.locationId, 'drawer:no-sale-open', {
+    void emitToLocation(drawer.locationId, 'drawer:opened', {
       drawerId,
       drawerName: drawer.name,
       employeeId: body.employeeId,
-      reason: reasonLabel,
+      reason: 'no_sale',
+      reasonLabel,
+      terminalId: drawer.deviceId || undefined,
       timestamp: new Date().toISOString(),
     }).catch(err => log.warn({ err }, 'Background task failed'))
 

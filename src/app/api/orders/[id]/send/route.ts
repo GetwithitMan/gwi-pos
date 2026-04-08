@@ -36,9 +36,10 @@ export const POST = withVenue(withTiming(async function POST(
     const timing = getTimingFromRequest(request)
     const { id } = await params
 
-    // Parse optional itemIds and employeeId from body for selective firing (per-item delays)
+    // Parse optional itemIds, employeeId, and idempotencyKey from body for selective firing (per-item delays)
     let filterItemIds: string[] | null = null
     let sendEmployeeId: string | null = null
+    let sendIdempotencyKey: string | null = null
     try {
       const body = await request.json()
       if (body.itemIds && Array.isArray(body.itemIds) && body.itemIds.length > 0) {
@@ -46,6 +47,9 @@ export const POST = withVenue(withTiming(async function POST(
       }
       if (body.employeeId) {
         sendEmployeeId = body.employeeId
+      }
+      if (body.idempotencyKey) {
+        sendIdempotencyKey = body.idempotencyKey
       }
     } catch {
       // No body or invalid JSON — send all pending items

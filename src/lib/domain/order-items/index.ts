@@ -42,6 +42,7 @@ export {
   validateOrderStatusForAdd,
   validateNoActivePayments,
   validateMenuItemAvailability,
+  validateMenuItemAvailabilityForAdd,
   validateItemDeletable,
   validateUpdateQuantity,
 } from './validation'

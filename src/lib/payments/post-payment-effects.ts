@@ -22,7 +22,7 @@ import { invalidateSnapshotCache } from '@/lib/snapshot-cache'
 import { allocateTipsForPayment } from '@/lib/domain/tips'
 import { resolveDeliveryTipRecipient } from '@/lib/delivery/tip-reallocation'
 import { emitCloudEvent } from '@/lib/cloud-events'
-import { triggerCashDrawer } from '@/lib/cash-drawer'
+import { triggerCashDrawer, emitDrawerOpenedEvent } from '@/lib/cash-drawer'
 import { batchUpdateOrderItemStatus } from '@/lib/batch-updates'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { printKitchenTicketsForManifests } from '@/lib/print-template-factory'
@@ -580,6 +580,29 @@ export function handleCashDrawer(ctx: PostPaymentContext): void {
   if (!ctx.orderIsPaid || !ctx.hasCash) return
 
   void triggerCashDrawer(ctx.order.locationId, ctx.terminalId || undefined).catch(err => log.warn({ err }, 'cash drawer trigger failed'))
+
+  // ── Audit log: DRAWER_OPENED with reason cash_payment (fire-and-forget) ──
+  if (ctx.employeeId) {
+    void db.auditLog.create({
+      data: {
+        locationId: ctx.order.locationId,
+        employeeId: ctx.employeeId,
+        action: 'DRAWER_OPENED',
+        entityType: 'drawer',
+        details: {
+          reason: 'cash_payment',
+          reasonLabel: 'Cash Payment',
+          orderId: ctx.orderId,
+          terminalId: ctx.terminalId || undefined,
+        },
+      },
+    }).catch(err => log.warn({ err }, 'Background task failed'))
+
+    // ── Socket event: drawer:opened (fire-and-forget) ──
+    void emitDrawerOpenedEvent(ctx.order.locationId, ctx.employeeId, 'cash_payment', ctx.terminalId ?? undefined).catch(err =>
+      log.warn({ err }, 'drawer:opened socket emission failed')
+    )
+  }
 
   void (async () => {
     const localDrawer = await resolveDrawerForPayment('cash', ctx.employeeId || null, ctx.terminalId ?? undefined)

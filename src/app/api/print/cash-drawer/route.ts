@@ -9,6 +9,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { dispatchAlert } from '@/lib/alert-service'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
+import { emitToLocation } from '@/lib/socket-server'
 import { createChildLogger } from '@/lib/logger'
 import { err, ok } from '@/lib/api-response'
 const log = createChildLogger('print-cash-drawer')
@@ -115,6 +116,36 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
         { data: { success: false, error: result.error ?? 'Printer did not acknowledge' } },
         { status: 500 }
       )
+    }
+
+    // ── Audit log (fire-and-forget) ──────────────────────────────────
+    // This route IS the no-sale open path — payment-triggered opens use triggerCashDrawer() directly
+    if (body.employeeId) {
+      const empId = body.employeeId
+      const drawerReason = body.reason || 'No Sale'
+      const resolvedLocationId = locationId
+      void db.auditLog.create({
+        data: {
+          locationId: resolvedLocationId,
+          employeeId: empId,
+          action: 'DRAWER_OPENED',
+          entityType: 'drawer',
+          details: {
+            reason: 'no_sale',
+            reasonLabel: drawerReason,
+            terminalId: terminalId || undefined,
+          },
+        },
+      }).catch(err => log.warn({ err }, 'Background task failed'))
+
+      // ── Socket event (fire-and-forget) ──
+      void emitToLocation(locationId, 'drawer:opened', {
+        employeeId: empId,
+        reason: 'no_sale',
+        reasonLabel: drawerReason,
+        terminalId: terminalId || undefined,
+        timestamp: new Date().toISOString(),
+      }).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     // Alert dispatch: notify on no-sale cash drawer open (fire-and-forget)

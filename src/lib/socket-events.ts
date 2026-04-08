@@ -157,7 +157,6 @@ export const SOCKET_EVENTS = {
 
   // ── Employees ─────────────────────────────────────────────────────────
   EMPLOYEES_CHANGED:       'employees:changed',
-  EMPLOYEES_UPDATED:       'employees:updated',
   EMPLOYEE_CLOCK_CHANGED:  'employee:clock-changed',
 
   // ── Shifts ────────────────────────────────────────────────────────────

@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
-import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchTabClosed, dispatchTabStatusUpdate, dispatchOrderClosed, dispatchEntertainmentStatusChanged, dispatchPaymentProcessed } from '@/lib/socket-dispatch'
+import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchTabClosed, dispatchTabStatusUpdate, dispatchOrderClosed, dispatchEntertainmentStatusChanged, dispatchPaymentProcessed, dispatchTabClosingStarted } from '@/lib/socket-dispatch'
 import { parseSettings } from '@/lib/settings'
 import { cleanupTemporarySeats } from '@/lib/cleanup-temp-seats'
 import { getLocationSettings } from '@/lib/location-cache'
@@ -115,6 +115,25 @@ export const POST = withVenue(async function POST(
     // BETWEEN PHASES: Compute values that don't need a lock
     // ═══════════════════════════════════════════════════════════════════════════
     const locationId = order.locationId
+
+    // Emit socket event: tab is starting to close
+    // This notifies other terminals IMMEDIATELY that this tab is being closed,
+    // so they don't try to add items and get confused with "TAB_CLOSING" errors.
+    // Include the closing employee name so the UI can show "Sarah is closing this tab"
+    try {
+      const closingEmployee = await db.employee.findUnique({
+        where: { id: employeeId, deletedAt: null },
+        select: { id: true, firstName: true, lastName: true },
+      })
+      const closingEmployeeName = closingEmployee ? `${closingEmployee.firstName} ${closingEmployee.lastName}`.trim() : 'Unknown Employee'
+      dispatchTabClosingStarted(locationId, {
+        orderId,
+        closingEmployeeId: employeeId,
+        closingEmployeeName,
+      })
+    } catch (lookupErr) {
+      log.warn({ err: lookupErr, employeeId }, 'Failed to look up closing employee for socket event')
+    }
 
     // Load location settings
     const settings = await getLocationSettings(locationId)

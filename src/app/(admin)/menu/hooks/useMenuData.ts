@@ -356,17 +356,9 @@ export function useMenuData() {
       return [...prev, normalized]
     })
 
-    // Dispatch socket event to other terminals
-    fetch('/api/broadcast', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        event: 'ingredient:library-update',
-        data: { ingredient: normalized },
-      }),
-    }).catch(err => {
-      console.error('Failed to broadcast ingredient update:', err)
-    })
+    // Note: The API endpoint POST /api/ingredients already broadcasts INGREDIENT_LIBRARY_UPDATE
+    // via dispatchIngredientLibraryUpdate(), so cross-terminal sync is handled server-side.
+    // Client-side optimistic update above ensures immediate local UI refresh.
   }, [])
 
   const handleCategoryCreated = useCallback((category: IngredientCategory) => {

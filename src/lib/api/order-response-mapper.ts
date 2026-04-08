@@ -61,6 +61,9 @@ export interface MappedOrderItem {
   pourMultiplier: number | null
   // Tip-exempt — excluded from tip suggestion basis
   tipExempt: boolean
+  // Price correction tracking (when server enforces catalog price over client price)
+  priceCorrected?: boolean
+  originalClientPrice?: number
   createdAt: Date
 }
 

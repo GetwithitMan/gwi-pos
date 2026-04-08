@@ -74,6 +74,8 @@ export interface ItemAddedPayload {
 export interface ItemRemovedPayload {
   lineItemId: string
   reason?: string | null
+  managerApprovalEmployeeId?: string | null
+  removedAfterSend?: boolean
 }
 
 export interface ItemUpdatedPayload {
