@@ -642,7 +642,22 @@ export const POST = withVenue(withTiming(async function POST(
     if (order.status === 'split') {
       const { computeSplitFamilyBalance } = await import('@/lib/domain/split-order/family-balance')
       const { closeSplitFamily } = await import('@/lib/domain/split-order/close-family')
-      const family = await computeSplitFamilyBalance(tx, order.id, order.locationId)
+      let family: any
+      try {
+        family = await computeSplitFamilyBalance(tx, order.id, order.locationId)
+        console.log(`[PAY-SPLIT-PARENT] familyTotal=${family.familyTotal} remaining=${family.remainingBalance} paid=${family.paidTotal} isFullyPaid=${family.isFullyPaid}`)
+      } catch (err) {
+        console.error('[PAY-SPLIT-PARENT] computeSplitFamilyBalance FAILED:', err)
+        // Fallback: use stored order total as the remaining balance
+        family = { remainingBalance: toNumber(order.total ?? 0), familyTotal: toNumber(order.total ?? 0), isFullyPaid: false }
+      }
+      // Guard: if family balance seems inflated (legacy splits without splitFamilyTotal),
+      // cap the remaining at the order's stored total — it was updated during split creation.
+      const storedTotal = toNumber(order.total ?? 0)
+      if (family.remainingBalance > storedTotal * 1.5) {
+        console.warn(`[PAY-SPLIT-PARENT] Family remaining ${family.remainingBalance} exceeds stored total ${storedTotal} — capping to stored total`)
+        family.remainingBalance = storedTotal
+      }
       if (family.remainingBalance <= 0) {
         await closeSplitFamily(tx, order.id, order.locationId)
         return { earlyReturn: NextResponse.json({ data: {
