@@ -686,6 +686,7 @@ function KDSContent() {
               seatNumber: ei.seatNumber ?? null,
               courseNumber: null,
               courseStatus: 'pending',
+              kitchenStatus: ei.kitchenStatus || 'pending',
               isHeld: false,
               firedAt: null,
               modifiers: ei.modifiers || [],
