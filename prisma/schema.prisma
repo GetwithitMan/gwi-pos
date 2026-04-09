@@ -91,6 +91,7 @@ enum PaymentStatus {
   failed
   refunded
   voided
+  cancelled
 }
 
 enum ShiftStatus {
