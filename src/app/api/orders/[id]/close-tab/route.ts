@@ -29,7 +29,7 @@ import { settleEntertainmentPricing } from '@/lib/payments/entertainment-settlem
 import { stopSession } from '@/lib/domain/entertainment'
 import { checkOrderClaim } from '@/lib/order-claim'
 import { isInOutageMode } from '@/lib/sync/upstream-sync-worker'
-import { pushUpstream, queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
+import { pushUpstream, queueIfOutageOrFail } from '@/lib/sync/outage-safe-write'
 import { OrderRepository, PaymentRepository } from '@/lib/repositories'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
