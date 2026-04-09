@@ -117,13 +117,16 @@ export const POST = withVenue(async function POST(
         throw new Error('SOURCE_ORDER_INVALID')
       }
 
-      // Block merging orders with existing payments (would corrupt financial totals)
+      // Block merging orders with ANY non-cancelled payments (not just completed).
+      // This catches in-flight authorizations where Datacap is processing a card
+      // but the payment hasn't been recorded as 'completed' yet. Without this,
+      // merging can delete an order with an active card authorization, orphaning money.
       const [sourcePaymentCount, targetPaymentCount] = await Promise.all([
         tx.payment.count({
-          where: { orderId: sourceOrder.id, status: 'completed', deletedAt: null },
+          where: { orderId: sourceOrder.id, status: { notIn: ['voided', 'refunded', 'cancelled'] }, deletedAt: null },
         }),
         tx.payment.count({
-          where: { orderId: targetOrder.id, status: 'completed', deletedAt: null },
+          where: { orderId: targetOrder.id, status: { notIn: ['voided', 'refunded', 'cancelled'] }, deletedAt: null },
         }),
       ])
       if (sourcePaymentCount > 0 || targetPaymentCount > 0) {
