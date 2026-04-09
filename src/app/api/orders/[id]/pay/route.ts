@@ -1164,7 +1164,7 @@ export const POST = withVenue(withTiming(async function POST(
                   expectedCardAmount,
                   orderTotal: toNumber(order.total ?? 0),
                   cashDiscountPercent: dualPricing.cashDiscountPercent,
-                  delta: Math.round((payment.amount - expectedCardAmount) * 100) / 100,
+                  delta: roundToCents(payment.amount - expectedCardAmount),
                 }),
               },
             }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.pay'))

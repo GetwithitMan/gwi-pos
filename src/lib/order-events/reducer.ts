@@ -248,6 +248,8 @@ function handleDiscountApplied(
 
     return {
       ...state,
+      // Update taxTotalCents if server provided the recalculated value
+      ...(payload.taxTotalCents != null ? { taxTotalCents: payload.taxTotalCents } : {}),
       items: {
         ...state.items,
         [payload.lineItemId]: {
@@ -271,6 +273,8 @@ function handleDiscountApplied(
 
     return {
       ...state,
+      // Update taxTotalCents if server provided the recalculated value
+      ...(payload.taxTotalCents != null ? { taxTotalCents: payload.taxTotalCents } : {}),
       discounts: {
         ...state.discounts,
         [payload.discountId]: orderDiscount,

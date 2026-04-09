@@ -24,8 +24,49 @@ import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('venue-logger')
 
 export type VenueLogLevel = 'info' | 'warn' | 'error' | 'critical'
-export type VenueLogSource = 'server' | 'pos' | 'kds' | 'android' | 'sync' | 'pax'
+export type VenueLogSource = 'server' | 'pos' | 'kds' | 'android' | 'sync' | 'pax' | 'web'
 export type VenueLogCategory = 'payment' | 'sync' | 'hardware' | 'auth' | 'order' | 'system'
+
+/**
+ * Detect the source platform from an HTTP request's headers.
+ *
+ * Resolution order:
+ * 1. `x-terminal-id` → DB lookup Terminal.platform (ANDROID → 'pax' if PAX UA, else 'android')
+ * 2. User-Agent sniffing for known PAX/Android/KDS fingerprints
+ * 3. Fallback: 'web'
+ *
+ * NOTE: This does NOT perform a DB query (would add latency to every request).
+ * It relies on User-Agent heuristics. For precise tracking, the caller should
+ * look up the Terminal record separately when x-terminal-id is present.
+ */
+export function detectRequestSource(request: { headers: { get(name: string): string | null } }): VenueLogSource {
+  const ua = request.headers.get('user-agent') || ''
+  const terminalId = request.headers.get('x-terminal-id')
+
+  // PAX A6650 runs a custom Android app with a distinct User-Agent
+  if (ua.includes('PAX') || ua.includes('pax') || ua.includes('A6650')) {
+    return 'pax'
+  }
+
+  // Android Register app
+  if (ua.includes('GWI-Register') || ua.includes('gwi-register')) {
+    return 'android'
+  }
+
+  // Generic Android WebView or OkHttp (used by both register and PAX)
+  // If a terminal ID is present, it's likely a native device
+  if (terminalId && (ua.includes('okhttp') || ua.includes('Android'))) {
+    return 'android'
+  }
+
+  // KDS screens often connect via embedded browsers
+  if (ua.includes('KDS') || ua.includes('kds')) {
+    return 'kds'
+  }
+
+  // Default: web POS (browser)
+  return 'web'
+}
 
 export interface VenueLogEntry {
   level: VenueLogLevel

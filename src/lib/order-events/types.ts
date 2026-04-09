@@ -129,11 +129,13 @@ export interface DiscountAppliedPayload {
   amountCents: number
   reason?: string | null
   lineItemId?: string | null
+  taxTotalCents?: number | null
 }
 
 export interface DiscountRemovedPayload {
   discountId: string
   lineItemId?: string | null
+  taxTotalCents?: number | null
 }
 
 export interface TabOpenedPayload {
