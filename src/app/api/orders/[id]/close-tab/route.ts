@@ -495,7 +495,7 @@ export const POST = withVenue(async function POST(
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
         createdPaymentId = await db.$transaction(async (tx) => {
-          return recordCaptureSuccess(tx, {
+          const paymentId = await recordCaptureSuccess(tx, {
             orderId,
             locationId,
             employeeId,
@@ -510,6 +510,18 @@ export const POST = withVenue(async function POST(
             datacapResponse: response,
             now,
           })
+
+          // Outage queue writes INSIDE the transaction for atomicity:
+          // if the process crashes after commit, both the payment record AND
+          // the outage queue entry are guaranteed to exist (or neither does).
+          if (isInOutageMode()) {
+            const fullPayment = await tx.payment.findUnique({ where: { id: paymentId } })
+            if (fullPayment) await queueIfOutageOrFail('Payment', locationId, paymentId, 'INSERT', fullPayment as unknown as Record<string, unknown>, tx)
+            const fullOrder = await tx.order.findUnique({ where: { id: orderId } })
+            if (fullOrder) await queueIfOutageOrFail('Order', locationId, orderId, 'UPDATE', fullOrder as unknown as Record<string, unknown>, tx)
+          }
+
+          return paymentId
         })
         phase3LastError = null
         break // Success
@@ -555,25 +567,9 @@ export const POST = withVenue(async function POST(
       })
     })
 
-    // Queue outage writes if in outage mode (fail-hard — payment data loss is unacceptable)
+    // Flag payment processed during outage for reconciliation (fire-and-forget)
     if (isInOutageMode()) {
-      // Flag payment processed during outage for reconciliation
       void PaymentRepository.updatePayment(createdPaymentId, locationId, { needsReconciliation: true }).catch(err => log.warn({ err }, 'Background task failed'))
-
-      try {
-        const fullPayment = await PaymentRepository.getPaymentById(createdPaymentId, locationId)
-        if (fullPayment) await queueIfOutageOrFail('Payment', locationId, createdPaymentId, 'INSERT', fullPayment as unknown as Record<string, unknown>)
-        const fullOrder = await OrderRepository.getOrderById(orderId, locationId)
-        if (fullOrder) await queueIfOutageOrFail('Order', locationId, orderId, 'UPDATE', fullOrder as unknown as Record<string, unknown>)
-      } catch (err) {
-        if (err instanceof OutageQueueFullError) {
-          return NextResponse.json(
-            { error: 'Payment captured but outage queue is full — manual reconciliation required', critical: true },
-            { status: 507 }
-          )
-        }
-        throw err
-      }
     }
 
     // ═══════════════════════════════════════════════════════════════════════════

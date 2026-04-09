@@ -89,6 +89,8 @@ export async function GET(request: NextRequest) {
 
   const summary = await forAllVenues(async (venueDb: PrismaClient, slug: string) => {
     // ── Concurrency guard: try advisory lock, skip if another run is active ──
+    // Defensive cleanup: release any stale lock from a prior crashed cron on this pooled connection
+    await venueDb.$queryRaw(Prisma.sql`SELECT pg_advisory_unlock(${SAF_RETRY_LOCK_KEY})`).catch(() => {})
     const lockResult = await venueDb.$queryRaw<[{ acquired: boolean }]>(
       Prisma.sql`SELECT pg_try_advisory_lock(${SAF_RETRY_LOCK_KEY}) as acquired`
     )

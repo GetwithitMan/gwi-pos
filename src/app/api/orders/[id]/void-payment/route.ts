@@ -110,7 +110,13 @@ export const POST = withVenue(async function POST(
 
     // PAY-P2-2: Advisory lock on orderId to coordinate with refund-payment.
     // Uses the same key derivation as refund-payment so void and refund block each other.
+    // Session-level lock is intentional: the lock spans external Datacap I/O across
+    // multiple DB transactions, so xact_lock (which auto-releases on commit) won't work.
     const voidLockKey = parseInt(orderId.replace(/-/g, '').slice(0, 12), 16)
+    // Defensive cleanup: release any stale lock on this key from a prior crashed request
+    // that happened to use this same pooled connection. Safe because Prisma serializes
+    // requests per connection, so no other in-flight request can hold this lock here.
+    await db.$queryRaw`SELECT pg_advisory_unlock(${voidLockKey}::bigint)`.catch(() => {})
     const [{ acquired: voidLockAcquired }] = await db.$queryRaw<[{ acquired: boolean }]>`
       SELECT pg_try_advisory_lock(${voidLockKey}::bigint) as acquired
     `
@@ -378,6 +384,14 @@ export const POST = withVenue(async function POST(
           },
         })
 
+        // Outage queue writes INSIDE the transaction for atomicity
+        if (isInOutageMode()) {
+          const fullPayment = await tx.payment.findUnique({ where: { id: paymentId } })
+          if (fullPayment) await queueIfOutageOrFail('Payment', order.locationId, paymentId, 'UPDATE', fullPayment as unknown as Record<string, unknown>, tx)
+          const fullOrder = await tx.order.findUnique({ where: { id: orderId } })
+          if (fullOrder) await queueIfOutageOrFail('Order', order.locationId, orderId, 'UPDATE', fullOrder as unknown as Record<string, unknown>, tx)
+        }
+
         return updated
       })
     } catch (dbError) {
@@ -436,27 +450,11 @@ export const POST = withVenue(async function POST(
       throw dbError
     }
 
-    // Queue outage writes if in outage mode (fail-hard — payment data loss is unacceptable)
+    // Flag void processed during outage for reconciliation (fire-and-forget)
     if (isInOutageMode()) {
-      // Flag void processed during outage for reconciliation
       void PaymentRepository.updatePayment(paymentId, order.locationId, {
         needsReconciliation: true,
       }).catch(err => log.warn({ err }, 'Background task failed'))
-
-      try {
-        const fullPayment = await PaymentRepository.getPaymentById(paymentId, order.locationId)
-        if (fullPayment) await queueIfOutageOrFail('Payment', order.locationId, paymentId, 'UPDATE', fullPayment as unknown as Record<string, unknown>)
-        const fullOrder = await OrderRepository.getOrderById(orderId, order.locationId)
-        if (fullOrder) await queueIfOutageOrFail('Order', order.locationId, orderId, 'UPDATE', fullOrder as unknown as Record<string, unknown>)
-      } catch (caughtErr) {
-        if (err instanceof OutageQueueFullError) {
-          return NextResponse.json(
-            { error: 'Payment voided but outage queue is full — manual reconciliation required', critical: true },
-            { status: 507 }
-          )
-        }
-        throw err
-      }
     }
 
     // Emit order event for voided payment (fire-and-forget)

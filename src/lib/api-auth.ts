@@ -269,7 +269,19 @@ export async function requirePermission(
       if (cloud.employeeId) {
         if (!employeeId) employeeId = cloud.employeeId
       } else {
-        // Shadow MC admin — no local Employee record, full god-mode access
+        // Shadow MC admin — no local Employee record.
+        // SECURITY: Only grant god-mode if the JWT carries a recognized admin role.
+        // Without this check, ANY cloud-prefixed sub without an employeeId would
+        // get full access (e.g. an online-ordering customer session).
+        const SHADOW_ADMIN_ROLES = ['super_admin', 'sub_admin', 'org:admin', 'owner']
+        if (!cloudRole || !SHADOW_ADMIN_ROLES.includes(cloudRole)) {
+          log.warn(`[api-auth] Shadow admin REJECTED: cloudRole=${cloudRole} is not a recognized admin role, permission=${permission}, locationId=${locationId}`)
+          return {
+            authorized: false,
+            error: 'Insufficient cloud role for admin access',
+            status: 403,
+          }
+        }
         log.info(`[api-auth] Shadow MC admin bypass: cloudRole=${cloudRole}, permission=${permission}, locationId=${locationId}`)
         return {
           authorized: true,

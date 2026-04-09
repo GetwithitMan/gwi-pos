@@ -283,16 +283,6 @@ export async function deductInventoryForOrder(
   multiplierSettings?: MultiplierSettings | null
 ): Promise<InventoryDeductionResult> {
   try {
-    // Idempotency guard: skip if deductions already exist for this order
-    const existingDeduction = await db.inventoryItemTransaction.findFirst({
-      where: { referenceType: 'order', referenceId: orderId, type: 'sale' },
-      select: { id: true },
-    })
-    if (existingDeduction) {
-      log.warn(`[INVENTORY] Deduction already exists for order ${orderId}, skipping`)
-      return { success: true, itemsDeducted: 0, totalCost: 0 }
-    }
-
     // Fetch the order with full recipe tree
     const order = await db.order.findUnique({
       where: { id: orderId },
@@ -1111,7 +1101,18 @@ export async function deductInventoryForOrder(
     // Read currentStock INSIDE the transaction (after decrement) for accurate snapshots.
     const depletedInventoryItemIds: string[] = []
 
-    await db.$transaction(async (tx) => {
+    const skippedAsIdempotent = await db.$transaction(async (tx) => {
+      // Idempotency guard INSIDE transaction to prevent TOCTOU race:
+      // two concurrent requests can no longer both pass the check before either writes.
+      const existingDeduction = await tx.inventoryItemTransaction.findFirst({
+        where: { referenceType: 'order', referenceId: orderId, type: 'sale' },
+        select: { id: true },
+      })
+      if (existingDeduction) {
+        log.warn(`[INVENTORY] Deduction already exists for order ${orderId}, skipping`)
+        return true
+      }
+
       for (const item of usageItems) {
         // Skip items with inventory tracking disabled
         // Also read currentStock before decrement for accurate quantityBefore snapshot
@@ -1201,7 +1202,12 @@ export async function deductInventoryForOrder(
           },
         })
       }
+      return false
     })
+
+    if (skippedAsIdempotent) {
+      return { success: true, itemsDeducted: 0, totalCost: 0 }
+    }
 
     // Auto-86 ingredients linked to depleted inventory items (fire-and-forget)
     if (depletedInventoryItemIds.length > 0) {
