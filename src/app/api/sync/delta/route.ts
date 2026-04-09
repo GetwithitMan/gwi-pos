@@ -64,12 +64,12 @@ export const GET = withVenue(withAuth({ allowCellular: true }, async function GE
       },
       orderBy: { sortOrder: 'asc' },
     }),
-    // All modifier groups updated since last sync (covers mid-shift price/config changes)
+    // All modifier groups updated since last sync (catches edits not reflected via menuItem.updatedAt)
     db.modifierGroup.findMany({
-      where: { locationId, deletedAt: null, updatedAt: { gt: since } },
+      where: { locationId, updatedAt: { gt: since }, deletedAt: null },
       include: {
         modifiers: {
-          where: { deletedAt: null, isActive: true },
+          where: { deletedAt: null },
           orderBy: { sortOrder: 'asc' },
           include: {
             linkedBottleProduct: {
@@ -82,16 +82,6 @@ export const GET = withVenue(withAuth({ allowCellular: true }, async function GE
     }),
   ])
 
-  // Map modifier group decimal fields
-  const mappedModifierGroups = deltaModifierGroups.map(group => ({
-    ...group,
-    modifiers: group.modifiers.map(mod => ({
-      ...mod,
-      price: mod.price != null ? Number(mod.price) : null,
-      extraPrice: mod.extraPrice != null ? Number(mod.extraPrice) : null,
-      cost: mod.cost != null ? Number(mod.cost) : null,
-    })),
-  }))
 
   // Convert Decimal fields to numbers for Android clients
   const mappedMenuItems = menuItems.map(item => ({
@@ -149,5 +139,20 @@ export const GET = withVenue(withAuth({ allowCellular: true }, async function GE
     })),
   }))
 
+  const mappedModifierGroups = deltaModifierGroups.map(group => ({
+    ...group,
+    modifiers: group.modifiers.map(mod => ({
+      ...mod,
+      price: Number(mod.price ?? 0),
+      extraPrice: mod.extraPrice != null ? Number(mod.extraPrice) : null,
+      cost: mod.cost != null ? Number(mod.cost) : null,
+      upsellPrice: mod.upsellPrice != null ? Number(mod.upsellPrice) : null,
+      commissionValue: mod.commissionValue != null ? Number(mod.commissionValue) : null,
+      liteMultiplier: mod.liteMultiplier != null ? Number(mod.liteMultiplier) : null,
+      extraMultiplier: mod.extraMultiplier != null ? Number(mod.extraMultiplier) : null,
+      inventoryDeductionAmount: mod.inventoryDeductionAmount != null ? Number(mod.inventoryDeductionAmount) : null,
+    })),
+  }))
+
   return ok({ menuItems: mappedMenuItems, categories, employees, tables, orderTypes, orders: mappedOrders, pricingOptionGroups: mappedPricingOptionGroups, sharedModifierGroups, modifierGroups: mappedModifierGroups, syncVersion: Date.now(), hasMore: orders.length >= 100 })
-}))
+})
