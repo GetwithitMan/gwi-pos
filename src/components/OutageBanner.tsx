@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react'
 import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
 
 /**
  * OutageBanner — displays a persistent amber banner when the upstream sync
@@ -87,14 +88,14 @@ export function OutageBanner() {
     const onFailoverActive = () => setFailoverActive(true)
     const onFailoverResolved = () => setFailoverActive(false)
 
-    socket.on('sync:outage-status', onOutageStatus)
-    socket.on('server:failover-active', onFailoverActive)
-    socket.on('server:failover-resolved', onFailoverResolved)
+    socket.on(SOCKET_EVENTS.SYNC_OUTAGE_STATUS, onOutageStatus)
+    socket.on(SOCKET_EVENTS.SERVER_FAILOVER_ACTIVE, onFailoverActive)
+    socket.on(SOCKET_EVENTS.SERVER_FAILOVER_RESOLVED, onFailoverResolved)
 
     return () => {
-      socket.off('sync:outage-status', onOutageStatus)
-      socket.off('server:failover-active', onFailoverActive)
-      socket.off('server:failover-resolved', onFailoverResolved)
+      socket.off(SOCKET_EVENTS.SYNC_OUTAGE_STATUS, onOutageStatus)
+      socket.off(SOCKET_EVENTS.SERVER_FAILOVER_ACTIVE, onFailoverActive)
+      socket.off(SOCKET_EVENTS.SERVER_FAILOVER_RESOLVED, onFailoverResolved)
       releaseSharedSocket()
       if (restoredTimerRef.current) {
         clearTimeout(restoredTimerRef.current)

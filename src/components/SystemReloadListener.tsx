@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react'
 import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
 
 /**
  * Listens for 'system:reload' socket events and reloads the page.
@@ -15,10 +16,10 @@ export function SystemReloadListener() {
       window.location.reload()
     }
 
-    socket.on('system:reload', onReload)
+    socket.on(SOCKET_EVENTS.SYSTEM_RELOAD, onReload)
 
     return () => {
-      socket.off('system:reload', onReload)
+      socket.off(SOCKET_EVENTS.SYSTEM_RELOAD, onReload)
       releaseSharedSocket()
     }
   }, [])

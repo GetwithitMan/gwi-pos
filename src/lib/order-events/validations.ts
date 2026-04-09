@@ -169,6 +169,13 @@ export const WalkoutMarkedSchema = z.object({
   employeeId: optionalString,
 })
 
+export const RefundAppliedSchema = z.object({
+  paymentId: idSchema,
+  refundAmountCents: centsSchema,
+  reason: optionalString,
+  employeeId: optionalString,
+})
+
 // ── Validator Map ────────────────────────────────────────────────────
 
 export const PayloadValidators = {
@@ -192,6 +199,7 @@ export const PayloadValidators = {
   ITEM_MODIFIER_REMOVED: ItemModifierRemovedSchema,
   TAB_CAPTURE_DECLINED: TabCaptureDeclinedSchema,
   WALKOUT_MARKED: WalkoutMarkedSchema,
+  REFUND_APPLIED: RefundAppliedSchema,
 } as const
 
 // ── Batch Input Schema ───────────────────────────────────────────────

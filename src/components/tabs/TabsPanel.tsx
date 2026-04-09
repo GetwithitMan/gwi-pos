@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { formatCurrency } from '@/lib/utils'
 import { formatCardDisplay } from '@/lib/payment'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
 import { PendingTabAnimation } from './PendingTabAnimation'
 import { AuthStatusBadge } from './AuthStatusBadge'
 import { MultiCardBadges } from './MultiCardBadges'
@@ -101,11 +102,11 @@ export function TabsPanel({ employeeId, onSelectTab, onNewTab, refreshTrigger, p
         toast.error('Card limit reached — take a new card or cash.', 10000)
       }
     }
-    socket.on('tab:updated', onTabUpdated)
-    socket.on('orders:list-changed', debouncedRefresh)
+    socket.on(SOCKET_EVENTS.TAB_UPDATED, onTabUpdated)
+    socket.on(SOCKET_EVENTS.ORDERS_LIST_CHANGED, debouncedRefresh)
     return () => {
-      socket.off('tab:updated', onTabUpdated)
-      socket.off('orders:list-changed', debouncedRefresh)
+      socket.off(SOCKET_EVENTS.TAB_UPDATED, onTabUpdated)
+      socket.off(SOCKET_EVENTS.ORDERS_LIST_CHANGED, debouncedRefresh)
       clearTimeout(debounceRef.current)
     }
   }, [socket, isConnected, loadTabs])

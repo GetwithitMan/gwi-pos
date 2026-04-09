@@ -68,3 +68,21 @@ export {
 // ─── Receipt Builder ────────────────────────────────────────────────────────
 
 export { buildReceiptData } from './receipt-builder'
+
+// ─── Payment State Machine ──────────────────────────────────────────────────
+
+export {
+  PAYMENT_STATES,
+  canTransition,
+  transitionPaymentState,
+  TERMINAL_PAYMENT_STATES,
+  ACTIVE_PAYMENT_STATES,
+  isPaymentActive,
+  isPaymentTerminal,
+  isPaymentSettled,
+  ACTIVE_PAYMENT_FILTER,
+  SETTLED_PAYMENT_FILTER,
+  TERMINAL_PAYMENT_FILTER,
+} from './payment-state-machine'
+
+export type { PaymentState } from './payment-state-machine'

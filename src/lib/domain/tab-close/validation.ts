@@ -8,6 +8,7 @@
 
 import { createChildLogger } from '@/lib/logger'
 import type { TxClient, TabCloseInput, TabCloseValidationResult, TabCloseOrder } from './types'
+import { isClosed, isTerminal } from '@/lib/domain/order-status'
 
 const log = createChildLogger('tab-close')
 
@@ -45,13 +46,13 @@ export async function validateTabForClose(
     return { valid: false, error: 'Order not found', status: 404 }
   }
 
-  // Status guard: voided/cancelled
-  if (order.status === 'voided' || order.status === 'cancelled') {
+  // Status guard: terminal states (voided/cancelled) — no further actions allowed
+  if (isTerminal(order.status)) {
     return { valid: false, error: `Cannot close tab on order in '${order.status}' status`, status: 400 }
   }
 
-  // PAYMENT-SAFETY: Double-capture prevention
-  if (order.status === 'paid' || order.status === 'closed') {
+  // PAYMENT-SAFETY: Double-capture prevention — order already paid/closed
+  if (isClosed(order.status)) {
     return {
       valid: false,
       error: 'Tab already closed',

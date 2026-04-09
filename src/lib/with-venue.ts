@@ -71,20 +71,27 @@ export function withVenue(handler: RouteHandler): RouteHandler {
       // IMPORTANT: Only fires when verification has RUN and FAILED (result
       // is non-null with passed === false). Does NOT fire during dev, or
       // when verification hasn't run yet (e.g., server still booting).
+      //
+      // Emergency override: SCHEMA_GATE_BYPASS=1 disables this gate entirely.
+      // Use only during schema drift incidents when operators need to restore service.
       if (process.env.NODE_ENV === 'production') {
-        const schemaResult = getSchemaVerificationResult()
-        if (schemaResult !== null && !schemaResult.passed) {
-          // Allow health, auth, internal, and recovery endpoints through
-          const pathname = request?.nextUrl?.pathname || request?.url?.split('?')[0] || ''
-          const isExempt = SLUGLESS_ALLOWED_PATTERNS.some(p => pathname.startsWith(p))
-          if (!isExempt) {
-            return new Response(
-              JSON.stringify({
-                error: 'Service unavailable — schema verification failed',
-                code: 'SCHEMA_NOT_VERIFIED',
-              }),
-              { status: 503, headers: { 'Content-Type': 'application/json', 'Retry-After': '30' } }
-            )
+        if (process.env.SCHEMA_GATE_BYPASS === '1') {
+          logger.warn('SCHEMA_GATE_BYPASS active — schema verification disabled')
+        } else {
+          const schemaResult = getSchemaVerificationResult()
+          if (schemaResult !== null && !schemaResult.passed) {
+            // Allow health, auth, internal, and recovery endpoints through
+            const pathname = request?.nextUrl?.pathname || request?.url?.split('?')[0] || ''
+            const isExempt = SLUGLESS_ALLOWED_PATTERNS.some(p => pathname.startsWith(p))
+            if (!isExempt) {
+              return new Response(
+                JSON.stringify({
+                  error: 'Service unavailable — schema verification failed',
+                  code: 'SCHEMA_NOT_VERIFIED',
+                }),
+                { status: 503, headers: { 'Content-Type': 'application/json', 'Retry-After': '30' } }
+              )
+            }
           }
         }
       }

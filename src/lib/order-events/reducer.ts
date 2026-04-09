@@ -472,6 +472,7 @@ export function reduce(state: OrderState, event: OrderEventPayload): OrderState 
     case 'ITEM_MODIFIER_REMOVED':
     case 'TAB_CAPTURE_DECLINED':
     case 'WALKOUT_MARKED':
+    case 'REFUND_APPLIED':
       // These events are recorded for audit trail but don't change OrderState
       return state
 

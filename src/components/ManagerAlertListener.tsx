@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react'
 import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
 import { toast } from '@/stores/toast-store'
 
 /**
@@ -26,10 +27,10 @@ export function ManagerAlertListener() {
       )
     }
 
-    socket.on('tab:manager-alert', onManagerAlert)
+    socket.on(SOCKET_EVENTS.TAB_MANAGER_ALERT, onManagerAlert)
 
     return () => {
-      socket.off('tab:manager-alert', onManagerAlert)
+      socket.off(SOCKET_EVENTS.TAB_MANAGER_ALERT, onManagerAlert)
       releaseSharedSocket()
     }
   }, [])

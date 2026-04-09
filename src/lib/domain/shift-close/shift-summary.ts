@@ -260,6 +260,18 @@ export async function calculateShiftSummary(
   const safPendingCount = safPendingPayments.length
   const safPendingTotal = safPendingPayments.reduce((sum, p) => sum + Number(p.amount) + Number(p.tipAmount), 0)
 
+  // Count banked tip shares for this employee so bartenders/barbacks see money waiting.
+  // TipShare.status='banked' means the tip-out was created while the recipient was off-shift
+  // and is waiting to be collected/paid out.
+  const bankedTipsCount = await db.tipShare.count({
+    where: {
+      locationId,
+      toEmployeeId: employeeId,
+      status: 'banked',
+      deletedAt: null,
+    },
+  })
+
   const safFailedPayments = await db.payment.findMany({
     where: {
       employeeId,
@@ -303,6 +315,7 @@ export async function calculateShiftSummary(
     safPendingTotal: Math.round(safPendingTotal * 100) / 100,
     safFailedCount,
     safFailedTotal: Math.round(safFailedTotal * 100) / 100,
+    bankedTipsCount,
     laborCost: await calculateShiftLaborCost(locationId, startTime, endTime),
   }
 }

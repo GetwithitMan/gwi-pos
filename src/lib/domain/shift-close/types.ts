@@ -49,6 +49,7 @@ export interface ShiftSummary {
   safPendingTotal: number
   safFailedCount: number
   safFailedTotal: number
+  bankedTipsCount: number
   laborCost: LaborCost | null
 }
 

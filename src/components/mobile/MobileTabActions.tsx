@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
 import { MOBILE_EVENTS } from '@/types/multi-surface'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
 import type { TabClosedEvent, TabStatusUpdateEvent } from '@/types/multi-surface'
 
 interface MobileTabActionsProps {
@@ -57,14 +58,14 @@ export default function MobileTabActions({ tabId, employeeId, onTabClosed, onSta
 
     socket.on(MOBILE_EVENTS.TAB_CLOSED, onClosed)
     socket.on(MOBILE_EVENTS.TAB_STATUS_UPDATE, onStatusChange)
-    socket.on('tab:transfer-complete', onTransferComplete)
-    socket.on('tab:error', onTabError)
+    socket.on(SOCKET_EVENTS.TAB_TRANSFER_COMPLETE, onTransferComplete)
+    socket.on(SOCKET_EVENTS.TAB_ERROR, onTabError)
 
     return () => {
       socket.off(MOBILE_EVENTS.TAB_CLOSED, onClosed)
       socket.off(MOBILE_EVENTS.TAB_STATUS_UPDATE, onStatusChange)
-      socket.off('tab:transfer-complete', onTransferComplete)
-      socket.off('tab:error', onTabError)
+      socket.off(SOCKET_EVENTS.TAB_TRANSFER_COMPLETE, onTransferComplete)
+      socket.off(SOCKET_EVENTS.TAB_ERROR, onTabError)
       releaseSharedSocket()
     }
   }, [tabId, onTabClosed, onStatusUpdate])

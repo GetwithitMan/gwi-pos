@@ -16,6 +16,7 @@
 import { useState, useEffect, useCallback, useRef, memo } from 'react'
 import { useDeliveryFeature } from '@/hooks/useDeliveryFeature'
 import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -387,20 +388,20 @@ function DeliveryExpoRailInner({ locationId }: DeliveryExpoRailProps) {
     const onRunCompleted = () => fetchData()
     const onDriverStatusChanged = () => fetchData()
 
-    socket.on('delivery:status_changed', onDeliveryStatusChanged)
-    socket.on('delivery:exception_created', onExceptionCreated)
-    socket.on('delivery:exception_resolved', onExceptionResolved)
-    socket.on('delivery:run_created', onRunCreated)
-    socket.on('delivery:run_completed', onRunCompleted)
-    socket.on('driver:status_changed', onDriverStatusChanged)
+    socket.on(SOCKET_EVENTS.DELIVERY_STATUS_CHANGED, onDeliveryStatusChanged)
+    socket.on(SOCKET_EVENTS.DELIVERY_EXCEPTION_CREATED, onExceptionCreated)
+    socket.on(SOCKET_EVENTS.DELIVERY_EXCEPTION_RESOLVED, onExceptionResolved)
+    socket.on(SOCKET_EVENTS.DELIVERY_RUN_CREATED, onRunCreated)
+    socket.on(SOCKET_EVENTS.DELIVERY_RUN_COMPLETED, onRunCompleted)
+    socket.on(SOCKET_EVENTS.DRIVER_STATUS_CHANGED, onDriverStatusChanged)
 
     return () => {
-      socket.off('delivery:status_changed', onDeliveryStatusChanged)
-      socket.off('delivery:exception_created', onExceptionCreated)
-      socket.off('delivery:exception_resolved', onExceptionResolved)
-      socket.off('delivery:run_created', onRunCreated)
-      socket.off('delivery:run_completed', onRunCompleted)
-      socket.off('driver:status_changed', onDriverStatusChanged)
+      socket.off(SOCKET_EVENTS.DELIVERY_STATUS_CHANGED, onDeliveryStatusChanged)
+      socket.off(SOCKET_EVENTS.DELIVERY_EXCEPTION_CREATED, onExceptionCreated)
+      socket.off(SOCKET_EVENTS.DELIVERY_EXCEPTION_RESOLVED, onExceptionResolved)
+      socket.off(SOCKET_EVENTS.DELIVERY_RUN_CREATED, onRunCreated)
+      socket.off(SOCKET_EVENTS.DELIVERY_RUN_COMPLETED, onRunCompleted)
+      socket.off(SOCKET_EVENTS.DRIVER_STATUS_CHANGED, onDriverStatusChanged)
       releaseSharedSocket()
     }
   }, [fetchData])

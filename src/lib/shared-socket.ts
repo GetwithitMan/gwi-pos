@@ -187,6 +187,32 @@ function attachVisibilityHandler(socket: Socket) {
     }
   })
 
+  // Canonical server handshake — fires for ALL auth paths (device token,
+  // session cookie, LAN identity, dev mode). Use this as the definitive
+  // "authenticated and in the room" signal instead of relying on
+  // Socket.io's generic 'connect' event.
+  socket.on('connected', (data: {
+    authenticated: boolean
+    terminalId: string | null
+    employeeId: string | null
+    locationId: string | null
+    platform: string | null
+    serverTime: string
+  }) => {
+    lastPongAt = Date.now()
+    if (data?.locationId) {
+      setTrackedLocationId(data.locationId)
+    }
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[SharedSocket] Server handshake received:', {
+        authenticated: data?.authenticated,
+        locationId: data?.locationId,
+        terminalId: data?.terminalId,
+        platform: data?.platform,
+      })
+    }
+  })
+
   // Note: onAny handler removed — ping and connect handlers already update lastPongAt.
   // The onAny handler ran on every incoming event just to set the same timestamp,
   // adding unnecessary overhead on high-frequency event streams (KDS, scale, etc.).

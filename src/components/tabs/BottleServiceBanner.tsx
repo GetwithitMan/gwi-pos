@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useSocket } from '@/hooks/useSocket'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
 
 interface BottleServiceStatus {
   depositAmount: number
@@ -52,15 +53,15 @@ export default function BottleServiceBanner({
   useEffect(() => {
     if (!socket || !isConnected) return
     const refresh = () => loadStatus()
-    socket.on('order:updated', refresh)
-    socket.on('order:item-added', refresh)
-    socket.on('tab:updated', refresh)
-    socket.on('payment:processed', refresh)
+    socket.on(SOCKET_EVENTS.ORDER_UPDATED, refresh)
+    socket.on(SOCKET_EVENTS.ORDER_ITEM_ADDED, refresh)
+    socket.on(SOCKET_EVENTS.TAB_UPDATED, refresh)
+    socket.on(SOCKET_EVENTS.PAYMENT_PROCESSED, refresh)
     return () => {
-      socket.off('order:updated', refresh)
-      socket.off('order:item-added', refresh)
-      socket.off('tab:updated', refresh)
-      socket.off('payment:processed', refresh)
+      socket.off(SOCKET_EVENTS.ORDER_UPDATED, refresh)
+      socket.off(SOCKET_EVENTS.ORDER_ITEM_ADDED, refresh)
+      socket.off(SOCKET_EVENTS.TAB_UPDATED, refresh)
+      socket.off(SOCKET_EVENTS.PAYMENT_PROCESSED, refresh)
     }
   }, [socket, isConnected, loadStatus])
 

@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react'
 import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
 import { toast } from '@/stores/toast-store'
 
 /**
@@ -26,10 +27,10 @@ export function LocationAlertListener() {
       toast[data.type](msg, data.duration)
     }
 
-    socket.on('location:alert', onAlert)
+    socket.on(SOCKET_EVENTS.LOCATION_ALERT, onAlert)
 
     return () => {
-      socket.off('location:alert', onAlert)
+      socket.off(SOCKET_EVENTS.LOCATION_ALERT, onAlert)
       releaseSharedSocket()
     }
   }, [])
