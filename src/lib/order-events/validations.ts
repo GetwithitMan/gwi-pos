@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { ORDER_EVENT_TYPES, type OrderEventType } from './types'
+import { ORDER_EVENT_TYPES } from './types'
 
 // ── Common fragments ────────────────────────────────────────────────
 
