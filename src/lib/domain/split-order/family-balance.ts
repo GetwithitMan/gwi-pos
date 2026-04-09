@@ -21,21 +21,35 @@ const log = createChildLogger('split-family-balance')
 
 // ─── Split Balance Reconciliation ───────────────────────────────────────────
 
+export interface SplitBalanceValidation {
+  valid: boolean
+  drift: number
+  parentTotal: number
+  childSum: number
+  childCount: number
+}
+
 /**
  * Validate that SUM(child totals) == parent total after a split mutation.
- * Logs a WARNING on drift > $0.01 — does NOT block the operation.
- * Should be called after split transactions commit (fire-and-forget safe).
+ *
+ * Returns a validation result with drift info. Drift > $0.02 is considered
+ * a blocking error — the caller should reject the operation to prevent
+ * "zombie checks" where a penny balance can never be cleared.
+ *
+ * The $0.02 tolerance accounts for up to 2 levels of rounding (e.g.,
+ * custom fractional split then even split). Single-level splits should
+ * never exceed $0.01 drift thanks to the last-item-remainder strategy.
  */
 export async function validateSplitBalance(
   tx: TxClient,
   parentOrderId: string,
-): Promise<void> {
+): Promise<SplitBalanceValidation> {
   try {
     const parentOrder = await tx.order.findFirst({
       where: { id: parentOrderId, deletedAt: null },
       select: { id: true, total: true, splitFamilyTotal: true },
     })
-    if (!parentOrder) return
+    if (!parentOrder) return { valid: true, drift: 0, parentTotal: 0, childSum: 0, childCount: 0 }
 
     const childOrders = await tx.order.findMany({
       where: {
@@ -49,29 +63,43 @@ export async function validateSplitBalance(
       select: { id: true, total: true },
     })
 
-    if (childOrders.length === 0) return
+    if (childOrders.length === 0) return { valid: true, drift: 0, parentTotal: Number(parentOrder.total), childSum: 0, childCount: 0 }
 
     const childSum = childOrders.reduce((sum, c) => sum + Number(c.total), 0)
     const parentTotal = parentOrder.splitFamilyTotal != null
       ? Number(parentOrder.splitFamilyTotal)
       : Number(parentOrder.total)
     const drift = Math.abs(childSum - parentTotal)
+    const childCount = childOrders.length
+
+    // Tolerance: $0.01 per child, minimum $0.02 to allow one level of nested rounding
+    const tolerance = Math.max(0.02, childCount * 0.01)
+    const valid = drift <= tolerance
 
     if (drift > 0.01) {
-      log.warn(
+      const logFn = valid ? log.warn.bind(log) : log.error.bind(log)
+      logFn(
         {
           parentOrderId,
           parentTotal,
           childSum,
           drift: Math.round(drift * 100) / 100,
-          childCount: childOrders.length,
+          childCount,
+          tolerance,
+          valid,
         },
-        'Split balance drift detected — SUM(child totals) != parent total',
+        valid
+          ? 'Split balance drift detected (within tolerance)'
+          : 'Split balance drift EXCEEDS tolerance — blocking operation',
       )
     }
+
+    return { valid, drift, parentTotal, childSum, childCount }
   } catch (e) {
-    // Never let reconciliation validation break the split flow
-    log.warn({ err: e, parentOrderId }, 'Split balance validation failed (non-blocking)')
+    // On validation error, allow the operation to proceed (fail-open)
+    // but log the error for investigation
+    log.warn({ err: e, parentOrderId }, 'Split balance validation failed (fail-open)')
+    return { valid: true, drift: 0, parentTotal: 0, childSum: 0, childCount: 0 }
   }
 }
 

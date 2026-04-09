@@ -309,9 +309,40 @@ export const POST = withVenue(async function POST(
       payload: { lineItemId, reason: `Transferred to order ${toOrderId}` },
     }))
     void emitOrderEvents(fromOrder.locationId, fromOrderId, sourceItemEvents).catch(err => log.warn({ err }, 'Background task failed'))
-    void emitOrderEvent(fromOrder.locationId, toOrderId, 'ORDER_METADATA_UPDATED', {
-      reason: `Received ${itemIds.length} items transferred from order ${fromOrderId}`,
-    }).catch(err => log.warn({ err }, 'Background task failed'))
+
+    // Event emission: ITEM_ADDED for each transferred item on the DESTINATION order.
+    // This ensures KDS screens, Android event projectors, and all event consumers
+    // see the transferred items — fixing the "vanishing food" bug where the
+    // destination order's event stream was incomplete.
+    try {
+      const transferredItems = await OrderItemRepository.getItemsByIdsWithInclude(
+        itemIds, fromOrder.locationId, { modifiers: true },
+      )
+      const destItemEvents = transferredItems.map(item => ({
+        type: 'ITEM_ADDED' as const,
+        payload: {
+          lineItemId: item.id,
+          menuItemId: item.menuItemId,
+          name: item.name,
+          priceCents: Math.round(Number(item.price) * 100),
+          quantity: item.quantity,
+          modifiers: item.modifiers.map(m => ({
+            id: m.id,
+            name: m.name,
+            priceCents: Math.round(Number(m.price) * 100),
+          })),
+          specialNotes: item.specialNotes,
+          seatNumber: item.seatNumber,
+          courseNumber: item.courseNumber,
+          isHeld: item.isHeld,
+          transferredFrom: fromOrderId,
+        },
+      }))
+      void emitOrderEvents(fromOrder.locationId, toOrderId, destItemEvents)
+        .catch(err => log.warn({ err }, 'Destination ITEM_ADDED event emission failed'))
+    } catch (err) {
+      log.warn({ err, toOrderId, itemIds }, 'Failed to emit ITEM_ADDED events for transferred items')
+    }
 
     pushUpstream()
 

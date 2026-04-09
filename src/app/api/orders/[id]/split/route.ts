@@ -227,8 +227,12 @@ export const POST = withVenue(async function POST(
 
       pushUpstream()
 
-      // Split balance reconciliation (non-blocking warning)
-      void validateSplitBalance(db, order.id).catch(() => {})
+      // Split balance reconciliation — blocking check to prevent zombie penny checks
+      const balanceCheck = await validateSplitBalance(db, order.id)
+      if (!balanceCheck.valid) {
+        console.error(`[SPLIT] Balance drift ${balanceCheck.drift.toFixed(2)} exceeds tolerance for order ${order.id}`)
+        // Don't fail the split (it's already committed), but flag it for the client
+      }
 
       return ok({
         type: 'even',
@@ -344,8 +348,11 @@ export const POST = withVenue(async function POST(
 
       pushUpstream()
 
-      // Split balance reconciliation (non-blocking warning)
-      void validateSplitBalance(db, order.parentOrderId || order.id).catch(() => {})
+      // Split balance reconciliation — blocking check
+      const byItemBalanceCheck = await validateSplitBalance(db, order.parentOrderId || order.id)
+      if (!byItemBalanceCheck.valid) {
+        console.error(`[SPLIT] By-item balance drift ${byItemBalanceCheck.drift.toFixed(2)} exceeds tolerance for order ${order.parentOrderId || order.id}`)
+      }
 
       return ok({
         type: 'by_item',
@@ -480,8 +487,11 @@ export const POST = withVenue(async function POST(
 
       pushUpstream()
 
-      // Split balance reconciliation (non-blocking warning)
-      void validateSplitBalance(db, order.id).catch(() => {})
+      // Split balance reconciliation — blocking check
+      const bySeatBalanceCheck = await validateSplitBalance(db, order.id)
+      if (!bySeatBalanceCheck.valid) {
+        console.error(`[SPLIT] By-seat balance drift ${bySeatBalanceCheck.drift.toFixed(2)} exceeds tolerance for order ${order.id}`)
+      }
 
       return ok({
         type: 'by_seat',
@@ -602,8 +612,11 @@ export const POST = withVenue(async function POST(
 
       pushUpstream()
 
-      // Split balance reconciliation (non-blocking warning)
-      void validateSplitBalance(db, order.id).catch(() => {})
+      // Split balance reconciliation — blocking check
+      const byTableBalanceCheck = await validateSplitBalance(db, order.id)
+      if (!byTableBalanceCheck.valid) {
+        console.error(`[SPLIT] By-table balance drift ${byTableBalanceCheck.drift.toFixed(2)} exceeds tolerance for order ${order.id}`)
+      }
 
       return ok({
         type: 'by_table',

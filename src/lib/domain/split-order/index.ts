@@ -55,7 +55,7 @@ export { getSplitOrders } from './split-queries'
 
 // ─── Family Balance ─────────────────────────────────────────────────────────
 
-export { computeSplitFamilyBalance, validateSplitBalance } from './family-balance'
+export { computeSplitFamilyBalance, validateSplitBalance, type SplitBalanceValidation } from './family-balance'
 
 // ─── Discount Distribution (pure policy) ─────────────────────────────────────
 
