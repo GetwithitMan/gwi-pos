@@ -1434,6 +1434,15 @@ export async function emitToTags(tags: string[], event: string, data: unknown, l
         globalForSocket.socketServer!.to(room).emit(event, data)
       }
     })
+    // Relay to Neon for cellular terminals (fire-and-forget, sync — errors must not propagate)
+    if (locationId) {
+      try {
+        const enriched = data && typeof data === 'object' && !Array.isArray(data) ? { ...data as Record<string, unknown> } : data
+        relayCellularEvent(locationId, event, enriched)
+      } catch (err) {
+        log.error({ err, event, locationId }, 'Cellular event relay failed for tags')
+      }
+    }
     return true
   }
   // IPC path: send pre-scoped room names so the remote ws-server uses correct rooms
@@ -1442,8 +1451,12 @@ export async function emitToTags(tags: string[], event: string, data: unknown, l
 
 /**
  * Emit to location room (global alerts)
+ * @param locationId - The location identifier
+ * @param event - The event name
+ * @param data - The event payload
+ * @param excludeSocketId - Optional socket ID to exclude from broadcast (prevents echo to sender)
  */
-export async function emitToLocation(locationId: string, event: string, data: unknown): Promise<boolean> {
+export async function emitToLocation(locationId: string, event: string, data: unknown, excludeSocketId?: string): Promise<boolean> {
   recordMetricEvent()
   if (globalForSocket.socketServer) {
     const room = `location:${locationId}`
@@ -1452,8 +1465,14 @@ export async function emitToLocation(locationId: string, event: string, data: un
     // Record in buffer and inject _eid for client catch-up tracking
     const eid = recordEvent(locationId, event, data, room)
     const enriched = data && typeof data === 'object' && !Array.isArray(data) ? { ...data as Record<string, unknown>, _eid: eid } : data
-    globalForSocket.socketServer.to(room).emit(event, enriched)
+    // Broadcast to room, optionally excluding the sender
+    if (excludeSocketId) {
+      globalForSocket.socketServer.to(room).except(excludeSocketId).emit(event, enriched)
+    } else {
+      globalForSocket.socketServer.to(room).emit(event, enriched)
+    }
     // Relay to Neon for cellular terminals (fire-and-forget, sync — errors must not propagate)
+    // TODO: Callers should handle retry on failure; consider adding to outbox/queue for reliability
     try {
       relayCellularEvent(locationId, event, enriched)
     } catch (err) {

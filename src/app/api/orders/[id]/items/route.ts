@@ -271,10 +271,10 @@ export const POST = withVenue(async function POST(
       try {
         await validateCellularOrderAccess(true, orderId, 'mutate', db)
       } catch (caughtErr) {
-        if (err instanceof CellularAuthError) {
-          return err(err.message, err.status)
+        if (caughtErr instanceof CellularAuthError) {
+          return err(caughtErr.message, caughtErr.status)
         }
-        throw err
+        throw caughtErr
       }
     }
 
@@ -363,31 +363,31 @@ export const POST = withVenue(async function POST(
       }
     }
 
-    // Idempotency check — if this key was already processed, return current order
-    // This prevents duplicate item additions on retried requests (e.g., WiFi stutter → Android retry).
-    // The idempotencyKey must be unique per request attempt and remain stable across retries.
-    const existing = await OrderItemRepository.getItemsForOrderWhere(orderId, locationId, {
-      idempotencyKey, deletedAt: null,
-    })
-    if (existing.length > 0) {
-      const order = await OrderRepository.getOrderByIdWithInclude(orderId, locationId, {
-        employee: {
-          select: { id: true, displayName: true, firstName: true, lastName: true },
-        },
-        items: {
-          include: {
-            modifiers: true,
-            ingredientModifications: true,
-            pizzaData: true,
-          },
-        },
-      })
-      if (!order) return apiError.notFound('Order not found', ERROR_CODES.ORDER_NOT_FOUND)
-      return ok(mapOrderForResponse(order))
-    }
-
     // Use a transaction to ensure atomic append
     const result = await db.$transaction(async (tx) => {
+      // Idempotency check — if this key was already processed, return current order
+      // This prevents duplicate item additions on retried requests (e.g., WiFi stutter → Android retry).
+      // The idempotencyKey must be unique per request attempt and remain stable across retries.
+      const existing = await tx.orderItem.findMany({
+        where: { orderId, idempotencyKey, deletedAt: null },
+      })
+      if (existing.length > 0) {
+        // Return early from transaction with the current order state
+        const order = await OrderRepository.getOrderByIdWithInclude(orderId, locationId, {
+          employee: {
+            select: { id: true, displayName: true, firstName: true, lastName: true },
+          },
+          items: {
+            include: {
+              modifiers: true,
+              ingredientModifications: true,
+              pizzaData: true,
+            },
+          },
+        }, tx)
+        if (!order) throw new Error('Order not found')
+        return { idempotencyMatch: true, order }
+      }
       // Lock the order row to prevent concurrent modifications (FOR UPDATE)
       const [lockedOrder] = await tx.$queryRaw<any[]>`
         SELECT id, status, "tabStatus" FROM "Order" WHERE id = ${orderId} FOR UPDATE
@@ -649,6 +649,11 @@ export const POST = withVenue(async function POST(
       return { updatedOrder, createdItems, menuItemMap, hasSentItems, priceCorrectionLog }
     })
 
+    // Handle idempotency match — return existing order if already processed
+    if (result.idempotencyMatch) {
+      return ok(mapOrderForResponse(result.order))
+    }
+
     // Fire-and-forget: check if bar tab or bottle service tab needs auto-increment
     if ((result.updatedOrder.orderType === 'bar_tab' || result.updatedOrder.isBottleService) && result.updatedOrder.preAuthRecordNo) {
       fetch(`${process.env.NEXT_PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 3005}`}/api/orders/${orderId}/auto-increment`, {
@@ -700,6 +705,8 @@ export const POST = withVenue(async function POST(
     })()
 
     // Emit ITEM_ADDED events for each new item (fire-and-forget)
+    // Pass idempotencyKey as clientEventId so server echo reuses the client's eventId,
+    // enabling proper deduplication via Room's INSERT OR IGNORE (fixes C4 and H2)
     void emitOrderEvents(result.updatedOrder.locationId, orderId, result.createdItems.map((item: any) => ({
       type: 'ITEM_ADDED' as const,
       payload: {
@@ -744,7 +751,7 @@ export const POST = withVenue(async function POST(
         isTaxInclusive: item.isTaxInclusive ?? false,
         itemType: result.menuItemMap.get(item.menuItemId)?.itemType || null,
       },
-    })))
+    })), { clientEventId: idempotencyKey })
 
     // Format response with complete modifier data
     // Build correlation map for newly created items
