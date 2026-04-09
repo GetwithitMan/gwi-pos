@@ -274,23 +274,30 @@ export const PUT = withVenue(async function PUT(
       }
     }
     if (tableId !== undefined) {
-      // Check table occupancy before allowing transfer (same logic as POST /api/orders)
+      // Atomically check table occupancy inside a FOR UPDATE lock, matching the POST
+      // /api/orders pattern. Without this, two concurrent transfers to the same table
+      // can both pass the check (TOCTOU race) and create two orders on one table.
       if (tableId && tableId !== existingOrder.tableId) {
-        const occupyingOrder = await db.order.findFirst({
-          where: {
-            tableId,
-            locationId: existingOrder.locationId,
-            status: { in: ['draft', 'open', 'in_progress', 'sent', 'split'] },
-            deletedAt: null,
-            id: { not: id },
-          },
-          select: { id: true, orderNumber: true, version: true },
+        const tableConflict = await db.$transaction(async (tx) => {
+          // Lock the target table row to serialize concurrent transfers
+          await tx.$queryRaw`SELECT id FROM "Table" WHERE id = ${tableId} FOR UPDATE`
+          const occupyingOrder = await tx.order.findFirst({
+            where: {
+              tableId,
+              locationId: existingOrder.locationId,
+              status: { in: ['draft', 'open', 'in_progress', 'sent', 'split'] },
+              deletedAt: null,
+              id: { not: id },
+            },
+            select: { id: true, orderNumber: true, version: true },
+          })
+          return occupyingOrder
         })
-        if (occupyingOrder) {
+        if (tableConflict) {
           return apiError.conflict(
             'Table already has an active order',
             ERROR_CODES.TABLE_OCCUPIED,
-            { existingOrderId: occupyingOrder.id, existingOrderNumber: occupyingOrder.orderNumber, existingOrderVersion: occupyingOrder.version }
+            { existingOrderId: tableConflict.id, existingOrderNumber: tableConflict.orderNumber, existingOrderVersion: tableConflict.version }
           )
         }
       }

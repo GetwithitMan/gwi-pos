@@ -1087,14 +1087,17 @@ export const DELETE = withVenue(withAuth(async function DELETE(
       await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${id} FOR UPDATE`
       await tx.$queryRaw`SELECT id FROM "Order" WHERE "parentOrderId" = ${id} FOR UPDATE`
 
-      // TX-KEEP: LOCK — re-check splits inside FOR UPDATE lock to prevent race with concurrent payment
+      // TX-KEEP: LOCK — re-check splits inside FOR UPDATE lock to prevent race with concurrent payment.
+      // Check for ANY non-cancelled payment status (not just 'completed') to catch in-flight
+      // authorizations. Without this, a merge can delete a child order while its card payment
+      // is being authorized by Datacap, orphaning the money permanently.
       const splits = await tx.order.findMany({
         where: { parentOrderId: id, locationId: parentOrder.locationId, deletedAt: null },
-        include: { payments: { where: { status: 'completed' } } },
+        include: { payments: { where: { status: { notIn: ['voided', 'refunded', 'cancelled'] }, deletedAt: null } } },
       })
       const hasPayments = splits.some(s => s.payments.length > 0)
       if (hasPayments) {
-        throw new ValidationError('Cannot merge splits that have payments')
+        throw new ValidationError('Cannot merge splits that have payments or pending authorizations')
       }
 
       // Bug 11: Collect child discount totals before soft-deleting
