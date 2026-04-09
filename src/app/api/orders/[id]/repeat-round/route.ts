@@ -72,7 +72,7 @@ export const POST = withVenue(async function POST(
             courseNumber: item.courseNumber,
             kitchenStatus: 'pending',
             status: 'active',
-            itemTotal: item.price,
+            itemTotal: item.itemTotal,
             isTaxInclusive: item.isTaxInclusive ?? false,
             cardPrice: item.cardPrice,
             pourSize: item.pourSize,
