@@ -44,6 +44,8 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     // Advisory lock to prevent concurrent SAF forwards for the same reader.
     // Derive a stable numeric key from readerId (first 12 hex chars → safe integer).
     const lockKey = parseInt(readerId.replace(/-/g, '').slice(0, 12), 16)
+    // Defensive cleanup: release any stale lock from a prior crashed request on this pooled connection
+    await db.$queryRaw`SELECT pg_advisory_unlock(${lockKey}::bigint)`.catch(() => {})
     const [lockResult] = await db.$queryRaw<[{ pg_try_advisory_lock: boolean }]>`SELECT pg_try_advisory_lock(${lockKey}::bigint) as pg_try_advisory_lock`
     if (!lockResult?.pg_try_advisory_lock) {
       return err('SAF forward already in progress for this reader', 409)

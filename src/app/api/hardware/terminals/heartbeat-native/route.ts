@@ -139,7 +139,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         isOnline: true,
         lastSeenAt: new Date(),
         lastKnownIp: clientIp,
-        lastMutatedBy: 'local',
+        // CRITICAL: Do NOT set lastMutatedBy here. Heartbeat only updates skip fields
+        // (isOnline, lastSeenAt, lastKnownIp, appVersion) which are excluded from
+        // downstream sync anyway. Setting lastMutatedBy: 'local' blocks cloud-originated
+        // changes (like pairingCode from MC) from syncing down to the NUC.
         ...(appVersion ? { appVersion } : {}),
         ...deviceInfoUpdate,
       },

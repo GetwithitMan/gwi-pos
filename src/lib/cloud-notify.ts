@@ -34,15 +34,21 @@ export function notifyDataChanged(params: NotifyParams): void {
   if (!mcBaseUrl || !secret) return
 
   // Fire-and-forget — never block the API response
-  fetch(`${mcBaseUrl}/api/fleet/commands/notify`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${secret}`,
-    },
-    body: JSON.stringify(params),
-    signal: AbortSignal.timeout(3000),
-  }).catch((err) => {
-    log.warn('[Cloud Notify] Failed to notify MC:', err instanceof Error ? err.message : err)
-  })
+  const doNotify = (attempt: number) => {
+    fetch(`${mcBaseUrl}/api/fleet/commands/notify`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${secret}`,
+      },
+      body: JSON.stringify(params),
+      signal: AbortSignal.timeout(3000),
+    }).catch((err) => {
+      log.warn(`[Cloud Notify] attempt ${attempt} failed:`, err instanceof Error ? err.message : err)
+      if (attempt < 2) {
+        setTimeout(() => doNotify(attempt + 1), 2000)
+      }
+    })
+  }
+  doNotify(1)
 }

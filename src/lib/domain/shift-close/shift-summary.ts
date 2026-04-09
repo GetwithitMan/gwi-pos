@@ -47,25 +47,27 @@ export async function calculateShiftSummary(
     },
   })
 
-  // Get all orders created by this employee during the shift
-  const orders = await db.order.findMany({
-    where: {
-      employeeId,
-      locationId,
-      createdAt: {
-        gte: startTime,
-        lte: endTime,
-      },
-      status: { in: ['paid', 'closed'] },
-    },
-    select: {
-      id: true,
-      total: true,
-      tipTotal: true,
-      discountTotal: true,
-      commissionTotal: true,
-    },
-  })
+  // Derive orders from the payments fetched above (aligned by processedAt).
+  // This prevents the "shift boundary drift" bug where orders filtered by createdAt
+  // could mismatch with payments filtered by processedAt — e.g. an order opened at
+  // 11:50 PM (Shift A) but paid at 12:10 AM (Shift B) would show revenue in Shift A
+  // but the payment in Shift B, causing Over/Short errors on every drawer.
+  const paymentOrderIds = [...new Set(payments.map(p => p.order?.id).filter(Boolean))] as string[]
+  const orders = paymentOrderIds.length > 0
+    ? await db.order.findMany({
+        where: {
+          id: { in: paymentOrderIds },
+          locationId,
+        },
+        select: {
+          id: true,
+          total: true,
+          tipTotal: true,
+          discountTotal: true,
+          commissionTotal: true,
+        },
+      })
+    : []
 
   // Calculate total commission earned
   const totalCommission = orders.reduce((sum, order) => sum + Number(order.commissionTotal || 0), 0)
@@ -194,34 +196,25 @@ export async function calculateShiftSummary(
   const orderCount = orders.length
   const paymentCount = payments.length
 
-  // Get voids/comps during shift (count items with voided/comped status on orders in this period)
-  const voids = await db.orderItem.count({
-    where: {
-      order: {
-        employeeId,
-        locationId,
-        createdAt: {
-          gte: startTime,
-          lte: endTime,
+  // Get voids/comps for orders with payments in this shift period
+  // (aligned with payment-derived order set to prevent boundary drift)
+  const voids = paymentOrderIds.length > 0
+    ? await db.orderItem.count({
+        where: {
+          orderId: { in: paymentOrderIds },
+          status: 'voided',
         },
-      },
-      status: 'voided',
-    },
-  })
+      })
+    : 0
 
-  const comps = await db.orderItem.count({
-    where: {
-      order: {
-        employeeId,
-        locationId,
-        createdAt: {
-          gte: startTime,
-          lte: endTime,
+  const comps = paymentOrderIds.length > 0
+    ? await db.orderItem.count({
+        where: {
+          orderId: { in: paymentOrderIds },
+          status: 'comped',
         },
-      },
-      status: 'comped',
-    },
-  })
+      })
+    : 0
 
   // SAF (Store-and-Forward) payment tracking for shift close visibility
   const safPendingPayments = await db.payment.findMany({

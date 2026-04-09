@@ -52,6 +52,8 @@ const SLUGLESS_ALLOWED_PATTERNS = [
   '/api/fleet/',         // Fleet endpoints (NUC heartbeat)
   '/api/cron/',          // Vercel cron jobs (authed via CRON_SECRET, not slug)
   '/api/dashboard/',     // NUC Dashboard app (local monitoring)
+  '/api/hardware/terminals/pair-native',  // Native app pairing (device doesn't know slug yet)
+  '/api/hardware/terminals/pair',         // Browser pairing
   '/pay/',               // Payment links
   '/approve-void/',      // Void approval links
 ]

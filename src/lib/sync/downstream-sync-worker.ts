@@ -454,18 +454,11 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
               )
 
               if (decision === 'quarantine') {
-                // Future blocking mode — skip the upsert
-                if (incomingUpdatedAt > maxSyncedAt) {
-                  maxSyncedAt = incomingUpdatedAt
-                }
-                // Persist downstream watermark so this quarantined row doesn't
-                // re-sync infinitely on subsequent cycles. Without this, the
-                // watermark never advances past the quarantined row's timestamp.
-                if (rowLocationId) {
-                  void updateDownstreamWatermark(rowLocationId, incomingUpdatedAt).catch((wmErr) => {
-                    log.error({ err: wmErr, locationId: rowLocationId }, 'Failed to update watermark after quarantine')
-                  })
-                }
+                // Quarantined rows are NOT synced and do NOT advance the watermark.
+                // The quarantine table itself will skip this row on subsequent cycles.
+                // Keeping the watermark at the last successfully synced row ensures
+                // that any legitimate rows with timestamps between old and new watermark
+                // are not silently skipped.
                 continue
               }
 

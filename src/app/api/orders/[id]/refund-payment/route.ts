@@ -14,7 +14,7 @@ import { getLocationSettings } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate, dispatchOrderSummaryUpdated, dispatchPaymentProcessed, dispatchGiftCardBalanceChanged } from '@/lib/socket-dispatch'
 import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
-import { queueIfOutageOrFail, OutageQueueFullError, pushUpstream } from '@/lib/sync/outage-safe-write'
+import { queueIfOutageOrFail,  pushUpstream } from '@/lib/sync/outage-safe-write'
 import { restoreInventoryForOrder } from '@/lib/inventory/void-waste'
 import { validateCellularRefundFromHeaders, validateManagerReauthFromHeaders, CellularAuthError } from '@/lib/cellular-validation'
 import { createChildLogger } from '@/lib/logger'
@@ -100,6 +100,10 @@ export const POST = withVenue(async function POST(
     // and void operations on the same order block each other. Both refund-payment and
     // void-payment use this same derivation to share the lock key space.
     const lockKey = parseInt(id.replace(/-/g, '').slice(0, 12), 16)
+    // Defensive cleanup: release any stale lock on this key from a prior crashed request
+    // that happened to use this same pooled connection. Safe because Prisma serializes
+    // requests per connection, so no other in-flight request can hold this lock here.
+    await db.$queryRaw`SELECT pg_advisory_unlock(${lockKey}::bigint)`.catch(() => {})
     const [{ acquired }] = await db.$queryRaw<[{ acquired: boolean }]>`
       SELECT pg_try_advisory_lock(${lockKey}::bigint) as acquired
     `
@@ -337,6 +341,13 @@ export const POST = withVenue(async function POST(
         },
       })
 
+      // Outage queue write INSIDE the transaction for atomicity
+      if (isInOutageMode()) {
+        await queueIfOutageOrFail('RefundLog', order.locationId, refundLog.id, 'INSERT', refundLog as unknown as Record<string, unknown>, tx)
+        const fullPayment = await tx.payment.findUnique({ where: { id: paymentId } })
+        if (fullPayment) await queueIfOutageOrFail('Payment', order.locationId, paymentId, 'UPDATE', fullPayment as unknown as Record<string, unknown>, tx)
+      }
+
       return { refundLog, isPartial, totalAlreadyRefunded: freshTotalRefunded, payment }
     }, { timeout: 15000 })
 
@@ -353,16 +364,6 @@ export const POST = withVenue(async function POST(
     }
 
     const { refundLog, isPartial } = txResult
-
-    // ── Outage queue protection for RefundLog ───────────────────────────────
-    try {
-      await queueIfOutageOrFail('RefundLog', order.locationId, refundLog.id, 'INSERT')
-    } catch (caughtErr) {
-      if (caughtErr instanceof OutageQueueFullError) {
-        return err('Service temporarily unavailable — outage queue full', 507)
-      }
-      throw caughtErr
-    }
 
     // Emit PAYMENT_VOIDED event (fire-and-forget)
     void emitOrderEvent(order.locationId, id, 'PAYMENT_VOIDED', {

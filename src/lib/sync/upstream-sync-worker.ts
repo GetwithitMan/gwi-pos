@@ -117,6 +117,7 @@ export async function queueOutageWrite(
   operation: 'INSERT' | 'UPDATE' | 'DELETE',
   payload: Record<string, unknown>,
   locationId: string,
+  tx?: any,
 ): Promise<{ queued: boolean; reason?: string }> {
   // Check queue size before inserting
   try {
@@ -157,7 +158,8 @@ export async function queueOutageWrite(
     // Idempotency key: deterministic prefix (for debugging) + random suffix (for uniqueness across retries/restarts)
     const idempotencyKey = `${locationId}:${tableName}:${recordId}:${randomUUID().slice(0, 8)}`
 
-    await masterClient.$executeRawUnsafe(
+    const client = tx ?? masterClient
+    await client.$executeRawUnsafe(
       `INSERT INTO "OutageQueueEntry" (id, "tableName", "recordId", operation, payload, "locationId", status, "localSeq", "idempotencyKey", "createdAt")
        VALUES (gen_random_uuid(), $1, $2, $3, $4::jsonb, $5, 'PENDING', $6, $7, NOW())`,
       tableName,
@@ -210,12 +212,23 @@ async function checkConnectivity(): Promise<boolean> {
 
 /**
  * FK violation retry tracker: "tableName:recordId" → { count, firstSeen }.
- * After FK_MAX_RETRIES failures, the row is stamped as synced to prevent infinite loops.
+ * Tracks retry attempts to detect when FK violations persist.
  * Entries older than 5 minutes are pruned at the end of each sync cycle.
  */
 const fkRetryMap = new Map<string, { count: number; firstSeen: number }>()
 const FK_MAX_RETRIES = 5
 const FK_RETRY_PRUNE_AGE = 5 * 60 * 1000 // 5 minutes
+
+/**
+ * FK dead-letter skip set: tracks unresolvable FK violations to prevent infinite retries.
+ * After FK_MAX_RETRIES, the key is added here with a timestamp.
+ * Entries older than 1 hour are automatically pruned to avoid unbounded memory growth.
+ * The skip set prevents re-attempting the same broken FK indefinitely.
+ * IMPORTANT: We never mark a row as synced if it failed an FK check — the row remains
+ * unsyncable until the parent dependency is genuinely created in Neon.
+ */
+const fkDeadLetterSkipSet = new Map<string, number>() // fkKey → timestamp when added
+const FK_DEADLETTER_TTL = 60 * 60 * 1000 // 1 hour
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -416,25 +429,45 @@ async function syncTable(tableName: string, batchSize: number): Promise<number> 
             // the row will retry next cycle when the parent may have been synced.
             // Track retries to prevent infinite loops if parent is genuinely missing.
             const fkKey = `${tableName}:${row.id as string}`
-            const existing = fkRetryMap.get(fkKey)
-            const fkCount = (existing?.count || 0) + 1
-            fkRetryMap.set(fkKey, { count: fkCount, firstSeen: existing?.firstSeen || Date.now() })
 
-            if (fkCount >= FK_MAX_RETRIES) {
-              log.error({ table: tableName, recordId: row.id, fkRetries: fkCount, errMsg: rowErrMsg },
-                'FK violation persisted after max retries — marking synced to prevent infinite loop')
-              try {
-                await masterClient.$executeRawUnsafe(
-                  `UPDATE "${tableName}" SET "syncedAt" = (NOW() AT TIME ZONE 'UTC') WHERE id = $1`,
-                  row.id as string
-                )
-              } catch {
-                // Best effort
-              }
-              fkRetryMap.delete(fkKey)
+            // Check if already in dead-letter skip set (unresolvable FK)
+            if (fkDeadLetterSkipSet.has(fkKey)) {
+              log.warn({ table: tableName, recordId: row.id, errMsg: rowErrMsg },
+                'FK violation — skipping (already in dead-letter set, will retry again in 1 hour)')
+              // Do NOT mark as synced — row remains unsynced and will retry after dead-letter TTL expires
             } else {
-              log.warn({ table: tableName, recordId: row.id, fkRetries: fkCount, maxRetries: FK_MAX_RETRIES, errMsg: rowErrMsg },
-                'FK violation — will retry next cycle (parent may not have synced yet)')
+              const existing = fkRetryMap.get(fkKey)
+              const fkCount = (existing?.count || 0) + 1
+              fkRetryMap.set(fkKey, { count: fkCount, firstSeen: existing?.firstSeen || Date.now() })
+
+              if (fkCount >= FK_MAX_RETRIES) {
+                // FK violation persisted through max retries — add to dead-letter skip set instead of marking synced.
+                // This preserves the row's unsyncable state and prevents silent data loss.
+                // Log to VenueLog for operational visibility.
+                log.error({ table: tableName, recordId: row.id, fkRetries: fkCount, errMsg: rowErrMsg },
+                  'FK violation persisted after max retries — added to dead-letter skip set (row NOT marked synced)')
+
+                // Record this unresolvable FK in VenueLog for audit trail
+                try {
+                  const locationId = process.env.POS_LOCATION_ID || process.env.LOCATION_ID || 'unknown'
+                  await masterClient.$executeRawUnsafe(
+                    `INSERT INTO "VenueLog" (id, "locationId", level, source, category, message, details, "createdAt", "expiresAt")
+                     VALUES (gen_random_uuid(), $1, 'error', 'sync', 'sync', $2, $3::jsonb, NOW(), NOW() + INTERVAL '30 days')`,
+                    locationId,
+                    `FK constraint violation: ${tableName}/${row.id} failed after ${fkCount} retries`,
+                    JSON.stringify({ table: tableName, recordId: row.id, fkRetries: fkCount, errorMsg: rowErrMsg })
+                  )
+                } catch (logErr) {
+                  log.warn({ err: logErr }, 'Failed to log FK dead-letter to VenueLog (non-fatal)')
+                }
+
+                // Add to dead-letter skip set with TTL expiry
+                fkDeadLetterSkipSet.set(fkKey, Date.now())
+                fkRetryMap.delete(fkKey)
+              } else {
+                log.warn({ table: tableName, recordId: row.id, fkRetries: fkCount, maxRetries: FK_MAX_RETRIES, errMsg: rowErrMsg },
+                  'FK violation — will retry next cycle (parent may not have synced yet)')
+              }
             }
           } else {
             log.error({ table: tableName, recordId: row.id, errMsg: rowErrMsg }, 'Row sync failed')
@@ -670,6 +703,16 @@ async function runSyncCycle(): Promise<void> {
       const entry = fkRetryMap.get(key)
       if (entry && now - entry.firstSeen > FK_RETRY_PRUNE_AGE) {
         fkRetryMap.delete(key)
+      }
+    }
+
+    // Prune dead-letter skip set entries older than 1 hour to allow eventual retry if parent appears
+    const fkDeadLetterKeys = Array.from(fkDeadLetterSkipSet.keys())
+    for (const key of fkDeadLetterKeys) {
+      const addedAt = fkDeadLetterSkipSet.get(key)
+      if (addedAt && now - addedAt > FK_DEADLETTER_TTL) {
+        fkDeadLetterSkipSet.delete(key)
+        log.info({ fkKey: key }, 'FK dead-letter entry expired — will retry if unsynced')
       }
     }
   }
