@@ -153,7 +153,7 @@ function recordReconnection(): void {
 
 // Reverse mapping: cfdTerminalId → registerTerminalId (cached from auth middleware)
 // Used by CFD-to-register relay to avoid DB lookups during payment flow
-const cfdToRegisterMap = new Map<string, string>()
+export const cfdToRegisterMap = new Map<string, string>()
 
 // Dedup map for mobile tab close requests: orderId → timestamp
 // Prevents duplicate close attempts within 30s (e.g., double-tap on mobile)
@@ -164,7 +164,7 @@ const CFD_MAP_MAX_SIZE = 100
  * Add to cfdToRegisterMap with size bound.
  * If map exceeds max size, evict the oldest entry (first key in insertion order).
  */
-function setCfdMapping(cfdTerminalId: string, registerTerminalId: string): void {
+export function setCfdMapping(cfdTerminalId: string, registerTerminalId: string): void {
   cfdToRegisterMap.set(cfdTerminalId, registerTerminalId)
   if (cfdToRegisterMap.size > CFD_MAP_MAX_SIZE) {
     // Map iterates in insertion order — first key is oldest
@@ -1365,7 +1365,7 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
  * Get socket server instance (for API routes to emit events)
  * Uses globalThis to survive Next.js HMR in development (same pattern as Prisma client)
  */
-const globalForSocket = globalThis as unknown as {
+export const globalForSocket = globalThis as unknown as {
   socketServer: SocketServer | undefined
 }
 
