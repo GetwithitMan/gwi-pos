@@ -119,7 +119,7 @@ export const POST = withVenue(async function POST(
       if (!splitEmployeeId) {
         const { getActorFromRequest } = await import('@/lib/api-auth')
         const actor = await getActorFromRequest(request)
-        splitEmployeeId = actor?.employeeId ?? null
+        splitEmployeeId = actor?.employeeId ?? undefined
       }
       const auth = await requirePermission(splitEmployeeId, order.locationId, PERMISSIONS.POS_SPLIT_CHECKS)
       if (!auth.authorized) return err(auth.error, auth.status)
