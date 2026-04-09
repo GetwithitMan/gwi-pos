@@ -166,6 +166,7 @@ _SERVER_PKGS=(
     @socket.io/component-emitter
     twilio
     zod
+    clsx tailwind-merge
     "${_PRISMA_RUNTIME_PKGS[@]}"
     pg postgres-array postgres-bytea postgres-date postgres-interval pg-types
 )
