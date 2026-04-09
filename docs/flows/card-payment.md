@@ -6,7 +6,7 @@
 
 ## 1. Purpose
 
-**Trigger:** A server taps "Charge" in PaymentSheet (Android register or PAX device) — a card transaction is sent to the Datacap reader, approved, and the order is closed.
+**Trigger:** A server initiates card payment on Android register or PAX device — a card transaction is sent to the Datacap reader, approved, and the order is closed.
 
 **Why it matters:** Money integrity. A failed or corrupted payment path means a customer's card is charged but the order is not closed, or the order is closed but no payment is recorded. Either failure damages the venue financially and erodes trust.
 
@@ -31,7 +31,7 @@
 ```
 1.  [CLIENT]      Server opens PaymentSheet on order, taps "Charge" (card)
                   Client generates idempotencyKey (UUID) on button press
-                  (Android: PayOrderUseCase generates key; Web POS: PaymentModal)
+                  (Android: PayOrderUseCase generates key; PAX: equivalent payment flow)
 
 2.  [API]         POST /api/orders/[id]/pay
                   Body: { paymentMethod: 'credit'|'debit', amount, idempotencyKey,

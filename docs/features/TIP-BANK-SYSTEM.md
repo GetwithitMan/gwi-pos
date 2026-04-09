@@ -629,16 +629,15 @@ Thermal receipt for end-of-day business summary.
 
 ### Tip Group Management (Skill 265)
 
-Full-page UI at `/crew/tip-group` for starting, joining, and leaving tip groups.
+Tip group management UI for starting, joining, and leaving tip groups. Previously a web POS page at `/crew/tip-group` (removed April 2026). Now managed via Android register crew screen and API routes.
 
 **Features:**
 - **Active Group Panel** — Members with split %, owner star indicator, leave/close actions
 - **Start Group Modal** — Select clocked-in coworkers, choose split mode (equal/custom)
 - **Join Group** — List active groups with "Request to Join" button
 - **Owner Actions** — Approve pending requests, close group
-- **Crew Hub Card** — "Tip Group" card on `/crew` linking to this page
 
-**File:** `src/app/(pos)/crew/tip-group/page.tsx`
+**API:** `src/app/api/tips/group-templates/` (routes remain)
 
 ### Shared Table Ownership (Skill 266)
 

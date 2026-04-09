@@ -269,26 +269,6 @@ model ItemBarcode {
 
 ---
 
-### Phase 5 — Web POS Scanner Support
-
-**Goal:** Support USB/Bluetooth barcode scanners on the web POS (NUC kiosk).
-
-**How USB scanners work on web:**
-- USB barcode scanners act as keyboard input — they "type" the barcode digits followed by Enter
-- No special driver or API needed
-- Detect rapid keystroke input (< 50ms between chars) as a scan vs. manual typing
-
-**Implementation:**
-- Global keypress listener on the POS order page
-- Accumulate rapid keystrokes into a barcode buffer
-- On Enter (or timeout), call `/api/barcode/lookup`
-- Same add-to-order flow as PAX
-
-**Files touched:**
-- New: `src/hooks/useBarcodeScanner.ts` — keyboard-based scanner detection hook
-- `src/app/(pos)/order/page.tsx` — wire up scanner hook
-- Reuses same API endpoint as PAX
-
 ---
 
 ## Settings
@@ -324,11 +304,12 @@ New settings under `settings.barcode`:
 | Phase 2 — Admin UI | Medium | Phase 1 |
 | Phase 3 — PAX Scanner | Medium-High | Phase 1, PAX SDK docs |
 | Phase 4 — Inventory Integration | High (case-break) | Phase 1 |
-| Phase 5 — Web POS Scanner | Low | Phase 1 |
 
-**Recommended build order:** Phase 1 → Phase 2 → Phase 3 → Phase 5 → Phase 4
+**Recommended build order:** Phase 1 → Phase 2 → Phase 3 → Phase 4
 
-Phase 5 (web scanner) is trivially simple once Phase 1 exists — USB scanners are just keyboard input. Phase 4 (case-break) is the most complex and can be deferred until a venue specifically needs it.
+Phase 4 (case-break) is the most complex and can be deferred until a venue specifically needs it.
+
+> **Note:** Web POS scanner support (Phase 5) was removed — the web POS register UI was deleted in April 2026. Barcode scanning is Android/PAX only.
 
 ---
 

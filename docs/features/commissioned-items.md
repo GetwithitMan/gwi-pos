@@ -33,7 +33,7 @@ Commission tracking on item sales. Configure flat-dollar or percentage commissio
 | Payment-time recalc | `src/app/api/orders/[id]/pay/route.ts` (fire-and-forget block) |
 | Manager report API | `src/app/api/reports/commission/route.ts` |
 | Manager report UI | `src/app/(admin)/reports/commission/page.tsx` |
-| Employee self-service | `src/app/(pos)/crew/commission/page.tsx` |
+| Employee self-service | Via Android register crew screen (web POS page removed April 2026) |
 | Admin fix tool | `src/app/api/admin/fix-commissions/route.ts` |
 
 ## Business Logic

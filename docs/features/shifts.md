@@ -23,6 +23,9 @@ Shifts track an employee's working session from clock-in to close-out, encompass
 
 | Interface | Path / Screen | Who Accesses |
 |-----------|--------------|--------------|
+| POS Web | Shift Start Modal → `src/components/shifts/ShiftStartModal.tsx` | All staff |
+| POS Web | Shift Closeout Modal → `src/components/shifts/ShiftCloseoutModal.tsx` | All staff / Managers |
+| POS Web | Time Clock Modal → `src/components/time-clock/TimeClockModal.tsx` | All staff |
 | Admin | Employee shift history | Managers |
 | Android | Clock in/out screen | All staff |
 
@@ -282,7 +285,7 @@ The `Break` model tracks individual break periods within a `TimeClockEntry`. Bre
 - `PinLoginScreen` supports clock-in flow
 - Android can clock in/out and view current shift summary
 - `MyTipsScreen` (2026-03-03): employees review pending and recorded tips via `/api/tips/pending-tips` and `/api/tips/recorded-tips`
-- No full shift close-out UI on Android — managers use admin web UI for close-out
+- No full shift close-out UI on Android — managers use admin settings pages for close-out (web POS register UI removed April 2026)
 
 ---
 

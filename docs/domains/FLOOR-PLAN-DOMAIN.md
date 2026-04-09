@@ -13,7 +13,7 @@ The Floor Plan domain manages the interactive floor plan canvas, tables, seats, 
 - Virtual table combining (physical drag-drop + virtual long-hold)
 - Entertainment item placement with visual types
 - Floor plan editor for admin layout building
-- FloorPlanHome **removed** (April 2026) — floor plan FOH view was part of the web POS register; admin editor remains
+- Android register floor plan view (FOH web POS view removed April 2026)
 
 ## Domain Trigger
 
@@ -25,7 +25,7 @@ PM Mode: Floor Plan
 
 | Layer | Scope | Key Files |
 |-------|-------|-----------|
-| Canvas | Floor plan rendering | `src/domains/floor-plan/canvas/FloorCanvas.tsx` (admin editor only — FOH FloorPlanHome removed April 2026) |
+| Canvas | Floor plan rendering | ~~`src/components/floor-plan/FloorPlanHome.tsx`~~ (removed April 2026; FOH view now Android-only) |
 | Fixtures | Non-seating elements | `src/app/api/floor-plan-elements/` |
 | Tables | Table records | `src/app/api/tables/`, `src/app/api/tables/[id]/` |
 | Seats | Seat records | `src/app/api/seats/`, `src/app/api/tables/[id]/seats/` |
@@ -38,7 +38,7 @@ PM Mode: Floor Plan
 
 | File | Purpose |
 |------|---------|
-| `src/components/floor-plan/FloorPlanHome.tsx` | **REMOVED (April 2026)** — was the FOH POS interface; admin editor at `FloorPlanEditor.tsx` remains |
+| ~~`src/components/floor-plan/FloorPlanHome.tsx`~~ | **Removed** (April 2026). FOH floor plan view now Android-only. |
 | `src/components/floor-plan/FloorPlanEditor.tsx` | Admin layout editor |
 | `src/lib/seat-generation.ts` | Seat position generation algorithms |
 | `src/lib/virtual-group-seats.ts` | Virtual group seat numbering |
@@ -78,7 +78,7 @@ PM Mode: Floor Plan
 
 ## Integration Points
 
-- **Orders Domain**: Table assignment (inline ordering from FloorPlanHome removed April 2026)
+- **Orders Domain**: Table assignment, order-to-table linking
 - **Entertainment Domain**: Entertainment items placed on floor plan
 - **Events Domain**: Reservation table assignment
 - **Payments Domain**: Payment flow initiated from floor plan

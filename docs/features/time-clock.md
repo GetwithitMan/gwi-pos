@@ -23,6 +23,7 @@ Employee clock-in/out system with break tracking, overtime calculation (8-hour t
 
 | Interface | Path / Screen | Who Accesses |
 |-----------|--------------|--------------|
+| Android | Crew screen (clock-in/out, breaks) | All staff |
 | Admin | Dashboard (clock status indicators) | Managers |
 
 ---
@@ -120,7 +121,7 @@ Break {
 ### Clock-Out Flow (CRITICAL GUARDS)
 1. Find active tip groups where employee is sole member
 2. **If found**: Return `errorCode: last_group_member` with `groupId` → **block clock-out (409)**
-3. UI shows modal: "Close the group before clocking out" → redirects to `/crew/tip-group`
+3. UI shows modal: "Close the group before clocking out"
 4. Manager can override with `force: true` (audit-logged)
 5. Calculate worked hours: `totalMinutes = (now - clockIn) - breakMinutes`
 6. If worked > 8 hours: split into `regularHours` + `overtimeHours`

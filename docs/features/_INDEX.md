@@ -7,7 +7,7 @@ Every feature in this registry has a dedicated doc in `docs/features/`. Before c
 **Repos in this system:**
 | Repo | Role |
 |------|------|
-| `gwi-pos` | NUC server + Next.js web POS (admin, settings, KDS, CFD) |
+| `gwi-pos` | NUC server + Next.js web app (admin, settings, KDS, CFD) |
 | `gwi-android-register` | Android POS register — PRIMARY client |
 | `gwi-cfd` | Customer-Facing Display (PAX A3700) — payment screens |
 | `gwi-backoffice` | Cloud event ingestion + aggregate reporting |

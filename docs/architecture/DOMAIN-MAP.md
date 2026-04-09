@@ -39,14 +39,13 @@ This document maps every significant file/folder in the current codebase to its 
 | 13 | Events | EV | `PM Mode: Events` | Reservations, event ticketing |
 | 14 | Financial | FN | `PM Mode: Financial` | Payroll processing, tip-outs, tip shares |
 | 15 | Development-RnD | RD | `PM Mode: Development-RnD` | Prototypes, research, technical spikes |
-| 16 | Datacap | DC | `PM Mode: Datacap` | Payment gateway, card readers, transaction processing |
-| 17 | Error Reporting | ER | `PM Mode: Error Reporting` | Error tracking, monitoring, alerts |
-| 18 | Tabs & Bottle Service | TB | `PM Mode: Tabs` | Bar tabs, pre-auth, bottle service, multi-card, walkout |
-| 19 | Pizza Builder | PZ | `PM Mode: Pizza Builder` | Pizza config, visual builder, sectional printing |
-| 20 | Liquor Management | LQ | `PM Mode: Liquor Management` | Spirit categories, bottles, cocktail recipes, pour cost |
-| 21 | Offline & Sync | OS | `PM Mode: Offline & Sync` | Offline queue, IndexedDB, cloud sync, health checks |
-| 22 | Customer Display | CD | `PM Mode: Customer Display` | CFD, pay-at-table, tip/signature screens |
-| 23 | Scheduling | SC | `PM Mode: Scheduling` | Employee scheduling, shift planning |
+| 16 | Error Reporting | ER | `PM Mode: Error Reporting` | Error tracking, monitoring, alerts |
+| 17 | Tabs & Bottle Service | TB | `PM Mode: Tabs` | Bar tabs, pre-auth, bottle service, multi-card, walkout |
+| 18 | Pizza Builder | PZ | `PM Mode: Pizza Builder` | Pizza config, visual builder, sectional printing |
+| 19 | Liquor Management | LQ | `PM Mode: Liquor Management` | Spirit categories, bottles, cocktail recipes, pour cost |
+| 20 | Offline & Sync | OS | `PM Mode: Offline & Sync` | Offline queue, IndexedDB, cloud sync, health checks |
+| 21 | Customer Display | CD | `PM Mode: Customer Display` | CFD, pay-at-table, tip/signature screens |
+| 22 | Scheduling | SC | `PM Mode: Scheduling` | Employee scheduling, shift planning |
 
 ---
 
@@ -93,7 +92,7 @@ This document maps every significant file/folder in the current codebase to its 
 | `settings/daily-counts/` | IN | Daily count config |
 | `settings/hardware/` | HW | Hardware overview |
 | `settings/hardware/kds-screens/` | HW | KDS pairing |
-| `settings/hardware/payment-readers/` | DC | Datacap reader config |
+| `settings/hardware/payment-readers/` | HW | Payment readers |
 | `settings/hardware/printers/` | HW | Printer setup |
 | `settings/hardware/routing/` | HW | Print routing |
 | `settings/hardware/terminals/` | HW | Terminal setup |
@@ -122,13 +121,10 @@ This document maps every significant file/folder in the current codebase to its 
 | `tips/` | RP | Tips reports |
 | `voids/` | RP | Void/comp reports |
 
-### 1.3 POS Pages (`src/app/(pos)/`)
+### 1.3 POS Pages (`src/app/(pos)/`) — REMOVED
 
-| Current Path | Target Domain | Notes |
-|--------------|---------------|-------|
-| `orders/` | OM + FP | [SPLIT] Main POS, uses Floor Plan for tables |
-| `tabs/` | TB | Tab management |
-| `pay-at-table/` | CD | Customer self-pay |
+> The web POS register UI was removed in April 2026. Android registers and PAX devices
+> are the only register clients. API routes serving Android/PAX remain in section 2.
 
 ### 1.4 KDS Pages (`src/app/(kds)/`)
 
@@ -505,7 +501,7 @@ This document maps every significant file/folder in the current codebase to its 
 
 | Current Path | Target Domain | Notes |
 |--------------|---------------|-------|
-| `floor-plan/FloorPlanHome.tsx` | FP | Main POS floor plan interface |
+| `floor-plan/FloorPlanHome.tsx` | FP | Floor plan interface (admin only — POS FOH view removed) |
 | `floor-plan/FloorPlanEditor.tsx` | FP | Admin layout editor |
 | `floor-plan/FloorPlanTable.tsx` | FP | Table rendering |
 | `floor-plan/FloorPlanEntertainment.tsx` | FP | Entertainment elements |
@@ -530,49 +526,25 @@ This document maps every significant file/folder in the current codebase to its 
 | `floor-plan/VirtualCombineBar.tsx` | FP | Virtual combine |
 | `floor-plan/VirtualGroupManagerModal.tsx` | FP | |
 
-### 3.2 Order Management Domain Components
+### 3.2 Order Management Domain Components — MOSTLY REMOVED
+
+> Most web POS order components were removed in April 2026. Order management now happens
+> on Android registers and PAX devices. API routes remain. Remaining web components:
 
 | Current Path | Target Domain | Notes |
 |--------------|---------------|-------|
-| `orders/OrderPanel.tsx` | OM | Order summary panel |
-| `orders/OrderPanelActions.tsx` | OM | Totals, payment buttons |
-| `orders/OrderTypeSelector.tsx` | OM | Order type selection |
-| `orders/OpenOrdersPanel.tsx` | OM | Open orders list |
-| `orders/CompVoidModal.tsx` | OM | Comp/void dialog |
-| `orders/AdjustTipModal.tsx` | OM | Tip adjustment |
-| `orders/RemoteVoidApprovalModal.tsx` | OM | Remote void |
-| `orders/ReopenOrderModal.tsx` | OM | Reopen closed order |
-| `orders/VoidPaymentModal.tsx` | OM | Void payment |
-| `orders/EntertainmentSessionControls.tsx` | OM | Session start/stop/extend |
-| `shifts/ShiftCloseoutModal.tsx` | EM | Shift closeout |
-| `shifts/ShiftStartModal.tsx` | EM | Shift start |
+| `shifts/ShiftCloseoutModal.tsx` | EM | Shift closeout (admin) |
+| `shifts/ShiftStartModal.tsx` | EM | Shift start (admin) |
 
-### 3.3 Payments Domain Components
+### 3.3 Payments Domain Components — REMOVED
 
-| Current Path | Target Domain | Notes |
-|--------------|---------------|-------|
-| `payment/PaymentModal.tsx` | PM | Main payment flow |
-| `payment/SplitCheckModal.tsx` | PM | Split check |
-| `payment/GroupSummary.tsx` | PM | Group payment summary |
-| `payment/DatacapPaymentProcessor.tsx` | PM | Datacap processing |
-| `payment/QuickPayButton.tsx` | PM | Quick pay flow |
-| `payment/ReaderStatusIndicator.tsx` | PM | Reader status |
-| `payment/SignatureCapture.tsx` | PM | Signature capture |
-| `payment/SwapConfirmationModal.tsx` | PM | Swap confirmation |
-| `payment/TipPromptSelector.tsx` | PM | Tip prompt |
-| `payment/steps/` | PM | Payment step components |
+> Web POS payment components were removed in April 2026. Payment processing now happens
+> on Android registers and PAX devices via API routes (see section 2.7).
 
-### 3.4 Tabs Domain Components
+### 3.4 Tabs Domain Components — REMOVED
 
-| Current Path | Target Domain | Notes |
-|--------------|---------------|-------|
-| `tabs/` | TB | All tab components |
-| `tabs/TabCard.tsx` | TB | Tab card display |
-| `tabs/BottleServiceBanner.tsx` | TB | Bottle service progress |
-| `tabs/CardFirstFlow.tsx` | TB | Card-first tab opening |
-| `tabs/TabTransferModal.tsx` | TB | Tab transfer |
-| `tabs/MultiCardBadges.tsx` | TB | Multi-card display |
-| `tabs/PendingTabShimmer.tsx` | TB | Auth pending animation |
+> Web POS tab components were removed in April 2026. Tab management now happens
+> on Android registers and PAX devices via API routes (see section 2.14).
 
 ### 3.5 Menu Domain Components
 
@@ -584,17 +556,12 @@ This document maps every significant file/folder in the current codebase to its 
 | `menu/RecipeBuilder.tsx` | MN | Recipe builder |
 | `menu/StockBadge.tsx` | MN | Stock status badge |
 | `modifiers/ModifierModal.tsx` | MN | Modifier selection modal |
-| `bartender/BartenderView.tsx` | MN | Bartender POS interface |
+| `bartender/BartenderView.tsx` | MN | Bartender interface (REMOVED — web POS deleted April 2026) |
 
-### 3.6 Pizza Builder Domain Components
+### 3.6 Pizza Builder Domain Components — REMOVED
 
-| Current Path | Target Domain | Notes |
-|--------------|---------------|-------|
-| `pizza/PizzaBuilder.tsx` | PZ | Visual pizza builder |
-| `pizza/PizzaBuilderModal.tsx` | PZ | Pizza builder modal |
-| `pizza/PizzaQuickBuilder.tsx` | PZ | Quick pizza builder |
-| `pizza/PizzaVisualBuilder.tsx` | PZ | Visual topping placement |
-| `pizza/use-pizza-order.ts` | PZ | Pizza order hook |
+> Web POS pizza builder components were removed in April 2026. Pizza building now happens
+> on Android registers and PAX devices natively. API routes and admin config pages remain.
 
 ### 3.7 Inventory Domain Components
 
@@ -628,9 +595,7 @@ This document maps every significant file/folder in the current codebase to its 
 | `cfd/CFDTipScreen.tsx` | CD | Tip selection |
 | `cfd/CFDSignatureScreen.tsx` | CD | Signature capture |
 | `cfd/CFDApprovedScreen.tsx` | CD | Approval/decline |
-| `pay-at-table/TablePayment.tsx` | CD | Pay-at-table flow |
-| `pay-at-table/SplitSelector.tsx` | CD | Split check |
-| `pay-at-table/TipScreen.tsx` | CD | Tip entry |
+| `pay-at-table/` | CD | Pay-at-table components (REMOVED — web POS deleted April 2026) |
 
 ### 3.10 Guest Domain Components
 
@@ -666,15 +631,14 @@ This document maps every significant file/folder in the current codebase to its 
 |--------------|---------------|-------|
 | `monitoring/` | ER | Error monitoring UI |
 
-### 3.14 POS Shared Components
+### 3.14 POS Shared Components — MOSTLY REMOVED
+
+> Most web POS components were removed in April 2026. Remaining shared components:
 
 | Current Path | Target Domain | Notes |
 |--------------|---------------|-------|
-| `pos/MenuItemContextMenu.tsx` | OM | |
-| `pos/OfflineSyncIndicator.tsx` | OS | Offline indicator |
-| `pos/QuickAccessBar.tsx` | OM | |
-| `pos/SyncStatusIndicator.tsx` | OS | Sync status |
-| `pos/TerminalPairingOverlay.tsx` | HW | |
+| `pos/OfflineSyncIndicator.tsx` | OS | Offline indicator (if still used by admin) |
+| `pos/SyncStatusIndicator.tsx` | OS | Sync status (if still used by admin) |
 | `search/` | MN | Menu search |
 
 ### 3.15 Admin Shared Components
@@ -729,7 +693,7 @@ This document maps every significant file/folder in the current codebase to its 
 | `socket-dispatch.ts` | [SHARED] | Socket event dispatch |
 | `socket-server.ts` | [SHARED] | Socket.io server |
 | `stock-status.ts` | IN | Stock status helpers |
-| `table-utils.ts` | FP | Table utilities |
+| `table-utils.ts` | FP | Table utilities (REMOVED — web POS deleted April 2026) |
 | `timed-rentals.ts` | EN | Timed rental logic |
 | `twilio.ts` | [SHARED] | SMS notifications |
 | `unit-conversions.ts` | IN | Unit conversions |
@@ -806,7 +770,7 @@ These files are over 1000 lines and contain logic for multiple concerns:
 | `lib/kds.ts` | 2,106 | KD | Split into services |
 | `app/(admin)/employees/page.tsx` | 1,965 | EM | Extract components |
 | `lib/scheduling.ts` | 1,931 | SC | Split into services |
-| `components/bartender/BartenderView.tsx` | ~3,000 | MN | Extract sub-components |
+| `components/bartender/BartenderView.tsx` | ~3,000 | MN | REMOVED — web POS deleted April 2026 |
 
 ---
 
@@ -814,15 +778,14 @@ These files are over 1000 lines and contain logic for multiple concerns:
 
 Files that cross domain boundaries and need bridge interfaces:
 
+> **Note:** Several web POS bridge files were removed in April 2026 (orders page, PaymentModal,
+> FloorPlanHome FOH, BartenderView). API route bridges remain.
+
 | File | Domains Involved | Bridge Needed |
 |------|------------------|---------------|
-| `app/(pos)/orders/page.tsx` | FP + OM | floor-to-order |
-| `components/payment/PaymentModal.tsx` | OM + PM | order-to-payment |
 | `lib/order-router.ts` | OM + HW | order-to-hardware |
 | `app/api/orders/[id]/pay/route.ts` | OM + IN + PM | order-to-inventory-to-payment |
-| `components/floor-plan/FloorPlanHome.tsx` | FP + OM | floor-to-order |
 | `app/api/orders/[id]/comp-void/route.ts` | OM + IN | order-to-inventory (waste) |
-| `components/bartender/BartenderView.tsx` | MN + TB + OM | bartender cross-domain |
 
 ---
 
@@ -851,7 +814,7 @@ Based on dependencies, documentation completeness, and business impact:
 | 17 | Events (EV) | Reservations and ticketing |
 | 18 | Settings (ST) | Cross-domain configuration |
 | 19 | Reports (RP) | Aggregates from all domains |
-| 21 | Offline & Sync (OS) | Infrastructure, touches all domains |
+| 20 | Offline & Sync (OS) | Infrastructure, touches all domains |
 | 21 | Error Reporting (ER) | Infrastructure, touches all domains |
 | 22 | Development-RnD (RD) | Non-production |
 

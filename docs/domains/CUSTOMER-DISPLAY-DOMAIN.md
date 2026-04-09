@@ -29,7 +29,7 @@ PM Mode: Customer Display
 | Tip Screen | Tip selection buttons | `src/components/cfd/CFDTipScreen.tsx` |
 | Signature | Signature capture canvas | `src/components/cfd/CFDSignatureScreen.tsx` |
 | Approval | Approved/declined screens | `src/components/cfd/CFDApprovedScreen.tsx` |
-| Pay-at-Table | Guest self-pay interface | `src/app/(pos)/pay-at-table/`, `src/components/pay-at-table/` |
+| Pay-at-Table | Guest self-pay interface | `src/components/pay-at-table/` (web POS page removed April 2026; API routes remain) |
 
 ## Key Files
 

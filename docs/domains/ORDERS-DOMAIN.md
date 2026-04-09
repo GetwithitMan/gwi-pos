@@ -32,12 +32,13 @@ PM Mode: Orders
 | Send to Kitchen | Kitchen dispatch | `src/app/api/orders/[id]/send/` |
 | Payment | Payment processing | `src/app/api/orders/[id]/pay/` |
 | Void/Comp | Void and comp operations | `src/app/api/orders/[id]/comp-void/` |
-| UI | Order screen components | `src/components/orders/` (web POS register removed April 2026) |
+| UI | Order screen components | `src/components/orders/` (shared components; web POS pages removed April 2026) |
 
 ## Key Files
 
 | File | Purpose |
 |------|---------|
+| ~~`src/app/(pos)/orders/page.tsx`~~ | **Removed** (April 2026). Orders now managed via Android/PAX only. |
 | `src/components/orders/OrderPanel.tsx` | Order summary panel |
 | `src/components/orders/OrderPanelActions.tsx` | Totals, payment buttons |
 | `src/components/orders/OrderTypeSelector.tsx` | Order type selection |

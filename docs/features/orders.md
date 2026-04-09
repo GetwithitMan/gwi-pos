@@ -66,7 +66,7 @@ Orders are the central transaction entity in GWI POS. Every sale, bar tab, takeo
 | `src/lib/order-events/ingester.ts` | Receive event, apply reducer, project snapshot |
 | `src/lib/order-events/types.ts` | Event types, payloads, state interfaces, helpers |
 | `src/lib/socket-dispatch.ts` | `dispatchNewOrder()`, `dispatchPaymentProcessed()`, etc. |
-| `src/stores/order-store.ts` | Zustand store for current order in POS UI |
+| `src/stores/order-store.ts` | Zustand store for order state (consumed by admin/KDS) |
 
 ### gwi-android-register
 | File | Purpose |

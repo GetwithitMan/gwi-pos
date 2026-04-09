@@ -10,7 +10,7 @@
 
 **Why it matters:** Sync integrity — mutations queued during the offline period must reach the NUC in the correct order, get server-assigned `serverSequence` values, and project into `OrderSnapshot`. The POS must never lose a mutation, reorder events, or block staff operations while recovery runs in the background.
 
-**Scope:** `gwi-android-register` (primary offline client), `gwi-pos` NUC API + Socket.io (recovery authority), Neon cloud sync (separate concern — does NOT block recovery). The web POS register was removed in April 2026.
+**Scope:** `gwi-android-register` (primary offline client), `gwi-pos` NUC API + Socket.io (recovery authority), Neon cloud sync (separate concern — does NOT block recovery).
 
 ---
 
@@ -22,13 +22,13 @@
 | Hardware required | NUC reachable on local network at `http://{NUC_IP}:3005`; Android or web client with stored `deviceToken` or session |
 | Permissions required | Bearer `deviceToken` (Android) or session cookie (web) — same credentials from original login |
 | Online / offline state | Terminal was in Red/Unavailable state (10s+ no heartbeat). This flow begins when heartbeat resumes. |
-| Prior state | Android Room DB has `OrderEventEntity` records with `status = PENDING` (mutations queued during offline period). Web POS has `PendingOrder` / `PendingPayment` in IndexedDB via Dexie. |
+| Prior state | Android Room DB has `OrderEventEntity` records with `status = PENDING` (mutations queued during offline period). |
 
 ---
 
 ## 3. Sequence (Happy Path)
 
-**"Offline" in this system means:** Android (or PAX device) cannot reach the NUC at `http://{NUC_IP}:3005`. This is distinct from the NUC losing its Neon cloud connection — NUC-to-Neon is a background sync concern and NEVER blocks POS operations.
+**"Offline" in this system means:** Android (or PAX) cannot reach the NUC at `http://{NUC_IP}:3005`. This is distinct from the NUC losing its Neon cloud connection — NUC-to-Neon is a background sync concern and NEVER blocks POS operations.
 
 ```
 1. [CLIENT]     Connectivity state during offline period:
@@ -75,7 +75,7 @@
 6. [CLIENT]     Android also sends delta sync request:
                 → POST /api/sync/delta?lastEventId={lastKnownServerSequence}
                 → Receives: all OrderEvents that occurred on NUC since lastEventId
-                  (e.g., web POS mutations during the offline period)
+                  (e.g., mutations from other terminals during the offline period)
                 → ingestRemoteEvent(): INSERT IGNORE by eventId (dedup)
                 → reducer.ts replays full event log → CachedOrderEntity updated
                 → UI reflects any orders modified by other terminals during offline
@@ -89,12 +89,7 @@
                     { terminalId, isOnline: true, lastSeenAt: NOW(), source: 'heartbeat-native' })
                 → /terminals page updates; toast.error cleared, terminal shows online
 
-8. [BROADCAST]  Web POS: socket reconnect handler fires:
-                → socket.on('connect', () => { socket.emit('join:location', { locationId }); fetchOrders() })
-                → Orders list refreshes after reconnect (debounced 150ms)
-                → Any missed order:event broadcasts replayed via delta sync
-
-9. [SIDE EFFECTS] Neon upstream sync (SEPARATE — does NOT block steps 3-8):
+8. [SIDE EFFECTS] Neon upstream sync (SEPARATE — does NOT block steps 3-7):
                 → upstream-sync-worker.ts runs every 5s independently
                 → Queries local PG: WHERE syncedAt IS NULL OR updatedAt > syncedAt
                 → Batches 50 rows → upserts to Neon via neonClient
@@ -102,19 +97,19 @@
                 → Neon sync failure does NOT affect NUC operation or Android recovery
                 → POS API routes NEVER touch neonClient directly
 
-10. [SIDE EFFECTS] Dead-letter handling (if any queued events fail after retries):
+9. [SIDE EFFECTS] Dead-letter handling (if any queued events fail after retries):
                 → After 5 retry attempts (exponential backoff): 5s, 10s, 20s, 30s cap
                 → CloudEventQueue.status = 'dead_letter'
                 → DeadLetterEvent alert shown to manager
                 → Max 1000 cloud events per location (oldest auto-pruned)
 
-11. [SIDE EFFECTS] POS stale sweep (background):
+10. [SIDE EFFECTS] POS stale sweep (background):
                 → socket-server.ts runs stale sweep every 60s
                 → Any terminal with lastSeenAt > 120s ago → marked offline
                 → emitToLocation: terminal:status_changed { isOnline: false }
                 → connectedTerminals map entry removed
 
-12. [SIDE EFFECTS] NUC restart recovery (if NUC itself restarted):
+11. [SIDE EFFECTS] NUC restart recovery (if NUC itself restarted):
                 → Socket events replay from PG (SocketEventLog L2 buffer, 30min TTL)
                 → Reconnecting clients catch up from PG without data loss
                 → CFD pairings rehydrate from Terminal.metadata (JSONB)
@@ -131,7 +126,7 @@
 | Event Name | Payload (key fields) | Emitter | Consumers | Ordering Constraint |
 |------------|---------------------|---------|-----------|---------------------|
 | `terminal:status_changed` | `{ terminalId, isOnline: true, lastSeenAt, source }` | POS socket-server.ts | `/terminals` page, fleet dashboard | On socket reconnect (step 7) |
-| `terminal:status_changed` | `{ terminalId, isOnline: false, lastSeenAt }` | POS stale sweep | `/terminals` page | On 120s stale timeout (step 11) |
+| `terminal:status_changed` | `{ terminalId, isOnline: false, lastSeenAt }` | POS stale sweep | `/terminals` page | On 120s stale timeout (step 10) |
 | `order:event` | `{ eventId, orderId, serverSequence, type, payload }` | POS API (`emitter.ts`) | All location clients | After each OrderEvent write (step 5) |
 
 ---
@@ -141,15 +136,15 @@
 | Record | Fields Changed | When |
 |--------|---------------|------|
 | `Terminal` | `isOnline: true`, `lastSeenAt: NOW()` | Heartbeat resumes (step 3) and every 30s after |
-| `Terminal` | `isOnline: false`, `lastSeenAt` (stale) | 120s stale sweep (step 11) |
+| `Terminal` | `isOnline: false`, `lastSeenAt` (stale) | 120s stale sweep (step 10) |
 | `OrderEvent` | INSERT for each drained outbox event (serverSequence assigned) | Step 5 |
 | `OrderSnapshot` | Full rebuild from event replay per affected orderId | Step 5 |
-| `CloudEventQueue` | `status`: pending → processing → completed / dead_letter | Step 9–10 |
+| `CloudEventQueue` | `status`: pending → processing → completed / dead_letter | Step 8–9 |
 | Room `OrderEventEntity` (Android) | `status`: PENDING → SYNCED | After NUC batch confirms (step 4–5) |
 | Room `CachedOrderEntity` (Android) | Updated from delta sync events | Step 6 |
 | `connectedTerminals` map (in-memory) | Entry added on reconnect, removed on stale sweep | Steps 7 and 11 |
-| `SocketEventLog` (PG) | Events replayed to reconnecting clients after NUC restart | Step 12 |
-| `Terminal.metadata` (JSONB) | CFD pairings rehydrated on NUC restart | Step 12 |
+| `SocketEventLog` (PG) | Events replayed to reconnecting clients after NUC restart | Step 11 |
+| `Terminal.metadata` (JSONB) | CFD pairings rehydrated on NUC restart | Step 11 |
 
 **Snapshot rebuild points:** Step 5 — every OrderEvent processed during outbox drain triggers a full `OrderSnapshot` rebuild via `reducer.ts` (pure replay from entire event log ordered by `serverSequence`).
 
@@ -167,7 +162,7 @@
 | **lastEventId unknown (fresh install or wiped device)** | Android sends `POST /api/sync/bootstrap` instead of delta sync. Full snapshot + all pending events downloaded. No gap possible after bootstrap. |
 | **Outbox drain exceeds server capacity** | `EventSyncWorker` batches events. If server returns 429 or 503, backoff and retry. Dead-letter threshold: 5 attempts. |
 | **offlineId deduplication (offline-created orders)** | Orders created while offline carry an `offlineId` UUID. `POST /api/sync/outbox` checks `offlineId` before creating. Duplicate submission returns 200 with existing orderId. |
-| **Web POS offline (IndexedDB)** | Browser client uses `src/lib/offline-manager.ts` (Dexie IndexedDB). Detection: `navigator.onLine` + 5-second health check to `/api/health`. Zombie Wi-Fi: 2 consecutive failures → "degraded" state. Queue: PendingOrder, PendingPayment in IndexedDB. Recovery: drain via `POST /api/orders/sync` and `POST /api/payments/sync`. |
+| **Web POS offline (removed)** | Web POS register UI was removed in April 2026. The browser-based offline manager (Dexie IndexedDB) is no longer applicable. Android Room DB is the only offline queue. |
 
 ---
 
