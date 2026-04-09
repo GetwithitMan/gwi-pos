@@ -31,6 +31,9 @@ export interface ShiftSummary {
   cashSales: number
   cardSales: number
   totalTips: number
+  netTips: number
+  sharedOut: number
+  sharedIn: number
   totalCommission: number
   cashReceived: number
   changeGiven: number
