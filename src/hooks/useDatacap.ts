@@ -199,8 +199,7 @@ export function useDatacap(options: UseDatacapOptions): UseDatacapReturn {
   const [backupReader, setBackupReader] = useState<PaymentReader | null>(null)
   const [isReaderOnline, setIsReaderOnline] = useState(false)
   const [readerFailoverTimeout, setReaderFailoverTimeout] = useState(10000)
-  const [isSimulated, setIsSimulated] = useState(false)
-
+  // Processing state
   const [processingStatus, setProcessingStatus] = useState<DatacapProcessingStatus>('idle')
   const [error, setError] = useState<string | null>(null)
   const [isSwapping, setIsSwapping] = useState(false)
@@ -237,18 +236,7 @@ export function useDatacap(options: UseDatacapOptions): UseDatacapReturn {
         setReader(terminal.paymentReader)
         readerRef.current = terminal.paymentReader
         setIsReaderOnline(terminal.paymentReader.isOnline || false)
-      // Track if we're using simulated payment provider
-      const simulated = terminal.paymentProvider === 'SIMULATED'
-      setIsSimulated(simulated)
-
-      if (terminal.paymentReader) {
-        setReader(terminal.paymentReader)
-        // Auto-set reader online for simulated provider
-        if (simulated) {
-          setIsReaderOnline(true)
-        } else {
-          setIsReaderOnline(terminal.paymentReader.isOnline || false)
-        }
+      } else {
         setReader(null)
         readerRef.current = null
         setIsReaderOnline(false)
@@ -388,16 +376,7 @@ export function useDatacap(options: UseDatacapOptions): UseDatacapReturn {
     }
     return `http://${reader.ipAddress}:${reader.port}${path}`
   }, [reader])
-   * Build reader URL based on simulated vs physical reader
-   */
-  const getReaderUrl = useCallback((path: string) => {
-    if (isSimulated) {
-      // Route through local API for simulated reader
-      return `/api/simulated-reader${path}`
-    }
-    if (!reader) return ''
-    return `http://${reader.ipAddress}:${reader.port}${path}`
-  }, [isSimulated, reader])
+
   /**
    * Cancel an in-progress transaction
    */
@@ -411,9 +390,7 @@ export function useDatacap(options: UseDatacapOptions): UseDatacapReturn {
     if (cancelUrl) {
       try {
         await fetch(cancelUrl, { method: 'POST' })
-        await fetch(getReaderUrl('/cancel'), {
-          method: 'POST',
-        })
+      } catch {
         // Reader might not support cancel, or already finished
       }
     }
@@ -484,16 +461,14 @@ export function useDatacap(options: UseDatacapOptions): UseDatacapReturn {
         return null
       }
 
-      // Skip serial verification for simulated reader
-      if (!isSimulated) {
-        const deviceSerial = deviceInfo.serialNumber || deviceInfo.serial || deviceInfo.sn
-        if (deviceSerial && deviceSerial !== reader.serialNumber) {
-          const msg = 'Reader serial mismatch - wrong device?'
-          setProcessingStatus('error')
-          setError(msg)
-          onError?.(msg)
-          return null
-        }
+      // Verify serial number matches
+      const deviceSerial = deviceInfo.serialNumber || deviceInfo.serial || deviceInfo.sn
+      if (deviceSerial && deviceSerial !== reader.serialNumber) {
+        const msg = 'Reader serial mismatch - wrong device?'
+        setProcessingStatus('error')
+        setError(msg)
+        onError?.(msg)
+        return null
       }
 
       setIsReaderOnline(true)
@@ -638,7 +613,7 @@ export function useDatacap(options: UseDatacapOptions): UseDatacapReturn {
       abortControllerRef.current = null
     }
   }, [reader, readerFailoverTimeout, canSwap, getReaderUrl, onSuccess, onDeclined, onError, onReaderOffline])
-  }, [reader, readerFailoverTimeout, canSwap, onSuccess, onDeclined, onError, onReaderOffline, isSimulated, getReaderUrl])
+
   return {
     // State
     reader,

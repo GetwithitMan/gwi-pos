@@ -62,34 +62,7 @@ import {
 import { createChildLogger } from '@/lib/logger'
 import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-pay')
-import { processLiquorInventory } from '@/lib/liquor-inventory'
-import { deductInventoryForOrder } from '@/lib/inventory-calculations'
-import { tableEvents } from '@/lib/realtime/table-events'
 
-interface PaymentInput {
-  method: 'cash' | 'credit' | 'debit' | 'gift_card' | 'house_account' | 'loyalty_points'
-  amount: number
-  tipAmount?: number
-  // Cash specific
-  amountTendered?: number
-  // Card specific
-  cardBrand?: string
-  cardLast4?: string
-  // Gift card specific
-  giftCardId?: string
-  giftCardNumber?: string
-  // House account specific
-  houseAccountId?: string
-  // Loyalty points specific
-  pointsUsed?: number
-  // Simulated/Datacap auth data (from card reader)
-  authCode?: string
-  transactionId?: string
-  entryMethod?: string     // 'Tap' | 'Chip' | 'Swipe' | 'Manual'
-  customerName?: string    // From chip reads
-  // Simulated - will be replaced with real processor
-  simulate?: boolean
-}
 // POST - Process payment for order
 export const POST = withVenue(withTiming(async function POST(
   request: NextRequest,
@@ -594,29 +567,7 @@ export const POST = withVenue(withTiming(async function POST(
             { error: 'Payment already processed', code: 'DUPLICATE_PAYMENT', existingPayment: JSON.parse(pending.response_json) },
             { status: 409 }
           )}
-        paymentRecord = {
-          ...paymentRecord,
-          amount: finalAmount,
-          totalAmount: finalAmount + (payment.tipAmount || 0),
-          amountTendered,
-          changeGiven,
-          roundingAdjustment: roundingAdjustment !== 0 ? roundingAdjustment : undefined,
         }
-      } else if (payment.method === 'credit' || payment.method === 'debit') {
-        // Card payment - accept auth data from card reader (simulated or Datacap)
-        if (!payment.cardLast4 || !/^\d{4}$/.test(payment.cardLast4)) {
-          return NextResponse.json(
-            { error: 'Valid card last 4 digits required' },
-            { status: 400 }
-          )
-        }
-
-        paymentRecord = {
-          ...paymentRecord,
-          cardBrand: payment.cardBrand || 'visa',
-          cardLast4: payment.cardLast4,
-          authCode: payment.authCode || generateFakeAuthCode(),
-          transactionId: payment.transactionId || generateFakeTransactionId(),
         // status is 'failed' or 'pending' without response — allow retry by updating status
         await tx.$executeRaw`
           UPDATE "_pending_captures" SET "status" = 'processing', "errorMessage" = NULL WHERE "id" = ${pending.id}
@@ -1164,7 +1115,7 @@ export const POST = withVenue(withTiming(async function POST(
                   expectedCardAmount,
                   orderTotal: toNumber(order.total ?? 0),
                   cashDiscountPercent: dualPricing.cashDiscountPercent,
-                  delta: roundToCents(payment.amount - expectedCardAmount),
+                  delta: Math.round((payment.amount - expectedCardAmount) * 100) / 100,
                 }),
               },
             }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.pay'))
