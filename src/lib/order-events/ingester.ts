@@ -613,7 +613,7 @@ export async function ingestAndProject(
         }
 
         // c) order:summary-updated (Cross-terminal state sync)
-        if (['ORDER_CREATED', 'ITEM_ADDED', 'ITEM_REMOVED', 'PAYMENT_APPLIED', 'ORDER_SENT', 'DISCOUNT_APPLIED', 'ORDER_METADATA_UPDATED'].includes(evt.type)) {
+        if (['ORDER_CREATED', 'ITEM_ADDED', 'ITEM_REMOVED', 'PAYMENT_APPLIED', 'ORDER_SENT', 'DISCOUNT_APPLIED', 'ORDER_METADATA_UPDATED', 'ORDER_CLOSED'].includes(evt.type)) {
           await queueSocketEvent(tx, locationId, 'order:summary-updated', {
             orderId,
             orderNumber: state.orderNumber,
