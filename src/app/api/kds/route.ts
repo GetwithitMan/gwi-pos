@@ -467,16 +467,16 @@ const putHandler = async function PUT(request: NextRequest) {
       // Look up the menu item to resolve locationId
       const menuItem = await db.menuItem.findUnique({
         where: { id: menuItemId },
-        select: { id: true, name: true, locationId: true, stockStatus: true },
+        select: { id: true, name: true, locationId: true, isAvailable: true },
       })
       if (!menuItem) {
         return err('Menu item not found')
       }
 
-      // Update stock status to out_of_stock
+      // Update isAvailable to false (86'd)
       await db.menuItem.update({
         where: { id: menuItemId },
-        data: { stockStatus: 'out_of_stock' },
+        data: { isAvailable: false },
       })
 
       // Push to Neon
@@ -490,7 +490,7 @@ const putHandler = async function PUT(request: NextRequest) {
       }).catch(e => console.error('[KDS] dispatchMenuStockChanged failed:', e))
 
       // Notify cloud for cross-location sync
-      notifyDataChanged({ table: 'MenuItem', locationId: menuItem.locationId })
+      notifyDataChanged({ locationId: menuItem.locationId, domain: 'menu', action: 'updated', entityId: menuItemId })
 
       // Audit log
       void db.auditLog.create({
@@ -500,7 +500,7 @@ const putHandler = async function PUT(request: NextRequest) {
           action: 'kds_mark_86',
           entityType: 'menu_item',
           entityId: menuItemId,
-          details: { itemName: menuItem.name, previousStatus: menuItem.stockStatus },
+          details: { itemName: menuItem.name, wasAvailable: menuItem.isAvailable },
         },
       }).catch(e => console.error('[AuditLog] KDS 86 audit failed:', e))
 
