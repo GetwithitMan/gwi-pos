@@ -161,6 +161,99 @@ describe('OrderReducer — Golden-master test vectors', () => {
   it('9. Payment void + re-pay + close', () => {
     runVector(paymentCloseFlow as TestVector)
   })
+
+  it('10. Complex scenario: Multi-item, discount, split-payment, void, and reopen', () => {
+    const events: OrderEventPayload[] = [
+      {
+        type: 'ORDER_CREATED',
+        payload: {
+          locationId: 'loc-1',
+          employeeId: 'emp-1',
+          orderType: 'dine_in',
+          guestCount: 2,
+          orderNumber: 101,
+        },
+      },
+      {
+        type: 'ITEM_ADDED',
+        payload: {
+          lineItemId: 'i1',
+          menuItemId: 'm1',
+          name: 'Burger',
+          priceCents: 1500,
+          quantity: 1,
+          isHeld: false,
+          soldByWeight: false,
+        },
+      },
+      {
+        type: 'ITEM_ADDED',
+        payload: {
+          lineItemId: 'i2',
+          menuItemId: 'm2',
+          name: 'Fries',
+          priceCents: 500,
+          quantity: 1,
+          isHeld: false,
+          soldByWeight: false,
+        },
+      },
+      {
+        type: 'DISCOUNT_APPLIED',
+        payload: {
+          discountId: 'd1',
+          type: 'amount',
+          value: 200,
+          amountCents: 200,
+          reason: 'Happy Hour',
+        },
+      },
+      {
+        type: 'PAYMENT_APPLIED',
+        payload: {
+          paymentId: 'p1',
+          method: 'cash',
+          amountCents: 1000,
+          tipCents: 0,
+          totalCents: 1000,
+          status: 'approved',
+        },
+      },
+      {
+        type: 'PAYMENT_APPLIED',
+        payload: {
+          paymentId: 'p2',
+          method: 'card',
+          amountCents: 800,
+          tipCents: 200,
+          totalCents: 1000,
+          status: 'approved',
+        },
+      },
+      {
+        type: 'ORDER_CLOSED',
+        payload: { closedStatus: 'paid' },
+      },
+      {
+        type: 'ORDER_REOPENED',
+        payload: { reason: 'Error in payment' },
+      },
+      {
+        type: 'PAYMENT_VOIDED',
+        payload: { paymentId: 'p2' },
+      },
+    ]
+
+    const state = replay('complex-101', events)
+    expect(state.status).toBe('open')
+    expect(state.isClosed).toBe(false)
+    expect(getSubtotalCents(state)).toBe(2000)
+    expect(getDiscountTotalCents(state)).toBe(200)
+    expect(getTotalCents(state)).toBe(1800)
+    expect(getPaidAmountCents(state)).toBe(1000) // p2 is voided
+    expect(Object.keys(state.items)).toHaveLength(2)
+    expect(state.payments['p2'].status).toBe('voided')
+  })
 })
 
 // ── Additional reducer unit tests ────────────────────────────────────

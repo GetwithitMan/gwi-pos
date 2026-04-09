@@ -4649,6 +4649,7 @@ CREATE TABLE "PendingDeduction" (
 -- CreateTable
 CREATE TABLE "DeductionRun" (
     "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
     "pendingDeductionId" TEXT NOT NULL,
     "syncedAt" TIMESTAMP(3),
     "startedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -4855,6 +4856,7 @@ CREATE TABLE "ReservationBlock" (
 CREATE TABLE "ReservationTable" (
     "reservationId" TEXT NOT NULL,
     "tableId" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "ReservationTable_pkey" PRIMARY KEY ("reservationId","tableId")
@@ -5037,6 +5039,7 @@ CREATE TABLE "LoyaltyProgram" (
 -- CreateTable
 CREATE TABLE "LoyaltyTier" (
     "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
     "programId" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "minimumPoints" INTEGER NOT NULL DEFAULT 0,
@@ -7667,6 +7670,9 @@ CREATE INDEX "PendingDeduction_status_availableAt_idx" ON "PendingDeduction"("st
 CREATE INDEX "DeductionRun_pendingDeductionId_idx" ON "DeductionRun"("pendingDeductionId");
 
 -- CreateIndex
+CREATE INDEX "DeductionRun_locationId_idx" ON "DeductionRun"("locationId");
+
+-- CreateIndex
 CREATE INDEX "BergPluMapping_locationId_idx" ON "BergPluMapping"("locationId");
 
 -- CreateIndex
@@ -7754,6 +7760,9 @@ CREATE INDEX "OutageQueueEntry_outageId_idx" ON "OutageQueueEntry"("outageId");
 CREATE INDEX "ReservationBlock_locationId_blockDate_idx" ON "ReservationBlock"("locationId", "blockDate");
 
 -- CreateIndex
+CREATE INDEX "ReservationTable_locationId_idx" ON "ReservationTable"("locationId");
+
+-- CreateIndex
 CREATE INDEX "ReservationEvent_reservationId_idx" ON "ReservationEvent"("reservationId");
 
 -- CreateIndex
@@ -7821,6 +7830,9 @@ CREATE INDEX "LoyaltyTier_programId_idx" ON "LoyaltyTier"("programId");
 
 -- CreateIndex
 CREATE INDEX "LoyaltyTier_programId_sortOrder_idx" ON "LoyaltyTier"("programId", "sortOrder");
+
+-- CreateIndex
+CREATE INDEX "LoyaltyTier_locationId_idx" ON "LoyaltyTier"("locationId");
 
 -- CreateIndex
 CREATE INDEX "LoyaltyTransaction_customerId_idx" ON "LoyaltyTransaction"("customerId");
@@ -9353,6 +9365,9 @@ ALTER TABLE "MarginEdgeProductMapping" ADD CONSTRAINT "MarginEdgeProductMapping_
 ALTER TABLE "PendingDeduction" ADD CONSTRAINT "PendingDeduction_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "DeductionRun" ADD CONSTRAINT "DeductionRun_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "DeductionRun" ADD CONSTRAINT "DeductionRun_pendingDeductionId_fkey" FOREIGN KEY ("pendingDeductionId") REFERENCES "PendingDeduction"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -9407,6 +9422,9 @@ ALTER TABLE "ReservationTable" ADD CONSTRAINT "ReservationTable_reservationId_fk
 ALTER TABLE "ReservationTable" ADD CONSTRAINT "ReservationTable_tableId_fkey" FOREIGN KEY ("tableId") REFERENCES "Table"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "ReservationTable" ADD CONSTRAINT "ReservationTable_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "ReservationEvent" ADD CONSTRAINT "ReservationEvent_reservationId_fkey" FOREIGN KEY ("reservationId") REFERENCES "Reservation"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -9432,6 +9450,9 @@ ALTER TABLE "SyncWatermark" ADD CONSTRAINT "SyncWatermark_locationId_fkey" FOREI
 
 -- AddForeignKey
 ALTER TABLE "LoyaltyProgram" ADD CONSTRAINT "LoyaltyProgram_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "LoyaltyTier" ADD CONSTRAINT "LoyaltyTier_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "LoyaltyTier" ADD CONSTRAINT "LoyaltyTier_programId_fkey" FOREIGN KEY ("programId") REFERENCES "LoyaltyProgram"("id") ON DELETE CASCADE ON UPDATE CASCADE;

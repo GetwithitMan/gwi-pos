@@ -48,7 +48,7 @@ export function dispatchCFDShowOrder(locationId: string, cfdTerminalId: string |
   if (cfdTerminalId) {
     void emitToTerminal(cfdTerminalId, CFD_EVENTS.SHOW_ORDER, payload).catch((err) => log.error({ err }, 'CFD show-order dispatch failed'))
   } else {
-    void emitToLocation(locationId, CFD_EVENTS.SHOW_ORDER, payload).catch((err) => log.error({ err }, 'CFD show-order dispatch failed'))
+    log.debug({ locationId, orderId: data.orderId }, 'CFD show-order skipped: no cfdTerminalId provided')
   }
 }
 
@@ -90,8 +90,7 @@ export function dispatchCFDShowOrderDetail(locationId: string, cfdTerminalId: st
     // Also emit as show-order so Android CFD picks it up (it doesn't handle show-order-detail)
     void emitToTerminal(cfdTerminalId, CFD_EVENTS.SHOW_ORDER, payload).catch((err) => log.error({ err }, 'CFD show-order (from detail) dispatch failed'))
   } else {
-    void emitToLocation(locationId, CFD_EVENTS.SHOW_ORDER_DETAIL, payload).catch((err) => log.error({ err }, 'CFD show-order-detail dispatch failed'))
-    void emitToLocation(locationId, CFD_EVENTS.SHOW_ORDER, payload).catch((err) => log.error({ err }, 'CFD show-order (from detail) dispatch failed'))
+    log.debug({ locationId, orderId: data.orderId }, 'CFD show-order-detail skipped: no cfdTerminalId provided')
   }
 }
 
@@ -115,7 +114,7 @@ export function dispatchCFDPaymentStarted(locationId: string, cfdTerminalId: str
   if (cfdTerminalId) {
     void emitToTerminal(cfdTerminalId, CFD_EVENTS.PAYMENT_STARTED, payload).catch((err) => log.error({ err }, 'CFD payment-started dispatch failed'))
   } else {
-    void emitToLocation(locationId, CFD_EVENTS.PAYMENT_STARTED, payload).catch((err) => log.error({ err }, 'CFD payment-started dispatch failed'))
+    log.debug({ locationId, orderId: data.orderId }, 'CFD payment-started skipped: no cfdTerminalId provided')
   }
 }
 
@@ -146,7 +145,7 @@ export function dispatchCFDTipPrompt(locationId: string, cfdTerminalId: string |
   if (cfdTerminalId) {
     void emitToTerminal(cfdTerminalId, CFD_EVENTS.TIP_PROMPT, payload).catch((err) => log.error({ err }, 'CFD tip-prompt dispatch failed'))
   } else {
-    void emitToLocation(locationId, CFD_EVENTS.TIP_PROMPT, payload).catch((err) => log.error({ err }, 'CFD tip-prompt dispatch failed'))
+    log.debug({ locationId, orderId: data.orderId }, 'CFD tip-prompt skipped: no cfdTerminalId provided')
   }
 }
 
@@ -261,7 +260,7 @@ export function dispatchCFDSignatureRequest(locationId: string, cfdTerminalId: s
   if (cfdTerminalId) {
     void emitToTerminal(cfdTerminalId, CFD_EVENTS.SIGNATURE_REQUEST, payload).catch((err) => log.error({ err }, 'CFD signature-request dispatch failed'))
   } else {
-    void emitToLocation(locationId, CFD_EVENTS.SIGNATURE_REQUEST, payload).catch((err) => log.error({ err }, 'CFD signature-request dispatch failed'))
+    log.debug({ locationId, orderId: data.orderId }, 'CFD signature-request skipped: no cfdTerminalId provided')
   }
 }
 
@@ -291,7 +290,7 @@ export function dispatchCFDReceiptSent(locationId: string, cfdTerminalId: string
   if (cfdTerminalId) {
     void emitToTerminal(cfdTerminalId, CFD_EVENTS.RECEIPT_SENT, payload).catch((err) => log.error({ err }, 'CFD receipt-sent dispatch failed'))
   } else {
-    void emitToLocation(locationId, CFD_EVENTS.RECEIPT_SENT, payload).catch((err) => log.error({ err }, 'CFD receipt-sent dispatch failed'))
+    log.debug({ locationId, orderId: data.orderId }, 'CFD receipt-sent skipped: no cfdTerminalId provided')
   }
 }
 
@@ -308,7 +307,7 @@ export function dispatchCFDProcessing(locationId: string, cfdTerminalId: string 
   if (cfdTerminalId) {
     void emitToTerminal(cfdTerminalId, CFD_EVENTS.PROCESSING, data).catch((err) => log.error({ err }, 'CFD processing dispatch failed'))
   } else {
-    void emitToLocation(locationId, CFD_EVENTS.PROCESSING, data).catch((err) => log.error({ err }, 'CFD processing dispatch failed'))
+    log.debug({ locationId, orderId: data.orderId }, 'CFD processing skipped: no cfdTerminalId provided')
   }
 }
 
@@ -334,7 +333,7 @@ export function dispatchCFDApproved(locationId: string, cfdTerminalId: string | 
   if (cfdTerminalId) {
     void emitToTerminal(cfdTerminalId, CFD_EVENTS.APPROVED, payload).catch((err) => log.error({ err }, 'CFD approved dispatch failed'))
   } else {
-    void emitToLocation(locationId, CFD_EVENTS.APPROVED, payload).catch((err) => log.error({ err }, 'CFD approved dispatch failed'))
+    log.debug({ locationId, orderId: data.orderId }, 'CFD approved skipped: no cfdTerminalId provided')
   }
 }
 
@@ -352,7 +351,7 @@ export function dispatchCFDDeclined(locationId: string, cfdTerminalId: string | 
   if (cfdTerminalId) {
     void emitToTerminal(cfdTerminalId, CFD_EVENTS.DECLINED, data).catch((err) => log.error({ err }, 'CFD declined dispatch failed'))
   } else {
-    void emitToLocation(locationId, CFD_EVENTS.DECLINED, data).catch((err) => log.error({ err }, 'CFD declined dispatch failed'))
+    log.debug({ locationId, orderId: data.orderId }, 'CFD declined skipped: no cfdTerminalId provided')
   }
 }
 
@@ -365,7 +364,7 @@ export function dispatchCFDIdle(locationId: string, cfdTerminalId: string | null
   if (cfdTerminalId) {
     void emitToTerminal(cfdTerminalId, CFD_EVENTS.IDLE, {}).catch((err) => log.error({ err }, 'CFD idle dispatch failed'))
   } else {
-    void emitToLocation(locationId, CFD_EVENTS.IDLE, {}).catch((err) => log.error({ err }, 'CFD idle dispatch failed'))
+    log.debug({ locationId }, 'CFD idle skipped: no cfdTerminalId provided')
   }
 }
 

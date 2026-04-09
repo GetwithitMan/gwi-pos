@@ -17,6 +17,7 @@ import { err, ok } from '@/lib/api-response'
 import { OrderRouter } from '@/lib/order-router'
 import { dispatchNewOrder } from '@/lib/socket-dispatch'
 import { printKitchenTicketsForManifests } from '@/lib/print-template-factory'
+import { validateEventPayload } from '@/lib/order-events/validations'
 
 /**
  * POST /api/order-events/batch
@@ -67,11 +68,17 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       continue
     }
 
-    // Validate event type
-    if (!ORDER_EVENT_TYPES.includes(evt.type as any)) {
+    // Validate event type and payload schema
+    let validatedPayload: Record<string, unknown>
+    try {
+      if (!ORDER_EVENT_TYPES.includes(evt.type as any)) {
+        throw new Error(`Unknown event type: ${evt.type}`)
+      }
+      validatedPayload = validateEventPayload(evt.type as any, evt.payloadJson ?? {}) as Record<string, unknown>
+    } catch (error: any) {
       rejected.push({
         eventId: evt.eventId,
-        reason: `Unknown event type: ${evt.type}`,
+        reason: error.message || 'Invalid payload schema',
       })
       continue
     }
@@ -80,7 +87,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     list.push({
       eventId: evt.eventId,
       type: evt.type,
-      payload: (evt.payloadJson ?? {}) as Record<string, unknown>,
+      payload: validatedPayload,
       deviceId: evt.deviceId,
       correlationId: evt.correlationId ?? null,
     })
