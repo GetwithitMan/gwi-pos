@@ -500,7 +500,7 @@ var commandHandlers = {
 
       // Restart POS container to pick up new config
       log('[Sync] CONFIGURE_SYNC: restarting POS container...')
-      var csOk = run('docker restart gwi-pos', APP_DIR, 30)
+      var csOk = run('docker restart -t 30 gwi-pos', APP_DIR, 30)
 
       // Update in-memory env so heartbeat picks up the change immediately
       env.NEON_DATABASE_URL = neonDatabaseUrl
@@ -523,14 +523,14 @@ var commandHandlers = {
   RELOAD_TERMINALS: async function(cmd) {
     // Restart POS container to force all connected terminals to reconnect
     log('[Sync] RELOAD_TERMINALS — restarting POS container...')
-    var rlOk = run('docker restart gwi-pos', APP_DIR, 30)
+    var rlOk = run('docker restart -t 30 gwi-pos', APP_DIR, 30)
     return { ok: rlOk }
   },
 
   RELOAD_TERMINAL: async function(cmd) {
     // Single terminal reload — same effect as RELOAD_TERMINALS on NUC
     log('[Sync] RELOAD_TERMINAL — restarting POS container...')
-    var rtOk = run('docker restart gwi-pos', APP_DIR, 30)
+    var rtOk = run('docker restart -t 30 gwi-pos', APP_DIR, 30)
     return { ok: rtOk }
   },
 

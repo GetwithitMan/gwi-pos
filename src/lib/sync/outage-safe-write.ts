@@ -34,10 +34,11 @@ export function queueIfOutage(
   locationId: string,
   recordId: string,
   operation: 'INSERT' | 'UPDATE' | 'DELETE',
-  payload?: Record<string, unknown>
+  payload?: Record<string, unknown>,
+  tx?: any
 ): void {
   if (!isInOutageMode()) return
-  void queueOutageWrite(tableName, recordId, operation, payload ?? {}, locationId).catch((err) => {
+  void queueOutageWrite(tableName, recordId, operation, payload ?? {}, locationId, tx).catch((err) => {
     log.error({ err, tableName, recordId, operation }, 'Failed to queue outage write')
   })
 }
@@ -52,10 +53,11 @@ export async function queueIfOutageOrFail(
   locationId: string,
   recordId: string,
   operation: 'INSERT' | 'UPDATE' | 'DELETE',
-  payload?: Record<string, unknown>
+  payload?: Record<string, unknown>,
+  tx?: any
 ): Promise<void> {
   if (!isInOutageMode()) return
-  const result = await queueOutageWrite(tableName, recordId, operation, payload ?? {}, locationId)
+  const result = await queueOutageWrite(tableName, recordId, operation, payload ?? {}, locationId, tx)
   if (!result.queued) {
     throw new OutageQueueFullError(tableName, recordId, result.reason)
   }
