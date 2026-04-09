@@ -112,8 +112,6 @@ export const SOCKET_EVENTS = {
   TERMINAL_STATUS_CHANGED:    'terminal:status_changed',
   TERMINAL_PAYMENT_REQUEST:   'terminal:payment_request',
   TERMINAL_PAYMENT_COMPLETE:  'terminal:payment_complete',
-  TERMINAL_PING:              'terminal:ping',
-  TERMINAL_CONFIG_UPDATE:     'terminal:config-update',
 
   // ── Void Approval ──────────────────────────────────────────────────────
   VOID_APPROVAL_UPDATE:    'void:approval-update',
@@ -126,8 +124,6 @@ export const SOCKET_EVENTS = {
   SCALE_STATUS:            'scale:status',
 
   // ── Print ──────────────────────────────────────────────────────────────
-  PRINT_JOB:               'print:job',
-  PRINT_STATUS:            'print:status',
   PRINT_JOB_FAILED:        'print:job-failed',
 
   // ── Sync / Infrastructure ──────────────────────────────────────────────

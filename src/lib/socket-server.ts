@@ -1015,12 +1015,8 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
       'sync:completed',
       'order:editing',
       'order:editing-released',
-      'print:job',
-      'print:status',
       'kds:bump',
       'kds:recall',
-      'terminal:ping',
-      'terminal:config-update',
       'terminal:payment_request',
       'terminal:payment_complete',
     ])

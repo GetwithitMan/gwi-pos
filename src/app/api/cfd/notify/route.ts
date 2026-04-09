@@ -16,6 +16,7 @@ import {
   dispatchCFDShowOrderDetail,
   dispatchCFDPaymentStarted,
   dispatchCFDTipPrompt,
+  dispatchCFDTipSelected,
   dispatchCFDSignatureRequest,
   dispatchCFDProcessing,
   dispatchCFDApproved,
@@ -46,6 +47,9 @@ export const POST = withVenue(withAuth(async (request: Request) => {
         break
       case 'tip-prompt':
         dispatchCFDTipPrompt(locationId, cfdTerminalId, payload)
+        break
+      case 'tip-selected':
+        await dispatchCFDTipSelected(locationId, cfdTerminalId, payload)
         break
       case 'signature-request':
         dispatchCFDSignatureRequest(locationId, cfdTerminalId, payload)
