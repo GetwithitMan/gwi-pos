@@ -876,9 +876,6 @@ export const POST = withVenue(async function POST(
     if (message === 'Order not found') {
       return apiError.notFound('Order not found', ERROR_CODES.ORDER_NOT_FOUND)
     }
-    if (message === 'Cannot modify a closed order') {
-      return apiError.conflict('Cannot modify a closed order', ERROR_CODES.ORDER_CLOSED)
-    }
     if (message === 'ORDER_NOT_MODIFIABLE') {
       return err('Order cannot be modified — it may have been paid or closed by another terminal', 409)
     }

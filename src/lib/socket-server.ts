@@ -1543,9 +1543,32 @@ export async function emitCriticalToLocation(
 export async function emitToTerminal(terminalId: string, event: string, data: unknown): Promise<boolean> {
   recordMetricEvent()
   const room = `terminal:${terminalId}`
+
+  // Get locationId from terminal mapping if available, for event buffering and cellular relay
+  const terminalInfo = connectedTerminals.get(terminalId)
+  const locationId = terminalInfo?.locationId
+
   if (globalForSocket.socketServer) {
     if (process.env.DEBUG_SOCKETS) log.debug(`emitToTerminal: ${event} → ${room}`)
-    globalForSocket.socketServer.to(room).emit(event, data)
+
+    // Buffer the event for catch-up if locationId is available
+    let enriched = data
+    if (locationId && typeof data === 'object' && data !== null) {
+      const eid = recordEvent(locationId, event, data, room)
+      enriched = { ...data, _eid: eid }
+    }
+
+    globalForSocket.socketServer.to(room).emit(event, enriched)
+
+    // Relay to Neon for cellular terminals (fire-and-forget, separate from emit)
+    if (locationId && enriched !== data) {
+      try {
+        relayCellularEvent(locationId, event, enriched)
+      } catch (err) {
+        log.error({ err, event, terminalId, locationId }, 'Cellular event relay failed for terminal')
+      }
+    }
+
     return true
   }
   return emitViaIPC({ type: 'room', target: room, event, data })
