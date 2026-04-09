@@ -215,6 +215,12 @@ export const SOCKET_EVENTS = {
   _CLIENT_CATCH_UP:        'catch-up',
   _CLIENT_SYNC_COMPLETED:  'sync_completed',
   _CLIENT_TERMINAL_MESSAGE: 'terminal_message',
+
+  // Admin page events (added for real-time refresh)
+  INVENTORY_CHANGED:    'inventory:changed',
+  DRAWER_PAID_IN_OUT:   'drawer:paid-in-out',
+  SHIFTS_CHANGED:       'shifts:changed',
+  ORDER_TYPES_UPDATED:  'order-types:updated',
 } as const
 
 /** Union of all event name string literals */

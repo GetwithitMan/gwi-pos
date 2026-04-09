@@ -927,6 +927,9 @@ model Location {
   deductionRuns     DeductionRun[]
   loyaltyTiers      LoyaltyTier[]     @relation("LoyaltyTierLocation")
 
+  // Peripheral Snapshot (upstream sync to MC)
+  peripheralSnapshots PeripheralSnapshot[]
+
   @@index([organizationId])
 }
 
@@ -9936,6 +9939,35 @@ model IntegrationRetryEntry {
 
   @@index([locationId, status, nextRetryAt])
   @@index([integration, status])
+}
+
+// ============================================
+// PERIPHERAL SNAPSHOT (Upstream Sync to MC)
+// ============================================
+
+/// Periodic snapshot of peripheral device status for upstream sync to Neon/MC.
+/// Written every 60 seconds by the peripheral snapshot writer on the NUC.
+/// Enables MC fleet dashboard to show live device health across all venues.
+model PeripheralSnapshot {
+  id          String   @id @default(cuid())
+  locationId  String
+  location    Location @relation(fields: [locationId], references: [id])
+  deviceType  String   // 'terminal' | 'printer' | 'reader' | 'scale' | 'kds'
+  deviceId    String
+  deviceName  String
+  isOnline    Boolean  @default(false)
+  lastSeenAt  DateTime?
+  lastError   String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+  lastMutatedBy String? // 'cloud' | 'local' | null
+  syncedAt    DateTime?
+
+  @@unique([locationId, deviceType, deviceId])
+  @@index([locationId])
+  @@index([locationId, updatedAt])
 }
 
 // NOTE: _local_schema_state and _local_install_state are NUC-only tables

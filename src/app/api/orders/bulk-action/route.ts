@@ -214,7 +214,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
 
     // Emit order events for each affected order.
     // These MUST succeed for event-source consistency. Await all and log failures.
-    const eventPromises: Promise<void>[] = []
+    const eventPromises: Promise<unknown>[] = []
     if (action === 'void') {
       for (const id of orderIds) {
         eventPromises.push(

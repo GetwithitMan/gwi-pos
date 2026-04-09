@@ -36,6 +36,7 @@ import { sendSMS, isTwilioConfigured } from './src/lib/twilio'
 import { runBootstrap, startSchemaRecheckIfBlocked, stopSchemaRecheck } from './src/lib/venue-bootstrap'
 import { computeReadiness, setReadinessState, getReadinessState, advanceToOrders, isReadyForSync, type ReadinessInputs } from './src/lib/readiness'
 import { runEntertainmentPriceUpdate } from './src/lib/domain/entertainment-price-updater'
+import { startPeripheralSnapshotWriter } from './src/lib/peripheral-snapshot-writer'
 
 // Normalize POS_LOCATION_ID early — some NUC .env files only set LOCATION_ID.
 // This ensures all downstream code reading process.env.POS_LOCATION_ID gets the value.
@@ -673,6 +674,13 @@ async function main() {
     )
     registerWorker('entertainmentPriceUpdate', 'optional',
       () => startEntertainmentPriceUpdateScheduler(),
+      () => { /* interval-based, unref'd — exits with process */ }
+    )
+    registerWorker('peripheralSnapshot', 'optional',
+      () => {
+        const locationId = config.posLocationId
+        if (locationId) startPeripheralSnapshotWriter(locationId)
+      },
       () => { /* interval-based, unref'd — exits with process */ }
     )
     registerWorker('scaleService', 'optional',

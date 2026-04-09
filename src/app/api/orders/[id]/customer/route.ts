@@ -134,7 +134,7 @@ export const PUT = withVenue(async function PUT(
             )
             const totals = calculateOrderTotals(
               itemsForCalc,
-              settings.tax?.rate ?? 0,
+              { tax: settings.tax ?? undefined },
               remainingDiscounts,
               Number(orderWithItems.tipTotal),
             )

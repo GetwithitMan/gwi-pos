@@ -155,4 +155,4 @@ export const GET = withVenue(withAuth({ allowCellular: true }, async function GE
   }))
 
   return ok({ menuItems: mappedMenuItems, categories, employees, tables, orderTypes, orders: mappedOrders, pricingOptionGroups: mappedPricingOptionGroups, sharedModifierGroups, modifierGroups: mappedModifierGroups, syncVersion: Date.now(), hasMore: orders.length >= 100 })
-})
+}))
