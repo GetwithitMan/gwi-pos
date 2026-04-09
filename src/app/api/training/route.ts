@@ -5,6 +5,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { getLocationSettings, invalidateLocationCache } from '@/lib/location-cache'
 import { emitToLocation } from '@/lib/socket-server'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
 import { withVenue } from '@/lib/with-venue'
 import { createChildLogger } from '@/lib/logger'
 import { err, notFound, ok } from '@/lib/api-response'
@@ -88,7 +89,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     invalidateLocationCache(location.id)
 
     // Notify all terminals
-    void emitToLocation(location.id, 'settings:updated', { training: updatedTraining })
+    void emitToLocation(location.id, SOCKET_EVENTS.SETTINGS_UPDATED, { training: updatedTraining })
 
     // Audit log
     void db.auditLog.create({

@@ -10,6 +10,7 @@ import { useAdminCRUD } from '@/hooks/useAdminCRUD'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { toast } from '@/stores/toast-store'
 import { getSharedSocket } from '@/lib/shared-socket'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
 
 interface Table {
   id: string
@@ -180,11 +181,11 @@ export default function ReservationsPage() {
       if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current)
       refreshTimerRef.current = setTimeout(() => fetchReservations(), 500)
     }
-    socket.on('reservation:changed', handler)
-    socket.on('reservation:new_online', handler)
+    socket.on(SOCKET_EVENTS.RESERVATION_CHANGED, handler)
+    socket.on(SOCKET_EVENTS.RESERVATION_NEW_ONLINE, handler)
     return () => {
-      socket.off('reservation:changed', handler)
-      socket.off('reservation:new_online', handler)
+      socket.off(SOCKET_EVENTS.RESERVATION_CHANGED, handler)
+      socket.off(SOCKET_EVENTS.RESERVATION_NEW_ONLINE, handler)
       if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current)
     }
   }, [locationId, fetchReservations])

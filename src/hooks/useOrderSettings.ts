@@ -6,6 +6,7 @@ import { getPricingProgram, DEFAULT_AGE_VERIFICATION, DEFAULT_BAR_OPERATIONS, DE
 import { useOrderStore } from '@/stores/order-store'
 import { setLocationTaxRate } from '@/lib/seat-utils'
 import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
 
 const DEFAULT_DUAL_PRICING: DualPricingSettings = {
   enabled: true,
@@ -319,9 +320,9 @@ export function useOrderSettings() {
       cacheTime = 0
       forceReloadRef.current()
     }
-    socket?.on('settings:updated', handler)
+    socket?.on(SOCKET_EVENTS.SETTINGS_UPDATED, handler)
     return () => {
-      socket?.off('settings:updated', handler)
+      socket?.off(SOCKET_EVENTS.SETTINGS_UPDATED, handler)
       releaseSharedSocket()
     }
   }, [])

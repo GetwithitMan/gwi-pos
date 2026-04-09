@@ -12,6 +12,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
 import { toast } from '@/stores/toast-store'
 
 export interface WeightReadingState {
@@ -64,7 +65,7 @@ export function useScale(scaleId: string | null | undefined): UseScaleReturn {
     const socket = getSharedSocket()
 
     // Join the scale room
-    socket.emit('subscribe', `scale:${scaleId}`)
+    socket.emit(SOCKET_EVENTS._CLIENT_SUBSCRIBE, `scale:${scaleId}`)
 
     const onWeight = (data: {
       scaleId: string
@@ -105,11 +106,11 @@ export function useScale(scaleId: string | null | undefined): UseScaleReturn {
 
     const onConnect = () => {
       // Re-join room after reconnection
-      socket.emit('subscribe', `scale:${scaleId}`)
+      socket.emit(SOCKET_EVENTS._CLIENT_SUBSCRIBE, `scale:${scaleId}`)
     }
 
-    socket.on('scale:weight', onWeight)
-    socket.on('scale:status', onStatus)
+    socket.on(SOCKET_EVENTS.SCALE_WEIGHT, onWeight)
+    socket.on(SOCKET_EVENTS.SCALE_STATUS, onStatus)
     socket.on('connect', onConnect)
 
     // Heartbeat: if no weight reading in 10s, mark scale as disconnected
@@ -123,9 +124,9 @@ export function useScale(scaleId: string | null | undefined): UseScaleReturn {
 
     return () => {
       clearInterval(heartbeat)
-      socket.emit('unsubscribe', `scale:${scaleId}`)
-      socket.off('scale:weight', onWeight)
-      socket.off('scale:status', onStatus)
+      socket.emit(SOCKET_EVENTS._CLIENT_UNSUBSCRIBE, `scale:${scaleId}`)
+      socket.off(SOCKET_EVENTS.SCALE_WEIGHT, onWeight)
+      socket.off(SOCKET_EVENTS.SCALE_STATUS, onStatus)
       socket.off('connect', onConnect)
       releaseSharedSocket()
     }

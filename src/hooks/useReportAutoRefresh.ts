@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
 
 interface UseReportAutoRefreshOptions {
   /** Callback to refresh the report data */
@@ -17,10 +18,10 @@ interface UseReportAutoRefreshOptions {
 }
 
 const DEFAULT_EVENTS = [
-  'orders:list-changed',
-  'order:totals-updated',
-  'payment:processed',
-  'employee:clock-changed',
+  SOCKET_EVENTS.ORDERS_LIST_CHANGED,
+  SOCKET_EVENTS.ORDER_TOTALS_UPDATED,
+  SOCKET_EVENTS.PAYMENT_PROCESSED,
+  SOCKET_EVENTS.EMPLOYEE_CLOCK_CHANGED,
 ]
 
 /**

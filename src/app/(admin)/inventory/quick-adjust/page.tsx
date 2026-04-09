@@ -8,6 +8,7 @@ import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { toast } from '@/stores/toast-store'
 import { Modal } from '@/components/ui/modal'
 import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
 
 interface StockItem {
   id: string
@@ -106,13 +107,13 @@ export default function QuickStockAdjustPage() {
   useEffect(() => {
     const socket = getSharedSocket()
     const handler = () => { loadData() }
-    socket.on('inventory:adjustment', handler)
-    socket.on('inventory:stock-change', handler)
-    socket.on('inventory:changed', handler)
+    socket.on(SOCKET_EVENTS.INVENTORY_ADJUSTMENT, handler)
+    socket.on(SOCKET_EVENTS.INVENTORY_STOCK_CHANGE, handler)
+    socket.on(SOCKET_EVENTS.INVENTORY_CHANGED, handler)
     return () => {
-      socket.off('inventory:adjustment', handler)
-      socket.off('inventory:stock-change', handler)
-      socket.off('inventory:changed', handler)
+      socket.off(SOCKET_EVENTS.INVENTORY_ADJUSTMENT, handler)
+      socket.off(SOCKET_EVENTS.INVENTORY_STOCK_CHANGE, handler)
+      socket.off(SOCKET_EVENTS.INVENTORY_CHANGED, handler)
       releaseSharedSocket()
     }
   }, [loadData])

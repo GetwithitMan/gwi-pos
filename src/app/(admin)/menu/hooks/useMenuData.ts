@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth-store'
 import { toast } from '@/stores/toast-store'
 import { getSharedSocket, releaseSharedSocket, getTerminalId } from '@/lib/shared-socket'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
 import type { Category, MenuItem, ModifierGroup, Printer, KDSScreen, IngredientCategory, IngredientLibraryItem } from '../types'
 
 export function useMenuData() {
@@ -162,7 +163,7 @@ export function useMenuData() {
 
     // Join location room (shared socket may already be joined, but additive is fine)
     const onConnect = () => {
-      socket.emit('join_station', {
+      socket.emit(SOCKET_EVENTS._CLIENT_JOIN_STATION, {
         locationId,
         tags: [],
         terminalId: getTerminalId(),
@@ -197,8 +198,8 @@ export function useMenuData() {
     }
 
     socket.on('connect', onConnect)
-    socket.on('entertainment:status-changed', onEntertainmentChanged)
-    socket.on('ingredient:library-update', onIngredientUpdate)
+    socket.on(SOCKET_EVENTS.ENTERTAINMENT_STATUS_CHANGED, onEntertainmentChanged)
+    socket.on(SOCKET_EVENTS.INGREDIENT_LIBRARY_UPDATE, onIngredientUpdate)
 
     if (socket.connected) {
       onConnect()
@@ -215,8 +216,8 @@ export function useMenuData() {
 
     return () => {
       socket.off('connect', onConnect)
-      socket.off('entertainment:status-changed', onEntertainmentChanged)
-      socket.off('ingredient:library-update', onIngredientUpdate)
+      socket.off(SOCKET_EVENTS.ENTERTAINMENT_STATUS_CHANGED, onEntertainmentChanged)
+      socket.off(SOCKET_EVENTS.INGREDIENT_LIBRARY_UPDATE, onIngredientUpdate)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       releaseSharedSocket()
     }

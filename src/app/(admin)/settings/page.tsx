@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { HardwareHealthWidget } from '@/components/hardware/HardwareHealthWidget'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { useSocket } from '@/hooks/useSocket'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
 import { useAuthStore } from '@/stores/auth-store'
 import { getSharedSocket } from '@/lib/shared-socket'
 
@@ -96,8 +97,8 @@ export default function SettingsPage() {
   useEffect(() => {
     const socket = getSharedSocket()
     const handler = () => { loadSettings(); loadHardwareStatus() }
-    socket.on('settings:updated', handler)
-    return () => { socket.off('settings:updated', handler) }
+    socket.on(SOCKET_EVENTS.SETTINGS_UPDATED, handler)
+    return () => { socket.off(SOCKET_EVENTS.SETTINGS_UPDATED, handler) }
   }, [loadSettings, loadHardwareStatus])
 
   // 20s fallback polling when socket is disconnected

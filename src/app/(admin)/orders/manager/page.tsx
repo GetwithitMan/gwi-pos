@@ -10,6 +10,7 @@ import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { formatCurrency, formatDateTime } from '@/lib/utils'
 import { toast } from '@/stores/toast-store'
 import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
 import { hasPermission, PERMISSIONS } from '@/lib/auth-utils'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -196,10 +197,10 @@ export default function OpenOrdersManagerPage() {
       debounceTimer = setTimeout(() => fetchRef.current(), 300)
     }
 
-    socket.on('orders:list-changed', handleChange)
+    socket.on(SOCKET_EVENTS.ORDERS_LIST_CHANGED, handleChange)
     return () => {
       clearTimeout(debounceTimer)
-      socket.off('orders:list-changed', handleChange)
+      socket.off(SOCKET_EVENTS.ORDERS_LIST_CHANGED, handleChange)
       releaseSharedSocket()
     }
   }, [])

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@/generated/prisma/client'
 import { db } from '@/lib/db'
 import { emitToLocation } from '@/lib/socket-server'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
@@ -153,7 +154,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Notify admin browsers of offline→online transition
     if (wasOffline) {
-      void emitToLocation(terminal.locationId, 'terminal:status_changed', {
+      void emitToLocation(terminal.locationId, SOCKET_EVENTS.TERMINAL_STATUS_CHANGED, {
         terminalId: terminal.id,
         isOnline: true,
         lastSeenAt: new Date().toISOString(),
