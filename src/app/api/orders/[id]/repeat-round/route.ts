@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
-import { getLocationId, getLocationSettings } from '@/lib/location-cache'
+import { getLocationId } from '@/lib/location-cache'
 import { OrderRepository } from '@/lib/repositories'
 import { mapOrderForResponse, mapOrderItemForResponse } from '@/lib/api/order-response-mapper'
 import { recalculateOrderTotals } from '@/lib/domain/order-items'
@@ -72,7 +72,7 @@ export const POST = withVenue(async function POST(
             courseNumber: item.courseNumber,
             kitchenStatus: 'pending',
             status: 'active',
-            itemTotal: item.price,
+            itemTotal: item.itemTotal,
             isTaxInclusive: item.isTaxInclusive ?? false,
             cardPrice: item.cardPrice,
             pourSize: item.pourSize,
