@@ -113,8 +113,15 @@ export const POST = withVenue(async function POST(
     }
 
     // Auth check — require pos.split_checks permission (skip for read-only get_splits)
+    // Resolve employeeId from body OR from auth context (Android may not always send it in body)
     if (body.type !== 'get_splits') {
-      const auth = await requirePermission(body.employeeId, order.locationId, PERMISSIONS.POS_SPLIT_CHECKS)
+      let splitEmployeeId = body.employeeId
+      if (!splitEmployeeId) {
+        const { getActorFromRequest } = await import('@/lib/api-auth')
+        const actor = await getActorFromRequest(request)
+        splitEmployeeId = actor?.employeeId ?? null
+      }
+      const auth = await requirePermission(splitEmployeeId, order.locationId, PERMISSIONS.POS_SPLIT_CHECKS)
       if (!auth.authorized) return err(auth.error, auth.status)
     }
 
