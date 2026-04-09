@@ -32,6 +32,7 @@ import {
   removeSocketFromAcks,
 } from './socket-ack-queue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { SOCKET_EVENTS, type TerminalRevokedPayload } from '@/lib/socket-events'
 import { createChildLogger } from '@/lib/logger'
 
 const log = createChildLogger('socket-server')
@@ -220,6 +221,24 @@ async function markTerminalOffline(terminalId: string, locationId: string, reaso
       source: 'socket_disconnect',
       reason,
     })
+
+    // ── CFD Cleanup (Ghost Order Prevention) ──
+    // If this terminal has a paired CFD, tell it to return to idle
+    void (async () => {
+      try {
+        const terminal = await db.terminal.findUnique({
+          where: { id: terminalId },
+          select: { cfdTerminalId: true },
+        })
+        if (terminal?.cfdTerminalId) {
+          log.debug({ terminalId, cfdTerminalId: terminal.cfdTerminalId }, 'Clearing paired CFD for offline register')
+          await emitToTerminal(terminal.cfdTerminalId, 'cfd:idle', {})
+        }
+      } catch (cfdErr) {
+        log.warn({ err: cfdErr, terminalId }, 'Failed to clear paired CFD on disconnect')
+      }
+    })()
+
     void db.auditLog.create({
       data: {
         locationId,

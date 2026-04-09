@@ -153,20 +153,16 @@ export const SOCKET_EVENTS = {
   RESERVATION_NEW_ONLINE:  'reservation:new_online',
 
   // ── Settings (additional) ──────────────────────────────────────────────
-  ORDER_TYPES_UPDATED:     'order-types:updated',
 
   // ── Employees ─────────────────────────────────────────────────────────
   EMPLOYEES_CHANGED:       'employees:changed',
   EMPLOYEE_CLOCK_CHANGED:  'employee:clock-changed',
 
   // ── Shifts ────────────────────────────────────────────────────────────
-  SHIFTS_CHANGED:          'shifts:changed',
 
   // ── Cash Drawers ──────────────────────────────────────────────────────
-  DRAWER_PAID_IN_OUT:      'drawer:paid_in_out',
 
   // ── Inventory (legacy alias) ──────────────────────────────────────────
-  INVENTORY_CHANGED:       'inventory:changed',
 
   // ── EOD ───────────────────────────────────────────────────────────────
   EOD_RESET_COMPLETE:      'eod:reset-complete',
@@ -176,10 +172,8 @@ export const SOCKET_EVENTS = {
   SYSTEM_UPDATE_REQUIRED:  'system:update-required',
 
   // ── Cover Tracking ────────────────────────────────────────────────────
-  COVER_ENTRY_RECORDED:    'cover:entry-recorded',
 
   // ── Cellular ──────────────────────────────────────────────────────────
-  CELLULAR_DEVICE_REVOKED: 'cellular:device-revoked',
 
   // ── Waitlist ───────────────────────────────────────────────────────────
   WAITLIST_CHANGED:        'waitlist:changed',

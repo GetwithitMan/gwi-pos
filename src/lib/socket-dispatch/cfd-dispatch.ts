@@ -185,87 +185,29 @@ export function dispatchCFDTipPrompt(locationId: string, cfdTerminalId: string |
  *
  * Called when the customer selects a tip amount on the Customer-Facing Display.
  * Relays the tip selection to the paired register terminal.
- * This is the reverse direction compared to most CFD dispatches — data flows
- * FROM the CFD TO the register, not FROM the register TO the CFD.
- *
- * When called via API, cfdTerminalId identifies the CFD that received the input.
- * The function looks up the paired register and emits the tip selection there.
- *
- * Android CFD sends { orderId, tipAmountCents, tipPercent? } to the register.
  */
 export async function dispatchCFDTipSelected(
   locationId: string,
   cfdTerminalId: string | null | undefined,
   data: { orderId: string; tipAmountCents: number; tipPercent?: number }
 ): Promise<void> {
-  if (!cfdTerminalId) {
-    // Without a CFD terminal ID, we cannot identify the paired register
-    log.warn({ locationId }, 'CFD tip-selected dispatch: no cfdTerminalId provided, ignoring')
-    return
-  }
+  if (cfdTerminalId) {
+    // Import here to avoid circular dependencies
+    const { cfdToRegisterMap } = await import('@/lib/socket-server')
+    const registerId = cfdToRegisterMap.get(cfdTerminalId)
 
-  const payload = {
-    ...data,
-    // Ensure cents are explicitly included for register
-    tipAmountCents: data.tipAmountCents,
-  }
-
-  // Import here to avoid circular dependencies
-  const { globalForSocket } = await import('@/lib/socket-server')
-  const { db } = await import('@/lib/db')
-
-  // Try cached mapping first (no DB query needed)
-  const { cfdToRegisterMap } = await import('@/lib/socket-server')
-  const cachedRegisterId = cfdToRegisterMap.get(cfdTerminalId)
-  if (cachedRegisterId) {
-    // Check if the target register is online (has sockets in its terminal room)
-    const room = `terminal:${cachedRegisterId}`
-    const roomSockets = globalForSocket.socketServer?.sockets.adapter.rooms.get(room)
-    if (!roomSockets || roomSockets.size === 0) {
-      log.warn({ cfdTerminalId, registerId: cachedRegisterId }, 'CFD tip-selected: paired register is offline')
+    if (registerId) {
+      void emitToTerminal(registerId, CFD_EVENTS.TIP_SELECTED, data).catch((err) =>
+        log.error({ err }, 'Failed to relay tip selection to register')
+      )
       return
     }
-    void emitToTerminal(cachedRegisterId, CFD_EVENTS.TIP_SELECTED, payload).catch((err) =>
-      log.error({ err, cfdTerminalId }, 'CFD tip-selected dispatch failed')
-    )
-    return
   }
 
-  // Cache miss — fall back to DB lookup with 5s timeout
-  try {
-    const register = await Promise.race([
-      db.terminal.findFirst({
-        where: { cfdTerminalId, deletedAt: null },
-        select: { id: true },
-      }),
-      new Promise<null>((_, reject) =>
-        setTimeout(() => reject(new Error('CFD-to-register DB lookup timed out (5s)')), 5000)
-      ),
-    ])
-
-    if (!register) {
-      log.warn({ cfdTerminalId }, 'CFD tip-selected: no paired register found in DB')
-      return
-    }
-
-    // Populate cache for future relays
-    const { setCfdMapping } = await import('@/lib/socket-server')
-    setCfdMapping(cfdTerminalId, register.id)
-
-    // Check if the target register is online
-    const room = `terminal:${register.id}`
-    const roomSockets = globalForSocket.socketServer?.sockets.adapter.rooms.get(room)
-    if (!roomSockets || roomSockets.size === 0) {
-      log.warn({ cfdTerminalId, registerId: register.id }, 'CFD tip-selected: paired register is offline')
-      return
-    }
-
-    void emitToTerminal(register.id, CFD_EVENTS.TIP_SELECTED, payload).catch((err) =>
-      log.error({ err, cfdTerminalId }, 'CFD tip-selected dispatch failed')
-    )
-  } catch (err) {
-    log.error({ err, cfdTerminalId }, 'CFD tip-selected lookup or dispatch failed')
-  }
+  // Fallback: broadcast to location if no paired register found
+  void emitToLocation(locationId, CFD_EVENTS.TIP_SELECTED, data).catch((err) =>
+    log.error({ err }, 'Failed to broadcast tip selection')
+  )
 }
 
 /**
@@ -432,7 +374,6 @@ export function dispatchCFDOrderUpdated(locationId: string, data: {
     currency: 'USD',
   }
   void emitToLocation(locationId, CFD_EVENTS.ORDER_UPDATED, payload).catch((err) => log.error({ err }, 'CFD order-updated dispatch failed'))
-  // Also emit as show-order so Android CFD picks up the update (it doesn't handle order-updated)
+  // Also emit as show-order so Android CFD picks it up (it doesn't handle order-updated)
   void emitToLocation(locationId, CFD_EVENTS.SHOW_ORDER, payload).catch((err) => log.error({ err }, 'CFD show-order (from update) dispatch failed'))
 }
-

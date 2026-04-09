@@ -451,10 +451,65 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 const putHandler = async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
-    const { itemIds, action, resendNote } = body as {
+    const { itemIds, action, resendNote, menuItemId } = body as {
       itemIds: string[]
-      action: 'complete' | 'uncomplete' | 'bump_order' | 'resend'
+      action: 'complete' | 'uncomplete' | 'bump_order' | 'resend' | 'mark_86'
       resendNote?: string
+      menuItemId?: string
+    }
+
+    // mark_86 has its own validation — doesn't need itemIds
+    if (action === 'mark_86') {
+      if (!menuItemId) {
+        return err('menuItemId is required for mark_86 action')
+      }
+
+      // Look up the menu item to resolve locationId
+      const menuItem = await db.menuItem.findUnique({
+        where: { id: menuItemId },
+        select: { id: true, name: true, locationId: true, stockStatus: true },
+      })
+      if (!menuItem) {
+        return err('Menu item not found')
+      }
+
+      // Update stock status to out_of_stock
+      await db.menuItem.update({
+        where: { id: menuItemId },
+        data: { stockStatus: 'out_of_stock' },
+      })
+
+      // Push to Neon
+      pushUpstream()
+
+      // Emit socket event so POS and online ordering update immediately
+      void dispatchMenuStockChanged(menuItem.locationId, {
+        itemId: menuItemId,
+        stockStatus: 'out_of_stock',
+        isOrderableOnline: false,
+      }).catch(e => console.error('[KDS] dispatchMenuStockChanged failed:', e))
+
+      // Notify cloud for cross-location sync
+      notifyDataChanged({ table: 'MenuItem', locationId: menuItem.locationId })
+
+      // Audit log
+      void db.auditLog.create({
+        data: {
+          locationId: menuItem.locationId,
+          employeeId: body.employeeId || null,
+          action: 'kds_mark_86',
+          entityType: 'menu_item',
+          entityId: menuItemId,
+          details: { itemName: menuItem.name, previousStatus: menuItem.stockStatus },
+        },
+      }).catch(e => console.error('[AuditLog] KDS 86 audit failed:', e))
+
+      return ok({
+        success: true,
+        menuItemId,
+        action: 'mark_86',
+        timestamp: new Date().toISOString(),
+      })
     }
 
     if (!itemIds || itemIds.length === 0) {

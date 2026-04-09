@@ -1,8 +1,8 @@
 {
-  "schemaVersion": "123",
+  "schemaVersion": "124",
   "seedVersion": "v1",
   "provisionerVersion": "1",
-  "migrationCount": 125,
+  "migrationCount": 126,
   "schemaSha256": "d86e1420c25c4328325fce69a5f05d43c603e33f9d40f5d1ca3f45481489418d",
   "installerVersion": "2.0.31",
   "version": "2.0.31",
@@ -10,9 +10,9 @@
   "syncAgentVersion": "2.0.31",
   "monitoringVersion": "2.0.31",
   "ansibleBaselineVersion": "2026.03.20.1",
-  "buildDate": "2026-04-09T15:16:32.503Z",
-  "gitSha": "d8df092b",
-  "generatedAt": "2026-04-09T15:16:32.504Z",
+  "buildDate": "2026-04-09T15:31:51.296Z",
+  "gitSha": "a2793be5",
+  "generatedAt": "2026-04-09T15:31:51.297Z",
   "components": {
     "pos": {
       "version": "2.0.31",
