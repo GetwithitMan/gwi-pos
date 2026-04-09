@@ -39,13 +39,14 @@ This document maps every significant file/folder in the current codebase to its 
 | 13 | Events | EV | `PM Mode: Events` | Reservations, event ticketing |
 | 14 | Financial | FN | `PM Mode: Financial` | Payroll processing, tip-outs, tip shares |
 | 15 | Development-RnD | RD | `PM Mode: Development-RnD` | Prototypes, research, technical spikes |
-| 16 | Error Reporting | ER | `PM Mode: Error Reporting` | Error tracking, monitoring, alerts |
-| 17 | Tabs & Bottle Service | TB | `PM Mode: Tabs` | Bar tabs, pre-auth, bottle service, multi-card, walkout |
-| 18 | Pizza Builder | PZ | `PM Mode: Pizza Builder` | Pizza config, visual builder, sectional printing |
-| 19 | Liquor Management | LQ | `PM Mode: Liquor Management` | Spirit categories, bottles, cocktail recipes, pour cost |
-| 20 | Offline & Sync | OS | `PM Mode: Offline & Sync` | Offline queue, IndexedDB, cloud sync, health checks |
-| 21 | Customer Display | CD | `PM Mode: Customer Display` | CFD, pay-at-table, tip/signature screens |
-| 22 | Scheduling | SC | `PM Mode: Scheduling` | Employee scheduling, shift planning |
+| 16 | Datacap | DC | `PM Mode: Datacap` | Payment gateway, card readers, transaction processing |
+| 17 | Error Reporting | ER | `PM Mode: Error Reporting` | Error tracking, monitoring, alerts |
+| 18 | Tabs & Bottle Service | TB | `PM Mode: Tabs` | Bar tabs, pre-auth, bottle service, multi-card, walkout |
+| 19 | Pizza Builder | PZ | `PM Mode: Pizza Builder` | Pizza config, visual builder, sectional printing |
+| 20 | Liquor Management | LQ | `PM Mode: Liquor Management` | Spirit categories, bottles, cocktail recipes, pour cost |
+| 21 | Offline & Sync | OS | `PM Mode: Offline & Sync` | Offline queue, IndexedDB, cloud sync, health checks |
+| 22 | Customer Display | CD | `PM Mode: Customer Display` | CFD, pay-at-table, tip/signature screens |
+| 23 | Scheduling | SC | `PM Mode: Scheduling` | Employee scheduling, shift planning |
 
 ---
 
@@ -92,7 +93,7 @@ This document maps every significant file/folder in the current codebase to its 
 | `settings/daily-counts/` | IN | Daily count config |
 | `settings/hardware/` | HW | Hardware overview |
 | `settings/hardware/kds-screens/` | HW | KDS pairing |
-| `settings/hardware/payment-readers/` | HW | Payment readers |
+| `settings/hardware/payment-readers/` | DC | Datacap reader config |
 | `settings/hardware/printers/` | HW | Printer setup |
 | `settings/hardware/routing/` | HW | Print routing |
 | `settings/hardware/terminals/` | HW | Terminal setup |
@@ -850,7 +851,7 @@ Based on dependencies, documentation completeness, and business impact:
 | 17 | Events (EV) | Reservations and ticketing |
 | 18 | Settings (ST) | Cross-domain configuration |
 | 19 | Reports (RP) | Aggregates from all domains |
-| 20 | Offline & Sync (OS) | Infrastructure, touches all domains |
+| 21 | Offline & Sync (OS) | Infrastructure, touches all domains |
 | 21 | Error Reporting (ER) | Infrastructure, touches all domains |
 | 22 | Development-RnD (RD) | Non-production |
 
