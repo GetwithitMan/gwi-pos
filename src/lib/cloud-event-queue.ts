@@ -50,7 +50,10 @@ export async function queueCloudEvent(
 }
 
 async function processQueue(): Promise<void> {
-  const cloudUrl = process.env.BACKOFFICE_API_URL
+  const cloudUrl = process.env.MISSION_CONTROL_URL || process.env.BACKOFFICE_API_URL
+  if (!process.env.MISSION_CONTROL_URL && process.env.BACKOFFICE_API_URL) {
+    console.warn('[DEPRECATED] Using BACKOFFICE_API_URL — migrate to MISSION_CONTROL_URL')
+  }
   if (!cloudUrl) return
 
   try {

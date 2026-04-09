@@ -42,7 +42,7 @@ export function notifyDataChanged(params: NotifyParams): void {
         'Authorization': `Bearer ${secret}`,
       },
       body: JSON.stringify(params),
-      signal: AbortSignal.timeout(3000),
+      signal: AbortSignal.timeout(10000),
     }).catch((err) => {
       log.warn(`[Cloud Notify] attempt ${attempt} failed:`, err instanceof Error ? err.message : err)
       if (attempt < 2) {
