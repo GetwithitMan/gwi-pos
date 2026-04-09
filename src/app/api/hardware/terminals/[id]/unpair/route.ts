@@ -6,6 +6,7 @@ import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { err, notFound, ok } from '@/lib/api-response'
+import { revokeTerminal } from '@/lib/socket-server'
 
 // POST unpair a terminal (manager action)
 export const POST = withVenue(withAuth('ADMIN', async function POST(
@@ -42,6 +43,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     // Without this, the old ACTIVE record persists in Neon and the device
     // can't obtain a new cellular JWT on re-pair.
     void db.$executeRaw`DELETE FROM "CellularDevice" WHERE "terminalId" = ${id} AND "locationId" = ${terminal.locationId}`.catch(err => console.warn('[unpair] CellularDevice cleanup failed (non-fatal):', err instanceof Error ? err.message : err))
+
+    // ── REVOKE Terminal (instantly disconnect socket) ──
+    void revokeTerminal(id, 'Unpaired by manager').catch(err => console.warn('[unpair] revokeTerminal failed (non-fatal):', err instanceof Error ? err.message : err))
 
     void notifyDataChanged({ locationId: terminal.locationId, domain: 'hardware', action: 'updated', entityId: id })
     void pushUpstream()

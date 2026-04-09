@@ -206,6 +206,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     return ok({
       success: true,
+      serverTime: new Date().toISOString(),
       terminal: {
         id: terminal.id,
         name: terminal.name,

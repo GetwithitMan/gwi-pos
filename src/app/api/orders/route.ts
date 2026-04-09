@@ -184,7 +184,10 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
           // Advisory lock on locationId hash to serialize order number generation
           // This works even when there are zero rows (unlike FOR UPDATE which only locks existing rows)
           const lockKey = Math.abs(locationId.split('').reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0))
-          await tx.$executeRaw`SELECT pg_advisory_xact_lock(${lockKey})`
+          const [{ acquired }] = await tx.$queryRaw<[{ acquired: boolean }]>`SELECT pg_try_advisory_xact_lock(${lockKey}) as acquired`
+          if (!acquired) {
+            throw new Error('ORDER_CREATION_BUSY')
+          }
 
           const lastOrderRows = await tx.$queryRaw<{ orderNumber: number }[]>`
             SELECT "orderNumber" FROM "Order" WHERE "locationId" = ${locationId} AND "parentOrderId" IS NULL AND "businessDayDate" = ${businessDayStart.toISOString()}::timestamp ORDER BY "orderNumber" DESC LIMIT 1
@@ -645,7 +648,10 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
         // Advisory lock on locationId hash to serialize order number generation
         // This works even when there are zero rows (unlike FOR UPDATE which only locks existing rows)
         const lockKey = Math.abs(locationId.split('').reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0))
-        await tx.$executeRaw`SELECT pg_advisory_xact_lock(${lockKey})`
+        const [{ acquired }] = await tx.$queryRaw<[{ acquired: boolean }]>`SELECT pg_try_advisory_xact_lock(${lockKey}) as acquired`
+        if (!acquired) {
+          throw new Error('ORDER_CREATION_BUSY')
+        }
 
         const lastOrderRows = await tx.$queryRaw<{ orderNumber: number }[]>`
           SELECT "orderNumber" FROM "Order" WHERE "locationId" = ${locationId} AND "parentOrderId" IS NULL AND "businessDayDate" = ${businessDayStart.toISOString()}::timestamp ORDER BY "orderNumber" DESC LIMIT 1
@@ -961,6 +967,10 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
       const itemName = parts[0]
       const groupName = parts[1]
       return err(`Required modifier group "${groupName}" is not satisfied for item "${itemName}"`)
+    }
+
+    if (message === 'ORDER_CREATION_BUSY') {
+      return err('Order creation is busy — please try again', 409)
     }
 
     console.error('Failed to create order:', error)

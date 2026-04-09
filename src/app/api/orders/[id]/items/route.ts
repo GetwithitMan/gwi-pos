@@ -271,10 +271,10 @@ export const POST = withVenue(async function POST(
       try {
         await validateCellularOrderAccess(true, orderId, 'mutate', db)
       } catch (caughtErr) {
-        if (err instanceof CellularAuthError) {
-          return err(err.message, err.status)
+        if (caughtErr instanceof CellularAuthError) {
+          return err(caughtErr.message, caughtErr.status)
         }
-        throw err
+        throw caughtErr
       }
     }
 
@@ -363,31 +363,31 @@ export const POST = withVenue(async function POST(
       }
     }
 
-    // Idempotency check — if this key was already processed, return current order
-    // This prevents duplicate item additions on retried requests (e.g., WiFi stutter → Android retry).
-    // The idempotencyKey must be unique per request attempt and remain stable across retries.
-    const existing = await OrderItemRepository.getItemsForOrderWhere(orderId, locationId, {
-      idempotencyKey, deletedAt: null,
-    })
-    if (existing.length > 0) {
-      const order = await OrderRepository.getOrderByIdWithInclude(orderId, locationId, {
-        employee: {
-          select: { id: true, displayName: true, firstName: true, lastName: true },
-        },
-        items: {
-          include: {
-            modifiers: true,
-            ingredientModifications: true,
-            pizzaData: true,
-          },
-        },
-      })
-      if (!order) return apiError.notFound('Order not found', ERROR_CODES.ORDER_NOT_FOUND)
-      return ok(mapOrderForResponse(order))
-    }
-
     // Use a transaction to ensure atomic append
     const result = await db.$transaction(async (tx) => {
+      // Idempotency check — if this key was already processed, return current order
+      // This prevents duplicate item additions on retried requests (e.g., WiFi stutter → Android retry).
+      // The idempotencyKey must be unique per request attempt and remain stable across retries.
+      const existing = await tx.orderItem.findMany({
+        where: { orderId, idempotencyKey, deletedAt: null },
+      })
+      if (existing.length > 0) {
+        // Return early from transaction with the current order state
+        const order = await OrderRepository.getOrderByIdWithInclude(orderId, locationId, {
+          employee: {
+            select: { id: true, displayName: true, firstName: true, lastName: true },
+          },
+          items: {
+            include: {
+              modifiers: true,
+              ingredientModifications: true,
+              pizzaData: true,
+            },
+          },
+        }, tx)
+        if (!order) throw new Error('Order not found')
+        return { idempotencyMatch: true, order }
+      }
       // Lock the order row to prevent concurrent modifications (FOR UPDATE)
       const [lockedOrder] = await tx.$queryRaw<any[]>`
         SELECT id, status, "tabStatus" FROM "Order" WHERE id = ${orderId} FOR UPDATE
@@ -649,12 +649,22 @@ export const POST = withVenue(async function POST(
       return { updatedOrder, createdItems, menuItemMap, hasSentItems, priceCorrectionLog }
     })
 
+    // Handle idempotency match — return existing order if already processed
+    if ('idempotencyMatch' in result && result.idempotencyMatch) {
+      return ok(mapOrderForResponse(result.order))
+    }
+
+    // Narrow type: past this point, result is the normal transaction result
+    const { updatedOrder, createdItems, menuItemMap, hasSentItems, priceCorrectionLog } = result as {
+      updatedOrder: any; createdItems: any[]; menuItemMap: Map<string, any>; hasSentItems: boolean; priceCorrectionLog: any[]
+    }
+
     // Fire-and-forget: check if bar tab or bottle service tab needs auto-increment
-    if ((result.updatedOrder.orderType === 'bar_tab' || result.updatedOrder.isBottleService) && result.updatedOrder.preAuthRecordNo) {
+    if ((updatedOrder.orderType === 'bar_tab' || updatedOrder.isBottleService) && updatedOrder.preAuthRecordNo) {
       fetch(`${process.env.NEXT_PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 3005}`}/api/orders/${orderId}/auto-increment`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ employeeId: result.updatedOrder.employeeId }),
+        body: JSON.stringify({ employeeId: updatedOrder.employeeId }),
       }).catch(err => {
         console.warn('[Auto-Increment] Background check failed:', err)
       })
@@ -662,17 +672,17 @@ export const POST = withVenue(async function POST(
 
     // Queue outage writes if Neon is unreachable
     if (isInOutageMode()) {
-      for (const item of result.createdItems) {
-        void queueOutageWrite('OrderItem', item.id, 'INSERT', { ...item } as Record<string, unknown>, result.updatedOrder.locationId).catch(err => log.warn({ err }, 'Background task failed'))
+      for (const item of createdItems) {
+        void queueOutageWrite('OrderItem', item.id, 'INSERT', { ...item } as Record<string, unknown>, updatedOrder.locationId).catch(err => log.warn({ err }, 'Background task failed'))
       }
-      void queueOutageWrite('Order', orderId, 'UPDATE', result.updatedOrder as unknown as Record<string, unknown>, result.updatedOrder.locationId).catch(err => log.warn({ err }, 'Background task failed'))
+      void queueOutageWrite('Order', orderId, 'UPDATE', updatedOrder as unknown as Record<string, unknown>, updatedOrder.locationId).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     // Fire-and-forget: calculate and store costAtSale for all new items (batch query instead of N+1)
     void (async () => {
       try {
         const costMap = await calculateCostAtSaleBatch(
-          result.createdItems.map((item: any) => ({
+          createdItems.map((item: any) => ({
             id: item.id,
             menuItemId: item.menuItemId,
             pricingOptionId: item.pricingOptionId,
@@ -700,7 +710,9 @@ export const POST = withVenue(async function POST(
     })()
 
     // Emit ITEM_ADDED events for each new item (fire-and-forget)
-    void emitOrderEvents(result.updatedOrder.locationId, orderId, result.createdItems.map((item: any) => ({
+    // Pass idempotencyKey as clientEventId so server echo reuses the client's eventId,
+    // enabling proper deduplication via Room's INSERT OR IGNORE (fixes C4 and H2)
+    void emitOrderEvents(updatedOrder.locationId, orderId, createdItems.map((item: any) => ({
       type: 'ITEM_ADDED' as const,
       payload: {
         lineItemId: item.id,
@@ -742,14 +754,14 @@ export const POST = withVenue(async function POST(
         pourSize: item.pourSize || null,
         pourMultiplier: item.pourMultiplier ? Number(item.pourMultiplier) : null,
         isTaxInclusive: item.isTaxInclusive ?? false,
-        itemType: result.menuItemMap.get(item.menuItemId)?.itemType || null,
+        itemType: menuItemMap.get(item.menuItemId)?.itemType || null,
       },
-    })))
+    })), { clientEventId: idempotencyKey })
 
     // Format response with complete modifier data
     // Build correlation map for newly created items
     const correlationMap = new Map<string, string>()
-    result.createdItems.forEach(item => {
+    createdItems.forEach(item => {
       const corr = (item as any).correlationId
       if (corr) {
         correlationMap.set(item.id, corr)
@@ -758,7 +770,7 @@ export const POST = withVenue(async function POST(
 
     // Build price correction metadata for client display (toast notifications)
     const priceCorrectionMap = new Map<string, { clientPrice: number; catalogPrice: number; menuItemName: string }>()
-    result.priceCorrectionLog.forEach(correction => {
+    priceCorrectionLog.forEach(correction => {
       priceCorrectionMap.set(correction.menuItemId, {
         clientPrice: correction.clientPrice,
         catalogPrice: correction.catalogPrice,
@@ -767,9 +779,9 @@ export const POST = withVenue(async function POST(
     })
 
     const response = {
-      ...mapOrderForResponse(result.updatedOrder),
+      ...mapOrderForResponse(updatedOrder),
       // Map items with correlationId for newly created items
-      items: result.updatedOrder.items.map((item: any) => {
+      items: updatedOrder.items.map((item: any) => {
         const mapped = mapOrderItemForResponse(item, correlationMap.get(item.id))
         const correction = priceCorrectionMap.get(item.menuItemId)
         if (correction) {
@@ -782,11 +794,11 @@ export const POST = withVenue(async function POST(
         return mapped
       }),
       // Summary of price corrections for toast/alert
-      ...(result.priceCorrectionLog.length > 0 && {
+      ...(priceCorrectionLog.length > 0 && {
         priceCorrectionAlert: {
           hasPriceCorrections: true,
-          correctionCount: result.priceCorrectionLog.length,
-          corrections: result.priceCorrectionLog.map(c => ({
+          correctionCount: priceCorrectionLog.length,
+          corrections: priceCorrectionLog.map(c => ({
             menuItemName: c.menuItemName,
             oldPrice: c.clientPrice,
             newPrice: c.catalogPrice,
@@ -797,62 +809,62 @@ export const POST = withVenue(async function POST(
     }
 
     // FIX-011: Dispatch real-time totals update (fire-and-forget)
-    dispatchOrderTotalsUpdate(result.updatedOrder.locationId, result.updatedOrder.id, {
-      subtotal: Number(result.updatedOrder.subtotal),
-      taxTotal: Number(result.updatedOrder.taxTotal),
-      tipTotal: Number(result.updatedOrder.tipTotal),
-      discountTotal: Number(result.updatedOrder.discountTotal),
-      total: Number(result.updatedOrder.total),
-      commissionTotal: Number(result.updatedOrder.commissionTotal || 0),
+    dispatchOrderTotalsUpdate(updatedOrder.locationId, updatedOrder.id, {
+      subtotal: Number(updatedOrder.subtotal),
+      taxTotal: Number(updatedOrder.taxTotal),
+      tipTotal: Number(updatedOrder.tipTotal),
+      discountTotal: Number(updatedOrder.discountTotal),
+      total: Number(updatedOrder.total),
+      commissionTotal: Number(updatedOrder.commissionTotal || 0),
     }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
-    dispatchOpenOrdersChanged(result.updatedOrder.locationId, { trigger: 'item_updated', orderId: result.updatedOrder.id, tableId: result.updatedOrder.tableId || undefined }, { async: true }).catch(err => log.warn({ err }, 'open orders dispatch failed'))
-    if (result.updatedOrder.tableId) {
-      dispatchFloorPlanUpdate(result.updatedOrder.locationId, { async: true }).catch(err => log.warn({ err }, 'floor plan dispatch failed'))
+    dispatchOpenOrdersChanged(updatedOrder.locationId, { trigger: 'item_updated', orderId: updatedOrder.id, tableId: updatedOrder.tableId || undefined }, { async: true }).catch(err => log.warn({ err }, 'open orders dispatch failed'))
+    if (updatedOrder.tableId) {
+      dispatchFloorPlanUpdate(updatedOrder.locationId, { async: true }).catch(err => log.warn({ err }, 'floor plan dispatch failed'))
     }
 
     // Dispatch order:summary-updated for Android cross-terminal sync (fire-and-forget)
-    void dispatchOrderSummaryUpdated(result.updatedOrder.locationId, buildOrderSummary(result.updatedOrder), { async: true }).catch(err => log.warn({ err }, 'order summary dispatch failed'))
-    if (result.updatedOrder.orderType === 'bar_tab' || result.updatedOrder.status === 'open') {
+    void dispatchOrderSummaryUpdated(updatedOrder.locationId, buildOrderSummary(updatedOrder), { async: true }).catch(err => log.warn({ err }, 'order summary dispatch failed'))
+    if (updatedOrder.orderType === 'bar_tab' || updatedOrder.status === 'open') {
       const updatedItemCount = await OrderItemRepository.countItemsForOrder(orderId, locationId)
-      dispatchTabItemsUpdated(result.updatedOrder.locationId, { orderId, itemCount: updatedItemCount })
+      dispatchTabItemsUpdated(updatedOrder.locationId, { orderId, itemCount: updatedItemCount })
     }
 
     // Notify terminal if new items were added to an order that already has sent items.
     // This prevents the add-then-send race where items stay 'pending' forever because
     // the employee already sent the order and doesn't realize new items arrived.
-    if (result.hasSentItems && result.createdItems.length > 0) {
-      void emitToLocation(result.updatedOrder.locationId, 'order:pending-items', {
-        orderId: result.updatedOrder.id,
-        count: result.createdItems.length,
-        itemNames: result.createdItems.map((i: any) => i.name).slice(0, 5),
+    if (hasSentItems && createdItems.length > 0) {
+      void emitToLocation(updatedOrder.locationId, 'order:pending-items', {
+        orderId: updatedOrder.id,
+        count: createdItems.length,
+        itemNames: createdItems.map((i: any) => i.name).slice(0, 5),
       }).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     // Emit price correction alerts for managers (real-time visibility of stale menu issues)
-    if (result.priceCorrectionLog.length > 0) {
-      void emitToLocation(result.updatedOrder.locationId, 'order:price-corrected', {
-        orderId: result.updatedOrder.id,
-        employeeId: requestingEmployeeId || result.updatedOrder.employeeId,
-        employeeName: result.updatedOrder.employee?.displayName || 'Unknown',
-        corrections: result.priceCorrectionLog.map(c => ({
+    if (priceCorrectionLog.length > 0) {
+      void emitToLocation(updatedOrder.locationId, 'order:price-corrected', {
+        orderId: updatedOrder.id,
+        employeeId: requestingEmployeeId || updatedOrder.employeeId,
+        employeeName: updatedOrder.employee?.displayName || 'Unknown',
+        corrections: priceCorrectionLog.map(c => ({
           menuItemId: c.menuItemId,
           menuItemName: c.menuItemName,
           clientPrice: c.clientPrice,
           catalogPrice: c.catalogPrice,
           priceDifference: c.catalogPrice - c.clientPrice,
         })),
-        correctionCount: result.priceCorrectionLog.length,
+        correctionCount: priceCorrectionLog.length,
         timestamp: new Date().toISOString(),
       }).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     // Evaluate auto-discount rules after items are added (fire-and-forget)
-    void evaluateAutoDiscounts(result.updatedOrder.id, result.updatedOrder.locationId).catch(err => log.warn({ err }, 'Background task failed'))
+    void evaluateAutoDiscounts(updatedOrder.id, updatedOrder.locationId).catch(err => log.warn({ err }, 'Background task failed'))
     pushUpstream()
 
     return ok({
       ...response,
-      addedItems: result.createdItems.map(item => ({
+      addedItems: createdItems.map(item => ({
         id: item.id,
         name: item.name,
         correlationId: (item as { correlationId?: string }).correlationId,
@@ -868,9 +880,6 @@ export const POST = withVenue(async function POST(
     // Map known errors to appropriate responses
     if (message === 'Order not found') {
       return apiError.notFound('Order not found', ERROR_CODES.ORDER_NOT_FOUND)
-    }
-    if (message === 'Cannot modify a closed order') {
-      return apiError.conflict('Cannot modify a closed order', ERROR_CODES.ORDER_CLOSED)
     }
     if (message === 'ORDER_NOT_MODIFIABLE') {
       return err('Order cannot be modified — it may have been paid or closed by another terminal', 409)

@@ -1,13 +1,33 @@
 'use client'
 
+import { useEffect } from 'react'
 import Link from 'next/link'
 import { IngredientLibrary } from '@/components/ingredients'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
+import { useSocket } from '@/hooks/useSocket'
 
 export default function FoodInventoryPage() {
   const employee = useAuthStore(s => s.employee)
   const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/inventory' })
+  const { socket } = useSocket()
+
+  useEffect(() => {
+    if (!socket) return
+
+    // Listen for inventory adjustments to refresh the UI
+    const handleAdjustment = () => {
+      // Force a full page reload or find a way to trigger IngredientLibrary refresh
+      // Since we don't have a simple refetch here, we'll reload the window for now
+      // as a foolproof way to ensure all nested lists (prep, inventory, ingredients) are fresh.
+      window.location.reload()
+    }
+
+    socket.on('inventory:adjustment', handleAdjustment)
+    return () => {
+      socket.off('inventory:adjustment', handleAdjustment)
+    }
+  }, [socket])
 
   if (!hydrated || !employee?.location?.id) {
     return null

@@ -921,6 +921,11 @@ model Location {
   // Unified Split Checks (Migration 118)
   itemShares ItemShare[]
 
+  // Multi-tenancy hardening (5K-merchant audit)
+  reservationTables ReservationTable[] @relation("ReservationTableLocation")
+  deductionRuns     DeductionRun[]
+  loyaltyTiers      LoyaltyTier[]     @relation("LoyaltyTierLocation")
+
   @@index([organizationId])
 }
 
@@ -8975,6 +8980,8 @@ model PendingDeduction {
 
 model DeductionRun {
   id                 String    @id @default(cuid())
+  locationId         String
+  location           Location  @relation(fields: [locationId], references: [id])
   pendingDeductionId String
   syncedAt           DateTime?
   startedAt          DateTime  @default(now())
@@ -8988,6 +8995,7 @@ model DeductionRun {
   pendingDeduction PendingDeduction @relation(fields: [pendingDeductionId], references: [id], onDelete: Cascade)
 
   @@index([pendingDeductionId])
+  @@index([locationId])
 }
 
 // ============================================
@@ -9246,9 +9254,12 @@ model ReservationTable {
   reservation   Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
   tableId       String
   table         Table       @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  locationId    String
+  location      Location    @relation("ReservationTableLocation", fields: [locationId], references: [id])
   createdAt     DateTime    @default(now())
 
   @@id([reservationId, tableId])
+  @@index([locationId])
 }
 
 model ReservationEvent {
@@ -9455,9 +9466,11 @@ model LoyaltyProgram {
 }
 
 model LoyaltyTier {
-  id        String         @id @default(cuid())
-  programId String
-  program   LoyaltyProgram @relation(fields: [programId], references: [id], onDelete: Cascade)
+  id         String         @id @default(cuid())
+  locationId String
+  location   Location       @relation("LoyaltyTierLocation", fields: [locationId], references: [id])
+  programId  String
+  program    LoyaltyProgram @relation(fields: [programId], references: [id], onDelete: Cascade)
 
   name             String
   minimumPoints    Int     @default(0) // Lifetime points to reach tier
@@ -9477,6 +9490,7 @@ model LoyaltyTier {
 
   @@index([programId])
   @@index([programId, sortOrder])
+  @@index([locationId])
 }
 
 model LoyaltyTransaction {

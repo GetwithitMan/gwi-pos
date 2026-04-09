@@ -37,6 +37,8 @@ export const maxDuration = 120
 // Default page sizes
 const DEFAULT_MENU_PAGE_SIZE = 200
 const DEFAULT_ORDERS_PAGE_SIZE = 100
+const MAX_MENU_PAGE_SIZE = 500
+const MAX_ORDERS_PAGE_SIZE = 200
 
 // ─── Parse query params ───────────────────────────────────────────────────────
 function parseBootstrapOptions(request: NextRequest): BootstrapOptions {
@@ -44,6 +46,9 @@ function parseBootstrapOptions(request: NextRequest): BootstrapOptions {
   const sectionsParam = url.searchParams.get('sections')
   const menuCursor = url.searchParams.get('menuCursor')
   const ordersCursor = url.searchParams.get('ordersCursor')
+  const pageSizeParam = url.searchParams.get('pageSize')
+
+  const requestedPageSize = pageSizeParam ? parseInt(pageSizeParam, 10) : null
 
   let sections: Set<BootstrapSection> | null = null
   if (sectionsParam) {
@@ -56,8 +61,8 @@ function parseBootstrapOptions(request: NextRequest): BootstrapOptions {
     sections,
     menuCursor,
     ordersCursor,
-    menuPageSize: DEFAULT_MENU_PAGE_SIZE,
-    ordersPageSize: DEFAULT_ORDERS_PAGE_SIZE,
+    menuPageSize: Math.min(MAX_MENU_PAGE_SIZE, requestedPageSize || DEFAULT_MENU_PAGE_SIZE),
+    ordersPageSize: Math.min(MAX_ORDERS_PAGE_SIZE, requestedPageSize || DEFAULT_ORDERS_PAGE_SIZE),
   }
 }
 
@@ -175,7 +180,7 @@ async function fetchMenuData(
             },
           },
           orderBy: { sortOrder: 'asc' },
-          take: opts.menuCursor ? opts.menuPageSize : undefined,
+          take: opts.menuPageSize,
           ...cursorClause,
         },
       },
@@ -319,11 +324,9 @@ async function fetchMenuData(
     })),
   }))
 
-  // Determine hasMore for paginated menu: if any category has exactly menuPageSize items
-  // and a cursor was provided, there may be more items
-  const hasMoreMenu = opts.menuCursor
-    ? categories.some(cat => cat.menuItems.length >= opts.menuPageSize)
-    : false
+  // Determine hasMore for paginated menu: if any category has exactly menuPageSize items,
+  // there may be more items. Clients should check hasMore and fetch next page if needed.
+  const hasMoreMenu = categories.some(cat => cat.menuItems.length >= opts.menuPageSize)
 
   return {
     menu: {

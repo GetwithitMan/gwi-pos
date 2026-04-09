@@ -35,7 +35,7 @@
  */
 
 import { Prisma } from '@/generated/prisma/client'
-import { emitToLocation, emitCriticalToLocation } from '@/lib/socket-server'
+import { emitToLocation, emitCriticalToLocation, emitToTags } from '@/lib/socket-server'
 import { SOCKET_EVENTS } from '@/lib/socket-events'
 import { createChildLogger } from '@/lib/logger'
 
@@ -91,6 +91,39 @@ export async function queueSocketEvent(
 }
 
 /**
+ * Queue a tag-based socket event inside a Prisma transaction.
+ *
+ * Used primarily for KDS routing (e.g. 'kds:order-received') where events
+ * are routed to specific prep stations based on item tags.
+ *
+ * @param tx       Prisma transaction client
+ * @param locationId  Target location
+ * @param event    Socket event name
+ * @param data     Event payload
+ * @param tags     Array of routing tags (e.g. ['kitchen', 'pizza'])
+ * @returns        The SocketEventLog row ID
+ */
+export async function queueTagSocketEvent(
+  tx: any,
+  locationId: string,
+  event: string,
+  data: unknown,
+  tags: string[],
+): Promise<number> {
+  const jsonData = JSON.stringify(data ?? {})
+  const tagsJson = JSON.stringify(tags)
+  const targetRoom = `location:${locationId}` // Base room for tag events
+
+  const rows: Array<{ id: bigint }> = await tx.$queryRaw(
+    Prisma.sql`INSERT INTO "SocketEventLog" ("locationId", event, data, room, tags, status, flushed, "createdAt")
+     VALUES (${locationId}, ${event}, ${jsonData}::jsonb, ${targetRoom}, ${tagsJson}::jsonb, 'pending', false, NOW())
+     RETURNING id`,
+  )
+
+  return Number(rows[0].id)
+}
+
+/**
  * Convenience: queue multiple socket events inside a transaction.
  *
  * @returns Array of SocketEventLog row IDs
@@ -98,11 +131,15 @@ export async function queueSocketEvent(
 export async function queueSocketEvents(
   tx: any,
   locationId: string,
-  events: Array<{ event: string; data: unknown; room?: string }>,
+  events: Array<{ event: string; data: unknown; room?: string; tags?: string[] }>,
 ): Promise<number[]> {
   const ids: number[] = []
   for (const e of events) {
-    ids.push(await queueSocketEvent(tx, locationId, e.event, e.data, e.room))
+    if (e.tags && e.tags.length > 0) {
+      ids.push(await queueTagSocketEvent(tx, locationId, e.event, e.data, e.tags))
+    } else {
+      ids.push(await queueSocketEvent(tx, locationId, e.event, e.data, e.room))
+    }
   }
   return ids
 }
@@ -133,15 +170,12 @@ export async function flushSocketOutbox(
 
   try {
     // Claim rows atomically: UPDATE ... RETURNING inside a single statement.
-    // This replaces SELECT ... FOR UPDATE SKIP LOCKED which required a
-    // transaction wrapper to hold the lock. The UPDATE + RETURNING pattern
-    // atomically marks rows as 'flushing' and returns them in one operation,
-    // preventing double-flush without needing an explicit transaction.
     const rows: Array<{
       id: bigint
       event: string
       data: unknown
       room: string
+      tags: string[] | null
     }> = await db.$queryRaw(
       Prisma.sql`UPDATE "SocketEventLog"
        SET status = 'flushing'
@@ -152,7 +186,7 @@ export async function flushSocketOutbox(
          LIMIT ${maxBatch}
          FOR UPDATE SKIP LOCKED
        )
-       RETURNING id, event, data, room`,
+       RETURNING id, event, data, room, tags`,
     )
 
     if (rows.length === 0) return { flushed: 0, failed: 0 }
@@ -168,7 +202,10 @@ export async function flushSocketOutbox(
           ? { ...row.data as Record<string, unknown>, _eid: eid }
           : row.data
 
-        if ((CRITICAL_EMIT_EVENTS as Set<string>).has(row.event)) {
+        if (row.tags && row.tags.length > 0) {
+          // Tag-based routing (e.g. KDS)
+          await emitToTags(row.tags, row.event, enriched, locationId)
+        } else if ((CRITICAL_EMIT_EVENTS as Set<string>).has(row.event)) {
           // QoS 1 events — acknowledged delivery with retry
           await emitCriticalToLocation(locationId, row.event, enriched)
         } else {

@@ -61,9 +61,9 @@ export const PUT = withVenue(async function PUT(
       return notFound('Order not found')
     }
 
-    // Fast-path guard: reject modifications on terminal order statuses
-    if (['paid', 'closed', 'voided'].includes(order.status)) {
-      return err('Cannot modify items on a completed order', 400)
+    // Fast-path guard: reject modifications on terminal order statuses and split parents
+    if (['paid', 'closed', 'voided', 'split'].includes(order.status)) {
+      return err('Cannot modify items on a completed or split order', 400)
     }
 
     // Status + payment guard via domain
@@ -391,6 +391,11 @@ export const DELETE = withVenue(async function DELETE(
 
       if (!order) {
         return notFound('Order not found')
+      }
+
+      // Fast-path guard: reject deletions on split parents (modify children instead)
+      if (order.status === 'split') {
+        return err('Cannot delete items on a split order', 400)
       }
 
       // Status + payment guard via domain

@@ -296,10 +296,10 @@ export const PUT = withVenue(async function PUT(
     // Real-time cross-terminal update
     // Flag permissionsChanged when role, additional roles, or active status changed so terminals re-evaluate cached permissions
     const permissionsChanged = Boolean(roleId || additionalRoleIds !== undefined || isActive !== undefined)
-    void emitToLocation(existing.locationId, 'employees:changed', { action: 'updated', employeeId: id, permissionsChanged }).catch(err => log.warn({ err }, 'socket emit failed'))
-    void emitToLocation(existing.locationId, 'employee:updated', { action: 'updated', employeeId: id, permissionsChanged }).catch(err => log.warn({ err }, 'socket emit failed'))
+    await emitToLocation(existing.locationId, 'employees:changed', { action: 'updated', employeeId: id, permissionsChanged }).catch(err => log.warn({ err }, 'broadcast failed'))
+    await emitToLocation(existing.locationId, 'employee:updated', { action: 'updated', employeeId: id, permissionsChanged }).catch(err => log.warn({ err }, 'broadcast failed'))
     if (isActive === false) {
-      void emitToLocation(existing.locationId, 'employee:deactivated', { employeeId: id }).catch(err => log.warn({ err }, 'Background task failed'))
+      await emitToLocation(existing.locationId, 'employee:deactivated', { employeeId: id }).catch(err => log.warn({ err }, 'broadcast failed'))
       try {
         const activeMemberships = await db.tipGroupMembership.findMany({
           where: { employeeId: id, status: 'active', group: { status: 'active' } },
@@ -388,9 +388,9 @@ export const DELETE = withVenue(async function DELETE(
     void pushUpstream()
 
     // Real-time cross-terminal update
-    void emitToLocation(employee.locationId, 'employees:changed', { action: 'deleted', employeeId: id }).catch(err => log.warn({ err }, 'socket emit failed'))
-    void emitToLocation(employee.locationId, 'employee:updated', { action: 'deleted', employeeId: id }).catch(err => log.warn({ err }, 'socket emit failed'))
-    void emitToLocation(employee.locationId, 'employee:deactivated', { employeeId: id }).catch(err => log.warn({ err }, 'Background task failed'))
+    await emitToLocation(employee.locationId, 'employees:changed', { action: 'deleted', employeeId: id }).catch(err => log.warn({ err }, 'broadcast failed'))
+    await emitToLocation(employee.locationId, 'employee:updated', { action: 'deleted', employeeId: id }).catch(err => log.warn({ err }, 'broadcast failed'))
+    await emitToLocation(employee.locationId, 'employee:deactivated', { employeeId: id }).catch(err => log.warn({ err }, 'broadcast failed'))
     try {
       const activeMemberships = await db.tipGroupMembership.findMany({
         where: { employeeId: id, status: 'active', group: { status: 'active' } },

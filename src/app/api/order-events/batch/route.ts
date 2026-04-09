@@ -15,8 +15,8 @@ import { emitToTerminal } from '@/lib/socket-server'
 import { authenticateTerminal } from '@/lib/terminal-auth'
 import { err, ok } from '@/lib/api-response'
 import { OrderRouter } from '@/lib/order-router'
-import { dispatchNewOrder } from '@/lib/socket-dispatch'
 import { printKitchenTicketsForManifests } from '@/lib/print-template-factory'
+import { validateEventPayload } from '@/lib/order-events/validations'
 
 /**
  * POST /api/order-events/batch
@@ -67,11 +67,17 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       continue
     }
 
-    // Validate event type
-    if (!ORDER_EVENT_TYPES.includes(evt.type as any)) {
+    // Validate event type and payload schema
+    let validatedPayload: Record<string, unknown>
+    try {
+      if (!ORDER_EVENT_TYPES.includes(evt.type as any)) {
+        throw new Error(`Unknown event type: ${evt.type}`)
+      }
+      validatedPayload = validateEventPayload(evt.type as any, evt.payloadJson ?? {}) as Record<string, unknown>
+    } catch (error: any) {
       rejected.push({
         eventId: evt.eventId,
-        reason: `Unknown event type: ${evt.type}`,
+        reason: error.message || 'Invalid payload schema',
       })
       continue
     }
@@ -80,7 +86,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     list.push({
       eventId: evt.eventId,
       type: evt.type,
-      payload: (evt.payloadJson ?? {}) as Record<string, unknown>,
+      payload: validatedPayload,
       deviceId: evt.deviceId,
       correlationId: evt.correlationId ?? null,
     })
@@ -106,9 +112,8 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     }
   }
 
-  // Fire-and-forget: dispatch KDS events for ORDER_SENT events from Android
-  // Without this, KDS screens never receive kds:order-received (no sound, no flash,
-  // no tag-based routing) and orders only appear on fallback polling.
+  // Best-effort kitchen printing (async)
+  // Real-time KDS dispatch is handled reliably via transactional outbox inside ingestAndProject
   const sentOrderIds = new Set<string>()
   for (const [orderId, orderEvents] of validatedByOrder) {
     if (orderEvents.some(e => e.type === 'ORDER_SENT')) {
@@ -120,14 +125,11 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       for (const orderId of sentOrderIds) {
         try {
           const routingResult = await OrderRouter.resolveRouting(orderId)
-          void dispatchNewOrder(locationId, routingResult, { async: true }).catch((err) => {
-            console.error('[batch] KDS dispatch failed for order', orderId, err)
-          })
-          void printKitchenTicketsForManifests(routingResult, locationId).catch((err) => {
+          await printKitchenTicketsForManifests(routingResult, locationId).catch((err) => {
             console.warn('[batch] Kitchen ticket print failed for order', orderId, err)
           })
         } catch (err) {
-          console.error('[batch] KDS routing failed for order', orderId, err)
+          console.error('[batch] resolveRouting failed for printing:', err)
         }
       }
     })()

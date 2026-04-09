@@ -39,27 +39,39 @@
   "crons": [
     { "path": "/api/cron/7shifts-sync", "schedule": "0 7 * * *" },
     { "path": "/api/cron/marginedge-sync", "schedule": "0 8 * * *" },
-    { "path": "/api/cron/process-deductions", "schedule": "*/5 * * * *" },
-    { "path": "/api/cron/berg-reprocess", "schedule": "*/5 * * * *" },
-    { "path": "/api/cron/entertainment-expiry", "schedule": "*/5 * * * *" },
-    { "path": "/api/cron/eod-batch-close", "schedule": "*/5 * * * *" },
-    { "path": "/api/cron/expire-payment-links", "schedule": "*/5 * * * *" },
+
+    { "path": "/api/cron/process-deductions", "schedule": "0,5,10,15,20,25,30,35,40,45,50,55 * * * *" },
+    { "path": "/api/cron/entertainment-expiry", "schedule": "0,5,10,15,20,25,30,35,40,45,50,55 * * * *" },
+
+    { "path": "/api/cron/berg-reprocess", "schedule": "1,6,11,16,21,26,31,36,41,46,51,56 * * * *" },
+    { "path": "/api/cron/eod-batch-close", "schedule": "1,6,11,16,21,26,31,36,41,46,51,56 * * * *" },
+
+    { "path": "/api/cron/expire-payment-links", "schedule": "2,7,12,17,22,27,32,37,42,47,52,57 * * * *" },
+    { "path": "/api/cron/reservation-no-shows", "schedule": "2,7,12,17,22,27,32,37,42,47,52,57 * * * *" },
+    { "path": "/api/cron/delivery-maintenance", "schedule": "2,7,12,17,22,27,32,37,42,47,52,57 * * * *" },
+
+    { "path": "/api/cron/expire-shared-reports", "schedule": "3,8,13,18,23,28,33,38,43,48,53,58 * * * *" },
+    { "path": "/api/cron/datacap-reconciliation", "schedule": "3,8,13,18,23,28,33,38,43,48,53,58 * * * *" },
+
+    { "path": "/api/cron/online-order-timeout", "schedule": "4,9,14,19,24,29,34,39,44,49,54,59 * * * *" },
+    { "path": "/api/cron/entertainment-waitlist-expiry", "schedule": "4,9,14,19,24,29,34,39,44,49,54,59 * * * *" },
+
     { "path": "/api/cron/process-memberships", "schedule": "0 * * * *" },
     { "path": "/api/cron/reservation-hold-expiry", "schedule": "*/2 * * * *" },
-    { "path": "/api/cron/reservation-no-shows", "schedule": "*/5 * * * *" },
     { "path": "/api/cron/reservation-reminders", "schedule": "*/15 * * * *" },
     { "path": "/api/cron/reservation-thank-you", "schedule": "*/30 * * * *" },
     { "path": "/api/cron/process-scheduled-orders", "schedule": "*/2 * * * *" },
-    { "path": "/api/cron/accounting-export", "schedule": "0 * * * *" },
-    { "path": "/api/cron/delivery-maintenance", "schedule": "*/5 * * * *" },
-    { "path": "/api/cron/expire-shared-reports", "schedule": "*/5 * * * *" },
-    { "path": "/api/cron/invoice-overdue", "schedule": "0 * * * *" },
-    { "path": "/api/cron/pms-reconciliation", "schedule": "0 * * * *" },
-    { "path": "/api/cron/datacap-reconciliation", "schedule": "*/5 * * * *" },
+
+    { "path": "/api/cron/accounting-export", "schedule": "5 * * * *" },
+    { "path": "/api/cron/invoice-overdue", "schedule": "10 * * * *" },
+    { "path": "/api/cron/pms-reconciliation", "schedule": "15 * * * *" },
+    { "path": "/api/cron/notification-reaper", "schedule": "20 * * * *" },
+
     { "path": "/api/cron/walkout-retry", "schedule": "0 */6 * * *" },
-    { "path": "/api/cron/online-order-timeout", "schedule": "*/5 * * * *" },
-    { "path": "/api/cron/entertainment-waitlist-expiry", "schedule": "*/5 * * * *" },
-    { "path": "/api/cron/notification-reaper", "schedule": "0 * * * *" },
-    { "path": "/api/cron/notification-archive", "schedule": "0 3 * * *" }
+    { "path": "/api/cron/notification-archive", "schedule": "0 3 * * *" },
+
+    { "path": "/api/cron/notification-retry", "schedule": "3,8,13,18,23,28,33,38,43,48,53,58 * * * *" },
+    { "path": "/api/cron/saf-retry", "schedule": "4,9,14,19,24,29,34,39,44,49,54,59 * * * *" },
+    { "path": "/api/cron/token-refresh", "schedule": "30 4 * * *" }
   ]
 }

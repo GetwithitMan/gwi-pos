@@ -32,6 +32,7 @@ import {
   removeSocketFromAcks,
 } from './socket-ack-queue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { SOCKET_EVENTS, type TerminalRevokedPayload } from '@/lib/socket-events'
 import { createChildLogger } from '@/lib/logger'
 
 const log = createChildLogger('socket-server')
@@ -153,7 +154,7 @@ function recordReconnection(): void {
 
 // Reverse mapping: cfdTerminalId → registerTerminalId (cached from auth middleware)
 // Used by CFD-to-register relay to avoid DB lookups during payment flow
-const cfdToRegisterMap = new Map<string, string>()
+export const cfdToRegisterMap = new Map<string, string>()
 
 // Dedup map for mobile tab close requests: orderId → timestamp
 // Prevents duplicate close attempts within 30s (e.g., double-tap on mobile)
@@ -164,7 +165,7 @@ const CFD_MAP_MAX_SIZE = 100
  * Add to cfdToRegisterMap with size bound.
  * If map exceeds max size, evict the oldest entry (first key in insertion order).
  */
-function setCfdMapping(cfdTerminalId: string, registerTerminalId: string): void {
+export function setCfdMapping(cfdTerminalId: string, registerTerminalId: string): void {
   cfdToRegisterMap.set(cfdTerminalId, registerTerminalId)
   if (cfdToRegisterMap.size > CFD_MAP_MAX_SIZE) {
     // Map iterates in insertion order — first key is oldest
@@ -220,6 +221,24 @@ async function markTerminalOffline(terminalId: string, locationId: string, reaso
       source: 'socket_disconnect',
       reason,
     })
+
+    // ── CFD Cleanup (Ghost Order Prevention) ──
+    // If this terminal has a paired CFD, tell it to return to idle
+    void (async () => {
+      try {
+        const terminal = await db.terminal.findUnique({
+          where: { id: terminalId },
+          select: { cfdTerminalId: true },
+        })
+        if (terminal?.cfdTerminalId) {
+          log.debug({ terminalId, cfdTerminalId: terminal.cfdTerminalId }, 'Clearing paired CFD for offline register')
+          await emitToTerminal(terminal.cfdTerminalId, 'cfd:idle', {})
+        }
+      } catch (cfdErr) {
+        log.warn({ err: cfdErr, terminalId }, 'Failed to clear paired CFD on disconnect')
+      }
+    })()
+
     void db.auditLog.create({
       data: {
         locationId,
@@ -1015,12 +1034,8 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
       'sync:completed',
       'order:editing',
       'order:editing-released',
-      'print:job',
-      'print:status',
       'kds:bump',
       'kds:recall',
-      'terminal:ping',
-      'terminal:config-update',
       'terminal:payment_request',
       'terminal:payment_complete',
     ])
@@ -1258,7 +1273,12 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
       // Clean up CFD→register cache when register disconnects
       try {
         if (socket.data.cfdTerminalId) {
-          cfdToRegisterMap.delete(socket.data.cfdTerminalId)
+          const cfdId = socket.data.cfdTerminalId
+          // Emit idle to paired CFD so it doesn't show stale order
+          void emitToTerminal(cfdId, 'cfd:idle', {}).catch((err) =>
+            log.warn({ err, cfdId }, 'Failed to send cfd:idle on register disconnect'))
+          cfdToRegisterMap.delete(cfdId)
+          log.info({ cfdId, registerId: socket.data.terminalId }, 'Sent cfd:idle on register disconnect')
         }
       } catch (err) {
         log.error({ err, socketId: sid }, 'disconnect cleanup failed (CFD cache)')
@@ -1369,7 +1389,7 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
  * Get socket server instance (for API routes to emit events)
  * Uses globalThis to survive Next.js HMR in development (same pattern as Prisma client)
  */
-const globalForSocket = globalThis as unknown as {
+export const globalForSocket = globalThis as unknown as {
   socketServer: SocketServer | undefined
 }
 
@@ -1434,6 +1454,15 @@ export async function emitToTags(tags: string[], event: string, data: unknown, l
         globalForSocket.socketServer!.to(room).emit(event, data)
       }
     })
+    // Relay to Neon for cellular terminals (fire-and-forget, sync — errors must not propagate)
+    if (locationId) {
+      try {
+        const enriched = data && typeof data === 'object' && !Array.isArray(data) ? { ...data as Record<string, unknown> } : data
+        relayCellularEvent(locationId, event, enriched)
+      } catch (err) {
+        log.error({ err, event, locationId }, 'Cellular event relay failed for tags')
+      }
+    }
     return true
   }
   // IPC path: send pre-scoped room names so the remote ws-server uses correct rooms
@@ -1442,8 +1471,12 @@ export async function emitToTags(tags: string[], event: string, data: unknown, l
 
 /**
  * Emit to location room (global alerts)
+ * @param locationId - The location identifier
+ * @param event - The event name
+ * @param data - The event payload
+ * @param excludeSocketId - Optional socket ID to exclude from broadcast (prevents echo to sender)
  */
-export async function emitToLocation(locationId: string, event: string, data: unknown): Promise<boolean> {
+export async function emitToLocation(locationId: string, event: string, data: unknown, excludeSocketId?: string): Promise<boolean> {
   recordMetricEvent()
   if (globalForSocket.socketServer) {
     const room = `location:${locationId}`
@@ -1452,8 +1485,14 @@ export async function emitToLocation(locationId: string, event: string, data: un
     // Record in buffer and inject _eid for client catch-up tracking
     const eid = recordEvent(locationId, event, data, room)
     const enriched = data && typeof data === 'object' && !Array.isArray(data) ? { ...data as Record<string, unknown>, _eid: eid } : data
-    globalForSocket.socketServer.to(room).emit(event, enriched)
+    // Broadcast to room, optionally excluding the sender
+    if (excludeSocketId) {
+      globalForSocket.socketServer.to(room).except(excludeSocketId).emit(event, enriched)
+    } else {
+      globalForSocket.socketServer.to(room).emit(event, enriched)
+    }
     // Relay to Neon for cellular terminals (fire-and-forget, sync — errors must not propagate)
+    // TODO: Callers should handle retry on failure; consider adding to outbox/queue for reliability
     try {
       relayCellularEvent(locationId, event, enriched)
     } catch (err) {
@@ -1524,12 +1563,74 @@ export async function emitCriticalToLocation(
 export async function emitToTerminal(terminalId: string, event: string, data: unknown): Promise<boolean> {
   recordMetricEvent()
   const room = `terminal:${terminalId}`
+
+  // Get locationId from terminal mapping if available, for event buffering and cellular relay
+  const terminalInfo = connectedTerminals.get(terminalId)
+  const locationId = terminalInfo?.locationId
+
   if (globalForSocket.socketServer) {
     if (process.env.DEBUG_SOCKETS) log.debug(`emitToTerminal: ${event} → ${room}`)
-    globalForSocket.socketServer.to(room).emit(event, data)
+
+    // Buffer the event for catch-up if locationId is available
+    let enriched = data
+    if (locationId && typeof data === 'object' && data !== null) {
+      const eid = recordEvent(locationId, event, data, room)
+      enriched = { ...data, _eid: eid }
+    }
+
+    globalForSocket.socketServer.to(room).emit(event, enriched)
+
+    // Relay to Neon for cellular terminals (fire-and-forget, separate from emit)
+    if (locationId && enriched !== data) {
+      try {
+        relayCellularEvent(locationId, event, enriched)
+      } catch (err) {
+        log.error({ err, event, terminalId, locationId }, 'Cellular event relay failed for terminal')
+      }
+    }
+
     return true
   }
   return emitViaIPC({ type: 'room', target: room, event, data })
+}
+
+/**
+ * Forcibly disconnect a terminal across the cluster.
+ *
+ * Used when a terminal is unpaired or revoked.
+ *   1. Emits 'terminal:revoked' to the terminal's room (all nodes)
+ *   2. Forcibly disconnects any local sockets for this terminal
+ *   3. Triggers unpair cleanup on the client via the event
+ *
+ * @param terminalId  The ID of the terminal to revoke
+ * @param reason      Optional reason for revocation (default 'Unpaired by admin')
+ */
+export async function revokeTerminal(terminalId: string, reason: string = 'Unpaired by admin'): Promise<void> {
+  const room = `terminal:${terminalId}`
+  const event = SOCKET_EVENTS.TERMINAL_REVOKED
+  const payload: TerminalRevokedPayload = {
+    terminalId,
+    reason,
+    revokedAt: new Date().toISOString(),
+  }
+
+  log.info({ terminalId, reason }, 'Revoking terminal across cluster')
+
+  // ── 1. Emit revocation event (cluster-wide via IPC/Redis) ──
+  // We use emitToTerminal which handles the local emit + IPC relay
+  await emitToTerminal(terminalId, event, payload)
+
+  // ── 2. Disconnect local sockets for this terminal ──
+  if (globalForSocket.socketServer) {
+    const sockets = await globalForSocket.socketServer.in(room).fetchSockets()
+    for (const s of sockets) {
+      log.debug({ socketId: s.id, terminalId }, 'Forcibly disconnecting revoked terminal socket')
+      s.disconnect(true) // true = close underlying connection
+    }
+  }
+
+  // ── 3. Cleanup local maps ──
+  connectedTerminals.delete(terminalId)
 }
 
 /**

@@ -946,6 +946,13 @@ export const POST = withVenue(withTiming(async function POST(
       ) }
     }
 
+    if (paymentBaseTotal > validationRemaining + validationTolerance) {
+      return { earlyReturn: NextResponse.json(
+        { error: `Payment amount ($${paymentBaseTotal.toFixed(2)}) exceeds remaining balance ($${validationRemaining.toFixed(2)})` },
+        { status: 400 }
+      ) }
+    }
+
     // Validate payment amounts and Datacap field consistency
     const amountError = validatePaymentAmounts(payments, orderTotal)
     if (amountError) {

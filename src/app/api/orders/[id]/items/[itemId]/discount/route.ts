@@ -1,18 +1,19 @@
-import { NextRequest } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { calculateOrderTotals } from '@/lib/order-calculations'
 import type { OrderItemForCalculation } from '@/lib/order-calculations'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate } from '@/lib/socket-dispatch'
+import { parseSettings } from '@/lib/settings'
 import { requirePermission } from '@/lib/api-auth'
 import { withAuth, type AuthenticatedContext } from '@/lib/api-auth-middleware'
-import { PERMISSIONS } from '@/lib/auth-utils'
+import { PERMISSIONS, hasPermission } from '@/lib/auth-utils'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
 import { roundToCents } from '@/lib/pricing'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
-import { err, notFound, ok } from '@/lib/api-response'
+import { err, forbidden, notFound, ok } from '@/lib/api-response'
 
 const log = createChildLogger('orders.id.items.itemId.discount')
 
@@ -87,6 +88,67 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       // Block item-level discounts on timed_rental items (dynamic pricing makes fixed discounts unreliable)
       if (item.menuItem?.itemType === 'timed_rental') {
         return err('Cannot apply item-level discounts to timed rental items. Use order-level discounts instead.')
+      }
+
+      // Parse location settings for approval rules (consistent with order-level discount route)
+      const settings = parseSettings(order.location.settings)
+      const approvalSettings = settings.approvals
+
+      // Pre-calculate discount percent to check approval requirement
+      let discountPercentForApproval: number | null = null
+      if (body.type === 'percent') {
+        discountPercentForApproval = body.value
+      } else if (body.type === 'fixed') {
+        // For fixed discounts, calculate the percentage relative to item total
+        discountPercentForApproval = roundToCents(Number(item.itemTotal) > 0
+          ? (body.value / Number(item.itemTotal)) * 100
+          : 0)
+      }
+
+      // W4-1: Check if approval is required based on discount threshold
+      let requiresApproval = false
+      if (discountPercentForApproval && discountPercentForApproval > approvalSettings.discountApprovalThreshold) {
+        requiresApproval = true
+      }
+
+      // W4-1: Check location-level discount approval requirement (matches order-level route)
+      if (approvalSettings.requireDiscountApproval) {
+        requiresApproval = true
+      }
+
+      // W4-2: Per-role discount limit — non-managers capped at defaultMaxDiscountPercent
+      if (authEmployeeId && discountPercentForApproval) {
+        const emp = await tx.employee.findUnique({
+          where: { id: authEmployeeId, deletedAt: null },
+          include: { role: true },
+        })
+        if (emp) {
+          const perms = (emp.role?.permissions as string[]) || []
+          const hasMgrDiscount = hasPermission(perms, PERMISSIONS.MGR_DISCOUNTS)
+
+          if (!hasMgrDiscount && discountPercentForApproval > approvalSettings.defaultMaxDiscountPercent) {
+            return NextResponse.json(
+              { error: 'Discount exceeds your limit. Manager approval required.', requiresApproval: true, maxPercent: approvalSettings.defaultMaxDiscountPercent },
+              { status: 403 }
+            )
+          }
+        }
+      }
+
+      // W4-1: Enforce approval — if required but not provided, block
+      if (requiresApproval && !body.approvedById) {
+        return NextResponse.json(
+          { error: 'Manager approval required', requiresApproval: true },
+          { status: 403 }
+        )
+      }
+
+      // W4-1: Validate approver has manager.discounts permission
+      if (body.approvedById) {
+        const approverAuth = await requirePermission(body.approvedById, order.locationId, PERMISSIONS.MGR_DISCOUNTS)
+        if (!approverAuth.authorized) {
+          return forbidden('Approver does not have discount permission')
+        }
       }
 
       // Toggle prevention: if this discountRuleId is already applied to this item, remove it
@@ -235,13 +297,23 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
         discountTotal: Number(updatedOrder.discountTotal),
         total: Number(updatedOrder.total),
       }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.items.itemId.discount'))
+      // Audit log for manager-approved discount (W4-1)
       if (body.approvedById) {
         await tx.auditLog.create({
           data: {
             locationId: order.locationId,
-            action: 'item_discount_override',
+            action: 'item_discount_approved',
             employeeId: body.approvedById,
-            details: JSON.stringify({ orderId, itemId, type: body.type, value: body.value, reason: body.reason }),
+            details: JSON.stringify({
+              orderId,
+              itemId,
+              discountId: itemDiscount.id,
+              type: body.type,
+              value: body.value,
+              appliedBy: body.employeeId,
+              approvedBy: body.approvedById,
+              reason: body.reason,
+            }),
           },
         })
       }

@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { OrderItemRepository } from '@/lib/repositories'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
 import { dispatchPrintWithRetry } from '@/lib/print-retry'
-import { dispatchItemStatus, dispatchItemsStatusChanged, dispatchOrderBumped, dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
+import { dispatchItemStatus, dispatchItemsStatusChanged, dispatchOrderBumped, dispatchOpenOrdersChanged, dispatchMenuStockChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { parseSettings, DEFAULT_SPEED_OF_SERVICE } from '@/lib/settings'
@@ -15,6 +15,7 @@ import { getReadinessState } from '@/lib/readiness'
 import { mergeOrderBehavior } from '@/lib/kds/defaults'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 import { err, ok } from '@/lib/api-response'
 const log = createChildLogger('kds')
 
@@ -354,6 +355,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         source: order.source || null,
         items: filteredItems.map(item => ({
           id: item.id,
+          menuItemId: item.menuItemId,
           name: item.menuItem.name,
           quantity: item.quantity,
           categoryName: item.menuItem.category?.name,
@@ -449,10 +451,65 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 const putHandler = async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
-    const { itemIds, action, resendNote } = body as {
+    const { itemIds, action, resendNote, menuItemId } = body as {
       itemIds: string[]
-      action: 'complete' | 'uncomplete' | 'bump_order' | 'resend'
+      action: 'complete' | 'uncomplete' | 'bump_order' | 'resend' | 'mark_86'
       resendNote?: string
+      menuItemId?: string
+    }
+
+    // mark_86 has its own validation — doesn't need itemIds
+    if (action === 'mark_86') {
+      if (!menuItemId) {
+        return err('menuItemId is required for mark_86 action')
+      }
+
+      // Look up the menu item to resolve locationId
+      const menuItem = await db.menuItem.findUnique({
+        where: { id: menuItemId },
+        select: { id: true, name: true, locationId: true, isAvailable: true },
+      })
+      if (!menuItem) {
+        return err('Menu item not found')
+      }
+
+      // Update isAvailable to false (86'd)
+      await db.menuItem.update({
+        where: { id: menuItemId },
+        data: { isAvailable: false },
+      })
+
+      // Push to Neon
+      pushUpstream()
+
+      // Emit socket event so POS and online ordering update immediately
+      void dispatchMenuStockChanged(menuItem.locationId, {
+        itemId: menuItemId,
+        stockStatus: 'out_of_stock',
+        isOrderableOnline: false,
+      }).catch(e => console.error('[KDS] dispatchMenuStockChanged failed:', e))
+
+      // Notify cloud for cross-location sync
+      notifyDataChanged({ locationId: menuItem.locationId, domain: 'menu', action: 'updated', entityId: menuItemId })
+
+      // Audit log
+      void db.auditLog.create({
+        data: {
+          locationId: menuItem.locationId,
+          employeeId: body.employeeId || null,
+          action: 'kds_mark_86',
+          entityType: 'menu_item',
+          entityId: menuItemId,
+          details: { itemName: menuItem.name, wasAvailable: menuItem.isAvailable },
+        },
+      }).catch(e => console.error('[AuditLog] KDS 86 audit failed:', e))
+
+      return ok({
+        success: true,
+        menuItemId,
+        action: 'mark_86',
+        timestamp: new Date().toISOString(),
+      })
     }
 
     if (!itemIds || itemIds.length === 0) {

@@ -23,7 +23,8 @@ declare global {
 
 const BATCH_INTERVAL_MS = 100
 const CLEANUP_INTERVAL_MS = 5 * 60 * 1000
-const MAX_EVENT_AGE_MINUTES = 60
+// Allow 4 hours for cellular terminals to reconnect and retrieve events
+const MAX_EVENT_AGE_MINUTES = 240
 
 // Events that are NOT relevant to cellular terminals (too frequent or device-specific)
 const SKIP_EVENTS = new Set([
@@ -129,7 +130,7 @@ async function cleanupOldEvents(): Promise<void> {
   if (!neonClient) return
   try {
     const result = await neonClient.$executeRaw(
-      Prisma.sql`DELETE FROM "CellularEvent" WHERE "createdAt" < NOW() - INTERVAL '60 minutes'`
+      Prisma.sql`DELETE FROM "CellularEvent" WHERE "createdAt" < NOW() - INTERVAL '240 minutes'`
     )
     // $executeRawUnsafe returns the count on DELETE
     if (typeof result === 'number' && result > 0) {

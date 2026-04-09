@@ -112,8 +112,7 @@ export const SOCKET_EVENTS = {
   TERMINAL_STATUS_CHANGED:    'terminal:status_changed',
   TERMINAL_PAYMENT_REQUEST:   'terminal:payment_request',
   TERMINAL_PAYMENT_COMPLETE:  'terminal:payment_complete',
-  TERMINAL_PING:              'terminal:ping',
-  TERMINAL_CONFIG_UPDATE:     'terminal:config-update',
+  TERMINAL_REVOKED:           'terminal:revoked',
 
   // ── Void Approval ──────────────────────────────────────────────────────
   VOID_APPROVAL_UPDATE:    'void:approval-update',
@@ -126,8 +125,6 @@ export const SOCKET_EVENTS = {
   SCALE_STATUS:            'scale:status',
 
   // ── Print ──────────────────────────────────────────────────────────────
-  PRINT_JOB:               'print:job',
-  PRINT_STATUS:            'print:status',
   PRINT_JOB_FAILED:        'print:job-failed',
 
   // ── Sync / Infrastructure ──────────────────────────────────────────────
@@ -156,20 +153,16 @@ export const SOCKET_EVENTS = {
   RESERVATION_NEW_ONLINE:  'reservation:new_online',
 
   // ── Settings (additional) ──────────────────────────────────────────────
-  ORDER_TYPES_UPDATED:     'order-types:updated',
 
   // ── Employees ─────────────────────────────────────────────────────────
   EMPLOYEES_CHANGED:       'employees:changed',
   EMPLOYEE_CLOCK_CHANGED:  'employee:clock-changed',
 
   // ── Shifts ────────────────────────────────────────────────────────────
-  SHIFTS_CHANGED:          'shifts:changed',
 
   // ── Cash Drawers ──────────────────────────────────────────────────────
-  DRAWER_PAID_IN_OUT:      'drawer:paid_in_out',
 
   // ── Inventory (legacy alias) ──────────────────────────────────────────
-  INVENTORY_CHANGED:       'inventory:changed',
 
   // ── EOD ───────────────────────────────────────────────────────────────
   EOD_RESET_COMPLETE:      'eod:reset-complete',
@@ -179,10 +172,8 @@ export const SOCKET_EVENTS = {
   SYSTEM_UPDATE_REQUIRED:  'system:update-required',
 
   // ── Cover Tracking ────────────────────────────────────────────────────
-  COVER_ENTRY_RECORDED:    'cover:entry-recorded',
 
   // ── Cellular ──────────────────────────────────────────────────────────
-  CELLULAR_DEVICE_REVOKED: 'cellular:device-revoked',
 
   // ── Waitlist ───────────────────────────────────────────────────────────
   WAITLIST_CHANGED:        'waitlist:changed',
@@ -669,6 +660,12 @@ export interface TerminalPaymentCompletePayload {
   declineReason?: string
 }
 
+export interface TerminalRevokedPayload {
+  terminalId: string
+  reason: string
+  revokedAt: string // ISO timestamp
+}
+
 // ── Void Approval ────────────────────────────────────────────────────────
 
 export interface VoidApprovalUpdatePayload {
@@ -973,6 +970,7 @@ export interface SocketEventPayloadMap {
   [SOCKET_EVENTS.TERMINAL_STATUS_CHANGED]: TerminalStatusChangedPayload
   [SOCKET_EVENTS.TERMINAL_PAYMENT_REQUEST]: TerminalPaymentRequestPayload
   [SOCKET_EVENTS.TERMINAL_PAYMENT_COMPLETE]: TerminalPaymentCompletePayload
+  [SOCKET_EVENTS.TERMINAL_REVOKED]: TerminalRevokedPayload
 
   // Void
   [SOCKET_EVENTS.VOID_APPROVAL_UPDATE]: VoidApprovalUpdatePayload

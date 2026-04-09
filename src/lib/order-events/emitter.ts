@@ -28,6 +28,8 @@ interface EmitOptions {
   correlationId?: string | null
   /** Schema version for payload evolution. Defaults to 1. */
   schemaVersion?: number
+  /** Client-generated event ID. If provided, reused instead of generating a new UUID. */
+  clientEventId?: string
 }
 
 /**
@@ -41,6 +43,10 @@ interface EmitOptions {
  *   isHeld: false, soldByWeight: false,
  * })
  * ```
+ *
+ * For idempotent event sourcing, pass `opts.clientEventId` to reuse the client's eventId
+ * instead of generating a new UUID. This ensures server echoes have the same eventId as
+ * the client's optimistic inserts, enabling proper deduplication via Room's INSERT OR IGNORE.
  */
 export async function emitOrderEvent(
   locationId: string,
@@ -50,7 +56,8 @@ export async function emitOrderEvent(
   opts?: EmitOptions
 ): Promise<{ eventId: string; serverSequence: number } | null> {
   try {
-    const eventId = crypto.randomUUID()
+    // Reuse client eventId if provided (for idempotency), otherwise generate new UUID
+    const eventId = opts?.clientEventId ?? crypto.randomUUID()
     const deviceId = opts?.deviceId ?? 'nuc-web'
     const deviceCounter = opts?.deviceCounter ?? 0
 
