@@ -103,6 +103,7 @@ export async function processNextDeduction(): Promise<{
       await db.deductionRun.create({
         data: {
           pendingDeductionId: job.id,
+          locationId: job.locationId,
           success: false,
           error: errorMessage,
           durationMs,
@@ -151,6 +152,7 @@ export async function processNextDeduction(): Promise<{
     await db.deductionRun.create({
       data: {
         pendingDeductionId: job.id,
+        locationId: job.locationId,
         success: true,
         durationMs,
         resultSummary: {
@@ -184,6 +186,7 @@ export async function processNextDeduction(): Promise<{
     await db.deductionRun.create({
       data: {
         pendingDeductionId: job.id,
+        locationId: job.locationId,
         success: false,
         error: errorMessage,
         durationMs,

@@ -9,7 +9,6 @@
  */
 
 import { Prisma, PrismaClient } from '@/generated/prisma/client'
-import { emitToLocation } from '@/lib/socket-server'
 import { createChildLogger } from '@/lib/logger'
 import {
   type OrderEventPayload,
@@ -22,10 +21,15 @@ import {
   getItemCount,
   getItemTotalCents,
 } from './types'
-
-const log = createChildLogger('order-events')
 import { reduce } from './reducer'
 import { applyProjection, bridgeLegacyFieldsToSnapshot } from './projector'
+import {
+  queueSocketEvent,
+  queueTagSocketEvent,
+  flushOutboxSafe,
+} from '@/lib/socket-outbox'
+
+const log = createChildLogger('order-events')
 
 // ── Snapshot Cache (in-memory LRU) ──────────────────────────────────
 //
@@ -162,11 +166,13 @@ export async function ingestAndProject(
   const result = await (db as any).$transaction(async (tx: any) => {
     const accepted: { eventId: string; serverSequence: number }[] = []
     const newPaymentEvents: { payload: Record<string, unknown> }[] = []
+    const ingestedEventTypes = new Set<string>()
     let alreadyPaid = false
 
     // ── 1. Event insertion (atomic idempotent via INSERT ON CONFLICT) ─
 
     for (const evt of events) {
+      ingestedEventTypes.add(evt.type)
       const eventId = evt.eventId || crypto.randomUUID()
       const deviceId = evt.deviceId || 'nuc-server'
 
@@ -517,19 +523,190 @@ export async function ingestAndProject(
       log.error({ err: err }, `[ingester] Legacy→Snapshot bridge failed for ${orderId}:`)
     }
 
+    // ── 7. Transactional Outbox (Reliable KDS & Sync) ─────────────────
+    //
+    // For every NEW event accepted, queue corresponding socket events in the outbox.
+    // This ensures that if the transaction commits, the side-effects (KDS routing,
+    // cross-terminal sync) are guaranteed to be emitted.
+
+    if (!options?.suppressBroadcast && accepted.length > 0) {
+      for (const acc of accepted) {
+        // Find the full event in the batch
+        const evt = events.find((e) => e.eventId === acc.eventId)
+        if (!evt) continue
+
+        // a) order:event (Standard domain broadcast)
+        await queueSocketEvent(tx, locationId, 'order:event', {
+          eventId: acc.eventId,
+          orderId,
+          serverSequence: acc.serverSequence,
+          type: evt.type,
+          payload: evt.payload,
+          deviceId: evt.deviceId,
+        })
+
+        // b) kds:order-received (KDS routing for ORDER_SENT)
+        if (evt.type === 'ORDER_SENT') {
+          try {
+            // Lazy load OrderRouter to avoid circular dependencies
+            const { OrderRouter } = await import('@/lib/order-router')
+            const routingResult = await OrderRouter.resolveRouting(orderId)
+
+            // Queue location-wide order:created
+            await queueSocketEvent(tx, locationId, 'order:created', {
+              orderId: routingResult.order.orderId,
+              orderNumber: routingResult.order.orderNumber,
+              orderType: routingResult.order.orderType,
+              tableName: routingResult.order.tableName,
+              tabName: routingResult.order.tabName,
+              employeeName: routingResult.order.employeeName,
+              createdAt: routingResult.order.createdAt.toISOString(),
+              stations: routingResult.manifests.map((m) => m.stationName),
+            })
+
+            // Queue station-specific kds:order-received events
+            for (const manifest of routingResult.manifests) {
+              const orderEvent = {
+                orderId: routingResult.order.orderId,
+                orderNumber: routingResult.order.orderNumber,
+                orderType: routingResult.order.orderType,
+                tableName: routingResult.order.tableName,
+                tabName: routingResult.order.tabName,
+                employeeName: routingResult.order.employeeName,
+                createdAt: routingResult.order.createdAt.toISOString(),
+                primaryItems: manifest.primaryItems.map((item) => ({
+                  id: item.id,
+                  name: item.name,
+                  quantity: item.quantity,
+                  seatNumber: item.seatNumber,
+                  specialNotes: item.specialNotes,
+                  sourceTableName: item.sourceTableName,
+                  modifiers: item.modifiers.map((m) => ({
+                    name: m.name,
+                    preModifier: m.preModifier,
+                  })),
+                  isPizza: item.isPizza,
+                  isBar: item.isBar,
+                  pizzaData: item.pizzaData,
+                  pricingOptionLabel: item.pricingOptionLabel ?? null,
+                  weight: item.weight ? Number(item.weight) : null,
+                  weightUnit: item.weightUnit ?? null,
+                  unitPrice: item.unitPrice ? Number(item.unitPrice) : null,
+                  soldByWeight: item.soldByWeight ?? false,
+                  tareWeight: item.tareWeight ? Number(item.tareWeight) : null,
+                })),
+                referenceItems: manifest.referenceItems.map((item) => ({
+                  id: item.id,
+                  name: item.name,
+                  quantity: item.quantity,
+                  stationName: manifest.stationName,
+                })),
+                matchedTags: manifest.matchedTags,
+                stationId: manifest.stationId,
+                stationName: manifest.stationName,
+              }
+              await queueTagSocketEvent(tx, locationId, 'kds:order-received', orderEvent, manifest.matchedTags)
+            }
+          } catch (routerErr) {
+            log.error({ err: routerErr, orderId }, '[ingester] KDS routing outbox failed')
+          }
+        }
+
+        // c) order:summary-updated (Cross-terminal state sync)
+        if (['ORDER_CREATED', 'ITEM_ADDED', 'ITEM_REMOVED', 'PAYMENT_APPLIED', 'ORDER_SENT', 'DISCOUNT_APPLIED', 'ORDER_METADATA_UPDATED'].includes(evt.type)) {
+          await queueSocketEvent(tx, locationId, 'order:summary-updated', {
+            orderId,
+            orderNumber: state.orderNumber,
+            status: state.status,
+            tableId: state.tableId || null,
+            tableName: state.tableName || null,
+            tabName: state.tabName || null,
+            guestCount: state.guestCount,
+            employeeId: state.employeeId,
+            subtotalCents: getSubtotalCents(state),
+            taxTotalCents: state.taxTotalCents,
+            discountTotalCents: getDiscountTotalCents(state),
+            tipTotalCents: getTipTotalCents(state),
+            totalCents: getTotalCents(state),
+            itemCount: getItemCount(state),
+            updatedAt: new Date().toISOString(),
+            locationId,
+          })
+
+          // Trigger general list-changed for legacy listeners
+          await queueSocketEvent(tx, locationId, 'orders:list-changed', {
+            trigger: 'updated',
+            orderId,
+            status: state.status,
+          })
+        }
+
+        // d) order:closed
+        if (evt.type === 'ORDER_CLOSED' || (evt.type === 'PAYMENT_APPLIED' && closedStatuses.includes(state.status))) {
+          await queueSocketEvent(tx, locationId, 'order:closed', {
+            orderId,
+            status: state.status,
+            closedAt: new Date().toISOString(),
+            closedByEmployeeId: options?.employeeId || state.employeeId,
+            locationId,
+            _dedupKey: crypto.randomUUID(),
+          })
+        }
+
+        // e) payment:processed (for each PAYMENT_APPLIED event)
+        if (evt.type === 'PAYMENT_APPLIED' && evt.payload) {
+          const p = evt.payload
+          await queueSocketEvent(tx, locationId, 'payment:processed', {
+            orderId,
+            paymentId: p.paymentId || null,
+            status: 'completed',
+            method: p.method || null,
+            amount: p.amountCents != null ? (p.amountCents as number) / 100 : 0,
+            tipAmount: p.tipCents != null ? (p.tipCents as number) / 100 : 0,
+            totalAmount: p.totalCents != null ? (p.totalCents as number) / 100 : 0,
+            cardBrand: p.cardBrand || null,
+            cardLast4: p.cardLast4 || null,
+          })
+        }
+
+        // f) order:totals-updated (for events that change order totals)
+        if (['ITEM_ADDED', 'ITEM_REMOVED', 'DISCOUNT_APPLIED', 'DISCOUNT_REMOVED', 'TIP_ADJUSTED', 'PAYMENT_APPLIED'].includes(evt.type)) {
+          const subtotal = getSubtotalCents(state) / 100
+          const discountTotal = getDiscountTotalCents(state) / 100
+          const taxTotal = state.taxTotalCents / 100
+          const tipTotal = getTipTotalCents(state) / 100
+          const total = getTotalCents(state) / 100
+          await queueSocketEvent(tx, locationId, 'order:totals-updated', {
+            orderId,
+            totals: { subtotal, taxTotal, discountTotal, tipTotal, total },
+            timestamp: new Date().toISOString(),
+          })
+        }
+
+        // g) kds:items-voided (ITEM_REMOVED after order has been sent to kitchen)
+        if (evt.type === 'ITEM_REMOVED' && state.status !== 'draft' && state.status !== 'open') {
+          const removedItemId = (evt.payload.lineItemId as string) || null
+          if (removedItemId) {
+            await queueSocketEvent(tx, locationId, 'kds:items-voided', {
+              orderId,
+              itemIds: [removedItemId],
+              reason: (evt.payload.reason as string) || 'Voided from POS',
+            })
+          }
+        }
+      }
+    }
+
     return { state, accepted, bridgedPayments, alreadyPaid }
   }) // end $transaction
 
-  // ── 7. Socket broadcast (outside transaction — fire-and-forget) ────
+  // ── 8. Flush outbox (post-commit) ──────────────────────────────────
 
-  if (!options?.suppressBroadcast) {
-    void emitToLocation(locationId, 'orders:list-changed', {
-      orderId,
-      source: 'event-ingest',
-    }).catch((err) => log.error({ err }, 'emitToLocation failed'))
+  if (!options?.suppressBroadcast && result.accepted.length > 0) {
+    flushOutboxSafe(locationId)
   }
 
-  // ── 8. Return result ───────────────────────────────────────────────
+  // ── 9. Return result ───────────────────────────────────────────────
 
   return result
 }

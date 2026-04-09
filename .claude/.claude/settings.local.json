@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(__NEW_LINE_896b830161ec2bb4__ echo \"\")"
+    ]
+  }
+}

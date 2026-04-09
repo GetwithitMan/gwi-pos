@@ -112,6 +112,7 @@ export const SOCKET_EVENTS = {
   TERMINAL_STATUS_CHANGED:    'terminal:status_changed',
   TERMINAL_PAYMENT_REQUEST:   'terminal:payment_request',
   TERMINAL_PAYMENT_COMPLETE:  'terminal:payment_complete',
+  TERMINAL_REVOKED:           'terminal:revoked',
 
   // ── Void Approval ──────────────────────────────────────────────────────
   VOID_APPROVAL_UPDATE:    'void:approval-update',
@@ -665,6 +666,12 @@ export interface TerminalPaymentCompletePayload {
   declineReason?: string
 }
 
+export interface TerminalRevokedPayload {
+  terminalId: string
+  reason: string
+  revokedAt: string // ISO timestamp
+}
+
 // ── Void Approval ────────────────────────────────────────────────────────
 
 export interface VoidApprovalUpdatePayload {
@@ -969,6 +976,7 @@ export interface SocketEventPayloadMap {
   [SOCKET_EVENTS.TERMINAL_STATUS_CHANGED]: TerminalStatusChangedPayload
   [SOCKET_EVENTS.TERMINAL_PAYMENT_REQUEST]: TerminalPaymentRequestPayload
   [SOCKET_EVENTS.TERMINAL_PAYMENT_COMPLETE]: TerminalPaymentCompletePayload
+  [SOCKET_EVENTS.TERMINAL_REVOKED]: TerminalRevokedPayload
 
   // Void
   [SOCKET_EVENTS.VOID_APPROVAL_UPDATE]: VoidApprovalUpdatePayload

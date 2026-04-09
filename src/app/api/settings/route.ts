@@ -12,6 +12,8 @@ import { invalidateMenuCache } from '@/lib/menu-cache'
 import { withVenue } from '@/lib/with-venue'
 import { getActorFromRequest } from '@/lib/api-auth'
 import { err, notFound, ok } from '@/lib/api-response'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('settings')
 
 // Category types that map to liquor/food tax-inclusive flags
 const LIQUOR_CATEGORY_TYPES = ['liquor', 'drinks']
@@ -359,11 +361,11 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     // Emit full settings to terminals so Android can pick up changes (e.g. idleLockMinutes)
     // Include changedKeys so terminals can selectively refresh (e.g. tax, pricing, tips)
     const changedKeys = Object.keys(settings)
-    void emitToLocation(location.id, 'settings:updated', { settings: finalSettings, changedKeys })
+    await emitToLocation(location.id, 'settings:updated', { settings: finalSettings, changedKeys }).catch(err => log.warn({ err }, 'broadcast failed'))
 
     // Emit CFD display settings to customer-facing displays so they update in real time
     if (finalSettings.cfdDisplay) {
-      void emitToLocation(location.id, 'cfd:settings-updated', { cfdDisplay: finalSettings.cfdDisplay })
+      await emitToLocation(location.id, 'cfd:settings-updated', { cfdDisplay: finalSettings.cfdDisplay }).catch(err => log.warn({ err }, 'broadcast failed'))
     }
 
     // P0.1: Strip secrets from response — same as GET handler.

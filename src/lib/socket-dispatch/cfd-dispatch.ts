@@ -15,6 +15,37 @@ import {
 } from './emit-helpers'
 
 /**
+ * Emit to a specific CFD terminal, falling back to location broadcast if the
+ * CFD has no active sockets (offline / disconnected).
+ *
+ * Uses the Socket.IO adapter rooms map (same pattern as emitCriticalToLocation
+ * in socket-server.ts) to check for connected sockets without an async
+ * fetchSockets() round-trip.
+ */
+async function emitToCfdOrFallback(
+  cfdTerminalId: string,
+  locationId: string,
+  event: string,
+  data: unknown,
+): Promise<void> {
+  const { globalForSocket } = await import('@/lib/socket-server')
+  const room = `terminal:${cfdTerminalId}`
+  const roomSockets = globalForSocket.socketServer?.sockets.adapter.rooms.get(room)
+
+  if (roomSockets && roomSockets.size > 0) {
+    // CFD is online — emit directly to its terminal room
+    void emitToTerminal(cfdTerminalId, event, data).catch((err) =>
+      log.error({ err, cfdTerminalId, event }, 'emitToCfdOrFallback: terminal emit failed'))
+  } else {
+    // CFD is offline — fall back to location broadcast so other CFDs or
+    // web dashboards in the same venue can pick it up
+    log.warn({ cfdTerminalId, locationId, event }, 'emitToCfdOrFallback: CFD terminal offline, falling back to location broadcast')
+    void emitToLocation(locationId, event, data).catch((err) =>
+      log.error({ err, locationId, event }, 'emitToCfdOrFallback: location fallback emit failed'))
+  }
+}
+
+/**
  * Dispatch CFD show-order event
  *
  * Called when the payment modal opens with order data.
@@ -46,7 +77,7 @@ export function dispatchCFDShowOrder(locationId: string, cfdTerminalId: string |
     currency: 'USD',
   }
   if (cfdTerminalId) {
-    void emitToTerminal(cfdTerminalId, CFD_EVENTS.SHOW_ORDER, payload).catch((err) => log.error({ err }, 'CFD show-order dispatch failed'))
+    void emitToCfdOrFallback(cfdTerminalId, locationId, CFD_EVENTS.SHOW_ORDER, payload)
   } else {
     log.debug({ locationId, orderId: data.orderId }, 'CFD show-order skipped: no cfdTerminalId provided')
   }
@@ -86,9 +117,9 @@ export function dispatchCFDShowOrderDetail(locationId: string, cfdTerminalId: st
     currency: 'USD',
   }
   if (cfdTerminalId) {
-    void emitToTerminal(cfdTerminalId, CFD_EVENTS.SHOW_ORDER_DETAIL, payload).catch((err) => log.error({ err }, 'CFD show-order-detail dispatch failed'))
+    void emitToCfdOrFallback(cfdTerminalId, locationId, CFD_EVENTS.SHOW_ORDER_DETAIL, payload)
     // Also emit as show-order so Android CFD picks it up (it doesn't handle show-order-detail)
-    void emitToTerminal(cfdTerminalId, CFD_EVENTS.SHOW_ORDER, payload).catch((err) => log.error({ err }, 'CFD show-order (from detail) dispatch failed'))
+    void emitToCfdOrFallback(cfdTerminalId, locationId, CFD_EVENTS.SHOW_ORDER, payload)
   } else {
     log.debug({ locationId, orderId: data.orderId }, 'CFD show-order-detail skipped: no cfdTerminalId provided')
   }
@@ -112,7 +143,7 @@ export function dispatchCFDPaymentStarted(locationId: string, cfdTerminalId: str
     totalCents: toCents(data.amount),
   }
   if (cfdTerminalId) {
-    void emitToTerminal(cfdTerminalId, CFD_EVENTS.PAYMENT_STARTED, payload).catch((err) => log.error({ err }, 'CFD payment-started dispatch failed'))
+    void emitToCfdOrFallback(cfdTerminalId, locationId, CFD_EVENTS.PAYMENT_STARTED, payload)
   } else {
     log.debug({ locationId, orderId: data.orderId }, 'CFD payment-started skipped: no cfdTerminalId provided')
   }
@@ -143,7 +174,7 @@ export function dispatchCFDTipPrompt(locationId: string, cfdTerminalId: string |
     showNoTip: true,      // Always allow "No Tip" option
   }
   if (cfdTerminalId) {
-    void emitToTerminal(cfdTerminalId, CFD_EVENTS.TIP_PROMPT, payload).catch((err) => log.error({ err }, 'CFD tip-prompt dispatch failed'))
+    void emitToCfdOrFallback(cfdTerminalId, locationId, CFD_EVENTS.TIP_PROMPT, payload)
   } else {
     log.debug({ locationId, orderId: data.orderId }, 'CFD tip-prompt skipped: no cfdTerminalId provided')
   }
@@ -258,7 +289,7 @@ export function dispatchCFDSignatureRequest(locationId: string, cfdTerminalId: s
     thresholdCents: toCents(data.signatureThreshold ?? 0),
   }
   if (cfdTerminalId) {
-    void emitToTerminal(cfdTerminalId, CFD_EVENTS.SIGNATURE_REQUEST, payload).catch((err) => log.error({ err }, 'CFD signature-request dispatch failed'))
+    void emitToCfdOrFallback(cfdTerminalId, locationId, CFD_EVENTS.SIGNATURE_REQUEST, payload)
   } else {
     log.debug({ locationId, orderId: data.orderId }, 'CFD signature-request skipped: no cfdTerminalId provided')
   }
@@ -288,7 +319,7 @@ export function dispatchCFDReceiptSent(locationId: string, cfdTerminalId: string
     timeoutSeconds: data.timeoutSeconds ?? 30,
   }
   if (cfdTerminalId) {
-    void emitToTerminal(cfdTerminalId, CFD_EVENTS.RECEIPT_SENT, payload).catch((err) => log.error({ err }, 'CFD receipt-sent dispatch failed'))
+    void emitToCfdOrFallback(cfdTerminalId, locationId, CFD_EVENTS.RECEIPT_SENT, payload)
   } else {
     log.debug({ locationId, orderId: data.orderId }, 'CFD receipt-sent skipped: no cfdTerminalId provided')
   }
@@ -305,7 +336,7 @@ export function dispatchCFDProcessing(locationId: string, cfdTerminalId: string 
   orderId: string
 }): void {
   if (cfdTerminalId) {
-    void emitToTerminal(cfdTerminalId, CFD_EVENTS.PROCESSING, data).catch((err) => log.error({ err }, 'CFD processing dispatch failed'))
+    void emitToCfdOrFallback(cfdTerminalId, locationId, CFD_EVENTS.PROCESSING, data)
   } else {
     log.debug({ locationId, orderId: data.orderId }, 'CFD processing skipped: no cfdTerminalId provided')
   }
@@ -331,7 +362,7 @@ export function dispatchCFDApproved(locationId: string, cfdTerminalId: string | 
     amountCents: toCents(data.total ?? 0),
   }
   if (cfdTerminalId) {
-    void emitToTerminal(cfdTerminalId, CFD_EVENTS.APPROVED, payload).catch((err) => log.error({ err }, 'CFD approved dispatch failed'))
+    void emitToCfdOrFallback(cfdTerminalId, locationId, CFD_EVENTS.APPROVED, payload)
   } else {
     log.debug({ locationId, orderId: data.orderId }, 'CFD approved skipped: no cfdTerminalId provided')
   }
@@ -349,7 +380,7 @@ export function dispatchCFDDeclined(locationId: string, cfdTerminalId: string | 
   reason: string
 }): void {
   if (cfdTerminalId) {
-    void emitToTerminal(cfdTerminalId, CFD_EVENTS.DECLINED, data).catch((err) => log.error({ err }, 'CFD declined dispatch failed'))
+    void emitToCfdOrFallback(cfdTerminalId, locationId, CFD_EVENTS.DECLINED, data)
   } else {
     log.debug({ locationId, orderId: data.orderId }, 'CFD declined skipped: no cfdTerminalId provided')
   }
@@ -362,7 +393,7 @@ export function dispatchCFDDeclined(locationId: string, cfdTerminalId: string | 
  */
 export function dispatchCFDIdle(locationId: string, cfdTerminalId: string | null): void {
   if (cfdTerminalId) {
-    void emitToTerminal(cfdTerminalId, CFD_EVENTS.IDLE, {}).catch((err) => log.error({ err }, 'CFD idle dispatch failed'))
+    void emitToCfdOrFallback(cfdTerminalId, locationId, CFD_EVENTS.IDLE, {})
   } else {
     log.debug({ locationId }, 'CFD idle skipped: no cfdTerminalId provided')
   }

@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { OrderItemRepository } from '@/lib/repositories'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
 import { dispatchPrintWithRetry } from '@/lib/print-retry'
-import { dispatchItemStatus, dispatchItemsStatusChanged, dispatchOrderBumped, dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
+import { dispatchItemStatus, dispatchItemsStatusChanged, dispatchOrderBumped, dispatchOpenOrdersChanged, dispatchMenuStockChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { parseSettings, DEFAULT_SPEED_OF_SERVICE } from '@/lib/settings'
@@ -15,6 +15,7 @@ import { getReadinessState } from '@/lib/readiness'
 import { mergeOrderBehavior } from '@/lib/kds/defaults'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 import { err, ok } from '@/lib/api-response'
 const log = createChildLogger('kds')
 
@@ -354,6 +355,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         source: order.source || null,
         items: filteredItems.map(item => ({
           id: item.id,
+          menuItemId: item.menuItemId,
           name: item.menuItem.name,
           quantity: item.quantity,
           categoryName: item.menuItem.category?.name,

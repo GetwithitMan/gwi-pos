@@ -1254,7 +1254,12 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
       // Clean up CFD→register cache when register disconnects
       try {
         if (socket.data.cfdTerminalId) {
-          cfdToRegisterMap.delete(socket.data.cfdTerminalId)
+          const cfdId = socket.data.cfdTerminalId
+          // Emit idle to paired CFD so it doesn't show stale order
+          void emitToTerminal(cfdId, 'cfd:idle', {}).catch((err) =>
+            log.warn({ err, cfdId }, 'Failed to send cfd:idle on register disconnect'))
+          cfdToRegisterMap.delete(cfdId)
+          log.info({ cfdId, registerId: socket.data.terminalId }, 'Sent cfd:idle on register disconnect')
         }
       } catch (err) {
         log.error({ err, socketId: sid }, 'disconnect cleanup failed (CFD cache)')
@@ -1568,6 +1573,45 @@ export async function emitToTerminal(terminalId: string, event: string, data: un
     return true
   }
   return emitViaIPC({ type: 'room', target: room, event, data })
+}
+
+/**
+ * Forcibly disconnect a terminal across the cluster.
+ *
+ * Used when a terminal is unpaired or revoked.
+ *   1. Emits 'terminal:revoked' to the terminal's room (all nodes)
+ *   2. Forcibly disconnects any local sockets for this terminal
+ *   3. Triggers unpair cleanup on the client via the event
+ *
+ * @param terminalId  The ID of the terminal to revoke
+ * @param reason      Optional reason for revocation (default 'Unpaired by admin')
+ */
+export async function revokeTerminal(terminalId: string, reason: string = 'Unpaired by admin'): Promise<void> {
+  const room = `terminal:${terminalId}`
+  const event = SOCKET_EVENTS.TERMINAL_REVOKED
+  const payload: TerminalRevokedPayload = {
+    terminalId,
+    reason,
+    revokedAt: new Date().toISOString(),
+  }
+
+  log.info({ terminalId, reason }, 'Revoking terminal across cluster')
+
+  // ── 1. Emit revocation event (cluster-wide via IPC/Redis) ──
+  // We use emitToTerminal which handles the local emit + IPC relay
+  await emitToTerminal(terminalId, event, payload)
+
+  // ── 2. Disconnect local sockets for this terminal ──
+  if (globalForSocket.socketServer) {
+    const sockets = await globalForSocket.socketServer.in(room).fetchSockets()
+    for (const s of sockets) {
+      log.debug({ socketId: s.id, terminalId }, 'Forcibly disconnecting revoked terminal socket')
+      s.disconnect(true) // true = close underlying connection
+    }
+  }
+
+  // ── 3. Cleanup local maps ──
+  connectedTerminals.delete(terminalId)
 }
 
 /**
