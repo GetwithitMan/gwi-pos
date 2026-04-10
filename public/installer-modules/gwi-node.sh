@@ -634,17 +634,22 @@ update_dashboard() {
     return 0
   fi
 
-  # Install
-  if dpkg -i "$deb_path" 2>/dev/null; then
-    log "Dashboard: installed v${available} successfully"
-    # Restart the dashboard service if running
+  # Install — dpkg may return non-zero on trigger warnings (icon cache),
+  # so we always run --configure -a and verify the installed version afterward.
+  dpkg -i "$deb_path" 2>&1 | while IFS= read -r line; do log "Dashboard: $line"; done
+  dpkg --configure -a 2>/dev/null || true
+  apt-get install -f -y -qq 2>/dev/null || true
+
+  # Verify the install actually worked by checking the installed version
+  local final_version
+  final_version=$(dpkg-query -W -f='${Version}' gwi-nuc-dashboard 2>/dev/null || echo "0.0.0")
+  if [[ "$final_version" == "$available" ]]; then
+    log "Dashboard: v${available} installed and configured successfully"
+    # Restart the dashboard service
     sudo -u "${POSUSER:-gwipos}" bash -c \
       "XDG_RUNTIME_DIR=/run/user/\$(id -u) systemctl --user restart gwi-dashboard.service" 2>/dev/null || true
   else
-    apt-get install -f -y -qq 2>/dev/null || true
-    dpkg -i "$deb_path" 2>/dev/null || {
-      log "Dashboard: dpkg install failed — skipping"
-    }
+    log "Dashboard: install may have failed — expected v${available}, got v${final_version}"
   fi
 
   rm -f "$deb_path" 2>/dev/null
