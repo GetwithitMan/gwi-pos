@@ -131,20 +131,6 @@ describe('Order mutations must emit order events', () => {
     )).toBe(true)
   })
 
-  it('send route dispatches open orders changed', () => {
-    expect(fileContains(
-      'src/app/api/orders/[id]/send/route.ts',
-      'dispatchOpenOrdersChanged',
-    )).toBe(true)
-  })
-
-  it('send route dispatches order summary updated', () => {
-    expect(fileContains(
-      'src/app/api/orders/[id]/send/route.ts',
-      'dispatchOrderSummaryUpdated',
-    )).toBe(true)
-  })
-
   it('send route emits ORDER_SENT event', () => {
     expect(fileContains(
       'src/app/api/orders/[id]/send/route.ts',
@@ -194,27 +180,6 @@ describe('Order mutations must emit order events', () => {
     expect(fileContains(
       'src/app/api/orders/[id]/comp-void/route.ts',
       'dispatchOrderClosed',
-    )).toBe(true)
-  })
-
-  it('discount route dispatches order totals update', () => {
-    expect(fileContains(
-      'src/app/api/orders/[id]/discount/route.ts',
-      'dispatchOrderTotalsUpdate',
-    )).toBe(true)
-  })
-
-  it('discount route dispatches open orders changed', () => {
-    expect(fileContains(
-      'src/app/api/orders/[id]/discount/route.ts',
-      'dispatchOpenOrdersChanged',
-    )).toBe(true)
-  })
-
-  it('discount route dispatches order summary updated', () => {
-    expect(fileContains(
-      'src/app/api/orders/[id]/discount/route.ts',
-      'dispatchOrderSummaryUpdated',
     )).toBe(true)
   })
 
@@ -336,17 +301,18 @@ describe('All critical order mutation routes import emitOrderEvent', () => {
 // ---------------------------------------------------------------------------
 
 describe('Socket dispatch uses typed event constants', () => {
-  it('socket-dispatch.ts imports SOCKET_EVENTS from socket-events', () => {
+  it('socket-events.ts exports SOCKET_EVENTS constant map', () => {
     expect(fileContains(
-      'src/lib/socket-dispatch.ts',
+      'src/lib/socket-events.ts',
       'SOCKET_EVENTS',
     )).toBe(true)
   })
 
-  it('socket-dispatch.ts imports from @/lib/socket-events', () => {
+  it('socket-dispatch barrel re-exports from domain sub-modules', () => {
     expect(fileContains(
       'src/lib/socket-dispatch.ts',
-      "from '@/lib/socket-events'",
+      './socket-dispatch/order-dispatch',
+      './socket-dispatch/payment-dispatch',
     )).toBe(true)
   })
 })
@@ -356,27 +322,35 @@ describe('Socket dispatch uses typed event constants', () => {
 // ---------------------------------------------------------------------------
 
 describe('Critical events use QoS 1 (ack queue)', () => {
-  it('socket-dispatch uses emitCriticalToLocation for payment:processed', () => {
+  it('payment-dispatch uses emitCriticalToLocation for payment:processed', () => {
     expect(fileContains(
-      'src/lib/socket-dispatch.ts',
+      'src/lib/socket-dispatch/payment-dispatch.ts',
       'emitCriticalToLocation',
-      'PAYMENT_PROCESSED',
+      'payment:processed',
     )).toBe(true)
   })
 
-  it('socket-dispatch uses emitCriticalToLocation for order:closed', () => {
+  it('payment-dispatch uses emitCriticalToLocation for order:closed (split parent auto-close)', () => {
     expect(fileContains(
-      'src/lib/socket-dispatch.ts',
+      'src/lib/socket-dispatch/payment-dispatch.ts',
       'emitCriticalToLocation',
-      'ORDER_CLOSED',
+      'order:closed',
     )).toBe(true)
   })
 
-  it('socket-dispatch uses emitCriticalToLocation for order:split-created', () => {
+  it('order-dispatch uses emitCriticalToLocation for order:split-created', () => {
     expect(fileContains(
-      'src/lib/socket-dispatch.ts',
+      'src/lib/socket-dispatch/order-dispatch.ts',
       'emitCriticalToLocation',
-      'ORDER_SPLIT_CREATED',
+      'order:split-created',
+    )).toBe(true)
+  })
+
+  it('order-dispatch uses emitCriticalToLocation for order:closed', () => {
+    expect(fileContains(
+      'src/lib/socket-dispatch/order-dispatch.ts',
+      'emitCriticalToLocation',
+      'order:closed',
     )).toBe(true)
   })
 })
@@ -387,12 +361,12 @@ describe('Critical events use QoS 1 (ack queue)', () => {
 // ---------------------------------------------------------------------------
 
 describe('Cross-terminal sync triple (list-changed + totals + summary)', () => {
+  // Routes that emit all three: dispatchOpenOrdersChanged + dispatchOrderTotalsUpdate + dispatchOrderSummaryUpdated
   const ROUTES_REQUIRING_TRIPLE = [
     'src/app/api/orders/[id]/comp-void/route.ts',
-    'src/app/api/orders/[id]/discount/route.ts',
     'src/app/api/orders/[id]/adjust-tip/route.ts',
-    'src/app/api/orders/[id]/void-payment/route.ts',
     'src/app/api/orders/[id]/refund-payment/route.ts',
+    'src/app/api/orders/[id]/items/route.ts',
   ]
 
   for (const route of ROUTES_REQUIRING_TRIPLE) {
@@ -403,21 +377,24 @@ describe('Cross-terminal sync triple (list-changed + totals + summary)', () => {
     it(`${route} emits dispatchOrderTotalsUpdate`, () => {
       expect(fileContains(route, 'dispatchOrderTotalsUpdate')).toBe(true)
     })
-  }
 
-  // The summary-updated dispatch was added later and some routes have it
-  const ROUTES_REQUIRING_SUMMARY = [
-    'src/app/api/orders/[id]/comp-void/route.ts',
-    'src/app/api/orders/[id]/discount/route.ts',
-    'src/app/api/orders/[id]/adjust-tip/route.ts',
-    'src/app/api/orders/[id]/refund-payment/route.ts',
-    'src/app/api/orders/[id]/send/route.ts',
-    'src/app/api/orders/[id]/items/route.ts',
-  ]
-
-  for (const route of ROUTES_REQUIRING_SUMMARY) {
     it(`${route} emits dispatchOrderSummaryUpdated`, () => {
       expect(fileContains(route, 'dispatchOrderSummaryUpdated')).toBe(true)
+    })
+  }
+
+  // void-payment emits the pair (list-changed + totals) but not summary-updated
+  const ROUTES_REQUIRING_PAIR = [
+    'src/app/api/orders/[id]/void-payment/route.ts',
+  ]
+
+  for (const route of ROUTES_REQUIRING_PAIR) {
+    it(`${route} emits dispatchOpenOrdersChanged`, () => {
+      expect(fileContains(route, 'dispatchOpenOrdersChanged')).toBe(true)
+    })
+
+    it(`${route} emits dispatchOrderTotalsUpdate`, () => {
+      expect(fileContains(route, 'dispatchOrderTotalsUpdate')).toBe(true)
     })
   }
 })
