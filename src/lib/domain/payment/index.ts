@@ -86,3 +86,18 @@ export {
 } from './payment-state-machine'
 
 export type { PaymentState } from './payment-state-machine'
+
+// ─── Financial Context Builder ─────────────────────────────────────────────
+
+export { buildPaymentFinancialContext } from './context/build-payment-financial-context'
+export type { PaymentFinancialContext, FinancialContextResult, BuildFinancialContextParams } from './context/build-payment-financial-context'
+
+// ─── Executors ─────────────────────────────────────────────────────────────
+
+export { processPaymentLoop } from './executors'
+export type { PaymentLoopResult, PaymentLoopParams } from './executors'
+
+// ─── Commit (Phase 5 — post-loop transaction commit) ───────────────────────
+
+export { commitPaymentTransaction } from './commit/commit-payment-transaction'
+export type { CommitPaymentParams, CommitPaymentSuccess, CommitPaymentResult } from './commit/commit-payment-transaction'

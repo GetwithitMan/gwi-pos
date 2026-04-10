@@ -14,6 +14,7 @@ function makeMockTx(card: Record<string, unknown> | null = null) {
       update: vi.fn().mockResolvedValue({}),
     },
     $queryRaw: vi.fn().mockResolvedValue([]),
+    $queryRawUnsafe: vi.fn().mockResolvedValue([]),
   } as unknown as Parameters<typeof processGiftCardPayment>[0]
 }
 
