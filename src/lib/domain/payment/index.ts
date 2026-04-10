@@ -34,7 +34,8 @@ export type { IdempotencyCheckResult } from './validation'
 
 // ─── Normalization ──────────────────────────────────────────────────────────
 
-export { normalizePaymentInput } from './normalize'
+export { normalizePaymentInput, normalizePaymentRequest } from './normalize'
+export type { PaymentRequestContext } from './normalize'
 
 // ─── Drawer Resolution ─────────────────────────────────────────────────────
 
@@ -68,6 +69,26 @@ export {
 // ─── Receipt Builder ────────────────────────────────────────────────────────
 
 export { buildReceiptData } from './receipt-builder'
+
+// ─── Guards (Idempotency & Concurrency) ────────────────────────────────────
+
+export {
+  checkOrphanedDatacapSales,
+  checkIdempotencyByKeyGuard,
+  checkIdempotencyByRecordNoGuard,
+  checkAmountTimeDedup,
+  checkSafDuplicate,
+  checkAlreadyPaid,
+} from './guards/check-idempotency'
+
+export type {
+  ExistingPayment,
+  PaymentInputForDedup,
+  GuardResult,
+} from './guards/check-idempotency'
+
+export { acquirePendingCaptureLock } from './guards/check-pending-capture'
+export type { PendingCaptureResult } from './guards/check-pending-capture'
 
 // ─── Payment State Machine ──────────────────────────────────────────────────
 

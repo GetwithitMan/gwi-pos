@@ -5,11 +5,9 @@ import { db } from '@/lib/db'
 import * as OrderRepository from '@/lib/repositories/order-repository'
 import * as PaymentRepository from '@/lib/repositories/payment-repository'
 import * as OrderItemRepository from '@/lib/repositories/order-item-repository'
-import { OrderStatus, PaymentMethod, PaymentStatus, PmsAttemptStatus } from '@/generated/prisma/client'
+import { OrderStatus, PaymentMethod, PaymentStatus } from '@/generated/prisma/client'
 import { roundAmount } from '@/lib/payment'
 import { parseSettings } from '@/lib/settings'
-import { requireAnyPermission, requirePermission } from '@/lib/api-auth'
-import { PERMISSIONS } from '@/lib/auth-utils'
 import { errorCapture } from '@/lib/error-capture'
 import { cleanupTemporarySeats } from '@/lib/cleanup-temp-seats'
 import { calculateCardPrice, applyPriceRounding, roundToCents, toNumber } from '@/lib/pricing'
@@ -36,16 +34,13 @@ import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worke
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { enableSyncReplication } from '@/lib/db-helpers'
 import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
-import { checkOrderClaim } from '@/lib/order-claim'
 import { PAYABLE_STATUSES } from '@/lib/domain/order-status'
-import { getRequestLocationId } from '@/lib/request-context'
 import {
   PaymentRequestSchema,
   normalizePaymentInput,
+  normalizePaymentRequest,
   resolveDrawerForPayment,
   calculateAutoGratuity,
-  checkIdempotencyByKey,
-  checkIdempotencyByRecordNo,
   validateTipBounds,
   validatePaymentAmounts,
   processCashPayment,
@@ -55,12 +50,19 @@ import {
   processLoyaltyPayment,
   processRoomChargePayment,
   buildReceiptData,
+  checkOrphanedDatacapSales,
+  checkIdempotencyByKeyGuard,
+  checkIdempotencyByRecordNoGuard,
+  checkAmountTimeDedup,
+  checkSafDuplicate,
+  checkAlreadyPaid,
+  acquirePendingCaptureLock,
   type PaymentInput,
   type PaymentRecord,
   type PreChargeResult,
 } from '@/lib/domain/payment'
 import { createChildLogger } from '@/lib/logger'
-import { err, notFound, ok } from '@/lib/api-response'
+import { err, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-pay')
 
 // POST - Process payment for order
@@ -76,213 +78,23 @@ export const POST = withVenue(withTiming(async function POST(
   let autoVoidLocationId: string | undefined
   let pendingCaptureIdempotencyKey: string | undefined
   try {
-    body = await request.json()
-
-    // Order claim check — block if another employee has an active claim
-    const payEmployeeId = (body.employeeId as string) || null
-    if (payEmployeeId) {
-      const terminalId = request.headers.get('x-terminal-id') || (body.terminalId as string) || null
-      const claimBlock = await checkOrderClaim(db, orderId, payEmployeeId, terminalId)
-      if (claimBlock) {
-        return NextResponse.json(
-          { error: claimBlock.error, claimedBy: claimBlock.claimedBy },
-          { status: claimBlock.status }
-        )
-      }
+    // ── Pre-transaction normalization: body parsing, claim check, permissions, PMS pre-charge ──
+    const normalizeResult = await normalizePaymentRequest({ request, orderId, db })
+    if (!normalizeResult.ok) {
+      return normalizeResult.response
     }
+    body = normalizeResult.ctx.body
+    const preChargeResult = normalizeResult.ctx.preChargeResult
 
-    // ── Permission checks OUTSIDE the transaction (no FOR UPDATE needed) ──
-    // These calls hit the auth service / employee table, not the Order row.
-    // Running them before the lock reduces contention time.
-    // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
-    let payLocationId = getRequestLocationId()
-    let preCheckOrder: { locationId: string; employeeId: string | null } | null = null
-    if (payLocationId) {
-      // We have locationId but still need employeeId for ownership check
-      const orderOwner = await db.order.findFirst({
-        where: { id: orderId },
-        select: { employeeId: true },
-      })
-      preCheckOrder = orderOwner ? { locationId: payLocationId, employeeId: orderOwner.employeeId } : null
-    } else {
-      preCheckOrder = await db.order.findFirst({
-        where: { id: orderId },
-        select: { locationId: true, employeeId: true },
-      })
-      payLocationId = preCheckOrder?.locationId
-    }
-    if (preCheckOrder && payEmployeeId) {
-      // Normalize payment methods from the raw body for permission resolution
-      const rawPaymentsForPerms = Array.isArray(body.payments)
-        ? body.payments
-        : [{ method: body.paymentMethodId || body.paymentMethod || body.method || 'cash' }]
-      const requiredPermsPreCheck = new Set<string>()
-      for (const p of rawPaymentsForPerms) {
-        if ((p as any).method === 'cash') {
-          requiredPermsPreCheck.add(PERMISSIONS.POS_CASH_PAYMENTS)
-        } else {
-          requiredPermsPreCheck.add(PERMISSIONS.POS_CARD_PAYMENTS)
-        }
-      }
-      const authPreCheck = await requireAnyPermission(payEmployeeId, preCheckOrder.locationId, [...requiredPermsPreCheck])
-      if (!authPreCheck.authorized) {
-        return err(authPreCheck.error, authPreCheck.status)
-      }
-      // Guard: paying another employee's order requires pos.edit_others_orders
-      if (preCheckOrder.employeeId && preCheckOrder.employeeId !== payEmployeeId) {
-        const ownerAuthPreCheck = await requirePermission(payEmployeeId, preCheckOrder.locationId, PERMISSIONS.POS_EDIT_OTHERS_ORDERS)
-        if (!ownerAuthPreCheck.authorized) {
-          return err(ownerAuthPreCheck.error, ownerAuthPreCheck.status)
-        }
-      }
-    }
-
-    // ── PMS Pre-Charge: Extract Oracle OPERA HTTP call OUTSIDE the transaction ──
-    // Room charges require a 1-5s HTTP call to Oracle OPERA. Doing this inside the
-    // FOR UPDATE transaction lock blocks all other terminals. Instead, we:
-    //   1. Validate PMS config and consume the one-time selection token
-    //   2. Create a PENDING pmsChargeAttempt record (outside tx — survives tx rollback for reconciliation)
-    //   3. Make the HTTP call to OPERA
-    //   4. Pass the result into the transaction, which just records the payment
-    // SAFETY: If OPERA succeeds but the DB transaction fails, the pmsChargeAttempt record
-    // (status=PENDING) persists for manual reconciliation — the charge is never silently lost.
-    let preChargeResult: {
-      pmsAttemptId: string
-      pmsTransactionNo: string
-      roomNumber: string
-      guestName: string
-      reservationId: string
-      idempotencyKey: string
-    } | null = null
-
-    // Detect room_charge in payments array (handle both normalized and raw formats)
-    const rawPayments = Array.isArray(body.payments) ? body.payments : []
-    const rawMethod = body.paymentMethodId || body.paymentMethod || body.method
-    const hasRoomCharge = rawPayments.some((p: any) => p.method === 'room_charge') ||
-                          rawMethod === 'room_charge'
-
-    if (hasRoomCharge) {
-      // Lightweight query for settings — no FOR UPDATE, no lock
-      // NOTE: Uses db directly because this runs before the main transaction and locationId
-      // may not be available yet (preCheckOrder could be null if room_charge is the only payment type).
-      const locationForPms = await db.order.findFirst({
-        where: { id: orderId },
-        select: {
-          locationId: true,
-          orderNumber: true,
-          location: { select: { settings: true } },
-        },
-      })
-
-      if (!locationForPms) {
-        return notFound('Order not found')
-      }
-
-      const pmsSettings = parseSettings(locationForPms.location.settings)
-
-      if (!pmsSettings.payments.acceptHotelRoomCharge) {
-        return err('Bill to Room is not enabled')
-      }
-
-      const pms = pmsSettings.hotelPms
-      if (!pms?.enabled || !pms.clientId) {
-        return err('Oracle PMS integration is not configured')
-      }
-
-      // Find the room_charge payment in the array
-      const roomPayment = rawPayments.find((p: any) => p.method === 'room_charge') ||
-                          (rawMethod === 'room_charge' ? body : null)
-      const selectionId = roomPayment?.selectionId
-      if (!selectionId) {
-        return err('Room charge requires a valid guest selection.')
-      }
-
-      const { consumeRoomChargeSelection } = await import('@/lib/room-charge-selections')
-      const sel = consumeRoomChargeSelection(selectionId, locationForPms.locationId)
-      if (!sel) {
-        return err('Guest selection has expired or is invalid. Please look up the guest again.')
-      }
-
-      const amountVal = toNumber(roomPayment.amount || 0)
-      const tipVal = toNumber(roomPayment.tipAmount || 0)
-      if (!isFinite(amountVal) || amountVal < 0 || !isFinite(tipVal) || tipVal < 0) {
-        return err('Invalid payment amount')
-      }
-      // FIX F10: Only send base amount to OPERA — tip is recorded on the Payment
-      // record but must NOT be added to the PMS folio charge (prevents guest overcharge).
-      const amountCents = Math.round(amountVal * 100)
-      const idempotencyKey_pms = `${orderId}:${sel.reservationId}:${amountCents}:${pms.chargeCode}`
-
-      // Check existing attempt (outside tx — read-only, safe)
-      let pmsAttempt = await db.pmsChargeAttempt.findUnique({ where: { idempotencyKey: idempotencyKey_pms } })
-
-      if (pmsAttempt?.status === 'COMPLETED') {
-        return ok({
-          success: true,
-          message: 'Room charge already processed.',
-          transactionNo: pmsAttempt.operaTransactionId,
-        })
-      }
-
-      if (pmsAttempt?.status === 'FAILED') {
-        return err('A previous charge attempt failed. Please try a new payment.', 502)
-      }
-
-      if (pmsAttempt?.status === 'PENDING') {
-        const ageMs = Date.now() - pmsAttempt.updatedAt.getTime()
-        if (ageMs < 60_000) {
-          return err('Charge in progress. Please wait a moment and try again.', 409)
-        }
-      }
-
-      // Create PENDING attempt outside tx — ensures it survives even if the later tx fails
-      if (!pmsAttempt) {
-        pmsAttempt = await db.pmsChargeAttempt.create({
-          data: {
-            idempotencyKey: idempotencyKey_pms,
-            locationId: locationForPms.locationId,
-            orderId,
-            reservationId: sel.reservationId,
-            amountCents,
-            chargeCode: pms.chargeCode,
-            employeeId: sel.employeeId ?? null,
-            status: 'PENDING',
-          },
-        })
-      }
-
-      // ── Make the OPERA HTTP call OUTSIDE the transaction lock ──
-      try {
-        const { postCharge } = await import('@/lib/oracle-pms-client')
-        const chargeResult = await postCharge(pms, locationForPms.locationId, {
-          reservationId: sel.reservationId,
-          amountCents,
-          description: `Restaurant Charge`,
-          reference: `GWI-POS-Order-${locationForPms.orderNumber ?? orderId}`,
-          idempotencyKey: pmsAttempt.idempotencyKey,
-        })
-
-        preChargeResult = {
-          pmsAttemptId: pmsAttempt.id,
-          pmsTransactionNo: chargeResult.transactionNo,
-          roomNumber: sel.roomNumber,
-          guestName: sel.guestName,
-          reservationId: sel.reservationId,
-          idempotencyKey: idempotencyKey_pms,
-        }
-      } catch (caughtErr) {
-        // Mark attempt FAILED for reconciliation
-        await db.pmsChargeAttempt.update({
-          where: { id: pmsAttempt.id },
-          data: {
-            status: 'FAILED' as PmsAttemptStatus,
-            lastErrorMessage: err instanceof Error ? err.message.substring(0, 200) : 'unknown',
-          },
-        }).catch(e => console.error('[pay/room_charge] Failed to mark attempt FAILED:', e))
-        console.error('[pay/room_charge] OPERA charge failed:', err instanceof Error ? err.message : 'unknown')
-        return err('Failed to post charge to hotel room. Please verify the room and try again.', 502)
-      }
-    }
+    // ── Pre-warm snapshot cache OUTSIDE the FOR UPDATE lock ──────────
+    // Running ingestAndProject with an empty event array forces a snapshot
+    // replay and caches the result. When the transaction re-enters
+    // ingestAndProject later, it hits the cache (incremental path) instead
+    // of replaying all events under the row-level lock — saving 50-200ms
+    // of lock hold time on large pizza orders with many modifiers.
+    await ingestAndProject(db, orderId, normalizeResult.ctx.locationId, [], {
+      suppressBroadcast: true,
+    })
 
     // Hoisted for post-transaction access (populated inside tx)
     let loyaltyTierMultiplier: number = 1.0
@@ -292,7 +104,7 @@ export const POST = withVenue(withTiming(async function POST(
     // Acquire row-level lock to prevent double-charge from concurrent terminals.
     //
     // LOCK SCOPE NOTE (P3 hardening review 2026-04-10):
-    // This FOR UPDATE lock is held for the entire transaction (bounded by the 30s timeout below).
+    // This FOR UPDATE lock is held for the entire transaction (bounded by the 10s timeout below).
     // We considered narrowing: Phase 1 (no lock) for validation, Phase 2 (locked) for insertion.
     // Decision: NOT safe to narrow. The validation phase (idempotency, amount checks, SAF dedup,
     // status guards) reads order.payments and order.status — these MUST be consistent with the
@@ -317,28 +129,7 @@ export const POST = withVenue(withTiming(async function POST(
     await enableSyncReplication(tx)
 
     // HA FAILOVER PROTECTION: Detect orphaned pending Datacap sales.
-    // Uses a savepoint so a missing table doesn't abort the outer transaction.
-    let orphanedSales: Array<{ id: string; amount: unknown; datacapRecordNo: string | null; invoiceNo: string | null }> = []
-    try {
-      await tx.$executeRaw`SAVEPOINT orphan_check`
-      orphanedSales = await tx.$queryRaw<typeof orphanedSales>`
-        SELECT id, amount, "datacapRecordNo", "invoiceNo" FROM "_pending_datacap_sales"
-         WHERE "orderId" = ${orderId} AND "status" = 'pending' AND "createdAt" < NOW() - INTERVAL '60 seconds'
-      `
-      await tx.$executeRaw`RELEASE SAVEPOINT orphan_check`
-    } catch {
-      // Table may not exist on this NUC — roll back savepoint to keep transaction alive
-      await tx.$executeRaw`ROLLBACK TO SAVEPOINT orphan_check`.catch(err => log.warn({ err }, 'savepoint rollback failed'))
-    }
-
-    if (orphanedSales.length > 0) {
-      console.warn(`[PAY] Found ${orphanedSales.length} orphaned pending Datacap sale(s) for order ${orderId}. These may need manual void.`)
-      for (const sale of orphanedSales) {
-        await tx.$executeRaw`
-          UPDATE "_pending_datacap_sales" SET "status" = 'orphaned', "resolvedAt" = NOW() WHERE id = ${sale.id}
-        `
-      }
-    }
+    await checkOrphanedDatacapSales(tx, orderId)
 
     // Single query for order — replaces separate zero-check, idempotency, and main fetch queries
     // Includes items/employee/table so we can build receipt data in the response (avoids second fetch)
@@ -447,209 +238,35 @@ export const POST = withVenue(withTiming(async function POST(
     }
 
     // Idempotency check using already-loaded payments (no extra query needed)
-    const idempDup = checkIdempotencyByKey(idempotencyKey, order.payments as any, order.status)
-    if (idempDup) {
-      return { earlyReturn: NextResponse.json({ data: {
-        success: true,
-        duplicate: true,
-        ...idempDup.response,
-        remainingBalance: 0,
-      } }) }
-    }
+    const idempKeyResult = checkIdempotencyByKeyGuard(idempotencyKey, order.payments as any, order.status)
+    if (idempKeyResult) return idempKeyResult
 
     // RecordNo-based idempotency check — check ALL payments, not just the first
-    for (const payment of payments) {
-      if (payment.datacapRecordNo) {
-        const recordNoDup = checkIdempotencyByRecordNo(payment.datacapRecordNo, order.payments as any)
-        if (recordNoDup) {
-          return { earlyReturn: NextResponse.json(
-            {
-              error: 'Payment with this recordNo already exists for this order',
-              code: 'DUPLICATE_RECORD_NO',
-              existingPaymentId: recordNoDup.existingPaymentId,
-            },
-            { status: 409 }
-          ) }
-        }
-      }
-    }
+    const recordNoResult = checkIdempotencyByRecordNoGuard(payments, order.payments as any)
+    if (recordNoResult) return recordNoResult
 
     // R1: SECONDARY IDEMPOTENCY — amount+time dedup for network retries with new keys.
-    // If a terminal retries a payment with a DIFFERENT idempotencyKey (client generated
-    // a fresh UUID on retry), the key-based check above won't catch it. This query
-    // detects a Payment for the same order with the same amount created in the last 30s.
-    // MUST run BEFORE Datacap is called to prevent double-charging the card.
-    const requestedBaseTotal = payments.reduce((sum, p) => sum + p.amount, 0)
-    const recentDuplicate = await tx.payment.findFirst({
-      where: {
-        orderId,
-        amount: { gte: requestedBaseTotal - 0.01, lte: requestedBaseTotal + 0.01 },
-        createdAt: { gte: new Date(Date.now() - 30000) },
-        status: { in: ['completed', 'pending'] },
-      },
-      orderBy: { createdAt: 'desc' },
-      select: { id: true, amount: true, tipAmount: true, totalAmount: true, paymentMethod: true },
-    })
-    if (recentDuplicate) {
-      log.warn({ orderId, existingPaymentId: recentDuplicate.id, amount: requestedBaseTotal }, 'R1: Blocked duplicate payment (amount+time dedup)')
-      return { earlyReturn: NextResponse.json({ data: {
-        success: true,
-        duplicate: true,
-        orderId,
-        paymentId: recentDuplicate.id,
-        amount: toNumber(recentDuplicate.amount),
-        tipAmount: toNumber(recentDuplicate.tipAmount),
-        totalAmount: toNumber(recentDuplicate.totalAmount),
-        paymentMethod: recentDuplicate.paymentMethod,
-        newOrderBalance: 0,
-        remainingBalance: 0,
-        message: 'Duplicate payment detected (same amount within 30s window)',
-      } }) }
-    }
+    const amountTimeDedupResult = await checkAmountTimeDedup(tx, orderId, payments)
+    if (amountTimeDedupResult) return amountTimeDedupResult
 
-    // SAF2: SAF DUPLICATE PREVENTION — if client retries payment while offline (SAF captures
-    // with UUID-X on the reader), then network returns and client retries with UUID-Y, BOTH
-    // charges succeed. Detect existing SAF payments for this order to prevent double-charge.
-    // This check runs BEFORE Datacap is called so we never send a second authorization.
-    const hasCardPayment = payments.some(p => p.method === 'credit' || p.method === 'debit')
-    if (hasCardPayment) {
-      const safDuplicate = await tx.payment.findFirst({
-        where: {
-          orderId,
-          deletedAt: null,
-          status: 'completed',
-          OR: [
-            { isOfflineCapture: true },
-            { safStatus: { in: ['APPROVED_SAF_PENDING_UPLOAD', 'UPLOAD_PENDING', 'UPLOAD_SUCCESS'] } },
-          ],
-        },
-        orderBy: { createdAt: 'desc' },
-        select: { id: true, amount: true, tipAmount: true, totalAmount: true, paymentMethod: true, safStatus: true },
-      })
-      if (safDuplicate) {
-        log.warn(
-          { orderId, existingPaymentId: safDuplicate.id, safStatus: safDuplicate.safStatus, amount: toNumber(safDuplicate.amount) },
-          'SAF2: Blocked duplicate payment — SAF payment already exists for this order'
-        )
-        return { earlyReturn: NextResponse.json({ data: {
-          success: true,
-          duplicate: true,
-          orderId,
-          paymentId: safDuplicate.id,
-          amount: toNumber(safDuplicate.amount),
-          tipAmount: toNumber(safDuplicate.tipAmount),
-          totalAmount: toNumber(safDuplicate.totalAmount),
-          paymentMethod: safDuplicate.paymentMethod,
-          safStatus: safDuplicate.safStatus,
-          newOrderBalance: 0,
-          remainingBalance: 0,
-          message: 'Duplicate payment detected — SAF (offline) payment already captured for this order',
-        } }) }
-      }
-    }
+    // SAF2: SAF DUPLICATE PREVENTION — detect existing SAF/offline capture before Datacap call.
+    const safDedupResult = await checkSafDuplicate(tx, orderId, payments)
+    if (safDedupResult) return safDedupResult
 
     // C18: Permission checks moved OUTSIDE the FOR UPDATE transaction (above)
     // to reduce lock contention. No duplicate check needed here.
 
     // DOUBLE-CHARGE PREVENTION: Lock-and-check on _pending_captures table.
-    // The FOR UPDATE lock above serializes concurrent requests for the SAME order,
-    // but a client retry with the same idempotencyKey can slip through the in-memory
-    // idempotency check (line above) if the first request hasn't committed yet.
-    // This INSERT with a unique index on idempotencyKey acts as a durable lock:
-    //   - First request: INSERT succeeds → proceed to payment
-    //   - Concurrent retry: INSERT conflicts → return 409 (or cached result)
-    // Uses a savepoint so a missing table (pre-migration NUCs) doesn't abort the transaction.
-    let pendingCaptureInserted = false
-    try {
-      await tx.$executeRaw`SAVEPOINT pending_capture_check`
-      const existingPending = await tx.$queryRaw<Array<{ id: string; status: string; response_json: string | null }>>`
-        SELECT id, status, response_json FROM "_pending_captures" WHERE "idempotencyKey" = ${finalIdempotencyKey} LIMIT 1
-      `
-      if (Array.isArray(existingPending) && existingPending.length > 0) {
-        const pending = existingPending[0] as any
-        if (pending.status === 'processing') {
-          await tx.$executeRaw`RELEASE SAVEPOINT pending_capture_check`
-          return { earlyReturn: NextResponse.json(
-            { error: 'Payment is already being processed. Please wait.', code: 'PAYMENT_IN_PROGRESS' },
-            { status: 409 }
-          )}
-        }
-        if (pending.status === 'completed' && pending.response_json) {
-          await tx.$executeRaw`RELEASE SAVEPOINT pending_capture_check`
-          // Return cached result — idempotent response
-          return { earlyReturn: NextResponse.json(
-            { error: 'Payment already processed', code: 'DUPLICATE_PAYMENT', existingPayment: JSON.parse(pending.response_json) },
-            { status: 409 }
-          )}
-        }
-        // status is 'failed' or 'pending' without response — allow retry by updating status
-        await tx.$executeRaw`
-          UPDATE "_pending_captures" SET "status" = 'processing', "errorMessage" = NULL WHERE "id" = ${pending.id}
-        `
-        pendingCaptureInserted = true
-      } else {
-        // No existing record — insert a new one with status='processing'
-        const captureId = crypto.randomUUID()
-        await tx.$executeRaw`
-          INSERT INTO "_pending_captures" ("id", "orderId", "locationId", "cardRecordNo", "purchaseAmount", "totalAmount", "status", "idempotencyKey", "createdAt")
-           VALUES (${captureId}, ${orderId}, ${order.locationId}, '', 0, 0, 'processing', ${finalIdempotencyKey}, NOW())
-           ON CONFLICT ("idempotencyKey") WHERE "idempotencyKey" IS NOT NULL DO NOTHING
-        `
-        // Check if our insert won (ON CONFLICT DO NOTHING means 0 rows if conflict)
-        const verifyInsert = await tx.$queryRaw<Array<{ id: string }>>`
-          SELECT id FROM "_pending_captures" WHERE "idempotencyKey" = ${finalIdempotencyKey} AND "id" = ${captureId} LIMIT 1
-        `
-        if (Array.isArray(verifyInsert) && verifyInsert.length > 0) {
-          pendingCaptureInserted = true
-        } else {
-          // Another concurrent request won the insert — this is a duplicate
-          await tx.$executeRaw`RELEASE SAVEPOINT pending_capture_check`
-          return { earlyReturn: NextResponse.json(
-            { error: 'Payment is already being processed. Please wait.', code: 'PAYMENT_IN_PROGRESS' },
-            { status: 409 }
-          )}
-        }
-      }
-      await tx.$executeRaw`RELEASE SAVEPOINT pending_capture_check`
-    } catch (pcError) {
-      // Table may not exist on pre-migration NUCs — roll back savepoint and proceed without protection
-      await tx.$executeRaw`ROLLBACK TO SAVEPOINT pending_capture_check`.catch(err => log.warn({ err }, 'savepoint rollback failed'))
-      console.warn('[PAY] _pending_captures check failed (table may not exist), proceeding without lock', {
-        orderId, error: pcError instanceof Error ? pcError.message : String(pcError),
-      })
-    }
+    const pendingCaptureResult = await acquirePendingCaptureLock(tx, finalIdempotencyKey, orderId, order.locationId)
+    if (pendingCaptureResult.earlyReturn) return { earlyReturn: pendingCaptureResult.earlyReturn }
     // Expose to outer catch block for failure cleanup
-    if (pendingCaptureInserted) {
+    if (pendingCaptureResult.inserted) {
       pendingCaptureIdempotencyKey = finalIdempotencyKey
     }
 
-    if (['paid', 'closed', 'cancelled', 'voided'].includes(order.status)) {
-      if (order.status === 'paid' || order.status === 'closed') {
-        // TX-KEEP: COMPLEX — latest payment lookup inside FOR UPDATE lock; no repo method for latest-payment-by-order
-        const existingPayment = await tx.payment.findFirst({
-          where: { orderId, locationId: order.locationId },
-          orderBy: { createdAt: 'desc' },
-          select: { id: true, amount: true, tipAmount: true, totalAmount: true, paymentMethod: true },
-        })
-        return { earlyReturn: NextResponse.json({ data: {
-          success: true,
-          alreadyPaid: true,
-          orderId,
-          paymentId: existingPayment?.id ?? 'already-paid',
-          amount: existingPayment ? toNumber(existingPayment.amount) : toNumber(order.total ?? 0),
-          tipAmount: existingPayment ? toNumber(existingPayment.tipAmount) : 0,
-          totalAmount: existingPayment ? toNumber(existingPayment.totalAmount) : toNumber(order.total ?? 0),
-          paymentMethod: existingPayment?.paymentMethod ?? body.paymentMethod ?? 'cash',
-          newOrderBalance: 0,
-          orderStatus: order.status,
-          message: `Order already ${order.status}`,
-        } }) }
-      }
-      return { earlyReturn: NextResponse.json(
-        { error: 'Cannot pay an order with status: ' + order.status },
-        { status: 400 }
-      ) }
-    }
+    // Already-paid / cancelled / voided guard
+    const alreadyPaidResult = await checkAlreadyPaid(tx, orderId, order as any, body.paymentMethod as string | undefined)
+    if (alreadyPaidResult) return alreadyPaidResult
 
     // Parent = pay remaining — compute family remaining balance
     let splitPayRemainingOverride: number | null = null
@@ -1134,7 +751,7 @@ export const POST = withVenue(withTiming(async function POST(
           paymentMethod: 'cash' as PaymentMethod, // Store as cash — no card processor interaction
           status: 'completed' as PaymentStatus,
           idempotencyKey: payments.length > 1
-            ? `${finalIdempotencyKey}-${paymentIdx}`
+            ? `${finalIdempotencyKey}-${payment.method}-${Math.round(payment.amount * 100)}`
             : finalIdempotencyKey,
           authCode: 'TRAINING',
           transactionId: `TRAINING-${crypto.randomUUID().slice(0, 8)}`,
@@ -1162,9 +779,10 @@ export const POST = withVenue(withTiming(async function POST(
         paymentMethod: payment.method as PaymentMethod,
         status: 'completed' as PaymentStatus,
         // Per-payment idempotency key: split tenders have multiple payments per request,
-        // each must have a unique key. Append index for any multi-payment request.
+        // each must have a unique key. Content-based: method + amount hash ensures
+        // idempotency survives payment reordering across retries.
         idempotencyKey: payments.length > 1
-          ? `${finalIdempotencyKey}-${paymentIdx}`
+          ? `${finalIdempotencyKey}-${payment.method}-${Math.round(payment.amount * 100)}`
           : finalIdempotencyKey,
         // Pricing tier detection (Payment & Pricing Redesign)
         // appliedPricingTier is NOT NULL with default 'cash' — always set it
@@ -1608,7 +1226,7 @@ export const POST = withVenue(withTiming(async function POST(
       totalDriftWarning,
     }
 
-    }, { timeout: 30000 })
+    }, { timeout: 10000 })
 
     if ('earlyReturn' in txResult) {
       return (txResult as any).earlyReturn as NextResponse
