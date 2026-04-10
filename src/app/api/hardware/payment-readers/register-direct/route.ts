@@ -6,7 +6,7 @@ import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { authenticateTerminal } from '@/lib/terminal-auth'
-import { err, ok, unauthorized } from '@/lib/api-response'
+import { err, ok } from '@/lib/api-response'
 
 /**
  * POST /api/hardware/payment-readers/register-direct

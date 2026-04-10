@@ -67,6 +67,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
   ])
 
   // Pre-fetch active employee IDs for this location (one query, used for all events)
+  // eslint-disable-next-line no-restricted-syntax -- bulk ID lookup, no repo method needed
   const activeEmployeeIds = new Set(
     (await db.employee.findMany({
       where: { locationId, isActive: true, deletedAt: null },
