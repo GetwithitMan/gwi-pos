@@ -651,9 +651,41 @@ update_dashboard() {
   final_version=$(dpkg-query -W -f='${Version}' gwi-nuc-dashboard 2>/dev/null || echo "0.0.0")
   if [[ "$final_version" == "$available" ]]; then
     log "Dashboard: v${available} installed and configured successfully"
-    # Restart the dashboard service
-    sudo -u "${POSUSER:-gwipos}" bash -c \
-      "XDG_RUNTIME_DIR=/run/user/\$(id -u) systemctl --user restart gwi-dashboard.service" 2>/dev/null || true
+    # Ensure systemd user service exists (may be first install on this NUC)
+    local _posuser="${POSUSER:-gwipos}"
+    local _svc_dir
+    _svc_dir=$(eval echo "~${_posuser}/.config/systemd/user")
+    if [[ ! -f "${_svc_dir}/gwi-dashboard.service" ]]; then
+      local _dash_bin
+      _dash_bin=$(command -v gwi-dashboard 2>/dev/null || command -v gwi-nuc-dashboard 2>/dev/null || true)
+      if [[ -n "$_dash_bin" ]]; then
+        mkdir -p "$_svc_dir"
+        chown -R "${_posuser}:${_posuser}" "$(eval echo "~${_posuser}/.config")"
+        cat > "${_svc_dir}/gwi-dashboard.service" <<SVCEOF
+[Unit]
+Description=GWI NUC Dashboard
+After=graphical-session.target
+
+[Service]
+ExecStart=${_dash_bin}
+Restart=on-failure
+RestartSec=5
+StartLimitBurst=5
+StartLimitIntervalSec=120
+Environment=DISPLAY=:0
+Environment=GWI_POS_URL=http://localhost:3005
+
+[Install]
+WantedBy=default.target
+SVCEOF
+        chown "${_posuser}:${_posuser}" "${_svc_dir}/gwi-dashboard.service"
+        loginctl enable-linger "${_posuser}" 2>/dev/null || true
+        log "Dashboard: created systemd user service"
+      fi
+    fi
+    # Start or restart the service
+    sudo -u "${_posuser}" bash -c \
+      "XDG_RUNTIME_DIR=/run/user/\$(id -u) systemctl --user daemon-reload && systemctl --user enable gwi-dashboard.service && systemctl --user start gwi-dashboard.service" 2>/dev/null || true
   else
     log "Dashboard: install may have failed — expected v${available}, got v${final_version}"
   fi
