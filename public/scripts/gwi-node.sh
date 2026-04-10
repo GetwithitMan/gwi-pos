@@ -640,10 +640,10 @@ update_dashboard() {
     return 0
   fi
 
-  # Install — dpkg may return non-zero on trigger warnings (icon cache),
-  # so we always run --configure -a and verify the installed version afterward.
-  sudo dpkg -i --force-overwrite "$deb_path" 2>&1 | while IFS= read -r line; do log "Dashboard: $line"; done
-  sudo dpkg --configure -a 2>&1 | while IFS= read -r line; do log "Dashboard: configure: $line"; done || true
+  # Install — .deb is built without /usr/share/icons (stripped at CI time)
+  # so dpkg won't fail on read-only icon paths. sudo ensures root privileges.
+  sudo dpkg -i "$deb_path" 2>&1 | while IFS= read -r line; do log "Dashboard: $line"; done
+  sudo dpkg --configure -a 2>/dev/null || true
   sudo apt-get install -f -y -qq 2>/dev/null || true
 
   # Verify the install actually worked by checking the installed version
