@@ -100,7 +100,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     if (!resolvedEmployeeId) {
       const { getActorFromRequest } = await import('@/lib/api-auth')
       const actor = await getActorFromRequest(request)
-      resolvedEmployeeId = actor?.employeeId
+      resolvedEmployeeId = actor?.employeeId ?? undefined
     }
 
     // Validate employee belongs to this location
