@@ -145,6 +145,29 @@ export async function createOrderItem(
     validatedPourMultiplier = 1.0
   }
 
+  // Defensive FK validation: null out modifierIds that don't exist locally (sync timing gap)
+  if (validatedModifiers?.length) {
+    const modIds = validatedModifiers
+      .map(m => isValidModifierId(m.modifierId) ? m.modifierId : null)
+      .filter((id): id is string => id != null)
+    if (modIds.length > 0) {
+      const placeholders = modIds.map((_, i) => `$${i + 1}`).join(', ')
+      const existing = await tx.$queryRawUnsafe<{ id: string }[]>(
+        `SELECT id FROM "Modifier" WHERE id IN (${placeholders})`, ...modIds
+      )
+      const existingSet = new Set(existing.map(r => r.id))
+      const missing = modIds.filter(id => !existingSet.has(id))
+      if (missing.length > 0) {
+        log.warn({ orderId, missingModifierIds: missing }, 'Item references modifiers not yet synced to NUC — FK references nulled')
+        for (const mod of validatedModifiers) {
+          if (mod.modifierId && !existingSet.has(mod.modifierId)) {
+            ;(mod as any).modifierId = null
+          }
+        }
+      }
+    }
+  }
+
   const createdItem = await tx.orderItem.create({
     data: {
       // Use client-generated lineItemId if provided (enables client-server dedup).
