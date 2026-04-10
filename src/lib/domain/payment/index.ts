@@ -86,3 +86,13 @@ export {
 } from './payment-state-machine'
 
 export type { PaymentState } from './payment-state-machine'
+
+// ─── Financial Context Builder ─────────────────────────────────────────────
+
+export { buildPaymentFinancialContext } from './context/build-payment-financial-context'
+export type { PaymentFinancialContext, FinancialContextResult, BuildFinancialContextParams } from './context/build-payment-financial-context'
+
+// ─── Executors ─────────────────────────────────────────────────────────────
+
+export { processPaymentLoop } from './executors'
+export type { PaymentLoopResult, PaymentLoopParams } from './executors'
