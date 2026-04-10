@@ -487,9 +487,9 @@ async function processOutageQueue(): Promise<void> {
 
     metrics.lastReplayAt = new Date()
 
-    // Clean up old replayed/dead-letter entries (retain 7 days for audit)
+    // Clean up old replayed/dead-letter entries (retain 24 hours for audit)
     try {
-      const cleanupThreshold = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+      const cleanupThreshold = new Date(Date.now() - 24 * 60 * 60 * 1000)
       await masterClient.$executeRawUnsafe(
         `DELETE FROM "OutageQueueEntry" WHERE status IN ('replayed', 'dead_letter') AND "createdAt" < $1::timestamptz`,
         cleanupThreshold.toISOString()

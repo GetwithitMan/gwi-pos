@@ -100,11 +100,24 @@ staleTerminalTimer.unref()
 // ── Per-socket rate limiting ──────────────────────────────────────────────────
 const socketRateLimits = new Map<string, { count: number; resetAt: number }>()
 const MAX_EVENTS_PER_SECOND = 200
+// Hard cap prevents unbounded memory growth under extreme flapping (40+ terminals × 200 events/sec)
+const RATE_LIMIT_MAP_CAP = 5000
 
 function checkSocketRateLimit(socketId: string): boolean {
   const now = Date.now()
   let state = socketRateLimits.get(socketId)
   if (!state || now > state.resetAt) {
+    // Evict oldest entries when map hits the hard cap
+    if (!state && socketRateLimits.size >= RATE_LIMIT_MAP_CAP) {
+      // Map iteration order is insertion order — first entries are oldest
+      const iter = socketRateLimits.keys()
+      const toEvict = Math.max(1, Math.floor(RATE_LIMIT_MAP_CAP * 0.1)) // evict 10%
+      for (let i = 0; i < toEvict; i++) {
+        const oldest = iter.next()
+        if (oldest.done) break
+        socketRateLimits.delete(oldest.value)
+      }
+    }
     state = { count: 0, resetAt: now + 1000 }
     socketRateLimits.set(socketId, state)
   }

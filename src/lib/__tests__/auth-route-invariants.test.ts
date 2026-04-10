@@ -39,6 +39,7 @@ describe('Critical mutation routes require authentication', () => {
     'src/app/api/orders/[id]/void-payment/route.ts',
     'src/app/api/orders/[id]/refund-payment/route.ts',
     'src/app/api/orders/[id]/comp-void/route.ts',
+    'src/app/api/orders/[id]/close-tab/route.ts',
     'src/app/api/orders/[id]/adjust-tip/route.ts',
     'src/app/api/orders/[id]/discount/route.ts',
     'src/app/api/orders/[id]/send/route.ts',
@@ -55,15 +56,9 @@ describe('Critical mutation routes require authentication', () => {
 })
 
 // ---------------------------------------------------------------------------
-// KNOWN GAP: close-tab/route.ts uses withVenue + checkOrderClaim but does NOT
-// call requirePermission. This means any authenticated employee can close a tab
-// without a specific permission check. This test documents the gap.
+// KNOWN GAPS: None — all critical mutation routes now have requirePermission.
+// close-tab was the last gap (fixed: now requires POS_CARD_PAYMENTS permission).
 // ---------------------------------------------------------------------------
-describe('Known auth gaps (documented, pending fix)', () => {
-  it('close-tab route does NOT have requirePermission (known gap)', () => {
-    expect(fileContainsAuth('src/app/api/orders/[id]/close-tab/route.ts')).toBe(false)
-  })
-})
 
 // ---------------------------------------------------------------------------
 // 2. All critical mutation routes use withVenue (multi-tenant isolation)

@@ -289,7 +289,21 @@ export const POST = withVenue(withTiming(async function POST(
 
     const txResult = await db.$transaction(async (tx) => {
 
-    // Acquire row-level lock to prevent double-charge from concurrent terminals
+    // Acquire row-level lock to prevent double-charge from concurrent terminals.
+    //
+    // LOCK SCOPE NOTE (P3 hardening review 2026-04-10):
+    // This FOR UPDATE lock is held for the entire transaction (bounded by the 30s timeout below).
+    // We considered narrowing: Phase 1 (no lock) for validation, Phase 2 (locked) for insertion.
+    // Decision: NOT safe to narrow. The validation phase (idempotency, amount checks, SAF dedup,
+    // status guards) reads order.payments and order.status — these MUST be consistent with the
+    // locked row to prevent TOCTOU double-charge. Splitting would require re-running all validation
+    // after re-fetch, duplicating logic and introducing subtle race windows.
+    //
+    // Mitigations already in place:
+    //   1. Permission checks run OUTSIDE the tx (lines ~94-138) — no lock held during auth
+    //   2. PMS/OPERA HTTP calls run OUTSIDE the tx (lines ~140-285) — no lock during 1-5s HTTP
+    //   3. 30s tx timeout caps worst-case lock duration
+    //   4. Datacap card processing is fire-and-forget before the tx (pre-charge model)
     const [lockedRow] = await tx.$queryRaw<Array<{ id: string }>>`
       SELECT id FROM "Order" WHERE id = ${orderId} FOR UPDATE
     `
@@ -419,7 +433,7 @@ export const POST = withVenue(withTiming(async function POST(
       ) }
     }
 
-    const { payments, employeeId, terminalId, idempotencyKey: bodyKey } = validation.data
+    const { payments, employeeId, terminalId, idempotencyKey: bodyKey, capturedOrderTotal, skipDriftCheck } = validation.data
     // Idempotency-Key header takes precedence over body field.
     // Android sends as "Idempotency-Key", normalize both header variants.
     const headerKey = request.headers.get('idempotency-key') || request.headers.get('x-idempotency-key')
@@ -959,6 +973,87 @@ export const POST = withVenue(withTiming(async function POST(
       return { earlyReturn: NextResponse.json({ error: amountError }, { status: 400 }) }
     }
 
+    // ── R3: IN-TRANSACTION TOTAL DRIFT DETECTION ──────────────────────────────
+    // When the client sends capturedOrderTotal (the total it displayed when the user
+    // initiated payment), compare against the current order total (locked via FOR UPDATE).
+    // This detects cases where Terminal A adds items while Terminal B is paying.
+    // Thresholds:
+    //   > $1.00 drift: REJECT unless client sends skipDriftCheck: true (user acknowledged)
+    //   $0.01–$1.00 drift: ALLOW but include totalDriftWarning in response
+    //   <= $0.01: ignore (rounding)
+    let totalDriftWarning: { capturedTotal: number; currentTotal: number; drift: number } | null = null
+    if (capturedOrderTotal != null) {
+      const currentTotal = toNumber(order.total ?? 0)
+      const drift = roundToCents(Math.abs(currentTotal - capturedOrderTotal))
+
+      if (drift > 0.01) {
+        // Audit log + socket for ALL drift cases (inside transaction for consistency)
+        log.warn({
+          orderId,
+          capturedTotal: capturedOrderTotal,
+          currentTotal,
+          drift,
+          skipDriftCheck: !!skipDriftCheck,
+        }, 'R3: Total drift detected between client capture and payment')
+
+        // Create audit log entry for staff review (savepoint so it never blocks payment)
+        try {
+          await tx.$executeRaw`SAVEPOINT drift_audit`
+          await tx.$executeRaw`
+            INSERT INTO "AuditLog" ("id", "locationId", "employeeId", "action", "entityType", "entityId", "details", "createdAt")
+            VALUES (
+              ${crypto.randomUUID()},
+              ${order.locationId},
+              ${employeeId || null},
+              'TOTAL_DRIFT_DETECTED',
+              'order',
+              ${orderId},
+              ${JSON.stringify({
+                orderNumber: order.orderNumber,
+                capturedTotal: capturedOrderTotal,
+                currentTotal,
+                drift,
+                acknowledged: !!skipDriftCheck,
+                message: `Order total changed from $${capturedOrderTotal.toFixed(2)} to $${currentTotal.toFixed(2)} (drift: $${drift.toFixed(2)})${skipDriftCheck ? ' — acknowledged by client' : ''}`,
+              })},
+              NOW()
+            )
+          `
+          await tx.$executeRaw`RELEASE SAVEPOINT drift_audit`
+        } catch {
+          await tx.$executeRaw`ROLLBACK TO SAVEPOINT drift_audit`.catch(e => log.warn({ err: e }, 'drift audit savepoint rollback failed'))
+        }
+
+        if (drift > 1.00 && !skipDriftCheck) {
+          // Significant drift — reject payment, require client acknowledgement
+          // Emit socket event so other terminals see the drift
+          void dispatchPaymentProcessed(order.locationId, {
+            orderId,
+            status: 'total_drift_rejected',
+            totalDriftDetected: true,
+            capturedTotal: capturedOrderTotal,
+            currentTotal,
+            drift,
+            sourceTerminalId: terminalId || undefined,
+          } as any).catch(e => log.warn({ err: e }, 'R3: drift rejection socket dispatch failed'))
+
+          return { earlyReturn: NextResponse.json(
+            {
+              error: `Order total has changed by $${drift.toFixed(2)} since payment was initiated. Please retry.`,
+              code: 'TOTAL_DRIFT_REJECTED',
+              capturedTotal: capturedOrderTotal,
+              currentTotal,
+              drift,
+            },
+            { status: 409 }
+          ) }
+        }
+
+        // Minor drift ($0.01–$1.00) or acknowledged drift (skipDriftCheck) — allow but warn
+        totalDriftWarning = { capturedTotal: capturedOrderTotal, currentTotal, drift }
+      }
+    }
+
     // Process each payment
     // Payments from special types (loyalty, gift card, house account) are created
     // inside their own transactions. Default payments (cash, card) are collected
@@ -1209,10 +1304,22 @@ export const POST = withVenue(withTiming(async function POST(
     // These are order items added via /api/orders/[id]/add-ha-payment that represent
     // a customer paying down their house account balance. When the order is paid,
     // we reduce the HA balance and create a transaction record.
+    //
+    // ATOMICITY FIX (Issue B): Pre-calculate all HA charges BEFORE updating any balances.
+    // If the transaction rolls back after partial updates, balance drift occurs.
+    // Now: collect all amounts → validate all → execute all in single phase.
     const haPaymentItems = order.items?.filter(
       (item: { specialNotes?: string | null; status?: string }) =>
         item.specialNotes?.startsWith('ha_payment:') && item.status !== 'voided'
     ) ?? []
+
+    // Collect and pre-validate all house account updates
+    const haUpdates: Array<{
+      haId: string
+      haAmount: number
+      currentBal: number
+      effectiveAmount: number
+    }> = []
 
     for (const haItem of haPaymentItems) {
       const haId = (haItem as any).specialNotes!.replace('ha_payment:', '')
@@ -1225,26 +1332,33 @@ export const POST = withVenue(withTiming(async function POST(
         const currentBal = toNumber(haAccount.currentBalance)
         const effectiveAmount = Math.min(haAmount, currentBal)
         if (effectiveAmount > 0) {
-          await tx.houseAccount.update({
-            where: { id: haId },
-            data: {
-              currentBalance: { decrement: effectiveAmount },
-              transactions: {
-                create: {
-                  locationId: order.locationId,
-                  type: 'payment',
-                  amount: -effectiveAmount,
-                  balanceBefore: currentBal,
-                  balanceAfter: currentBal - effectiveAmount,
-                  orderId,
-                  employeeId: employeeId || null,
-                  notes: `Payment via Order #${order.orderNumber}`,
-                }
-              }
-            }
-          })
+          haUpdates.push({ haId, haAmount, currentBal, effectiveAmount })
         }
       }
+    }
+
+    // Apply all house account updates atomically — if any fails, the entire tx rolls back.
+    // This prevents partial state where some balances were decremented but the tx failed.
+    for (const update of haUpdates) {
+      const newBalance = update.currentBal - update.effectiveAmount
+      await tx.houseAccount.update({
+        where: { id: update.haId },
+        data: {
+          currentBalance: newBalance,
+          transactions: {
+            create: {
+              locationId: order.locationId,
+              type: 'payment',
+              amount: -update.effectiveAmount,
+              balanceBefore: update.currentBal,
+              balanceAfter: newBalance,
+              orderId,
+              employeeId: employeeId || null,
+              notes: `Payment via Order #${order.orderNumber}`,
+            }
+          }
+        }
+      })
     }
 
     // Update order status and tip total
@@ -1491,6 +1605,7 @@ export const POST = withVenue(withTiming(async function POST(
       isTrainingPayment,
       giftCardBalanceChanges,
       isSplitPayRemaining: splitPayRemainingOverride != null,
+      totalDriftWarning,
     }
 
     }, { timeout: 30000 })
@@ -1529,63 +1644,24 @@ export const POST = withVenue(withTiming(async function POST(
       isTrainingPayment,
       giftCardBalanceChanges,
       isSplitPayRemaining,
+      totalDriftWarning,
     } = txResult as any
 
-    // R3: TOTAL DRIFT DETECTION — detect if the order total changed between capture and recording.
-    // When Terminal A adds items while Terminal B is processing payment, the captured amount
-    // may be less than the current order total. The card is ALREADY charged at this point,
-    // so we do NOT reject or void — just flag it for review.
-    // Fire-and-forget: must never fail the payment response.
-    void (async () => {
-      try {
-        const currentOrder = await db.order.findUnique({
-          where: { id: orderId },
-          select: { total: true },
-        })
-        if (!currentOrder) return
-        const capturedTotal = toNumber(order.total ?? 0)
-        const currentTotal = toNumber(currentOrder.total ?? 0)
-        const drift = roundToCents(currentTotal - capturedTotal)
-        if (drift > 0.01) {
-          log.warn({
-            orderId,
-            capturedTotal,
-            currentTotal,
-            drift,
-          }, 'R3: Payment captured on stale order total — customer may have underpaid')
-          // Create audit log entry for staff review
-          await db.auditLog.create({
-            data: {
-              locationId: order.locationId,
-              employeeId: employeeId || null,
-              action: 'TOTAL_DRIFT_DETECTED',
-              entityType: 'order',
-              entityId: orderId,
-              details: JSON.stringify({
-                orderNumber: order.orderNumber,
-                capturedTotal,
-                currentTotal,
-                drift,
-                paymentIds: ingestResult.bridgedPayments.map((bp: { id: string }) => bp.id),
-                message: `Payment captured at $${capturedTotal.toFixed(2)} but order total is now $${currentTotal.toFixed(2)} (underpaid by $${drift.toFixed(2)})`,
-              }),
-            },
-          })
-          // Emit socket event so the terminal/manager is alerted
-          void dispatchPaymentProcessed(order.locationId, {
-            orderId,
-            status: 'total_drift_warning',
-            totalDriftDetected: true,
-            capturedTotal,
-            currentTotal,
-            drift,
-            sourceTerminalId: terminalId || undefined,
-          } as any).catch(err => log.warn({ err }, 'R3: total drift socket dispatch failed'))
-        }
-      } catch (caughtErr) {
-        log.warn({ err, orderId }, 'R3: Total drift detection failed (non-blocking)')
-      }
-    })()
+    // R3: POST-TRANSACTION DRIFT SOCKET NOTIFICATION
+    // The primary drift detection now happens INSIDE the transaction (before payment insertion).
+    // This post-transaction block only emits the socket event for drift warnings that were
+    // allowed through (minor drift or acknowledged via skipDriftCheck).
+    if (totalDriftWarning) {
+      void dispatchPaymentProcessed(order.locationId, {
+        orderId,
+        status: 'total_drift_warning',
+        totalDriftDetected: true,
+        capturedTotal: totalDriftWarning.capturedTotal,
+        currentTotal: totalDriftWarning.currentTotal,
+        drift: totalDriftWarning.drift,
+        sourceTerminalId: terminalId || undefined,
+      } as any).catch(e => log.warn({ err: e }, 'R3: total drift socket dispatch failed'))
+    }
 
     if (isInOutageMode()) {
       // Flag payments processed during outage for reconciliation visibility
@@ -2491,6 +2567,15 @@ export const POST = withVenue(withTiming(async function POST(
       customerId: order.customer?.id || null,
       // Auto-gratuity info (when applied)
       ...(autoGratApplied ? { autoGratuityApplied: true, autoGratuityNote: autoGratNote } : {}),
+      // R3: Total drift warning — included when order total changed between client capture and payment
+      ...(totalDriftWarning ? {
+        totalDriftWarning: {
+          capturedTotal: totalDriftWarning.capturedTotal,
+          currentTotal: totalDriftWarning.currentTotal,
+          drift: totalDriftWarning.drift,
+          message: `Order total changed by $${totalDriftWarning.drift.toFixed(2)} since payment was initiated`,
+        },
+      } : {}),
       // Card-on-file: signal to front-end that card can be saved (fire-and-forget check)
       ...(() => {
         try {

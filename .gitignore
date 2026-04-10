@@ -86,3 +86,4 @@ Manual PDF.pdf
 *.rtf
 .env.vercel-prod*
 .aider*
+playwright-report/

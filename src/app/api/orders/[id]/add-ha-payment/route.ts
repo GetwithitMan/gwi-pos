@@ -2,13 +2,17 @@ import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
-import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate } from '@/lib/socket-dispatch'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
-import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
+import { OrderRepository } from '@/lib/repositories'
 import { getRequestLocationId } from '@/lib/request-context'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { recalculateOrderTotals } from '@/lib/domain/order-items/order-totals'
+import { getLocationSettings } from '@/lib/location-cache'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
+import type { OrderTotalsUpdatedPayload, OrdersListChangedPayload, OrderSummaryUpdatedPayload } from '@/lib/socket-events'
+import { queueSocketEvent, flushOutboxSafe } from '@/lib/socket-outbox'
 import { createChildLogger } from '@/lib/logger'
 import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-add-ha-payment')
@@ -53,192 +57,235 @@ export const POST = withVenue(async function POST(
       if (!auth.authorized) return err(auth.error, auth.status)
     }
 
-    // Validate the order exists and fetch current totals under FOR UPDATE lock
-    // to prevent concurrent modifications (e.g., simultaneous HA payments or pay/close)
     const locationId = haLocationId
     if (!locationId) {
       return notFound('Order not found')
     }
 
-    const lockedOrderRows = await db.$queryRaw<Array<{
-      id: string; locationId: string; status: string;
-      taxTotal: string; discountTotal: string; tipTotal: string;
-    }>>`SELECT id, "locationId", status, "taxTotal"::numeric::text as "taxTotal",
-              "discountTotal"::numeric::text as "discountTotal", "tipTotal"::numeric::text as "tipTotal"
-       FROM "Order" WHERE id = ${orderId} AND "locationId" = ${locationId} AND "deletedAt" IS NULL FOR UPDATE`
-    const order = lockedOrderRows[0]
-      ? {
-          id: lockedOrderRows[0].id,
-          locationId: lockedOrderRows[0].locationId,
-          status: lockedOrderRows[0].status,
-          taxTotal: Number(lockedOrderRows[0].taxTotal),
-          discountTotal: Number(lockedOrderRows[0].discountTotal),
-          tipTotal: Number(lockedOrderRows[0].tipTotal),
-        }
-      : null
+    // Track locationId for outbox flush after transaction commits
+    let outboxLocationId: string | null = null
 
-    if (!order) {
-      return notFound('Order not found')
-    }
+    const result = await db.$transaction(async (tx) => {
+      // Lock the Order row FOR UPDATE to prevent concurrent modifications
+      // (e.g., simultaneous HA payments or pay/close)
+      const lockedOrderRows = await tx.$queryRaw<Array<{
+        id: string; locationId: string; status: string;
+        orderNumber: number; tableId: string | null; tabName: string | null;
+        guestCount: number; employeeId: string | null; itemCount: number;
+        tipTotal: string; discountTotal: string; isTaxExempt: boolean;
+      }>>`SELECT id, "locationId", status, "orderNumber", "tableId", "tabName",
+                "guestCount", "employeeId", "itemCount",
+                "tipTotal"::numeric::text as "tipTotal",
+                "discountTotal"::numeric::text as "discountTotal",
+                "isTaxExempt"
+         FROM "Order" WHERE id = ${orderId} AND "locationId" = ${locationId} AND "deletedAt" IS NULL FOR UPDATE`
+      const order = lockedOrderRows[0]
+        ? {
+            id: lockedOrderRows[0].id,
+            locationId: lockedOrderRows[0].locationId,
+            status: lockedOrderRows[0].status,
+            orderNumber: lockedOrderRows[0].orderNumber,
+            tableId: lockedOrderRows[0].tableId,
+            tabName: lockedOrderRows[0].tabName,
+            guestCount: lockedOrderRows[0].guestCount ?? 0,
+            employeeId: lockedOrderRows[0].employeeId,
+            itemCount: lockedOrderRows[0].itemCount ?? 0,
+            tipTotal: Number(lockedOrderRows[0].tipTotal),
+            discountTotal: Number(lockedOrderRows[0].discountTotal),
+            isTaxExempt: lockedOrderRows[0].isTaxExempt ?? false,
+          }
+        : null
 
-    if (['paid', 'closed', 'cancelled', 'voided'].includes(order.status)) {
-      return err(`Cannot add items to an order with status: ${order.status}`)
-    }
+      if (!order) {
+        return notFound('Order not found')
+      }
 
-    // Validate the house account exists, is active, and has sufficient balance
-    // TODO: Add HouseAccountRepository once that repository exists
-    const houseAccount = await db.houseAccount.findUnique({
-      where: { id: houseAccountId },
-    })
+      if (['paid', 'closed', 'cancelled', 'voided'].includes(order.status)) {
+        return err(`Cannot add items to an order with status: ${order.status}`)
+      }
 
-    if (!houseAccount) {
-      return notFound('House account not found')
-    }
+      // Capture locationId for outbox flush after commit
+      outboxLocationId = order.locationId
 
-    if (houseAccount.status !== 'active') {
-      return err(`House account is ${houseAccount.status}`)
-    }
+      // Lock the HouseAccount row FOR UPDATE to prevent concurrent overdraft
+      const lockedHaRows = await tx.$queryRaw<Array<{
+        id: string; name: string; status: string; currentBalance: string;
+      }>>`SELECT id, name, status, "currentBalance"::numeric::text as "currentBalance"
+         FROM "HouseAccount" WHERE id = ${houseAccountId} FOR UPDATE`
+      const houseAccount = lockedHaRows[0] ?? null
 
-    const currentBalance = Number(houseAccount.currentBalance)
-    if (currentBalance < amount) {
-      return err(`Insufficient house account balance. Current balance: $${currentBalance.toFixed(2)}`)
-    }
+      if (!houseAccount) {
+        return notFound('House account not found')
+      }
 
-    // Find or create a "System" category for the location
-    // TODO: Add CategoryRepository once that repository exists
-    let systemCategory = await db.category.findFirst({
-      where: {
-        locationId: order.locationId,
-        name: 'System',
-        categoryType: 'retail',
-        deletedAt: null,
-      },
-      select: { id: true },
-    })
+      if (houseAccount.status !== 'active') {
+        return err(`House account is ${houseAccount.status}`)
+      }
 
-    if (!systemCategory) {
-      systemCategory = await db.category.create({
-        data: {
+      const currentBalance = Number(houseAccount.currentBalance)
+      if (currentBalance < amount) {
+        return err(`Insufficient house account balance. Current balance: $${currentBalance.toFixed(2)}`)
+      }
+
+      // Find or create a "System" category for the location
+      let systemCategory = await tx.category.findFirst({
+        where: {
           locationId: order.locationId,
           name: 'System',
           categoryType: 'retail',
-          sortOrder: 9999,
-          isActive: false, // Hidden from regular menu
+          deletedAt: null,
         },
+        select: { id: true },
       })
-    }
 
-    // Find or create the "House Account Payment" system menu item
-    // TODO: Add MenuItemRepository.findByNameAndCategory() once available
-    // TODO: Add MenuItemRepository.findByNameAndCategory() once available
-    let systemMenuItem = await db.menuItem.findFirst({
-      where: {
-        locationId: order.locationId,
-        name: 'House Account Payment',
-        categoryId: systemCategory.id,
-        deletedAt: null,
-      },
-      select: { id: true },
-    })
+      if (!systemCategory) {
+        systemCategory = await tx.category.create({
+          data: {
+            locationId: order.locationId,
+            name: 'System',
+            categoryType: 'retail',
+            sortOrder: 9999,
+            isActive: false, // Hidden from regular menu
+          },
+        })
+      }
 
-    if (!systemMenuItem) {
-      systemMenuItem = await db.menuItem.create({
+      // Find or create the "House Account Payment" system menu item
+      let systemMenuItem = await tx.menuItem.findFirst({
+        where: {
+          locationId: order.locationId,
+          name: 'House Account Payment',
+          categoryId: systemCategory.id,
+          deletedAt: null,
+        },
+        select: { id: true },
+      })
+
+      if (!systemMenuItem) {
+        systemMenuItem = await tx.menuItem.create({
+          data: {
+            locationId: order.locationId,
+            categoryId: systemCategory.id,
+            name: 'House Account Payment',
+            price: 0, // Price is set per-item on the order item
+            isActive: false, // Hidden from regular menu
+          },
+        })
+      }
+
+      // Create the order item
+      const orderItem = await tx.orderItem.create({
         data: {
           locationId: order.locationId,
-          categoryId: systemCategory.id,
-          name: 'House Account Payment',
-          price: 0, // Price is set per-item on the order item
-          isActive: false, // Hidden from regular menu
+          orderId,
+          menuItemId: systemMenuItem.id,
+          name: `House Account Payment - ${houseAccount.name}`,
+          price: amount,
+          quantity: 1,
+          specialNotes: `ha_payment:${houseAccountId}`,
+          categoryType: 'retail',
+          itemTotal: amount,
+          status: 'active',
+          isTaxInclusive: false, // House account payments are always tax-exclusive
+          kitchenStatus: 'delivered', // No kitchen routing needed
         },
       })
-    }
 
-    // Create the order item
-    // TODO: Add OrderItemRepository.createItem() once that write method exists
-    // TODO: Add OrderItemRepository.createItem() once that write method exists
-    const orderItem = await db.orderItem.create({
-      data: {
-        locationId: order.locationId,
+      // Recalculate order totals using shared utility (handles tax, discounts, rounding)
+      const locationSettings = await getLocationSettings(order.locationId)
+      const totals = await recalculateOrderTotals(
+        tx,
         orderId,
+        locationSettings,
+        order.tipTotal,
+        order.isTaxExempt,
+      )
+
+      await OrderRepository.updateOrder(orderId, order.locationId, {
+        subtotal: totals.subtotal,
+        taxTotal: totals.taxTotal,
+        taxFromInclusive: totals.taxFromInclusive,
+        taxFromExclusive: totals.taxFromExclusive,
+        total: totals.total,
+        commissionTotal: totals.commissionTotal,
+        itemCount: totals.itemCount,
+        version: { increment: 1 },
+      }, tx)
+
+      // Emit order event for event sourcing (fire-and-forget)
+      void emitOrderEvent(order.locationId, orderId, 'ITEM_ADDED', {
+        lineItemId: orderItem.id,
         menuItemId: systemMenuItem.id,
-        name: `House Account Payment - ${houseAccount.name}`,
-        price: amount,
+        name: orderItem.name,
+        priceCents: Math.round(amount * 100),
         quantity: 1,
-        specialNotes: `ha_payment:${houseAccountId}`,
-        categoryType: 'retail',
-        itemTotal: amount,
-        status: 'active',
-        isTaxInclusive: false, // House account payments are always tax-exclusive
-        kitchenStatus: 'delivered', // No kitchen routing needed
-      },
+        isHeld: false,
+        soldByWeight: false,
+        specialNotes: orderItem.specialNotes,
+      }).catch(err => console.error('[add-ha-payment] Failed to emit ITEM_ADDED event:', err))
+
+      // Queue critical socket events in the outbox (atomic with order mutation)
+      const totalsPayload: OrderTotalsUpdatedPayload = {
+        orderId,
+        totals: {
+          subtotal: totals.subtotal,
+          taxTotal: totals.taxTotal,
+          tipTotal: order.tipTotal,
+          discountTotal: order.discountTotal,
+          total: totals.total,
+          commissionTotal: totals.commissionTotal,
+        },
+        timestamp: new Date().toISOString(),
+      }
+      await queueSocketEvent(tx, order.locationId, SOCKET_EVENTS.ORDER_TOTALS_UPDATED, totalsPayload)
+
+      const listPayload: OrdersListChangedPayload = {
+        trigger: 'item_updated',
+        orderId,
+      }
+      await queueSocketEvent(tx, order.locationId, SOCKET_EVENTS.ORDERS_LIST_CHANGED, listPayload)
+
+      const summaryPayload: OrderSummaryUpdatedPayload = {
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        status: order.status,
+        tableId: order.tableId || null,
+        tableName: null,
+        tabName: order.tabName || null,
+        guestCount: order.guestCount,
+        employeeId: order.employeeId || null,
+        subtotalCents: Math.round(totals.subtotal * 100),
+        taxTotalCents: Math.round(totals.taxTotal * 100),
+        discountTotalCents: Math.round(order.discountTotal * 100),
+        tipTotalCents: Math.round(order.tipTotal * 100),
+        totalCents: Math.round(totals.total * 100),
+        itemCount: totals.itemCount,
+        updatedAt: new Date().toISOString(),
+        locationId: order.locationId,
+      }
+      await queueSocketEvent(tx, order.locationId, SOCKET_EVENTS.ORDER_SUMMARY_UPDATED, summaryPayload)
+
+      return ok({
+        success: true,
+        orderItem: {
+          id: orderItem.id,
+          name: orderItem.name,
+          price: Number(orderItem.price),
+          quantity: orderItem.quantity,
+          specialNotes: orderItem.specialNotes,
+          categoryType: orderItem.categoryType,
+        },
+      })
     })
 
-    // Recalculate order totals
-    const activeItems = await OrderItemRepository.getItemsForOrderWhere(
-      orderId, order.locationId,
-      { status: 'active', deletedAt: null },
-    )
-    // Re-fetch with modifiers for total calculation
-    const activeItemsWithMods = activeItems.length > 0
-      ? await OrderItemRepository.getItemsByIdsWithInclude(
-          activeItems.map(i => i.id), order.locationId,
-          { modifiers: { where: { deletedAt: null } } },
-        )
-      : []
-
-    let newSubtotal = 0
-    for (const item of activeItemsWithMods) {
-      const modTotal = (item as any).modifiers.reduce((s: number, m: any) => s + Number(m.price), 0)
-      newSubtotal += (Number(item.price) + modTotal) * item.quantity
+    // Transaction committed — flush outbox (fire-and-forget, catch-up handles failures)
+    if (outboxLocationId) {
+      flushOutboxSafe(outboxLocationId)
     }
-
-    const taxTotal = Number(order.taxTotal ?? 0)
-    const discountTotal = Number(order.discountTotal ?? 0)
-    const newTotal = newSubtotal + taxTotal - discountTotal
-
-    await OrderRepository.updateOrder(orderId, order.locationId, {
-      subtotal: newSubtotal,
-      total: newTotal,
-    })
-
-    // Emit order events for event sourcing
-    void emitOrderEvent(order.locationId, orderId, 'ITEM_ADDED', {
-      lineItemId: orderItem.id,
-      menuItemId: systemMenuItem.id,
-      name: orderItem.name,
-      priceCents: Math.round(amount * 100),
-      quantity: 1,
-      isHeld: false,
-      soldByWeight: false,
-      specialNotes: orderItem.specialNotes,
-    }).catch(err => console.error('[add-ha-payment] Failed to emit ITEM_ADDED event:', err))
-
-    // Emit socket events for real-time updates
-    void dispatchOpenOrdersChanged(order.locationId, {
-      trigger: 'item_updated',
-      orderId,
-    }).catch(err => log.warn({ err }, 'Background task failed'))
-    void dispatchOrderTotalsUpdate(order.locationId, orderId, {
-      subtotal: newSubtotal,
-      taxTotal,
-      tipTotal: Number(order.tipTotal ?? 0),
-      discountTotal,
-      total: newTotal,
-    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     pushUpstream()
 
-    return ok({
-      success: true,
-      orderItem: {
-        id: orderItem.id,
-        name: orderItem.name,
-        price: Number(orderItem.price),
-        quantity: orderItem.quantity,
-        specialNotes: orderItem.specialNotes,
-        categoryType: orderItem.categoryType,
-      },
-    })
+    return result
   } catch (error) {
     console.error('[add-ha-payment] Error:', error)
     return err('Failed to add house account payment item', 500)
