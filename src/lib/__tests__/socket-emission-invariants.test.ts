@@ -52,6 +52,8 @@ const PAY_ROUTE_FILES = [
   'src/lib/domain/payment/effects/run-payment-post-commit-effects.ts',
   'src/lib/domain/payment/context/build-payment-financial-context.ts',
   'src/lib/domain/payment/commit/commit-payment-transaction.ts',
+  'src/lib/domain/payment/effects/kitchen-and-fulfillment.ts',
+  'src/lib/domain/payment/effects/notifications.ts',
 ]
 
 // ---------------------------------------------------------------------------
