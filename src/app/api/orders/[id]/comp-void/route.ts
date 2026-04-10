@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
+import { compare } from 'bcryptjs'
 import { db } from '@/lib/db'
 import * as OrderRepository from '@/lib/repositories/order-repository'
 import * as OrderItemRepository from '@/lib/repositories/order-item-repository'
@@ -94,6 +95,22 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     if (approvedById && !remoteApprovalCode) {
       try {
         validateManagerReauthFromHeaders(request, approvedById, managerPinHash)
+
+        // SECURITY: Verify the manager PIN hash against the database
+        // managerPinHash is the plaintext PIN, stored as a hash in the Employee.pin field
+        const manager = await db.employee.findUnique({
+          where: { id: approvedById },
+          select: { pin: true },
+        })
+
+        if (!manager || !manager.pin) {
+          return err('Manager not found or PIN not configured', 403)
+        }
+
+        const pinVerified = await compare(managerPinHash, manager.pin)
+        if (!pinVerified) {
+          return err('Invalid manager PIN', 403)
+        }
       } catch (caughtError) {
         if (caughtError instanceof CellularAuthError) {
           return err(caughtError.message, caughtError.status)

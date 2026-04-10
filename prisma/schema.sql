@@ -23,7 +23,7 @@ CREATE TYPE "CourseStatus" AS ENUM ('pending', 'fired', 'ready', 'served');
 CREATE TYPE "PaymentMethod" AS ENUM ('cash', 'card', 'credit', 'debit', 'ach', 'gift_card', 'house_account', 'loyalty', 'loyalty_points', 'room_charge');
 
 -- CreateEnum
-CREATE TYPE "PaymentStatus" AS ENUM ('pending', 'processing', 'completed', 'declined', 'failed', 'refunded', 'voided');
+CREATE TYPE "PaymentStatus" AS ENUM ('pending', 'processing', 'completed', 'declined', 'failed', 'refunded', 'voided', 'cancelled');
 
 -- CreateEnum
 CREATE TYPE "ShiftStatus" AS ENUM ('open', 'closed');
@@ -5452,6 +5452,26 @@ CREATE TABLE "IntegrationRetryEntry" (
     CONSTRAINT "IntegrationRetryEntry_pkey" PRIMARY KEY ("id")
 );
 
+-- CreateTable
+CREATE TABLE "PeripheralSnapshot" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "deviceType" TEXT NOT NULL,
+    "deviceId" TEXT NOT NULL,
+    "deviceName" TEXT NOT NULL,
+    "isOnline" BOOLEAN NOT NULL DEFAULT false,
+    "lastSeenAt" TIMESTAMP(3),
+    "lastError" TEXT,
+    "metadata" JSONB,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "deletedAt" TIMESTAMP(3),
+    "lastMutatedBy" TEXT,
+    "syncedAt" TIMESTAMP(3),
+
+    CONSTRAINT "PeripheralSnapshot_pkey" PRIMARY KEY ("id")
+);
+
 -- CreateIndex
 CREATE UNIQUE INDEX "Location_slug_key" ON "Location"("slug");
 
@@ -7942,6 +7962,15 @@ CREATE INDEX "IntegrationRetryEntry_locationId_status_nextRetryAt_idx" ON "Integ
 -- CreateIndex
 CREATE INDEX "IntegrationRetryEntry_integration_status_idx" ON "IntegrationRetryEntry"("integration", "status");
 
+-- CreateIndex
+CREATE INDEX "PeripheralSnapshot_locationId_idx" ON "PeripheralSnapshot"("locationId");
+
+-- CreateIndex
+CREATE INDEX "PeripheralSnapshot_locationId_updatedAt_idx" ON "PeripheralSnapshot"("locationId", "updatedAt");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "PeripheralSnapshot_locationId_deviceType_deviceId_key" ON "PeripheralSnapshot"("locationId", "deviceType", "deviceId");
+
 -- AddForeignKey
 ALTER TABLE "Location" ADD CONSTRAINT "Location_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "Organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
@@ -9480,4 +9509,7 @@ ALTER TABLE "ItemShare" ADD CONSTRAINT "ItemShare_locationId_fkey" FOREIGN KEY (
 
 -- AddForeignKey
 ALTER TABLE "IntegrationRetryEntry" ADD CONSTRAINT "IntegrationRetryEntry_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "PeripheralSnapshot" ADD CONSTRAINT "PeripheralSnapshot_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 

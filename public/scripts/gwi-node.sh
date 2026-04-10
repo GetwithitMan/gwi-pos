@@ -595,6 +595,12 @@ EOF
 # Non-fatal: returns 0 even on failure so deploy is not blocked.
 # ──────────────────────────────────────────────────────────────────────────────
 update_dashboard() {
+  # Skip on terminal role — dashboard is only for server/backup NUCs
+  if [[ "${STATION_ROLE:-}" == "terminal" ]]; then
+    log "Dashboard: skipping on terminal role"
+    return 0
+  fi
+
   local installed available deb_url deb_path
 
   # Read desired version from the running container's version-contract
@@ -637,7 +643,7 @@ update_dashboard() {
   # Install — dpkg may return non-zero on trigger warnings (icon cache),
   # so we always run --configure -a and verify the installed version afterward.
   dpkg -i "$deb_path" 2>&1 | while IFS= read -r line; do log "Dashboard: $line"; done
-  dpkg --configure -a 2>/dev/null || true
+  dpkg --configure -a 2>&1 | while IFS= read -r line; do log "Dashboard: configure: $line"; done || true
   apt-get install -f -y -qq 2>/dev/null || true
 
   # Verify the install actually worked by checking the installed version

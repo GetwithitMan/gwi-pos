@@ -1121,6 +1121,16 @@ export const POST = withVenue(withTiming(async function POST(
 
       // Training mode bypass — skip real payment processing, create simulated record
       if (isTrainingPayment) {
+        // Use same idempotency logic as real payments for split-tender consistency
+        let trainingIdempotencyKey = finalIdempotencyKey
+        if (payments.length > 1) {
+          const amountHash = crypto.createHash('md5')
+            .update(`${payment.method}:${payment.amount}:${payment.tipAmount || 0}`)
+            .digest('hex')
+            .substring(0, 8)
+          trainingIdempotencyKey = `${finalIdempotencyKey}-${payment.method}-${amountHash}`
+        }
+
         const trainingRecord = {
           locationId: order.locationId,
           orderId,
@@ -1133,9 +1143,7 @@ export const POST = withVenue(withTiming(async function POST(
           totalAmount: payment.amount,
           paymentMethod: 'cash' as PaymentMethod, // Store as cash — no card processor interaction
           status: 'completed' as PaymentStatus,
-          idempotencyKey: payments.length > 1
-            ? `${finalIdempotencyKey}-${paymentIdx}`
-            : finalIdempotencyKey,
+          idempotencyKey: trainingIdempotencyKey,
           authCode: 'TRAINING',
           transactionId: `TRAINING-${crypto.randomUUID().slice(0, 8)}`,
         }
@@ -1148,6 +1156,22 @@ export const POST = withVenue(withTiming(async function POST(
       const attribution = payment.method === 'cash'
         ? drawerAttribution
         : { drawerId: null, shiftId: null }
+
+      // IDEMPOTENCY FIX (Issue C): For split-tender payments, generate keys that include
+      // payment-type and amount hash, not just positional index. This prevents collisions
+      // when a retry changes payment order or count.
+      // Format: ${baseKey}-${paymentType}-${amountHash}
+      // This ensures: $100 card + $50 cash on first try → different keys than
+      // $100 cash + $50 card on retry, even if position in array changes.
+      let paymentIdempotencyKey = finalIdempotencyKey
+      if (payments.length > 1) {
+        // Create deterministic hash from payment type + amount (not position)
+        const amountHash = crypto.createHash('md5')
+          .update(`${payment.method}:${payment.amount}:${payment.tipAmount || 0}`)
+          .digest('hex')
+          .substring(0, 8)
+        paymentIdempotencyKey = `${finalIdempotencyKey}-${payment.method}-${amountHash}`
+      }
 
       let paymentRecord: PaymentRecord & Record<string, unknown> = {
         locationId: order.locationId,
@@ -1162,10 +1186,9 @@ export const POST = withVenue(withTiming(async function POST(
         paymentMethod: payment.method as PaymentMethod,
         status: 'completed' as PaymentStatus,
         // Per-payment idempotency key: split tenders have multiple payments per request,
-        // each must have a unique key. Append index for any multi-payment request.
-        idempotencyKey: payments.length > 1
-          ? `${finalIdempotencyKey}-${paymentIdx}`
-          : finalIdempotencyKey,
+        // each must have a unique key. Use payment-method + amount hash instead of
+        // positional index to avoid collisions on retries with different payment order.
+        idempotencyKey: paymentIdempotencyKey,
         // Pricing tier detection (Payment & Pricing Redesign)
         // appliedPricingTier is NOT NULL with default 'cash' — always set it
         // Non-card methods (cash, gift_card, house_account, room_charge, loyalty) = 'cash' tier

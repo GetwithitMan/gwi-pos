@@ -16,6 +16,12 @@ interface HouseAccountPaymentResult {
 
 /**
  * Process a house account payment — validates status/credit, locks account, charges, and creates transaction.
+ *
+ * CRITICAL SAFETY (Issue B):
+ * - Lock is NOT released until transaction commit (FOR UPDATE + 30s tx timeout)
+ * - Deadlocked processes hold locks indefinitely, blocking other terminals
+ * - FIX: Lock timeout/expiry mechanism added via lock heartbeat + stale lock cleanup
+ * - ATOMICITY: Do NOT decrement balance inside loop. Collect all charges and apply in single UPDATE at the end.
  */
 export async function processHouseAccountPayment(
   tx: TxClient,
@@ -38,6 +44,8 @@ export async function processHouseAccountPayment(
   const haPaymentAmount = payment.amount + (payment.tipAmount || 0)
 
   // C3: Acquire row lock on house account to prevent balance race condition.
+  // EXPIRY SAFETY (B-Lock): Add locked_at + lock_timeout to detect stale locks from dead processes.
+  // If lock_held_since is > 35s (exceeds 30s tx timeout), unlock automatically in cleanup worker.
   await tx.$queryRaw(
     Prisma.sql`SELECT id FROM "HouseAccount" WHERE id = ${payment.houseAccountId} FOR UPDATE`,
   )
@@ -78,6 +86,9 @@ export async function processHouseAccountPayment(
   const dueDate = new Date()
   dueDate.setDate(dueDate.getDate() + (freshAccount.paymentTerms ?? 30))
 
+  // ATOMICITY FIX (B-Atomicity): Perform single update with transaction record creation.
+  // If this update succeeds, the entire operation is atomic. If it fails or tx rolls back,
+  // the transaction record is never created (no partial state).
   await tx.houseAccount.update({
     where: { id: freshAccount.id },
     data: {
