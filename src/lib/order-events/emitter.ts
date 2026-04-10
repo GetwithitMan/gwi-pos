@@ -61,6 +61,17 @@ export async function emitOrderEvent(
     const deviceId = opts?.deviceId ?? 'nuc-web'
     const deviceCounter = opts?.deviceCounter ?? 0
 
+    // Ensure ITEM_ADDED events emit both `modifiersJson` (string, backward compat)
+    // and `modifiers` (parsed JSON array) for Android deserialization.
+    if (type === 'ITEM_ADDED' && payload.modifiersJson != null && payload.modifiers == null) {
+      try {
+        const raw = payload.modifiersJson
+        payload.modifiers = typeof raw === 'string' ? JSON.parse(raw) : raw
+      } catch {
+        // Malformed modifiersJson — leave modifiers absent
+      }
+    }
+
     // Assign serverSequence atomically via Postgres SEQUENCE
     const [seqRow] = await db.$queryRaw<
       { nextval: bigint | number }[]

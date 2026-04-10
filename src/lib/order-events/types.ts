@@ -30,6 +30,7 @@ export const ORDER_EVENT_TYPES = [
   'TAB_CAPTURE_DECLINED',
   'WALKOUT_MARKED',
   'REFUND_APPLIED',
+  'PARENT_SPLIT',
 ] as const
 
 export type OrderEventType = (typeof ORDER_EVENT_TYPES)[number]
@@ -54,7 +55,10 @@ export interface ItemAddedPayload {
   priceCents: number
   quantity: number
   isTaxInclusive?: boolean
+  /** Stringified JSON array of modifiers (backward compat for older Android clients) */
   modifiersJson?: string | null
+  /** Parsed modifier array — preferred by newer Android clients */
+  modifiers?: Array<Record<string, unknown>> | null
   specialNotes?: string | null
   seatNumber?: number | null
   courseNumber?: number | null
@@ -202,6 +206,12 @@ export interface RefundAppliedPayload {
   employeeId?: string | null
 }
 
+export interface ParentSplitPayload {
+  splitChildIds: string[]
+  splitCount: number
+  reason?: string | null
+}
+
 // ── Union type for dispatching ──────────────────────────────────────
 
 export type OrderEventPayload =
@@ -226,6 +236,7 @@ export type OrderEventPayload =
   | { type: 'TAB_CAPTURE_DECLINED'; payload: TabCaptureDeclinedPayload }
   | { type: 'WALKOUT_MARKED'; payload: WalkoutMarkedPayload }
   | { type: 'REFUND_APPLIED'; payload: RefundAppliedPayload }
+  | { type: 'PARENT_SPLIT'; payload: ParentSplitPayload }
 
 // ── State Models (match Android OrderState) ─────────────────────────
 

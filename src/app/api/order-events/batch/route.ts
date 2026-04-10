@@ -96,11 +96,15 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
   // Process each order through the shared ingestion pipeline
   // Collect projected states for CFD dispatch
   const projectedStates = new Map<string, OrderState>()
+  const allNewlyInsertedEventIds = new Set<string>()
   for (const [orderId, orderEvents] of validatedByOrder) {
     try {
       const result = await ingestAndProject(db as any, orderId, locationId, orderEvents)
       accepted.push(...result.accepted)
       projectedStates.set(orderId, result.state)
+      for (const eid of result.newlyInsertedEventIds) {
+        allNewlyInsertedEventIds.add(eid)
+      }
     } catch (err) {
       // If ingestion fails for an order, reject all its events
       for (const evt of orderEvents) {
@@ -114,9 +118,14 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
 
   // Best-effort kitchen printing (async)
   // Real-time KDS dispatch is handled reliably via transactional outbox inside ingestAndProject
+  // Idempotency guard: only print for orders where the ORDER_SENT event was NEWLY inserted
+  // (not a duplicate from a retry). This prevents double-printing on batch retries.
   const sentOrderIds = new Set<string>()
   for (const [orderId, orderEvents] of validatedByOrder) {
-    if (orderEvents.some(e => e.type === 'ORDER_SENT')) {
+    const hasFreshOrderSent = orderEvents.some(
+      e => e.type === 'ORDER_SENT' && e.eventId != null && allNewlyInsertedEventIds.has(e.eventId)
+    )
+    if (hasFreshOrderSent) {
       sentOrderIds.add(orderId)
     }
   }
