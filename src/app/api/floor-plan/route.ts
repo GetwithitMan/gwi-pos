@@ -197,12 +197,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         })
       : []
 
-    // Fetch open orders for these tables (status = open or in_progress)
+    // Fetch active orders for these tables (matches snapshot.ts definition)
     const openOrders = tableIds.length > 0
       ? await db.order.findMany({
       where: {
         tableId: { in: tableIds },
-        status: { in: ['open', 'in_progress'] },
+        status: { in: ['open', 'sent', 'in_progress', 'split'] },
         deletedAt: null,
       },
       select: {

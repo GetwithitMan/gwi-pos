@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { createServerTiming } from '@/lib/perf-timing'
 import { getFloorPlanSnapshot } from '@/lib/snapshot'
 import { err } from '@/lib/api-response'
@@ -11,7 +12,7 @@ import { err } from '@/lib/api-response'
  * Replaces 4 separate fetches on FloorPlanHome mount (3 parallel + 1 count).
  * All queries run in parallel within one serverless invocation.
  */
-export const GET = withVenue(async function GET(request: NextRequest) {
+export const GET = withVenue(withAuth({ allowCellular: true }, async function GET(request: NextRequest) {
   const locationId = request.nextUrl.searchParams.get('locationId')
 
   if (!locationId) {
@@ -33,4 +34,4 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     console.error('[floorplan/snapshot] GET error:', error)
     return err('Failed to load floor plan', 500)
   }
-})
+}))

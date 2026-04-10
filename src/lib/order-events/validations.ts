@@ -139,6 +139,7 @@ export const OrderMetadataUpdatedSchema = z.object({
   tableName: optionalString,
   employeeId: optionalString,
   customerId: optionalString,
+  tabStatus: optionalString,
 })
 
 export const CompVoidAppliedSchema = z.object({

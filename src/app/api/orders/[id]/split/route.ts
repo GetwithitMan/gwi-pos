@@ -183,6 +183,11 @@ export const POST = withVenue(async function POST(
 
       // === TRANSACTION: create all split children + update parent atomically ===
       const { splitOrders } = await db.$transaction(async (tx) => {
+        // Re-lock + recheck status inside split tx (closes race window from initial validation)
+        const [row] = await tx.$queryRaw<any[]>`SELECT status FROM "Order" WHERE id = ${id} FOR UPDATE`
+        if (!row || !SPLITTABLE_STATUSES.includes(row.status)) {
+          throw new Error(`Order status changed to '${row?.status ?? 'deleted'}' — cannot split`)
+        }
         return createEvenSplit(tx, splitOrder, numWays)
       }, { timeout: 15000 })
 
@@ -283,6 +288,11 @@ export const POST = withVenue(async function POST(
 
       // === TRANSACTION: create child order + soft-delete items from parent + recalc parent atomically ===
       const { newOrder, remainingSubtotal, remainingTax, remainingTotal, remainingItems, baseOrderNumber, nextSplitIndex } = await db.$transaction(async (tx) => {
+        // Re-lock + recheck status (closes race window from initial validation)
+        const [row] = await tx.$queryRaw<any[]>`SELECT status FROM "Order" WHERE id = ${id} FOR UPDATE`
+        if (!row || !SPLITTABLE_STATUSES.includes(row.status)) {
+          throw new Error(`Order status changed to '${row?.status ?? 'deleted'}' — cannot split`)
+        }
         return createItemSplit(tx, splitOrder, itemIds, taxRate, inclusiveTaxRate)
       }, { timeout: 15000 })
 
@@ -412,6 +422,11 @@ export const POST = withVenue(async function POST(
 
       // === TRANSACTION: create all seat children + soft-delete items + update parent atomically ===
       const { splitOrders, itemIdsToRemove, remainingItems, remainingTotal } = await db.$transaction(async (tx) => {
+        // Re-lock + recheck status (closes race window from initial validation)
+        const [row] = await tx.$queryRaw<any[]>`SELECT status FROM "Order" WHERE id = ${id} FOR UPDATE`
+        if (!row || !SPLITTABLE_STATUSES.includes(row.status)) {
+          throw new Error(`Order status changed to '${row?.status ?? 'deleted'}' — cannot split`)
+        }
         return createSeatSplit(tx, splitOrder, taxRate, inclusiveTaxRate)
       }, { timeout: 20000 })
 
@@ -537,6 +552,11 @@ export const POST = withVenue(async function POST(
 
       // === TRANSACTION: create all table children + soft-delete items + update parent atomically ===
       const { splitOrders, itemIdsToRemove, remainingItems, remainingTotal } = await db.$transaction(async (tx) => {
+        // Re-lock + recheck status (closes race window from initial validation)
+        const [row] = await tx.$queryRaw<any[]>`SELECT status FROM "Order" WHERE id = ${id} FOR UPDATE`
+        if (!row || !SPLITTABLE_STATUSES.includes(row.status)) {
+          throw new Error(`Order status changed to '${row?.status ?? 'deleted'}' — cannot split`)
+        }
         return createTableSplit(tx, splitOrder, taxRate, tablesWithItems, tableNameMap, inclusiveTaxRate)
       }, { timeout: 20000 })
 

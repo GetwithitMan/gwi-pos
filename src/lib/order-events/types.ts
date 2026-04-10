@@ -165,6 +165,7 @@ export interface OrderMetadataUpdatedPayload {
   tableName?: string | null
   employeeId?: string | null
   customerId?: string | null
+  tabStatus?: string | null
 }
 
 export interface CompVoidAppliedPayload {

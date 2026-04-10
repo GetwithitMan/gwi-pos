@@ -33,7 +33,69 @@ interface EmitOptions {
 }
 
 /**
+ * Insert an event row inside an existing Prisma transaction.
+ * Use for critical events that MUST be atomically committed with business writes
+ * (e.g. ORDER_SENT inside the send transaction).
+ *
+ * After commit, call broadcastOrderEvent() to push to connected clients.
+ */
+export async function insertOrderEventTx(
+  tx: any,
+  locationId: string,
+  orderId: string,
+  type: OrderEventType,
+  payload: Record<string, unknown>,
+  opts?: EmitOptions
+): Promise<{ eventId: string; serverSequence: number; deviceId: string; deviceCounter: number }> {
+  const eventId = opts?.clientEventId ?? crypto.randomUUID()
+  const deviceId = opts?.deviceId ?? 'nuc-web'
+  const deviceCounter = opts?.deviceCounter ?? 0
+
+  const [seqRow] = await tx.$queryRaw<{ nextval: bigint | number }[]>(
+    Prisma.sql`SELECT nextval('order_event_server_seq')`
+  )
+  const serverSequence = Number(seqRow.nextval)
+
+  await tx.orderEvent.create({
+    data: {
+      eventId, orderId, locationId, deviceId, deviceCounter, serverSequence,
+      type, payloadJson: payload as any,
+      schemaVersion: opts?.schemaVersion ?? 1,
+      correlationId: opts?.correlationId ?? null,
+      deviceCreatedAt: new Date(),
+    },
+  })
+
+  return { eventId, serverSequence, deviceId, deviceCounter }
+}
+
+/**
+ * Broadcast a previously-inserted event to connected clients via Socket.IO.
+ * Fire-and-forget safe — call after the transaction commits.
+ */
+export function broadcastOrderEvent(
+  locationId: string,
+  orderId: string,
+  result: { eventId: string; serverSequence: number; deviceId: string; deviceCounter: number },
+  type: OrderEventType,
+  payload: Record<string, unknown>,
+): void {
+  void emitToLocation(locationId, 'order:event', {
+    eventId: result.eventId,
+    orderId,
+    serverSequence: result.serverSequence,
+    type,
+    payload,
+    deviceId: result.deviceId,
+    deviceCounter: result.deviceCounter,
+  }).catch(err => log.warn({ err }, 'broadcast failed in order-events.emitter'))
+}
+
+/**
  * Emit a single domain event. Fire-and-forget safe.
+ *
+ * For critical events that must be atomically committed with business logic,
+ * use insertOrderEventTx() + broadcastOrderEvent() instead.
  *
  * Usage in an API route:
  * ```ts

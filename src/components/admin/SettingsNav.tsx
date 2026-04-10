@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { hasPermission, isAdmin, PERMISSIONS } from '@/lib/auth-utils'
 import { useAuthStore } from '@/stores/auth-store'
-import { useOrderStore } from '@/stores/order-store'
+// order-store removed (web POS register deleted April 2026)
 import { useDeliveryFeature } from '@/hooks/useDeliveryFeature'
 import { useCakeFeature, useCakeLicensed } from '@/hooks/useCakeFeature'
 
@@ -351,7 +351,7 @@ export function SettingsNav() {
   const pathname = usePathname()
   const employee = useAuthStore(s => s.employee)
   const logout = useAuthStore(s => s.logout)
-  const clearOrder = useOrderStore(s => s.clearOrder)
+  const clearOrder = () => {} // no-op: web POS register removed
   const permissions = employee?.permissions || []
   const userIsAdmin = isAdmin(permissions)
   const isDeliveryActive = useDeliveryFeature()

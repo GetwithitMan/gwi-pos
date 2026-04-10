@@ -158,9 +158,12 @@ function handleOrderSent(
     }
   }
 
+  // NOTE: ORDER_SENT updates item-level kitchen statuses only.
+  // Order-level status is NOT changed here — the DB uses 'open' throughout
+  // the order lifecycle (draft → open → paid/closed). Transitioning to 'sent'
+  // would diverge from the SQL source of truth and break open-order queries.
   return {
     ...state,
-    status: state.status === 'open' ? 'sent' : state.status,
     items: updatedItems,
   }
 }
@@ -365,6 +368,7 @@ function handleOrderMetadataUpdated(
     ...(payload.tableId != null ? { tableId: payload.tableId } : {}),
     ...(payload.tableName != null ? { tableName: payload.tableName } : {}),
     ...(payload.employeeId != null ? { employeeId: payload.employeeId } : {}),
+    ...(payload.tabStatus != null ? { tabStatus: payload.tabStatus } : {}),
   }
 }
 
