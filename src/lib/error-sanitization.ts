@@ -12,13 +12,17 @@
  *   }
  */
 
-import { PrismaClientKnownRequestError, PrismaClientValidationError } from '@prisma/client/runtime/library'
+/** Structural stand-in for Prisma's PrismaClientKnownRequestError (avoids hard import). */
+interface PrismaKnownError extends Error {
+  code: string
+  meta?: Record<string, unknown>
+}
 
 /**
  * Detect if an error is a Prisma error by checking for Prisma error properties.
  * Handles both CommonJS and ESM imports.
  */
-function isPrismaClientKnownRequestError(error: unknown): error is PrismaClientKnownRequestError {
+function isPrismaClientKnownRequestError(error: unknown): error is PrismaKnownError {
   return (
     error instanceof Error &&
     'code' in error &&
@@ -28,7 +32,7 @@ function isPrismaClientKnownRequestError(error: unknown): error is PrismaClientK
   )
 }
 
-function isPrismaClientValidationError(error: unknown): error is PrismaClientValidationError {
+function isPrismaClientValidationError(error: unknown): error is Error {
   return (
     error instanceof Error &&
     error.message.includes('Invalid `prisma.')

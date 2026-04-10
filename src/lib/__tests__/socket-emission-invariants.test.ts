@@ -27,28 +27,55 @@ function fileContainsAny(relPath: string, ...patterns: string[]): boolean {
   return patterns.some(p => content.includes(p))
 }
 
+/**
+ * Check that patterns exist across a route AND its extracted domain modules.
+ * The pay route was decomposed — socket emissions moved to domain layer files.
+ * This helper concatenates all sources so structural invariant checks still pass.
+ */
+function filesContain(relPaths: string[], ...patterns: string[]): boolean {
+  const combined = relPaths
+    .map(p => readFileSync(path.join(ROOT, p), 'utf-8'))
+    .join('\n')
+  return patterns.every(p => combined.includes(p))
+}
+
+function filesContainAny(relPaths: string[], ...patterns: string[]): boolean {
+  const combined = relPaths
+    .map(p => readFileSync(path.join(ROOT, p), 'utf-8'))
+    .join('\n')
+  return patterns.some(p => combined.includes(p))
+}
+
+// The pay route was decomposed into domain modules — check the route + all its extracted modules
+const PAY_ROUTE_FILES = [
+  'src/app/api/orders/[id]/pay/route.ts',
+  'src/lib/domain/payment/effects/run-payment-post-commit-effects.ts',
+  'src/lib/domain/payment/context/build-payment-financial-context.ts',
+  'src/lib/domain/payment/commit/commit-payment-transaction.ts',
+]
+
 // ---------------------------------------------------------------------------
 // 1. Payment mutations must emit payment events
 // ---------------------------------------------------------------------------
 
 describe('Payment mutations must emit payment events', () => {
-  it('pay route emits dispatchPaymentProcessed', () => {
-    expect(fileContains(
-      'src/app/api/orders/[id]/pay/route.ts',
+  it('pay route (+ extracted modules) emits dispatchPaymentProcessed', () => {
+    expect(filesContain(
+      PAY_ROUTE_FILES,
       'dispatchPaymentProcessed',
     )).toBe(true)
   })
 
-  it('pay route emits emitOrderEvent', () => {
-    expect(fileContains(
-      'src/app/api/orders/[id]/pay/route.ts',
+  it('pay route (+ extracted modules) emits emitOrderEvent', () => {
+    expect(filesContain(
+      PAY_ROUTE_FILES,
       'emitOrderEvent',
     )).toBe(true)
   })
 
-  it('pay route emits dispatchOrderClosed for fully paid orders', () => {
-    expect(fileContains(
-      'src/app/api/orders/[id]/pay/route.ts',
+  it('pay route (+ extracted modules) emits dispatchOrderClosed for fully paid orders', () => {
+    expect(filesContain(
+      PAY_ROUTE_FILES,
       'dispatchOrderClosed',
     )).toBe(true)
   })
@@ -291,7 +318,9 @@ describe('All critical order mutation routes import emitOrderEvent', () => {
 
   for (const route of ORDER_MUTATION_ROUTES) {
     it(`${route} imports emitOrderEvent or emitOrderEvents`, () => {
-      expect(fileContainsAny(route, 'emitOrderEvent', 'emitOrderEvents')).toBe(true)
+      // The pay route was decomposed — socket emissions live in extracted domain modules
+      const filesToCheck = route.includes('/pay/route.ts') ? PAY_ROUTE_FILES : [route]
+      expect(filesContainAny(filesToCheck, 'emitOrderEvent', 'emitOrderEvents')).toBe(true)
     })
   }
 })

@@ -96,7 +96,7 @@ export interface CommitPaymentSuccess {
   isSplitPayRemaining: boolean
   totalDriftWarning: { capturedTotal: number; currentTotal: number; drift: number } | null
   /** Card payment records that need auto-void on tx failure */
-  autoVoidRecords: Record<string, unknown>[]
+  autoVoidRecords: PaymentRecord[]
   autoVoidTerminalId: string | undefined
   autoVoidLocationId: string | undefined
   loyaltyTierMultiplier: number

@@ -12,6 +12,7 @@ import { PrismaClient } from '@/generated/prisma/client'
 import { getDatacapClient } from '@/lib/datacap/helpers'
 import { errorCapture } from '@/lib/error-capture'
 import { createChildLogger } from '@/lib/logger'
+import type { PaymentRecord } from '@/lib/domain/payment/types'
 
 const log = createChildLogger('payment-failure')
 
@@ -23,7 +24,7 @@ export interface HandlePaymentFailureParams {
   body: Record<string, unknown>
   db: PrismaClient
   pendingCaptureIdempotencyKey: string | undefined
-  autoVoidRecords: Record<string, unknown>[]
+  autoVoidRecords: PaymentRecord[]
   autoVoidTerminalId: string | undefined
   autoVoidLocationId: string | undefined
 }

@@ -33,7 +33,7 @@ import {
   type DrawerAttribution,
 } from '@/lib/domain/payment'
 import { dispatchPaymentProcessed } from '@/lib/socket-dispatch'
-import type { LocationSettings } from '@/lib/settings/defaults'
+import type { LocationSettings } from '@/lib/settings/types'
 
 const log = createChildLogger('payment-financial-context')
 
@@ -123,7 +123,7 @@ export async function buildPaymentFinancialContext(
         overtimePerMinuteRate: true, overtimeFlatFee: true, overtimeGraceMinutes: true,
       },
     })
-    const perMinuteMenuItemMap = new Map(perMinuteMenuItems.map((mi: any) => [mi.id, mi]))
+    const perMinuteMenuItemMap = new Map<string, any>(perMinuteMenuItems.map((mi: any) => [mi.id, mi]))
 
     // Calculate settlements and batch the updates
     const settlementUpdates: Promise<unknown>[] = []

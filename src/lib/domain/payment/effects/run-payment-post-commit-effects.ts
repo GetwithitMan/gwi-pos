@@ -796,7 +796,7 @@ function kickCashDrawerAndAudit(
   // Pass terminalId so the drawer kicks on THIS terminal's printer, not the location default
   void triggerCashDrawer(order.locationId, terminalId || undefined).catch(err => log.warn({ err }, 'cash drawer trigger failed'))
   void (async () => {
-    const localDrawer = await resolveDrawerForPayment('cash', employeeId || null, terminalId)
+    const localDrawer = await resolveDrawerForPayment('cash', employeeId || null, terminalId ?? undefined)
     if (localDrawer.drawerId && employeeId) {
       try {
         const ownerShift = await db.shift.findFirst({

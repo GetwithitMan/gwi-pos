@@ -54,9 +54,9 @@ export interface PaymentInput {
   // SAF (Store-and-Forward) — transaction stored offline on reader
   storedOffline?: boolean
   // Pricing tier detection (Payment & Pricing Redesign)
-  detectedCardType?: string   // 'credit' | 'debit' — from Datacap CardLookup
+  detectedCardType?: string | null   // 'credit' | 'debit' — from Datacap CardLookup
   appliedPricingTier?: string // 'cash' | 'debit' | 'credit' — which tier was applied
-  walletType?: string         // 'apple_pay' | 'google_pay' | 'samsung_pay'
+  walletType?: string | null         // 'apple_pay' | 'google_pay' | 'samsung_pay'
 }
 
 // ─── Payment Record ─────────────────────────────────────────────────────────

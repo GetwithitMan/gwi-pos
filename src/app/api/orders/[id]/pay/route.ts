@@ -43,7 +43,7 @@ export const POST = withVenue(withTiming(async function POST(
   const { id: orderId } = await params
   const timing = getTimingFromRequest(request)
   let body: Record<string, unknown> = {}
-  let autoVoidRecords: Record<string, unknown>[] = []
+  let autoVoidRecords: PaymentRecord[] = []
   let autoVoidTerminalId: string | undefined
   let autoVoidLocationId: string | undefined
   let pendingCaptureIdempotencyKey: string | undefined
@@ -415,7 +415,9 @@ export const POST = withVenue(withTiming(async function POST(
       ) }
     }
 
-    const { payments, employeeId, terminalId, idempotencyKey: bodyKey, capturedOrderTotal, skipDriftCheck } = validation.data
+    const { payments: rawPayments, employeeId, terminalId, idempotencyKey: bodyKey, capturedOrderTotal, skipDriftCheck } = validation.data
+    // Widen Zod-inferred literal union to PaymentInput for domain layer compatibility
+    const payments: PaymentInput[] = rawPayments as PaymentInput[]
     // Idempotency-Key header takes precedence over body field.
     // Android sends as "Idempotency-Key", normalize both header variants.
     const headerKey = request.headers.get('idempotency-key') || request.headers.get('x-idempotency-key')
@@ -792,8 +794,8 @@ export const POST = withVenue(withTiming(async function POST(
       paymentBaseTotal,
       orderTotal,
       businessDayStart,
-      employeeId,
-      terminalId,
+      employeeId: employeeId ?? null,
+      terminalId: terminalId ?? null,
       orderId,
       pendingCaptureInserted,
       finalIdempotencyKey,
