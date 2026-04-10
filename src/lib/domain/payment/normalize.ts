@@ -44,12 +44,19 @@ export function normalizePaymentInput(body: Record<string, unknown>): Record<str
       amount: body.amount,
       ...(body.tipAmount !== undefined ? { tipAmount: body.tipAmount } : {}),
       ...(body.amountTendered !== undefined ? { amountTendered: body.amountTendered } : {}),
-      ...(body.cardBrand !== undefined ? { cardBrand: body.cardBrand } : {}),
       ...(body.cardLast4 !== undefined ? { cardLast4: body.cardLast4 } : {}),
       // Map Android PaymentReconciliationWorker fields
       ...(body.authCode !== undefined ? { authCode: body.authCode } : {}),
       ...(body.recordNo !== undefined ? { datacapRecordNo: body.recordNo } : {}),
       ...(body.datacapRecordNo !== undefined ? { datacapRecordNo: body.datacapRecordNo } : {}),
+      // Card type / entry method fields (Android sends cardType from Datacap, map to cardBrand)
+      ...(body.cardType !== undefined && !body.cardBrand ? { cardBrand: body.cardType } : {}),
+      ...(body.cardBrand !== undefined ? { cardBrand: body.cardBrand } : {}),
+      ...(body.entryMethod !== undefined ? { entryMethod: body.entryMethod } : {}),
+      ...(body.storedOffline !== undefined ? { storedOffline: body.storedOffline } : {}),
+      // Pricing tier fields (Payment & Pricing Redesign)
+      ...(body.appliedPricingTier !== undefined ? { appliedPricingTier: body.appliedPricingTier } : {}),
+      ...(body.detectedCardType !== undefined ? { detectedCardType: body.detectedCardType } : {}),
       // House account / gift card fields
       ...(body.houseAccountId !== undefined ? { houseAccountId: body.houseAccountId } : {}),
       ...(body.giftCardId !== undefined ? { giftCardId: body.giftCardId } : {}),

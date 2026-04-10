@@ -1,21 +1,19 @@
 # Android Integration Guide
 
-> Reference for AI agents working on GWI POS. Covers Android-as-primary-client architecture, API contracts, event-sourced order flow, and UI rules.
+> Reference for AI agents working on GWI POS. Covers Android-as-only-register-client architecture, API contracts, event-sourced order flow, and UI rules.
 
 ---
 
 ## Android is the ONLY Register Client
 
-The native Android app (and PAX devices) are the only register clients. The web POS register UI was removed in April 2026.
+Android registers and PAX devices are the only POS register clients. The web POS register UI (`src/app/(pos)/`) was removed in April 2026. The web UI now serves admin/settings, KDS, and CFD only.
 
 | Rule | Detail |
 |------|--------|
-| Mobile-first design | All new UI work targets Android first |
+| Android-only register | All ordering, tab management, and payment happens on Android/PAX devices |
 | Touch targets | Min **48×48dp** — no hover-dependent interactions |
 | Performance target | Sub-50ms for all POS actions (tap → visual response) |
 | Network baseline | WiFi to NUC — if it works here, it works everywhere |
-
-When building features, verify Android behavior over WiFi to the NUC. There is no web POS register to maintain parity with.
 
 ---
 
@@ -93,7 +91,7 @@ cashTotal = order.total          // stored price IS the cash price
 cardTotal = order.total + surcharge
 ```
 
-Android (and PAX) must send `amount: remainingBeforeTip` for cash — that equals `order.total` (the cash price). The web POS PaymentModal was removed in April 2026; Android and PAX are the only payment clients.
+The payment API expects `amount: remainingBeforeTip` for cash — that equals `order.total` (the cash price). Android must send this exactly.
 
 **Wrong pattern (do not do this):**
 ```kotlin

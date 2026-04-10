@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from 'react'
 import { getSharedSocket, releaseSharedSocket, getTerminalId } from '@/lib/shared-socket'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
 
 /**
  * Emits order:editing when this terminal opens an order,
@@ -20,7 +21,7 @@ export function useOrderEditing(orderId: string | null, locationId: string | nul
     const terminalName = terminalId // Use terminal ID as name; could be enriched later
 
     const emitEditing = () => {
-      socket.emit('order:editing', { orderId, terminalId, terminalName, locationId })
+      socket.emit(SOCKET_EVENTS.ORDER_EDITING, { orderId, terminalId, terminalName, locationId })
     }
 
     emitEditing()
@@ -31,7 +32,7 @@ export function useOrderEditing(orderId: string | null, locationId: string | nul
 
     return () => {
       socket.off('connect', emitEditing)
-      socket.emit('order:editing-released', { orderId, terminalId, locationId })
+      socket.emit(SOCKET_EVENTS.ORDER_EDITING_RELEASED, { orderId, terminalId, locationId })
       emittedRef.current = null
       releaseSharedSocket()
     }

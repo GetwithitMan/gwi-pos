@@ -29,6 +29,7 @@ export const ORDER_EVENT_TYPES = [
   'ITEM_MODIFIER_REMOVED',
   'TAB_CAPTURE_DECLINED',
   'WALKOUT_MARKED',
+  'REFUND_APPLIED',
 ] as const
 
 export type OrderEventType = (typeof ORDER_EVENT_TYPES)[number]
@@ -129,11 +130,13 @@ export interface DiscountAppliedPayload {
   amountCents: number
   reason?: string | null
   lineItemId?: string | null
+  taxTotalCents?: number | null
 }
 
 export interface DiscountRemovedPayload {
   discountId: string
   lineItemId?: string | null
+  taxTotalCents?: number | null
 }
 
 export interface TabOpenedPayload {
@@ -192,6 +195,13 @@ export interface WalkoutMarkedPayload {
   employeeId?: string | null
 }
 
+export interface RefundAppliedPayload {
+  paymentId: string
+  refundAmountCents: number
+  reason?: string | null
+  employeeId?: string | null
+}
+
 // ── Union type for dispatching ──────────────────────────────────────
 
 export type OrderEventPayload =
@@ -215,6 +225,7 @@ export type OrderEventPayload =
   | { type: 'ITEM_MODIFIER_REMOVED'; payload: ItemModifierRemovedPayload }
   | { type: 'TAB_CAPTURE_DECLINED'; payload: TabCaptureDeclinedPayload }
   | { type: 'WALKOUT_MARKED'; payload: WalkoutMarkedPayload }
+  | { type: 'REFUND_APPLIED'; payload: RefundAppliedPayload }
 
 // ── State Models (match Android OrderState) ─────────────────────────
 

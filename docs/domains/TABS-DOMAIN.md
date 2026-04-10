@@ -25,7 +25,7 @@ PM Mode: Tabs
 
 | Layer | Scope | Key Files |
 |-------|-------|-----------|
-| Tab CRUD | Tab creation, listing, close | `src/app/api/tabs/` (web POS tabs page removed April 2026) |
+| Tab CRUD | Tab creation, listing, close | `src/app/api/tabs/` (web POS page removed April 2026) |
 | Pre-Auth | Card pre-authorization flow | `src/app/api/datacap/preauth/`, `src/app/api/datacap/collect-card/` |
 | Bottle Service | Tier management, deposits, progress | `src/components/tabs/BottleServiceBanner.tsx` |
 | Multi-Card | Multiple cards per tab | `src/components/tabs/MultiCardBadges.tsx` |
@@ -37,6 +37,7 @@ PM Mode: Tabs
 
 | File | Purpose |
 |------|---------|
+| ~~`src/app/(pos)/tabs/page.tsx`~~ | **Removed** (April 2026). Tab management now via Android/PAX. |
 | `src/app/api/tabs/[id]/route.ts` | Tab details/close/update; accepts `tabNickname` |
 | `src/components/tabs/TabCard.tsx` | Individual tab card display |
 | `src/components/tabs/BottleServiceBanner.tsx` | Bottle service progress tracking |

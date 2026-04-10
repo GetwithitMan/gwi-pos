@@ -114,13 +114,13 @@ PM Mode: Entertainment
 |-----------|------|---------|
 | EntertainmentVisual | `/src/components/floor-plan/entertainment-visuals.tsx` | 12 SVG visual types |
 | AddEntertainmentPalette | `/src/components/floor-plan/AddEntertainmentPalette.tsx` | Place items on floor plan |
-| FloorPlanEntertainment | `/src/components/floor-plan/FloorPlanEntertainment.tsx` | **REMOVED (April 2026)** — was part of FOH floor plan view |
+| ~~FloorPlanEntertainment~~ | ~~`/src/components/floor-plan/FloorPlanEntertainment.tsx`~~ | **Removed** (April 2026). FOH floor plan view now Android-only. |
 | EntertainmentProperties | `/src/domains/floor-plan/admin/EntertainmentProperties.tsx` | Editor properties panel |
 
 ### Order Components
 | Component | File | Purpose |
 |-----------|------|---------|
-| EntertainmentSessionControls | `/src/components/orders/EntertainmentSessionControls.tsx` | **REMOVED (April 2026)** — was part of web POS order panel |
+| ~~EntertainmentSessionControls~~ | ~~`/src/components/orders/EntertainmentSessionControls.tsx`~~ | **Removed** (April 2026). Entertainment session controls now on Android register only. |
 
 ---
 
@@ -361,10 +361,10 @@ Grace period prevents charging for small overruns.
 - `/src/components/entertainment/WaitlistPanel.tsx`
 - `/src/components/entertainment/AddToWaitlistModal.tsx`
 - `/src/components/entertainment/SeatFromWaitlistModal.tsx`
-- `/src/components/orders/EntertainmentSessionControls.tsx`
+- ~~`/src/components/orders/EntertainmentSessionControls.tsx`~~ (removed April 2026)
 - `/src/components/floor-plan/entertainment-visuals.tsx`
 - `/src/components/floor-plan/AddEntertainmentPalette.tsx`
-- `/src/components/floor-plan/FloorPlanEntertainment.tsx`
+- ~~`/src/components/floor-plan/FloorPlanEntertainment.tsx`~~ (removed April 2026)
 - `/src/domains/floor-plan/admin/EntertainmentProperties.tsx`
 
 ### Library

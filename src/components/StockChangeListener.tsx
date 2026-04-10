@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react'
 import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
 import { toast } from '@/stores/toast-store'
 import { useStockStatusStore } from '@/stores/stock-status-store'
 import type { StockLevel } from '@/stores/stock-status-store'
@@ -49,12 +50,12 @@ export function StockChangeListener() {
       }
     }
 
-    socket.on('inventory:stock-change', onInventoryStockChange)
-    socket.on('menu:stock-changed', onMenuStockChanged)
+    socket.on(SOCKET_EVENTS.INVENTORY_STOCK_CHANGE, onInventoryStockChange)
+    socket.on(SOCKET_EVENTS.MENU_STOCK_CHANGED, onMenuStockChanged)
 
     return () => {
-      socket.off('inventory:stock-change', onInventoryStockChange)
-      socket.off('menu:stock-changed', onMenuStockChanged)
+      socket.off(SOCKET_EVENTS.INVENTORY_STOCK_CHANGE, onInventoryStockChange)
+      socket.off(SOCKET_EVENTS.MENU_STOCK_CHANGED, onMenuStockChanged)
       releaseSharedSocket()
     }
   }, [])

@@ -120,7 +120,11 @@ supporting code and utilities last. Check off each file as you review it.
 
 ---
 
-## TIER 3 — CORE POS PAGES (What staff use every shift)
+## TIER 3 — CORE PAGES (Auth, KDS, CFD, Hooks)
+
+> **Note:** The web POS register UI (`src/app/(pos)/`) has been removed (April 2026).
+> Android registers and PAX devices are the only register clients. The web UI serves
+> admin/settings, KDS, and CFD only. API routes that serve Android/PAX remain in Tiers 1-2.
 
 ### Authentication Pages
 - [ ] `src/app/(auth)/login/page.tsx` — PIN-based employee login
@@ -136,6 +140,9 @@ supporting code and utilities last. Check off each file as you review it.
 
 ### Customer Facing Display
 - [ ] `src/app/(cfd)/cfd/page.tsx` — Customer Facing Display
+
+### Stores
+- [ ] `src/stores/auth-store.ts` — Auth state (login, user, roles)
 
 ### Core Hooks
 - [ ] `src/hooks/useOrderingEngine.ts` — Main ordering logic
@@ -385,11 +392,11 @@ supporting code and utilities last. Check off each file as you review it.
 |------|-------|----------|---|
 | 1 — Critical (Security + Payments) | 37 | 0 | 0% |
 | 2 — Core Business Logic | 52 | 0 | 0% |
-| 3 — Core POS Pages | 42 | 0 | 0% |
+| 3 — Core Pages (Auth, KDS, CFD, Hooks) | 18 | 0 | 0% |
 | 4 — Menu, Printing, Hardware | 38 | 0 | 0% |
 | 5 — Admin Pages | 38 | 0 | 0% |
 | 6 — Reports | 26 | 0 | 0% |
 | 7 — Mobile & Public | 10 | 0 | 0% |
 | 8 — System & Infrastructure | 19 | 0 | 0% |
-| 9 — Supporting Code | 22 | 0 | 0% |
-| **Total** | **284** | **0** | **0%** |
+| 9 — Supporting Code | 21 | 0 | 0% |
+| **Total** | **259** | **0** | **0%** |

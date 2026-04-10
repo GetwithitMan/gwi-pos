@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
 
 interface PaidInOutRecord {
   id: string
@@ -95,9 +96,9 @@ export default function DrawersPage() {
     const handler = () => {
       fetchRecords()
     }
-    socket.on('drawer:paid_in_out', handler)
+    socket.on(SOCKET_EVENTS.DRAWER_PAID_IN_OUT, handler)
     return () => {
-      socket.off('drawer:paid_in_out', handler)
+      socket.off(SOCKET_EVENTS.DRAWER_PAID_IN_OUT, handler)
       releaseSharedSocket()
     }
   }, [fetchRecords])

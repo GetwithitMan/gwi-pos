@@ -6,11 +6,11 @@
 
 ## 1. Purpose
 
-**Trigger:** An employee approaches an Android register or PAX device and enters their 4-digit PIN to begin a shift.
+**Trigger:** An employee approaches a POS terminal (Android register or PAX device) and enters their 4-digit PIN to begin a shift.
 
 **Why it matters:** Reporting integrity and security — login establishes the `locationId` scope for all subsequent queries, loads the employee's permission set that gates every sensitive action, and registers the terminal in `connectedTerminals` for connectivity tracking. A login defect can either lock out staff or grant unauthorized access.
 
-**Scope:** `gwi-pos` NUC API (authority), `gwi-android-register` and PAX (initiators), `gwi-pos` Socket.io (terminal registration). The web POS register was removed in April 2026.
+**Scope:** `gwi-pos` NUC API (authority), `gwi-android-register` and `gwi-pax-a6650` (initiators), `gwi-pos` Socket.io (terminal registration).
 
 ---
 
@@ -21,7 +21,7 @@
 | Feature flags / settings | None required; `requiresPinChange` flag forces PIN update on first login |
 | Hardware required | NUC reachable on local WiFi; Android additionally requires paired `Terminal` record with `deviceToken` |
 | Permissions required | None to log in; permissions are LOADED as a result of login |
-| Online / offline state | NUC must be reachable for PIN validation. If `isUnavailablePhase = true` (10s no heartbeat), Android blocks login via `PinLoginViewModel`. Web POS shows full-screen UNAVAILABLE lock. |
+| Online / offline state | NUC must be reachable for PIN validation. If `isUnavailablePhase = true` (10s no heartbeat), Android blocks login via `PinLoginViewModel`. |
 | Prior state | Employee record must exist with `isActive = true`, `deletedAt = null`, and `pin` (hashed). Employee must belong to the same `locationId` as the terminal. |
 
 ---
@@ -29,7 +29,7 @@
 ## 3. Sequence (Happy Path)
 
 ```
-1. [CLIENT]     Employee taps PIN digits on Android PinLoginScreen.kt (or PAX device)
+1. [CLIENT]     Employee taps PIN digits on Android PinLoginScreen.kt (or PAX equivalent)
                 → 4-digit PIN assembled locally (never persisted, never logged)
 
 2. [CLIENT]     Android only: Check connectivity state
@@ -66,11 +66,11 @@
                     posLayoutSettings, defaultScreen, defaultOrderType }
                 → PIN field is NEVER returned in any response
 
-7. [CLIENT]     Web POS: session established, permissions stored in Zustand store
+7. [CLIENT]     Android/PAX: permissions stored locally
                 → UI shows/hides actions based on permission keys
                 → Employee routed to defaultScreen (orders | bar | kds)
 
-8. [CLIENT]     Android only: BootstrapWorker runs after successful PIN auth
+8. [CLIENT]     Android: BootstrapWorker runs after successful PIN auth
                 → GET /api/sync/bootstrap (Bearer deviceToken)
                 → Downloads: full OrderSnapshot set, open orders, menu, employees,
                   settings, floor plan, tables, CfdSettings
@@ -133,7 +133,7 @@
 | **Employee at wrong location** | `withVenue()` scopes the query to `locationId` — employee at another location simply not found. Returns 401. |
 | **Employee inactive or soft-deleted** | `isActive: false` or `deletedAt != null` → not returned by query → 401. |
 | **NUC unreachable (Android)** | `isUnavailablePhase = true` after 10s gap. `PinLoginViewModel` disables submit button and shows `UnavailableOverlay`. Login cannot proceed until heartbeat resumes. |
-| **NUC unreachable (web)** | Web POS shows full-screen UNAVAILABLE lock via socket disconnect handler. Taps blocked. |
+| **NUC unreachable (PAX)** | PAX device shows unavailable state. Login blocked until NUC heartbeat resumes. |
 | **requiresPinChange = true** | API returns 200 with `{ requiresPinChange: true }`. Client redirects to PIN change screen. All other API calls remain blocked until PIN is changed. |
 | **Multi-role employee** | If employee has multiple `EmployeeRole` records, login response includes all roles. Client shows role picker modal. Working role stored in session. Permissions come from selected working role ONLY (not union of all roles). |
 | **Bootstrap fails on Android** | `BootstrapWorker` retries with exponential backoff. Employee can work from cached Room DB data if `lastSyncedAt` is recent. Full offline mode available for orders already in Room DB. |

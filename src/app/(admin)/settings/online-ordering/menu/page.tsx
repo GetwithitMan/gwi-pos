@@ -6,6 +6,7 @@ import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { toast } from '@/stores/toast-store'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -107,9 +108,9 @@ export default function OnlineMenuPage() {
     const onMenuChanged = () => {
       loadMenu()
     }
-    socket.on('menu:updated', onMenuChanged)
+    socket.on(SOCKET_EVENTS.MENU_UPDATED, onMenuChanged)
     return () => {
-      socket.off('menu:updated', onMenuChanged)
+      socket.off(SOCKET_EVENTS.MENU_UPDATED, onMenuChanged)
       releaseSharedSocket()
     }
   }, [loadMenu])

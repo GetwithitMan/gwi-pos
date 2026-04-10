@@ -5,7 +5,7 @@
 
 ## Overview
 
-The Floor Plan system provides a visual editor for designing restaurant/bar layouts and a Front-of-House (FOH) view for servers to manage tables, seats, and orders.
+The Floor Plan system provides a visual editor for designing restaurant/bar layouts. The FOH view for servers was removed in April 2026 — ordering is now Android/PAX only.
 
 ## Architecture
 
@@ -22,11 +22,11 @@ The Floor Plan system provides a visual editor for designing restaurant/bar layo
 │                                        │                        │
 │                                        │ 5-second polling       │
 │                                        ▼                        │
-│  ┌──────────────────┐         ┌──────────────────┐              │
-│  │  FOH View        │ ◄────── │   API Routes     │              │
-│  │  /test-floorplan │   GET   │  /api/floor-plan │              │
-│  │                  │         │  -elements       │              │
-│  └──────────────────┘         └──────────────────┘              │
+│                               ┌──────────────────┐              │
+│                               │   API Routes     │              │
+│                               │  /api/floor-plan │              │
+│                               │  -elements       │              │
+│                               └──────────────────┘              │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -133,18 +133,9 @@ model Section {
 - `src/domains/floor-plan/admin/FixtureProperties.tsx` - Properties panel
 - `src/domains/floor-plan/admin/types.ts` - Editor types and fixture metadata
 
-### FOH View
-- `src/components/floor-plan/FloorPlanHome.tsx` - Main FOH component
-- `src/domains/floor-plan/tables/Table.tsx` - Table rendering
-- `src/domains/floor-plan/tables/Seat.tsx` - Seat rendering
-
 ### Shared
 - `src/domains/floor-plan/shared/types.ts` - Shared types (Fixture, Point, etc.)
 - `src/domains/floor-plan/canvas/FloorCanvasAPI.ts` - In-memory canvas API
-
-### Test Pages
-- `src/app/test-floorplan/page.tsx` - FOH test page
-- `src/app/test-floorplan/editor/page.tsx` - Editor test page
 
 ## Configuration
 
@@ -169,35 +160,12 @@ The editor supports two modes:
 />
 ```
 
-### Real-Time Sync
-
-FOH view polls every 5 seconds for fixture updates:
-```typescript
-// In FloorPlanHome.tsx
-useEffect(() => {
-  const interval = setInterval(() => {
-    fetchFixtures();
-  }, 5000);
-  return () => clearInterval(interval);
-}, []);
-```
-
 ## Future Enhancements
 
-### Phase 2: WebSocket Real-Time (Planned)
-- Replace polling with Socket.io for instant updates
-- `dispatchFloorPlanUpdate()` already implemented in API routes
-- Need to add socket listener in FOH view
-
-### Phase 3: Entertainment Integration (Planned)
+### Entertainment Integration (Planned)
 - Link FloorPlanElement to MenuItem for entertainment items
 - Visual indicators for pool tables, dart boards, etc.
 - Session timers and status display on floor plan
-
-### Phase 4: Table Management (Planned)
-- Drag tables on FOH view to reposition
-- Combine/split tables visually
-- Reservation visual indicators
 
 ## Troubleshooting
 
@@ -206,12 +174,6 @@ useEffect(() => {
 2. Verify `locationId` is being passed to API
 3. Run `npx prisma generate` if schema changed
 4. Restart dev server after Prisma changes
-
-### Fixtures not syncing to FOH
-1. Check "Sync Status" panel shows "Database Connected"
-2. Verify both pages use same `locationId`
-3. Check network tab for polling requests
-4. Ensure Section IDs match between pages
 
 ### Canvas not rendering
 1. Check Section has `widthFeet` and `heightFeet` set
@@ -222,10 +184,8 @@ useEffect(() => {
 
 - [x] Create fixture in Editor
 - [x] Fixture persists after page refresh
-- [x] Fixture appears in FOH view
 - [x] Multiple rooms/sections work independently
 - [x] Wall fixtures with geometry save correctly
 - [x] Rectangle and circle fixtures save correctly
 - [x] Fixture position updates persist
 - [x] Delete fixture removes from database
-- [x] Real-time polling updates FOH within 5 seconds

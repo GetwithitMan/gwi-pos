@@ -8,6 +8,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { toast } from '@/stores/toast-store'
 import { getSharedSocket, releaseSharedSocket, getTerminalId } from '@/lib/shared-socket'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
 import { useOrderSettings } from '@/hooks/useOrderSettings'
 import { SpiritCategory, BottleProduct } from './types'
 import { CategoryModal } from './CategoryModal'
@@ -124,7 +125,7 @@ function LiquorBuilderContent() {
     socketRef.current = socket
 
     const onConnect = () => {
-      socket.emit('join_station', {
+      socket.emit(SOCKET_EVENTS._CLIENT_JOIN_STATION, {
         locationId: employee?.location?.id || '',
         tags: [],
         terminalId: getTerminalId(),
@@ -136,7 +137,7 @@ function LiquorBuilderContent() {
     }
 
     socket.on('connect', onConnect)
-    socket.on('menu:updated', onMenuUpdated)
+    socket.on(SOCKET_EVENTS.MENU_UPDATED, onMenuUpdated)
 
     if (socket.connected) {
       onConnect()
@@ -144,7 +145,7 @@ function LiquorBuilderContent() {
 
     return () => {
       socket.off('connect', onConnect)
-      socket.off('menu:updated', onMenuUpdated)
+      socket.off(SOCKET_EVENTS.MENU_UPDATED, onMenuUpdated)
       socketRef.current = null
       releaseSharedSocket()
     }

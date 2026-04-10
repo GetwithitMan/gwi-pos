@@ -84,7 +84,7 @@ SecuritySettings {
 
 - When `idleLockMinutes > 0`, the POS terminal locks the screen after the configured number of minutes of inactivity.
 - On lock, the terminal requires PIN re-entry before any further action.
-- Applies to Android registers and PAX devices (`PinLoginViewModel` reads `idleLockMinutes` from bootstrapped settings). Web POS register was removed April 2026.
+- Applies to Android registers and PAX devices (`PinLoginViewModel` reads `idleLockMinutes` from bootstrapped settings).
 - The lock must not interrupt an active transaction in progress (payment flow, open order panel, etc.).
 - Valid values: `0` (disabled), `1`, `3`, `5`, `10`, `15`, `30` minutes. These are enforced in the UI via the `IDLE_LOCK_OPTIONS` constant; the API stores whatever integer is sent.
 

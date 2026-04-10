@@ -85,3 +85,4 @@ Manual PDF.pdf
 # Personal Notes
 *.rtf
 .env.vercel-prod*
+.aider*

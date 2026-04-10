@@ -190,6 +190,34 @@ export async function calculateShiftSummary(
     totalDiscounts = orders.reduce((sum, order) => sum + Number(order.discountTotal || 0), 0)
   }
 
+  // ─── Net tip calculation: gross tips minus shared out, plus shared in ──────
+  // Query TipLedgerEntry for this employee's DEBIT (shared out) and CREDIT (shared in) entries.
+  // DIRECT_TIP credits are already counted in totalTips via payment.tipAmount,
+  // so sharedIn only counts tip-share types (ROLE_TIPOUT, TIP_GROUP, MANUAL_TRANSFER).
+  const tipLedgerEntries = await db.tipLedgerEntry.findMany({
+    where: {
+      locationId,
+      employeeId,
+      createdAt: { gte: startTime, lte: endTime },
+      deletedAt: null,
+    },
+    select: { type: true, amountCents: true, sourceType: true },
+  })
+
+  let sharedOut = 0
+  let sharedIn = 0
+  const tipShareSourceTypes = ['ROLE_TIPOUT', 'TIP_GROUP', 'MANUAL_TRANSFER']
+  tipLedgerEntries.forEach(entry => {
+    const amount = Number(entry.amountCents)
+    if (entry.type === 'DEBIT') {
+      sharedOut += amount
+    } else if (entry.type === 'CREDIT' && tipShareSourceTypes.includes(entry.sourceType)) {
+      sharedIn += amount
+    }
+  })
+
+  const netTips = totalTips - sharedOut + sharedIn
+
   const netSales = totalSales - totalDiscounts
 
   // Count orders and payments
@@ -232,6 +260,18 @@ export async function calculateShiftSummary(
   const safPendingCount = safPendingPayments.length
   const safPendingTotal = safPendingPayments.reduce((sum, p) => sum + Number(p.amount) + Number(p.tipAmount), 0)
 
+  // Count banked tip shares for this employee so bartenders/barbacks see money waiting.
+  // TipShare.status='banked' means the tip-out was created while the recipient was off-shift
+  // and is waiting to be collected/paid out.
+  const bankedTipsCount = await db.tipShare.count({
+    where: {
+      locationId,
+      toEmployeeId: employeeId,
+      status: 'banked',
+      deletedAt: null,
+    },
+  })
+
   const safFailedPayments = await db.payment.findMany({
     where: {
       employeeId,
@@ -252,6 +292,9 @@ export async function calculateShiftSummary(
     cashSales: Math.round(cashSales * 100) / 100,
     cardSales: Math.round(cardSales * 100) / 100,
     totalTips: Math.round(totalTips * 100) / 100,
+    netTips: Math.round(netTips * 100) / 100,
+    sharedOut: Math.round(sharedOut * 100) / 100,
+    sharedIn: Math.round(sharedIn * 100) / 100,
     totalCommission: Math.round(totalCommission * 100) / 100,
     cashReceived: Math.round(cashReceived * 100) / 100,
     changeGiven: Math.round(changeGiven * 100) / 100,
@@ -272,6 +315,7 @@ export async function calculateShiftSummary(
     safPendingTotal: Math.round(safPendingTotal * 100) / 100,
     safFailedCount,
     safFailedTotal: Math.round(safFailedTotal * 100) / 100,
+    bankedTipsCount,
     laborCost: await calculateShiftLaborCost(locationId, startTime, endTime),
   }
 }

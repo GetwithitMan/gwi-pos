@@ -108,3 +108,27 @@ export function createRateLimiter(options: RateLimiterOptions) {
     },
   }
 }
+
+// ─── Convenience: Admin Route Rate Limiter ──────────────────────────────────
+// Pre-configured instance for admin/mutation routes.
+// 30 requests per minute per client IP — prevents brute-force and hot loops.
+const adminLimiter = createRateLimiter({ maxAttempts: 30, windowMs: 60_000 })
+
+/**
+ * Quick check for admin/mutation routes. Returns true if allowed.
+ *
+ * Usage in API routes:
+ *   import { checkAdminRateLimit } from '@/lib/rate-limiter'
+ *
+ *   const clientIp = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown'
+ *   const rl = checkAdminRateLimit(clientIp)
+ *   if (!rl.allowed) {
+ *     return NextResponse.json(
+ *       { error: 'Rate limit exceeded', retryAfter: rl.retryAfter },
+ *       { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } }
+ *     )
+ *   }
+ */
+export function checkAdminRateLimit(clientIp: string): RateLimitResult {
+  return adminLimiter.check(`admin:${clientIp}`)
+}

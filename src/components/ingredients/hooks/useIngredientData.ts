@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useAuthStore } from '@/stores/auth-store'
 import { getSharedSocket } from '@/lib/shared-socket'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
 import type { Ingredient, IngredientCategory, SwapGroup, InventoryItemRef, PrepItemRef } from '../types'
 
 interface UseIngredientDataParams {
@@ -146,8 +147,8 @@ export function useIngredientData({ locationId, showInactive, viewMode }: UseIng
       loadCategories()
       loadInventoryItems()
     }
-    socket.on('inventory:changed', handler)
-    return () => { socket.off('inventory:changed', handler) }
+    socket.on(SOCKET_EVENTS.INVENTORY_CHANGED, handler)
+    return () => { socket.off(SOCKET_EVENTS.INVENTORY_CHANGED, handler) }
   }, [loadIngredients, loadCategories, loadInventoryItems])
 
   return {

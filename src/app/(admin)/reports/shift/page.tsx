@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { getSharedSocket } from '@/lib/shared-socket'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
@@ -247,8 +248,8 @@ function EmployeeShiftReportContent() {
   useEffect(() => {
     const socket = getSharedSocket()
     const handler = () => { if (report) loadReport() }
-    socket.on('shifts:changed', handler)
-    return () => { socket.off('shifts:changed', handler) }
+    socket.on(SOCKET_EVENTS.SHIFTS_CHANGED, handler)
+    return () => { socket.off(SOCKET_EVENTS.SHIFTS_CHANGED, handler) }
   }, [loadReport, report])
 
   const loadReportByShift = async (shiftId: string) => {

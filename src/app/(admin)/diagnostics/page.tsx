@@ -7,6 +7,7 @@ import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { Button } from '@/components/ui/button'
 import { toast } from '@/stores/toast-store'
 import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
 
 // ============================================================================
 // TYPES
@@ -206,10 +207,10 @@ export default function DiagnosticsPage() {
       setLiveCount(c => c + 1)
     }
 
-    socket.on('venue-log:new', handleNewLog)
+    socket.on(SOCKET_EVENTS.VENUE_LOG_NEW, handleNewLog)
 
     return () => {
-      socket.off('venue-log:new', handleNewLog)
+      socket.off(SOCKET_EVENTS.VENUE_LOG_NEW, handleNewLog)
       releaseSharedSocket()
     }
   }, [hydrated])

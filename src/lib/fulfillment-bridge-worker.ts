@@ -18,6 +18,7 @@
 import { Prisma } from '@/generated/prisma/client'
 import { masterClient } from './db'
 import { emitToLocation, emitToTags } from './socket-server'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
 import { shouldClaimBridge, isLeaseActive } from '@/lib/bridge-checkpoint'
 import { createChildLogger } from '@/lib/logger'
 
@@ -160,7 +161,7 @@ async function executeHardwareAction(event: {
       if (event.stationId) {
         const tags = payload?.matchedTags as string[] | undefined
         if (tags && tags.length > 0) {
-          await emitToTags(tags, 'kds:order-received', payload, event.locationId)
+          await emitToTags(tags, SOCKET_EVENTS.KDS_ORDER_RECEIVED, payload, event.locationId)
         }
       }
       // Also emit print-ticket for physical printers listening on location room
@@ -173,7 +174,7 @@ async function executeHardwareAction(event: {
     }
 
     case 'kds_update': {
-      await emitToLocation(event.locationId, 'kds:order-received', payload)
+      await emitToLocation(event.locationId, SOCKET_EVENTS.KDS_ORDER_RECEIVED, payload)
       break
     }
 

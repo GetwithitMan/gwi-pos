@@ -338,7 +338,7 @@ async function processOutageQueue(): Promise<void> {
       void (async () => {
         try {
           const { emitCloudEvent } = await import('../cloud-events')
-          const locationId = process.env.POS_LOCATION_ID || process.env.LOCATION_ID || ''
+          const locationId = process.env.POS_LOCATION_ID || ''
 
           // Fetch details of recently dead-lettered entries for the alert
           const deadLetterDetails = await masterClient.$queryRawUnsafe<Array<{
@@ -486,6 +486,42 @@ async function processOutageQueue(): Promise<void> {
     }
 
     metrics.lastReplayAt = new Date()
+
+    // Clean up old replayed/dead-letter entries (retain 7 days for audit)
+    try {
+      const cleanupThreshold = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+      await masterClient.$executeRawUnsafe(
+        `DELETE FROM "OutageQueueEntry" WHERE status IN ('replayed', 'dead_letter') AND "createdAt" < $1::timestamptz`,
+        cleanupThreshold.toISOString()
+      )
+    } catch (err) {
+      console.error('[OutageReplay] Cleanup of old entries failed:', err instanceof Error ? err.message : err)
+    }
+
+    // Emit socket event so terminals know the outage is resolved
+    if (metrics.replayedCount > 0) {
+      const remainingCount = await masterClient.$queryRawUnsafe<[{ count: bigint }]>(
+        `SELECT COUNT(*) as count FROM "OutageQueueEntry" WHERE status = 'pending'`
+      ).then(rows => Number(rows[0]?.count ?? 0)).catch(() => 0)
+
+      if (remainingCount === 0) {
+        const locationId = process.env.POS_LOCATION_ID || ''
+        if (locationId) {
+          void (async () => {
+            try {
+              const { emitToLocation } = await import('../socket-server')
+              await emitToLocation(locationId, 'sync:outage-recovered', {
+                replayedCount: metrics.replayedCount,
+                remainingCount: 0,
+                timestamp: new Date().toISOString(),
+              })
+            } catch {
+              // Socket dispatch is best-effort
+            }
+          })().catch(console.error)
+        }
+      }
+    }
   } finally {
     processingEntryIds.clear()
     isReplaying = false

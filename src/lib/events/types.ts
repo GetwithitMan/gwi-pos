@@ -6,6 +6,7 @@
  */
 
 import type { OrderStatus } from '@/types'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
 
 // ==================== Event Payloads ====================
 
@@ -137,13 +138,13 @@ export interface TabUpdatedEvent {
  */
 export interface EventMap {
   // Orders
-  'order:created': OrderCreatedEvent
-  'order:updated': OrderUpdatedEvent
-  'order:item-added': OrderItemAddedEvent
-  'order:item-updated': OrderItemUpdatedEvent
+  [SOCKET_EVENTS.ORDER_CREATED]: OrderCreatedEvent
+  [SOCKET_EVENTS.ORDER_UPDATED]: OrderUpdatedEvent
+  [SOCKET_EVENTS.ORDER_ITEM_ADDED]: OrderItemAddedEvent
+  [SOCKET_EVENTS.ORDER_ITEM_UPDATED]: OrderItemUpdatedEvent
 
   // Tables
-  'table:status-changed': TableStatusChangedEvent
+  [SOCKET_EVENTS.TABLE_STATUS_CHANGED]: TableStatusChangedEvent
 
   // KDS (Legacy)
   'kds:ticket-new': KDSTicketNewEvent
@@ -151,52 +152,52 @@ export interface EventMap {
   'kds:item-bumped': KDSItemBumpedEvent
 
   // KDS (Tag-Based Routing - New)
-  'kds:order-received': KDSOrderReceivedEvent      // New order routed to this station
-  'kds:item-status': KDSItemStatusUpdateEvent      // Item status changed (cooking/ready/served)
-  'kds:order-bumped': KDSOrderBumpedEvent          // Order bumped from station
+  [SOCKET_EVENTS.KDS_ORDER_RECEIVED]: KDSOrderReceivedEvent      // New order routed to this station
+  [SOCKET_EVENTS.KDS_ITEM_STATUS]: KDSItemStatusUpdateEvent      // Item status changed (cooking/ready/served)
+  [SOCKET_EVENTS.KDS_ORDER_BUMPED]: KDSOrderBumpedEvent          // Order bumped from station
 
   // Entertainment
-  'entertainment:session-update': EntertainmentSessionUpdateEvent
+  [SOCKET_EVENTS.ENTERTAINMENT_SESSION_UPDATE]: EntertainmentSessionUpdateEvent
 
   // Floor Plan
-  'floor-plan:updated': FloorPlanUpdatedEvent
+  [SOCKET_EVENTS.FLOOR_PLAN_UPDATED]: FloorPlanUpdatedEvent
 
   // Order Totals
-  'order:totals-updated': OrderTotalsUpdatedEvent
+  [SOCKET_EVENTS.ORDER_TOTALS_UPDATED]: OrderTotalsUpdatedEvent
 
   // Open Orders (cross-terminal table status updates)
-  'orders:list-changed': OrdersListChangedEvent
+  [SOCKET_EVENTS.ORDERS_LIST_CHANGED]: OrdersListChangedEvent
 
   // Sync
   'sync:conflict': SyncConflictEvent
-  'sync:completed': SyncCompletedEvent
+  [SOCKET_EVENTS.SYNC_COMPLETED]: SyncCompletedEvent
 
   // Employees
   'employee:clock': EmployeeClockEvent
 
   // Payments
-  'payment:processed': PaymentProcessedEvent
+  [SOCKET_EVENTS.PAYMENT_PROCESSED]: PaymentProcessedEvent
 
   // Tabs
-  'tab:updated': TabUpdatedEvent
+  [SOCKET_EVENTS.TAB_UPDATED]: TabUpdatedEvent
 
   // Void Approvals
-  'void:approval-update': VoidApprovalUpdateEvent
+  [SOCKET_EVENTS.VOID_APPROVAL_UPDATE]: VoidApprovalUpdateEvent
 
   // Inventory
-  'inventory:adjustment': InventoryAdjustmentEvent
-  'inventory:stock-change': InventoryStockChangeEvent
+  [SOCKET_EVENTS.INVENTORY_ADJUSTMENT]: InventoryAdjustmentEvent
+  [SOCKET_EVENTS.INVENTORY_STOCK_CHANGE]: InventoryStockChangeEvent
 
   // Menu (granular — used alongside menu:updated)
-  'menu:item-changed': MenuItemChangedEvent
-  'menu:stock-changed': MenuStockChangedEvent
-  'menu:structure-changed': MenuStructureChangedEvent
+  [SOCKET_EVENTS.MENU_ITEM_CHANGED]: MenuItemChangedEvent
+  [SOCKET_EVENTS.MENU_STOCK_CHANGED]: MenuStockChangedEvent
+  [SOCKET_EVENTS.MENU_STRUCTURE_CHANGED]: MenuStructureChangedEvent
 
   // Tip Groups
-  'tip-group:updated': TipGroupUpdatedEvent
+  [SOCKET_EVENTS.TIP_GROUP_UPDATED]: TipGroupUpdatedEvent
 
   // Location Alerts
-  'location:alert': LocationAlertEvent
+  [SOCKET_EVENTS.LOCATION_ALERT]: LocationAlertEvent
 
   // EOD
   'eod:reset-complete': EodResetCompleteEvent

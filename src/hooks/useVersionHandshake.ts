@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react'
 import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
 
 // Read from build-time env (injected by next.config.ts from package.json)
 const CLIENT_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || '0.0.0'
@@ -15,7 +16,7 @@ export function useVersionHandshake() {
     const socket = getSharedSocket()
 
     const reportVersion = () => {
-      socket.emit('client:version', {
+      socket.emit(SOCKET_EVENTS._CLIENT_VERSION, {
         clientVersion: CLIENT_VERSION,
         userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : undefined,
       })

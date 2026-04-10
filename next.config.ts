@@ -20,6 +20,10 @@ const nextConfig: NextConfig = {
   output: 'standalone',
   serverExternalPackages: ['serialport', 'ws', 'accepts', 'negotiator', 'socket.io', 'engine.io', 'base64id'],
 
+  // Enable gzip/brotli compression for all responses.
+  // Cuts bootstrap payload from ~3-5MB to ~500KB over LAN.
+  compress: true,
+
   // Disable x-powered-by header for security
   poweredByHeader: false,
 
@@ -129,4 +133,25 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig
+// Sentry import + withSentryConfig deadlocks the dev server (OpenTelemetry
+// dependency tree blocks both Turbopack and webpack). Only wrap in production.
+let exportedConfig: NextConfig = nextConfig
+if (process.env.NODE_ENV === 'production') {
+  try {
+    const { withSentryConfig } = require('@sentry/nextjs')
+    exportedConfig = withSentryConfig(nextConfig, {
+      org: process.env.SENTRY_ORG,
+      project: process.env.SENTRY_PROJECT,
+      silent: !process.env.CI,
+      widenClientFileUpload: true,
+      tunnelRoute: '/monitoring',
+      sourcemaps: {
+        disable: true,
+      },
+    })
+  } catch {
+    // Sentry not available — use plain config
+  }
+}
+
+export default exportedConfig

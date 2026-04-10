@@ -212,28 +212,38 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
       })
     }
 
-    // Emit order events for each affected order (fire-and-forget)
+    // Emit order events for each affected order.
+    // These MUST succeed for event-source consistency. Await all and log failures.
+    const eventPromises: Promise<unknown>[] = []
     if (action === 'void') {
       for (const id of orderIds) {
-        void emitOrderEvent(locationId, id, 'ORDER_CLOSED', {
-          closedStatus: 'voided',
-          reason: reason || 'Bulk void',
-        })
+        eventPromises.push(
+          emitOrderEvent(locationId, id, 'ORDER_CLOSED', {
+            closedStatus: 'voided',
+            reason: reason || 'Bulk void',
+          }).catch(e => log.error({ err: e, orderId: id }, 'CRITICAL: failed to emit ORDER_CLOSED event for bulk-voided order'))
+        )
       }
     } else if (action === 'cancel') {
       for (const id of orderIds) {
-        void emitOrderEvent(locationId, id, 'ORDER_CLOSED', {
-          closedStatus: 'cancelled',
-          reason: reason || 'Bulk cancel',
-        })
+        eventPromises.push(
+          emitOrderEvent(locationId, id, 'ORDER_CLOSED', {
+            closedStatus: 'cancelled',
+            reason: reason || 'Bulk cancel',
+          }).catch(e => log.error({ err: e, orderId: id }, 'CRITICAL: failed to emit ORDER_CLOSED event for bulk-cancelled order'))
+        )
       }
     } else if (action === 'transfer') {
       for (const id of orderIds) {
-        void emitOrderEvent(locationId, id, 'ORDER_METADATA_UPDATED', {
-          employeeId: toEmployeeId,
-        })
+        eventPromises.push(
+          emitOrderEvent(locationId, id, 'ORDER_METADATA_UPDATED', {
+            employeeId: toEmployeeId,
+          }).catch(e => log.error({ err: e, orderId: id }, 'CRITICAL: failed to emit ORDER_METADATA_UPDATED event for bulk-transferred order'))
+        )
       }
     }
+    // Await all event emissions — best-effort but logged if any fail
+    await Promise.allSettled(eventPromises)
 
     pushUpstream()
 

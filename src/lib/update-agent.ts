@@ -544,6 +544,9 @@ export async function executeUpdate(targetVersion: string, options?: { rollingRe
  * X-Hardware-Fingerprint, X-Request-Signature).
  */
 export async function reportDeployHealth(result: UpdateResult): Promise<void> {
+  if (!process.env.MISSION_CONTROL_URL && process.env.BACKOFFICE_API_URL) {
+    console.warn('[DEPRECATED] Using BACKOFFICE_API_URL — migrate to MISSION_CONTROL_URL')
+  }
   const mcUrl = (process.env.MISSION_CONTROL_URL || process.env.BACKOFFICE_API_URL || '').replace(/\/+$/, '')
   const apiKey = process.env.SERVER_API_KEY || ''
   const nodeId = process.env.SERVER_NODE_ID || ''

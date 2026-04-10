@@ -255,6 +255,9 @@ export const SYNC_MODELS: Readonly<Record<string, SyncModelConfig>> = {
   QuickBarPreference:     { direction: 'downstream', owner: 'cloud', priority: 276, batchSize: 50 },
   QuickBarDefault:        { direction: 'downstream', owner: 'cloud', priority: 277, batchSize: 50 },
 
+  // ── Peripheral Snapshots (NUC → Neon, low priority) ─────────────────
+  PeripheralSnapshot:     { direction: 'upstream', owner: 'nuc', priority: 300, batchSize: 100 },
+
   // ── Operational Logs (NUC → Neon, lower priority) ───────────────────
   VenueLog:               { direction: 'upstream', owner: 'nuc', priority: 130, batchSize: 100 },
   SevenShiftsDailySalesPush: { direction: 'upstream', owner: 'nuc', priority: 131, batchSize: 50 },

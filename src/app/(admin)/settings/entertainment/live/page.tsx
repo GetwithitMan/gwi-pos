@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { EntertainmentItemCard } from '@/components/entertainment/EntertainmentItemCard'
 import type { EntertainmentItem } from '@/lib/entertainment'
 import { getSharedSocket, releaseSharedSocket, getTerminalId } from '@/lib/shared-socket'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
 import { useAuthStore } from '@/stores/auth-store'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { toast } from '@/stores/toast-store'
@@ -68,7 +69,7 @@ export default function EntertainmentLiveStatusPage() {
 
     const onConnect = () => {
       setSocketConnected(true)
-      socket.emit('join_station', {
+      socket.emit(SOCKET_EVENTS._CLIENT_JOIN_STATION, {
         locationId,
         tags: ['entertainment'],
         terminalId: getTerminalId(),
@@ -87,8 +88,8 @@ export default function EntertainmentLiveStatusPage() {
 
     socket.on('connect', onConnect)
     socket.on('disconnect', onDisconnect)
-    socket.on('entertainment:status-changed', debouncedFetch)
-    socket.on('entertainment:session-update', debouncedFetch)
+    socket.on(SOCKET_EVENTS.ENTERTAINMENT_STATUS_CHANGED, debouncedFetch)
+    socket.on(SOCKET_EVENTS.ENTERTAINMENT_SESSION_UPDATE, debouncedFetch)
 
     if (socket.connected) {
       onConnect()
@@ -97,8 +98,8 @@ export default function EntertainmentLiveStatusPage() {
     return () => {
       socket.off('connect', onConnect)
       socket.off('disconnect', onDisconnect)
-      socket.off('entertainment:status-changed', debouncedFetch)
-      socket.off('entertainment:session-update', debouncedFetch)
+      socket.off(SOCKET_EVENTS.ENTERTAINMENT_STATUS_CHANGED, debouncedFetch)
+      socket.off(SOCKET_EVENTS.ENTERTAINMENT_SESSION_UPDATE, debouncedFetch)
       if (debouncedFetchTimer.current) clearTimeout(debouncedFetchTimer.current)
       socketRef.current = null
       releaseSharedSocket()

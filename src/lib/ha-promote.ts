@@ -459,6 +459,9 @@ function writeResult(result: PromotionResult): void {
 }
 
 async function reportToMc(result: PromotionResult): Promise<void> {
+  if (!process.env.MISSION_CONTROL_URL && process.env.BACKOFFICE_API_URL) {
+    console.warn('[DEPRECATED] Using BACKOFFICE_API_URL — migrate to MISSION_CONTROL_URL')
+  }
   const mcUrl = (
     process.env.MISSION_CONTROL_URL ||
     process.env.BACKOFFICE_API_URL ||

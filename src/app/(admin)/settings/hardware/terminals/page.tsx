@@ -6,6 +6,7 @@ import { Modal } from '@/components/ui/modal'
 import { TerminalFailoverManager } from '@/components/hardware/TerminalFailoverManager'
 import { useAuthStore } from '@/stores/auth-store'
 import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
 import { toast } from '@/stores/toast-store'
 
 interface Printer {
@@ -158,9 +159,9 @@ export default function TerminalsPage() {
       })
     }
 
-    socket.on('terminal:status_changed', onStatusChanged)
+    socket.on(SOCKET_EVENTS.TERMINAL_STATUS_CHANGED, onStatusChanged)
     return () => {
-      socket.off('terminal:status_changed', onStatusChanged)
+      socket.off(SOCKET_EVENTS.TERMINAL_STATUS_CHANGED, onStatusChanged)
       releaseSharedSocket()
     }
   }, [locationId])

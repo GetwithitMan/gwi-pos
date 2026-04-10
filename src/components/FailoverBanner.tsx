@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
 
 /**
  * FailoverBanner — displays a persistent amber banner when the backup server
@@ -53,12 +54,12 @@ export function FailoverBanner() {
       setFailoverSince(null)
     }
 
-    socket.on('server:failover-active', onFailoverActive)
-    socket.on('server:failover-resolved', onFailoverResolved)
+    socket.on(SOCKET_EVENTS.SERVER_FAILOVER_ACTIVE, onFailoverActive)
+    socket.on(SOCKET_EVENTS.SERVER_FAILOVER_RESOLVED, onFailoverResolved)
 
     return () => {
-      socket.off('server:failover-active', onFailoverActive)
-      socket.off('server:failover-resolved', onFailoverResolved)
+      socket.off(SOCKET_EVENTS.SERVER_FAILOVER_ACTIVE, onFailoverActive)
+      socket.off(SOCKET_EVENTS.SERVER_FAILOVER_RESOLVED, onFailoverResolved)
       releaseSharedSocket()
     }
   }, [])

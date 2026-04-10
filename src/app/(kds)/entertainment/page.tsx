@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
 import { useAuthStore } from '@/stores/auth-store'
 import { Button } from '@/components/ui/button'
 import { EntertainmentItemCard } from '@/components/entertainment/EntertainmentItemCard'
@@ -136,7 +137,7 @@ export default function EntertainmentKDSPage() {
 
     const onConnect = () => {
       setSocketConnected(true)
-      socket.emit('join_station', {
+      socket.emit(SOCKET_EVENTS._CLIENT_JOIN_STATION, {
         locationId,
         tags: ['entertainment'],
         terminalId: `entertainment-kds-${locationId || 'fallback'}-${Math.random().toString(36).slice(2, 8)}`,
@@ -187,10 +188,10 @@ export default function EntertainmentKDSPage() {
 
     socket.on('connect', onConnect)
     socket.on('disconnect', onDisconnect)
-    socket.on('entertainment:status-changed', onEntertainmentChanged)
-    socket.on('entertainment:session-update', onSessionUpdate)
-    socket.on('orders:list-changed', onListChanged)
-    socket.on('entertainment:waitlist-notify', onWaitlistNotify)
+    socket.on(SOCKET_EVENTS.ENTERTAINMENT_STATUS_CHANGED, onEntertainmentChanged)
+    socket.on(SOCKET_EVENTS.ENTERTAINMENT_SESSION_UPDATE, onSessionUpdate)
+    socket.on(SOCKET_EVENTS.ORDERS_LIST_CHANGED, onListChanged)
+    socket.on(SOCKET_EVENTS.ENTERTAINMENT_WAITLIST_NOTIFY, onWaitlistNotify)
 
     if (socket.connected) {
       onConnect()
@@ -199,10 +200,10 @@ export default function EntertainmentKDSPage() {
     return () => {
       socket.off('connect', onConnect)
       socket.off('disconnect', onDisconnect)
-      socket.off('entertainment:status-changed', onEntertainmentChanged)
-      socket.off('entertainment:session-update', onSessionUpdate)
-      socket.off('orders:list-changed', onListChanged)
-      socket.off('entertainment:waitlist-notify', onWaitlistNotify)
+      socket.off(SOCKET_EVENTS.ENTERTAINMENT_STATUS_CHANGED, onEntertainmentChanged)
+      socket.off(SOCKET_EVENTS.ENTERTAINMENT_SESSION_UPDATE, onSessionUpdate)
+      socket.off(SOCKET_EVENTS.ORDERS_LIST_CHANGED, onListChanged)
+      socket.off(SOCKET_EVENTS.ENTERTAINMENT_WAITLIST_NOTIFY, onWaitlistNotify)
       if (debouncedFetchTimer.current) clearTimeout(debouncedFetchTimer.current)
       socketRef.current = null
       releaseSharedSocket()

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useAuthStore } from '@/stores/auth-store'
 import { toast } from '@/stores/toast-store'
 import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
 import Link from 'next/link'
 
 interface Ingredient86Status {
@@ -92,13 +93,13 @@ export default function Quick86Page() {
   useEffect(() => {
     const socket = getSharedSocket()
     const handler = () => { fetchData() }
-    socket.on('inventory:adjustment', handler)
-    socket.on('inventory:stock-change', handler)
-    socket.on('inventory:changed', handler)
+    socket.on(SOCKET_EVENTS.INVENTORY_ADJUSTMENT, handler)
+    socket.on(SOCKET_EVENTS.INVENTORY_STOCK_CHANGE, handler)
+    socket.on(SOCKET_EVENTS.INVENTORY_CHANGED, handler)
     return () => {
-      socket.off('inventory:adjustment', handler)
-      socket.off('inventory:stock-change', handler)
-      socket.off('inventory:changed', handler)
+      socket.off(SOCKET_EVENTS.INVENTORY_ADJUSTMENT, handler)
+      socket.off(SOCKET_EVENTS.INVENTORY_STOCK_CHANGE, handler)
+      socket.off(SOCKET_EVENTS.INVENTORY_CHANGED, handler)
       releaseSharedSocket()
     }
   }, [fetchData])

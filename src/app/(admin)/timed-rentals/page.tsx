@@ -10,6 +10,7 @@ import { formatCurrency } from '@/lib/utils'
 import { toast } from '@/stores/toast-store'
 import { Modal } from '@/components/ui/modal'
 import { useSocket } from '@/hooks/useSocket'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
 import { useOrderSettings } from '@/hooks/useOrderSettings'
 import { calculateCardPrice } from '@/lib/pricing'
 import { calculateTimeRemaining, calculateElapsedTime } from '@/lib/entertainment'
@@ -219,11 +220,11 @@ export function TimedRentalsContent() {
   useEffect(() => {
     if (!socket || !isConnected) return
     const onUpdate = () => loadData()
-    socket.on('entertainment:session-update', onUpdate)
-    socket.on('entertainment:status-changed', onUpdate)
+    socket.on(SOCKET_EVENTS.ENTERTAINMENT_SESSION_UPDATE, onUpdate)
+    socket.on(SOCKET_EVENTS.ENTERTAINMENT_STATUS_CHANGED, onUpdate)
     return () => {
-      socket.off('entertainment:session-update', onUpdate)
-      socket.off('entertainment:status-changed', onUpdate)
+      socket.off(SOCKET_EVENTS.ENTERTAINMENT_SESSION_UPDATE, onUpdate)
+      socket.off(SOCKET_EVENTS.ENTERTAINMENT_STATUS_CHANGED, onUpdate)
     }
   }, [socket, isConnected])
 

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { getSharedSocket } from '@/lib/shared-socket'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
 import { Modal } from '@/components/ui/modal'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
@@ -46,8 +47,8 @@ export default function OrderTypesPage() {
     const handler = () => {
       if (employee?.location?.id) loadOrderTypes(employee.location.id)
     }
-    socket.on('order-types:updated', handler)
-    return () => { socket.off('order-types:updated', handler) }
+    socket.on(SOCKET_EVENTS.ORDER_TYPES_UPDATED, handler)
+    return () => { socket.off(SOCKET_EVENTS.ORDER_TYPES_UPDATED, handler) }
   }, [employee?.location?.id, loadOrderTypes])
 
   const handleToggleActive = async (orderType: OrderTypeConfig) => {
