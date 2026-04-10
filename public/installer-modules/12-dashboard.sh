@@ -141,14 +141,19 @@ run_dashboard() {
   # Install the .deb
   # ─────────────────────────────────────────────────────────────────────────
   log "Installing dashboard .deb..."
-  if ! dpkg -i "$DASHBOARD_DEB" 2>/dev/null; then
-    warn "dpkg install failed, attempting dependency fix..."
-    apt-get install -f -y -qq 2>/dev/null || true
-    if ! dpkg -i "$DASHBOARD_DEB" 2>/dev/null; then
-      track_warn "Dashboard .deb installation failed -- can be retried manually"
-      end_timer "Stage 12 (dashboard)"
-      return 0  # Non-fatal: dashboard is optional
-    fi
+  # dpkg may return non-zero on trigger warnings (icon cache), so we always
+  # run --configure -a afterward and verify the installed version.
+  dpkg -i "$DASHBOARD_DEB" 2>&1 | while IFS= read -r line; do log "  dpkg: $line"; done
+  dpkg --configure -a 2>/dev/null || true
+  apt-get install -f -y -qq 2>/dev/null || true
+
+  # Verify the install actually worked
+  local _final_version
+  _final_version=$(dpkg-query -W -f='${Version}' gwi-nuc-dashboard 2>/dev/null || echo "0.0.0")
+  if [[ -n "$_available_version" ]] && [[ "$_available_version" != "0.0.0" ]] && [[ "$_final_version" != "$_available_version" ]]; then
+    track_warn "Dashboard: expected v${_available_version}, got v${_final_version} -- may need manual install"
+  else
+    log "Dashboard v${_final_version} installed and configured"
   fi
 
   # ─────────────────────────────────────────────────────────────────────────
@@ -191,8 +196,8 @@ SVCEOF
 
     # Enable the user service (requires loginctl enable-linger for boot-time start)
     loginctl enable-linger "${POSUSER}" 2>/dev/null || true
-    sudo -u "${POSUSER}" bash -c "XDG_RUNTIME_DIR=/run/user/\$(id -u) systemctl --user daemon-reload && systemctl --user enable gwi-dashboard.service" 2>/dev/null || {
-      track_warn "Could not enable systemd user service for dashboard"
+    sudo -u "${POSUSER}" bash -c "XDG_RUNTIME_DIR=/run/user/\$(id -u) systemctl --user daemon-reload && systemctl --user enable gwi-dashboard.service && systemctl --user start gwi-dashboard.service" 2>/dev/null || {
+      track_warn "Could not enable/start systemd user service for dashboard"
     }
     log "Systemd user service created at ${SYSTEMD_USER_DIR}/gwi-dashboard.service (Restart=on-failure, RestartSec=5, burst=5/120s)"
   fi
