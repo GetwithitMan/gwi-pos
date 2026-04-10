@@ -102,7 +102,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     // (only when approvedById is provided and not using remote approval)
     if (approvedById && !remoteApprovalCode) {
       try {
-        validateManagerReauthFromHeaders(request, approvedById, managerPinHash)
+        await validateManagerReauthFromHeaders(request, approvedById, managerPinHash, db)
       } catch (caughtError) {
         if (caughtError instanceof CellularAuthError) {
           return err(caughtError.message, caughtError.status)

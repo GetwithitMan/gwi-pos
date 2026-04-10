@@ -58,7 +58,7 @@ export const POST = withVenue(async function POST(
 
     // Cellular terminal: require manager PIN re-authentication for refund
     try {
-      validateManagerReauthFromHeaders(request, managerId, managerPinHash)
+      await validateManagerReauthFromHeaders(request, managerId, managerPinHash, db)
     } catch (caughtErr) {
       if (caughtErr instanceof CellularAuthError) {
         return err(caughtErr.message, caughtErr.status)

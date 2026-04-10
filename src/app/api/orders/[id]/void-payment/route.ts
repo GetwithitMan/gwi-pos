@@ -75,12 +75,12 @@ export const POST = withVenue(async function POST(
 
     // Cellular terminal: require manager PIN re-authentication for void
     try {
-      validateManagerReauthFromHeaders(request, managerId, managerPinHash)
+      await validateManagerReauthFromHeaders(request, managerId, managerPinHash, db)
     } catch (caughtErr) {
-      if (err instanceof CellularAuthError) {
-        return err(err.message, err.status)
+      if (caughtErr instanceof CellularAuthError) {
+        return err(caughtErr.message, caughtErr.status)
       }
-      throw err
+      throw caughtErr
     }
 
     // Cellular ownership gating — block void on locally-owned orders
