@@ -14,6 +14,7 @@
  */
 
 import { type NextRequest } from 'next/server'
+import { compare } from 'bcryptjs'
 import { type AuthContext } from './api-auth-middleware'
 import { createChildLogger } from '@/lib/logger'
 
@@ -168,12 +169,14 @@ export function validateCellularEmployeeFromHeaders(
 
 /**
  * Validate manager re-auth from proxy headers for sensitive cellular actions.
+ * Verifies the manager PIN hash against the stored bcrypt hash in the Employee record.
  */
-export function validateManagerReauthFromHeaders(
+export async function validateManagerReauthFromHeaders(
   request: NextRequest,
   managerId: string | undefined,
-  managerPinHash: string | undefined
-): void {
+  managerPinHash: string | undefined,
+  prisma: any
+): Promise<void> {
   if (!isCellularRequest(request)) return
 
   if (!managerId) {
@@ -188,6 +191,25 @@ export function validateManagerReauthFromHeaders(
       'Manager PIN verification required for cellular terminal actions',
       403
     )
+  }
+
+  // Fetch the manager's stored PIN hash from DB and verify
+  const employee = await prisma.employee.findUnique({
+    where: { id: managerId },
+    select: { pin: true },
+  })
+
+  if (!employee) {
+    throw new CellularAuthError('Manager not found', 404)
+  }
+
+  if (!employee.pin) {
+    throw new CellularAuthError('Manager has no PIN configured', 403)
+  }
+
+  const pinValid = await compare(managerPinHash, employee.pin)
+  if (!pinValid) {
+    throw new CellularAuthError('Invalid manager PIN', 403)
   }
 }
 

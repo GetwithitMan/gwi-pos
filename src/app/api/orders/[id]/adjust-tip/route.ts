@@ -15,6 +15,8 @@ import { roundToCents } from '@/lib/pricing'
 import { isInOutageMode } from '@/lib/sync/upstream-sync-worker'
 import { pushUpstream, queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
 import { getRequestLocationId } from '@/lib/request-context'
+import { validateManagerReauthFromHeaders, CellularAuthError } from '@/lib/cellular-validation'
+import { validateMutationApproval } from '@/lib/approval-tokens'
 import { createChildLogger } from '@/lib/logger'
 import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-adjust-tip')
@@ -25,7 +27,7 @@ export const PATCH = withVenue(withAuth({ allowCellular: true }, async function 
 ) {
   try {
     const { id: orderId } = await ctx.params
-    const { paymentId, newTipAmount, reason, managerId } = await request.json()
+    const { paymentId, newTipAmount, reason, managerId, approvalToken, managerPinHash } = await request.json()
 
     // HA cellular sync — detect mutation origin for downstream sync
     const isCellularTip = request.headers.get('x-cellular-authenticated') === '1'
@@ -38,6 +40,22 @@ export const PATCH = withVenue(withAuth({ allowCellular: true }, async function 
 
     if (newTipAmount < 0) {
       return err('Tip amount cannot be negative')
+    }
+
+    // Validate mutation-bound approval token (if present)
+    const tokenCheck = validateMutationApproval({ approvalToken, approvedById: managerId, routeName: 'adjust-tip' })
+    if (!tokenCheck.valid) {
+      return err(tokenCheck.error, tokenCheck.status)
+    }
+
+    // Cellular terminal: require manager PIN re-authentication for tip adjustment
+    try {
+      await validateManagerReauthFromHeaders(request, managerId, managerPinHash, db)
+    } catch (caughtErr) {
+      if (caughtErr instanceof CellularAuthError) {
+        return err(caughtErr.message, caughtErr.status)
+      }
+      throw caughtErr
     }
 
     // Fast path: locationId from auth context or request context. Fallback: bootstrap from DB.

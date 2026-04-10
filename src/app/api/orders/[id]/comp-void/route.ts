@@ -40,6 +40,7 @@ import {
   applyCompVoid,
   applyRestore,
 } from '@/lib/domain/comp-void'
+import { validateMutationApproval } from '@/lib/approval-tokens'
 import { createChildLogger } from '@/lib/logger'
 import { err, forbidden, notFound, ok, unauthorized } from '@/lib/api-response'
 const log = createChildLogger('orders-comp-void')
@@ -52,6 +53,7 @@ const CompVoidSchema = z.object({
   employeeId: z.string().min(1, 'Employee ID is required'),
   wasMade: z.boolean().optional(),
   approvedById: z.string().min(1).optional(),
+  approvalToken: z.string().optional(),
   managerPinHash: z.string().optional(),
   remoteApprovalCode: z.string().length(6).optional(),
   version: z.number().int().nonnegative().optional(),
@@ -64,6 +66,7 @@ interface CompVoidRequest {
   employeeId: string
   wasMade?: boolean  // Was the item already made? Determines waste tracking
   approvedById?: string  // Manager ID if approval required
+  approvalToken?: string  // HMAC-signed token from verify-pin (mutation-bound)
   managerPinHash?: string  // Manager PIN hash for cellular re-auth
   remoteApprovalCode?: string  // 6-digit code from remote manager approval (Skill 121)
   version?: number  // Optimistic concurrency control
@@ -83,17 +86,23 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     }
     const body = parseResult.data as CompVoidRequest
 
-    const { action, itemId, reason, wasMade, approvedById, managerPinHash, remoteApprovalCode, version } = body
+    const { action, itemId, reason, wasMade, approvedById, approvalToken, managerPinHash, remoteApprovalCode, version } = body
     // SECURITY: Use authenticated employee ID for the performer, not body.employeeId.
     // body.employeeId is accepted as a fallback for cellular terminals (which may have
     // employeeId in the token but also send it in body for legacy compatibility).
     const employeeId = ctx.auth.employeeId || body.employeeId
 
+    // Validate mutation-bound approval token (if present)
+    const tokenCheck = validateMutationApproval({ approvalToken, approvedById, routeName: 'comp-void' })
+    if (!tokenCheck.valid) {
+      return err(tokenCheck.error, tokenCheck.status)
+    }
+
     // Cellular terminal: require manager PIN re-authentication for comp/void
     // (only when approvedById is provided and not using remote approval)
     if (approvedById && !remoteApprovalCode) {
       try {
-        validateManagerReauthFromHeaders(request, approvedById, managerPinHash)
+        await validateManagerReauthFromHeaders(request, approvedById, managerPinHash, db)
       } catch (caughtError) {
         if (caughtError instanceof CellularAuthError) {
           return err(caughtError.message, caughtError.status)

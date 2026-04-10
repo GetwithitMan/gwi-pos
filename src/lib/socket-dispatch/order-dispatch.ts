@@ -7,7 +7,7 @@
 
 import type { RoutingResult } from '@/types/routing'
 import { invalidateSnapshotCache } from '@/lib/snapshot-cache'
-import { invalidateOpenOrdersCache } from '@/app/api/orders/open/route'
+import { invalidateOpenOrdersCache } from '@/lib/open-orders-cache'
 import {
   log,
   randomUUID,

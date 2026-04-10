@@ -18,6 +18,8 @@ const mockQueryRaw = vi.fn()
 const mockPendingDeductionUpdate = vi.fn()
 const mockDeductionRunCreate = vi.fn()
 
+const mockInventoryItemTransactionCreate = vi.fn()
+
 vi.mock('@/lib/db', () => ({
   db: {
     $queryRaw: (...args: unknown[]) => mockQueryRaw(...args),
@@ -27,11 +29,13 @@ vi.mock('@/lib/db', () => ({
     deductionRun: {
       create: (...args: unknown[]) => mockDeductionRunCreate(...args),
     },
+    inventoryItemTransaction: {
+      create: (...args: unknown[]) => mockInventoryItemTransactionCreate(...args),
+    },
   },
-  Prisma: { sql: (strings: TemplateStringsArray, ...values: unknown[]) => ({ strings, values }) },
 }))
 
-vi.mock('@prisma/client', () => ({
+vi.mock('@/generated/prisma/client', () => ({
   Prisma: {
     sql: (strings: TemplateStringsArray, ...values: unknown[]) => ({ strings, values }),
   },
@@ -40,14 +44,13 @@ vi.mock('@prisma/client', () => ({
 // ─── Mock deduction workers ───────────────────────────────────────────────────
 
 const mockDeductInventory = vi.fn()
-const mockProcessLiquor = vi.fn()
 
 vi.mock('@/lib/inventory', () => ({
   deductInventoryForOrder: (...args: unknown[]) => mockDeductInventory(...args),
 }))
 
-vi.mock('@/lib/liquor-inventory', () => ({
-  processLiquorInventory: (...args: unknown[]) => mockProcessLiquor(...args),
+vi.mock('@/lib/socket-server', () => ({
+  emitCriticalToLocation: vi.fn().mockResolvedValue(undefined),
 }))
 
 // ─── Import after mocks ───────────────────────────────────────────────────────
@@ -88,9 +91,9 @@ describe('processNextDeduction', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockDeductInventory.mockResolvedValue({ success: true, itemsDeducted: 2 })
-    mockProcessLiquor.mockResolvedValue({ success: true })
     mockPendingDeductionUpdate.mockResolvedValue({})
     mockDeductionRunCreate.mockResolvedValue({})
+    mockInventoryItemTransactionCreate.mockResolvedValue({})
   })
 
   it('returns processed=false when queue is empty', async () => {
@@ -112,9 +115,9 @@ describe('processNextDeduction', () => {
     expect(result.success).toBe(true)
     expect(result.orderId).toBe('order-abc')
 
-    // Both deduction workers called
+    // Unified deduction worker called (processLiquorInventory was removed —
+    // deductInventoryForOrder now handles both food AND liquor)
     expect(mockDeductInventory).toHaveBeenCalledWith('order-abc', null)
-    expect(mockProcessLiquor).toHaveBeenCalledWith('order-abc', null)
 
     // Status updated to succeeded
     expect(mockPendingDeductionUpdate).toHaveBeenCalledWith(
@@ -222,8 +225,6 @@ describe('idempotency: re-running processor on already-succeeded job', () => {
 
     expect(result.processed).toBe(false)
     expect(mockDeductInventory).not.toHaveBeenCalled()
-    // Crucial: stock deduction workers were NOT called a second time
-    expect(mockProcessLiquor).not.toHaveBeenCalled()
   })
 })
 
@@ -235,7 +236,7 @@ describe('processAllPending', () => {
     mockPendingDeductionUpdate.mockResolvedValue({})
     mockDeductionRunCreate.mockResolvedValue({})
     mockDeductInventory.mockResolvedValue({ success: true })
-    mockProcessLiquor.mockResolvedValue({ success: true })
+    mockInventoryItemTransactionCreate.mockResolvedValue({})
   })
 
   it('processes all jobs and stops when queue is empty', async () => {

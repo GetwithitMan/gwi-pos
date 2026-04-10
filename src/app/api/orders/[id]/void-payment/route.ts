@@ -21,6 +21,7 @@ import { isInOutageMode } from '@/lib/sync/upstream-sync-worker'
 import { pushUpstream, queueIfOutageOrFail } from '@/lib/sync/outage-safe-write'
 import { getRequestLocationId } from '@/lib/request-context'
 import { validateManagerReauthFromHeaders, validateCellularOrderAccess, CellularAuthError } from '@/lib/cellular-validation'
+import { validateMutationApproval } from '@/lib/approval-tokens'
 import { isClosed } from '@/lib/domain/order-status'
 import { createChildLogger } from '@/lib/logger'
 import { err, notFound, ok } from '@/lib/api-response'
@@ -53,13 +54,19 @@ export const POST = withVenue(async function POST(
   try {
     const { id: orderId } = await params
     const body = await request.json()
-    const { paymentId, reason, notes, managerId, readerId, managerPinHash } = body as {
-      paymentId?: string; reason?: string; notes?: string; managerId?: string; readerId?: string; managerPinHash?: string
+    const { paymentId, reason, notes, managerId, readerId, managerPinHash, approvalToken } = body as {
+      paymentId?: string; reason?: string; notes?: string; managerId?: string; readerId?: string; managerPinHash?: string; approvalToken?: string
     }
 
     // Validate inputs
     if (!paymentId || !reason || !managerId) {
       return err('Missing required fields')
+    }
+
+    // Validate mutation-bound approval token (if present)
+    const tokenCheck = validateMutationApproval({ approvalToken, approvedById: managerId, routeName: 'void-payment' })
+    if (!tokenCheck.valid) {
+      return err(tokenCheck.error, tokenCheck.status)
     }
 
     // HA cellular sync — detect mutation origin for downstream sync
@@ -68,12 +75,12 @@ export const POST = withVenue(async function POST(
 
     // Cellular terminal: require manager PIN re-authentication for void
     try {
-      validateManagerReauthFromHeaders(request, managerId, managerPinHash)
+      await validateManagerReauthFromHeaders(request, managerId, managerPinHash, db)
     } catch (caughtErr) {
-      if (err instanceof CellularAuthError) {
-        return err(err.message, err.status)
+      if (caughtErr instanceof CellularAuthError) {
+        return err(caughtErr.message, caughtErr.status)
       }
-      throw err
+      throw caughtErr
     }
 
     // Cellular ownership gating — block void on locally-owned orders

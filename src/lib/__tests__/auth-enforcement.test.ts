@@ -13,24 +13,83 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // ─── Mock auth-session ────────────────────────────────────────────────────────
 
 const mockGetSessionFromCookie = vi.fn()
+const mockVerifySessionToken = vi.fn()
 
 vi.mock('@/lib/auth-session', () => ({
   getSessionFromCookie: () => mockGetSessionFromCookie(),
+  verifySessionToken: (...args: unknown[]) => mockVerifySessionToken(...args),
+  refreshSessionToken: vi.fn(),
+}))
+
+// ─── Mock repositories ──────────────────────────────────────────────────────
+
+const mockGetEmployeeByIdWithInclude = vi.fn()
+
+vi.mock('@/lib/repositories/employee-repository', () => ({
+  getEmployeeByIdWithInclude: (...args: unknown[]) => mockGetEmployeeByIdWithInclude(...args),
+}))
+
+// ─── Mock request-context ───────────────────────────────────────────────────
+
+vi.mock('@/lib/request-context', () => ({
+  getRequestPrisma: () => null,
 }))
 
 // ─── Mock db ─────────────────────────────────────────────────────────────────
 
-const mockFindUnique = vi.fn()
+const mockFindFirst = vi.fn()
 
 vi.mock('@/lib/db', () => ({
   db: {
     employee: {
-      findUnique: (...args: unknown[]) => mockFindUnique(...args),
+      findFirst: (...args: unknown[]) => mockFindFirst(...args),
+    },
+    employeePermissionOverride: {
+      findMany: vi.fn().mockResolvedValue([]),
     },
   },
 }))
 
-// ─── Mock next/server (NextRequest not needed in unit scope) ─────────────────
+// ─── Mock auth-utils ────────────────────────────────────────────────────────
+
+vi.mock('@/lib/auth-utils', () => ({
+  hasPermission: (permissions: string[], required: string) =>
+    permissions.includes(required) || permissions.includes('all'),
+}))
+
+// ─── Mock cloud-auth (no cloud session in these tests) ──────────────────────
+
+vi.mock('@/lib/cloud-auth', () => ({
+  verifyCloudToken: vi.fn().mockResolvedValue(null),
+}))
+
+vi.mock('@/lib/system-config', () => ({
+  config: { cloudJwtSecret: null },
+}))
+
+// ─── Mock logger ────────────────────────────────────────────────────────────
+
+vi.mock('@/lib/logger', () => ({
+  createChildLogger: () => ({
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  }),
+}))
+
+// ─── Mock next/headers (cookies + headers) ──────────────────────────────────
+
+vi.mock('next/headers', () => ({
+  cookies: vi.fn().mockResolvedValue({
+    get: () => undefined,
+  }),
+  headers: vi.fn().mockResolvedValue({
+    get: () => null,
+  }),
+}))
+
+// ─── Mock next/server ───────────────────────────────────────────────────────
 
 vi.mock('next/server', () => ({
   NextRequest: class {},
@@ -44,7 +103,7 @@ vi.mock('next/server', () => ({
 
 // ─── Import after mocks are registered ───────────────────────────────────────
 
-import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
+import { getActorFromRequest, requirePermission, clearPermissionCache } from '@/lib/api-auth'
 import type { NextRequest } from 'next/server'
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -118,7 +177,7 @@ describe('cookie-first actor pattern (session takes precedence over body)', () =
   it('session actor overrides a spoofed body employeeId', async () => {
     // Session says emp-session; attacker sends emp-attacker in body
     mockGetSessionFromCookie.mockResolvedValue(SESSION_EMPLOYEE)
-    mockFindUnique.mockResolvedValue(makeEmployee()) // emp-session is valid
+    mockGetEmployeeByIdWithInclude.mockResolvedValue(makeEmployee()) // emp-session is valid
 
     const actor = await getActorFromRequest({} as NextRequest)
     const resolvedId = actor.employeeId ?? 'emp-attacker' // body value
@@ -141,10 +200,13 @@ describe('cookie-first actor pattern (session takes precedence over body)', () =
 // ─── requirePermission — DB-level invariants ──────────────────────────────────
 
 describe('requirePermission', () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(() => {
+    vi.clearAllMocks()
+    clearPermissionCache()
+  })
 
   it('authorizes a valid employee with the required permission', async () => {
-    mockFindUnique.mockResolvedValue(makeEmployee())
+    mockGetEmployeeByIdWithInclude.mockResolvedValue(makeEmployee())
 
     const result = await requirePermission('emp-session', 'loc-1', 'REPORTS_VIEW')
 
@@ -155,7 +217,8 @@ describe('requirePermission', () => {
   })
 
   it('rejects when employee belongs to a different location (cross-tenant)', async () => {
-    mockFindUnique.mockResolvedValue(makeEmployee({ locationId: 'loc-other' }))
+    mockGetEmployeeByIdWithInclude.mockResolvedValue(null) // not found with loc-1
+    mockFindFirst.mockResolvedValue(makeEmployee({ locationId: 'loc-other' })) // fallback finds with different location
 
     const result = await requirePermission('emp-session', 'loc-1', 'REPORTS_VIEW')
 
@@ -167,7 +230,7 @@ describe('requirePermission', () => {
   })
 
   it('rejects when employee lacks the required permission', async () => {
-    mockFindUnique.mockResolvedValue(makeEmployee({ role: { permissions: [] } }))
+    mockGetEmployeeByIdWithInclude.mockResolvedValue(makeEmployee({ role: { permissions: [] } }))
 
     const result = await requirePermission('emp-session', 'loc-1', 'SETTINGS_EDIT')
 
@@ -178,6 +241,9 @@ describe('requirePermission', () => {
   })
 
   it('rejects with 401 when no employeeId provided', async () => {
+    // No session cookie, no Bearer token, no cloud session
+    mockGetSessionFromCookie.mockResolvedValue(null)
+
     const result = await requirePermission(null, 'loc-1', 'REPORTS_VIEW')
 
     expect(result.authorized).toBe(false)
@@ -187,7 +253,7 @@ describe('requirePermission', () => {
   })
 
   it('rejects inactive employees', async () => {
-    mockFindUnique.mockResolvedValue(makeEmployee({ isActive: false }))
+    mockGetEmployeeByIdWithInclude.mockResolvedValue(makeEmployee({ isActive: false }))
 
     const result = await requirePermission('emp-session', 'loc-1', 'REPORTS_VIEW')
 
@@ -199,7 +265,8 @@ describe('requirePermission', () => {
   })
 
   it('rejects when employee not found', async () => {
-    mockFindUnique.mockResolvedValue(null)
+    mockGetEmployeeByIdWithInclude.mockResolvedValue(null)
+    mockFindFirst.mockResolvedValue(null)
 
     const result = await requirePermission('emp-ghost', 'loc-1', 'REPORTS_VIEW')
 

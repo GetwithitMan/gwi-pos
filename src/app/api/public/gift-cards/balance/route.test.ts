@@ -29,6 +29,17 @@ vi.mock('@/lib/site-api-schemas', () => ({
 vi.mock('@/lib/online-rate-limiter', () => ({
   checkOnlineRateLimit: vi.fn().mockReturnValue({ allowed: true }),
 }))
+vi.mock('@/lib/get-client-ip', () => ({
+  getClientIp: vi.fn().mockReturnValue('127.0.0.1'),
+}))
+vi.mock('@/lib/logger', () => ({
+  createChildLogger: () => ({
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  }),
+}))
 
 // ---------------------------------------------------------------------------
 // Import
@@ -86,9 +97,9 @@ describe('POST /api/public/gift-cards/balance', () => {
     const json = await res.json()
 
     expect(res.status).toBe(200)
-    expect(json.valid).toBe(true)
-    expect(json.balance).toBe(75)
-    expect(json.last4).toBe('1234')
+    expect(json.data.valid).toBe(true)
+    expect(json.data.balance).toBe(75)
+    expect(json.data.last4).toBe('1234')
   })
 
   it('returns error for wrong PIN', async () => {
@@ -103,8 +114,8 @@ describe('POST /api/public/gift-cards/balance', () => {
     }))
     const json = await res.json()
 
-    expect(json.valid).toBe(false)
-    expect(json.reason).toMatch(/invalid pin/i)
+    expect(json.data.valid).toBe(false)
+    expect(json.data.reason).toMatch(/invalid pin/i)
   })
 
   it('returns error for inactive card (depleted)', async () => {
@@ -118,8 +129,8 @@ describe('POST /api/public/gift-cards/balance', () => {
     }))
     const json = await res.json()
 
-    expect(json.valid).toBe(false)
-    expect(json.reason).toMatch(/zero balance/i)
+    expect(json.data.valid).toBe(false)
+    expect(json.data.reason).toMatch(/zero balance/i)
   })
 
   it('returns error for frozen card', async () => {
@@ -133,8 +144,8 @@ describe('POST /api/public/gift-cards/balance', () => {
     }))
     const json = await res.json()
 
-    expect(json.valid).toBe(false)
-    expect(json.reason).toMatch(/suspended/i)
+    expect(json.data.valid).toBe(false)
+    expect(json.data.reason).toMatch(/suspended/i)
   })
 
   it('lazily updates expired cards', async () => {
@@ -152,8 +163,8 @@ describe('POST /api/public/gift-cards/balance', () => {
     }))
     const json = await res.json()
 
-    expect(json.valid).toBe(false)
-    expect(json.reason).toMatch(/expired/i)
+    expect(json.data.valid).toBe(false)
+    expect(json.data.reason).toMatch(/expired/i)
     // Verify lazy expiry update was triggered (fire-and-forget)
     expect(mockVenueDb.giftCard.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -171,8 +182,8 @@ describe('POST /api/public/gift-cards/balance', () => {
     }))
     const json = await res.json()
 
-    expect(json.valid).toBe(false)
-    expect(json.reason).toMatch(/not found/i)
+    expect(json.data.valid).toBe(false)
+    expect(json.data.reason).toMatch(/not found/i)
   })
 
   it('returns active card without PIN when no PIN set', async () => {
@@ -186,8 +197,8 @@ describe('POST /api/public/gift-cards/balance', () => {
     }))
     const json = await res.json()
 
-    expect(json.valid).toBe(true)
-    expect(json.balance).toBe(100)
+    expect(json.data.valid).toBe(true)
+    expect(json.data.balance).toBe(100)
   })
 
   it('returns 400 for invalid request body', async () => {

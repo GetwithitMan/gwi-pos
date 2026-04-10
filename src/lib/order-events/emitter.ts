@@ -114,8 +114,8 @@ export async function emitOrderEvent(
 }
 
 /**
- * Emit multiple domain events for the same order in sequence.
- * Each event gets its own serverSequence (ordered).
+ * Emit multiple domain events for the same order in a single batch.
+ * Reserves N sequence numbers in one query and inserts all rows via createMany.
  * Fire-and-forget safe.
  *
  * Usage:
@@ -136,9 +136,77 @@ export async function emitOrderEvents(
   }>,
   opts?: EmitOptions
 ): Promise<void> {
-  // Sequential loop — each event must get a monotonically increasing
-  // serverSequence number. Promise.all would race and produce out-of-order sequences.
-  for (const evt of events) {
-    await emitOrderEvent(locationId, orderId, evt.type, evt.payload, opts)
+  if (events.length === 0) return
+  // Single event — delegate to the singular emitter (avoids overhead)
+  if (events.length === 1) {
+    await emitOrderEvent(locationId, orderId, events[0].type, events[0].payload, opts)
+    return
+  }
+
+  try {
+    const deviceId = opts?.deviceId ?? 'nuc-web'
+    const deviceCounter = opts?.deviceCounter ?? 0
+    const schemaVersion = opts?.schemaVersion ?? 1
+    const correlationId = opts?.correlationId ?? null
+    const now = new Date()
+
+    // Pre-process payloads (modifier JSON normalization) synchronously
+    const processedEvents = events.map((evt, idx) => {
+      const payload = { ...evt.payload }
+      if (evt.type === 'ITEM_ADDED' && payload.modifiersJson != null && payload.modifiers == null) {
+        try {
+          const raw = payload.modifiersJson
+          payload.modifiers = typeof raw === 'string' ? JSON.parse(raw) : raw
+        } catch {
+          // Malformed modifiersJson — leave modifiers absent
+        }
+      }
+      return {
+        type: evt.type,
+        payload,
+        // Suffix index to client ID for uniqueness; generate fresh UUID if no client ID
+        eventId: opts?.clientEventId ? `${opts.clientEventId}-${idx}` : crypto.randomUUID(),
+      }
+    })
+
+    // Reserve N sequence numbers in a single query
+    const seqRows = await db.$queryRaw<
+      { nextval: bigint | number }[]
+    >(Prisma.sql`SELECT nextval('order_event_server_seq') FROM generate_series(1, ${events.length})`)
+    const sequences = seqRows.map(r => Number(r.nextval))
+
+    // Batch insert all events in a single createMany call
+    await db.orderEvent.createMany({
+      data: processedEvents.map((evt, i) => ({
+        eventId: evt.eventId,
+        orderId,
+        locationId,
+        deviceId,
+        deviceCounter,
+        serverSequence: sequences[i],
+        type: evt.type,
+        payloadJson: evt.payload as any,
+        schemaVersion,
+        correlationId,
+        deviceCreatedAt: now,
+      })),
+    })
+
+    // Broadcast all events to terminals in parallel
+    void Promise.all(
+      processedEvents.map((evt, i) =>
+        emitToLocation(locationId, 'order:event', {
+          eventId: evt.eventId,
+          orderId,
+          serverSequence: sequences[i],
+          type: evt.type,
+          payload: evt.payload,
+          deviceId,
+          deviceCounter,
+        })
+      )
+    ).catch(err => log.warn({ err }, 'fire-and-forget failed in batch order-events.emitter'))
+  } catch (err) {
+    log.error({ err }, `[order-events/emitter] Failed to batch-emit ${events.length} events for order ${orderId}`)
   }
 }
