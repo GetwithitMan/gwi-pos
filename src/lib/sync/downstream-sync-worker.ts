@@ -112,6 +112,11 @@ const RECONCILIATION_INTERVAL_MS = 5 * 60 * 1000
 /** Timestamp of last reconciliation check */
 let lastReconciliationAt = 0
 
+/** Dead-letter fulfillment scan interval — 2 minutes */
+const DEAD_LETTER_SCAN_INTERVAL_MS = 2 * 60 * 1000
+/** Timestamp of last dead-letter scan */
+let lastDeadLetterScanAt = 0
+
 /**
  * Catalog tables use ID-swap instead of delete for business-key conflicts.
  * When a Neon row has a different ID but matching business key to a local row,
@@ -765,8 +770,8 @@ const pendingFulfillmentOrders = new Map<string, {
   scheduledAt: number
 }>()
 
-/** Max re-check attempts before giving up (5 cycles * 15s = ~75s window) */
-const MAX_FULFILLMENT_RETRIES = 5
+/** Max re-check attempts before giving up (20 cycles * 15s = ~5min window) */
+const MAX_FULFILLMENT_RETRIES = 20
 
 function schedulePendingFulfillment(orderId: string, locationId: string, row: Record<string, unknown>): void {
   if (pendingFulfillmentOrders.has(orderId)) return // Already scheduled
@@ -790,16 +795,18 @@ async function processPendingFulfillments(): Promise<void> {
     pending.retries++
 
     if (pending.retries > MAX_FULFILLMENT_RETRIES) {
-      log.warn({ orderId, retries: pending.retries }, 'Pending fulfillment exceeded max retries — giving up')
+      const elapsedSec = Math.round((Date.now() - pending.scheduledAt) / 1000)
+      log.warn({ orderId, retries: pending.retries, elapsedSec }, 'Pending fulfillment exceeded max retries — moved to dead-letter (will be recovered by periodic scan)')
       pendingFulfillmentOrders.delete(orderId)
       try {
         const { emitToLocation } = await import('../socket-server')
-        await emitToLocation(pending.locationId, 'sync:fulfillment-timeout', {
+        await emitToLocation(pending.locationId, 'sync:fulfillment-dead-letter', {
           orderId,
           retries: MAX_FULFILLMENT_RETRIES,
+          elapsedSec,
         })
       } catch (emitErr) {
-        log.error({ err: emitErr, orderId }, 'Failed to emit sync:fulfillment-timeout')
+        log.error({ err: emitErr, orderId }, 'Failed to emit sync:fulfillment-dead-letter')
       }
       continue
     }
@@ -818,6 +825,73 @@ async function processPendingFulfillments(): Promise<void> {
     } catch (err) {
       log.error({ err, orderId }, 'Pending fulfillment re-check failed')
     }
+  }
+}
+
+/**
+ * Dead-letter fulfillment scan — catches orders that fell through the in-memory retry window.
+ *
+ * Queries local DB for cloud-originated orders from the last 30 minutes that:
+ * 1. Have status 'sent' and lastMutatedBy 'cloud'
+ * 2. Have OrderItems present (items DID eventually arrive)
+ * 3. Have NO corresponding FulfillmentEvent (fulfillment never fired)
+ *
+ * For any matches, re-triggers handleCloudFulfillment. This is the safety net
+ * for orders whose items arrived after the 5-minute in-memory retry expired.
+ */
+async function scanDeadLetterFulfillments(): Promise<void> {
+  try {
+    const orphanedOrders = await masterClient.$queryRawUnsafe<Array<{
+      id: string
+      locationId: string
+      orderNumber: number | null
+      orderType: string | null
+      tabName: string | null
+      originTerminalId: string | null
+      createdAt: Date
+    }>>(
+      `SELECT o.id, o."locationId", o."orderNumber", o."orderType", o."tabName",
+              o."originTerminalId", o."createdAt"
+       FROM "Order" o
+       WHERE o.status = 'sent'
+         AND o."lastMutatedBy" = 'cloud'
+         AND o."createdAt" > NOW() - INTERVAL '30 minutes'
+         AND o."deletedAt" IS NULL
+         AND EXISTS (
+           SELECT 1 FROM "OrderItem" oi
+           WHERE oi."orderId" = o.id AND oi."deletedAt" IS NULL AND oi."kitchenStatus" = 'sent'
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM "FulfillmentEvent" fe WHERE fe."orderId" = o.id
+         )`
+    )
+
+    if (orphanedOrders.length === 0) return
+
+    log.warn({ count: orphanedOrders.length, orderIds: orphanedOrders.map(o => o.id) },
+      'Dead-letter scan found unfulfilled cloud orders — re-triggering fulfillment')
+
+    for (const order of orphanedOrders) {
+      try {
+        // Build a row object matching the shape handleCloudFulfillment expects
+        const row: Record<string, unknown> = {
+          id: order.id,
+          locationId: order.locationId,
+          orderNumber: order.orderNumber,
+          orderType: order.orderType,
+          tabName: order.tabName,
+          originTerminalId: order.originTerminalId,
+          createdAt: order.createdAt,
+        }
+        await handleCloudFulfillment(row)
+        log.info({ orderId: order.id }, 'Dead-letter fulfillment recovered')
+      } catch (err) {
+        log.error({ err, orderId: order.id }, 'Dead-letter fulfillment recovery failed')
+      }
+    }
+  } catch (err) {
+    // FulfillmentEvent table may not exist yet — non-fatal
+    log.error({ err }, 'Dead-letter fulfillment scan query failed')
   }
 }
 
@@ -1370,6 +1444,15 @@ async function runDownstreamCycle(): Promise<void> {
       lastReconciliationAt = now
       void runReconciliationCheck().catch((err) => {
         log.error({ err }, 'Reconciliation check failed')
+      })
+    }
+
+    // Dead-letter fulfillment scan — runs every 2 minutes (fire-and-forget)
+    // Catches cloud orders whose items arrived after the in-memory retry window expired
+    if (now - lastDeadLetterScanAt > DEAD_LETTER_SCAN_INTERVAL_MS) {
+      lastDeadLetterScanAt = now
+      void scanDeadLetterFulfillments().catch((err) => {
+        log.error({ err }, 'Dead-letter fulfillment scan failed')
       })
     }
   } catch (err) {

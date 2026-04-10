@@ -5,7 +5,9 @@ import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { normalizeCardholderName } from '@/lib/datacap/helpers'
 import { recordTab, DuplicateTabError } from '@/lib/datacap/record-tab'
-import { dispatchOpenOrdersChanged, dispatchTabUpdated } from '@/lib/socket-dispatch'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
+import type { OrdersListChangedPayload, TabUpdatedPayload } from '@/lib/socket-events'
+import { queueSocketEvent, flushOutboxSafe } from '@/lib/socket-outbox'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { validateCellularEmployeeFromHeaders, CellularAuthError } from '@/lib/cellular-validation'
 import { createChildLogger } from '@/lib/logger'
@@ -168,9 +170,22 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
         refNo: datacapRefNo,
       })
 
-      // Fire-and-forget socket dispatches so other terminals see the card auth
-      void dispatchOpenOrdersChanged(locationId, { trigger: 'item_updated', orderId }).catch(err => log.warn({ err }, 'Background task failed'))
-      void dispatchTabUpdated(locationId, { orderId }).catch(err => log.warn({ err }, 'Background task failed'))
+      // Durable outbox: queue socket events in a transaction so they survive crashes
+      await db.$transaction(async (tx) => {
+        const listPayload: OrdersListChangedPayload = {
+          trigger: 'item_updated',
+          orderId,
+        }
+        await queueSocketEvent(tx, locationId, SOCKET_EVENTS.ORDERS_LIST_CHANGED, listPayload)
+
+        const tabPayload: TabUpdatedPayload = {
+          orderId,
+        }
+        await queueSocketEvent(tx, locationId, SOCKET_EVENTS.TAB_UPDATED, tabPayload)
+      })
+
+      // Transaction committed — flush outbox (fire-and-forget, catch-up handles failures)
+      flushOutboxSafe(locationId)
       pushUpstream()
 
       return ok({

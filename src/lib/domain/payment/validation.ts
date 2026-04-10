@@ -69,6 +69,13 @@ export const PaymentRequestSchema = z.object({
   // The pay route falls back to the header if the body field is absent (line 420-422).
   // When present in body, must be a valid UUID.
   idempotencyKey: z.string().uuid('idempotencyKey must be a valid UUID').optional(),
+  // DRIFT-ACK: The order total as the client saw it when initiating payment.
+  // Used for drift detection — if the order total changed since the client captured it,
+  // the server can reject or warn. Omit if client doesn't track totals.
+  capturedOrderTotal: z.number().min(0).optional(),
+  // DRIFT-ACK: When true, the client has acknowledged a total drift and wants to proceed
+  // anyway. Set after the user confirms "Total changed by $X — proceed anyway?" prompt.
+  skipDriftCheck: z.boolean().optional(),
 })
 
 // ─── Idempotency Check ─────────────────────────────────────────────────────
