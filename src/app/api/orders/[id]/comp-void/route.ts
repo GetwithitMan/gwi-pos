@@ -94,11 +94,11 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     if (approvedById && !remoteApprovalCode) {
       try {
         validateManagerReauthFromHeaders(request, approvedById, managerPinHash)
-      } catch (caughtErr) {
-        if (err instanceof CellularAuthError) {
-          return err(err.message, err.status)
+      } catch (caughtError) {
+        if (caughtError instanceof CellularAuthError) {
+          return err(caughtError.message, caughtError.status)
         }
-        throw err
+        throw caughtError
       }
     }
 
@@ -107,11 +107,11 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     if (isCellularCompVoid) {
       try {
         await validateCellularOrderAccess(true, orderId, 'mutate', db)
-      } catch (caughtErr) {
-        if (err instanceof CellularAuthError) {
-          return err(err.message, err.status)
+      } catch (caughtError) {
+        if (caughtError instanceof CellularAuthError) {
+          return err(caughtError.message, caughtError.status)
         }
-        throw err
+        throw caughtError
       }
     }
 

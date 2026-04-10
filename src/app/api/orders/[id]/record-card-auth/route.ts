@@ -7,6 +7,7 @@ import { normalizeCardholderName } from '@/lib/datacap/helpers'
 import { recordTab, DuplicateTabError } from '@/lib/datacap/record-tab'
 import { dispatchOpenOrdersChanged, dispatchTabUpdated } from '@/lib/socket-dispatch'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { validateCellularEmployeeFromHeaders, CellularAuthError } from '@/lib/cellular-validation'
 import { createChildLogger } from '@/lib/logger'
 import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-record-card-auth')
@@ -83,6 +84,34 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       tokenFrequency,
     } = body
 
+    // HA cellular sync — detect mutation origin for downstream sync
+    const isCellular = request.headers.get('x-cellular-authenticated') === '1'
+
+    // Cellular employee binding: prevent impersonation by validating bound employee
+    let validatedEmployeeId: string | undefined
+    try {
+      validatedEmployeeId = validateCellularEmployeeFromHeaders(request, employeeId) || undefined
+    } catch (caughtErr) {
+      if (caughtErr instanceof CellularAuthError) {
+        return err(caughtErr.message, caughtErr.status)
+      }
+      throw caughtErr
+    }
+
+    // Cellular ownership gating — block mutation of locally-owned orders
+    // Card auth is a payment operation, so use 'pay' access level (always allowed)
+    if (isCellular) {
+      const { validateCellularOrderAccess } = await import('@/lib/cellular-validation')
+      try {
+        await validateCellularOrderAccess(true, orderId, 'pay', db)
+      } catch (caughtErr) {
+        if (caughtErr instanceof CellularAuthError) {
+          return err(caughtErr.message, caughtErr.status)
+        }
+        throw caughtErr
+      }
+    }
+
     // Fetch the order
     const order = await db.order.findFirst({
       where: { id: orderId, deletedAt: null },
@@ -95,8 +124,8 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
 
     const locationId = order.locationId
 
-    // Resolve employee from body OR from auth context (Android may send device token)
-    let resolvedEmployeeId = employeeId
+    // Resolve employee from validated cellular binding, body, or auth context
+    let resolvedEmployeeId = validatedEmployeeId || employeeId
     if (!resolvedEmployeeId) {
       const { getActorFromRequest } = await import('@/lib/api-auth')
       const actor = await getActorFromRequest(request)
