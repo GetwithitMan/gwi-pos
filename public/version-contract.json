@@ -2,11 +2,11 @@
   "schemaVersion": "124",
   "seedVersion": "v1",
   "provisionerVersion": "1",
-  "migrationCount": 126,
+  "migrationCount": 127,
   "schemaSha256": "d86e1420c25c4328325fce69a5f05d43c603e33f9d40f5d1ca3f45481489418d",
   "installerVersion": "2.0.33",
   "version": "2.0.33",
-  "dashboardVersion": "0.3.0",
+  "dashboardVersion": "0.3.1",
   "syncAgentVersion": "2.0.33",
   "monitoringVersion": "2.0.33",
   "ansibleBaselineVersion": "2026.03.20.1",
@@ -19,7 +19,7 @@
       "artifact": "app"
     },
     "dashboard": {
-      "version": "0.3.0",
+      "version": "0.3.1",
       "artifact": "gwi-nuc-dashboard.deb",
       "url": "/gwi-nuc-dashboard.deb"
     },
