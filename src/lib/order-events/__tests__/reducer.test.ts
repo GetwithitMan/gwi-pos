@@ -12,6 +12,7 @@ import {
   type OrderEventPayload,
   getSubtotalCents,
   getDiscountTotalCents,
+  getTotalCents,
   getItemTotalCents,
   getPaidAmountCents,
   getItemCount,

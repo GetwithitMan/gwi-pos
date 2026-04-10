@@ -154,7 +154,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
   const acceptedEventIds = new Set(accepted.map(a => a.eventId))
   const sentOrderIds = new Set<string>()
   for (const [orderId, orderEvents] of validatedByOrder) {
-    if (orderEvents.some(e => e.type === 'ORDER_SENT' && acceptedEventIds.has(e.eventId))) {
+    if (orderEvents.some(e => e.type === 'ORDER_SENT' && e.eventId && acceptedEventIds.has(e.eventId))) {
       sentOrderIds.add(orderId)
     }
   }

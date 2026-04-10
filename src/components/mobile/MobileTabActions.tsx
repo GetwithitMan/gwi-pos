@@ -88,25 +88,50 @@ export default function MobileTabActions({ tabId, employeeId, onTabClosed, onSta
     try {
       switch (pendingAction) {
         case 'close_device_tip':
+        case 'close_receipt_tip': {
+          const tipMode = pendingAction === 'close_device_tip' ? 'device' : 'receipt'
+          // Primary: HTTP POST for durability
+          try {
+            const res = await fetch(`/api/orders/${tabId}/close-tab`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ employeeId, tipMode }),
+            })
+            if (res.ok) {
+              break
+            }
+          } catch (err) {
+            console.warn('HTTP close failed, falling back to socket', err)
+          }
+          // Fallback: socket emit
           emitToSocket(MOBILE_EVENTS.TAB_CLOSE_REQUEST, {
             orderId: tabId,
-            tipMode: 'device',
+            tipMode,
             employeeId,
           })
           break
-        case 'close_receipt_tip':
-          emitToSocket(MOBILE_EVENTS.TAB_CLOSE_REQUEST, {
-            orderId: tabId,
-            tipMode: 'receipt',
-            employeeId,
-          })
-          break
-        case 'transfer':
+        }
+        case 'transfer': {
+          // Primary: HTTP POST for durability
+          try {
+            const res = await fetch(`/api/tabs/${tabId}/transfer`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ newEmployeeId: employeeId }),
+            })
+            if (res.ok) {
+              break
+            }
+          } catch (err) {
+            console.warn('HTTP transfer failed, falling back to socket', err)
+          }
+          // Fallback: socket emit
           emitToSocket(MOBILE_EVENTS.TAB_TRANSFER_REQUEST, {
             orderId: tabId,
             employeeId,
           })
           break
+        }
         case 'alert_manager':
           emitToSocket(MOBILE_EVENTS.TAB_ALERT_MANAGER, {
             orderId: tabId,

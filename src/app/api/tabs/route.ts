@@ -57,6 +57,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // cards, and custom includes is available. Current query requires locationId filtering.
     const where = {
       orderType: 'bar_tab' as const,
+      ...(tabsLocationId ? { locationId: tabsLocationId } : {}),
       ...(status !== 'all' ? { status } : {}),
       ...(employeeId ? { employeeId } : {}),
     }

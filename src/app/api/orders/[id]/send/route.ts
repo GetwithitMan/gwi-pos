@@ -219,12 +219,12 @@ export const POST = withVenue(withTiming(async function POST(
         }
       }
 
-      // Transition draft → open on first send (so Open Orders panel sees it)
-      const newStatus = order.status === 'draft' ? 'open' : order.status
+      // Transition draft/open → sent on first send (matches reducer behavior)
+      const newStatus = (order.status === 'draft' || order.status === 'open') ? 'sent' : order.status
 
-      // Update order: increment version, set sentAt = NOW(), optionally transition draft → open
-      if (order.status === 'draft') {
-        await tx.$executeRaw`UPDATE "Order" SET version = version + 1, "sentAt" = NOW(), status = 'open', "lastMutatedBy" = ${mutationOrigin}, "updatedAt" = NOW()
+      // Update order: increment version, set sentAt = NOW(), optionally transition draft/open → sent
+      if (order.status === 'draft' || order.status === 'open') {
+        await tx.$executeRaw`UPDATE "Order" SET version = version + 1, "sentAt" = NOW(), status = 'sent', "lastMutatedBy" = ${mutationOrigin}, "updatedAt" = NOW()
            WHERE id = ${id} AND "locationId" = ${order.locationId}`
       } else {
         await tx.$executeRaw`UPDATE "Order" SET version = version + 1, "sentAt" = NOW(), "lastMutatedBy" = ${mutationOrigin}, "updatedAt" = NOW()
