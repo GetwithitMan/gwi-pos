@@ -96,3 +96,8 @@ export type { PaymentFinancialContext, FinancialContextResult, BuildFinancialCon
 
 export { processPaymentLoop } from './executors'
 export type { PaymentLoopResult, PaymentLoopParams } from './executors'
+
+// ─── Commit (Phase 5 — post-loop transaction commit) ───────────────────────
+
+export { commitPaymentTransaction } from './commit/commit-payment-transaction'
+export type { CommitPaymentParams, CommitPaymentSuccess, CommitPaymentResult } from './commit/commit-payment-transaction'
