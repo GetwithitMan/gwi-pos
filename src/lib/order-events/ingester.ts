@@ -96,6 +96,12 @@ export interface IngestEvent {
   payload: Record<string, unknown>
   deviceId?: string
   correlationId?: string | null
+  /** Client-side monotonic counter for FIFO ordering diagnostics */
+  deviceCounter?: number
+  /** Client schema version for migration safety */
+  schemaVersion?: number
+  /** Client-side event creation timestamp (ISO string or Date) */
+  deviceCreatedAt?: string | Date | null
 }
 
 export interface IngestResult {
@@ -189,8 +195,8 @@ export async function ingestAndProject(
         )
         VALUES (
           gen_random_uuid(), ${eventId}, ${orderId}, ${locationId}, ${deviceId},
-          ${0}, nextval('order_event_server_seq'), ${evt.type}, ${JSON.stringify(evt.payload ?? {})}::jsonb,
-          ${1}, ${evt.correlationId ?? null}, ${new Date()},
+          ${evt.deviceCounter ?? 0}, nextval('order_event_server_seq'), ${evt.type}, ${JSON.stringify(evt.payload ?? {})}::jsonb,
+          ${evt.schemaVersion ?? 1}, ${evt.correlationId ?? null}, ${evt.deviceCreatedAt ? new Date(evt.deviceCreatedAt) : new Date()},
           NOW(), NOW()
         )
         ON CONFLICT ("eventId") DO NOTHING

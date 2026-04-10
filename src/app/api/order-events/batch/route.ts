@@ -89,6 +89,9 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       payload: validatedPayload,
       deviceId: evt.deviceId,
       correlationId: evt.correlationId ?? null,
+      deviceCounter: evt.deviceCounter,
+      schemaVersion: evt.schemaVersion,
+      deviceCreatedAt: evt.deviceCreatedAt ?? null,
     })
     validatedByOrder.set(evt.orderId, list)
   }
@@ -114,9 +117,12 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
 
   // Best-effort kitchen printing (async)
   // Real-time KDS dispatch is handled reliably via transactional outbox inside ingestAndProject
+  // IMPORTANT: Only print for ORDER_SENT events that were actually inserted (not duplicate retries).
+  // Build a set of accepted eventIds so we can cross-check against the raw batch.
+  const acceptedEventIds = new Set(accepted.map(a => a.eventId))
   const sentOrderIds = new Set<string>()
   for (const [orderId, orderEvents] of validatedByOrder) {
-    if (orderEvents.some(e => e.type === 'ORDER_SENT')) {
+    if (orderEvents.some(e => e.type === 'ORDER_SENT' && acceptedEventIds.has(e.eventId))) {
       sentOrderIds.add(orderId)
     }
   }
