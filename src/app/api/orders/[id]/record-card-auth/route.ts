@@ -20,7 +20,7 @@ const RecordCardAuthSchema = z.object({
   recordNo: z.string().min(1, 'recordNo is required'),
   authCode: z.string().min(1, 'authCode is required'),
   authAmount: z.number().positive('authAmount must be a positive number'),
-  employeeId: z.string().optional(), // Resolved from body or auth context (Android may send device token)
+  employeeId: z.string().min(1, 'employeeId is required'),
   transactionType: z.string().optional(),
   datacapResponseCode: z.string().optional(),
   datacapRefNo: z.string().optional(),
@@ -95,19 +95,11 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
 
     const locationId = order.locationId
 
-    // Resolve employee from body OR from auth context (Android may send device token)
-    let resolvedEmployeeId = employeeId
-    if (!resolvedEmployeeId) {
-      const { getActorFromRequest } = await import('@/lib/api-auth')
-      const actor = await getActorFromRequest(request)
-      resolvedEmployeeId = actor?.employeeId
-    }
-
     // Validate employee belongs to this location
-    const employee = resolvedEmployeeId ? await db.employee.findFirst({
-      where: { id: resolvedEmployeeId, locationId, deletedAt: null },
+    const employee = await db.employee.findFirst({
+      where: { id: employeeId, locationId, deletedAt: null },
       select: { id: true },
-    }) : null
+    })
 
     if (!employee) {
       return err('Employee not found at this location')

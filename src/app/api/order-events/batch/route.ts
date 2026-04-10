@@ -54,6 +54,26 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
   const accepted: BatchEventResponse['accepted'] = []
   const rejected: BatchEventResponse['rejected'] = []
 
+  // Privileged event types that require an identified employee in the payload.
+  // A bare device token is not sufficient — these mutations affect money.
+  const PRIVILEGED_EVENT_TYPES = new Set([
+    'PAYMENT_APPLIED',
+    'PAYMENT_VOIDED',
+    'DISCOUNT_APPLIED',
+    'DISCOUNT_REMOVED',
+    'COMP_VOID_APPLIED',
+    'ORDER_CLOSED',
+    'REFUND_APPLIED',
+  ])
+
+  // Pre-fetch active employee IDs for this location (one query, used for all events)
+  const activeEmployeeIds = new Set(
+    (await db.employee.findMany({
+      where: { locationId, isActive: true, deletedAt: null },
+      select: { id: true },
+    })).map(e => e.id)
+  )
+
   // Validate events and group by orderId
   const validatedByOrder = new Map<string, IngestEvent[]>()
 
@@ -80,6 +100,18 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
         reason: error.message || 'Invalid payload schema',
       })
       continue
+    }
+
+    // Privileged events must carry an employeeId that maps to an active employee
+    if (PRIVILEGED_EVENT_TYPES.has(evt.type)) {
+      const employeeId = (validatedPayload as Record<string, unknown>).employeeId as string | undefined
+      if (!employeeId || !activeEmployeeIds.has(employeeId)) {
+        rejected.push({
+          eventId: evt.eventId,
+          reason: `${evt.type} requires a valid employeeId in payload (got: ${employeeId || 'none'})`,
+        })
+        continue
+      }
     }
 
     const list = validatedByOrder.get(evt.orderId) ?? []
