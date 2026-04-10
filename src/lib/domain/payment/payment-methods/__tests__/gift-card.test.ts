@@ -13,6 +13,7 @@ function makeMockTx(card: Record<string, unknown> | null = null) {
       findUniqueOrThrow: vi.fn().mockResolvedValue(card),
       update: vi.fn().mockResolvedValue({}),
     },
+    $queryRaw: vi.fn().mockResolvedValue([]),
     $queryRawUnsafe: vi.fn().mockResolvedValue([]),
   } as unknown as Parameters<typeof processGiftCardPayment>[0]
 }
@@ -213,9 +214,12 @@ describe('processGiftCardPayment', () => {
       true
     )
 
-    expect(tx.$queryRawUnsafe).toHaveBeenCalledWith(
-      expect.stringContaining('FOR UPDATE'),
-      'gc-1'
+    expect(tx.$queryRaw).toHaveBeenCalledWith(
+      expect.objectContaining({
+        strings: expect.arrayContaining([
+          expect.stringContaining('FOR UPDATE'),
+        ]),
+      })
     )
   })
 
