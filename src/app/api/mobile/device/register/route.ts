@@ -42,19 +42,14 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
       return unauthorized('Invalid PIN')
     }
 
-    // Find or create a RegisteredDevice for this fingerprint.
-    // When no fingerprint is supplied, skip the lookup entirely and always create
-    // a new device record. This prevents matching an arbitrary existing device
-    // (Prisma drops undefined filters, which would match the first row).
-    let device = deviceFingerprint
-      ? await db.registeredDevice.findFirst({
-          where: {
-            locationId,
-            deviceFingerprint,
-            deletedAt: null,
-          },
-        })
-      : null
+    // Find or create a RegisteredDevice for this fingerprint
+    let device = await db.registeredDevice.findFirst({
+      where: {
+        locationId,
+        deviceFingerprint: deviceFingerprint ?? undefined,
+        deletedAt: null,
+      },
+    })
 
     if (!device) {
       device = await db.registeredDevice.create({

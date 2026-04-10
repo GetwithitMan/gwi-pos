@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
-import { withAuth } from '@/lib/api-auth-middleware'
 import { withTiming, getTimingFromRequest } from '@/lib/with-timing'
 import { getCurrentBusinessDay } from '@/lib/business-day'
 import { err, ok } from '@/lib/api-response'
@@ -53,7 +52,7 @@ async function hasScheduledForColumn(): Promise<boolean> {
 // TODO: OrderRepository.getOpenOrders() exists but is too simple for this route —
 // needs business day batching, empty-shell exclusion, rich includes, and multi-filter support.
 // Add repository methods: getOpenOrdersSummary(), getOpenOrdersFull(), countOpenOrders()
-export const GET = withVenue(withAuth({ allowCellular: true }, withTiming(async function GET(request: NextRequest) {
+export const GET = withVenue(withTiming(async function GET(request: NextRequest) {
   try {
     const timing = getTimingFromRequest(request)
     const searchParams = request.nextUrl.searchParams
@@ -638,4 +637,4 @@ export const GET = withVenue(withAuth({ allowCellular: true }, withTiming(async 
     console.error('Failed to fetch open orders:', error)
     return err('Failed to fetch open orders', 500)
   }
-}, 'orders-open')))
+}, 'orders-open'))

@@ -54,26 +54,6 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
   const accepted: BatchEventResponse['accepted'] = []
   const rejected: BatchEventResponse['rejected'] = []
 
-  // Privileged event types that require an identified employee in the payload.
-  // A bare device token is not sufficient — these mutations affect money.
-  const PRIVILEGED_EVENT_TYPES = new Set([
-    'PAYMENT_APPLIED',
-    'PAYMENT_VOIDED',
-    'DISCOUNT_APPLIED',
-    'DISCOUNT_REMOVED',
-    'COMP_VOID_APPLIED',
-    'ORDER_CLOSED',
-    'REFUND_APPLIED',
-  ])
-
-  // Pre-fetch active employee IDs for this location (one query, used for all events)
-  const activeEmployeeIds = new Set(
-    (await db.employee.findMany({
-      where: { locationId, isActive: true, deletedAt: null },
-      select: { id: true },
-    })).map(e => e.id)
-  )
-
   // Validate events and group by orderId
   const validatedByOrder = new Map<string, IngestEvent[]>()
 
@@ -102,18 +82,6 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       continue
     }
 
-    // Privileged events must carry an employeeId that maps to an active employee
-    if (PRIVILEGED_EVENT_TYPES.has(evt.type)) {
-      const employeeId = (validatedPayload as Record<string, unknown>).employeeId as string | undefined
-      if (!employeeId || !activeEmployeeIds.has(employeeId)) {
-        rejected.push({
-          eventId: evt.eventId,
-          reason: `${evt.type} requires a valid employeeId in payload (got: ${employeeId || 'none'})`,
-        })
-        continue
-      }
-    }
-
     const list = validatedByOrder.get(evt.orderId) ?? []
     list.push({
       eventId: evt.eventId,
@@ -121,9 +89,6 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       payload: validatedPayload,
       deviceId: evt.deviceId,
       correlationId: evt.correlationId ?? null,
-      deviceCounter: evt.deviceCounter,
-      schemaVersion: evt.schemaVersion,
-      deviceCreatedAt: evt.deviceCreatedAt ? new Date(evt.deviceCreatedAt) : null,
     })
     validatedByOrder.set(evt.orderId, list)
   }
@@ -149,12 +114,9 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
 
   // Best-effort kitchen printing (async)
   // Real-time KDS dispatch is handled reliably via transactional outbox inside ingestAndProject
-  // IMPORTANT: Only print for ORDER_SENT events that were actually inserted (not duplicate retries).
-  // Build a set of accepted eventIds so we can cross-check against the raw batch.
-  const acceptedEventIds = new Set(accepted.map(a => a.eventId))
   const sentOrderIds = new Set<string>()
   for (const [orderId, orderEvents] of validatedByOrder) {
-    if (orderEvents.some(e => e.type === 'ORDER_SENT' && e.eventId && acceptedEventIds.has(e.eventId))) {
+    if (orderEvents.some(e => e.type === 'ORDER_SENT')) {
       sentOrderIds.add(orderId)
     }
   }

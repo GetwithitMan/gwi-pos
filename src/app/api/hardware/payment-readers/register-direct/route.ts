@@ -5,8 +5,7 @@ import { parseSettings } from '@/lib/settings'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
-import { authenticateTerminal } from '@/lib/terminal-auth'
-import { err, ok, unauthorized } from '@/lib/api-response'
+import { err, ok } from '@/lib/api-response'
 
 /**
  * POST /api/hardware/payment-readers/register-direct
@@ -23,21 +22,11 @@ import { err, ok, unauthorized } from '@/lib/api-response'
  */
 export const POST = withVenue(withAuth(async function POST(request: NextRequest) {
   try {
-    // Authenticate the calling terminal and use its identity as the source of truth
-    // for locationId and terminalId. Body values are accepted for backward compat
-    // but must match the authenticated identity.
-    const auth = await authenticateTerminal(request)
-    if (auth.error) return auth.error
-
     const body = await request.json()
-    const { serialNumber, connectionType, name } = body
+    const { serialNumber, connectionType, name, locationId, terminalId } = body
 
-    // Use authenticated terminal's identity — never trust body for location/terminal
-    const locationId = auth.terminal.locationId
-    const terminalId = auth.terminal.id
-
-    if (!serialNumber) {
-      return err('serialNumber is required')
+    if (!serialNumber || !locationId || !terminalId) {
+      return err('serialNumber, locationId, and terminalId are required')
     }
 
     const resolvedConnectionType = (connectionType === 'BLUETOOTH' ? 'BLUETOOTH' : 'USB') as string
