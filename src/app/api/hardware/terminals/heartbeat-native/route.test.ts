@@ -10,6 +10,12 @@ const mockDb = vi.hoisted(() => ({
     findFirst: vi.fn(),
     update: vi.fn(),
   },
+  auditLog: {
+    create: vi.fn().mockResolvedValue({}),
+  },
+  mobileSession: {
+    findFirst: vi.fn().mockResolvedValue(null),
+  },
 }))
 
 vi.mock('@/lib/with-venue', () => ({
@@ -17,6 +23,43 @@ vi.mock('@/lib/with-venue', () => ({
 }))
 
 vi.mock('@/lib/db', () => ({ db: mockDb }))
+
+vi.mock('@/lib/cloud-notify', () => ({
+  notifyDataChanged: vi.fn(),
+}))
+vi.mock('@/lib/sync/outage-safe-write', () => ({
+  pushUpstream: vi.fn(),
+}))
+vi.mock('@/lib/get-client-ip', () => ({
+  getClientIp: vi.fn().mockReturnValue('10.0.0.1'),
+}))
+vi.mock('@/lib/socket-server', () => ({
+  emitToLocation: vi.fn().mockResolvedValue(undefined),
+}))
+vi.mock('@/lib/socket-events', () => ({
+  SOCKET_EVENTS: {
+    TERMINAL_STATUS_CHANGED: 'terminal:status-changed',
+  },
+}))
+vi.mock('@/lib/api-response', async () => {
+  const { NextResponse } = await import('next/server')
+  return {
+    ok: (data: unknown) => NextResponse.json({ data }, { status: 200 }),
+    err: (message: string, status = 400) => NextResponse.json({ error: message }, { status }),
+    unauthorized: (message = 'Unauthorized') => NextResponse.json({ error: message }, { status: 401 }),
+  }
+})
+vi.mock('@/lib/auth-session', () => ({
+  refreshSessionToken: vi.fn().mockResolvedValue(null),
+}))
+vi.mock('@/lib/logger', () => ({
+  createChildLogger: () => ({
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  }),
+}))
 
 // ---------------------------------------------------------------------------
 import { POST } from './route'

@@ -20,6 +20,10 @@ vi.mock('@/lib/api-auth-middleware', () => ({
   withAuth: (_perm: string, handler: (...args: unknown[]) => unknown) => handler,
 }))
 vi.mock('@/lib/cloud-notify', () => ({ notifyDataChanged: vi.fn() }))
+vi.mock('@/lib/sync/outage-safe-write', () => ({ pushUpstream: vi.fn() }))
+vi.mock('@/lib/socket-dispatch', () => ({
+  dispatchGiftCardBalanceChanged: vi.fn(),
+}))
 vi.mock('@/lib/domain/gift-cards/schemas', () => ({
   importCardsSchema: {
     safeParse: (data: Record<string, unknown>) => {
@@ -97,9 +101,9 @@ describe('POST /api/gift-cards/import', () => {
     const json = await res.json()
 
     expect(res.status).toBe(200)
-    expect(json.imported).toBe(3)
-    expect(json.skipped).toBe(0)
-    expect(json.batchId).toBeTruthy()
+    expect(json.data.imported).toBe(3)
+    expect(json.data.skipped).toBe(0)
+    expect(json.data.batchId).toBeTruthy()
     expect(mockDb.giftCard.createMany).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.arrayContaining([
@@ -122,12 +126,12 @@ describe('POST /api/gift-cards/import', () => {
     )
     const json = await res.json()
 
-    expect(json.batchId).toEqual(expect.any(String))
+    expect(json.data.batchId).toEqual(expect.any(String))
     // Verify batchId was passed to createMany
     expect(mockDb.giftCard.createMany).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.arrayContaining([
-          expect.objectContaining({ batchId: json.batchId }),
+          expect.objectContaining({ batchId: json.data.batchId }),
         ]),
       })
     )
@@ -144,9 +148,9 @@ describe('POST /api/gift-cards/import', () => {
     const json = await res.json()
 
     // One should be imported, one skipped as duplicate within batch
-    expect(json.imported).toBe(2) // GC-DUPE (first) + GC-UNIQ
-    expect(json.skipped).toBe(1) // second GC-DUPE
-    expect(json.errors).toContainEqual(
+    expect(json.data.imported).toBe(2) // GC-DUPE (first) + GC-UNIQ
+    expect(json.data.skipped).toBe(1) // second GC-DUPE
+    expect(json.data.errors).toContainEqual(
       expect.objectContaining({ error: 'Duplicate within batch' })
     )
   })
@@ -163,9 +167,9 @@ describe('POST /api/gift-cards/import', () => {
     )
     const json = await res.json()
 
-    expect(json.imported).toBe(1)
-    expect(json.skipped).toBe(1)
-    expect(json.errors).toContainEqual(
+    expect(json.data.imported).toBe(1)
+    expect(json.data.skipped).toBe(1)
+    expect(json.data.errors).toContainEqual(
       expect.objectContaining({ error: 'Card number already exists in database' })
     )
   })
@@ -187,8 +191,8 @@ describe('POST /api/gift-cards/import', () => {
     const json = await res.json()
 
     // 2 DB collisions + 1 batch duplicate = 3 skipped, 2 imported (GC-NEW-A first + GC-NEW-B)
-    expect(json.imported).toBe(2)
-    expect(json.skipped).toBe(3)
+    expect(json.data.imported).toBe(2)
+    expect(json.data.skipped).toBe(3)
   })
 
   it('validates card number format (rejects invalid)', async () => {

@@ -20,6 +20,7 @@ import { SOCKET_EVENTS } from '@/lib/socket-events'
 import type { OrderTotalsUpdatedPayload, OrdersListChangedPayload, OrderSummaryUpdatedPayload } from '@/lib/socket-events'
 import { queueSocketEvent, flushOutboxSafe } from '@/lib/socket-outbox'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { validateMutationApproval } from '@/lib/approval-tokens'
 import { createChildLogger } from '@/lib/logger'
 import { err, forbidden, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-discount')
@@ -33,6 +34,7 @@ const ApplyDiscountSchema = z.object({
   reason: z.string().max(500).optional(),
   employeeId: z.string().min(1).optional(),
   approvedById: z.string().min(1).optional(),
+  approvalToken: z.string().optional(),
 }).passthrough()
 
 interface ApplyDiscountRequest {
@@ -45,6 +47,7 @@ interface ApplyDiscountRequest {
   reason?: string
   employeeId?: string
   approvedById?: string  // Manager ID if approval required
+  approvalToken?: string  // HMAC-signed token from verify-pin (mutation-bound)
 }
 
 // POST - Apply a discount to an order
@@ -60,6 +63,12 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       return err(`Validation failed: ${parseResult.error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`)
     }
     const body = parseResult.data as ApplyDiscountRequest
+
+    // Validate mutation-bound approval token (if present)
+    const tokenCheck = validateMutationApproval({ approvalToken: body.approvalToken, approvedById: body.approvedById, routeName: 'order-discount' })
+    if (!tokenCheck.valid) {
+      return err(tokenCheck.error, tokenCheck.status)
+    }
 
     // SECURITY: Use authenticated employee ID for permission checks.
     // body.employeeId is still used for business logic (employee discount clock-in check)

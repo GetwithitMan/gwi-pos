@@ -27,6 +27,25 @@ const mockUpdateMany = vi.fn()
 const mockUpdate = vi.fn()
 const mockCreate = vi.fn()
 const mockTransaction = vi.fn()
+const mockTxQueryRaw = vi.fn()
+const mockTxFindFirst = vi.fn().mockResolvedValue(null)
+const mockTxFindUnique = vi.fn()
+const mockTxUpdate = vi.fn()
+const mockTxCreate = vi.fn()
+
+// Interactive transaction mock — calls fn with a mock tx client
+const mockTx = {
+  inventoryItemTransaction: {
+    findFirst: (...args: unknown[]) => mockTxFindFirst(...args),
+    create: (...args: unknown[]) => mockTxCreate(...args),
+  },
+  inventoryItem: {
+    findUnique: (...args: unknown[]) => mockTxFindUnique(...args),
+    update: (...args: unknown[]) => mockTxUpdate(...args),
+  },
+  wasteLogEntry: { create: (...args: unknown[]) => mockTxCreate(...args) },
+  $queryRaw: (...args: unknown[]) => mockTxQueryRaw(...args),
+}
 
 vi.mock('@/lib/db', () => ({
   db: {
@@ -35,7 +54,12 @@ vi.mock('@/lib/db', () => ({
     inventoryItem: { update: (...args: unknown[]) => mockUpdate(...args) },
     inventoryItemTransaction: { create: (...args: unknown[]) => mockCreate(...args) },
     wasteLogEntry: { create: (...args: unknown[]) => mockCreate(...args) },
-    $transaction: (ops: unknown[]) => mockTransaction(ops),
+    $transaction: (fnOrOps: unknown) => {
+      if (typeof fnOrOps === 'function') {
+        return (fnOrOps as (tx: typeof mockTx) => unknown)(mockTx)
+      }
+      return mockTransaction(fnOrOps)
+    },
   },
 }))
 
@@ -47,6 +71,12 @@ vi.mock('@/lib/logger', () => ({
     warn: vi.fn(),
     debug: vi.fn(),
   },
+  createChildLogger: () => ({
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  }),
 }))
 
 // =============================================================================
@@ -87,6 +117,11 @@ describe('deductInventoryForOrder', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockTransaction.mockResolvedValue(undefined)
+    mockTxFindFirst.mockResolvedValue(null)
+    mockTxFindUnique.mockResolvedValue(null)
+    mockTxQueryRaw.mockResolvedValue([])
+    mockTxUpdate.mockResolvedValue({})
+    mockTxCreate.mockResolvedValue({})
   })
 
   it('deducts food recipe ingredients on payment', async () => {
@@ -116,15 +151,18 @@ describe('deductInventoryForOrder', () => {
       ],
     })
 
+    // Mock tx operations inside interactive transaction
+    mockTxFindUnique.mockResolvedValue({ trackInventory: true, version: 0, currentStock: new Decimal(100) })
+    mockTxQueryRaw.mockResolvedValue([{ currentStock: new Decimal(92) }])
+    mockTxCreate.mockResolvedValue({})
+
     const result = await deductInventoryForOrder('order-1')
 
     expect(result.success).toBe(true)
     expect(result.itemsDeducted).toBe(2)
-    // Flour: 4oz * 2qty = 8oz, Butter: 2oz * 2qty = 4oz
-    expect(mockTransaction).toHaveBeenCalledTimes(1)
-    const txOps = mockTransaction.mock.calls[0][0]
-    // 2 items * 2 operations each (update stock + create transaction) = 4
-    expect(txOps).toHaveLength(4)
+    // 2 items: each gets a $queryRaw (decrement) + inventoryItemTransaction.create
+    expect(mockTxQueryRaw).toHaveBeenCalledTimes(2)
+    expect(mockTxCreate).toHaveBeenCalledTimes(2)
   })
 
   it('deducts modifier via Path A (ModifierInventoryLink)', async () => {
@@ -159,11 +197,17 @@ describe('deductInventoryForOrder', () => {
       ],
     })
 
+    // Mock tx operations inside interactive transaction
+    mockTxFindUnique.mockResolvedValue({ trackInventory: true, version: 0, currentStock: new Decimal(100) })
+    mockTxQueryRaw.mockResolvedValue([{ currentStock: new Decimal(98.5) }])
+    mockTxCreate.mockResolvedValue({})
+
     const result = await deductInventoryForOrder('order-2')
 
     expect(result.success).toBe(true)
     expect(result.itemsDeducted).toBe(1) // cheese
-    expect(mockTransaction).toHaveBeenCalledTimes(1)
+    expect(mockTxQueryRaw).toHaveBeenCalledTimes(1)
+    expect(mockTxCreate).toHaveBeenCalledTimes(1)
   })
 
   it('deducts modifier via Path B (ingredientId fallback) when no inventoryLink', async () => {
@@ -246,15 +290,19 @@ describe('deductInventoryForOrder', () => {
       ],
     })
 
+    // Mock tx operations inside interactive transaction
+    mockTxFindUnique.mockResolvedValue({ trackInventory: true, version: 0, currentStock: new Decimal(100) })
+    mockTxQueryRaw.mockResolvedValue([{ currentStock: new Decimal(97) }])
+    mockTxCreate.mockResolvedValue({})
+
     const result = await deductInventoryForOrder('order-4')
 
     expect(result.success).toBe(true)
     // Should deduct exactly 1 item (cheese-a via Path A), NOT 2 (cheese-a + cheese-b)
     expect(result.itemsDeducted).toBe(1)
-    // Transaction should have exactly 2 operations (1 stock update + 1 transaction record)
-    expect(mockTransaction).toHaveBeenCalledTimes(1)
-    const txOps = mockTransaction.mock.calls[0][0]
-    expect(txOps).toHaveLength(2)
+    // 1 item: 1 $queryRaw (decrement) + 1 inventoryItemTransaction.create
+    expect(mockTxQueryRaw).toHaveBeenCalledTimes(1)
+    expect(mockTxCreate).toHaveBeenCalledTimes(1)
   })
 
   it('NO modifier → 0x deduction (skips ingredient entirely)', async () => {
@@ -357,6 +405,11 @@ describe('deductInventoryForVoidedItem', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockTransaction.mockResolvedValue(undefined)
+    mockTxFindFirst.mockResolvedValue(null)
+    mockTxFindUnique.mockResolvedValue(null)
+    mockTxQueryRaw.mockResolvedValue([])
+    mockTxUpdate.mockResolvedValue({})
+    mockTxCreate.mockResolvedValue({})
   })
 
   it('food void with wasMade reason → deducts as waste', async () => {
@@ -379,13 +432,17 @@ describe('deductInventoryForVoidedItem', () => {
       modifiers: [],
     })
 
+    // Mock tx operations inside interactive transaction
+    mockTxUpdate.mockResolvedValue({ currentStock: new Decimal(96) })
+    mockTxCreate.mockResolvedValue({})
+
     const result = await deductInventoryForVoidedItem('oi-1', 'kitchen_error')
 
     expect(result.success).toBe(true)
     expect(result.itemsDeducted).toBe(1)
-    // Should create 3 operations per item: stock update + transaction + waste log
-    const txOps = mockTransaction.mock.calls[0][0]
-    expect(txOps).toHaveLength(3)
+    // Interactive transaction: stock update via tx.inventoryItem.update + tx.inventoryItemTransaction.create + tx.wasteLogEntry.create
+    expect(mockTxUpdate).toHaveBeenCalledTimes(1)
+    expect(mockTxCreate).toHaveBeenCalledTimes(2) // transaction record + waste log entry
   })
 
   it('CRITICAL (GL-08): liquor void with wasMade → deducts bottle stock', async () => {
@@ -418,12 +475,17 @@ describe('deductInventoryForVoidedItem', () => {
       modifiers: [],
     })
 
+    // Mock tx operations inside interactive transaction
+    mockTxUpdate.mockResolvedValue({ currentStock: new Decimal(747) })
+    mockTxCreate.mockResolvedValue({})
+
     const result = await deductInventoryForVoidedItem('oi-2', 'kitchen_error')
 
     expect(result.success).toBe(true)
     expect(result.itemsDeducted).toBe(2) // tequila + lime
     // This was the GL-08 bug — before the fix, this would return 0
-    expect(mockTransaction).toHaveBeenCalledTimes(1)
+    expect(mockTxUpdate).toHaveBeenCalledTimes(2) // stock decrement for each ingredient
+    expect(mockTxCreate).toHaveBeenCalledTimes(4) // 2 transaction records + 2 waste log entries
   })
 
   it('non-waste void reason → no deduction', async () => {

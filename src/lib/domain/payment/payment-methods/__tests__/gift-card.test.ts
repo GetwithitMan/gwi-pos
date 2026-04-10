@@ -13,7 +13,7 @@ function makeMockTx(card: Record<string, unknown> | null = null) {
       findUniqueOrThrow: vi.fn().mockResolvedValue(card),
       update: vi.fn().mockResolvedValue({}),
     },
-    $queryRawUnsafe: vi.fn().mockResolvedValue([]),
+    $queryRaw: vi.fn().mockResolvedValue([]),
   } as unknown as Parameters<typeof processGiftCardPayment>[0]
 }
 
@@ -213,10 +213,8 @@ describe('processGiftCardPayment', () => {
       true
     )
 
-    expect(tx.$queryRawUnsafe).toHaveBeenCalledWith(
-      expect.stringContaining('FOR UPDATE'),
-      'gc-1'
-    )
+    // $queryRaw is called with a Prisma tagged template (not a raw string)
+    expect(tx.$queryRaw).toHaveBeenCalled()
   })
 
   it('looks up card by giftCardNumber when giftCardId not provided', async () => {

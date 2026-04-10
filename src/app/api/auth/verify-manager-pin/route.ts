@@ -5,6 +5,7 @@ import { withVenue } from '@/lib/with-venue'
 import { hasPermission } from '@/lib/auth-utils'
 import { createRateLimiter } from '@/lib/rate-limiter'
 import { getClientIp } from '@/lib/get-client-ip'
+import { generateApprovalToken } from '@/lib/approval-tokens'
 import { ok } from '@/lib/api-response'
 
 // ── Action → Permission mapping ─────────────────────────────────────────────
@@ -166,10 +167,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const employeeName = matchedEmployee.displayName
       || `${matchedEmployee.firstName} ${matchedEmployee.lastName}`
 
+    // Generate mutation-bound approval token (HMAC-signed, 5-min TTL)
+    const approvalToken = generateApprovalToken(matchedEmployee.id, locationId)
+
     return ok({
       authorized: true,
       employeeId: matchedEmployee.id,
       employeeName,
+      approvalToken,
     })
   } catch (error) {
     console.error('[verify-manager-pin] Error:', error)

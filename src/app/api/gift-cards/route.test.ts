@@ -101,8 +101,8 @@ describe('GET /api/gift-cards', () => {
     const json = await res.json()
 
     expect(res.status).toBe(200)
-    expect(Array.isArray(json)).toBe(true)
-    expect(json[0]).toHaveProperty('cardNumber', 'GC-AAAA-BBBB-CCCC-DDDD')
+    expect(Array.isArray(json.data)).toBe(true)
+    expect(json.data[0]).toHaveProperty('cardNumber', 'GC-AAAA-BBBB-CCCC-DDDD')
     expect(mockDb.giftCard.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({ locationId: 'loc-1' }),

@@ -1,13 +1,13 @@
 /**
- * Update Agent — Failure Recovery & Rollback Tests
+ * Update Agent — Version Validation, Preflight, and Deploy Tests
  *
- * Tests the CRITICAL paths in the update agent:
- * 1. Service restore on failure (P0 safety net)
+ * Tests the update agent's:
+ * 1. Version validation (shell injection defense)
  * 2. Preflight safety gates
- * 3. Version validation (shell injection defense)
- * 4. Health check and rollback flow
- * 5. Concurrent update rejection
- * 6. Deploy health reporting to MC
+ * 3. gwi-node deploy path (single deploy engine)
+ * 4. Concurrent update rejection
+ * 5. Deploy health reporting to MC
+ * 6. getCurrentVersion and status
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -114,6 +114,7 @@ function buildExecSyncMock(overrides: Record<string, () => string> = {}, tracker
     if (cmd.includes('mv ')) return ''
     if (cmd.includes('rm -rf')) return ''
     if (cmd.includes('deploy-release.sh')) return 'deploy ok'
+    if (cmd.includes('gwi-node.sh')) return 'deploy ok'
     return ''
   }
 }
@@ -131,10 +132,10 @@ function setupExistsSync(pathMap: Record<string, boolean>, defaultValue = false)
   })
 }
 
-/** Standard existsSync setup for legacy deploy tests */
-const LEGACY_EXISTS_MAP: Record<string, boolean> = {
+/** Standard existsSync setup for gwi-node deploy tests */
+const DEPLOY_EXISTS_MAP: Record<string, boolean> = {
   'package.json': true,
-  'deploy-release.sh': false,
+  'gwi-node.sh': true,
   '.update-lock': false,
   'disk-pressure.json': false,
   'last-update.json': false,
@@ -144,7 +145,6 @@ const LEGACY_EXISTS_MAP: Record<string, boolean> = {
   '.git/CHERRY_PICK_HEAD': false,
   '.git/index.lock': false,
   '.git/HEAD.lock': false,
-  'app.last-good': false,
   'version-contract.json': false,
   'version-compat.sh': false,
   '.next': true,
@@ -157,7 +157,7 @@ describe('update-agent', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.useFakeTimers()
-    setupExistsSync(LEGACY_EXISTS_MAP)
+    setupExistsSync(DEPLOY_EXISTS_MAP)
     mockExecSync.mockImplementation(buildExecSyncMock())
     mockReadFileSync.mockImplementation((p: string) => {
       if (typeof p === 'string' && p.includes('package.json')) return '{"version":"1.0.50"}'
@@ -282,7 +282,7 @@ describe('update-agent', () => {
 
     it('blocks when lock file is fresh (not stale)', async () => {
       setupExistsSync({
-        ...LEGACY_EXISTS_MAP,
+        ...DEPLOY_EXISTS_MAP,
         '.update-lock': true,
       })
 
@@ -303,8 +303,6 @@ describe('update-agent', () => {
     })
 
     it('detects stale lock (>30min) and removes it', async () => {
-      // First call existsSync for update-lock => true, but after unlink
-      // we need it to return false for the not_already_updating check.
       let lockRemoved = false
       mockExistsSyncImpl.mockImplementation((p: string) => {
         if (p.includes('.update-lock')) {
@@ -355,7 +353,7 @@ describe('update-agent', () => {
 
     it('fails when disk pressure is critical (<4GB)', async () => {
       setupExistsSync({
-        ...LEGACY_EXISTS_MAP,
+        ...DEPLOY_EXISTS_MAP,
         'disk-pressure.json': true,
       })
 
@@ -381,39 +379,43 @@ describe('update-agent', () => {
   })
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // 4. SERVICE RESTORE ON FAILURE (P0 SAFETY NET)
+  // 4. gwi-node DEPLOY PATH
   // ═══════════════════════════════════════════════════════════════════════════
 
-  describe('service restore on failure', () => {
-    it('does NOT restart POS when build fails in legacy path — exposes P0 gap', async () => {
-      // This test documents the current behavior: when `npm run build` fails
-      // in the legacy path, the catch block does NOT call
-      // `systemctl start thepasspos`. The service was stopped at L802 but
-      // the error handler only cleans the lock file and writes state.
-      //
-      // The service relies on systemd Restart=on-failure to self-recover.
-
+  describe('gwi-node deploy path', () => {
+    it('succeeds when gwi-node.sh deploy completes', async () => {
       const execCalls: string[] = []
-      mockExecSync.mockImplementation(buildExecSyncMock({
-        'npm run build': () => { throw new Error('Build failed: OOM') },
-      }, execCalls))
+      mockExecSync.mockImplementation(buildExecSyncMock({}, execCalls))
 
       const result = await executeUpdate('1.0.51')
+      expect(result.success).toBe(true)
+      expect(result.previousVersion).toBe('1.0.50')
+      expect(result.targetVersion).toBe('1.0.51')
 
+      // Verify gwi-node.sh was called
+      const deployCalls = execCalls.filter(c => c.includes('gwi-node.sh'))
+      expect(deployCalls.length).toBe(1)
+    })
+
+    it('fails when gwi-node.sh is not found', async () => {
+      setupExistsSync({
+        ...DEPLOY_EXISTS_MAP,
+        'gwi-node.sh': false,
+      })
+
+      const result = await executeUpdate('1.0.51')
       expect(result.success).toBe(false)
-      expect(result.error).toContain('Build failed')
+      expect(result.error).toContain('gwi-node.sh not found')
+    })
 
-      // Verify service was stopped
-      const stopCalls = execCalls.filter(c => c.includes('systemctl stop thepasspos'))
-      expect(stopCalls.length).toBeGreaterThan(0)
+    it('fails when gwi-node.sh deploy command fails', async () => {
+      mockExecSync.mockImplementation(buildExecSyncMock({
+        'gwi-node.sh': () => { throw new Error('container health check failed') },
+      }))
 
-      // Document: the catch block does NOT explicitly restart the service.
-      // This is the P0 gap — the service is left stopped after a build failure.
-      // systemd Restart=on-failure provides the safety net.
-      const startCalls = execCalls.filter(c =>
-        c.includes('systemctl start thepasspos') || c.includes('systemctl restart thepasspos')
-      )
-      expect(startCalls.length).toBe(0)
+      const result = await executeUpdate('1.0.51')
+      expect(result.success).toBe(false)
+      expect(result.error).toContain('container health check failed')
     })
 
     it('does not stop service when preflight fails (no service disruption)', async () => {
@@ -432,33 +434,12 @@ describe('update-agent', () => {
       expect(systemctlCalls.length).toBe(0)
     })
 
-    it('cleans up lock file when update fails', async () => {
-      // Git fetch will fail all 3 attempts — use fake timers to skip 5s delays
+    it('resets isUpdating flag even when deploy fails', async () => {
       mockExecSync.mockImplementation(buildExecSyncMock({
-        'git fetch': () => { throw new Error('network error') },
+        'gwi-node.sh': () => { throw new Error('catastrophic failure') },
       }))
 
-      // Run executeUpdate (non-blocking for timer advancement)
-      const updatePromise = executeUpdate('1.0.51')
-
-      // Advance timers past the 5-second retry delays (2 retries x 5s = 10s)
-      await vi.advanceTimersByTimeAsync(15_000)
-
-      const result = await updatePromise
-      expect(result.success).toBe(false)
-
-      // Lock file should be cleaned up via unlinkSync
-      expect(mockUnlinkSync).toHaveBeenCalled()
-    })
-
-    it('resets isUpdating flag even when update throws', async () => {
-      mockExecSync.mockImplementation(buildExecSyncMock({
-        'git fetch': () => { throw new Error('catastrophic failure') },
-      }))
-
-      const updatePromise = executeUpdate('1.0.51')
-      await vi.advanceTimersByTimeAsync(15_000)
-      await updatePromise
+      await executeUpdate('1.0.51')
 
       const status = getUpdateAgentStatus()
       expect(status.isUpdating).toBe(false)
@@ -472,13 +453,11 @@ describe('update-agent', () => {
   describe('concurrent update rejection', () => {
     it('resets isUpdating after failed update allowing next update', async () => {
       mockExecSync.mockImplementation(buildExecSyncMock({
-        'git fetch': () => { throw new Error('fetch timeout') },
+        'gwi-node.sh': () => { throw new Error('deploy timeout') },
       }))
 
-      // First update — will fail on git fetch after preflight
-      const p1 = executeUpdate('1.0.51')
-      await vi.advanceTimersByTimeAsync(15_000)
-      const result1 = await p1
+      // First update — will fail on gwi-node deploy
+      const result1 = await executeUpdate('1.0.51')
       expect(result1.success).toBe(false)
 
       // After failure, isUpdating should be reset (finally block)
@@ -488,181 +467,7 @@ describe('update-agent', () => {
   })
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // 6. ARTIFACT DEPLOY PATH
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  describe('artifact deploy path', () => {
-    it('uses deploy-release.sh when available', async () => {
-      setupExistsSync({
-        ...LEGACY_EXISTS_MAP,
-        'deploy-release.sh': true,
-      })
-
-      const execCalls: string[] = []
-      mockExecSync.mockImplementation(buildExecSyncMock({}, execCalls))
-
-      const result = await executeUpdate('1.0.51')
-      expect(result.success).toBe(true)
-
-      // Should have called deploy-release.sh, NOT npm run build
-      const deployScriptCalls = execCalls.filter(c => c.includes('deploy-release.sh'))
-      expect(deployScriptCalls.length).toBe(1)
-
-      const buildCalls = execCalls.filter(c => c.includes('npm run build'))
-      expect(buildCalls.length).toBe(0)
-    })
-
-    it('returns failure result when deploy-release.sh fails', async () => {
-      setupExistsSync({
-        ...LEGACY_EXISTS_MAP,
-        'deploy-release.sh': true,
-        'deploy-state.json': true,
-      })
-
-      mockReadFileSync.mockImplementation((p: string) => {
-        if (typeof p === 'string' && p.includes('package.json')) return '{"version":"1.0.50"}'
-        if (typeof p === 'string' && p.includes('deploy-state.json')) return '{"state":"rolled_back"}'
-        return '{}'
-      })
-
-      mockExecSync.mockImplementation(buildExecSyncMock({
-        'deploy-release.sh': () => { throw new Error('artifact checksum mismatch') },
-      }))
-
-      const result = await executeUpdate('1.0.51')
-      expect(result.success).toBe(false)
-      expect(result.error).toContain('Artifact deploy failed')
-    })
-  })
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // 7. LEGACY DEPLOY PATH — BUILD FAILURE HANDLING
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  describe('legacy deploy — build failure', () => {
-    it('restores .next backup when build fails', async () => {
-      setupExistsSync({
-        ...LEGACY_EXISTS_MAP,
-        '.next': true,
-        '.next.backup': true,
-      })
-
-      const execCalls: string[] = []
-      mockExecSync.mockImplementation(buildExecSyncMock({
-        'npm run build': () => { throw new Error('Module not found') },
-      }, execCalls))
-
-      const result = await executeUpdate('1.0.51')
-      expect(result.success).toBe(false)
-
-      // Verify .next.backup was restored (mv .next.backup .next)
-      const mvCalls = execCalls.filter(c => c.includes('mv') && c.includes('.next.backup'))
-      expect(mvCalls.length).toBeGreaterThan(0)
-    })
-
-    it('writes error state file on failure', async () => {
-      mockExecSync.mockImplementation(buildExecSyncMock({
-        'git fetch': () => { throw new Error('DNS resolution failed') },
-      }))
-
-      const updatePromise = executeUpdate('1.0.51')
-      await vi.advanceTimersByTimeAsync(15_000)
-      await updatePromise
-
-      // Verify writeFileSync was called with the state file
-      const stateWrites = mockWriteFileSync.mock.calls.filter(
-        (call: unknown[]) => typeof call[0] === 'string' && (call[0] as string).includes('last-update.json')
-      )
-      expect(stateWrites.length).toBeGreaterThan(0)
-
-      const stateJson = JSON.parse(stateWrites[0][1] as string)
-      expect(stateJson.status).toBe('FAILED')
-      expect(stateJson.error).toContain('git fetch failed after 3 attempts')
-    })
-  })
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // 8. SUCCESSFUL LEGACY DEPLOY
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  describe('legacy deploy — success path', () => {
-    it('completes full legacy deploy cycle and returns success', async () => {
-      const execCalls: string[] = []
-      mockExecSync.mockImplementation(buildExecSyncMock({}, execCalls))
-
-      const result = await executeUpdate('1.0.51')
-      expect(result.success).toBe(true)
-      expect(result.previousVersion).toBe('1.0.50')
-      expect(result.targetVersion).toBe('1.0.51')
-      expect(result.durationMs).toBeGreaterThanOrEqual(0)
-
-      // Verify the essential steps were called
-      expect(execCalls.some(c => c.includes('git fetch'))).toBe(true)
-      expect(execCalls.some(c => c.includes('npm ci'))).toBe(true)
-      expect(execCalls.some(c => c.includes('npm run build'))).toBe(true)
-    })
-
-    it('stamps version into package.json after successful build', async () => {
-      mockExecSync.mockImplementation(buildExecSyncMock())
-
-      await executeUpdate('1.0.51')
-
-      // Find the writeFileSync call that stamps package.json
-      const pkgWrites = mockWriteFileSync.mock.calls.filter(
-        (call: unknown[]) => typeof call[0] === 'string' && (call[0] as string).includes('package.json')
-      )
-      expect(pkgWrites.length).toBeGreaterThan(0)
-      const writtenPkg = JSON.parse(pkgWrites[0][1] as string)
-      expect(writtenPkg.version).toBe('1.0.51')
-    })
-  })
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // 9. GIT RETRY LOGIC
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  describe('git fetch retry', () => {
-    it('retries git fetch up to 3 times before failing', async () => {
-      let fetchAttempts = 0
-      mockExecSync.mockImplementation(buildExecSyncMock({
-        'git fetch': () => {
-          fetchAttempts++
-          throw new Error(`network timeout attempt ${fetchAttempts}`)
-        },
-      }))
-
-      const updatePromise = executeUpdate('1.0.51')
-      // Advance past the 5s delays between retries
-      await vi.advanceTimersByTimeAsync(15_000)
-      const result = await updatePromise
-
-      expect(result.success).toBe(false)
-      expect(result.error).toContain('git fetch failed after 3 attempts')
-      expect(fetchAttempts).toBe(3)
-    })
-
-    it('succeeds on second fetch attempt after first failure', async () => {
-      let fetchAttempts = 0
-      mockExecSync.mockImplementation(buildExecSyncMock({
-        'git fetch': () => {
-          fetchAttempts++
-          if (fetchAttempts === 1) throw new Error('temporary network issue')
-          return ''
-        },
-      }))
-
-      const updatePromise = executeUpdate('1.0.51')
-      // Advance past the 5s delay before second attempt
-      await vi.advanceTimersByTimeAsync(10_000)
-      const result = await updatePromise
-
-      expect(result.success).toBe(true)
-      expect(fetchAttempts).toBe(2)
-    })
-  })
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // 10. DEPLOY HEALTH REPORTING
+  // 6. DEPLOY HEALTH REPORTING
   // ═══════════════════════════════════════════════════════════════════════════
 
   describe('reportDeployHealth', () => {
@@ -761,7 +566,7 @@ describe('update-agent', () => {
   })
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // 11. getCurrentVersion
+  // 7. getCurrentVersion
   // ═══════════════════════════════════════════════════════════════════════════
 
   describe('getCurrentVersion', () => {
@@ -790,7 +595,7 @@ describe('update-agent', () => {
   })
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // 12. getUpdateAgentStatus
+  // 8. getUpdateAgentStatus
   // ═══════════════════════════════════════════════════════════════════════════
 
   describe('getUpdateAgentStatus', () => {
@@ -809,68 +614,6 @@ describe('update-agent', () => {
 
       const status = getUpdateAgentStatus()
       expect(status.lockFileExists).toBe(false)
-    })
-  })
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // 13. GIT SELF-REPAIR
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  describe('git self-repair', () => {
-    it('removes stale git lock files before fetch', async () => {
-      // Override the specific .git lock file paths to return true
-      mockExistsSyncImpl.mockImplementation((p: string) => {
-        if (p.includes('index.lock')) return true
-        if (p.includes('HEAD.lock')) return true
-        // Standard paths
-        if (p.includes('package.json')) return true
-        if (p.includes('deploy-release.sh')) return false
-        if (p.includes('.update-lock')) return false
-        if (p.includes('disk-pressure.json')) return false
-        if (p.includes('MERGE_HEAD')) return false
-        if (p.includes('rebase-merge')) return false
-        if (p.includes('rebase-apply')) return false
-        if (p.includes('CHERRY_PICK_HEAD')) return false
-        if (p.includes('.next')) return true
-        return false
-      })
-
-      const execCalls: string[] = []
-      mockExecSync.mockImplementation(buildExecSyncMock({}, execCalls))
-
-      await executeUpdate('1.0.51')
-
-      // unlinkSync should have been called for the stale git lock files
-      const unlinkCalls = mockUnlinkSync.mock.calls.map((c: unknown[]) => c[0])
-      const gitLockRemovals = unlinkCalls.filter(
-        (p: unknown) => typeof p === 'string' && ((p as string).includes('index.lock') || (p as string).includes('HEAD.lock'))
-      )
-      expect(gitLockRemovals.length).toBeGreaterThan(0)
-    })
-
-    it('aborts interrupted merge if MERGE_HEAD exists', async () => {
-      // MERGE_HEAD must match before .git/MERGE_HEAD: false in the legacy map
-      mockExistsSyncImpl.mockImplementation((p: string) => {
-        if (p.includes('MERGE_HEAD')) return true
-        if (p.includes('package.json')) return true
-        if (p.includes('deploy-release.sh')) return false
-        if (p.includes('.update-lock')) return false
-        if (p.includes('disk-pressure.json')) return false
-        if (p.includes('rebase-merge')) return false
-        if (p.includes('rebase-apply')) return false
-        if (p.includes('CHERRY_PICK_HEAD')) return false
-        if (p.includes('index.lock')) return false
-        if (p.includes('.next')) return true
-        return false
-      })
-
-      const execCalls: string[] = []
-      mockExecSync.mockImplementation(buildExecSyncMock({}, execCalls))
-
-      await executeUpdate('1.0.51')
-
-      const mergeAbortCalls = execCalls.filter(c => c.includes('git merge --abort'))
-      expect(mergeAbortCalls.length).toBe(1)
     })
   })
 })
