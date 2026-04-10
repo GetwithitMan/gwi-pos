@@ -101,6 +101,8 @@ export interface IngestEvent {
 export interface IngestResult {
   state: OrderState
   accepted: { eventId: string; serverSequence: number }[]
+  /** Event IDs that were newly inserted (not duplicates). Used for idempotent side-effects. */
+  newlyInsertedEventIds: Set<string>
   bridgedPayments: BridgedPayment[]
   alreadyPaid: boolean
 }
@@ -165,6 +167,7 @@ export async function ingestAndProject(
 
   const result = await (db as any).$transaction(async (tx: any) => {
     const accepted: { eventId: string; serverSequence: number }[] = []
+    const newlyInsertedEventIds = new Set<string>()
     const newPaymentEvents: { payload: Record<string, unknown> }[] = []
     const ingestedEventTypes = new Set<string>()
     let alreadyPaid = false
@@ -201,6 +204,7 @@ export async function ingestAndProject(
         // New event was inserted
         const serverSequence = Number(inserted[0].serverSequence)
         accepted.push({ eventId, serverSequence })
+        newlyInsertedEventIds.add(eventId)
 
         // Track new PAYMENT_APPLIED events for bridge sync
         if (evt.type === 'PAYMENT_APPLIED' && evt.payload) {
@@ -697,7 +701,7 @@ export async function ingestAndProject(
       }
     }
 
-    return { state, accepted, bridgedPayments, alreadyPaid }
+    return { state, accepted, newlyInsertedEventIds, bridgedPayments, alreadyPaid }
   }) // end $transaction
 
   // ── 8. Flush outbox (post-commit) ──────────────────────────────────

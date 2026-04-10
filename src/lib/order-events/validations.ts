@@ -31,6 +31,8 @@ export const ItemAddedSchema = z.object({
   quantity: quantitySchema,
   isTaxInclusive: z.boolean().optional(),
   modifiersJson: optionalString,
+  /** Parsed modifier array — newer Android clients send this; server also emits it */
+  modifiers: z.array(z.record(z.string(), z.any())).nullable().optional(),
   specialNotes: optionalString,
   seatNumber: optionalNumber,
   courseNumber: optionalNumber,
@@ -176,6 +178,12 @@ export const RefundAppliedSchema = z.object({
   employeeId: optionalString,
 })
 
+export const ParentSplitSchema = z.object({
+  splitChildIds: z.array(z.string()),
+  splitCount: z.number().int().positive(),
+  reason: optionalString,
+})
+
 // ── Validator Map ────────────────────────────────────────────────────
 
 export const PayloadValidators = {
@@ -200,6 +208,7 @@ export const PayloadValidators = {
   TAB_CAPTURE_DECLINED: TabCaptureDeclinedSchema,
   WALKOUT_MARKED: WalkoutMarkedSchema,
   REFUND_APPLIED: RefundAppliedSchema,
+  PARENT_SPLIT: ParentSplitSchema,
 } as const
 
 // ── Batch Input Schema ───────────────────────────────────────────────
