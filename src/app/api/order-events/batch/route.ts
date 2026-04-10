@@ -54,6 +54,27 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
   const accepted: BatchEventResponse['accepted'] = []
   const rejected: BatchEventResponse['rejected'] = []
 
+  // Privileged event types that require an identified employee in the payload.
+  // A bare device token is not sufficient — these mutations affect money.
+  const PRIVILEGED_EVENT_TYPES = new Set([
+    'PAYMENT_APPLIED',
+    'PAYMENT_VOIDED',
+    'DISCOUNT_APPLIED',
+    'DISCOUNT_REMOVED',
+    'COMP_VOID_APPLIED',
+    'ORDER_CLOSED',
+    'REFUND_APPLIED',
+  ])
+
+  // Pre-fetch active employee IDs for this location (one query, used for all events)
+  const activeEmployeeIds = new Set(
+    // eslint-disable-next-line no-restricted-syntax -- bulk ID lookup, no repo method needed
+    (await db.employee.findMany({
+      where: { locationId, isActive: true, deletedAt: null },
+      select: { id: true },
+    })).map(e => e.id)
+  )
+
   // Validate events and group by orderId
   const validatedByOrder = new Map<string, IngestEvent[]>()
 

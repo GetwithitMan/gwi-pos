@@ -579,9 +579,76 @@ EOF
 
   bootstrap_host_watcher "$IMAGE_REF"
 
+  # ── Dashboard update (non-fatal) ──────────────────────────────────────────
+  # Check if a newer dashboard .deb is available and install it.
+  # Downloads from the POS Vercel deployment (same origin as version-contract).
+  update_dashboard || log "WARN: Dashboard update skipped (non-fatal)"
+
   FINAL_STATUS="healthy"
   write_deploy_log
   log "Deploy $DEPLOY_ID complete: $IMAGE_REF"
+}
+
+# ── update_dashboard ──────────────────────────────────────────────────────────
+# Downloads and installs the NUC dashboard .deb if a newer version is available.
+# Compares installed version (dpkg) against version-contract.json dashboardVersion.
+# Non-fatal: returns 0 even on failure so deploy is not blocked.
+# ──────────────────────────────────────────────────────────────────────────────
+update_dashboard() {
+  local installed available deb_url deb_path
+
+  # Read desired version from the running container's version-contract
+  available=$(docker exec "$CONTAINER_NAME" cat /app/public/version-contract.json 2>/dev/null \
+    | python3 -c "import json,sys; print(json.load(sys.stdin).get('dashboardVersion',''))" 2>/dev/null || true)
+  [[ -z "$available" ]] && { log "Dashboard: no dashboardVersion in version-contract — skipping"; return 0; }
+
+  # Get currently installed version
+  installed=$(dpkg-query -W -f='${Version}' gwi-nuc-dashboard 2>/dev/null || echo "0.0.0")
+
+  if [[ "$installed" == "$available" ]]; then
+    log "Dashboard: already at v${installed} — no update needed"
+    return 0
+  fi
+
+  log "Dashboard: updating v${installed} → v${available}"
+
+  # Download .deb from the POS app (Vercel serves static files from /public)
+  deb_path="/tmp/gwi-nuc-dashboard-${available}.deb"
+  deb_url="$(docker exec "$CONTAINER_NAME" printenv NEXT_PUBLIC_BASE_URL 2>/dev/null || echo 'http://localhost:3005')/gwi-nuc-dashboard.deb"
+
+  if ! curl -sfL "$deb_url" -o "$deb_path" 2>/dev/null; then
+    # Fallback: try the container's static files directly
+    docker cp "${CONTAINER_NAME}:/app/public/gwi-nuc-dashboard.deb" "$deb_path" 2>/dev/null || {
+      log "Dashboard: download failed — skipping"
+      rm -f "$deb_path" 2>/dev/null
+      return 0
+    }
+  fi
+
+  # Validate file size (must be > 100KB to be a real .deb)
+  local size
+  size=$(stat -c%s "$deb_path" 2>/dev/null || echo 0)
+  if [[ "$size" -lt 100000 ]]; then
+    log "Dashboard: downloaded file too small (${size} bytes) — skipping"
+    rm -f "$deb_path" 2>/dev/null
+    return 0
+  fi
+
+  # Install
+  if dpkg -i "$deb_path" 2>/dev/null; then
+    log "Dashboard: installed v${available} successfully"
+    # Restart the dashboard service if running
+    sudo -u "${POSUSER:-gwipos}" bash -c \
+      "XDG_RUNTIME_DIR=/run/user/\$(id -u) systemctl --user restart gwi-dashboard.service" 2>/dev/null || true
+  else
+    apt-get install -f -y -qq 2>/dev/null || true
+    dpkg -i "$deb_path" 2>/dev/null || {
+      log "Dashboard: dpkg install failed — skipping"
+    }
+  fi
+
+  rm -f "$deb_path" 2>/dev/null
+  return 0
 }
 
 deploy_failure() {
