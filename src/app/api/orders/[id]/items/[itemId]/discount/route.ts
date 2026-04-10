@@ -12,6 +12,7 @@ import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
 import { roundToCents } from '@/lib/pricing'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { validateMutationApproval } from '@/lib/approval-tokens'
 import { createChildLogger } from '@/lib/logger'
 import { err, forbidden, notFound, ok } from '@/lib/api-response'
 
@@ -24,6 +25,7 @@ interface ApplyItemDiscountRequest {
   employeeId: string
   discountRuleId?: string
   approvedById?: string  // Manager ID if approval required
+  approvalToken?: string  // HMAC-signed token from verify-pin (mutation-bound)
 }
 
 // POST — Apply item-level discount
@@ -36,6 +38,12 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     const body = await request.json() as ApplyItemDiscountRequest
     // SECURITY: Use authenticated employee ID for permission check
     const authEmployeeId = ctx.auth.employeeId || body.employeeId
+
+    // Validate mutation-bound approval token (if present)
+    const tokenCheck = validateMutationApproval({ approvalToken: body.approvalToken, approvedById: body.approvedById, routeName: 'item-discount' })
+    if (!tokenCheck.valid) {
+      return err(tokenCheck.error, tokenCheck.status)
+    }
 
     // Validate required fields
     if (!body.type || body.value === undefined || body.value === null || !authEmployeeId) {

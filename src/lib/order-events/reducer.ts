@@ -122,7 +122,7 @@ function handleItemUpdated(
     ...(payload.seatNumber != null ? { seatNumber: payload.seatNumber } : {}),
     ...(payload.quantity != null ? { quantity: payload.quantity } : {}),
     ...(payload.delayMinutes != null ? { delayMinutes: payload.delayMinutes } : {}),
-    ...(payload.kitchenStatus != null ? { kitchenStatus: payload.kitchenStatus } : {}),
+    ...(payload.kitchenStatus != null ? { kitchenStatus: payload.kitchenStatus.toLowerCase() } : {}),
     ...(payload.status != null ? { status: payload.status } : {}),
     ...(payload.isCompleted != null ? { isCompleted: payload.isCompleted } : {}),
     ...(payload.resendCount != null ? { resendCount: payload.resendCount } : {}),

@@ -172,7 +172,7 @@ describe('GET /api/gift-cards/[id]', () => {
     expect(json.data.status).toBe('expired')
     expect(mockDb.giftCard.update).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: { status: 'expired' },
+        data: expect.objectContaining({ status: 'expired' }),
       })
     )
   })

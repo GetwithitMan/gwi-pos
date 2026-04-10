@@ -4,6 +4,7 @@ import * as EmployeeRepository from '@/lib/repositories/employee-repository'
 import { compare } from 'bcryptjs'
 import { withVenue } from '@/lib/with-venue'
 import { getClientIp } from '@/lib/get-client-ip'
+import { generateApprovalToken } from '@/lib/approval-tokens'
 import { err, ok, unauthorized } from '@/lib/api-response'
 
 // ── Dedicated rate limiter for PIN verification ────────────────────────────
@@ -184,6 +185,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         if (terminalRateKey) recordTerminalPinFailure(terminalRateKey, terminalRateLabel)
         return unauthorized('Invalid PIN')
       }
+
+      // Generate mutation-bound approval token (HMAC-signed, 5-min TTL)
+      const approvalToken = generateApprovalToken(employee.id, locationId)
+
       return ok({
         employee: {
           id: employee.id,
@@ -193,6 +198,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           requiresPinChange: employee.requiresPinChange ?? false,
         },
         verified: true,
+        approvalToken,
       })
     }
 
@@ -231,6 +237,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       return unauthorized('Invalid PIN')
     }
 
+    // Generate mutation-bound approval token (HMAC-signed, 5-min TTL)
+    const approvalToken = generateApprovalToken(matchedEmployee.id, locationId)
+
     // Return minimal employee info for verification
     return ok({
       employee: {
@@ -241,6 +250,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         requiresPinChange: matchedEmployee.requiresPinChange ?? false,
       },
       verified: true,
+      approvalToken,
     })
   } catch (error) {
     console.error('PIN verification error:', error)

@@ -5,28 +5,75 @@ import { NextRequest } from 'next/server'
 // Mocks — vi.hoisted ensures mock objects exist before vi.mock factories run
 // ---------------------------------------------------------------------------
 
-const { mockDb, mockTx } = vi.hoisted(() => {
+const { mockDb, mockAdminDb, mockTx } = vi.hoisted(() => {
   const mockTx = {
-    $queryRawUnsafe: vi.fn(),
+    $queryRaw: vi.fn(),
     order: { create: vi.fn() },
   }
   const mockDb = {
     terminal: { findFirst: vi.fn() },
-    order: { findFirst: vi.fn() },
     $transaction: vi.fn((fn: (tx: typeof mockTx) => unknown) => fn(mockTx)),
   }
-  return { mockDb, mockTx }
+  const mockAdminDb = {
+    order: {
+      findFirst: vi.fn(),
+      findUnique: vi.fn(),
+    },
+  }
+  return { mockDb, mockAdminDb, mockTx }
 })
 
 vi.mock('@/lib/with-venue', () => ({
   withVenue: (handler: (...args: unknown[]) => unknown) => handler,
 }))
 
-vi.mock('@/lib/db', () => ({ db: mockDb }))
+vi.mock('@/lib/db', () => ({ db: mockDb, adminDb: mockAdminDb }))
 
 vi.mock('@/lib/socket-server', () => ({
   emitToLocation: vi.fn().mockResolvedValue(undefined),
 }))
+
+vi.mock('@/lib/api-auth-middleware', () => ({
+  withAuth: (_opts: unknown, handler: (...args: unknown[]) => unknown) => handler,
+}))
+
+vi.mock('@/lib/terminal-auth', () => ({
+  authenticateTerminal: vi.fn().mockImplementation(async (request: Request) => {
+    const authHeader = request.headers.get('authorization')
+    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
+    if (!token) {
+      const { NextResponse } = await import('next/server')
+      return { error: NextResponse.json({ error: 'Authorization required' }, { status: 401 }) }
+    }
+    const terminal = await mockDb.terminal.findFirst()
+    if (!terminal) {
+      const { NextResponse } = await import('next/server')
+      return { error: NextResponse.json({ error: 'Invalid token' }, { status: 401 }) }
+    }
+    return { terminal }
+  }),
+}))
+
+vi.mock('@/lib/order-events/emitter', () => ({
+  emitOrderEvents: vi.fn().mockResolvedValue(undefined),
+}))
+
+vi.mock('@/lib/logger', () => ({
+  createChildLogger: () => ({
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  }),
+}))
+
+vi.mock('@/lib/api-response', async () => {
+  const { NextResponse } = await import('next/server')
+  return {
+    ok: (data: unknown) => NextResponse.json({ data }, { status: 200 }),
+    err: (message: string, status = 400) => NextResponse.json({ error: message }, { status }),
+  }
+})
 
 // ---------------------------------------------------------------------------
 import { POST } from './route'
@@ -57,8 +104,9 @@ describe('POST /api/sync/outbox', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     // Default: no existing order, next orderNumber is 1
-    mockTx.$queryRawUnsafe.mockResolvedValue([])
-    mockDb.order.findFirst.mockResolvedValue(null)
+    mockTx.$queryRaw.mockResolvedValue([])
+    mockAdminDb.order.findFirst.mockResolvedValue(null)
+    mockAdminDb.order.findUnique.mockResolvedValue(null)
   })
 
   it('returns 401 when Authorization header is missing', async () => {
@@ -81,11 +129,12 @@ describe('POST /api/sync/outbox', () => {
 
   it('creates an order with generated orderNumber and returns synced structure', async () => {
     mockDb.terminal.findFirst.mockResolvedValue(TERMINAL_STUB)
-    mockDb.order.findFirst.mockResolvedValue(null) // not a duplicate
+    mockAdminDb.order.findFirst.mockResolvedValue(null) // not a duplicate
 
-    const createdOrder = { id: 'order-srv-1', orderNumber: 1, offlineId: 'offline-1' }
-    mockTx.$queryRawUnsafe.mockResolvedValue([{ orderNumber: 5 }]) // last order was #5
+    const createdOrder = { id: 'order-srv-1', orderNumber: 6, offlineId: 'offline-1' }
+    mockTx.$queryRaw.mockResolvedValue([{ orderNumber: 5 }]) // last order was #5
     mockTx.order.create.mockResolvedValue(createdOrder)
+    mockAdminDb.order.findUnique.mockResolvedValue({ id: 'order-srv-1', items: [] })
 
     const res = await POST(makeRequest({
       orders: [{
@@ -124,9 +173,9 @@ describe('POST /api/sync/outbox', () => {
   it('is idempotent — same offlineId does not create a duplicate', async () => {
     mockDb.terminal.findFirst.mockResolvedValue(TERMINAL_STUB)
 
-    // Simulate order already synced
+    // Simulate order already synced (adminDb.order.findFirst returns existing)
     const existingOrder = { id: 'order-srv-1', offlineId: 'offline-1' }
-    mockDb.order.findFirst.mockResolvedValue(existingOrder)
+    mockAdminDb.order.findFirst.mockResolvedValue(existingOrder)
 
     const res = await POST(makeRequest({
       orders: [{ offlineId: 'offline-1', employeeId: 'emp-1', subtotal: 10, tax: 0, total: 10 }],
@@ -143,10 +192,11 @@ describe('POST /api/sync/outbox', () => {
 
   it('returns { synced, errors } structure', async () => {
     mockDb.terminal.findFirst.mockResolvedValue(TERMINAL_STUB)
-    mockDb.order.findFirst.mockResolvedValue(null)
+    mockAdminDb.order.findFirst.mockResolvedValue(null)
 
-    mockTx.$queryRawUnsafe.mockResolvedValue([])
+    mockTx.$queryRaw.mockResolvedValue([])
     mockTx.order.create.mockResolvedValue({ id: 'order-1', offlineId: 'off-1' })
+    mockAdminDb.order.findUnique.mockResolvedValue({ id: 'order-1', items: [] })
 
     const res = await POST(makeRequest({
       orders: [{ offlineId: 'off-1', employeeId: 'emp-1', subtotal: 5, tax: 0, total: 5 }],
@@ -188,14 +238,15 @@ describe('POST /api/sync/outbox', () => {
 
   it('syncs multiple orders in a single request', async () => {
     mockDb.terminal.findFirst.mockResolvedValue(TERMINAL_STUB)
-    mockDb.order.findFirst.mockResolvedValue(null)
+    mockAdminDb.order.findFirst.mockResolvedValue(null)
 
-    mockTx.$queryRawUnsafe.mockResolvedValue([])
+    mockTx.$queryRaw.mockResolvedValue([])
     let callCount = 0
     mockTx.order.create.mockImplementation(() => {
       callCount++
       return Promise.resolve({ id: `order-${callCount}`, offlineId: `off-${callCount}` })
     })
+    mockAdminDb.order.findUnique.mockResolvedValue({ id: 'order-1', items: [] })
 
     const res = await POST(makeRequest({
       orders: [

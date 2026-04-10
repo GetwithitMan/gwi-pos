@@ -17,6 +17,7 @@ import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worke
 import { queueIfOutageOrFail,  pushUpstream } from '@/lib/sync/outage-safe-write'
 import { restoreInventoryForOrder } from '@/lib/inventory/void-waste'
 import { validateCellularRefundFromHeaders, validateManagerReauthFromHeaders, CellularAuthError } from '@/lib/cellular-validation'
+import { validateMutationApproval } from '@/lib/approval-tokens'
 import { createChildLogger } from '@/lib/logger'
 import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-refund-payment')
@@ -27,12 +28,18 @@ export const POST = withVenue(async function POST(
 ) {
   try {
     const { id } = await params
-    const { paymentId, refundAmount, refundReason, notes, managerId, readerId, remoteApprovalCode, approvedById, managerPinHash } =
+    const { paymentId, refundAmount, refundReason, notes, managerId, readerId, remoteApprovalCode, approvedById, approvalToken, managerPinHash } =
       await request.json()
 
     // Validate required fields
     if (!paymentId || refundAmount === undefined || refundAmount === null || !refundReason || !managerId) {
       return err('Missing required fields')
+    }
+
+    // Validate mutation-bound approval token (if present)
+    const tokenCheck = validateMutationApproval({ approvalToken, approvedById, routeName: 'refund-payment' })
+    if (!tokenCheck.valid) {
+      return err(tokenCheck.error, tokenCheck.status)
     }
 
     // HA cellular sync — detect mutation origin for downstream sync

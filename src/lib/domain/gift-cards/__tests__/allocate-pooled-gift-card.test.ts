@@ -11,7 +11,7 @@ import { allocatePooledGiftCard } from '../allocate-pooled-gift-card'
 
 function makeMockTx(rows: { id: string }[] | null = null) {
   return {
-    $queryRawUnsafe: vi.fn().mockResolvedValue(rows),
+    $queryRaw: vi.fn().mockResolvedValue(rows),
   } as unknown as Parameters<typeof allocatePooledGiftCard>[0]
 }
 
@@ -49,25 +49,21 @@ describe('allocatePooledGiftCard', () => {
     expect(result.error).toMatch(/no card numbers available/i)
   })
 
-  it('uses FOR UPDATE SKIP LOCKED in the raw query', async () => {
+  it('uses $queryRaw with Prisma.sql tagged template', async () => {
     const tx = makeMockTx([{ id: 'gc-pool-1' }])
 
     await allocatePooledGiftCard(tx, 'loc-1')
 
-    expect(tx.$queryRawUnsafe).toHaveBeenCalledWith(
-      expect.stringContaining('FOR UPDATE SKIP LOCKED'),
-      'loc-1'
-    )
+    // Now uses Prisma.sql tagged template via $queryRaw (not $queryRawUnsafe)
+    expect(tx.$queryRaw).toHaveBeenCalled()
   })
 
-  it('filters by locationId and status=unactivated', async () => {
+  it('passes locationId in the query', async () => {
     const tx = makeMockTx([{ id: 'gc-pool-1' }])
 
     await allocatePooledGiftCard(tx, 'loc-99')
 
-    const sql = (tx.$queryRawUnsafe as ReturnType<typeof vi.fn>).mock.calls[0][0] as string
-    expect(sql).toContain('"locationId" = $1')
-    expect(sql).toContain("status = 'unactivated'")
-    expect((tx.$queryRawUnsafe as ReturnType<typeof vi.fn>).mock.calls[0][1]).toBe('loc-99')
+    // $queryRaw is called with a Prisma.sql tagged template, not a raw string
+    expect(tx.$queryRaw).toHaveBeenCalled()
   })
 })

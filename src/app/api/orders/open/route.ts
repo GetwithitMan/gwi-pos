@@ -5,26 +5,9 @@ import { withAuth } from '@/lib/api-auth-middleware'
 import { withTiming, getTimingFromRequest } from '@/lib/with-timing'
 import { getCurrentBusinessDay } from '@/lib/business-day'
 import { err, ok } from '@/lib/api-response'
+import { OPEN_ORDERS_CACHE_TTL, getOpenOrdersCacheEntry, setOpenOrdersCacheEntry } from '@/lib/open-orders-cache'
 // TODO: Migrate to OrderRepository once it supports getOpenOrdersSummary(), getOpenOrdersFull(),
 // business day batching, empty-shell exclusion, rich includes, multi-filter, and pagination
-
-// ---------------------------------------------------------------------------
-// Lightweight in-memory response cache for summary queries
-// Android registers poll every 60s + on socket events. Most calls return
-// identical data. A 5s TTL eliminates redundant DB work while socket-driven
-// invalidation keeps the cache fresh on mutations.
-// ---------------------------------------------------------------------------
-const openOrdersCache = new Map<string, { data: any; timestamp: number }>()
-const OPEN_ORDERS_CACHE_TTL = 5_000 // 5 seconds
-
-/** Clear cached open-orders responses for a given location (called on mutations). */
-export function invalidateOpenOrdersCache(locationId: string) {
-  for (const key of openOrdersCache.keys()) {
-    if (key.startsWith(locationId + ':')) {
-      openOrdersCache.delete(key)
-    }
-  }
-}
 
 // Force dynamic rendering - never cache this endpoint
 export const dynamic = 'force-dynamic'
@@ -146,7 +129,7 @@ export const GET = withVenue(withAuth({ allowCellular: true }, withTiming(async 
 
       // Check response cache (summary-only, keyed by location + params)
       const cacheKey = `${locationId}:${summaryLimit}:${employeeId || ''}:${orderType || ''}:${rolledOver || ''}:${minAge || ''}:${previousDay}`
-      const cached = openOrdersCache.get(cacheKey)
+      const cached = getOpenOrdersCacheEntry(cacheKey)
       if (cached && Date.now() - cached.timestamp < OPEN_ORDERS_CACHE_TTL) {
         return NextResponse.json(cached.data)
       }
@@ -376,7 +359,7 @@ export const GET = withVenue(withAuth({ allowCellular: true }, withTiming(async 
       }
 
       // Store in cache for subsequent requests within the TTL window
-      openOrdersCache.set(cacheKey, { data: { data: summaryResponseData }, timestamp: Date.now() })
+      setOpenOrdersCacheEntry(cacheKey, { data: summaryResponseData })
 
       return ok(summaryResponseData)
     }
