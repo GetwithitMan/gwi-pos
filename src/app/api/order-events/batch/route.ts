@@ -123,7 +123,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       correlationId: evt.correlationId ?? null,
       deviceCounter: evt.deviceCounter,
       schemaVersion: evt.schemaVersion,
-      deviceCreatedAt: evt.deviceCreatedAt ?? null,
+      deviceCreatedAt: evt.deviceCreatedAt ? new Date(evt.deviceCreatedAt) : null,
     })
     validatedByOrder.set(evt.orderId, list)
   }
