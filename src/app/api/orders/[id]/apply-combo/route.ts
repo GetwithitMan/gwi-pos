@@ -22,7 +22,7 @@ import {
   type LocationTaxSettings,
 } from '@/lib/order-calculations'
 import { calculateCardPrice, roundToCents } from '@/lib/pricing'
-import { parseSettings } from '@/lib/settings'
+import { parseSettings, getPricingProgram } from '@/lib/settings'
 import {
   dispatchOpenOrdersChanged,
   dispatchOrderTotalsUpdate,
@@ -173,10 +173,11 @@ export const POST = withVenue(async function POST(
         }))
       )
 
-      // Derive pricing settings
+      // Derive pricing settings via canonical pricing program
       const locSettings = parseSettings(order.location.settings)
-      const dualPricingEnabled = locSettings?.dualPricing?.enabled ?? false
-      const cashDiscountPct = locSettings?.dualPricing?.cashDiscountPercent ?? 4.0
+      const pp = getPricingProgram(locSettings)
+      const dualPricingEnabled = pp.enabled
+      const cashDiscountPct = pp.creditMarkupPercent ?? 0
 
       // Tax-inclusive check
       const catType = template.menuItem.category?.categoryType ?? null
