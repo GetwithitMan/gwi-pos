@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# gwi-node.sh — GWI POS node agent (install | deploy | rollback | status | self-update | watch | dashboard-check)
+# gwi-node.sh — GWI POS node agent (install | deploy | rollback | status | self-update | watch | dashboard-check | dashboard-rollback | converge | converge-loop | venue-state)
 # One agent. One runtime. One flow. Install and update are the same operation.
 set -euo pipefail
 
@@ -10,8 +10,12 @@ readonly LOG_DIR="${SHARED_DIR}/logs/deploys"
 readonly LOCK_FILE="${STATE_DIR}/gwi-node.lock"
 readonly VERSION_FILE="${STATE_DIR}/running-version.json"
 readonly PREVIOUS_IMAGE_FILE="${STATE_DIR}/previous-image.txt"
+readonly LKG_IMAGE_FILE="${STATE_DIR}/last-known-good-image"
+readonly LKG_VERSION_FILE="${STATE_DIR}/last-known-good-version"
+readonly LKG_DASHBOARD_FILE="${STATE_DIR}/last-known-good-dashboard"
 readonly REQUESTS_DIR="${STATE_DIR}/deploy-requests"
 readonly RESULTS_DIR="${STATE_DIR}/deploy-results"
+readonly VENUE_STATE_FILE="${STATE_DIR}/venue-state.json"
 readonly CONTAINER_NAME="gwi-pos"
 readonly AGENT_CONTAINER_NAME="gwi-agent"
 readonly R2_ORIGIN="https://pub-15bf4245be0e4c05b570d31988004d09.r2.dev"
@@ -469,6 +473,11 @@ deploy() {
   mkdir -p "$STATE_DIR" "$LOG_DIR"
   write_deploy_state "in_progress"
 
+  # ── Venue state: mark server as converging ───────────────────────────────
+  local _vs_target="${IMAGE_REF##*:}"
+  [[ -z "$_vs_target" ]] && _vs_target="unknown"
+  vs_update_component "server" "behind" "" "$_vs_target" 2>/dev/null || true
+
   # ── Resolve target BEFORE self-update ─────────────────────────────────────
   # Manifest fetch must happen first so self-update always pulls from the
   # TARGET image, not the currently running old image.
@@ -514,12 +523,15 @@ deploy() {
     log "Digest verified: $actual"
   fi
   log "Running schema migration (local PG)..."
+  vs_update_component "schema" "behind" "" "$_vs_target" 2>/dev/null || true
   if docker run --rm --env-file "$ENV_FILE" --network=host "$IMAGE_REF" \
     node deploy-tools/src/migrate.js; then
     SCHEMA_RESULT="pass"
     log "Local migration complete"
+    vs_update_component "schema" "converged" "$_vs_target" "$_vs_target" 2>/dev/null || true
   else
     SCHEMA_RESULT="fail"
+    vs_update_component "schema" "failed" "" "$_vs_target" "Local schema migration failed" 2>/dev/null || true
     die "Local schema migration failed"
     [[ "$WATCH_DIE_FIRED" == true ]] && return 1
   fi
@@ -560,6 +572,9 @@ deploy() {
 deploy_success() {
   write_deploy_state "healthy"
   local tag="${IMAGE_REF##*:}"
+
+  # ── Venue state: mark server converged ───────────────────────────────────
+  vs_update_component "server" "converged" "$tag" "$tag" 2>/dev/null || true
   cat > "$VERSION_FILE" <<EOF
 {
   "version": "${tag}",
@@ -571,6 +586,12 @@ deploy_success() {
 }
 EOF
   chmod 644 "$VERSION_FILE" 2>/dev/null || true
+
+  # Save last-known-good image ref and version for future rollbacks
+  echo "$IMAGE_REF" > "$LKG_IMAGE_FILE"
+  echo "$tag" > "$LKG_VERSION_FILE"
+  log "Last-known-good saved: $IMAGE_REF (v${tag})"
+
   docker image prune -f --filter "dangling=true" 2>/dev/null || true
   start_agent "$IMAGE_REF" || log "WARN: gwi-agent failed to start (non-fatal)"
 
@@ -697,7 +718,10 @@ update_dashboard() {
   final_version=$(dpkg-query -W -f='${Version}' gwi-nuc-dashboard 2>/dev/null || echo "0.0.0")
   if [[ "$final_version" == "$available" ]]; then
     log "Dashboard: v${available} installed and configured successfully"
+    echo "$available" > "$LKG_DASHBOARD_FILE"
+    log "Dashboard: last-known-good saved: v${available}"
     _clear_dashboard_warning
+    vs_update_component "dashboard" "converged" "$available" "$available" 2>/dev/null || true
     # Ensure systemd user service exists (may be first install on this NUC)
     local _posuser="${POSUSER:-gwipos}"
     local _svc_dir
@@ -741,6 +765,7 @@ SVCEOF
     _dashboard_warning="VERSION MISMATCH after install — expected v${available}, got v${final_version}"
     err "Dashboard: WARNING: $_dashboard_warning"
     _write_dashboard_warning "$_dashboard_warning" "$available" "$final_version"
+    vs_update_component "dashboard" "failed" "$final_version" "$available" "$_dashboard_warning" 2>/dev/null || true
   fi
 
   rm -f "$deb_path" 2>/dev/null
@@ -772,6 +797,221 @@ WEOF
 
 _clear_dashboard_warning() {
   rm -f "${STATE_DIR}/dashboard-warning.json" 2>/dev/null || true
+}
+
+# ── Venue State Machine ──────────────────────────────────────────────────────
+# Read/write venue-state.json with python3 for atomic JSON manipulation.
+# Matches src/lib/venue-state.ts types exactly.
+# ──────────────────────────────────────────────────────────────────────────────
+
+readonly VS_MAX_ATTEMPTS=5
+
+# Initialize a default venue-state.json if it does not exist.
+vs_ensure_file() {
+  [[ -f "$VENUE_STATE_FILE" ]] && return 0
+  mkdir -p "$(dirname "$VENUE_STATE_FILE")" 2>/dev/null || true
+  python3 << 'VSINIT'
+import json, datetime
+now = datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.000Z')
+comp = lambda n: {'name':n,'targetVersion':'0.0.0','currentVersion':'0.0.0','lastKnownGoodVersion':None,'status':'unknown','lastConvergedAt':None,'lastAttemptAt':None,'attemptCount':0,'error':None}
+state = {
+  'lifecycleState':'BOOTSTRAPPING',
+  'components':{'server':comp('server'),'schema':comp('schema'),'dashboard':comp('dashboard'),'baseline':comp('baseline')},
+  'lastConvergedAt':None,'lastStateChangeAt':now,'blockedReason':None,'degradedReasons':[],'convergenceAttempts':0
+}
+import os
+sf = os.environ.get('_VS_FILE', '/opt/gwi-pos/shared/state/venue-state.json')
+with open(sf,'w') as f:
+  json.dump(state, f, indent=2)
+  f.write('\n')
+VSINIT
+  chmod 644 "$VENUE_STATE_FILE" 2>/dev/null || true
+}
+
+# Update a component and recompute venue lifecycle.
+# Usage: vs_update_component <name> <status> <currentVersion> <targetVersion> [error]
+vs_update_component() {
+  local comp_name="$1" comp_status="$2" comp_current="$3" comp_target="$4" comp_error="${5:-}"
+  vs_ensure_file
+  _VS_FILE="$VENUE_STATE_FILE" _VS_MAX="$VS_MAX_ATTEMPTS" \
+  python3 - "$comp_name" "$comp_status" "$comp_current" "$comp_target" "$comp_error" << 'VSUPDATE'
+import json, sys, os, datetime
+
+comp_name, comp_status, comp_current, comp_target, comp_error = sys.argv[1:6]
+state_file = os.environ['_VS_FILE']
+max_attempts = int(os.environ['_VS_MAX'])
+now = datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.000Z')
+
+with open(state_file) as f:
+    state = json.load(f)
+
+c = state['components'].get(comp_name)
+if not c:
+    sys.exit(0)
+
+c['status'] = comp_status
+c['currentVersion'] = comp_current
+c['targetVersion'] = comp_target
+c['lastAttemptAt'] = now
+if comp_error:
+    c['error'] = comp_error
+    c['attemptCount'] = c.get('attemptCount', 0) + 1
+else:
+    c['error'] = None
+
+if comp_status == 'converged':
+    c['lastConvergedAt'] = now
+    c['lastKnownGoodVersion'] = comp_current
+    c['error'] = None
+
+# Recompute lifecycle
+comps = list(state['components'].values())
+all_converged = all(x['status'] == 'converged' for x in comps)
+blocked = [x for x in comps if x['status'] == 'failed' and x.get('attemptCount', 0) >= max_attempts]
+server_healthy = state['components']['server']['status'] == 'converged'
+behind_or_failed = [x for x in comps if x['status'] in ('behind', 'failed', 'ahead')]
+
+if blocked:
+    new_lifecycle = 'BLOCKED'
+    state['blockedReason'] = '; '.join(
+        f"{x['name']}: {x.get('error','unknown')} ({x['attemptCount']} attempts)" for x in blocked)
+    state['degradedReasons'] = []
+elif all_converged:
+    new_lifecycle = 'CONVERGED'
+    state['blockedReason'] = None
+    state['degradedReasons'] = []
+elif server_healthy and behind_or_failed:
+    new_lifecycle = 'DEGRADED'
+    state['blockedReason'] = None
+    state['degradedReasons'] = [
+        f"{x['name']}: {x['status']} (current={x['currentVersion']}, target={x['targetVersion']})"
+        for x in behind_or_failed]
+else:
+    new_lifecycle = 'CONVERGING'
+    state['blockedReason'] = None
+    state['degradedReasons'] = []
+
+VALID = {
+    'BOOTSTRAPPING': {'CONVERGING','CONVERGED','BLOCKED'},
+    'CONVERGING': {'CONVERGED','DEGRADED','BLOCKED','ROLLING_BACK'},
+    'CONVERGED': {'CONVERGING','DEGRADED'},
+    'DEGRADED': {'CONVERGING','CONVERGED','BLOCKED'},
+    'BLOCKED': {'CONVERGING','RECOVERY_REQUIRED'},
+    'ROLLING_BACK': {'CONVERGED','DEGRADED','RECOVERY_REQUIRED'},
+    'RECOVERY_REQUIRED': {'BOOTSTRAPPING','CONVERGING'},
+}
+
+prev = state.get('lifecycleState', 'BOOTSTRAPPING')
+allowed = VALID.get(prev, set())
+if new_lifecycle != prev and new_lifecycle in allowed:
+    state['lifecycleState'] = new_lifecycle
+    state['lastStateChangeAt'] = now
+    if new_lifecycle == 'CONVERGED':
+        state['lastConvergedAt'] = now
+        state['convergenceAttempts'] = 0
+    elif new_lifecycle == 'CONVERGING':
+        state['convergenceAttempts'] = state.get('convergenceAttempts', 0) + 1
+
+with open(state_file, 'w') as f:
+    json.dump(state, f, indent=2)
+    f.write('\n')
+VSUPDATE
+  chmod 644 "$VENUE_STATE_FILE" 2>/dev/null || true
+}
+
+# Transition venue lifecycle directly (for ROLLING_BACK, RECOVERY_REQUIRED).
+# Usage: vs_transition <target_state>
+vs_transition() {
+  local target_state="$1"
+  vs_ensure_file
+  _VS_FILE="$VENUE_STATE_FILE" python3 - "$target_state" << 'VSTRANS'
+import json, sys, os, datetime
+
+target = sys.argv[1]
+state_file = os.environ['_VS_FILE']
+now = datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.000Z')
+
+with open(state_file) as f:
+    state = json.load(f)
+
+VALID = {
+    'BOOTSTRAPPING': {'CONVERGING','CONVERGED','BLOCKED'},
+    'CONVERGING': {'CONVERGED','DEGRADED','BLOCKED','ROLLING_BACK'},
+    'CONVERGED': {'CONVERGING','DEGRADED'},
+    'DEGRADED': {'CONVERGING','CONVERGED','BLOCKED'},
+    'BLOCKED': {'CONVERGING','RECOVERY_REQUIRED'},
+    'ROLLING_BACK': {'CONVERGED','DEGRADED','RECOVERY_REQUIRED'},
+    'RECOVERY_REQUIRED': {'BOOTSTRAPPING','CONVERGING'},
+}
+
+prev = state.get('lifecycleState', 'BOOTSTRAPPING')
+if target == prev:
+    sys.exit(0)
+
+allowed = VALID.get(prev, set())
+if target not in allowed:
+    print(f"Invalid transition: {prev} -> {target} (allowed: {sorted(allowed)})", file=sys.stderr)
+    sys.exit(1)
+
+state['lifecycleState'] = target
+state['lastStateChangeAt'] = now
+if target == 'CONVERGED':
+    state['lastConvergedAt'] = now
+    state['convergenceAttempts'] = 0
+    state['blockedReason'] = None
+    state['degradedReasons'] = []
+elif target == 'CONVERGING':
+    state['convergenceAttempts'] = state.get('convergenceAttempts', 0) + 1
+
+with open(state_file, 'w') as f:
+    json.dump(state, f, indent=2)
+    f.write('\n')
+VSTRANS
+  chmod 644 "$VENUE_STATE_FILE" 2>/dev/null || true
+}
+
+# Print current venue state as formatted JSON + component summary.
+# Returns non-zero if BLOCKED or RECOVERY_REQUIRED.
+venue_state() {
+  vs_ensure_file
+  echo "=== Venue State ==="
+  python3 -m json.tool "$VENUE_STATE_FILE" 2>/dev/null || cat "$VENUE_STATE_FILE"
+  echo ""
+  echo "--- Component Summary ---"
+  _VS_FILE="$VENUE_STATE_FILE" python3 << 'VSPRINT'
+import json, sys, os
+
+with open(os.environ['_VS_FILE']) as f:
+    state = json.load(f)
+
+lifecycle = state.get('lifecycleState', 'UNKNOWN')
+print(f"  Lifecycle: {lifecycle}")
+print(f"  Last converged: {state.get('lastConvergedAt') or 'never'}")
+print(f"  Convergence attempts: {state.get('convergenceAttempts', 0)}")
+
+if state.get('blockedReason'):
+    print(f"  BLOCKED: {state['blockedReason']}")
+for r in state.get('degradedReasons', []):
+    print(f"  DEGRADED: {r}")
+
+print("")
+for name in ('server', 'schema', 'dashboard', 'baseline'):
+    c = state.get('components', {}).get(name, {})
+    status = c.get('status', 'unknown')
+    current = c.get('currentVersion', '?')
+    target = c.get('targetVersion', '?')
+    converged_at = c.get('lastConvergedAt') or 'never'
+    indicator = 'OK' if status == 'converged' else 'FAIL' if status == 'failed' else '..'
+    line = f"  [{indicator:4s}] {name:12s} {status:10s} current={current} target={target} converged={converged_at}"
+    error = c.get('error')
+    if error:
+        line += f" ERROR: {error} (attempts={c.get('attemptCount',0)})"
+    print(line)
+
+# Exit code
+if lifecycle in ('BLOCKED', 'RECOVERY_REQUIRED'):
+    sys.exit(1)
+VSPRINT
 }
 
 # ── dashboard_check ──────────────────────────────────────────────────────────
@@ -845,15 +1085,120 @@ dashboard_check() {
   fi
 }
 
+# ── dashboard_rollback ────────────────────────────────────────────────────────
+# Rolls the dashboard back to the last-known-good version. Downloads the
+# matching .deb from the POS container's static files and reinstalls it.
+# ──────────────────────────────────────────────────────────────────────────────
+dashboard_rollback() {
+  local lkg
+  lkg="$(cat "$LKG_DASHBOARD_FILE" 2>/dev/null || true)"
+  if [[ -z "$lkg" ]]; then
+    err "No last-known-good dashboard version recorded — cannot rollback"
+    return 1
+  fi
+
+  local installed
+  installed=$(dpkg-query -W -f='${Version}' gwi-nuc-dashboard 2>/dev/null || echo "not-installed")
+  if [[ "$installed" == "$lkg" ]]; then
+    log "Dashboard: already at last-known-good v${lkg} — nothing to do"
+    return 0
+  fi
+
+  log "Dashboard: rolling back v${installed} -> v${lkg} (last-known-good)"
+
+  # Attempt to download the LKG .deb from the running container's static files.
+  # The container ships the current version's .deb, which may not match LKG if a
+  # newer deploy changed it. Try container copy first, then fall back to local cache.
+  local deb_path="/tmp/gwi-nuc-dashboard-${lkg}.deb"
+  local deb_url
+
+  # Try the running container's HTTP endpoint
+  deb_url="$(docker exec "$CONTAINER_NAME" printenv NEXT_PUBLIC_BASE_URL 2>/dev/null || echo 'http://localhost:3005')/gwi-nuc-dashboard.deb"
+  if curl -sfL "$deb_url" -o "$deb_path" 2>/dev/null; then
+    # Verify the downloaded .deb matches LKG version
+    local pkg_ver
+    pkg_ver=$(dpkg-deb -f "$deb_path" Version 2>/dev/null || echo "")
+    if [[ "$pkg_ver" != "$lkg" ]]; then
+      log "Dashboard rollback: container serves v${pkg_ver}, need v${lkg} — trying container copy"
+      rm -f "$deb_path"
+    fi
+  fi
+
+  # Fallback: try copying from container filesystem
+  if [[ ! -f "$deb_path" ]]; then
+    docker cp "${CONTAINER_NAME}:/app/public/gwi-nuc-dashboard.deb" "$deb_path" 2>/dev/null || true
+    if [[ -f "$deb_path" ]]; then
+      local pkg_ver
+      pkg_ver=$(dpkg-deb -f "$deb_path" Version 2>/dev/null || echo "")
+      if [[ "$pkg_ver" != "$lkg" ]]; then
+        log "Dashboard rollback: container .deb is v${pkg_ver}, need v${lkg}"
+        rm -f "$deb_path"
+      fi
+    fi
+  fi
+
+  if [[ ! -f "$deb_path" ]]; then
+    err "Dashboard rollback: could not obtain v${lkg} .deb — rollback failed"
+    return 1
+  fi
+
+  # Validate and install
+  if ! dpkg --info "$deb_path" > /dev/null 2>&1; then
+    err "Dashboard rollback: downloaded file is not a valid .deb"
+    rm -f "$deb_path"
+    return 1
+  fi
+
+  sudo dpkg -i "$deb_path" 2>&1 | while IFS= read -r line; do log "Dashboard rollback: $line"; done
+  sudo dpkg --configure -a 2>&1 | while IFS= read -r line; do log "Dashboard rollback: configure: $line"; done || true
+  sudo apt-get install -f -y -qq 2>/dev/null || true
+
+  local final_version
+  final_version=$(dpkg-query -W -f='${Version}' gwi-nuc-dashboard 2>/dev/null || echo "0.0.0")
+  rm -f "$deb_path" 2>/dev/null
+
+  if [[ "$final_version" == "$lkg" ]]; then
+    log "Dashboard rollback: restored to v${lkg}"
+    _clear_dashboard_warning
+    # Restart service
+    local _posuser="${POSUSER:-gwipos}"
+    sudo -u "${_posuser}" bash -c \
+      "XDG_RUNTIME_DIR=/run/user/\$(id -u) systemctl --user restart gwi-dashboard.service" 2>/dev/null || true
+    # Audit log
+    mkdir -p "${RESULTS_DIR}" 2>/dev/null || true
+    echo "{\"action\":\"dashboard_rollback\",\"version\":\"$lkg\",\"previousVersion\":\"$installed\",\"status\":\"rolled_back\",\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" \
+      > "${RESULTS_DIR}/dashboard-rollback-$(date +%s).json" 2>/dev/null || true
+    return 0
+  else
+    err "Dashboard rollback: expected v${lkg}, got v${final_version}"
+    _write_dashboard_warning "Rollback failed — expected v${lkg}, got v${final_version}" "$lkg" "$final_version"
+    return 1
+  fi
+}
+
 deploy_failure() {
   err "Health check failed after $HEALTH_MAX_ATTEMPTS attempts"
   capture_diagnostics
+
+  # ── Venue state: mark server as failed ───────���─────────────────────────
+  local _vs_target="${IMAGE_REF##*:}"
+  vs_update_component "server" "failed" "" "${_vs_target:-unknown}" "Health check failed after $HEALTH_MAX_ATTEMPTS attempts" 2>/dev/null || true
+
   docker stop "$CONTAINER_NAME" 2>/dev/null || true
   docker rm "$CONTAINER_NAME" 2>/dev/null || true
+
+  # Resolve rollback image: previous-image first, then LKG as fallback
+  local prev=""
   if [[ -f "$PREVIOUS_IMAGE_FILE" ]]; then
-    local prev
     prev="$(cat "$PREVIOUS_IMAGE_FILE")"
+  elif [[ -f "$LKG_IMAGE_FILE" ]]; then
+    prev="$(cat "$LKG_IMAGE_FILE")"
+    log "No previous image — falling back to last-known-good"
+  fi
+
+  if [[ -n "$prev" ]]; then
     log "Auto-rolling back to: $prev"
+    vs_transition "ROLLING_BACK" 2>/dev/null || true
     if start_container "$prev"; then
       log "Verifying rollback health..."
       health_check "Rollback: "
@@ -861,22 +1206,27 @@ deploy_failure() {
         ROLLBACK_RESULT="pass"; ROLLBACK_READINESS="pass"; FINAL_STATUS="rolled_back"
         write_deploy_state "rolled_back"
         log "Rollback healthy — previous image restored"
+        local _rb_tag="${prev##*:}"
+        vs_update_component "server" "converged" "$_rb_tag" "$_rb_tag" 2>/dev/null || true
       else
         ROLLBACK_RESULT="pass"; ROLLBACK_READINESS="fail"; FINAL_STATUS="rollback_failed"
         write_deploy_state "rollback_failed"
         err "Rollback container started but health check failed"
+        vs_transition "RECOVERY_REQUIRED" 2>/dev/null || true
         systemd_last_resort
       fi
     else
       ROLLBACK_RESULT="fail"; ROLLBACK_READINESS="not_attempted"; FINAL_STATUS="rollback_failed"
       write_deploy_state "rollback_failed"
       err "Failed to start rollback container"
+      vs_transition "RECOVERY_REQUIRED" 2>/dev/null || true
       systemd_last_resort
     fi
   else
     ROLLBACK_RESULT="not_attempted"; ROLLBACK_READINESS="not_attempted"; FINAL_STATUS="rollback_failed"
     write_deploy_state "rollback_failed"
-    err "No previous image for rollback"
+    err "No previous image or last-known-good for rollback"
+    vs_transition "RECOVERY_REQUIRED" 2>/dev/null || true
     systemd_last_resort
   fi
   write_deploy_log
@@ -899,12 +1249,19 @@ install() {
 }
 
 rollback() {
-  if [[ ! -f "$PREVIOUS_IMAGE_FILE" ]]; then
-    echo "No previous image to roll back to"
+  local lkg_image
+  lkg_image="$(cat "$LKG_IMAGE_FILE" 2>/dev/null || true)"
+  if [[ -n "$lkg_image" ]]; then
+    IMAGE_REF="$lkg_image"
+    local lkg_ver; lkg_ver="$(cat "$LKG_VERSION_FILE" 2>/dev/null || echo unknown)"
+    log "Rollback to last-known-good: $IMAGE_REF (v${lkg_ver})"
+  elif [[ -f "$PREVIOUS_IMAGE_FILE" ]]; then
+    IMAGE_REF="$(cat "$PREVIOUS_IMAGE_FILE")"
+    log "Rollback to previous image (no LKG available): $IMAGE_REF"
+  else
+    err "No last-known-good or previous image to roll back to"
     if [[ "$WATCH_MODE" == true ]]; then FINAL_STATUS="failed"; return 1; else exit 1; fi
   fi
-  IMAGE_REF="$(cat "$PREVIOUS_IMAGE_FILE")"
-  log "Rollback requested: $IMAGE_REF"
   deploy
 }
 
@@ -917,12 +1274,28 @@ status() {
   local port; port="$(read_port)"
   curl -sf "http://localhost:${port}/api/health/ready" 2>/dev/null | python3 -m json.tool 2>/dev/null || echo "Health: no response"
   echo ""
+
+  # Server last-known-good
+  local _lkg_image _lkg_version
+  _lkg_image="$(cat "$LKG_IMAGE_FILE" 2>/dev/null || echo none)"
+  _lkg_version="$(cat "$LKG_VERSION_FILE" 2>/dev/null || echo none)"
+  echo "Server LKG: image=${_lkg_image} version=${_lkg_version}"
+  echo ""
+
   # Dashboard convergence status
-  local _dash_installed _dash_target
+  local _dash_installed _dash_target _dash_lkg _dash_svc_status
   _dash_installed=$(dpkg-query -W -f='${Version}' gwi-nuc-dashboard 2>/dev/null || echo "not-installed")
   _dash_target=$(docker exec "$CONTAINER_NAME" cat /app/public/version-contract.json 2>/dev/null \
     | python3 -c "import json,sys; print(json.load(sys.stdin).get('dashboardVersion',''))" 2>/dev/null || echo "unknown")
-  echo "Dashboard: installed=${_dash_installed} target=${_dash_target}"
+  _dash_lkg="$(cat "$LKG_DASHBOARD_FILE" 2>/dev/null || echo none)"
+
+  # Dashboard service status
+  local _posuser="${POSUSER:-gwipos}"
+  _dash_svc_status=$(sudo -u "${_posuser}" bash -c \
+    "XDG_RUNTIME_DIR=/run/user/\$(id -u) systemctl --user is-active gwi-dashboard.service" 2>/dev/null || echo "unknown")
+
+  echo "Dashboard: installed=${_dash_installed} target=${_dash_target} lkg=${_dash_lkg}"
+  echo "Dashboard: service=${_dash_svc_status}"
   if [[ "$_dash_installed" == "$_dash_target" ]]; then
     echo "Dashboard: CONVERGED"
   else
@@ -930,6 +1303,17 @@ status() {
   fi
   if [[ -f "${STATE_DIR}/dashboard-warning.json" ]]; then
     echo "Dashboard WARNING: $(cat "${STATE_DIR}/dashboard-warning.json" 2>/dev/null)"
+  fi
+
+  # Venue state summary
+  echo ""
+  if [[ -f "$VENUE_STATE_FILE" ]]; then
+    local _vs_lifecycle
+    _vs_lifecycle="$(jq -r '.lifecycleState // "UNKNOWN"' "$VENUE_STATE_FILE" 2>/dev/null || echo "UNKNOWN")"
+    echo "Venue State: ${_vs_lifecycle}"
+    echo "  (run 'gwi-node venue-state' for full details)"
+  else
+    echo "Venue State: not initialized"
   fi
 }
 
@@ -1085,6 +1469,14 @@ dispatch_trigger() {
       # self_update does not set FINAL_STATUS; mark healthy on success
       [[ $dispatch_rc -eq 0 ]] && FINAL_STATUS="healthy"
       ;;
+    dashboard-check)
+      dashboard_check || dispatch_rc=$?
+      [[ $dispatch_rc -eq 0 ]] && FINAL_STATUS="healthy"
+      ;;
+    dashboard-rollback)
+      dashboard_rollback || dispatch_rc=$?
+      [[ $dispatch_rc -eq 0 ]] && FINAL_STATUS="healthy"
+      ;;
     *)
       log "Unknown action: $action"
       FINAL_STATUS="failed"
@@ -1158,6 +1550,287 @@ watch_loop() {
   log "Watch mode exited"
 }
 
+# ---------------------------------------------------------------------------
+#  converge — single-run check-and-fix for all venue components
+# ---------------------------------------------------------------------------
+# Reads venue state and version-contract, compares each component against
+# its target, and attempts reconciliation for any diverged components.
+# Idempotent: safe to run repeatedly. Uses existing deploy/update/vs_* functions.
+# ---------------------------------------------------------------------------
+
+# Read a field from the version-contract inside the running container.
+# Usage: _cv_read_contract <jq_expression>
+_cv_read_contract() {
+  docker exec "$CONTAINER_NAME" cat /app/public/version-contract.json 2>/dev/null \
+    | jq -r "$1" 2>/dev/null || echo ""
+}
+
+# Quick health probe — single HTTP check (not the full HEALTH_CONSECUTIVE loop).
+# Returns 0 if healthy, 1 otherwise.
+_cv_health_probe() {
+  local port code
+  port="$(read_port)"
+  code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "http://localhost:${port}/api/health/ready" 2>/dev/null || echo 000)"
+  [[ "$code" == "200" ]]
+}
+
+converge() {
+  log "=== Convergence check ==="
+  mkdir -p "$STATE_DIR"
+  vs_ensure_file
+
+  local _cv_server_running=false
+  local _cv_server_image="" _cv_server_version=""
+  local _cv_target_version=""
+
+  # ── Observe current server state ───────────────────────────────────────────
+  if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^${CONTAINER_NAME}$"; then
+    _cv_server_running=true
+    _cv_server_image="$(docker inspect --format='{{.Config.Image}}' "$CONTAINER_NAME" 2>/dev/null || true)"
+    _cv_server_version="${_cv_server_image##*:}"
+  fi
+
+  if [[ "$_cv_server_running" == true ]]; then
+    _cv_target_version=$(_cv_read_contract '.version // empty')
+  fi
+
+  # ── Component: Server ──────────────────────────────────────────────────────
+  if [[ "$_cv_server_running" != true ]]; then
+    log "Converge/server: NOT RUNNING — attempting start"
+
+    local last_image=""
+    [[ -f "$VERSION_FILE" ]] && last_image="$(jq -r '.imageRef // empty' "$VERSION_FILE" 2>/dev/null || true)"
+
+    if [[ -n "$last_image" ]]; then
+      ensure_port_available 2>/dev/null || true
+      ensure_runtime_dirs 2>/dev/null || true
+      if start_container "$last_image" 2>/dev/null; then
+        sleep 5
+        if _cv_health_probe; then
+          vs_update_component "server" "converged" "${last_image##*:}" "${last_image##*:}"
+          log "Converge/server: started from $last_image"
+          start_agent "$last_image" 2>/dev/null || log "WARN: converge — gwi-agent failed to start"
+          _cv_server_running=true
+          _cv_server_image="$last_image"
+          _cv_server_version="${last_image##*:}"
+        else
+          vs_update_component "server" "failed" "" "${last_image##*:}" "Container started but unhealthy"
+        fi
+      else
+        vs_update_component "server" "failed" "" "${last_image##*:}" "start_container failed"
+      fi
+    else
+      vs_update_component "server" "failed" "" "unknown" "No known image to start from"
+    fi
+
+  elif ! _cv_health_probe; then
+    log "Converge/server: UNHEALTHY — restarting container"
+    docker restart "$CONTAINER_NAME" 2>/dev/null || true
+    sleep 10
+    if _cv_health_probe; then
+      vs_update_component "server" "converged" "$_cv_server_version" "$_cv_server_version"
+      log "Converge/server: healthy after restart"
+    else
+      vs_update_component "server" "failed" "$_cv_server_version" "$_cv_server_version" "Still unhealthy after restart"
+    fi
+
+  elif [[ -n "$_cv_target_version" ]] && [[ "$_cv_server_version" != "$_cv_target_version" ]]; then
+    log "Converge/server: VERSION MISMATCH (${_cv_server_version} != ${_cv_target_version}) — triggering deploy"
+    vs_update_component "server" "behind" "$_cv_server_version" "$_cv_target_version"
+
+    # Use the existing deploy flow
+    reset_deploy_state 2>/dev/null || true
+    MANIFEST_URL="${R2_ORIGIN}/latest/manifest.json"
+    SKIP_SELF_UPDATE=true
+    if deploy 2>/dev/null; then
+      log "Converge/server: deploy succeeded"
+      # deploy_success already calls vs_update_component
+    else
+      vs_update_component "server" "failed" "$_cv_server_version" "$_cv_target_version" "Deploy failed"
+    fi
+
+  else
+    vs_update_component "server" "converged" "$_cv_server_version" "${_cv_target_version:-$_cv_server_version}"
+    log "Converge/server: OK (${_cv_server_version})"
+  fi
+
+  # Refresh running state after server reconciliation
+  if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^${CONTAINER_NAME}$"; then
+    _cv_server_running=true
+    _cv_server_image="$(docker inspect --format='{{.Config.Image}}' "$CONTAINER_NAME" 2>/dev/null || true)"
+    _cv_server_version="${_cv_server_image##*:}"
+    [[ -z "$_cv_target_version" ]] && _cv_target_version=$(_cv_read_contract '.version // empty')
+  fi
+
+  # ── Component: Dashboard ───────────────────────────────────────────────────
+  if [[ "${STATION_ROLE:-}" == "terminal" ]]; then
+    log "Converge/dashboard: skipped (terminal role)"
+  elif [[ "$_cv_server_running" != true ]]; then
+    log "Converge/dashboard: skipped (server not running)"
+  else
+    local _cv_dash_installed _cv_dash_target
+    _cv_dash_installed=$(dpkg-query -W -f='${Version}' gwi-nuc-dashboard 2>/dev/null || echo "")
+    _cv_dash_target=$(_cv_read_contract '.dashboardVersion // empty')
+
+    if [[ -z "$_cv_dash_target" ]]; then
+      log "Converge/dashboard: no target in version-contract"
+    elif [[ "$_cv_dash_installed" != "$_cv_dash_target" ]]; then
+      log "Converge/dashboard: DIVERGED (${_cv_dash_installed:-none} != ${_cv_dash_target}) — updating"
+      vs_update_component "dashboard" "behind" "${_cv_dash_installed:-0.0.0}" "$_cv_dash_target"
+
+      if update_dashboard 2>/dev/null; then
+        local _cv_dash_after
+        _cv_dash_after=$(dpkg-query -W -f='${Version}' gwi-nuc-dashboard 2>/dev/null || echo "")
+        if [[ "$_cv_dash_after" == "$_cv_dash_target" ]]; then
+          vs_update_component "dashboard" "converged" "$_cv_dash_after" "$_cv_dash_target"
+          log "Converge/dashboard: updated to ${_cv_dash_after}"
+        else
+          vs_update_component "dashboard" "failed" "${_cv_dash_after:-0.0.0}" "$_cv_dash_target" "Update ran but version still ${_cv_dash_after:-none}"
+        fi
+      else
+        vs_update_component "dashboard" "failed" "${_cv_dash_installed:-0.0.0}" "$_cv_dash_target" "update_dashboard failed"
+      fi
+    else
+      # Version matches — check if service is running
+      local _cv_dash_svc _posuser="${POSUSER:-gwipos}"
+      _cv_dash_svc=$(sudo -u "${_posuser}" bash -c \
+        "XDG_RUNTIME_DIR=/run/user/\$(id -u) systemctl --user is-active gwi-dashboard.service" 2>/dev/null || echo "inactive")
+      if [[ "$_cv_dash_svc" != "active" ]]; then
+        log "Converge/dashboard: service not running — starting"
+        sudo -u "${_posuser}" bash -c \
+          "XDG_RUNTIME_DIR=/run/user/\$(id -u) systemctl --user start gwi-dashboard.service" 2>/dev/null || true
+        sleep 2
+        _cv_dash_svc=$(sudo -u "${_posuser}" bash -c \
+          "XDG_RUNTIME_DIR=/run/user/\$(id -u) systemctl --user is-active gwi-dashboard.service" 2>/dev/null || echo "inactive")
+        if [[ "$_cv_dash_svc" == "active" ]]; then
+          vs_update_component "dashboard" "converged" "$_cv_dash_installed" "$_cv_dash_target"
+          log "Converge/dashboard: service started"
+        else
+          vs_update_component "dashboard" "failed" "$_cv_dash_installed" "$_cv_dash_target" "Service failed to start"
+        fi
+      else
+        vs_update_component "dashboard" "converged" "$_cv_dash_installed" "$_cv_dash_target"
+        log "Converge/dashboard: OK (${_cv_dash_installed})"
+      fi
+    fi
+  fi
+
+  # ── Component: Schema ──────────────────────────────────────────────────────
+  if [[ "$_cv_server_running" != true ]]; then
+    log "Converge/schema: skipped (server not running)"
+  else
+    local _cv_schema_target _cv_schema_current
+    _cv_schema_target=$(_cv_read_contract '.migrationCount // 0')
+    # Query local PG for applied migration count
+    _cv_schema_current=$(docker exec "$CONTAINER_NAME" \
+      node -e "
+        const { PrismaClient } = require('@prisma/client');
+        const p = new PrismaClient();
+        p.\$queryRawUnsafe('SELECT COUNT(*) as c FROM _gwi_migrations')
+          .then(r => { console.log(r[0].c || 0); process.exit(0); })
+          .catch(() => { console.log(0); process.exit(0); });
+      " 2>/dev/null || echo 0)
+
+    if [[ "$_cv_schema_target" -eq 0 ]]; then
+      log "Converge/schema: no migrationCount in version-contract"
+    elif [[ "$_cv_schema_current" -lt "$_cv_schema_target" ]]; then
+      log "Converge/schema: BEHIND (${_cv_schema_current}/${_cv_schema_target}) — running migrations"
+      vs_update_component "schema" "behind" "$_cv_schema_current" "$_cv_schema_target"
+
+      if docker run --rm --env-file "$ENV_FILE" --network=host "$_cv_server_image" \
+        node deploy-tools/src/migrate.js 2>/dev/null; then
+        # Re-check
+        _cv_schema_current=$(docker exec "$CONTAINER_NAME" \
+          node -e "
+            const { PrismaClient } = require('@prisma/client');
+            const p = new PrismaClient();
+            p.\$queryRawUnsafe('SELECT COUNT(*) as c FROM _gwi_migrations')
+              .then(r => { console.log(r[0].c || 0); process.exit(0); })
+              .catch(() => { console.log(0); process.exit(0); });
+          " 2>/dev/null || echo 0)
+        if [[ "$_cv_schema_current" -ge "$_cv_schema_target" ]]; then
+          vs_update_component "schema" "converged" "$_cv_schema_current" "$_cv_schema_target"
+          log "Converge/schema: migrations applied (${_cv_schema_current}/${_cv_schema_target})"
+        else
+          vs_update_component "schema" "failed" "$_cv_schema_current" "$_cv_schema_target" "Migrations ran but count still ${_cv_schema_current}/${_cv_schema_target}"
+        fi
+      else
+        vs_update_component "schema" "failed" "$_cv_schema_current" "$_cv_schema_target" "Migration runner failed"
+      fi
+    else
+      vs_update_component "schema" "converged" "$_cv_schema_current" "$_cv_schema_target"
+      log "Converge/schema: OK (${_cv_schema_current}/${_cv_schema_target})"
+    fi
+  fi
+
+  # ── Summary ────────────────────────────────────────────────────────────────
+  local lifecycle
+  lifecycle=$(jq -r '.lifecycleState // "UNKNOWN"' "$VENUE_STATE_FILE" 2>/dev/null || echo "UNKNOWN")
+  log "Convergence complete: lifecycle=${lifecycle}"
+  return 0
+}
+
+# ---------------------------------------------------------------------------
+#  converge-loop — run converge on a recurring timer
+# ---------------------------------------------------------------------------
+converge_loop() {
+  local interval="${1:-300}"  # Default: every 5 minutes
+  log "Starting convergence loop (interval: ${interval}s)"
+
+  # Graceful shutdown on SIGTERM/SIGINT
+  local loop_running=true
+  trap 'log "Convergence loop shutting down (signal received)"; loop_running=false' SIGTERM SIGINT
+
+  while [[ "$loop_running" == true ]]; do
+    converge || log "WARN: converge returned non-zero (non-fatal)"
+
+    # Interruptible sleep
+    sleep "$interval" &
+    wait $! 2>/dev/null || true
+  done
+
+  log "Convergence loop exited"
+}
+
+# ---------------------------------------------------------------------------
+#  install_converge_service — write systemd unit for the convergence agent
+# ---------------------------------------------------------------------------
+install_converge_service() {
+  local interval="${1:-300}"
+  local unit_path="/etc/systemd/system/gwi-converge.service"
+  local script_path="${BASE_DIR}/gwi-node.sh"
+
+  # Prefer the installed copy; fall back to this script's location
+  [[ -f "$script_path" ]] || script_path="$0"
+
+  log "Installing convergence service (interval: ${interval}s)"
+
+  cat > "$unit_path" <<SVCEOF
+[Unit]
+Description=GWI POS Venue Convergence Agent
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+ExecStart=${script_path} converge-loop ${interval}
+Restart=always
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=gwi-converge
+
+[Install]
+WantedBy=multi-user.target
+SVCEOF
+
+  chmod 644 "$unit_path"
+  systemctl daemon-reload
+  systemctl enable gwi-converge.service
+  log "Convergence service installed: $unit_path"
+  log "Start with: systemctl start gwi-converge.service"
+}
+
 # ── Source guard ────────────────────────────────────────────────────────────
 # When sourced by the installer (source installer-modules/gwi-node.sh), only
 # define functions — do not parse args or run commands. The installer calls
@@ -1168,6 +1841,9 @@ fi
 
 SUBCOMMAND="${1:-deploy}"
 shift 2>/dev/null || true
+
+# converge-loop and install-converge-service accept a positional interval arg
+CONVERGE_INTERVAL=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --force)              FORCE=true; shift ;;
@@ -1176,17 +1852,29 @@ while [[ $# -gt 0 ]]; do
     --image-digest)       IMAGE_DIGEST="$2"; shift 2 ;;
     --skip-self-update)   SKIP_SELF_UPDATE=true; shift ;;
     --self-updated)       SELF_UPDATED=true; shift ;;
-    *) echo "Unknown flag: $1"; exit 1 ;;
+    *)
+      # Positional arg for converge-loop / install-converge-service
+      if [[ "$SUBCOMMAND" == "converge-loop" ]] || [[ "$SUBCOMMAND" == "install-converge-service" ]]; then
+        CONVERGE_INTERVAL="$1"; shift
+      else
+        echo "Unknown flag: $1"; exit 1
+      fi
+      ;;
   esac
 done
 
 case "$SUBCOMMAND" in
-  install)          install ;;
-  deploy)           deploy ;;
-  rollback)         rollback ;;
-  status)           status ;;
-  self-update)      self_update ;;
-  watch)            watch_loop ;;
-  dashboard-check)  dashboard_check ;;
-  *)                echo "Usage: gwi-node.sh {install|deploy|rollback|status|self-update|watch|dashboard-check}"; exit 1 ;;
+  install)                    install ;;
+  deploy)                     deploy ;;
+  rollback)                   rollback ;;
+  status)                     status ;;
+  self-update)                self_update ;;
+  watch)                      watch_loop ;;
+  dashboard-check)            dashboard_check ;;
+  dashboard-rollback)         dashboard_rollback ;;
+  venue-state)                venue_state ;;
+  converge)                   converge ;;
+  converge-loop)              converge_loop "${CONVERGE_INTERVAL:-300}" ;;
+  install-converge-service)   install_converge_service "${CONVERGE_INTERVAL:-300}" ;;
+  *)                          echo "Usage: gwi-node.sh {install|deploy|rollback|status|self-update|watch|dashboard-check|dashboard-rollback|venue-state|converge|converge-loop|install-converge-service}"; exit 1 ;;
 esac
