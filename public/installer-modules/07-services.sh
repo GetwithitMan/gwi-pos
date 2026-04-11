@@ -595,9 +595,9 @@ BKEOF
 
       # ── Cloud Backup Upload (encrypted -> S3) ──
       UPLOAD_SCRIPT="$APP_BASE/scripts/nuc-backup-upload.sh"
-      if [[ -f "$APP_DIR/public/nuc-backup-upload.sh" ]]; then
-        mkdir -p "$APP_BASE/scripts"
-        cp "$APP_DIR/public/nuc-backup-upload.sh" "$UPLOAD_SCRIPT"
+      mkdir -p "$APP_BASE/scripts"
+      if docker cp gwi-pos:/app/public/nuc-backup-upload.sh "$UPLOAD_SCRIPT" 2>/dev/null \
+         || cp "$APP_DIR/public/nuc-backup-upload.sh" "$UPLOAD_SCRIPT" 2>/dev/null; then
         chmod +x "$UPLOAD_SCRIPT"
         chown "$POSUSER":"$POSUSER" "$UPLOAD_SCRIPT"
 
@@ -607,7 +607,7 @@ BKEOF
 
         log "Cloud backup upload configured (4:15 AM daily -> S3)."
       else
-        track_warn "nuc-backup-upload.sh not found at $APP_DIR/public/nuc-backup-upload.sh -- cloud backup upload not configured."
+        track_warn "nuc-backup-upload.sh not found in container or at $APP_DIR/public/ -- cloud backup upload not configured."
       fi
     else
       log "Cloud database (Neon) -- backups managed by provider. Skipping local backup."
@@ -615,25 +615,27 @@ BKEOF
 
     # ── Restore Script ──
     RESTORE_SCRIPT="$APP_BASE/scripts/nuc-restore.sh"
-    if [[ -f "$APP_DIR/public/nuc-restore.sh" ]]; then
-      mkdir -p "$APP_BASE/scripts"
-      cp "$APP_DIR/public/nuc-restore.sh" "$RESTORE_SCRIPT"
+    mkdir -p "$APP_BASE/scripts"
+    if docker cp gwi-pos:/app/public/nuc-restore.sh "$RESTORE_SCRIPT" 2>/dev/null \
+       || cp "$APP_DIR/public/nuc-restore.sh" "$RESTORE_SCRIPT" 2>/dev/null; then
       chmod +x "$RESTORE_SCRIPT"
       chown root:root "$RESTORE_SCRIPT"
       log "Restore script installed: $RESTORE_SCRIPT"
     else
-      track_warn "nuc-restore.sh not found at $APP_DIR/public/nuc-restore.sh -- restore script not installed."
+      track_warn "nuc-restore.sh not found in container or at $APP_DIR/public/ -- restore script not installed."
     fi
 
     # ── Deploy full ha-check.sh (replaces bootstrap version written before git clone) ──
-    if [[ -n "${VIRTUAL_IP:-}" ]] && [[ -f "$APP_DIR/public/ha-check.sh" ]]; then
+    if [[ -n "${VIRTUAL_IP:-}" ]]; then
       mkdir -p "$APP_BASE/scripts"
-      cp "$APP_DIR/public/ha-check.sh" "$APP_BASE/scripts/ha-check.sh"
-      chmod +x "$APP_BASE/scripts/ha-check.sh"
-      chown root:root "$APP_BASE/scripts/ha-check.sh"
-      log "Full ha-check.sh deployed (pg_is_in_recovery, replication lag, MC alerting)."
-    elif [[ -n "${VIRTUAL_IP:-}" ]]; then
-      track_warn "ha-check.sh not found at $APP_DIR/public/ha-check.sh -- using bootstrap version (no replication lag monitoring)."
+      if docker cp gwi-pos:/app/public/ha-check.sh "$APP_BASE/scripts/ha-check.sh" 2>/dev/null \
+         || cp "$APP_DIR/public/ha-check.sh" "$APP_BASE/scripts/ha-check.sh" 2>/dev/null; then
+        chmod +x "$APP_BASE/scripts/ha-check.sh"
+        chown root:root "$APP_BASE/scripts/ha-check.sh"
+        log "Full ha-check.sh deployed (pg_is_in_recovery, replication lag, MC alerting)."
+      else
+        track_warn "ha-check.sh not found in container or at $APP_DIR/public/ -- using bootstrap version (no replication lag monitoring)."
+      fi
     fi
 
     # ───────────────────────────────────────────────────────────────────────────
@@ -691,9 +693,9 @@ SUDEOF
     header "Setting Up Sync Agent"
 
     SYNC_SCRIPT="$APP_BASE/sync-agent.js"
-    # Copy sync agent from repo (self-updating -- updated by FORCE_UPDATE deployments)
-    if [[ -f "$APP_DIR/public/sync-agent.js" ]]; then
-      cp "$APP_DIR/public/sync-agent.js" "$SYNC_SCRIPT"
+    # Copy sync agent from container (self-updating -- updated by FORCE_UPDATE deployments)
+    if docker cp gwi-pos:/app/public/sync-agent.js "$SYNC_SCRIPT" 2>/dev/null \
+       || cp "$APP_DIR/public/sync-agent.js" "$SYNC_SCRIPT" 2>/dev/null; then
       chown "$POSUSER":"$POSUSER" "$SYNC_SCRIPT"
 
       # thepasspos-sync.service -- Sync Agent (only created when script exists)
@@ -722,7 +724,7 @@ SVCEOF
       systemctl restart thepasspos-sync || { err_code "ERR-INST-213" "systemctl restart thepasspos-sync failed"; track_warn "Sync agent failed to start -- check journalctl -u thepasspos-sync"; }
       log "Sync agent configured and started."
     else
-      track_warn "sync-agent.js not found at $APP_DIR/public/sync-agent.js -- sync agent will not start."
+      track_warn "sync-agent.js not found in container or at $APP_DIR/public/ -- sync agent will not start."
       systemctl disable thepasspos-sync 2>/dev/null || true
     fi
 
@@ -733,27 +735,25 @@ SVCEOF
 
     header "Installing gwi-node Deploy Service"
 
-    # Copy gwi-node.sh to host location
-    GWI_NODE_SRC="$APP_DIR/public/scripts/gwi-node.sh"
+    # Copy gwi-node.sh to host location (container first, host fallback)
     GWI_NODE_DEST="$APP_BASE/gwi-node.sh"
-    if [[ -f "$GWI_NODE_SRC" ]]; then
-      cp "$GWI_NODE_SRC" "$GWI_NODE_DEST"
+    if docker cp gwi-pos:/app/public/scripts/gwi-node.sh "$GWI_NODE_DEST" 2>/dev/null \
+       || cp "$APP_DIR/public/scripts/gwi-node.sh" "$GWI_NODE_DEST" 2>/dev/null; then
       chown root:root "$GWI_NODE_DEST"
       chmod 755 "$GWI_NODE_DEST"
       log "gwi-node.sh installed at $GWI_NODE_DEST"
     else
-      track_warn "gwi-node.sh not found at $GWI_NODE_SRC"
+      track_warn "gwi-node.sh not found in container or at $APP_DIR/public/scripts/"
     fi
 
-    # Install gwi-node.service systemd unit
-    GWI_NODE_SVC_SRC="$APP_DIR/public/scripts/gwi-node.service"
-    if [[ -f "$GWI_NODE_SVC_SRC" ]]; then
-      cp "$GWI_NODE_SVC_SRC" /etc/systemd/system/gwi-node.service
+    # Install gwi-node.service systemd unit (container first, host fallback)
+    if docker cp gwi-pos:/app/public/scripts/gwi-node.service /etc/systemd/system/gwi-node.service 2>/dev/null \
+       || cp "$APP_DIR/public/scripts/gwi-node.service" /etc/systemd/system/gwi-node.service 2>/dev/null; then
       systemctl daemon-reload
       systemctl enable gwi-node.service
       log "gwi-node.service installed and enabled"
     else
-      track_warn "gwi-node.service not found at $GWI_NODE_SVC_SRC"
+      track_warn "gwi-node.service not found in container or at $APP_DIR/public/scripts/"
     fi
 
     # Create trigger file directories with correct ownership
@@ -1158,31 +1158,58 @@ SVCEOF
 
   header "Installing watchdog health monitor..."
 
-  # Resolve source directory: prefer $APP_DIR/public (post-clone), fall back to $MODULES_DIR/..
-  local _WD_SRC="${APP_DIR:-/opt/gwi-pos/app}/public"
-  [[ -f "$_WD_SRC/watchdog.sh" ]] || _WD_SRC="${MODULES_DIR:-$SCRIPT_DIR/installer-modules}/.."
+  # Copy watchdog files from container first, then host fallback
+  local _wd_copied=false
 
-  # Copy watchdog files
-  if [[ -f "$_WD_SRC/watchdog.sh" ]]; then
-    cp "$_WD_SRC/watchdog.sh" /opt/gwi-pos/watchdog.sh
+  # Try container extraction first
+  if docker cp gwi-pos:/app/public/watchdog.sh /opt/gwi-pos/watchdog.sh 2>/dev/null; then
+    _wd_copied=true
     chmod +x /opt/gwi-pos/watchdog.sh
 
-    if [[ -f "$_WD_SRC/watchdog.service" ]] && [[ -f "$_WD_SRC/watchdog.timer" ]]; then
-      cp "$_WD_SRC/watchdog.service" /etc/systemd/system/gwi-watchdog.service
-      cp "$_WD_SRC/watchdog.timer" /etc/systemd/system/gwi-watchdog.timer
-    else
-      track_warn "watchdog.service or watchdog.timer not found -- watchdog timer not installed"
+    docker cp gwi-pos:/app/public/watchdog.service /etc/systemd/system/gwi-watchdog.service 2>/dev/null || true
+    docker cp gwi-pos:/app/public/watchdog.timer /etc/systemd/system/gwi-watchdog.timer 2>/dev/null || true
+
+    if [[ ! -f /etc/systemd/system/gwi-watchdog.service ]] || [[ ! -f /etc/systemd/system/gwi-watchdog.timer ]]; then
+      track_warn "watchdog.service or watchdog.timer not found in container -- watchdog timer not installed"
     fi
 
-    # Copy monitoring scripts
+    # Copy monitoring scripts from container
     mkdir -p /opt/gwi-pos/scripts
     for script in hardware-inventory.sh disk-pressure-monitor.sh version-compat.sh rolling-restart.sh; do
-      if [[ -f "$_WD_SRC/scripts/$script" ]]; then
-        cp "$_WD_SRC/scripts/$script" /opt/gwi-pos/scripts/"$script"
-      fi
+      docker cp "gwi-pos:/app/public/scripts/$script" "/opt/gwi-pos/scripts/$script" 2>/dev/null || true
     done
     chmod +x /opt/gwi-pos/scripts/*.sh 2>/dev/null || true
+  fi
 
+  # Host fallback if container extraction failed
+  if [[ "$_wd_copied" != "true" ]]; then
+    local _WD_SRC="${APP_DIR:-/opt/gwi-pos/app}/public"
+    [[ -f "$_WD_SRC/watchdog.sh" ]] || _WD_SRC="${MODULES_DIR:-$SCRIPT_DIR/installer-modules}/.."
+
+    if [[ -f "$_WD_SRC/watchdog.sh" ]]; then
+      _wd_copied=true
+      cp "$_WD_SRC/watchdog.sh" /opt/gwi-pos/watchdog.sh
+      chmod +x /opt/gwi-pos/watchdog.sh
+
+      if [[ -f "$_WD_SRC/watchdog.service" ]] && [[ -f "$_WD_SRC/watchdog.timer" ]]; then
+        cp "$_WD_SRC/watchdog.service" /etc/systemd/system/gwi-watchdog.service
+        cp "$_WD_SRC/watchdog.timer" /etc/systemd/system/gwi-watchdog.timer
+      else
+        track_warn "watchdog.service or watchdog.timer not found -- watchdog timer not installed"
+      fi
+
+      # Copy monitoring scripts
+      mkdir -p /opt/gwi-pos/scripts
+      for script in hardware-inventory.sh disk-pressure-monitor.sh version-compat.sh rolling-restart.sh; do
+        if [[ -f "$_WD_SRC/scripts/$script" ]]; then
+          cp "$_WD_SRC/scripts/$script" /opt/gwi-pos/scripts/"$script"
+        fi
+      done
+      chmod +x /opt/gwi-pos/scripts/*.sh 2>/dev/null || true
+    fi
+  fi
+
+  if [[ "$_wd_copied" == "true" ]]; then
     # Create state and log directories
     mkdir -p /opt/gwi-pos/state /opt/gwi-pos/logs/watchdog-diagnostics
 

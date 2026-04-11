@@ -89,13 +89,16 @@ run_schema() {
           _ds_release=$(sed -n 's/.*"releaseId"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$_ds_file" 2>/dev/null | head -1) || true
         fi
 
-        # Read current release ID from deployed artifact
+        # Read current release ID from deployed artifact (container first, host fallback)
         local _current_release=""
-        if [[ -f "$APP_DIR/artifact-metadata.json" ]]; then
+        local _artifact_json=""
+        _artifact_json=$(docker exec gwi-pos cat /app/artifact-metadata.json 2>/dev/null) \
+          || _artifact_json=$(cat "$APP_DIR/artifact-metadata.json" 2>/dev/null) || true
+        if [[ -n "$_artifact_json" ]]; then
           if command -v jq &>/dev/null; then
-            _current_release=$(jq -r '.releaseId // empty' "$APP_DIR/artifact-metadata.json" 2>/dev/null) || true
+            _current_release=$(echo "$_artifact_json" | jq -r '.releaseId // empty' 2>/dev/null) || true
           else
-            _current_release=$(sed -n 's/.*"releaseId"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$APP_DIR/artifact-metadata.json" 2>/dev/null | head -1) || true
+            _current_release=$(echo "$_artifact_json" | sed -n 's/.*"releaseId"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' 2>/dev/null | head -1) || true
           fi
         fi
 
@@ -290,12 +293,18 @@ run_schema() {
     SCHEMA_VERSION="${NEON_SCHEMA_VERSION}"
     SCHEMA_SOURCE="neon"
     if [[ -z "$SCHEMA_VERSION" ]]; then
-      # Fallback: read from locally-built version-contract.json (informational)
-      if [[ -f "$APP_DIR/public/version-contract.json" ]]; then
-        SCHEMA_VERSION=$(sudo -u "$POSUSER" node -e "try { console.log(require('$APP_DIR/public/version-contract.json').schemaVersion) } catch(e) { console.log('') }" 2>/dev/null)
+      # Fallback: read from version-contract.json (container first, host fallback)
+      local _vc_json=""
+      _vc_json=$(docker exec gwi-pos cat /app/public/version-contract.json 2>/dev/null) || true
+      if [[ -z "$_vc_json" ]]; then
+        if [[ -f "$APP_DIR/public/version-contract.json" ]]; then
+          _vc_json=$(cat "$APP_DIR/public/version-contract.json" 2>/dev/null) || true
+        elif [[ -f "$APP_DIR/src/generated/version-contract.json" ]]; then
+          _vc_json=$(cat "$APP_DIR/src/generated/version-contract.json" 2>/dev/null) || true
+        fi
       fi
-      if [[ -z "$SCHEMA_VERSION" ]] && [[ -f "$APP_DIR/src/generated/version-contract.json" ]]; then
-        SCHEMA_VERSION=$(sudo -u "$POSUSER" node -e "try { console.log(require('$APP_DIR/src/generated/version-contract.json').schemaVersion) } catch(e) { console.log('') }" 2>/dev/null)
+      if [[ -n "$_vc_json" ]]; then
+        SCHEMA_VERSION=$(echo "$_vc_json" | node -e "try { const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf-8')); console.log(d.schemaVersion||'') } catch(e) { console.log('') }" 2>/dev/null)
       fi
       if [[ -n "$SCHEMA_VERSION" ]]; then
         SCHEMA_SOURCE="version-contract"
@@ -353,9 +362,16 @@ run_schema() {
   # The build step generates version-contract.json with the real schema version.
   # This is purely informational -- _venue_schema_state is MC-owned, not touched here.
   if [[ "$STATION_ROLE" == "server" ]]; then
-    BUILT_VERSION=$(sudo -u "$POSUSER" node -e "try{console.log(require('$APP_DIR/src/generated/version-contract.json').schemaVersion)}catch(e){}" 2>/dev/null || echo "")
-    if [[ -z "$BUILT_VERSION" ]]; then
-      BUILT_VERSION=$(sudo -u "$POSUSER" node -e "try{console.log(require('$APP_DIR/public/version-contract.json').schemaVersion)}catch(e){}" 2>/dev/null || echo "")
+    # Read post-build version from container first, host fallback
+    local _post_vc=""
+    _post_vc=$(docker exec gwi-pos cat /app/public/version-contract.json 2>/dev/null) || true
+    if [[ -n "$_post_vc" ]]; then
+      BUILT_VERSION=$(echo "$_post_vc" | node -e "try{const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf-8'));console.log(d.schemaVersion||'')}catch(e){}" 2>/dev/null || echo "")
+    else
+      BUILT_VERSION=$(sudo -u "$POSUSER" node -e "try{console.log(require('$APP_DIR/src/generated/version-contract.json').schemaVersion)}catch(e){}" 2>/dev/null || echo "")
+      if [[ -z "$BUILT_VERSION" ]]; then
+        BUILT_VERSION=$(sudo -u "$POSUSER" node -e "try{console.log(require('$APP_DIR/public/version-contract.json').schemaVersion)}catch(e){}" 2>/dev/null || echo "")
+      fi
     fi
     if [[ -n "$BUILT_VERSION" ]] && [[ "$BUILT_VERSION" != "${SCHEMA_VERSION:-}" ]]; then
       log "Recording post-build version in _local_install_state: $BUILT_VERSION (was: ${SCHEMA_VERSION:-unknown})"

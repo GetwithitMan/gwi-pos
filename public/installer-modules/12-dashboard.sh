@@ -35,11 +35,21 @@ run_dashboard() {
   # Get installed version (0.0.0 if not installed)
   _installed_version=$(dpkg-query -W -f='${Version}' gwi-nuc-dashboard 2>/dev/null || echo "0.0.0")
 
-  # Get available version from version file or bundled .deb
-  if [[ -f "${APP_DIR}/public/dashboard-version.txt" ]]; then
-    _available_version=$(cat "${APP_DIR}/public/dashboard-version.txt" 2>/dev/null || echo "0.0.0")
-  elif [[ -f "${APP_DIR}/public/gwi-nuc-dashboard.deb" ]]; then
-    _available_version=$(dpkg-deb -f "${APP_DIR}/public/gwi-nuc-dashboard.deb" Version 2>/dev/null || echo "0.0.0")
+  # Get available version from version file or bundled .deb (container first, host fallback)
+  _available_version=$(docker exec gwi-pos cat /app/public/dashboard-version.txt 2>/dev/null || true)
+  if [[ -z "$_available_version" ]]; then
+    if [[ -f "${APP_DIR}/public/dashboard-version.txt" ]]; then
+      _available_version=$(cat "${APP_DIR}/public/dashboard-version.txt" 2>/dev/null || echo "0.0.0")
+    fi
+  fi
+  if [[ -z "$_available_version" ]] || [[ "$_available_version" == "0.0.0" ]]; then
+    # Try extracting .deb from container to check version
+    if docker cp gwi-pos:/app/public/gwi-nuc-dashboard.deb /tmp/gwi-nuc-dashboard-check.deb 2>/dev/null; then
+      _available_version=$(dpkg-deb -f /tmp/gwi-nuc-dashboard-check.deb Version 2>/dev/null || echo "0.0.0")
+      rm -f /tmp/gwi-nuc-dashboard-check.deb
+    elif [[ -f "${APP_DIR}/public/gwi-nuc-dashboard.deb" ]]; then
+      _available_version=$(dpkg-deb -f "${APP_DIR}/public/gwi-nuc-dashboard.deb" Version 2>/dev/null || echo "0.0.0")
+    fi
   fi
 
   if [[ "$_installed_version" != "0.0.0" ]] && [[ -n "$_available_version" ]] && [[ "$_available_version" != "0.0.0" ]]; then
@@ -61,29 +71,38 @@ run_dashboard() {
   fi
 
   # ─────────────────────────────────────────────────────────────────────────
-  # Locate the .deb package
+  # Locate the .deb package (container first, then host paths)
   # ─────────────────────────────────────────────────────────────────────────
   local DASHBOARD_DEB=""
 
-  local SEARCH_PATHS=(
-    "$APP_BASE/dashboard"
-    "$APP_DIR/packaging"
-    "$APP_DIR/dashboard"
-    "$APP_DIR/public"
-    "$(dirname "$0")"
-  )
+  # Try extracting .deb from the running container first
+  if docker cp gwi-pos:/app/public/gwi-nuc-dashboard.deb "$APP_BASE/dashboard/gwi-nuc-dashboard.deb" 2>/dev/null; then
+    DASHBOARD_DEB="$APP_BASE/dashboard/gwi-nuc-dashboard.deb"
+    log "Dashboard .deb extracted from gwi-pos container"
+  fi
 
-  for dir in "${SEARCH_PATHS[@]}"; do
-    if [[ ! -d "$dir" ]]; then
-      continue
-    fi
-    local found
-    found=$(find "$dir" -maxdepth 2 -name "gwi-nuc-dashboard*.deb" -type f 2>/dev/null | sort -V | tail -1)
-    if [[ -n "$found" ]]; then
-      DASHBOARD_DEB="$found"
-      break
-    fi
-  done
+  # Fall back to host search paths if container extraction failed
+  if [[ -z "$DASHBOARD_DEB" ]]; then
+    local SEARCH_PATHS=(
+      "$APP_BASE/dashboard"
+      "$APP_DIR/packaging"
+      "$APP_DIR/dashboard"
+      "$APP_DIR/public"
+      "$(dirname "$0")"
+    )
+
+    for dir in "${SEARCH_PATHS[@]}"; do
+      if [[ ! -d "$dir" ]]; then
+        continue
+      fi
+      local found
+      found=$(find "$dir" -maxdepth 2 -name "gwi-nuc-dashboard*.deb" -type f 2>/dev/null | sort -V | tail -1)
+      if [[ -n "$found" ]]; then
+        DASHBOARD_DEB="$found"
+        break
+      fi
+    done
+  fi
 
   # If not found locally, download from POS deployment (Vercel) or GitHub releases
   if [[ -z "$DASHBOARD_DEB" ]]; then
