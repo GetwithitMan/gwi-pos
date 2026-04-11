@@ -7,7 +7,7 @@ import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchPaymentProc
 // deductInventoryForOrder replaced by PendingDeduction outbox pattern (see pay/route.ts)
 // import { deductInventoryForOrder } from '@/lib/inventory-calculations'
 import { allocateTipsForPayment } from '@/lib/domain/tips'
-import { parseSettings } from '@/lib/settings'
+import { parseSettings, getPricingProgram } from '@/lib/settings'
 import { calculateCardPrice, roundToCents } from '@/lib/pricing'
 import { calculateAutoGratuity } from '@/lib/domain/payment/auto-gratuity'
 import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
@@ -138,19 +138,19 @@ export const POST = withVenue(withAuth(async function POST(
       }
     }
 
-    // Dual pricing: determine if card price applies to this payment method
-    const dualPricing = settings.dualPricing
+    // Pricing program: determine if card/debit markup applies
+    const pp = getPricingProgram(settings)
     const isCard = method !== 'cash'
-    const dualPricingApplies = dualPricing.enabled && isCard && (
-      (method === 'credit' && dualPricing.applyToCredit) ||
-      (method === 'debit' && dualPricing.applyToDebit)
-    )
+    const markupPercent = method === 'debit'
+      ? (pp.debitMarkupPercent ?? 0)
+      : (pp.creditMarkupPercent ?? pp.cashDiscountPercent ?? 0)
+    const pricingApplies = pp.enabled && isCard && markupPercent > 0
 
     // Calculate combined total (W2-P2: round to avoid floating-point drift)
-    // For card payments with dual pricing, use card price (cash price × (1 + %))
+    // For card payments with pricing program, use card price (cash price × (1 + %))
     const combinedTotal = roundToCents(unpaidSplits.reduce((sum, s) => {
       const cashAmt = Number(s.total)
-      const amt = dualPricingApplies ? calculateCardPrice(cashAmt, dualPricing.cashDiscountPercent) : cashAmt
+      const amt = pricingApplies ? calculateCardPrice(cashAmt, markupPercent) : cashAmt
       return sum + amt
     }, 0))
 
@@ -196,8 +196,8 @@ export const POST = withVenue(withAuth(async function POST(
       const createdPayments = await Promise.all(
         unpaidSplits.map(async (split) => {
           const cashSplitTotal = roundToCents(Number(split.total))
-          const splitTotal = dualPricingApplies
-            ? calculateCardPrice(cashSplitTotal, dualPricing.cashDiscountPercent)
+          const splitTotal = pricingApplies
+            ? calculateCardPrice(cashSplitTotal, markupPercent)
             : cashSplitTotal
           const splitAutoGratTip = autoGratPerSplit.get(split.id) ?? 0
 
@@ -352,8 +352,8 @@ export const POST = withVenue(withAuth(async function POST(
     // Dispatch payment:processed for each split payment (fire-and-forget)
     for (const split of unpaidSplits) {
       const cashSplitTotal = roundToCents(Number(split.total))
-      const splitTotal = dualPricingApplies
-        ? calculateCardPrice(cashSplitTotal, dualPricing.cashDiscountPercent)
+      const splitTotal = pricingApplies
+        ? calculateCardPrice(cashSplitTotal, markupPercent)
         : cashSplitTotal
       const splitAutoGratTip = autoGratPerSplit.get(split.id) ?? 0
       void dispatchPaymentProcessed(parentOrder.locationId, {
@@ -382,8 +382,8 @@ export const POST = withVenue(withAuth(async function POST(
     }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
     for (const split of unpaidSplits) {
       const cashSplitTotal = roundToCents(Number(split.total))
-      const splitTotal = dualPricingApplies
-        ? calculateCardPrice(cashSplitTotal, dualPricing.cashDiscountPercent)
+      const splitTotal = pricingApplies
+        ? calculateCardPrice(cashSplitTotal, markupPercent)
         : cashSplitTotal
       const splitAutoGratTipEmit = autoGratPerSplit.get(split.id) ?? 0
       void emitOrderEvents(split.locationId, split.id, [
