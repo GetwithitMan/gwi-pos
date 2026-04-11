@@ -1835,8 +1835,8 @@ SVCEOF
   chmod 644 "$unit_path"
   systemctl daemon-reload
   systemctl enable gwi-converge.service
-  log "Convergence service installed: $unit_path"
-  log "Start with: systemctl start gwi-converge.service"
+  systemctl start gwi-converge.service
+  log "Convergence service installed and started: $unit_path"
 }
 
 # ── Source guard ────────────────────────────────────────────────────────────
