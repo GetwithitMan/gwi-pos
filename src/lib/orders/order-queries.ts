@@ -7,7 +7,7 @@
 import { db } from '@/lib/db'
 import * as OrderRepository from '@/lib/repositories/order-repository'
 import { mapOrderForResponse } from '@/lib/api/order-response-mapper'
-import { calculateCardPrice, roundToCents } from '@/lib/pricing'
+import { roundToCents } from '@/lib/pricing'
 import { getLocationSettings } from '@/lib/location-cache'
 import { parseSettings, getPricingProgram } from '@/lib/settings'
 import { requirePermission } from '@/lib/api-auth'
