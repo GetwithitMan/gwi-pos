@@ -169,6 +169,27 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
       }
       // ── End requireTipsAdjusted check ──────────────────────────────────
 
+      // ── enforceTabClose check ──────────────────────────────────────────
+      // If businessDay.enforceTabClose is enabled, block clock-out when the
+      // employee has open orders that aren't settled (paid/closed/cancelled/voided).
+      if (!force && locSettings.businessDay.enforceTabClose) {
+        const openOrderCount = await db.orderSnapshot.count({
+          where: {
+            locationId,
+            employeeId,
+            status: { notIn: ['paid', 'closed', 'cancelled', 'voided'] },
+            deletedAt: null,
+          },
+        })
+
+        if (openOrderCount > 0) {
+          return err(
+            `You have ${openOrderCount} open tab${openOrderCount > 1 ? 's' : ''}. Close them before clocking out.`
+          )
+        }
+      }
+      // ── End enforceTabClose check ──────────────────────────────────────
+
       const otThreshold = breakConfig.overtimeThresholdHours ?? 8
       const regularHours = Math.min(workedHours, otThreshold)
       const overtimeHours = Math.max(0, workedHours - otThreshold)

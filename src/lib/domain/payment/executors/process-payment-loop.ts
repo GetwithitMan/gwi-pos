@@ -43,6 +43,7 @@ export interface PaymentLoopParams {
     locationId: string
     orderNumber: number | null
     total: unknown
+    tipTotal?: unknown
     isTraining?: boolean | null
     customer?: unknown
     items?: Array<{ specialNotes?: string | null; status?: string; price?: unknown; quantity?: number }>
@@ -167,7 +168,9 @@ export async function processPaymentLoop(
         paymentRecord.priceBeforeDiscount = payment.amount
 
         // Validate: card amount should match expected card price (warn, don't reject)
-        const expectedCardAmount = calculateCardPrice(toNumber(order.total ?? 0), dualPricing.cashDiscountPercent)
+        // CRITICAL: exclude tipTotal from surcharge base — surcharge applies to order amount only
+        const orderTotalExTip = toNumber(order.total ?? 0) - toNumber(order.tipTotal ?? 0)
+        const expectedCardAmount = calculateCardPrice(orderTotalExTip, dualPricing.cashDiscountPercent)
         if (Math.abs(payment.amount - expectedCardAmount) > 0.01) {
           console.warn(`[DualPricing] Card payment amount $${payment.amount} differs from expected $${expectedCardAmount} for order ${orderId}`)
           // Route through audit log so it shows up in monitoring dashboards
