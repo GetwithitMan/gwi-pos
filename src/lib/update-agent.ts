@@ -103,7 +103,7 @@ export function isReadinessVerified(): boolean {
  * Priority: running-version.json > /opt/gwi-pos/current/package.json > legacy APP_DIR
  */
 export function getCurrentVersion(): string {
-  // Single source of truth: running-version.json (written by deploy-release.sh)
+  // Single source of truth: running-version.json (written by gwi-node deploy)
   try {
     const rvPath = '/opt/gwi-pos/shared/state/running-version.json'
     if (existsSync(rvPath)) {
@@ -323,31 +323,54 @@ async function checkVersionCompatibility(currentVersion: string, targetVersion: 
   }
 }
 
-// ── Rolling restart ────────────────────────────────────────────────────────
+// ── gwi-node resolution ───────────────────────────────────────────────────
+
+/** Resolve the gwi-node.sh path, checking known locations in priority order. */
+function resolveGwiNode(): string | null {
+  const candidates = [
+    '/opt/gwi-pos/gwi-node.sh',                    // symlink (preferred)
+    '/usr/local/bin/gwi-node',                      // system-installed
+    '/opt/gwi-pos/app/public/scripts/gwi-node.sh',  // inside app dir
+  ]
+  for (const p of candidates) {
+    if (existsSync(p)) return p
+  }
+  return null
+}
+
+// ── Rolling restart (via gwi-node converge) ───────────────────────────────
 
 /**
- * Perform a rolling restart using the rolling-restart.sh script.
- * Returns true if rolling restart succeeded, false if script not found or failed
- * (caller should fall back to standard restart).
+ * Perform a rolling restart via gwi-node converge.
+ * Returns true if converge succeeded, false if gwi-node not found or failed
+ * (caller should fall back to docker restart gwi-pos).
  */
 async function performRollingRestart(targetVersion: string): Promise<boolean> {
-  const rollingScript = '/opt/gwi-pos/scripts/rolling-restart.sh'
-  if (!existsSync(rollingScript)) {
-    log.info('[UpdateAgent] Rolling restart script not found, falling back to standard restart')
-    return false
+  const gwiNode = resolveGwiNode()
+  if (!gwiNode) {
+    log.info('[UpdateAgent] gwi-node not found, falling back to docker restart')
+    try {
+      execSync('docker restart gwi-pos', { encoding: 'utf8', timeout: 120_000, stdio: 'pipe' })
+      log.info('[UpdateAgent] Container restart completed')
+      return true
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      log.error(`[UpdateAgent] Container restart failed: ${msg}`)
+      return false
+    }
   }
 
   try {
-    execSync(`bash ${rollingScript} "${targetVersion}"`, {
+    execSync(`bash "${gwiNode}" converge`, {
       encoding: 'utf8',
-      timeout: 600_000, // 10 min for build + restart
+      timeout: 600_000, // 10 min for converge
       stdio: 'pipe',
     })
-    log.info('[UpdateAgent] Rolling restart completed successfully')
+    log.info('[UpdateAgent] gwi-node converge completed successfully')
     return true
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)
-    log.error(`[UpdateAgent] Rolling restart failed: ${msg}`)
+    log.error(`[UpdateAgent] gwi-node converge failed: ${msg}`)
     return false
   }
 }
@@ -355,19 +378,19 @@ async function performRollingRestart(targetVersion: string): Promise<boolean> {
 // ── gwi-node deploy (single deploy engine) ───────────────────────────────
 
 async function performDeploy(targetVersion: string, commandId?: string): Promise<UpdateResult> {
-  const GWI_NODE = '/opt/gwi-pos/gwi-node.sh'
+  const gwiNode = resolveGwiNode()
   const startTime = Date.now()
   const previousVersion = getCurrentVersion()
 
-  if (!existsSync(GWI_NODE)) {
-    log.error('[UpdateAgent] gwi-node.sh not found')
+  if (!gwiNode) {
+    log.error('[UpdateAgent] gwi-node.sh not found at any known location')
     return { success: false, previousVersion, targetVersion, preflightResult: { passed: false, checks: [] }, durationMs: 0, error: 'gwi-node.sh not found' }
   }
 
-  log.info(`[UpdateAgent] Deploy via gwi-node: ${previousVersion} → ${targetVersion}`)
+  log.info(`[UpdateAgent] Deploy via gwi-node (${gwiNode}): ${previousVersion} → ${targetVersion}`)
 
   try {
-    execSync(`bash "${GWI_NODE}" deploy`, {
+    execSync(`bash "${gwiNode}" deploy`, {
       encoding: 'utf8',
       timeout: 600_000,
       stdio: 'pipe',
@@ -709,7 +732,6 @@ async function updateComponents(): Promise<ComponentUpdateResult> {
       { src: 'public/scripts/hardware-inventory.sh', dest: '/opt/gwi-pos/scripts/hardware-inventory.sh' },
       { src: 'public/scripts/disk-pressure-monitor.sh', dest: '/opt/gwi-pos/scripts/disk-pressure-monitor.sh' },
       { src: 'public/scripts/version-compat.sh', dest: '/opt/gwi-pos/scripts/version-compat.sh' },
-      { src: 'public/scripts/rolling-restart.sh', dest: '/opt/gwi-pos/scripts/rolling-restart.sh' },
     ]
 
     let updated = false

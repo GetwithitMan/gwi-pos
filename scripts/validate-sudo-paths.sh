@@ -116,6 +116,18 @@ else
   critical "gwi-pos container is not running"
 fi
 
+# 11a. Legacy runtime must not be active
+if systemctl is-active --quiet thepasspos 2>/dev/null; then
+  fail "Legacy thepasspos service is active — should be masked"
+else
+  pass "Legacy thepasspos service is not active"
+fi
+if systemctl is-active --quiet thepasspos-sync 2>/dev/null; then
+  fail "Legacy thepasspos-sync service is active — should be masked"
+else
+  pass "Legacy thepasspos-sync service is not active"
+fi
+
 # ── Container-internal checks (appliance validation matrix) ──
 # These mirror the CI "Appliance validation matrix" step so the same
 # validation runs both in CI (on the image) and on the NUC (on the

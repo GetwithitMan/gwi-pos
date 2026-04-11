@@ -150,7 +150,7 @@ mkdir -p "$BUNDLE_DIR/scripts"
 for script in watchdog.sh; do
   [[ -f "public/$script" ]] && cp "public/$script" "$BUNDLE_DIR/scripts/"
 done
-for script in hardware-inventory.sh disk-pressure-monitor.sh version-compat.sh rolling-restart.sh pre-update-backup.sh; do
+for script in hardware-inventory.sh disk-pressure-monitor.sh version-compat.sh rolling-restart.sh; do
   [[ -f "public/scripts/$script" ]] && cp "public/scripts/$script" "$BUNDLE_DIR/scripts/"
 done
 chmod +x "$BUNDLE_DIR/scripts/"*.sh 2>/dev/null || true

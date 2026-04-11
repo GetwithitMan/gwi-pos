@@ -136,49 +136,48 @@ HACHKEOF
   fi
 
   # Create promote.sh stub -- called by keepalived notify_master on failover
+  # Thin wrapper around gwi-node promote subcommand.
   cat > "$APP_BASE/scripts/promote.sh" <<'PROMOTE'
 #!/usr/bin/env bash
-# Promote this standby to primary
+# Promote this standby to primary — thin wrapper around gwi-node promote
 set -euo pipefail
-echo "[HA] Promoting to primary..."
-sudo -u postgres pg_ctl promote -D /var/lib/postgresql/17/main 2>/dev/null || sudo -u postgres pg_ctl promote -D /var/lib/postgresql/16/main 2>/dev/null || true
-# Update STATION_ROLE in .env so POS knows it is now the primary
-if [ -f /opt/gwi-pos/.env ]; then
-  sed -i 's/STATION_ROLE=backup/STATION_ROLE=server/' /opt/gwi-pos/.env
-  echo "[HA] Updated STATION_ROLE to server in .env"
-fi
-# Start POS via Docker (appliance model) or gwi-node deploy.
-# The legacy thepasspos systemd unit is masked on Docker-first installs.
-if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q "^gwi-pos$"; then
-  echo "[HA] Starting POS via Docker container..."
-  sudo docker start gwi-pos 2>/dev/null || true
+echo "[HA] Promoting to primary via gwi-node..."
+GWI_NODE="/opt/gwi-pos/shared/gwi-node.sh"
+if [[ -x "$GWI_NODE" ]]; then
+  "$GWI_NODE" promote 2>&1 || {
+    echo "[HA] gwi-node promote failed (exit $?) — attempting direct Docker fallback"
+    sudo docker start gwi-pos 2>/dev/null || true
+  }
 else
-  # Fallback for pre-Docker installs: unmask and start legacy service
-  echo "[HA] Starting POS via systemctl (legacy)..."
-  sudo systemctl unmask thepasspos 2>/dev/null || true
-  sudo systemctl enable thepasspos 2>/dev/null || true
-  sudo systemctl start thepasspos 2>/dev/null || true
+  echo "[HA] gwi-node.sh not found at $GWI_NODE — direct Docker fallback"
+  sudo -u postgres pg_ctl promote -D /var/lib/postgresql/17/main 2>/dev/null \
+    || sudo -u postgres pg_ctl promote -D /var/lib/postgresql/16/main 2>/dev/null || true
+  if [ -f /opt/gwi-pos/.env ]; then
+    sed -i 's/STATION_ROLE=backup/STATION_ROLE=server/' /opt/gwi-pos/.env
+  fi
+  sudo docker start gwi-pos 2>/dev/null || true
 fi
 echo "[HA] Promotion complete"
 PROMOTE
   chmod +x "$APP_BASE/scripts/promote.sh"
 
   # Create rejoin-as-standby.sh stub -- called by keepalived notify_backup on demotion
+  # Thin wrapper around gwi-node rejoin subcommand.
   cat > "$APP_BASE/scripts/rejoin-as-standby.sh" <<'REJOIN'
 #!/usr/bin/env bash
-# Rejoin as standby after primary reclaims VIP
+# Rejoin as standby after primary reclaims VIP — thin wrapper around gwi-node rejoin
 set -euo pipefail
-echo "[HA] Rejoining as standby..."
-# Stop POS via Docker (appliance model) or legacy systemd
-if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^gwi-pos$"; then
-  echo "[HA] Stopping POS Docker container..."
-  sudo docker stop gwi-pos 2>/dev/null || true
+echo "[HA] Rejoining as standby via gwi-node..."
+GWI_NODE="/opt/gwi-pos/shared/gwi-node.sh"
+if [[ -x "$GWI_NODE" ]]; then
+  "$GWI_NODE" rejoin 2>&1 || {
+    echo "[HA] gwi-node rejoin failed (exit $?) — attempting direct Docker fallback"
+    sudo docker stop gwi-pos 2>/dev/null || true
+  }
 else
-  sudo systemctl stop thepasspos 2>/dev/null || true
+  echo "[HA] gwi-node.sh not found at $GWI_NODE — direct Docker fallback"
+  sudo docker stop gwi-pos 2>/dev/null || true
 fi
-# Note: full rejoin requires pg_basebackup from the primary.
-# This stub stops the POS app to prevent stale writes.
-# A full rejoin procedure should be triggered manually or by a fleet command.
 echo "[HA] POS stopped. Manual pg_basebackup required to fully rejoin as standby."
 REJOIN
   chmod +x "$APP_BASE/scripts/rejoin-as-standby.sh"

@@ -157,14 +157,36 @@ export async function handleRejoin(command: RejoinCommand): Promise<RejoinResult
       return buildResult(overallStatus, overallDetail, startedAt, command, steps)
     }
 
-    // -- Step 3: Execute rejoin-as-standby.sh ---------------------------------
-    const step3 = await runStep(3, 'Execute rejoin-as-standby.sh', async () => {
+    // -- Step 3: Execute rejoin via gwi-node (or fallback to shell script) ----
+    const step3 = await runStep(3, 'Execute rejoin', async () => {
+      const gwiNode = join(APP_BASE, 'shared', 'gwi-node.sh')
+
+      // Prefer gwi-node rejoin subcommand (Docker-first appliance model)
+      if (existsSync(gwiNode)) {
+        try {
+          const output = execSync(
+            `bash "${gwiNode}" rejoin --new-primary-ip=${command.newPrimaryIp}`,
+            {
+              timeout: 600_000, // 10 minutes
+              encoding: 'utf8',
+              stdio: 'pipe',
+            }
+          )
+          return `gwi-node rejoin completed: ${output.slice(-200).trim()}`
+        } catch (e) {
+          const exitCode = (e as { status?: number }).status ?? 1
+          const stderr = (e as { stderr?: string }).stderr ?? ''
+          log.warn({ exitCode, stderr: stderr.slice(-200) }, 'gwi-node rejoin failed — falling back to shell script')
+        }
+      }
+
+      // Fallback: direct shell script execution
       const scriptPath = existsSync(SCRIPT_PATH)
         ? SCRIPT_PATH
         : join(APP_BASE, 'app', 'public', 'rejoin-as-standby.sh')
 
       if (!existsSync(scriptPath)) {
-        throw new Error(`rejoin-as-standby.sh not found at ${SCRIPT_PATH} or fallback`)
+        throw new Error(`Neither gwi-node rejoin nor rejoin-as-standby.sh available`)
       }
 
       try {

@@ -258,7 +258,7 @@ export const GET = withVenue(async function GET(): Promise<NextResponse> {
   }
 
   // ── Last update state ─────────────────────────────────────────────────────
-  // Priority: deploy-state.json (written by deploy-release.sh) > last-update.json (sync-agent)
+  // Priority: deploy-state.json (written by gwi-node deploy) > last-update.json (sync-agent)
   let lastUpdate: {
     attemptedAt: string
     targetVersion: string
@@ -270,7 +270,7 @@ export const GET = withVenue(async function GET(): Promise<NextResponse> {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const fs = require('fs') as typeof import('fs')
-    // Try deploy-state.json first (canonical, written by deploy-release.sh)
+    // Try deploy-state.json first (canonical, written by gwi-node deploy)
     try {
       const dsRaw = fs.readFileSync('/opt/gwi-pos/shared/state/deploy-state.json', 'utf-8')
       const ds = JSON.parse(dsRaw)

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# gwi-node.sh — GWI POS node agent (install | deploy | rollback | status | self-update | watch)
+# gwi-node.sh — GWI POS node agent (install | deploy | rollback | promote | rejoin | status | self-update | watch)
 # One agent. One runtime. One flow. Install and update are the same operation.
 set -euo pipefail
 
@@ -757,6 +757,151 @@ rollback() {
   deploy
 }
 
+# ── promote ───────────────────────────────────────────────────────────────────
+# HA failover: promote this standby NUC to primary.
+#   1. pg_ctl promote (PostgreSQL exits recovery)
+#   2. Update .env STATION_ROLE=server
+#   3. Start gwi-pos container
+#   4. Verify health
+
+promote() {
+  local skip_pg_promote=false
+  for arg in "$@"; do
+    case "$arg" in
+      --skip-pg-promote) skip_pg_promote=true ;;
+      --new-primary-ip=*) ;; # accepted but unused for promote
+    esac
+  done
+
+  log "HA promote: starting (skip_pg_promote=$skip_pg_promote)"
+
+  # Step 1: pg_ctl promote (unless skipped)
+  if [[ "$skip_pg_promote" != "true" ]]; then
+    log "HA promote: promoting PostgreSQL..."
+    local pg_promoted=false
+    for pgver in 17 16 15; do
+      local datadir="/var/lib/postgresql/${pgver}/main"
+      if [[ -d "$datadir" ]]; then
+        if sudo -u postgres pg_ctl promote -D "$datadir" 2>/dev/null; then
+          log "HA promote: pg_ctl promote succeeded (PG ${pgver})"
+          pg_promoted=true
+          break
+        fi
+      fi
+    done
+    if [[ "$pg_promoted" != "true" ]]; then
+      err "HA promote: pg_ctl promote failed for all PG versions"
+      return 1
+    fi
+
+    # Wait for PG to exit recovery (max 30s)
+    local waited=0
+    while [[ $waited -lt 30 ]]; do
+      local in_recovery
+      in_recovery="$(sudo -u postgres psql -tAc 'SELECT pg_is_in_recovery()' 2>/dev/null || echo t)"
+      if [[ "$in_recovery" == "f" ]]; then
+        log "HA promote: PG exited recovery after ${waited}s"
+        break
+      fi
+      sleep 1
+      waited=$((waited + 1))
+    done
+    if [[ $waited -ge 30 ]]; then
+      err "HA promote: PG still in recovery after 30s"
+      return 1
+    fi
+  fi
+
+  # Step 2: Update .env
+  if [[ -f "$ENV_FILE" ]]; then
+    if grep -q "^STATION_ROLE=" "$ENV_FILE" 2>/dev/null; then
+      sed -i "s|^STATION_ROLE=.*|STATION_ROLE=server|" "$ENV_FILE"
+    else
+      echo "STATION_ROLE=server" >> "$ENV_FILE"
+    fi
+    log "HA promote: STATION_ROLE=server written to $ENV_FILE"
+  fi
+
+  # Step 3: Start gwi-pos container
+  if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q "^${CONTAINER_NAME}$"; then
+    log "HA promote: starting Docker container ${CONTAINER_NAME}..."
+    docker start "$CONTAINER_NAME" 2>/dev/null || {
+      err "HA promote: docker start failed"
+      return 1
+    }
+  else
+    log "HA promote: container ${CONTAINER_NAME} not found — running deploy"
+    deploy
+    return $?
+  fi
+
+  # Step 4: Health check (max 60s)
+  local port; port="$(read_port)"
+  local hc_waited=0
+  while [[ $hc_waited -lt 60 ]]; do
+    if curl -sf --max-time 3 "http://localhost:${port}/api/health" >/dev/null 2>&1; then
+      log "HA promote: POS healthy after ${hc_waited}s"
+      log "HA promote: complete"
+      return 0
+    fi
+    sleep 2
+    hc_waited=$((hc_waited + 2))
+  done
+
+  err "HA promote: POS not healthy after 60s (container may still be starting)"
+  return 0  # non-fatal — container is running
+}
+
+# ── rejoin ────────────────────────────────────────────────────────────────────
+# HA rejoin: demote this NUC back to standby.
+#   1. Stop gwi-pos container (graceful drain)
+#   2. Update .env STATION_ROLE=backup
+
+rejoin() {
+  local new_primary_ip=""
+  for arg in "$@"; do
+    case "$arg" in
+      --new-primary-ip=*) new_primary_ip="${arg#*=}" ;;
+    esac
+  done
+
+  log "HA rejoin: starting (new_primary_ip=${new_primary_ip:-unset})"
+
+  # Step 1: Stop gwi-pos container (15s grace period for connection draining)
+  if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^${CONTAINER_NAME}$"; then
+    log "HA rejoin: stopping Docker container ${CONTAINER_NAME} (15s grace)..."
+    docker stop --time 15 "$CONTAINER_NAME" 2>/dev/null || {
+      err "HA rejoin: docker stop failed — force killing"
+      docker kill "$CONTAINER_NAME" 2>/dev/null || true
+    }
+    log "HA rejoin: container stopped"
+  else
+    log "HA rejoin: container ${CONTAINER_NAME} not running — nothing to stop"
+  fi
+
+  # Step 2: Update .env
+  if [[ -f "$ENV_FILE" ]]; then
+    if grep -q "^STATION_ROLE=" "$ENV_FILE" 2>/dev/null; then
+      sed -i "s|^STATION_ROLE=.*|STATION_ROLE=backup|" "$ENV_FILE"
+    else
+      echo "STATION_ROLE=backup" >> "$ENV_FILE"
+    fi
+    if [[ -n "$new_primary_ip" ]]; then
+      if grep -q "^PRIMARY_NUC_IP=" "$ENV_FILE" 2>/dev/null; then
+        sed -i "s|^PRIMARY_NUC_IP=.*|PRIMARY_NUC_IP=$new_primary_ip|" "$ENV_FILE"
+      fi
+      if grep -q "^HA_PEER_IP=" "$ENV_FILE" 2>/dev/null; then
+        sed -i "s|^HA_PEER_IP=.*|HA_PEER_IP=$new_primary_ip|" "$ENV_FILE"
+      fi
+    fi
+    log "HA rejoin: STATION_ROLE=backup written to $ENV_FILE"
+  fi
+
+  log "HA rejoin: complete — POS stopped, node demoted to standby"
+  log "HA rejoin: NOTE — pg_basebackup NOT run. Use rejoin-as-standby.sh for full data resync."
+  return 0
+}
+
 status() {
   echo "=== GWI Node Status ==="
   cat "$VERSION_FILE" 2>/dev/null | python3 -m json.tool 2>/dev/null || echo "No version info"
@@ -1002,6 +1147,7 @@ fi
 
 SUBCOMMAND="${1:-deploy}"
 shift 2>/dev/null || true
+HA_ARGS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --force)              FORCE=true; shift ;;
@@ -1010,6 +1156,8 @@ while [[ $# -gt 0 ]]; do
     --image-digest)       IMAGE_DIGEST="$2"; shift 2 ;;
     --skip-self-update)   SKIP_SELF_UPDATE=true; shift ;;
     --self-updated)       SELF_UPDATED=true; shift ;;
+    --skip-pg-promote)    HA_ARGS+=("$1"); shift ;;
+    --new-primary-ip=*)   HA_ARGS+=("$1"); shift ;;
     *) echo "Unknown flag: $1"; exit 1 ;;
   esac
 done
@@ -1018,8 +1166,10 @@ case "$SUBCOMMAND" in
   install)     install ;;
   deploy)      deploy ;;
   rollback)    rollback ;;
+  promote)     promote "${HA_ARGS[@]}" ;;
+  rejoin)      rejoin "${HA_ARGS[@]}" ;;
   status)      status ;;
   self-update) self_update ;;
   watch)       watch_loop ;;
-  *)           echo "Usage: gwi-node.sh {install|deploy|rollback|status|self-update|watch}"; exit 1 ;;
+  *)           echo "Usage: gwi-node.sh {install|deploy|rollback|promote|rejoin|status|self-update|watch}"; exit 1 ;;
 esac

@@ -1,8 +1,8 @@
 /**
  * Deploy Cleanup — POST /api/internal/deploy/cleanup
  *
- * Calls deploy-release.sh --cleanup to remove old releases and reclaim
- * disk space. Keeps current and previous releases intact.
+ * Calls gwi-node.sh cleanup to remove old images and reclaim
+ * disk space. Keeps current and previous images intact.
  * Requires INTERNAL_API_SECRET bearer token authentication.
  */
 
@@ -12,7 +12,18 @@ import { existsSync } from 'fs'
 
 export const dynamic = 'force-dynamic'
 
-const DEPLOY_SCRIPT = '/opt/gwi-pos/deploy-release.sh'
+/** Resolve gwi-node.sh path, checking known locations in priority order. */
+function resolveGwiNode(): string | null {
+  const candidates = [
+    '/opt/gwi-pos/gwi-node.sh',
+    '/usr/local/bin/gwi-node',
+    '/opt/gwi-pos/app/public/scripts/gwi-node.sh',
+  ]
+  for (const p of candidates) {
+    if (existsSync(p)) return p
+  }
+  return null
+}
 
 export async function POST(request: Request) {
   // Auth check — require INTERNAL_API_SECRET
@@ -22,15 +33,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  if (!existsSync(DEPLOY_SCRIPT)) {
+  const gwiNode = resolveGwiNode()
+  if (!gwiNode) {
     return NextResponse.json(
-      { error: 'deploy-release.sh not installed' },
+      { error: 'gwi-node.sh not found' },
       { status: 404 },
     )
   }
 
   try {
-    const output = execSync(`bash "${DEPLOY_SCRIPT}" --cleanup`, {
+    const output = execSync(`bash "${gwiNode}" cleanup`, {
       encoding: 'utf8',
       timeout: 120_000, // 2 minutes
     })

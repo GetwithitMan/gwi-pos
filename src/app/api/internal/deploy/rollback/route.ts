@@ -1,7 +1,7 @@
 /**
  * Deploy Rollback — POST /api/internal/deploy/rollback
  *
- * Calls deploy-release.sh --rollback-to <releaseId>.
+ * Calls gwi-node.sh rollback <releaseId>.
  * Requires INTERNAL_API_SECRET bearer token authentication.
  *
  * Body: { releaseId: string }
@@ -13,7 +13,18 @@ import { existsSync } from 'fs'
 
 export const dynamic = 'force-dynamic'
 
-const DEPLOY_SCRIPT = '/opt/gwi-pos/deploy-release.sh'
+/** Resolve gwi-node.sh path, checking known locations in priority order. */
+function resolveGwiNode(): string | null {
+  const candidates = [
+    '/opt/gwi-pos/gwi-node.sh',
+    '/usr/local/bin/gwi-node',
+    '/opt/gwi-pos/app/public/scripts/gwi-node.sh',
+  ]
+  for (const p of candidates) {
+    if (existsSync(p)) return p
+  }
+  return null
+}
 
 export async function POST(request: Request) {
   // Auth check — require INTERNAL_API_SECRET
@@ -23,9 +34,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  if (!existsSync(DEPLOY_SCRIPT)) {
+  const gwiNode = resolveGwiNode()
+  if (!gwiNode) {
     return NextResponse.json(
-      { error: 'deploy-release.sh not installed' },
+      { error: 'gwi-node.sh not found' },
       { status: 404 },
     )
   }
@@ -40,7 +52,7 @@ export async function POST(request: Request) {
 
   try {
     const output = execSync(
-      `bash "${DEPLOY_SCRIPT}" --rollback-to "${releaseId}"`,
+      `bash "${gwiNode}" rollback "${releaseId}"`,
       {
         encoding: 'utf8',
         timeout: 300_000, // 5 minutes — rollbacks can take time

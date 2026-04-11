@@ -3,7 +3,7 @@
  *
  * Reads structured JSON deploy logs from /opt/gwi-pos/shared/logs/deploys/
  * and returns the most recent entries. Each log file is a JSON object
- * written by deploy-release.sh after each deploy/rollback operation.
+ * written by gwi-node after each deploy/rollback operation.
  *
  * Query params:
  *   ?limit=20  — number of log entries to return (default 20, max 100)

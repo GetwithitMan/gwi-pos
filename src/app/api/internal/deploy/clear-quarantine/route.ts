@@ -1,7 +1,7 @@
 /**
  * Clear Quarantine — POST /api/internal/deploy/clear-quarantine
  *
- * Calls deploy-release.sh --clear-quarantine [releaseId] to remove a
+ * Calls gwi-node.sh clear-quarantine [releaseId] to remove a
  * specific release from the quarantine (bad-releases) list, or all
  * quarantined releases if no releaseId is provided.
  * Requires INTERNAL_API_SECRET bearer token authentication.
@@ -15,7 +15,18 @@ import { existsSync } from 'fs'
 
 export const dynamic = 'force-dynamic'
 
-const DEPLOY_SCRIPT = '/opt/gwi-pos/deploy-release.sh'
+/** Resolve gwi-node.sh path, checking known locations in priority order. */
+function resolveGwiNode(): string | null {
+  const candidates = [
+    '/opt/gwi-pos/gwi-node.sh',
+    '/usr/local/bin/gwi-node',
+    '/opt/gwi-pos/app/public/scripts/gwi-node.sh',
+  ]
+  for (const p of candidates) {
+    if (existsSync(p)) return p
+  }
+  return null
+}
 
 export async function POST(request: Request) {
   // Auth check — require INTERNAL_API_SECRET
@@ -25,9 +36,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  if (!existsSync(DEPLOY_SCRIPT)) {
+  const gwiNode = resolveGwiNode()
+  if (!gwiNode) {
     return NextResponse.json(
-      { error: 'deploy-release.sh not installed' },
+      { error: 'gwi-node.sh not found' },
       { status: 404 },
     )
   }
@@ -42,8 +54,8 @@ export async function POST(request: Request) {
 
   try {
     const cmd = releaseId
-      ? `bash "${DEPLOY_SCRIPT}" --clear-quarantine "${releaseId}"`
-      : `bash "${DEPLOY_SCRIPT}" --clear-quarantine`
+      ? `bash "${gwiNode}" clear-quarantine "${releaseId}"`
+      : `bash "${gwiNode}" clear-quarantine`
 
     const output = execSync(cmd, {
       encoding: 'utf8',

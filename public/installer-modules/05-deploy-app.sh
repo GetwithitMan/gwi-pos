@@ -72,12 +72,14 @@ _refresh_modules_from_checkout() {
   [[ -f "${APP_DIR}/public/watchdog.service" ]] && cp "${APP_DIR}/public/watchdog.service" /opt/gwi-pos/ && log "  Deployed watchdog.service"
   [[ -f "${APP_DIR}/public/watchdog.timer" ]] && cp "${APP_DIR}/public/watchdog.timer" /opt/gwi-pos/ && log "  Deployed watchdog.timer"
 
-  for script in hardware-inventory.sh disk-pressure-monitor.sh version-compat.sh rolling-restart.sh pre-update-backup.sh; do
+  for script in hardware-inventory.sh disk-pressure-monitor.sh version-compat.sh rolling-restart.sh; do
     if [[ -f "$checkout_scripts/$script" ]]; then
       cp "$checkout_scripts/$script" /opt/gwi-pos/scripts/ 2>/dev/null && chmod +x "/opt/gwi-pos/scripts/$script" \
         && log "  Deployed scripts/$script" || warn "  FAILED to deploy scripts/$script"
     fi
   done
+  # NOTE: pre-update-backup.sh removed — DB backups handled by pre-update-safety.sh
+  # library (sourced by gwi-node pre-deploy hook). Standalone wrapper is legacy.
 
   if [[ -d "$checkout_modules/lib" ]]; then
     cp -a "$checkout_modules"/lib/*.sh /opt/gwi-pos/installer-modules/lib/ 2>/dev/null || true
