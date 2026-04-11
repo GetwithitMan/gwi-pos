@@ -27,9 +27,9 @@ interface PricingOptionRowProps {
 export function PricingOptionRow({ option, showOnPosCount = 0, onUpdate, onDelete }: PricingOptionRowProps) {
   const [label, setLabel] = useState(option.label)
   const [price, setPrice] = useState(option.price != null ? String(option.price) : '')
-  const { dualPricing } = useOrderSettings()
-  const cashDiscountPct = dualPricing.cashDiscountPercent || 4.0
-  const isDualPricingEnabled = dualPricing.enabled !== false
+  const { pricingProgram } = useOrderSettings()
+  const cashDiscountPct = pricingProgram.creditMarkupPercent ?? 4.0
+  const isDualPricingEnabled = pricingProgram.enabled
   const [showColors, setShowColors] = useState(false)
   const colorRef = useRef<HTMLDivElement>(null)
 

@@ -3,7 +3,7 @@
 import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
 import { formatCurrency } from '@/lib/utils'
-import type { DualPricingSettings } from '@/lib/settings'
+import type { PricingProgram } from '@/lib/settings'
 import type { MenuItem, ModifierGroup, SelectedModifier } from '@/types'
 import './modifier-modal.css'
 import {
@@ -34,7 +34,7 @@ interface ModifierModalProps {
     modifiers: { id: string; name: string; price: number; preModifier?: string; depth: number; parentModifierId?: string }[]
     ingredientModifications?: IngredientModification[]
   } | null
-  dualPricing: DualPricingSettings
+  pricingProgram: PricingProgram
   onConfirm: (modifiers: SelectedModifier[], specialNotes?: string, pourSize?: string, pourMultiplier?: number, ingredientModifications?: IngredientModification[], pourCustomPrice?: number | null) => void
   onCancel: () => void
   initialNotes?: string
@@ -49,7 +49,7 @@ export function ModifierModal({
   modifierGroups,
   loading,
   editingItem,
-  dualPricing,
+  pricingProgram,
   onConfirm,
   onCancel,
   initialNotes,
@@ -100,11 +100,11 @@ export function ModifierModal({
     getGroupColor,
     getTieredPrice,
     getExcludedModifierIds,
-  } = useModifierSelections(item, modifierGroups, editingItem, dualPricing, initialNotes)
+  } = useModifierSelections(item, modifierGroups, editingItem, pricingProgram, initialNotes)
 
-  // Card price multiplier for dual pricing display
-  const cpm = dualPricing?.enabled && dualPricing.cashDiscountPercent > 0
-    ? 1 + dualPricing.cashDiscountPercent / 100
+  // Card price multiplier for pricing program display
+  const cpm = pricingProgram?.enabled && (pricingProgram.creditMarkupPercent ?? 0) > 0
+    ? 1 + (pricingProgram.creditMarkupPercent ?? 0) / 100
     : 1
 
   // Debounced special notes: local state updates immediately for input

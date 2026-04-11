@@ -45,9 +45,9 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
   const [saving, setSaving] = useState(false)
 
   // Pricing settings — item is the source of truth for all pricing
-  const { dualPricing, taxRate, taxInclusiveLiquor, taxInclusiveFood } = useOrderSettings()
-  const isDualPricingEnabled = dualPricing.enabled
-  const cashDiscountPct = dualPricing.cashDiscountPercent || 4.0
+  const { pricingProgram, taxRate, taxInclusiveLiquor, taxInclusiveFood } = useOrderSettings()
+  const isDualPricingEnabled = pricingProgram.enabled
+  const cashDiscountPct = pricingProgram.creditMarkupPercent ?? 4.0
 
   const itemCardPrice = useMemo(() => {
     if (!item || !isDualPricingEnabled) return item?.price ?? 0

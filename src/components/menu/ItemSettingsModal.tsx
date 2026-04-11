@@ -172,10 +172,10 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
   const handleSizesActiveChange = useCallback((active: boolean) => setSizesActive(active), [])
   const [categoryType, setCategoryType] = useState<string>('food')
 
-  // Dual pricing
-  const { dualPricing } = useOrderSettings()
-  const cashDiscountPct = dualPricing.cashDiscountPercent || 4.0
-  const isDualPricingEnabled = dualPricing.enabled !== false
+  // Pricing program
+  const { pricingProgram } = useOrderSettings()
+  const cashDiscountPct = pricingProgram.creditMarkupPercent ?? 4.0
+  const isDualPricingEnabled = pricingProgram.enabled
 
   // Fetch full item data on mount
   useEffect(() => {

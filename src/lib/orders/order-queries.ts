@@ -23,6 +23,10 @@ import { ok, err } from '@/lib/api-response'
 interface DualPricingResult {
   cashTotal: number
   cardTotal: number
+  debitTotal: number
+  creditMarkupPercent: number
+  debitMarkupPercent: number
+  /** @deprecated Use creditMarkupPercent */
   cashDiscountPercent: number
 }
 
@@ -37,34 +41,36 @@ export async function computeDualPricing(
 ): Promise<DualPricingResult> {
   let cashTotal = orderTotal
   let cardTotal = orderTotal
-  let cashDiscountPercent = 0
+  let debitTotal = orderTotal
+  let creditMarkupPercent = 0
+  let debitMarkupPercent = 0
 
   try {
     const locSettings = await getLocationSettings(locationId)
     const parsed = parseSettings(locSettings as Record<string, unknown>)
     const pp = getPricingProgram(parsed)
     if (pp.enabled) {
-      cashDiscountPercent = pp.creditMarkupPercent ?? pp.cashDiscountPercent ?? 4.0
+      creditMarkupPercent = pp.creditMarkupPercent ?? pp.cashDiscountPercent ?? 4.0
+      debitMarkupPercent = pp.debitMarkupPercent ?? 0
       const sub = orderSubtotal
       const disc = orderDiscountTotal
       const discountedCashSub = Math.max(0, sub - disc)
-      const cardSub = calculateCardPrice(sub, cashDiscountPercent)
-      const discountedCardSub = Math.max(0, cardSub - disc)
-      const taxRate = (parsed?.tax?.defaultRate ?? 0) / 100
-      const storedTaxInc = taxFromInclusive
-      const storedTaxExc = taxFromExclusive
-      const storedTaxTotal = storedTaxInc + storedTaxExc
-      const excRatio = storedTaxTotal > 0 ? storedTaxExc / storedTaxTotal : 1
-      const cashTax = roundToCents(storedTaxInc + (discountedCashSub * taxRate * excRatio))
-      const cardTax = roundToCents(storedTaxInc + (discountedCardSub * taxRate * excRatio))
-      cashTotal = roundToCents(discountedCashSub + cashTax + tipTotal)
-      cardTotal = roundToCents(discountedCardSub + cardTax + tipTotal)
+      // Surcharge on full subtotal (pre-discount, pre-tax) per CANONICAL-MONEY-SPEC
+      const creditSurcharge = roundToCents(sub * creditMarkupPercent / 100)
+      const debitSurcharge = debitMarkupPercent > 0 ? roundToCents(sub * debitMarkupPercent / 100) : 0
+      // Tax is NOT marked up (DP1 rule) — use stored tax values directly
+      const storedTax = taxFromInclusive + taxFromExclusive
+      cashTotal = roundToCents(discountedCashSub + storedTax + tipTotal)
+      cardTotal = roundToCents(discountedCashSub + creditSurcharge + storedTax + tipTotal)
+      debitTotal = debitMarkupPercent > 0
+        ? roundToCents(discountedCashSub + debitSurcharge + storedTax + tipTotal)
+        : cashTotal
     }
   } catch {
-    // Settings unavailable — fall back to order.total for both
+    // Settings unavailable — fall back to order.total for all tiers
   }
 
-  return { cashTotal, cardTotal, cashDiscountPercent }
+  return { cashTotal, cardTotal, debitTotal, creditMarkupPercent, debitMarkupPercent, cashDiscountPercent: creditMarkupPercent }
 }
 
 // ---------------------------------------------------------------------------

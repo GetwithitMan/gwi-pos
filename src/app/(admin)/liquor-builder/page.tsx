@@ -103,10 +103,10 @@ function LiquorBuilderContent() {
   // Filter state
   const [selectedMenuCategoryId, setSelectedMenuCategoryId] = useState<string>('')
 
-  // Dual pricing settings
-  const { dualPricing } = useOrderSettings()
-  const cashDiscountPct = dualPricing.cashDiscountPercent || 4.0
-  const isDualPricingEnabled = dualPricing.enabled !== false
+  // Pricing program settings
+  const { pricingProgram } = useOrderSettings()
+  const cashDiscountPct = pricingProgram.creditMarkupPercent ?? 4.0
+  const isDualPricingEnabled = pricingProgram.enabled
 
   // Socket ref for real-time updates
   const socketRef = useRef<any>(null)

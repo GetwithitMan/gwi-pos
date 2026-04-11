@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react'
 import { formatCurrency } from '@/lib/utils'
 import { calculateCardPrice } from '@/lib/pricing'
 import { toast } from '@/stores/toast-store'
-import type { DualPricingSettings } from '@/lib/settings'
+import type { PricingProgram } from '@/lib/settings'
 import type { MenuItem, ModifierGroup, SelectedModifier, Modifier, CustomPreMod } from '@/types'
 
 // Custom entry selection for open-entry modifier groups
@@ -251,10 +251,10 @@ export function useModifierSelections(
     modifiers: { id: string; name: string; price: number; preModifier?: string; depth: number; parentModifierId?: string }[]
     ingredientModifications?: IngredientModification[]
   } | null | undefined,
-  dualPricing: DualPricingSettings,
+  pricingProgram: PricingProgram,
   initialNotes?: string
 ) {
-  const discountPct = dualPricing.cashDiscountPercent || 4.0
+  const discountPct = pricingProgram.creditMarkupPercent ?? 4.0
 
   // Pour size state — use defaultPourSize if set, fallback to 'standard' if it exists, else first size key
   const [selectedPourSize, setSelectedPourSize] = useState<string | null>(() => {
@@ -340,7 +340,7 @@ export function useModifierSelections(
     const price = overridePrice !== undefined ? overridePrice : storedPrice
     if (price === 0) return ''
     const adjustedPrice = item.applyPourToModifiers ? price * pourMultiplier : price
-    if (!dualPricing.enabled) {
+    if (!pricingProgram.enabled) {
       return `+${formatCurrency(adjustedPrice)}`
     }
     const cardPrice = calculateCardPrice(adjustedPrice, discountPct)
