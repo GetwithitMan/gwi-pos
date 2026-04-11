@@ -9,7 +9,7 @@ import * as OrderRepository from '@/lib/repositories/order-repository'
 import { mapOrderForResponse } from '@/lib/api/order-response-mapper'
 import { calculateCardPrice, roundToCents } from '@/lib/pricing'
 import { getLocationSettings } from '@/lib/location-cache'
-import { parseSettings } from '@/lib/settings'
+import { parseSettings, getPricingProgram } from '@/lib/settings'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { apiError, ERROR_CODES } from '@/lib/api/error-responses'
@@ -33,6 +33,7 @@ export async function computeDualPricing(
   orderDiscountTotal: number,
   taxFromInclusive: number,
   taxFromExclusive: number,
+  tipTotal: number = 0,
 ): Promise<DualPricingResult> {
   let cashTotal = orderTotal
   let cardTotal = orderTotal
@@ -41,9 +42,9 @@ export async function computeDualPricing(
   try {
     const locSettings = await getLocationSettings(locationId)
     const parsed = parseSettings(locSettings as Record<string, unknown>)
-    const dp = parsed?.dualPricing
-    if (dp?.enabled) {
-      cashDiscountPercent = dp.cashDiscountPercent ?? 4.0
+    const pp = getPricingProgram(parsed)
+    if (pp.enabled) {
+      cashDiscountPercent = pp.creditMarkupPercent ?? pp.cashDiscountPercent ?? 4.0
       const sub = orderSubtotal
       const disc = orderDiscountTotal
       const discountedCashSub = Math.max(0, sub - disc)
@@ -56,8 +57,8 @@ export async function computeDualPricing(
       const excRatio = storedTaxTotal > 0 ? storedTaxExc / storedTaxTotal : 1
       const cashTax = roundToCents(storedTaxInc + (discountedCashSub * taxRate * excRatio))
       const cardTax = roundToCents(storedTaxInc + (discountedCardSub * taxRate * excRatio))
-      cashTotal = roundToCents(discountedCashSub + cashTax)
-      cardTotal = roundToCents(discountedCardSub + cardTax)
+      cashTotal = roundToCents(discountedCashSub + cashTax + tipTotal)
+      cardTotal = roundToCents(discountedCardSub + cardTax + tipTotal)
     }
   } catch {
     // Settings unavailable — fall back to order.total for both
@@ -215,6 +216,7 @@ export async function getOrderForPanel(orderId: string) {
     Number(order.discountTotal || 0),
     Number(order.taxFromInclusive) || 0,
     Number(order.taxFromExclusive) || 0,
+    Number(order.tipTotal) || 0,
   )
 
   return ok({
@@ -338,6 +340,7 @@ export async function getOrderFull(
     Number(order.discountTotal || 0),
     Number((order as any).taxFromInclusive) || 0,
     Number((order as any).taxFromExclusive) || 0,
+    Number((order as any).tipTotal) || 0,
   )
 
   return ok({

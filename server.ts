@@ -31,6 +31,9 @@ import { startCloudRelayClient, stopCloudRelayClient } from './src/lib/cloud-rel
 import { startCellularRelayCleanup, stopCellularRelayCleanup } from './src/lib/cellular-event-relay'
 import { disconnectNeon } from './src/lib/neon-client'
 import { cleanupStaleOrders } from './src/lib/domain/cleanup/stale-order-cleanup'
+import { executeEodReset } from './src/lib/eod'
+import { parseSettings } from './src/lib/settings'
+import { parseTimeString } from './src/lib/business-day'
 import { listPendingRetries, processWalkoutRetry } from './src/lib/domain/datacap/walkout-retry-service'
 import { sendSMS, isTwilioConfigured } from './src/lib/twilio'
 import { runBootstrap, startSchemaRecheckIfBlocked, stopSchemaRecheck } from './src/lib/venue-bootstrap'
@@ -99,21 +102,21 @@ function startEodScheduler() {
 }
 
 // ============================================================================
-// Periodic Draft Cleanup — cancels abandoned $0 drafts every 30 minutes
+// Periodic Draft Cleanup — cancels abandoned $0 drafts every 5 minutes (15-min TTL)
 // ============================================================================
 
 function startDraftCleanupInterval() {
-  const INTERVAL_MS = 30 * 60 * 1000 // 30 minutes
-  const MAX_AGE_HOURS = 1 // Cancel drafts older than 1 hour (more aggressive than EOD's 4h)
+  const INTERVAL_MS = 5 * 60 * 1000 // 5 minutes
+  const MAX_AGE_MINUTES = 15 // Cancel drafts older than 15 minutes
 
   async function cleanupDrafts() {
     const locationId = config.posLocationId
     if (!locationId) return
 
     try {
-      const result = await cleanupStaleOrders({ locationId, maxAgeHours: MAX_AGE_HOURS })
+      const result = await cleanupStaleOrders({ locationId, maxAgeMinutes: MAX_AGE_MINUTES })
       if (result.closedCount > 0) {
-        logger.info({ closedCount: result.closedCount, maxAgeHours: MAX_AGE_HOURS }, 'Cancelled abandoned draft orders')
+        logger.info({ closedCount: result.closedCount, maxAgeMinutes: MAX_AGE_MINUTES }, 'Cancelled abandoned draft orders (5-min sweep)')
       }
     } catch {
       // Silent — non-critical background task
@@ -379,6 +382,96 @@ function startNotificationRetryScheduler() {
   timer.unref()
   // Run first sweep 2 minutes after boot
   const startupTimer = setTimeout(sweepNotificationRetries, 2 * 60 * 1000)
+  startupTimer.unref()
+}
+
+// ============================================================================
+// EOD Batch Close Scheduler — checks every 15 minutes if within EOD window
+//
+// Reads the location's businessDay.dayStartTime and timezone, then checks if
+// the current time is within a 30-minute window starting at dayStartTime.
+// If yes, triggers executeEodReset() with triggeredBy='cron'. The engine has
+// built-in idempotency (AuditLog lookup) so double-runs are harmless.
+// NUC-only (requires POS_LOCATION_ID).
+// ============================================================================
+
+function startEodBatchCloseScheduler() {
+  const INTERVAL_MS = 15 * 60 * 1000 // 15 minutes
+  const EOD_WINDOW_MINUTES = 30 // Window after dayStartTime during which EOD triggers
+
+  async function checkAndRunEod() {
+    const locationId = config.posLocationId
+    if (!locationId) return // Cloud/dev mode — skip
+
+    try {
+      const location = await masterClient.location.findFirst({
+        where: { id: locationId },
+        select: { settings: true, timezone: true },
+      })
+      if (!location) return
+
+      const locSettings = parseSettings(location.settings as Record<string, unknown> | null)
+      const dayStartTime = locSettings.businessDay.dayStartTime ?? '04:00'
+      const venueTimezone = location.timezone || process.env.TIMEZONE || process.env.TZ || 'America/New_York'
+
+      // Get current local time in venue timezone (DST-safe)
+      const now = new Date()
+      const fmt = new Intl.DateTimeFormat('en-US', {
+        timeZone: venueTimezone,
+        hour: 'numeric',
+        minute: 'numeric',
+        hour12: false,
+      })
+      const parts = fmt.formatToParts(now)
+      const currentHour = parseInt(parts.find(p => p.type === 'hour')?.value ?? '0', 10)
+      const currentMinute = parseInt(parts.find(p => p.type === 'minute')?.value ?? '0', 10)
+
+      const { hours: startHour, minutes: startMinute } = parseTimeString(dayStartTime)
+      const startMinuteOfDay = startHour * 60 + startMinute
+      const currentMinuteOfDay = currentHour * 60 + currentMinute
+
+      // Calculate minutes since dayStartTime (handles midnight wrap)
+      let minutesSinceStart = currentMinuteOfDay - startMinuteOfDay
+      if (minutesSinceStart < -720) minutesSinceStart += 1440
+
+      if (minutesSinceStart < 0 || minutesSinceStart >= EOD_WINDOW_MINUTES) {
+        // Outside the EOD window — skip
+        return
+      }
+
+      logger.info(
+        { dayStartTime, currentTime: `${currentHour}:${String(currentMinute).padStart(2, '0')}`, minutesSinceStart, venueTimezone },
+        'EOD batch close window active — triggering EOD reset'
+      )
+
+      const result = await executeEodReset({
+        locationId,
+        triggeredBy: 'cron',
+      })
+
+      if (result.alreadyRanToday) {
+        logger.info({ businessDay: result.businessDay }, 'EOD batch close skipped — already ran today')
+      } else {
+        logger.info({
+          businessDay: result.businessDay,
+          tabsCaptured: result.tabsCaptured,
+          tabsCapturedAmount: result.tabsCapturedAmount,
+          rolledOverOrders: result.rolledOverOrders,
+          tablesReset: result.tablesReset,
+          entertainmentReset: result.entertainmentReset,
+          batchCloseSuccess: result.batchCloseSuccess,
+          warnings: result.warnings.length > 0 ? result.warnings : undefined,
+        }, 'EOD batch close completed')
+      }
+    } catch (err) {
+      logger.error({ err }, 'EOD batch close scheduler failed')
+    }
+  }
+
+  const timer = setInterval(checkAndRunEod, INTERVAL_MS)
+  timer.unref()
+  // Run first check 3 minutes after boot (let server stabilize, after draft cleanup)
+  const startupTimer = setTimeout(checkAndRunEod, 3 * 60 * 1000)
   startupTimer.unref()
 }
 
@@ -662,6 +755,10 @@ async function main() {
     )
     registerWorker('draftCleanup', 'optional',
       () => startDraftCleanupInterval(),
+      () => { /* interval-based, unref'd — exits with process */ }
+    )
+    registerWorker('eodBatchClose', 'optional',
+      () => startEodBatchCloseScheduler(),
       () => { /* interval-based, unref'd — exits with process */ }
     )
     registerWorker('walkoutRetry', 'optional',

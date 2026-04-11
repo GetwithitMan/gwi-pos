@@ -117,6 +117,74 @@ export async function executeEodReset(options: EodResetOptions): Promise<EodRese
     }
   }
 
+  // ── 2b. Ghost draft cleanup (consolidated from eod-cleanup) ────────────────
+  // Hard-delete all $0.00 drafts older than the business day boundary.
+  // Previously this was a separate route — now runs as part of the main EOD executor.
+  let ghostDraftsDeleted = 0
+  if (!dryRun) {
+    try {
+      const deleted = await db.order.deleteMany({
+        where: {
+          locationId,
+          status: 'draft',
+          total: 0,
+          deletedAt: null,
+          createdAt: { lt: businessDay.start },
+          payments: { none: {} },
+          items: { none: {} },
+        },
+      })
+      ghostDraftsDeleted = deleted.count
+      if (ghostDraftsDeleted > 0) {
+        log.info({ ghostDraftsDeleted, locationId }, 'EOD: cleaned up ghost drafts')
+      }
+    } catch (e) {
+      log.warn({ err: e, locationId }, 'EOD: ghost draft cleanup failed (non-fatal)')
+    }
+  }
+
+  // ── 2c. Cardless tab rollover (manager exception handling) ─────────────────
+  // Tabs with money but NO authorized card can't be auto-captured.
+  // Mark them with an audit trail so they don't look like active workable tabs.
+  let cardlessTabsRolledOver = 0
+  if (!dryRun) {
+    try {
+      const cardlessTabs = await db.order.findMany({
+        where: {
+          locationId,
+          orderType: 'bar_tab',
+          status: { in: ['open', 'sent'] },
+          deletedAt: null,
+          total: { gt: 0 },
+          cards: { none: { status: 'authorized', deletedAt: null } },
+          createdAt: { lt: businessDay.start },
+        },
+        select: { id: true, orderNumber: true, total: true, tabName: true },
+      })
+      for (const tab of cardlessTabs) {
+        await db.auditLog.create({
+          data: {
+            locationId,
+            action: 'eod_cardless_tab_rollover',
+            details: {
+              orderId: tab.id,
+              orderNumber: tab.orderNumber,
+              total: Number(tab.total),
+              tabName: tab.tabName,
+              reason: 'Tab has balance but no authorized card — requires manager review',
+            },
+          },
+        })
+        cardlessTabsRolledOver++
+      }
+      if (cardlessTabsRolledOver > 0) {
+        log.warn({ cardlessTabsRolledOver, locationId }, 'EOD: cardless tabs need manager review')
+      }
+    } catch (e) {
+      log.warn({ err: e, locationId }, 'EOD: cardless tab rollover failed (non-fatal)')
+    }
+  }
+
   // ── 3. Tab auto-capture ────────────────────────────────────────────────────
   let tabsCaptured = 0
   let tabsCapturedAmount = 0
@@ -126,14 +194,15 @@ export async function executeEodReset(options: EodResetOptions): Promise<EodRese
   if (eodSettings.autoCaptureTabs && !dryRun) {
     const autoGratuityPct = eodSettings.autoGratuityPercent ?? 20
 
-    // Find all open bar tabs with authorized cards.
+    // Find all open/sent bar tabs with authorized cards.
+    // Include 'sent' status — tabs with items sent to kitchen must be captured.
     // Exclude tabs that are mid-close (closing) or mid-auth (pending_auth)
     // to prevent double-capture races with another terminal.
     const openTabs = await db.order.findMany({
       where: {
         locationId,
         orderType: 'bar_tab',
-        status: 'open',
+        status: { in: ['open', 'sent'] },
         tabStatus: { notIn: ['closing', 'pending_auth'] },
         deletedAt: null,
         cards: {

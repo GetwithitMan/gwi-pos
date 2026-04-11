@@ -5,7 +5,7 @@ import { buildCustomerReceipt, type CustomerReceiptData } from '@/lib/escpos/cus
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { parseSettings, getPricingProgram } from '@/lib/settings'
-import { calculateCardPrice } from '@/lib/pricing'
+import { calculateCardPrice, calculateDebitPrice } from '@/lib/pricing'
 import type { PrintTemplateSettings } from '@/types/print'
 import { createChildLogger } from '@/lib/logger'
 import { err, notFound, ok } from '@/lib/api-response'
@@ -110,17 +110,38 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
       return err('No receipt printer configured for this location')
     }
 
-    // ── Parse location settings for dual pricing / surcharge ──
+    // ── Parse location settings — use canonical pricing program ──
     const locationSettings = parseSettings(order.location.settings)
-    const dualPricing = locationSettings.dualPricing
-    const dualPricingEnabled = dualPricing?.enabled
-    const cashDiscountPercent = dualPricing?.cashDiscountPercent ?? 0
-    const hasCardPayment = dualPricingEnabled && order.payments.some(
-      (p) =>
-        (p.paymentMethod === 'credit' && dualPricing?.applyToCredit) ||
-        (p.paymentMethod === 'debit' && dualPricing?.applyToDebit)
+    const pp = getPricingProgram(locationSettings)
+
+    const isDualPricing = pp.enabled && (
+      pp.model === 'dual_price' || pp.model === 'dual_price_pan_debit' || pp.model === 'cash_discount'
     )
-    const isDualCard = dualPricingEnabled && hasCardPayment
+
+    // Determine the applied tier from the first card payment
+    const cardPayment = isDualPricing ? order.payments.find(p =>
+      (p as any).pricingMode === 'card' ||
+      (p as any).appliedPricingTier === 'credit' ||
+      (p as any).appliedPricingTier === 'debit'
+    ) : null
+    const appliedTier = (
+      (cardPayment as any)?.appliedPricingTier ||
+      ((cardPayment as any)?.pricingMode === 'card' ? 'credit' : null)
+    ) as 'credit' | 'debit' | null
+
+    // Resolve markup percent based on which pricing tier was applied
+    const markupPercent = (() => {
+      if (!isDualPricing || !appliedTier) return 0
+      if (appliedTier === 'debit') return pp.debitMarkupPercent ?? 0
+      return pp.creditMarkupPercent ?? pp.cashDiscountPercent ?? 0
+    })()
+
+    const isDualCard = isDualPricing && !!cardPayment && markupPercent > 0
+
+    const applyMarkup = (amount: number): number =>
+      appliedTier === 'debit'
+        ? calculateDebitPrice(amount, markupPercent)
+        : calculateCardPrice(amount, markupPercent)
 
     // ─── Use STORED order values (never recalculate from items) ────────────
     const activeItems = order.items.filter(
@@ -140,12 +161,9 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     const total = Number(order.total ?? 0)
 
     // Subtotal for display — apply card markup if dual pricing
-    const subtotal = isDualCard
-      ? calculateCardPrice(cashSubtotal, cashDiscountPercent)
-      : cashSubtotal
+    const subtotal = isDualCard ? applyMarkup(cashSubtotal) : cashSubtotal
 
     // Surcharge info
-    const pp = getPricingProgram(locationSettings)
     const surchargeDisclosure =
       pp.enabled && pp.model === 'surcharge' && pp.surchargeDisclosure
         ? pp.surchargeDisclosure
@@ -191,11 +209,13 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
         name: item.name,
         quantity: item.quantity,
         price: isDualCard
-          ? calculateCardPrice(Number(item.price), cashDiscountPercent)
+          ? applyMarkup(Number(item.price))
           : Number(item.price),
         modifiers: item.modifiers.map((m: any) => ({
           name: m.name,
-          price: Number(m.price),
+          price: isDualCard
+            ? applyMarkup(Number(m.price))
+            : Number(m.price),
           depth: m.depth ?? 0,
           preModifier: m.preModifier ?? null,
           isCustomEntry: m.isCustomEntry ?? false,
@@ -232,11 +252,12 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
         convenienceFee: Number(order.convenienceFee ?? 0),
         isTaxExempt: isTaxExemptOrder,
         taxExemptReason: order.taxExemptReason ?? null,
-        // Dual pricing breakdown — only populated when location has dual pricing enabled
-        ...(dualPricingEnabled ? {
-          cardSubtotal: calculateCardPrice(cashSubtotal, cashDiscountPercent),
-          cardTax: calculateCardPrice(taxTotal, cashDiscountPercent),
-          cardTotal: calculateCardPrice(total, cashDiscountPercent),
+        // Dual pricing breakdown — only populated when dual pricing applies
+        // Tax is NOT marked up (surcharge/markup is pre-tax per DP1 rule)
+        ...(isDualCard ? {
+          cardSubtotal: applyMarkup(cashSubtotal),
+          cardTax: taxTotal,
+          cardTotal: applyMarkup(cashSubtotal) + taxTotal - discountTotal + tipTotal,
           cashSubtotal,
           cashTax: taxTotal,
           cashTotal: total,

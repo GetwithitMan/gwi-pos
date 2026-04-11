@@ -10,6 +10,7 @@ import {
 } from '@/lib/payment'
 import { createChildLogger } from '@/lib/logger'
 import { calculateCardPrice, calculateCashDiscount, applyPriceRounding, roundToCents } from '@/lib/pricing'
+import type { PricingProgram } from '@/lib/settings'
 import type { PaymentInput, PaymentRecord } from '../types'
 
 const log = createChildLogger('payment')
@@ -18,7 +19,7 @@ const log = createChildLogger('payment')
  * Process a cash payment — applies rounding, calculates change, and sets dual pricing fields.
  *
  * `settings` must be the parsed location settings (from `parseSettings()`).
- * `dualPricing` is `settings.dualPricing`.
+ * `pricingProgram` is the resolved PricingProgram from `getPricingProgram(settings)`.
  */
 export function processCashPayment(
   payment: PaymentInput,
@@ -29,7 +30,7 @@ export function processCashPayment(
     priceRounding?: { enabled: boolean; applyToCash: boolean; increment: string; direction: string; applyToCard: boolean }
     payments: { cashRounding?: string; roundingDirection?: string }
   },
-  dualPricing: { enabled: boolean; cashDiscountPercent: number } | undefined,
+  pricingProgram: PricingProgram | undefined,
   orderId: string,
   orderTotal: number,
 ): PaymentRecord {
@@ -62,9 +63,10 @@ export function processCashPayment(
   const changeGiven = Math.max(0, amountTendered - finalAmount - (payment.tipAmount || 0))
 
   // Dual pricing: calculate from post-rounding amount
-  if (dualPricing?.enabled && record.pricingMode === 'cash') {
-    const cardPrice = calculateCardPrice(finalAmount, dualPricing.cashDiscountPercent)
-    const discountAmount = calculateCashDiscount(cardPrice, dualPricing.cashDiscountPercent)
+  if (pricingProgram?.enabled && record.pricingMode === 'cash') {
+    const markupPct = pricingProgram.creditMarkupPercent ?? pricingProgram.cashDiscountPercent ?? 0
+    const cardPrice = calculateCardPrice(finalAmount, markupPct)
+    const discountAmount = calculateCashDiscount(cardPrice, markupPct)
     record.priceBeforeDiscount = cardPrice
     record.cashDiscountAmount = discountAmount
 
