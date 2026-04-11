@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# gwi-node.sh — GWI POS node agent (install | deploy | rollback | promote | rejoin | status | self-update | watch | dashboard-check | dashboard-rollback | converge | converge-loop | venue-state)
+# gwi-node.sh — GWI POS node agent (install | deploy | rollback | promote | rejoin | status | self-update | watch | dashboard-check | dashboard-rollback | converge | converge-loop | venue-state | cleanup | clear-quarantine)
 # One agent. One runtime. One flow. Install and update are the same operation.
 set -euo pipefail
 
@@ -2065,6 +2065,78 @@ SVCEOF
   fi
 }
 
+# ── cleanup ────────────────────────────────────────────────────────────────────
+# Reclaim disk space: prune dangling Docker images, remove old deploy logs.
+# Safe to run at any time. Does NOT remove the running or LKG images.
+cleanup_node() {
+  log "=== GWI Node Cleanup ==="
+
+  # Prune dangling Docker images
+  local pruned
+  pruned=$(docker image prune -f --filter "dangling=true" 2>&1) || true
+  log "Docker image prune: $pruned"
+
+  # Remove deploy logs older than 30 days
+  local removed=0
+  if [[ -d "$LOG_DIR" ]]; then
+    while IFS= read -r -d '' f; do
+      rm -f "$f" && removed=$((removed + 1))
+    done < <(find "$LOG_DIR" -name '*.json' -type f -mtime +30 -print0 2>/dev/null)
+  fi
+  log "Removed $removed deploy log(s) older than 30 days"
+
+  # Remove stale deploy results older than 7 days
+  local stale_results=0
+  if [[ -d "$RESULTS_DIR" ]]; then
+    while IFS= read -r -d '' f; do
+      rm -f "$f" && stale_results=$((stale_results + 1))
+    done < <(find "$RESULTS_DIR" -name '*.json' -type f -mtime +7 -print0 2>/dev/null)
+  fi
+  log "Removed $stale_results stale deploy result(s) older than 7 days"
+
+  log "Cleanup complete"
+}
+
+# ── clear-quarantine ──────────────────────────────────────────────────────────
+# Remove quarantine marker for a specific release (or all) from bad-releases.json.
+# Usage: clear_quarantine [releaseId]
+#   - With releaseId: remove that single entry from bad-releases.json
+#   - Without releaseId: delete bad-releases.json entirely (clear all)
+clear_quarantine() {
+  local release_id="${1:-}"
+  local bad_releases_file="${STATE_DIR}/bad-releases.json"
+
+  if [[ ! -f "$bad_releases_file" ]]; then
+    log "No quarantine file found — nothing to clear"
+    return 0
+  fi
+
+  if [[ -z "$release_id" ]]; then
+    rm -f "$bad_releases_file"
+    log "Cleared all quarantined releases"
+  else
+    # Remove the specific entry using python3 (jq may not be installed)
+    python3 - "$release_id" "$bad_releases_file" << 'CLEARQ'
+import json, sys
+release_id = sys.argv[1]
+path = sys.argv[2]
+try:
+    with open(path) as f:
+        data = json.load(f)
+    if isinstance(data, list):
+        data = [e for e in data if e.get('releaseId') != release_id]
+    elif isinstance(data, dict):
+        data.pop(release_id, None)
+    with open(path, 'w') as f:
+        json.dump(data, f, indent=2)
+    print(f"Removed {release_id} from quarantine")
+except Exception as e:
+    print(f"WARN: Could not update quarantine file: {e}")
+CLEARQ
+    log "Cleared quarantine for release: $release_id"
+  fi
+}
+
 # ── Source guard ────────────────────────────────────────────────────────────
 # When sourced by the installer (source installer-modules/gwi-node.sh), only
 # define functions — do not parse args or run commands. The installer calls
@@ -2078,7 +2150,9 @@ shift 2>/dev/null || true
 
 # converge-loop and install-converge-service accept a positional interval arg
 # promote/rejoin accept HA-specific flags passed through as HA_ARGS
+# clear-quarantine accepts an optional releaseId positional arg
 CONVERGE_INTERVAL=""
+CLEAR_QUARANTINE_RELEASE=""
 HA_ARGS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -2091,9 +2165,11 @@ while [[ $# -gt 0 ]]; do
     --skip-pg-promote)    HA_ARGS+=("$1"); shift ;;
     --new-primary-ip=*)   HA_ARGS+=("$1"); shift ;;
     *)
-      # Positional arg for converge-loop / install-converge-service
+      # Positional arg for converge-loop / install-converge-service / clear-quarantine
       if [[ "$SUBCOMMAND" == "converge-loop" ]] || [[ "$SUBCOMMAND" == "install-converge-service" ]]; then
         CONVERGE_INTERVAL="$1"; shift
+      elif [[ "$SUBCOMMAND" == "clear-quarantine" ]]; then
+        CLEAR_QUARANTINE_RELEASE="$1"; shift
       else
         echo "Unknown flag: $1"; exit 1
       fi
@@ -2116,5 +2192,7 @@ case "$SUBCOMMAND" in
   converge)                   converge ;;
   converge-loop)              converge_loop "${CONVERGE_INTERVAL:-300}" ;;
   install-converge-service)   install_converge_service "${CONVERGE_INTERVAL:-300}" ;;
-  *)                          echo "Usage: gwi-node.sh {install|deploy|rollback|promote|rejoin|status|self-update|watch|dashboard-check|dashboard-rollback|venue-state|converge|converge-loop|install-converge-service}"; exit 1 ;;
+  cleanup)                    cleanup_node ;;
+  clear-quarantine)           clear_quarantine "${CLEAR_QUARANTINE_RELEASE:-}" ;;
+  *)                          echo "Usage: gwi-node.sh {install|deploy|rollback|promote|rejoin|status|self-update|watch|dashboard-check|dashboard-rollback|venue-state|converge|converge-loop|install-converge-service|cleanup|clear-quarantine}"; exit 1 ;;
 esac

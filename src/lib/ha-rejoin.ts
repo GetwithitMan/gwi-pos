@@ -159,10 +159,15 @@ export async function handleRejoin(command: RejoinCommand): Promise<RejoinResult
 
     // -- Step 3: Execute rejoin via gwi-node (or fallback to shell script) ----
     const step3 = await runStep(3, 'Execute rejoin', async () => {
-      const gwiNode = join(APP_BASE, 'shared', 'gwi-node.sh')
+      // Check known gwi-node locations in priority order
+      const gwiNodeCandidates = [
+        join(APP_BASE, 'gwi-node.sh'),
+        '/usr/local/bin/gwi-node',
+      ]
+      const gwiNode = gwiNodeCandidates.find(p => existsSync(p)) || null
 
       // Prefer gwi-node rejoin subcommand (Docker-first appliance model)
-      if (existsSync(gwiNode)) {
+      if (gwiNode) {
         try {
           const output = execSync(
             `bash "${gwiNode}" rejoin --new-primary-ip=${command.newPrimaryIp}`,

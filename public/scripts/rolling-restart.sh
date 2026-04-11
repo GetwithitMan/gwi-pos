@@ -1,10 +1,18 @@
 #!/usr/bin/env bash
-# GWI POS Rolling Restart — Thin wrapper around deploy-release.sh
-# Kept for backward compatibility. All heavy lifting is in deploy-release.sh.
+# =============================================================================
+# rolling-restart.sh — DEPRECATED (legacy rolling restart wrapper)
+# =============================================================================
+# ⚠ DEPRECATED since v2.0.0 — gwi-node.sh is the canonical deploy agent.
+# Docker is the only NUC runtime. This script now delegates to gwi-node
+# converge instead of deploy-release.sh for non-legacy flows.
 #
-# Usage:
-#   rolling-restart.sh [target-version]                    # artifact-based deploy (default)
+# The canonical deploy agent is: /opt/gwi-pos/gwi-node.sh
+#   gwi-node deploy | rollback | converge | status
+#
+# Legacy usage (kept for backward compat):
+#   rolling-restart.sh [target-version]                    # delegates to gwi-node converge
 #   rolling-restart.sh [target-version] --legacy           # old git-based build-on-NUC flow
+# =============================================================================
 set -euo pipefail
 
 # ---------------------------------------------------------------------------
@@ -14,7 +22,8 @@ APP_DIR="/opt/gwi-pos/app"
 ENV_FILE="/opt/gwi-pos/.env"
 POS_PORT="${POS_PORT:-3005}"
 
-DEPLOY_RELEASE="/opt/gwi-pos/deploy-release.sh"
+DEPLOY_RELEASE="/opt/gwi-pos/deploy-release.sh"    # DEPRECATED — legacy fallback only
+GWI_NODE="/opt/gwi-pos/gwi-node.sh"                # Canonical deploy agent (v2.0.0+)
 MANIFEST_URL="https://ordercontrolcenter.com/artifacts/manifest.json"
 STATE_DIR="/opt/gwi-pos/shared/state"
 MAINTENANCE_FLAG="${STATE_DIR}/deploy-in-progress"
@@ -28,6 +37,10 @@ err() { echo "[$(date -u +%FT%TZ)] ROLLING-RESTART ERROR: $*" >&2; }
 
 # Load error codes if available
 [[ -f /opt/gwi-pos/installer-modules/lib/error-codes.sh ]] && source /opt/gwi-pos/installer-modules/lib/error-codes.sh
+
+# ── Deprecation warning (logged on every invocation) ─────────────────────────
+err "WARNING: rolling-restart.sh is DEPRECATED. Use 'gwi-node deploy' or 'gwi-node converge' instead."
+err "WARNING: Canonical deploy agent: /opt/gwi-pos/gwi-node.sh"
 
 # ---------------------------------------------------------------------------
 # Record result to state file (same location as before)
@@ -151,13 +164,19 @@ main() {
     legacy_flow "$target_version"
     record_result "$target_version" "COMPLETED" "legacy-rolling-restart"
   else
-    # Delegate to deploy-release.sh
-    if [[ ! -x "$DEPLOY_RELEASE" ]]; then
-      err "deploy-release.sh not found at $DEPLOY_RELEASE — falling back to --legacy"
-      legacy_flow "$target_version"
-      record_result "$target_version" "COMPLETED" "legacy-rolling-restart-fallback"
-    else
-      log "Delegating to deploy-release.sh --manifest-url $MANIFEST_URL"
+    # Prefer gwi-node converge (canonical deploy agent, v2.0.0+)
+    if [[ -x "$GWI_NODE" ]]; then
+      log "Delegating to gwi-node converge (canonical deploy agent)"
+      "$GWI_NODE" converge || {
+        local rc=$?
+        err "gwi-node converge exited with code $rc"
+        record_result "$target_version" "FAILED" "gwi-node-converge"
+        exit $rc
+      }
+      record_result "$target_version" "COMPLETED" "gwi-node-converge"
+    elif [[ -x "$DEPLOY_RELEASE" ]]; then
+      # Legacy fallback: deploy-release.sh (DEPRECATED)
+      log "gwi-node not found — falling back to deploy-release.sh (DEPRECATED)"
       "$DEPLOY_RELEASE" --manifest-url "$MANIFEST_URL" || {
         local rc=$?
         err "deploy-release.sh exited with code $rc"
@@ -165,6 +184,10 @@ main() {
         exit $rc
       }
       record_result "$target_version" "COMPLETED" "deploy-release"
+    else
+      err "Neither gwi-node.sh nor deploy-release.sh found — falling back to --legacy"
+      legacy_flow "$target_version"
+      record_result "$target_version" "COMPLETED" "legacy-rolling-restart-fallback"
     fi
   fi
 

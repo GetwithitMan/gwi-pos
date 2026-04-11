@@ -1,10 +1,12 @@
 /**
  * Deploy Rollback — POST /api/internal/deploy/rollback
  *
- * Calls gwi-node.sh rollback <releaseId>.
+ * Calls gwi-node.sh rollback (LKG semantics — rolls back to the
+ * last-known-good image, NOT a caller-specified release).
  * Requires INTERNAL_API_SECRET bearer token authentication.
  *
- * Body: { releaseId: string }
+ * Body: { releaseId?: string }  — releaseId is accepted for audit/logging
+ *   but is NOT passed to gwi-node. gwi-node always rolls back to LKG.
  */
 
 import { NextResponse } from 'next/server'
@@ -42,17 +44,17 @@ export async function POST(request: Request) {
     )
   }
 
+  // releaseId is accepted for audit trail but NOT passed to gwi-node.
+  // gwi-node rollback always uses LKG (last-known-good) semantics.
   const body = await request.json().catch(() => ({}))
   const releaseId = (body as any).releaseId
-
-  // Validate releaseId — alphanumeric, dots, hyphens, underscores only
-  if (!releaseId || typeof releaseId !== 'string' || !/^[\w.-]+$/.test(releaseId)) {
-    return NextResponse.json({ error: 'Invalid releaseId' }, { status: 400 })
+  if (releaseId) {
+    console.log(`[deploy/rollback] Rollback requested (audit releaseId=${releaseId}) — using LKG semantics`)
   }
 
   try {
     const output = execSync(
-      `bash "${gwiNode}" rollback "${releaseId}"`,
+      `bash "${gwiNode}" rollback`,
       {
         encoding: 'utf8',
         timeout: 300_000, // 5 minutes — rollbacks can take time
@@ -61,12 +63,16 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
+      method: 'lkg-rollback',
+      auditReleaseId: releaseId || null,
       output: output.slice(-500),
     })
   } catch (err: any) {
     return NextResponse.json(
       {
         success: false,
+        method: 'lkg-rollback',
+        auditReleaseId: releaseId || null,
         error: err.message?.slice(0, 500),
         stderr: err.stderr?.slice(0, 500),
       },

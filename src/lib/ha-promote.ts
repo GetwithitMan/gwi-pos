@@ -261,10 +261,12 @@ export async function handlePromotion(command: PromoteCommand): Promise<Promotio
     const step6 = await runStep(6, 'Start POS service', async () => {
       // Docker-first (appliance model): start via gwi-node or docker directly.
       // gwi-node.sh is the canonical deploy agent — prefer it if available.
-      const gwiNode = '/opt/gwi-pos/shared/gwi-node.sh'
+      // Check known locations in priority order.
+      const gwiNodeCandidates = ['/opt/gwi-pos/gwi-node.sh', '/usr/local/bin/gwi-node']
+      const gwiNode = gwiNodeCandidates.find(p => existsSync(p)) || null
 
       try {
-        if (existsSync(gwiNode)) {
+        if (gwiNode) {
           execSync(`bash "${gwiNode}" promote --skip-pg-promote`, {
             timeout: 60000,
             stdio: 'pipe',

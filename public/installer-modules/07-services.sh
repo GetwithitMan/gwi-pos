@@ -371,7 +371,7 @@ $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl daemon-reload
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl status *, /usr/bin/systemctl is-active *, /usr/bin/systemctl is-enabled *, /usr/bin/systemctl list-unit-files *
 # --- Database tools ---
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/psql, /usr/lib/postgresql/*/bin/psql, /usr/bin/pg_isready, /usr/bin/pg_dump
-# --- POS scripts ---
+# --- POS scripts (deploy-release.sh is DEPRECATED but kept in sudoers for legacy compat) ---
 $POSUSER ALL=(ALL) NOPASSWD: /opt/gwi-pos/deploy-release.sh, /opt/gwi-pos/scripts/*, /opt/gwi-pos/watchdog.sh, /opt/gwi-pos/heartbeat.sh
 $POSUSER ALL=(ALL) NOPASSWD: /opt/gwi-pos/backup-pos.sh, /opt/gwi-pos/disable-rls.sh, /opt/gwi-pos/pre-start.sh, /opt/gwi-pos/clear-kiosk-session.sh
 $POSUSER ALL=(ALL) NOPASSWD: /opt/gwi-pos/kiosk-control.sh, /opt/gwi-pos/boot-diagnostic.sh

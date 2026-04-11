@@ -1,11 +1,16 @@
 #!/usr/bin/env bash
 # =============================================================================
-# deploy-release.sh — THE canonical deploy script for GWI POS NUC servers
+# deploy-release.sh — DEPRECATED (legacy tarball deploy)
 # =============================================================================
-# Every deploy path (update-agent, sync-agent, installer, Ansible, manual)
-# calls this ONE script. No duplicate deploy logic anywhere.
+# ⚠ DEPRECATED since v2.0.0 — gwi-node.sh is the canonical deploy agent.
+# Docker is the only NUC runtime. This script is kept for backward
+# compatibility only (installer still copies it). All new deploy paths
+# should use gwi-node.sh subcommands.
 #
-# Usage:
+# The canonical deploy agent is: /opt/gwi-pos/gwi-node.sh
+#   gwi-node deploy | rollback | status | cleanup | clear-quarantine | converge
+#
+# Legacy usage (may still work for tarball-era NUCs):
 #   deploy-release.sh [--artifact /path/to.tar.zst | --manifest-url URL] [--force]
 #   deploy-release.sh [--rollback-to <releaseId>]
 #   deploy-release.sh [--offline /path/to.tar.zst]
@@ -30,15 +35,18 @@
 #   │       └── deploy-in-progress  <- maintenance mode flag
 #   ├── cache/artifacts/            <- downloaded artifacts survive retries
 #   ├── keys/gwi-pos-release.pub   <- minisign public key
-#   └── deploy-release.sh          <- this script (also at current/public/scripts/)
+#   ├── gwi-node.sh                <- CANONICAL deploy agent (v2.0.0+)
+#   └── deploy-release.sh          <- this script (DEPRECATED)
 # =============================================================================
 
-# INVARIANTS:
-# - /opt/gwi-pos/current is the only active runtime
-# - /opt/gwi-pos/shared/state/running-version.json is the only authoritative running version
-# - deploy-release.sh is the only component allowed to change active runtime or schema state
+# DEPRECATED: gwi-node.sh is now the only component allowed to change active runtime or schema state.
+# This script is retained for backward compatibility with pre-Docker NUC installations.
 
 set -euo pipefail
+
+# ── Deprecation warning (logged on every invocation) ─────────────────────────
+echo "[$(date -u +%FT%TZ)] WARNING: deploy-release.sh is DEPRECATED. Use gwi-node.sh instead." >&2
+echo "[$(date -u +%FT%TZ)] WARNING: Canonical deploy agent: /opt/gwi-pos/gwi-node.sh (deploy|rollback|status|cleanup|converge)" >&2
 
 # ---------------------------------------------------------------------------
 # Constants

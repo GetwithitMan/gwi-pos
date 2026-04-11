@@ -142,14 +142,18 @@ HACHKEOF
 # Promote this standby to primary — thin wrapper around gwi-node promote
 set -euo pipefail
 echo "[HA] Promoting to primary via gwi-node..."
-GWI_NODE="/opt/gwi-pos/shared/gwi-node.sh"
-if [[ -x "$GWI_NODE" ]]; then
+# Check known gwi-node locations in priority order
+GWI_NODE=""
+for _candidate in /opt/gwi-pos/gwi-node.sh /usr/local/bin/gwi-node; do
+  if [[ -x "$_candidate" ]]; then GWI_NODE="$_candidate"; break; fi
+done
+if [[ -n "$GWI_NODE" ]]; then
   "$GWI_NODE" promote 2>&1 || {
     echo "[HA] gwi-node promote failed (exit $?) — attempting direct Docker fallback"
     sudo docker start gwi-pos 2>/dev/null || true
   }
 else
-  echo "[HA] gwi-node.sh not found at $GWI_NODE — direct Docker fallback"
+  echo "[HA] gwi-node.sh not found — direct Docker fallback"
   sudo -u postgres pg_ctl promote -D /var/lib/postgresql/17/main 2>/dev/null \
     || sudo -u postgres pg_ctl promote -D /var/lib/postgresql/16/main 2>/dev/null || true
   if [ -f /opt/gwi-pos/.env ]; then
@@ -168,14 +172,18 @@ PROMOTE
 # Rejoin as standby after primary reclaims VIP — thin wrapper around gwi-node rejoin
 set -euo pipefail
 echo "[HA] Rejoining as standby via gwi-node..."
-GWI_NODE="/opt/gwi-pos/shared/gwi-node.sh"
-if [[ -x "$GWI_NODE" ]]; then
+# Check known gwi-node locations in priority order
+GWI_NODE=""
+for _candidate in /opt/gwi-pos/gwi-node.sh /usr/local/bin/gwi-node; do
+  if [[ -x "$_candidate" ]]; then GWI_NODE="$_candidate"; break; fi
+done
+if [[ -n "$GWI_NODE" ]]; then
   "$GWI_NODE" rejoin 2>&1 || {
     echo "[HA] gwi-node rejoin failed (exit $?) — attempting direct Docker fallback"
     sudo docker stop gwi-pos 2>/dev/null || true
   }
 else
-  echo "[HA] gwi-node.sh not found at $GWI_NODE — direct Docker fallback"
+  echo "[HA] gwi-node.sh not found — direct Docker fallback"
   sudo docker stop gwi-pos 2>/dev/null || true
 fi
 echo "[HA] POS stopped. Manual pg_basebackup required to fully rejoin as standby."

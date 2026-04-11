@@ -202,7 +202,10 @@ PUBKEY
   log "Directory skeleton ready at $APP_BASE"
 }
 
-# ── Install deploy-release.sh ─────────────────────────────────────────────
+# ── Install deploy-release.sh (DEPRECATED — legacy compat only) ───────────
+# gwi-node.sh is the canonical deploy agent (v2.0.0+). This function is
+# kept so pre-Docker NUCs can still receive the script, and for any external
+# tooling that references /opt/gwi-pos/deploy-release.sh.
 _install_deploy_script() {
   local _target="$APP_BASE/deploy-release.sh"
   local _src_local="$(dirname "${BASH_SOURCE[0]}")/../scripts/deploy-release.sh"
