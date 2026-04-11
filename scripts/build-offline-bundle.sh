@@ -92,7 +92,7 @@ SKIP_TYPECHECK=1 NODE_OPTIONS="--max-old-space-size=8192" npm run build 2>&1 | t
 
 # ── Step 5: Build custom server ───────────────────────────────────────
 log "Step 5: Building custom server..."
-npm run build:server 2>&1 | tail -5 || {
+node scripts/build-server.mjs 2>&1 | tail -5 || {
   err "Custom server build failed"
   exit 1
 }

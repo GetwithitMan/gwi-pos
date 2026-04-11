@@ -715,10 +715,12 @@ async function main() {
       startSchemaRecheckIfBlocked()
     }
 
-    // Offline-first: always start sync workers when sync is enabled.
-    // Workers handle Neon retries internally — they won't crash if Neon
-    // is unreachable, they'll just skip sync cycles until it's available.
-    if (syncReady || (config.syncEnabled && config.neonDatabaseUrl && readiness.level !== 'FAILED')) {
+    // Sync workers require at minimum SYNC readiness (schema verified, seed present).
+    // BOOT level means local DB is up but Neon/schema may be incomplete — too early for sync.
+    const syncWorkersAllowed = config.syncEnabled && config.neonDatabaseUrl &&
+      readiness.level !== 'BOOT' && readiness.level !== 'FAILED'
+
+    if (syncWorkersAllowed) {
       registerWorker('upstreamSync', 'degraded',
         () => startUpstreamSyncWorker(),
         () => stopUpstreamSyncWorker()
@@ -739,6 +741,10 @@ async function main() {
         () => startBridgeCheckpoint(),
         () => stopBridgeCheckpoint()
       )
+    }
+
+    // Cloud/cellular relay can tolerate BOOT (no data mutation, just event forwarding)
+    if (config.syncEnabled && readiness.level !== 'FAILED') {
       registerWorker('cloudRelay', 'optional',
         () => startCloudRelayClient(),
         () => stopCloudRelayClient()
@@ -747,6 +753,10 @@ async function main() {
         () => startCellularRelayCleanup(),
         () => stopCellularRelayCleanup()
       )
+    }
+
+    if (config.syncEnabled && readiness.level === 'BOOT') {
+      logger.warn('Sync workers deferred — readiness at BOOT (schema/seed incomplete). Will start when SYNC level reached.')
     }
 
     registerWorker('eodScheduler', 'optional',

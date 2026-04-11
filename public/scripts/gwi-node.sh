@@ -523,14 +523,11 @@ deploy() {
     die "Local schema migration failed"
     [[ "$WATCH_DIE_FIRED" == true ]] && return 1
   fi
-  if grep -q "^NEON_DATABASE_URL=" "$ENV_FILE" 2>/dev/null; then
-    log "Running schema migration (Neon)..."
-    docker run --rm --env-file "$ENV_FILE" --network=host \
-      -e NEON_MIGRATE=true "$IMAGE_REF" \
-      node deploy-tools/src/migrate.js \
-      && log "Neon migration complete" \
-      || log "WARNING: Neon migration failed — continuing"
-  fi
+  # ── Neon schema is MC's responsibility (AUTHORITY-MODEL.md) ────────
+  # NUC applies migrations to local PG only. Neon schema updates are
+  # handled by MC provisioning pipeline and Vercel build. The NUC
+  # observes Neon schema version via _venue_schema_state and blocks
+  # sync if incompatible, but never executes DDL against Neon.
   log "Stopping old runtime..."
   docker rm -f "$CONTAINER_NAME" 2>/dev/null || true
   docker rm -f "$AGENT_CONTAINER_NAME" 2>/dev/null || true

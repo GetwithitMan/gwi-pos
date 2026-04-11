@@ -164,6 +164,20 @@ jobs:
           sbom: true
           provenance: mode=max
 
+      - name: Validate Docker image contract
+        run: |
+          IMAGE="ghcr.io/getwithitman/gwi-pos:${{ steps.meta.outputs.version }}"
+          echo "Validating Docker image contract for $IMAGE..."
+          docker run --rm "$IMAGE" sh -c '
+            set -e
+            test -f deploy-tools/src/migrate.js || { echo "FAIL: deploy-tools/src/migrate.js missing"; exit 1; }
+            test -f deploy-tools/src/apply-schema.js || { echo "FAIL: deploy-tools/src/apply-schema.js missing"; exit 1; }
+            test -f scripts/migration-helpers.js || { echo "FAIL: scripts/migration-helpers.js missing"; exit 1; }
+            test -f public/version-contract.json || { echo "FAIL: public/version-contract.json missing"; exit 1; }
+            node -e "const v = require(\"./public/version-contract.json\"); if (!v.version || !v.schemaVersion) { console.error(\"FAIL: version-contract.json missing version or schemaVersion\"); process.exit(1); }"
+            echo "Docker image contract validated: all required files present, version-contract.json well-formed"
+          '
+
       # ── Phase C: Cosign signing + SBOM ──
 
       - name: Install Cosign
