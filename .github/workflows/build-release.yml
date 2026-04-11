@@ -192,6 +192,69 @@ jobs:
             fi
           '
 
+      - name: Appliance validation matrix
+        run: |
+          IMAGE="ghcr.io/getwithitman/gwi-pos:${{ steps.meta.outputs.version }}"
+          PASS=0; FAIL=0
+
+          check() {
+            local name="$1"; shift
+            if eval "$@" >/dev/null 2>&1; then
+              echo "✓ $name"
+              PASS=$((PASS+1))
+            else
+              echo "✗ $name"
+              FAIL=$((FAIL+1))
+            fi
+          }
+
+          echo "=== Appliance Validation Matrix ==="
+
+          # ── Runtime contract ──
+          check "migrate.js exists" docker run --rm $IMAGE test -f /app/deploy-tools/src/migrate.js
+          check "apply-schema.js exists" docker run --rm $IMAGE test -f /app/deploy-tools/src/apply-schema.js
+          check "migration-helpers.js exists" docker run --rm $IMAGE test -f /app/scripts/migration-helpers.js
+          check "version-contract.json exists" docker run --rm $IMAGE test -f /app/public/version-contract.json
+          check "version-contract has version" docker run --rm $IMAGE node -e "const v=require('/app/public/version-contract.json'); if(!v.version)process.exit(1)"
+          check "version-contract has schemaVersion" docker run --rm $IMAGE node -e "const v=require('/app/public/version-contract.json'); if(!v.schemaVersion)process.exit(1)"
+          check "version-contract has migrationCount" docker run --rm $IMAGE node -e "const v=require('/app/public/version-contract.json'); if(!v.migrationCount)process.exit(1)"
+
+          # ── Server runtime ──
+          check "server.js exists" docker run --rm $IMAGE test -f /app/server.js
+          check "preload.js exists" docker run --rm $IMAGE test -f /app/preload.js
+          check "prisma client generated" docker run --rm $IMAGE test -d /app/src/generated/prisma
+          check ".next build exists" docker run --rm $IMAGE test -d /app/.next
+
+          # ── Venue state support ──
+          check "venue-state module loadable" docker run --rm $IMAGE node -e "require('/app/src/lib/venue-state')"
+
+          # ── gwi-node scripts ──
+          check "gwi-node.sh exists" docker run --rm $IMAGE test -f /app/public/scripts/gwi-node.sh
+          check "installer.run exists" docker run --rm $IMAGE test -f /app/public/installer.run
+          check "validate-sudo-paths.sh exists" docker run --rm $IMAGE test -f /app/scripts/validate-sudo-paths.sh
+
+          # ── Dashboard .deb (optional) ──
+          if docker run --rm $IMAGE test -f /app/public/gwi-nuc-dashboard.deb 2>/dev/null; then
+            check "dashboard .deb valid" docker run --rm $IMAGE dpkg --info /app/public/gwi-nuc-dashboard.deb
+            check "dashboard .deb package name" "docker run --rm $IMAGE dpkg-deb -f /app/public/gwi-nuc-dashboard.deb Package | grep -q gwi-nuc-dashboard"
+          else
+            echo "○ dashboard .deb not bundled (optional)"
+          fi
+
+          # ── Installer modules ──
+          check "05-deploy-app.sh exists" docker run --rm $IMAGE test -f /app/public/installer-modules/05-deploy-app.sh
+          check "06-schema.sh exists" docker run --rm $IMAGE test -f /app/public/installer-modules/06-schema.sh
+          check "07-services.sh exists" docker run --rm $IMAGE test -f /app/public/installer-modules/07-services.sh
+          check "12-dashboard.sh exists" docker run --rm $IMAGE test -f /app/public/installer-modules/12-dashboard.sh
+
+          # ── Canonical docs ──
+          check "CANONICAL-MONEY-SPEC.md exists" docker run --rm $IMAGE test -f /app/docs/guides/CANONICAL-MONEY-SPEC.md
+          check "VERSION-TRUTH.md exists" docker run --rm $IMAGE test -f /app/docs/guides/VERSION-TRUTH.md
+
+          echo ""
+          echo "=== Results: $PASS passed, $FAIL failed ==="
+          test $FAIL -eq 0
+
       # ── Phase C: Cosign signing + SBOM ──
 
       - name: Install Cosign

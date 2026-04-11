@@ -99,26 +99,126 @@ else
   critical "gwi-pos container is not running"
 fi
 
-# 12. deploy-tools accessible inside container
+# ── Container-internal checks (appliance validation matrix) ──
+# These mirror the CI "Appliance validation matrix" step so the same
+# validation runs both in CI (on the image) and on the NUC (on the
+# running container).  All checks are skipped when the container is down.
+
 if [[ -n "$CONTAINER_ID" ]]; then
+  echo ""
+  echo "--- Container-internal validation ---"
+
+  # 12. deploy-tools accessible
   if docker exec gwi-pos test -f /app/deploy-tools/src/migrate.js 2>/dev/null; then
     pass "deploy-tools/migrate.js accessible inside container"
   else
     fail "deploy-tools/migrate.js not found inside container"
   fi
-else
-  fail "deploy-tools check skipped (container not running)"
-fi
 
-# 13. version-contract accessible inside container
-if [[ -n "$CONTAINER_ID" ]]; then
+  if docker exec gwi-pos test -f /app/deploy-tools/src/apply-schema.js 2>/dev/null; then
+    pass "deploy-tools/apply-schema.js accessible inside container"
+  else
+    fail "deploy-tools/apply-schema.js not found inside container"
+  fi
+
+  # 13. version-contract accessible and well-formed
   if docker exec gwi-pos test -f /app/public/version-contract.json 2>/dev/null; then
     pass "version-contract.json accessible inside container"
   else
     fail "version-contract.json not found inside container"
   fi
+
+  VC_JSON=$(docker exec gwi-pos cat /app/public/version-contract.json 2>/dev/null || echo "")
+  if [[ -n "$VC_JSON" ]]; then
+    # Validate required fields
+    for FIELD in version schemaVersion migrationCount; do
+      VALUE=$(echo "$VC_JSON" | python3 -c "import json,sys; m=json.load(sys.stdin); v=m.get('$FIELD',''); print(v if v else '')" 2>/dev/null || echo "")
+      if [[ -n "$VALUE" ]]; then
+        pass "version-contract has $FIELD ($VALUE)"
+      else
+        fail "version-contract missing $FIELD"
+      fi
+    done
+
+    # 14. Schema migration count matches version-contract
+    VC_MIGRATION_COUNT=$(echo "$VC_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin).get('migrationCount',0))" 2>/dev/null || echo "0")
+    ACTUAL_MIGRATION_COUNT=$(docker exec gwi-pos sh -c 'ls -1 /app/scripts/migrations/*.js 2>/dev/null | wc -l' 2>/dev/null || echo "0")
+    ACTUAL_MIGRATION_COUNT=$(echo "$ACTUAL_MIGRATION_COUNT" | tr -d '[:space:]')
+    if [[ "$VC_MIGRATION_COUNT" -eq "$ACTUAL_MIGRATION_COUNT" ]]; then
+      pass "Migration count matches version-contract ($VC_MIGRATION_COUNT)"
+    else
+      fail "Migration count mismatch: version-contract=$VC_MIGRATION_COUNT, actual=$ACTUAL_MIGRATION_COUNT"
+    fi
+  else
+    fail "version-contract.json could not be read"
+  fi
+
+  # 15. Venue state file exists and is valid JSON
+  VENUE_STATE_PATH="/opt/gwi-pos/shared/state/venue-state.json"
+  if test -f "$VENUE_STATE_PATH"; then
+    if python3 -c "import json; json.load(open('$VENUE_STATE_PATH'))" 2>/dev/null; then
+      LIFECYCLE=$(python3 -c "import json; print(json.load(open('$VENUE_STATE_PATH')).get('lifecycleState','UNKNOWN'))" 2>/dev/null || echo "UNKNOWN")
+      pass "venue-state.json valid (lifecycleState=$LIFECYCLE)"
+    else
+      fail "venue-state.json exists but is not valid JSON"
+    fi
+  else
+    fail "venue-state.json not found at $VENUE_STATE_PATH"
+  fi
+
+  # 16. Server runtime files
+  if docker exec gwi-pos test -f /app/server.js 2>/dev/null; then
+    pass "server.js exists inside container"
+  else
+    fail "server.js not found inside container"
+  fi
+
+  if docker exec gwi-pos test -f /app/preload.js 2>/dev/null; then
+    pass "preload.js exists inside container"
+  else
+    fail "preload.js not found inside container"
+  fi
+
+  if docker exec gwi-pos test -d /app/.next 2>/dev/null; then
+    pass ".next build exists inside container"
+  else
+    fail ".next build not found inside container"
+  fi
+
+  if docker exec gwi-pos test -d /app/src/generated/prisma 2>/dev/null; then
+    pass "prisma client generated inside container"
+  else
+    fail "prisma client not found inside container"
+  fi
+
+  # 17. Dashboard convergence state
+  if test -f "$VENUE_STATE_PATH"; then
+    DASH_STATUS=$(python3 -c "
+import json, sys
+vs = json.load(open('$VENUE_STATE_PATH'))
+dash = vs.get('components', {}).get('dashboard', {})
+status = dash.get('status', 'unknown')
+current = dash.get('currentVersion', '?')
+target = dash.get('targetVersion', '?')
+print(f'{status}|{current}|{target}')
+" 2>/dev/null || echo "unknown|?|?")
+    DASH_STATE=$(echo "$DASH_STATUS" | cut -d'|' -f1)
+    DASH_CURRENT=$(echo "$DASH_STATUS" | cut -d'|' -f2)
+    DASH_TARGET=$(echo "$DASH_STATUS" | cut -d'|' -f3)
+    if [[ "$DASH_STATE" == "converged" ]]; then
+      pass "Dashboard converged (v$DASH_CURRENT)"
+    elif [[ "$DASH_STATE" == "unknown" && "$DASH_CURRENT" == "0.0.0" ]]; then
+      # Fresh install, not yet converged — not a failure
+      pass "Dashboard not yet converged (fresh install)"
+    else
+      fail "Dashboard diverged: status=$DASH_STATE, current=$DASH_CURRENT, target=$DASH_TARGET"
+    fi
+  else
+    fail "Dashboard convergence check skipped (no venue-state.json)"
+  fi
+
 else
-  fail "version-contract check skipped (container not running)"
+  fail "Container-internal checks skipped (container not running)"
 fi
 
 # Summary
