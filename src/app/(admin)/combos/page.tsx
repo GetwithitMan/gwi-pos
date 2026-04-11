@@ -75,9 +75,9 @@ type Category = CategoryBasic & {
 export default function CombosPage() {
   const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/combos' })
   const employee = useAuthStore(s => s.employee)
-  const { dualPricing } = useOrderSettings()
-  const cashDiscountPct = dualPricing.cashDiscountPercent || 4.0
-  const isDualPricingEnabled = dualPricing.enabled !== false
+  const { pricingProgram } = useOrderSettings()
+  const cashDiscountPct = pricingProgram.creditMarkupPercent ?? 4.0
+  const isDualPricingEnabled = pricingProgram.enabled
   const [combos, setCombos] = useState<Combo[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [menuItems, setMenuItems] = useState<MenuItem[]>([])

@@ -369,7 +369,7 @@ async function legacyReport(
       take: 10000, include: { employee: { select: { id: true, firstName: true, lastName: true, displayName: true } } },
     }),
     db.tipLedgerEntry.findMany({
-      where: { locationId, sourceType: 'ROLE_TIPOUT', deletedAt: null, createdAt: { gte: startOfDay, lte: endOfDay } },
+      where: { locationId, sourceType: { in: ['ROLE_TIPOUT', 'MANUAL_TRANSFER'] }, deletedAt: null, createdAt: { gte: startOfDay, lte: endOfDay } },
       take: 10000, include: { employee: { select: { id: true, firstName: true, lastName: true, displayName: true } } },
     }),
     db.category.findMany({ where: { locationId, deletedAt: null }, select: { id: true, name: true, categoryType: true } }),

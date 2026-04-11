@@ -239,7 +239,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })()
 
     // If a tip group template was selected, assign the employee to its runtime group.
-    // Wrapped in try/catch so clock-in still succeeds even if group assignment fails.
+    // FAIL-CLOSED: if assignment fails, roll back the clock-in entry and return an error.
+    // Tip allocation depends on active group membership, so silently proceeding
+    // without a group would route tips as standalone — invisible to the employee.
     let selectedTipGroup: { id: string; name: string } | null = null
     if (selectedTipGroupTemplateId) {
       try {
@@ -262,8 +264,19 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         })
 
         selectedTipGroup = { id: groupInfo.id, name: template?.name ?? 'Tip Group' }
-      } catch (err) {
-        console.warn('[time-clock] Tip group assignment failed (clock-in still succeeds):', err)
+      } catch (groupErr) {
+        // Roll back the clock-in entry so the employee isn't stuck clocked-in
+        // without a tip group. They can retry or contact a manager.
+        console.error('[time-clock] Tip group assignment failed — rolling back clock-in:', groupErr)
+        try {
+          await db.timeClockEntry.delete({ where: { id: entry.id } })
+        } catch (rollbackErr) {
+          console.error('[time-clock] Failed to roll back clock-in entry:', rollbackErr)
+        }
+        const reason = groupErr instanceof Error && groupErr.message === 'EMPLOYEE_ALREADY_IN_GROUP'
+          ? 'You are already assigned to another tip group. Please leave that group first or contact a manager.'
+          : 'Failed to assign tip group at clock-in. Please try again or contact a manager.'
+        return err(reason, 400)
       }
     }
 

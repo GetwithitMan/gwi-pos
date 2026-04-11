@@ -79,7 +79,6 @@ const DEFAULT_PRICE_ROUNDING: PriceRoundingSettings = {
 type SendBehavior = 'stay' | 'return_to_floor' | 'return_to_orders'
 
 interface SettingsCache {
-  dualPricing: DualPricingSettings
   paymentSettings: PaymentSettings
   priceRounding: PriceRoundingSettings
   taxRate: number
@@ -104,9 +103,6 @@ const CACHE_TTL = 5 * 60 * 1000 // 5 minutes
 let inflight: Promise<SettingsCache | null> | null = null
 
 export function useOrderSettings() {
-  const [dualPricing, setDualPricing] = useState<DualPricingSettings>(
-    cachedSettings?.dualPricing ?? DEFAULT_DUAL_PRICING
-  )
   const [paymentSettings, setPaymentSettings] = useState<PaymentSettings>(
     cachedSettings?.paymentSettings ?? DEFAULT_PAYMENT_SETTINGS
   )
@@ -156,12 +152,10 @@ export function useOrderSettings() {
     tipBank?: { entertainmentTipsEnabled?: boolean }
     entertainment?: EntertainmentSettings
   }) => {
-    const effectiveDualPricing = settings.dualPricing || DEFAULT_DUAL_PRICING
     const derivedPricingProgram = settings.pricingProgram
       ? settings.pricingProgram
-      : getPricingProgram({ dualPricing: effectiveDualPricing } as Parameters<typeof getPricingProgram>[0])
+      : getPricingProgram({ dualPricing: settings.dualPricing || DEFAULT_DUAL_PRICING } as Parameters<typeof getPricingProgram>[0])
     const result: SettingsCache = {
-      dualPricing: effectiveDualPricing,
       paymentSettings: settings.payments || DEFAULT_PAYMENT_SETTINGS,
       priceRounding: settings.priceRounding || DEFAULT_PRICE_ROUNDING,
       taxRate: 0,
@@ -204,7 +198,6 @@ export function useOrderSettings() {
     cacheTime = Date.now()
 
     // Update component state
-    setDualPricing(result.dualPricing)
     setPaymentSettings(result.paymentSettings)
     setPriceRounding(result.priceRounding)
     setTaxRate(result.taxRate)
@@ -226,7 +219,6 @@ export function useOrderSettings() {
     // Check module cache (skip on explicit reload)
     if (cachedSettings && Date.now() - cacheTime < CACHE_TTL) {
       applySettings({
-        dualPricing: cachedSettings.dualPricing,
         payments: cachedSettings.paymentSettings,
         priceRounding: cachedSettings.priceRounding,
         tax: {
@@ -253,7 +245,6 @@ export function useOrderSettings() {
       const result = await inflight
       if (result) {
         applySettings({
-          dualPricing: result.dualPricing,
           payments: result.paymentSettings,
           priceRounding: result.priceRounding,
           tax: {
@@ -327,7 +318,18 @@ export function useOrderSettings() {
     }
   }, [])
 
+  // Deprecated: derive dualPricing from pricingProgram for backward compat.
+  // Consumers should use pricingProgram.creditMarkupPercent instead.
+  const dualPricing: DualPricingSettings = {
+    enabled: pricingProgram.enabled && (pricingProgram.model === 'dual_price' || pricingProgram.model === 'dual_price_pan_debit' || pricingProgram.model === 'cash_discount'),
+    cashDiscountPercent: pricingProgram.creditMarkupPercent ?? pricingProgram.cashDiscountPercent ?? 4.0,
+    applyToCredit: pricingProgram.applyToCredit ?? true,
+    applyToDebit: pricingProgram.applyToDebit ?? true,
+    showSavingsMessage: pricingProgram.showSavingsMessage ?? true,
+  }
+
   return {
+    /** @deprecated Use pricingProgram instead */
     dualPricing,
     paymentSettings,
     priceRounding,

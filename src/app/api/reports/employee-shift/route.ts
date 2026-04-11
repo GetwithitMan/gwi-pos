@@ -194,23 +194,23 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           createdAt: { gte: shiftStart, lte: shiftEnd },
         },
       }),
-      // Tip-out credits received (Skill 273)
+      // Tip-out credits received — include custom shift shares (MANUAL_TRANSFER)
       db.tipLedgerEntry.findMany({
         where: {
           employeeId: employee.id,
           locationId: locationIdToUse,
-          sourceType: 'ROLE_TIPOUT',
+          sourceType: { in: ['ROLE_TIPOUT', 'MANUAL_TRANSFER'] },
           type: 'CREDIT',
           deletedAt: null,
           createdAt: { gte: shiftStart, lte: shiftEnd },
         },
       }),
-      // Tip-out debits given (Skill 273)
+      // Tip-out debits given — include custom shift shares (MANUAL_TRANSFER)
       db.tipLedgerEntry.findMany({
         where: {
           employeeId: employee.id,
           locationId: locationIdToUse,
-          sourceType: 'ROLE_TIPOUT',
+          sourceType: { in: ['ROLE_TIPOUT', 'MANUAL_TRANSFER'] },
           type: 'DEBIT',
           deletedAt: null,
           createdAt: { gte: shiftStart, lte: shiftEnd },
@@ -243,7 +243,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         ? db.tipLedgerEntry.findMany({
             where: {
               sourceId: { in: allSourceIds },
-              sourceType: 'ROLE_TIPOUT',
+              sourceType: { in: ['ROLE_TIPOUT', 'MANUAL_TRANSFER'] },
               deletedAt: null,
               employeeId: { not: employee.id },
             },

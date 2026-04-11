@@ -217,7 +217,7 @@ export async function generatePayrollData(
 
     if (t.sourceType === 'DIRECT_TIP' && t.type === 'CREDIT') {
       rec.cardTipsReceived += amount
-    } else if (t.sourceType === 'ROLE_TIPOUT' || t.sourceType === 'TIP_GROUP') {
+    } else if (t.sourceType === 'ROLE_TIPOUT' || t.sourceType === 'MANUAL_TRANSFER' || t.sourceType === 'TIP_GROUP') {
       if (t.type === 'DEBIT') {
         rec.tipOutsGiven += Math.abs(amount)
       } else {

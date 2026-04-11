@@ -167,8 +167,8 @@ export const PUT = withVenue(async function PUT(
             deletedAt: null,
             createdAt: { gte: period.periodStart, lte: period.periodEnd },
             OR: [
-              { sourceType: 'ROLE_TIPOUT', type: 'DEBIT' },
-              { sourceType: 'ROLE_TIPOUT', type: 'CREDIT' },
+              { sourceType: { in: ['ROLE_TIPOUT', 'MANUAL_TRANSFER'] }, type: 'DEBIT' },
+              { sourceType: { in: ['ROLE_TIPOUT', 'MANUAL_TRANSFER'] }, type: 'CREDIT' },
               { sourceType: { in: ['DIRECT_TIP', 'TIP_GROUP'] }, type: 'CREDIT' },
             ],
           },
@@ -207,9 +207,9 @@ export const PUT = withVenue(async function PUT(
           tipDataByEmployee.set(entry.employeeId, data)
         }
         const cents = Number(entry.amountCents || 0)
-        if (entry.sourceType === 'ROLE_TIPOUT' && entry.type === 'DEBIT') {
+        if ((entry.sourceType === 'ROLE_TIPOUT' || entry.sourceType === 'MANUAL_TRANSFER') && entry.type === 'DEBIT') {
           data.givenCents += cents
-        } else if (entry.sourceType === 'ROLE_TIPOUT' && entry.type === 'CREDIT') {
+        } else if ((entry.sourceType === 'ROLE_TIPOUT' || entry.sourceType === 'MANUAL_TRANSFER') && entry.type === 'CREDIT') {
           data.receivedCents += cents
         } else {
           // DIRECT_TIP or TIP_GROUP CREDIT

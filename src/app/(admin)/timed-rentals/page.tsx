@@ -125,9 +125,9 @@ export function TimedRentalsContent() {
   const employee = useAuthStore(s => s.employee)
   const locationId = employee?.location?.id
   const { socket, isConnected } = useSocket()
-  const { dualPricing } = useOrderSettings()
-  const cashDiscountPct = dualPricing.cashDiscountPercent || 4.0
-  const isDualPricingEnabled = dualPricing.enabled !== false
+  const { pricingProgram } = useOrderSettings()
+  const cashDiscountPct = pricingProgram.creditMarkupPercent ?? 4.0
+  const isDualPricingEnabled = pricingProgram.enabled
   const [activeItems, setActiveItems] = useState<StatusItem[]>([])
   const [timedItems, setTimedItems] = useState<TimedItem[]>([])
   const [isLoading, setIsLoading] = useState(true)

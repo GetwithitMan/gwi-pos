@@ -335,11 +335,12 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       invalidateMenuCache(location.id)
     }
 
-    // When cashDiscountPercent changes (or dual pricing is toggled on), recompute priceCC for all
+    // When creditMarkupPercent changes (or pricing program is toggled on), recompute priceCC for all
     // menu items so card prices stay in sync without requiring manual item-by-item saves.
-    const newPct = finalSettings.dualPricing?.cashDiscountPercent ?? 0
-    const oldPct = currentSettings.dualPricing?.cashDiscountPercent ?? 0
-    const dualNowEnabled = finalSettings.dualPricing?.enabled === true
+    // Prefer pricingProgram.creditMarkupPercent; fall back to legacy dualPricing.cashDiscountPercent.
+    const newPct = finalSettings.pricingProgram?.creditMarkupPercent ?? finalSettings.dualPricing?.cashDiscountPercent ?? 0
+    const oldPct = currentSettings.pricingProgram?.creditMarkupPercent ?? currentSettings.dualPricing?.cashDiscountPercent ?? 0
+    const dualNowEnabled = finalSettings.pricingProgram?.enabled === true || finalSettings.dualPricing?.enabled === true
     if (dualNowEnabled && newPct > 0 && newPct !== oldPct) {
       const multiplier = 1 + newPct / 100
       const items = await db.menuItem.findMany({

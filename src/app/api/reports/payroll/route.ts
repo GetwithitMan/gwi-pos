@@ -179,22 +179,22 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         },
         orderBy: { startedAt: 'asc' },
       }),
-      // 3a. Tip shares GIVEN (Skill 273)
+      // 3a. Tip shares GIVEN — include both role-based and custom shift shares
       db.tipLedgerEntry.findMany({
         where: {
           locationId,
-          sourceType: 'ROLE_TIPOUT',
+          sourceType: { in: ['ROLE_TIPOUT', 'MANUAL_TRANSFER'] },
           type: 'DEBIT',
           deletedAt: null,
           createdAt: { gte: periodStart, lte: periodEnd },
           ...(employeeId ? { employeeId } : {}),
         },
       }),
-      // 3b. Tip shares RECEIVED (Skill 273)
+      // 3b. Tip shares RECEIVED — include both role-based and custom shift shares
       db.tipLedgerEntry.findMany({
         where: {
           locationId,
-          sourceType: 'ROLE_TIPOUT',
+          sourceType: { in: ['ROLE_TIPOUT', 'MANUAL_TRANSFER'] },
           type: 'CREDIT',
           deletedAt: null,
           createdAt: { gte: periodStart, lte: periodEnd },
