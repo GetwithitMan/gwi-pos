@@ -727,6 +727,9 @@ update_dashboard() {
   if [[ "$final_version" == "$available" ]]; then
     log "Dashboard: v${available} installed and configured successfully"
     echo "$available" > "$LKG_DASHBOARD_FILE"
+    # Cache the .deb so dashboard_rollback() can use it even if the container
+    # ships a newer version after the next deploy.
+    cp "$deb_path" "${STATE_DIR}/dashboard-lkg.deb" 2>/dev/null || log "WARN: could not cache dashboard .deb for rollback"
     log "Dashboard: last-known-good saved: v${available}"
     _clear_dashboard_warning
     vs_update_component "dashboard" "converged" "$available" "$available" 2>/dev/null || log "WARN: venue state update failed"
@@ -873,6 +876,7 @@ else:
 if comp_status == 'converged':
     c['lastConvergedAt'] = now
     c['lastKnownGoodVersion'] = comp_current
+    c['attemptCount'] = 0
     c['error'] = None
 
 # Recompute lifecycle (baseline is informational only — not managed by convergence engine)
@@ -1117,21 +1121,36 @@ dashboard_rollback() {
 
   log "Dashboard: rolling back v${installed} -> v${lkg} (last-known-good)"
 
-  # Attempt to download the LKG .deb from the running container's static files.
-  # The container ships the current version's .deb, which may not match LKG if a
-  # newer deploy changed it. Try container copy first, then fall back to local cache.
+  # Attempt to find the LKG .deb. Priority order:
+  #   1. Cached .deb from the successful install (most reliable)
+  #   2. Running container's HTTP endpoint
+  #   3. Container filesystem copy
   local deb_path="/tmp/gwi-nuc-dashboard-${lkg}.deb"
   local deb_url
 
+  # Try cached .deb first (saved during successful install by update_dashboard)
+  if [[ -f "${STATE_DIR}/dashboard-lkg.deb" ]]; then
+    local cached_ver
+    cached_ver=$(dpkg-deb -f "${STATE_DIR}/dashboard-lkg.deb" Version 2>/dev/null || echo "")
+    if [[ "$cached_ver" == "$lkg" ]]; then
+      cp "${STATE_DIR}/dashboard-lkg.deb" "$deb_path" 2>/dev/null || true
+      log "Dashboard rollback: using cached LKG .deb (v${lkg})"
+    else
+      log "Dashboard rollback: cached .deb is v${cached_ver}, need v${lkg} — trying container"
+    fi
+  fi
+
   # Try the running container's HTTP endpoint
-  deb_url="$(docker exec "$CONTAINER_NAME" printenv NEXT_PUBLIC_BASE_URL 2>/dev/null || echo 'http://localhost:3005')/gwi-nuc-dashboard.deb"
-  if curl -sfL "$deb_url" -o "$deb_path" 2>/dev/null; then
-    # Verify the downloaded .deb matches LKG version
-    local pkg_ver
-    pkg_ver=$(dpkg-deb -f "$deb_path" Version 2>/dev/null || echo "")
-    if [[ "$pkg_ver" != "$lkg" ]]; then
-      log "Dashboard rollback: container serves v${pkg_ver}, need v${lkg} — trying container copy"
-      rm -f "$deb_path"
+  if [[ ! -f "$deb_path" ]]; then
+    deb_url="$(docker exec "$CONTAINER_NAME" printenv NEXT_PUBLIC_BASE_URL 2>/dev/null || echo 'http://localhost:3005')/gwi-nuc-dashboard.deb"
+    if curl -sfL "$deb_url" -o "$deb_path" 2>/dev/null; then
+      # Verify the downloaded .deb matches LKG version
+      local pkg_ver
+      pkg_ver=$(dpkg-deb -f "$deb_path" Version 2>/dev/null || echo "")
+      if [[ "$pkg_ver" != "$lkg" ]]; then
+        log "Dashboard rollback: container serves v${pkg_ver}, need v${lkg} — trying container copy"
+        rm -f "$deb_path"
+      fi
     fi
   fi
 
@@ -1661,7 +1680,22 @@ converge() {
       log "Converge/server: deploy succeeded"
       # deploy_success already calls vs_update_component
     else
-      vs_update_component "server" "failed" "$_cv_server_version" "$_cv_target_version" "Deploy failed"
+      # deploy() returns non-zero even when rollback succeeds inside deploy_failure().
+      # Re-read venue state: if rollback already marked server=converged at the
+      # rolled-back version, don't overwrite with "failed".
+      local _cv_post_status=""
+      _cv_post_status=$(python3 -c "
+import json, sys
+try:
+    s = json.load(open('$VENUE_STATE_FILE'))
+    print(s['components']['server']['status'])
+except: print('')
+" 2>/dev/null || true)
+      if [[ "$_cv_post_status" == "converged" ]]; then
+        log "Converge/server: deploy failed but rollback succeeded — keeping converged state"
+      else
+        vs_update_component "server" "failed" "$_cv_server_version" "$_cv_target_version" "Deploy failed"
+      fi
     fi
 
   else

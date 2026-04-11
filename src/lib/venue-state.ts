@@ -291,6 +291,7 @@ export function updateComponentState(
   // Auto-set lastConvergedAt when status becomes converged
   if (update.status === 'converged') {
     component.lastConvergedAt = now();
+    component.attemptCount = 0;
     component.error = null;
     // Promote current to last-known-good
     component.lastKnownGoodVersion = component.currentVersion;

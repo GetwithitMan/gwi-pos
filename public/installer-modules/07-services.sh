@@ -391,15 +391,25 @@ FIXEOF
     log "Self-healing sudoers script created: $FIX_SUDOERS"
 
     # thepasspos.service -- POS backend/UI
-    PG_AFTER=""
-    PG_WANTS=""
-    if [[ "$USE_LOCAL_PG" == "true" ]]; then
-      PG_AFTER=" postgresql.service"
-      PG_WANTS="Wants=network-online.target postgresql.service"
+    # If Docker runtime is active (gwi-pos container exists), skip host-mode
+    # service creation entirely. Docker is the only runtime in the appliance model;
+    # gwi-node owns the container lifecycle. Stage 05 already disables thepasspos.
+    if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q "^gwi-pos$"; then
+      log "Docker runtime active (gwi-pos container exists) — skipping host thepasspos.service creation"
+      systemctl stop thepasspos 2>/dev/null || true
+      systemctl disable thepasspos 2>/dev/null || true
+      systemctl mask thepasspos 2>/dev/null || true
+      systemctl daemon-reload
     else
-      PG_WANTS="Wants=network-online.target"
-    fi
-    cat > /etc/systemd/system/thepasspos.service <<SVCEOF
+      PG_AFTER=""
+      PG_WANTS=""
+      if [[ "$USE_LOCAL_PG" == "true" ]]; then
+        PG_AFTER=" postgresql.service"
+        PG_WANTS="Wants=network-online.target postgresql.service"
+      else
+        PG_WANTS="Wants=network-online.target"
+      fi
+      cat > /etc/systemd/system/thepasspos.service <<SVCEOF
 [Unit]
 Description=ThePassPOS Server
 After=network-online.target${PG_AFTER}
@@ -414,10 +424,6 @@ Environment=NODE_ENV=production
 # Ensures enumerated NOPASSWD rules exist. Replaces legacy NOPASSWD: ALL on older venues.
 ExecStartPre=+/opt/gwi-pos/fix-sudoers.sh
 ExecStartPre=$APP_BASE/pre-start.sh
-# NOTE: ExecStart still launches node on host. In the Docker appliance model,
-# the container is started by pre-start.sh (container readiness gate) and managed
-# by gwi-node. This systemd unit ensures pre-start checks run and the service
-# lifecycle integrates with systemd. Future: ExecStart=docker start -a gwi-pos.
 ExecStart=/usr/bin/node -r ./preload.js server.js
 Restart=always
 RestartSec=3
@@ -430,32 +436,32 @@ SyslogIdentifier=thepasspos
 WantedBy=multi-user.target
 SVCEOF
 
-    systemctl daemon-reload
+      systemctl daemon-reload
 
-    if [[ "$STATION_ROLE" == "backup" ]]; then
-      # Backup role: DISABLE POS app so it does NOT auto-start on reboot.
-      # If backup reboots with POS enabled, the upstream sync worker would read
-      # stale standby PG and overwrite newer data in Neon. POS will be started
-      # by promote.sh if this NUC takes over as primary.
-      systemctl disable thepasspos 2>/dev/null || true
-      log "POS service installed but DISABLED (backup standby mode)."
-      log "POS will start automatically on promotion via promote.sh."
-    else
-      systemctl enable thepasspos
+      if [[ "$STATION_ROLE" == "backup" ]]; then
+        # Backup role: DISABLE POS app so it does NOT auto-start on reboot.
+        # If backup reboots with POS enabled, the upstream sync worker would read
+        # stale standby PG and overwrite newer data in Neon. POS will be started
+        # by promote.sh if this NUC takes over as primary.
+        systemctl disable thepasspos 2>/dev/null || true
+        log "POS service installed but DISABLED (backup standby mode)."
+        log "POS will start automatically on promotion via promote.sh."
+      else
+        systemctl enable thepasspos
 
-      # Ensure POSUSER owns the entire app directory -- root-created dirs/files
-      # from installer stages (mkdir, cp) cause "Permission denied" at runtime
-      chown -R "$POSUSER":"$POSUSER" "$APP_BASE" 2>/dev/null || true
-      # Keys stay root-owned (secrets)
-      [[ -d "$KEY_DIR" ]] && chown -R root:root "$KEY_DIR" && chmod 700 "$KEY_DIR"
+        # Ensure POSUSER owns the entire app directory -- root-created dirs/files
+        # from installer stages (mkdir, cp) cause "Permission denied" at runtime
+        chown -R "$POSUSER":"$POSUSER" "$APP_BASE" 2>/dev/null || true
+        # Keys stay root-owned (secrets)
+        [[ -d "$KEY_DIR" ]] && chown -R root:root "$KEY_DIR" && chmod 700 "$KEY_DIR"
 
-      log "Starting POS server..."
-      if ! timeout --kill-after=10 180 systemctl restart thepasspos; then
-        err_code "ERR-INST-211" "systemctl restart thepasspos failed"
-        err "POS service failed to start -- installer cannot continue"
-        track_warn "POS service restart failed"
-        return 1
-      fi
+        log "Starting POS server..."
+        if ! timeout --kill-after=10 180 systemctl restart thepasspos; then
+          err_code "ERR-INST-211" "systemctl restart thepasspos failed"
+          err "POS service failed to start -- installer cannot continue"
+          track_warn "POS service restart failed"
+          return 1
+        fi
 
       # Wait for POS to be order-ready, not just alive
       # Check /api/health AND verify response contains "status":"healthy"
@@ -504,7 +510,8 @@ SVCEOF
         return 1
       fi
       log "Services configured and started (no kiosk -- web UI for settings/admin only)."
-    fi
+      fi
+    fi  # end Docker runtime guard
 
     # ───────────────────────────────────────────────────────────────────────────
     # Server Role: Backup Script + Cron (local PostgreSQL only)

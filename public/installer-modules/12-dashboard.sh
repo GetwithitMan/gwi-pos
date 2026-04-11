@@ -153,6 +153,27 @@ run_dashboard() {
   log "Dashboard .deb validated: package=$_pkg_name, version=$(dpkg-deb -f "$DASHBOARD_DEB" Version 2>/dev/null)"
 
   # ─────────────────────────────────────────────────────────────────────────
+  # SHA256 verification (matches gwi-node.sh update_dashboard behavior)
+  # ─────────────────────────────────────────────────────────────────────────
+  local _expected_sha=""
+  # Try reading from version-contract.json inside the running container
+  _expected_sha=$(docker exec gwi-pos cat /app/public/version-contract.json 2>/dev/null \
+    | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('components',{}).get('dashboard',{}).get('sha256',''))" 2>/dev/null || true)
+  if [[ -n "$_expected_sha" ]]; then
+    local _actual_sha
+    _actual_sha=$(sha256sum "$DASHBOARD_DEB" | awk '{print $1}')
+    if [[ "$_actual_sha" != "$_expected_sha" ]]; then
+      track_warn "Dashboard: SHA256 mismatch — expected $_expected_sha, got $_actual_sha — skipping install"
+      end_timer "Stage 12 (dashboard)"
+      return 0
+    fi
+    log "Dashboard: SHA256 verified ($_actual_sha)"
+  else
+    # version-contract not available (container not running during install) — skip SHA check
+    log "Dashboard: SHA256 check skipped (version-contract not available from container)"
+  fi
+
+  # ─────────────────────────────────────────────────────────────────────────
   # Install dependencies
   # ─────────────────────────────────────────────────────────────────────────
   log "Installing dashboard dependencies..."

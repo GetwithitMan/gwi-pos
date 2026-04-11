@@ -142,13 +142,22 @@ HACHKEOF
 set -euo pipefail
 echo "[HA] Promoting to primary..."
 sudo -u postgres pg_ctl promote -D /var/lib/postgresql/17/main 2>/dev/null || sudo -u postgres pg_ctl promote -D /var/lib/postgresql/16/main 2>/dev/null || true
-# Enable POS service so it survives reboots (backup role has it disabled)
-sudo systemctl enable thepasspos
-sudo systemctl start thepasspos
 # Update STATION_ROLE in .env so POS knows it is now the primary
 if [ -f /opt/gwi-pos/.env ]; then
   sed -i 's/STATION_ROLE=backup/STATION_ROLE=server/' /opt/gwi-pos/.env
   echo "[HA] Updated STATION_ROLE to server in .env"
+fi
+# Start POS via Docker (appliance model) or gwi-node deploy.
+# The legacy thepasspos systemd unit is masked on Docker-first installs.
+if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q "^gwi-pos$"; then
+  echo "[HA] Starting POS via Docker container..."
+  sudo docker start gwi-pos 2>/dev/null || true
+else
+  # Fallback for pre-Docker installs: unmask and start legacy service
+  echo "[HA] Starting POS via systemctl (legacy)..."
+  sudo systemctl unmask thepasspos 2>/dev/null || true
+  sudo systemctl enable thepasspos 2>/dev/null || true
+  sudo systemctl start thepasspos 2>/dev/null || true
 fi
 echo "[HA] Promotion complete"
 PROMOTE
@@ -160,7 +169,13 @@ PROMOTE
 # Rejoin as standby after primary reclaims VIP
 set -euo pipefail
 echo "[HA] Rejoining as standby..."
-sudo systemctl stop thepasspos 2>/dev/null || true
+# Stop POS via Docker (appliance model) or legacy systemd
+if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^gwi-pos$"; then
+  echo "[HA] Stopping POS Docker container..."
+  sudo docker stop gwi-pos 2>/dev/null || true
+else
+  sudo systemctl stop thepasspos 2>/dev/null || true
+fi
 # Note: full rejoin requires pg_basebackup from the primary.
 # This stub stops the POS app to prevent stale writes.
 # A full rejoin procedure should be triggered manually or by a fleet command.

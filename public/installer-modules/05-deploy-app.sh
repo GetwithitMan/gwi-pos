@@ -9,7 +9,6 @@
 # Deploys a pre-built, self-contained artifact via deploy-release.sh.
 # No git clone. No npm ci. No prisma generate. The artifact has everything.
 #
-# Legacy git+npm flow preserved behind LEGACY_DEPLOY=1 env var.
 # =============================================================================
 
 # ── Minisign public key (embedded) ─────────────────────────────────────────
@@ -18,71 +17,7 @@ if ! declare -p _GWI_MINISIGN_PUB &>/dev/null 2>&1; then
 RWQKv7Sx7waAahboOQ+1oTmS1uU5fHebSLBqOoOBHpFa6MsLyFMqZdVl'
 fi
 
-# ── Legacy helpers (only loaded when LEGACY_DEPLOY=1) ──────────────────────
-if [[ "${LEGACY_DEPLOY:-}" == "1" ]]; then
-
-_git_repair() {
-  local dir="$1"
-  if [[ -z "$dir" ]] || [[ "$dir" == "/" ]] || [[ ! "$dir" == /opt/gwi-pos/* ]]; then
-    log "  ERROR: _git_repair refused to operate on path: '$dir'"
-    return 1
-  fi
-  [[ -d "$dir/.git" ]] || return 0
-  log "  Running git self-repair on $dir..."
-  local locks=(
-    "$dir/.git/index.lock" "$dir/.git/refs/remotes/origin/main.lock"
-    "$dir/.git/HEAD.lock" "$dir/.git/config.lock"
-    "$dir/.git/shallow.lock" "$dir/.git/refs/heads/main.lock"
-  )
-  for lf in "${locks[@]}"; do
-    [[ -f "$lf" ]] && log "  Removing stale lock: $lf" && rm -f "$lf"
-  done
-  [[ -f "$dir/.git/MERGE_HEAD" ]] && sudo -u "$POSUSER" bash -c "cd '$dir' && git merge --abort" 2>/dev/null || true
-  if [[ -d "$dir/.git/rebase-merge" ]] || [[ -d "$dir/.git/rebase-apply" ]]; then
-    sudo -u "$POSUSER" bash -c "cd '$dir' && git rebase --abort" 2>/dev/null || true
-  fi
-  [[ -f "$dir/.git/CHERRY_PICK_HEAD" ]] && sudo -u "$POSUSER" bash -c "cd '$dir' && git cherry-pick --abort" 2>/dev/null || true
-  chown -R "$POSUSER":"$POSUSER" "$dir" 2>/dev/null || true
-  [[ -f "$ENV_FILE" ]] && chown root:"$POSUSER" "$ENV_FILE" && chmod 640 "$ENV_FILE"
-  [[ -d "$KEY_DIR" ]] && chown -R root:root "$KEY_DIR" && chmod 700 "$KEY_DIR"
-  local _cred="$APP_BASE/.git-credentials"
-  [[ -f "$_cred" ]] && chown root:"$POSUSER" "$_cred" && chmod 640 "$_cred"
-  log "  Git self-repair complete."
-}
-
-_git_validate_credentials() {
-  local cred_file="$1" repo="$2"
-  [[ ! -f "$cred_file" ]] && log "  WARNING: Credentials file missing at $cred_file" && return 1
-  log "  Validating git credentials..."
-  if sudo -u "$POSUSER" bash -c "
-    git config --global credential.helper 'store --file=$cred_file'
-    git ls-remote --exit-code '$repo' HEAD >/dev/null 2>&1
-  "; then
-    log "  Credentials valid."
-    sudo -u "$POSUSER" git config --global --unset credential.helper 2>/dev/null || true
-    return 0
-  else
-    log "  WARNING: Credentials failed."
-    sudo -u "$POSUSER" git config --global --unset credential.helper 2>/dev/null || true
-    return 1
-  fi
-}
-
-_git_with_retry() {
-  local max_attempts="$1"; shift
-  local delay="$1"; shift
-  local attempt=1
-  while [[ $attempt -le $max_attempts ]]; do
-    if eval "$@"; then return 0; fi
-    [[ $attempt -lt $max_attempts ]] && log "  Git failed (attempt $attempt/$max_attempts). Retrying in ${delay}s..." && sleep "$delay"
-    attempt=$(( attempt + 1 ))
-  done
-  return 1
-}
-
-fi  # end LEGACY_DEPLOY guard
-
-# ── Module refresh (shared by both paths) ──────────────────────────────────
+# ── Module refresh ────────────────────────────────────────────────────────
 _refresh_modules_from_checkout() {
   local checkout_modules="${APP_DIR}/public/installer-modules"
   local checkout_scripts="${APP_DIR}/public/scripts"
@@ -288,85 +223,7 @@ _install_deploy_script() {
   chown root:gwipos "$_target" 2>/dev/null || true
 }
 
-# ── Legacy deploy (git clone + npm ci) ─────────────────────────────────────
-_run_legacy_deploy() {
-  log "=== LEGACY DEPLOY PATH ==="
 
-  # Credential setup
-  CRED_FILE="$APP_BASE/.git-credentials"
-  if [[ -n "${DEPLOY_TOKEN:-}" ]] && [[ "${DEPLOY_TOKEN:-}" != "null" ]]; then
-    echo "https://${DEPLOY_TOKEN}:x-oauth-basic@github.com" > "$CRED_FILE"
-    chown root:"$POSUSER" "$CRED_FILE" && chmod 640 "$CRED_FILE"
-  elif [[ ! -f "$CRED_FILE" ]]; then
-    err "WARNING: No deploy token and no credentials file."
-    track_warn "No git credentials available -- legacy deploy may fail"
-  fi
-
-  [[ -f "$CRED_FILE" ]] && ! _git_validate_credentials "$CRED_FILE" "$GIT_REPO" && \
-    track_warn "Git credentials invalid -- token may be expired"
-
-  # Clone or update
-  if [[ -d "$APP_DIR/.git" ]]; then
-    log "Updating existing app code..."
-    _git_repair "$APP_DIR"
-    if ! _git_with_retry 3 5 "sudo -u '$POSUSER' bash -c \"
-      cd '$APP_DIR' && git config credential.helper 'store --file=$CRED_FILE'
-      git remote set-url origin '$GIT_REPO' 2>/dev/null || true
-      git fetch --all --prune
-    \""; then
-      err_code "ERR-INST-151" "git fetch failed after 3 attempts"
-      return 1
-    fi
-    if ! sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && git reset --hard origin/main && git clean -fd"; then
-      if [[ -n "$APP_DIR" ]] && [[ "$APP_DIR" == /opt/gwi-pos/* ]] && [[ ${#APP_DIR} -gt 15 ]]; then
-        rm -rf "$APP_DIR"
-      else
-        err "FATAL: Refusing to rm -rf suspicious path: '$APP_DIR'"
-        return 1
-      fi
-    fi
-  fi
-
-  if [[ ! -d "$APP_DIR/.git" ]]; then
-    log "Cloning app from repository..."
-    mkdir -p "$(dirname "$APP_DIR")"
-    chown -R "$POSUSER":"$POSUSER" "$APP_BASE"
-    [[ -f "$ENV_FILE" ]] && chown root:"$POSUSER" "$ENV_FILE" && chmod 640 "$ENV_FILE"
-    [[ -d "$KEY_DIR" ]] && chown -R root:root "$KEY_DIR" && chmod 700 "$KEY_DIR"
-    [[ -f "$CRED_FILE" ]] && chown root:"$POSUSER" "$CRED_FILE" && chmod 640 "$CRED_FILE"
-    if ! _git_with_retry 3 10 "sudo -u '$POSUSER' bash -c \"
-      git config --global credential.helper 'store --file=$CRED_FILE'
-      git clone --depth 1 '$GIT_REPO' '$APP_DIR'
-      cd '$APP_DIR' && git config credential.helper 'store --file=$CRED_FILE'
-    \""; then
-      err_code "ERR-INST-150" "git clone failed after 3 attempts"
-      return 1
-    fi
-    sudo -u "$POSUSER" git config --global --unset credential.helper 2>/dev/null || true
-  fi
-
-  # Env symlinks
-  rm -f "$APP_DIR/.env" "$APP_DIR/.env.local"
-  ln -sf "$ENV_FILE" "$APP_DIR/.env"
-  ln -sf "$ENV_FILE" "$APP_DIR/.env.local"
-  chown -h "$POSUSER":"$POSUSER" "$APP_DIR/.env" "$APP_DIR/.env.local"
-
-  # npm install + prisma generate
-  rm -rf "$APP_DIR/.next" 2>/dev/null || true
-  log "Installing npm dependencies (legacy)..."
-  if ! sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npm ci --production=false"; then
-    sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npm cache clean --force" 2>/dev/null || true
-    if ! sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && rm -rf node_modules && npm ci --production=false"; then
-      err_code "ERR-INST-153" "npm ci failed after retry"
-      return 1
-    fi
-  fi
-
-  log "Generating Prisma client (legacy)..."
-  if ! sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npx prisma generate"; then
-    err_code "ERR-INST-154" "npx prisma generate failed"
-    return 1
-  fi
-
-  log "=== LEGACY DEPLOY COMPLETE ==="
-}
+# NOTE: Legacy deploy (LEGACY_DEPLOY=1, git clone + npm ci) was removed.
+# Docker-based deploy via gwi-node is the only supported path.
+# Emergency recovery: use `gwi-node rollback`.
