@@ -236,6 +236,49 @@ _report_install_progress() {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Durable install-state.json journal
+# Survives reboots and crashes. Used for diagnostics and resume decisions.
+# ─────────────────────────────────────────────────────────────────────────────
+_write_install_state() {
+  local stage="$1" status="$2" error="${3:-}"
+  local boot_id
+  boot_id=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null || echo "unknown")
+  local state_file="/opt/gwi-pos/shared/state/install-state.json"
+  mkdir -p "$(dirname "$state_file")"
+  python3 -c "
+import json, os, sys
+from datetime import datetime, timezone
+state_file = '$state_file'
+try:
+    with open(state_file) as f:
+        state = json.load(f)
+except:
+    state = {'history': []}
+state['currentStage'] = '$stage'
+state['stageStatus'] = '$status'
+state['bootId'] = '$boot_id'
+state['installerVersion'] = '${INSTALLER_VERSION:-unknown}'
+state['resumeMode'] = 'automatic'
+now = datetime.now(timezone.utc).isoformat()
+if '$status' == 'running':
+    state['startedAt'] = now
+    state['completedAt'] = None
+    state['lastError'] = None
+elif '$status' == 'completed':
+    state['completedAt'] = now
+    state['lastError'] = None
+    state['history'].append({'stage': '$stage', 'status': 'completed', 'startedAt': state.get('startedAt',''), 'completedAt': now})
+elif '$status' == 'failed':
+    state['completedAt'] = now
+    state['lastError'] = '''$error'''
+    state['history'].append({'stage': '$stage', 'status': 'failed', 'startedAt': state.get('startedAt',''), 'completedAt': now, 'error': '''$error'''})
+with open(state_file + '.tmp', 'w') as f:
+    json.dump(state, f, indent=2)
+os.rename(state_file + '.tmp', state_file)
+" 2>/dev/null || true
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Shared state variables (set by modules, consumed by later modules)
 # ─────────────────────────────────────────────────────────────────────────────
 POSUSER=""
@@ -492,6 +535,7 @@ run_stage() {
 
     header "Stage $num: $name"
     _report_install_progress "$name" "STARTING"
+    _write_install_state "${num}-${name}" "running"
     start_timer
 
     # Tee stderr to a temp file for error capture while preserving console output
@@ -501,12 +545,14 @@ run_stage() {
         rm -f "$_stage_err_file"
         _mark_stage_done "$num"
         _report_install_progress "$name" "COMPLETED"
+        _write_install_state "${num}-${name}" "completed"
         end_timer "Stage $num ($name)"
     else
         local _stage_err
         _stage_err=$(tail -c 500 "$_stage_err_file" 2>/dev/null || echo "")
         rm -f "$_stage_err_file"
         _report_install_progress "$name" "FAILED" "ERR-INST-${num}" "$_stage_err"
+        _write_install_state "${num}-${name}" "failed" "$_stage_err"
         err "Stage $num ($name) FAILED"
         err "Fix the issue and re-run: sudo ./installer.run"
         err "  (completed stages will be skipped automatically)"
@@ -601,6 +647,7 @@ PHASE2_SERVICE="/etc/systemd/system/gwi-installer-phase2.service"
 
 # Check if this is Phase 2 resuming after reboot
 if [[ -f "$PHASE2_TOKEN" ]] && [[ -z "$RESUME_FROM" ]]; then
+  _write_install_state "boot-recovery" "running"
   log "Phase 2: Resuming after reboot (hardening + dashboard)..."
   for stage in "${PHASE2_STAGES[@]}"; do
     _num="${STAGE_NUM[$stage]}"
@@ -620,11 +667,11 @@ if [[ -f "$PHASE2_TOKEN" ]] && [[ -z "$RESUME_FROM" ]]; then
   _install_ok=true
   _checks=()
 
-  # Check POS service
-  if systemctl is-active thepasspos >/dev/null 2>&1; then
-    _checks+=("POS service: active")
+  # Check POS container (Docker is the only runtime)
+  if docker ps -q --filter name=gwi-pos --filter status=running 2>/dev/null | grep -q .; then
+    _checks+=("POS container: running")
   else
-    _checks+=("POS service: NOT ACTIVE")
+    _checks+=("POS container: NOT RUNNING")
     _install_ok=false
   fi
 
@@ -747,7 +794,7 @@ else
   cat > "$PHASE2_SERVICE" << 'P2SVCEOF'
 [Unit]
 Description=GWI POS Installer Phase 2 (hardening + dashboard)
-After=network-online.target local-fs.target thepasspos.service
+After=network-online.target local-fs.target docker.service
 Wants=network-online.target
 RequiresMountsFor=/opt/gwi-pos
 
