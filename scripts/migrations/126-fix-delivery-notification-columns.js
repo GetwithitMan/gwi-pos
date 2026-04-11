@@ -22,7 +22,9 @@ const { columnExists, tableExists } = require('../migration-helpers')
 
 const PREFIX = '[migration-126]'
 
-module.exports = async function up(prisma) {
+module.exports = { up }
+
+async function up(prisma) {
   // ─── DeliveryNotification fixes ──────────────────────────────────────────
 
   if (await tableExists(prisma, 'DeliveryNotification')) {
