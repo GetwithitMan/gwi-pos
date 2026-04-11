@@ -100,6 +100,22 @@ function makeDefaultComponent(name: string): ComponentState {
   };
 }
 
+function makeBaselineComponent(): ComponentState {
+  // Baseline is NOT managed by the convergence engine (updated by Ansible independently).
+  // Initialize as 'converged' so it does not block or confuse venue lifecycle computation.
+  return {
+    name: 'baseline',
+    targetVersion: '0.0.0',
+    currentVersion: '0.0.0',
+    lastKnownGoodVersion: null,
+    status: 'converged',
+    lastConvergedAt: now(),
+    lastAttemptAt: null,
+    attemptCount: 0,
+    error: null,
+  };
+}
+
 function makeDefaultState(): VenueState {
   return {
     lifecycleState: 'BOOTSTRAPPING',
@@ -107,7 +123,7 @@ function makeDefaultState(): VenueState {
       server: makeDefaultComponent('server'),
       schema: makeDefaultComponent('schema'),
       dashboard: makeDefaultComponent('dashboard'),
-      baseline: makeDefaultComponent('baseline'),
+      baseline: makeBaselineComponent(),
     },
     lastConvergedAt: null,
     lastStateChangeAt: now(),

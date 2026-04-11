@@ -476,7 +476,7 @@ deploy() {
   # ── Venue state: mark server as converging ───────────────────────────────
   local _vs_target="${IMAGE_REF##*:}"
   [[ -z "$_vs_target" ]] && _vs_target="unknown"
-  vs_update_component "server" "behind" "" "$_vs_target" 2>/dev/null || true
+  vs_update_component "server" "behind" "" "$_vs_target" 2>/dev/null || log "WARN: venue state update failed"
 
   # ── Resolve target BEFORE self-update ─────────────────────────────────────
   # Manifest fetch must happen first so self-update always pulls from the
@@ -523,15 +523,15 @@ deploy() {
     log "Digest verified: $actual"
   fi
   log "Running schema migration (local PG)..."
-  vs_update_component "schema" "behind" "" "$_vs_target" 2>/dev/null || true
+  vs_update_component "schema" "behind" "" "$_vs_target" 2>/dev/null || log "WARN: venue state update failed"
   if docker run --rm --env-file "$ENV_FILE" --network=host "$IMAGE_REF" \
     node deploy-tools/src/migrate.js; then
     SCHEMA_RESULT="pass"
     log "Local migration complete"
-    vs_update_component "schema" "converged" "$_vs_target" "$_vs_target" 2>/dev/null || true
+    vs_update_component "schema" "converged" "$_vs_target" "$_vs_target" 2>/dev/null || log "WARN: venue state update failed"
   else
     SCHEMA_RESULT="fail"
-    vs_update_component "schema" "failed" "" "$_vs_target" "Local schema migration failed" 2>/dev/null || true
+    vs_update_component "schema" "failed" "" "$_vs_target" "Local schema migration failed" 2>/dev/null || log "WARN: venue state update failed"
     die "Local schema migration failed"
     [[ "$WATCH_DIE_FIRED" == true ]] && return 1
   fi
@@ -574,7 +574,7 @@ deploy_success() {
   local tag="${IMAGE_REF##*:}"
 
   # ── Venue state: mark server converged ───────────────────────────────────
-  vs_update_component "server" "converged" "$tag" "$tag" 2>/dev/null || true
+  vs_update_component "server" "converged" "$tag" "$tag" 2>/dev/null || log "WARN: venue state update failed"
   cat > "$VERSION_FILE" <<EOF
 {
   "version": "${tag}",
@@ -729,7 +729,7 @@ update_dashboard() {
     echo "$available" > "$LKG_DASHBOARD_FILE"
     log "Dashboard: last-known-good saved: v${available}"
     _clear_dashboard_warning
-    vs_update_component "dashboard" "converged" "$available" "$available" 2>/dev/null || true
+    vs_update_component "dashboard" "converged" "$available" "$available" 2>/dev/null || log "WARN: venue state update failed"
     # Ensure systemd user service exists (may be first install on this NUC)
     local _posuser="${POSUSER:-gwipos}"
     local _svc_dir
@@ -773,7 +773,7 @@ SVCEOF
     _dashboard_warning="VERSION MISMATCH after install — expected v${available}, got v${final_version}"
     err "Dashboard: WARNING: $_dashboard_warning"
     _write_dashboard_warning "$_dashboard_warning" "$available" "$final_version"
-    vs_update_component "dashboard" "failed" "$final_version" "$available" "$_dashboard_warning" 2>/dev/null || true
+    vs_update_component "dashboard" "failed" "$final_version" "$available" "$_dashboard_warning" 2>/dev/null || log "WARN: venue state update failed"
   fi
 
   rm -f "$deb_path" 2>/dev/null
@@ -822,9 +822,12 @@ vs_ensure_file() {
 import json, datetime
 now = datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.000Z')
 comp = lambda n: {'name':n,'targetVersion':'0.0.0','currentVersion':'0.0.0','lastKnownGoodVersion':None,'status':'unknown','lastConvergedAt':None,'lastAttemptAt':None,'attemptCount':0,'error':None}
+# Baseline is NOT managed by the convergence engine (updated by Ansible independently).
+# Initialize it as 'converged' so it does not block or confuse venue lifecycle computation.
+baseline = {'name':'baseline','targetVersion':'0.0.0','currentVersion':'0.0.0','lastKnownGoodVersion':None,'status':'converged','lastConvergedAt':now,'lastAttemptAt':None,'attemptCount':0,'error':None}
 state = {
   'lifecycleState':'BOOTSTRAPPING',
-  'components':{'server':comp('server'),'schema':comp('schema'),'dashboard':comp('dashboard'),'baseline':comp('baseline')},
+  'components':{'server':comp('server'),'schema':comp('schema'),'dashboard':comp('dashboard'),'baseline':baseline},
   'lastConvergedAt':None,'lastStateChangeAt':now,'blockedReason':None,'degradedReasons':[],'convergenceAttempts':0
 }
 import os
@@ -1186,11 +1189,14 @@ dashboard_rollback() {
 
 deploy_failure() {
   err "Health check failed after $HEALTH_MAX_ATTEMPTS attempts"
-  capture_diagnostics
 
-  # ── Venue state: mark server as failed ───────���─────────────────────────
+  # ── Venue state: mark server failed and transition BEFORE rollback ───
+  # Operators must see the failure state even if rollback takes time or hangs.
   local _vs_target="${IMAGE_REF##*:}"
-  vs_update_component "server" "failed" "" "${_vs_target:-unknown}" "Health check failed after $HEALTH_MAX_ATTEMPTS attempts" 2>/dev/null || true
+  vs_update_component "server" "failed" "" "${_vs_target:-unknown}" "Health check failed after $HEALTH_MAX_ATTEMPTS attempts" 2>/dev/null || log "WARN: venue state update failed"
+  vs_transition "ROLLING_BACK" 2>/dev/null || log "WARN: venue state transition to ROLLING_BACK failed"
+
+  capture_diagnostics
 
   docker stop "$CONTAINER_NAME" 2>/dev/null || true
   docker rm "$CONTAINER_NAME" 2>/dev/null || true
@@ -1206,7 +1212,7 @@ deploy_failure() {
 
   if [[ -n "$prev" ]]; then
     log "Auto-rolling back to: $prev"
-    vs_transition "ROLLING_BACK" 2>/dev/null || true
+    vs_transition "ROLLING_BACK" 2>/dev/null || log "WARN: venue state transition failed"
     if start_container "$prev"; then
       log "Verifying rollback health..."
       health_check "Rollback: "
@@ -1215,26 +1221,26 @@ deploy_failure() {
         write_deploy_state "rolled_back"
         log "Rollback healthy — previous image restored"
         local _rb_tag="${prev##*:}"
-        vs_update_component "server" "converged" "$_rb_tag" "$_rb_tag" 2>/dev/null || true
+        vs_update_component "server" "converged" "$_rb_tag" "$_rb_tag" 2>/dev/null || log "WARN: venue state update failed"
       else
         ROLLBACK_RESULT="pass"; ROLLBACK_READINESS="fail"; FINAL_STATUS="rollback_failed"
         write_deploy_state "rollback_failed"
         err "Rollback container started but health check failed"
-        vs_transition "RECOVERY_REQUIRED" 2>/dev/null || true
+        vs_transition "RECOVERY_REQUIRED" 2>/dev/null || log "WARN: venue state transition failed"
         systemd_last_resort
       fi
     else
       ROLLBACK_RESULT="fail"; ROLLBACK_READINESS="not_attempted"; FINAL_STATUS="rollback_failed"
       write_deploy_state "rollback_failed"
       err "Failed to start rollback container"
-      vs_transition "RECOVERY_REQUIRED" 2>/dev/null || true
+      vs_transition "RECOVERY_REQUIRED" 2>/dev/null || log "WARN: venue state transition failed"
       systemd_last_resort
     fi
   else
     ROLLBACK_RESULT="not_attempted"; ROLLBACK_READINESS="not_attempted"; FINAL_STATUS="rollback_failed"
     write_deploy_state "rollback_failed"
     err "No previous image or last-known-good for rollback"
-    vs_transition "RECOVERY_REQUIRED" 2>/dev/null || true
+    vs_transition "RECOVERY_REQUIRED" 2>/dev/null || log "WARN: venue state transition failed"
     systemd_last_resort
   fi
   write_deploy_log
@@ -1268,6 +1274,7 @@ rollback() {
     log "Rollback to previous image (no LKG available): $IMAGE_REF"
   else
     err "No last-known-good or previous image to roll back to"
+    vs_transition "RECOVERY_REQUIRED" 2>/dev/null || log "WARN: venue state transition to RECOVERY_REQUIRED failed"
     if [[ "$WATCH_MODE" == true ]]; then FINAL_STATUS="failed"; return 1; else exit 1; fi
   fi
   deploy
@@ -1834,9 +1841,25 @@ SVCEOF
 
   chmod 644 "$unit_path"
   systemctl daemon-reload
-  systemctl enable gwi-converge.service
-  systemctl start gwi-converge.service
-  log "Convergence service installed and started: $unit_path"
+
+  if ! systemctl enable gwi-converge.service; then
+    err "Failed to enable gwi-converge.service"
+    return 1
+  fi
+
+  # Restart if already running (e.g., unit file was updated); start otherwise
+  if systemctl is-active gwi-converge.service >/dev/null 2>&1; then
+    if ! systemctl restart gwi-converge.service; then
+      err "Failed to restart gwi-converge.service"
+    fi
+    log "Convergence service restarted: $unit_path"
+  else
+    if ! systemctl start gwi-converge.service; then
+      err "Failed to start gwi-converge.service — will start on next boot"
+    else
+      log "Convergence service installed and started: $unit_path"
+    fi
+  fi
 }
 
 # ── Source guard ────────────────────────────────────────────────────────────
