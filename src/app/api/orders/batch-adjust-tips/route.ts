@@ -4,9 +4,7 @@ import * as OrderRepository from '@/lib/repositories/order-repository'
 import * as PaymentRepository from '@/lib/repositories/payment-repository'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchOrderTotalsUpdate, dispatchOpenOrdersChanged, dispatchOrderSummaryUpdated } from '@/lib/socket-dispatch'
-import { allocateTipsForPayment } from '@/lib/domain/tips'
-import { getLocationSettings } from '@/lib/location-cache'
-import { parseSettings } from '@/lib/settings'
+import { postToTipLedger, dollarsToCents } from '@/lib/domain/tips/tip-ledger'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { requireDatacapClient } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
@@ -64,7 +62,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const results: { orderId: string; success: boolean; error?: string }[] = []
     let totalTips = 0
     const dispatchInfos: { locationId: string; orderId: string; subtotal: number; taxTotal: number; tipTotal: number; discountTotal: number; total: number; commissionTotal: number }[] = []
-    const allocationInfos: { locationId: string; orderId: string; employeeId: string; paymentId: string; paymentMethod: string; tipAmount: number }[] = []
+    const allocationInfos: { locationId: string; orderId: string; employeeId: string; paymentId: string; paymentMethod: string; oldTipAmount: number; newTipAmount: number }[] = []
 
     // Phase 1: Pre-fetch orders and call Datacap for card payments (before DB transaction)
     // Datacap calls are network I/O to hardware — must happen outside the transaction.
@@ -248,15 +246,16 @@ export const POST = withVenue(async function POST(request: NextRequest) {
             commissionTotal: Number(order.commissionTotal || 0),
           })
 
-          // Collect info for tip allocation (BUG #412 fix)
-          if (adj.tipAmount > 0 && order.employeeId) {
+          // Collect info for tip ledger delta adjustment (mirrors single adjust-tip)
+          if (order.employeeId) {
             allocationInfos.push({
               locationId: order.locationId,
               orderId: adj.orderId,
               employeeId: order.employeeId,
               paymentId: adj.paymentId,
               paymentMethod: payment.paymentMethod,
-              tipAmount: adj.tipAmount,
+              oldTipAmount,
+              newTipAmount: adj.tipAmount,
             })
           }
         }
@@ -307,21 +306,84 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
-    // Fire-and-forget tip allocations (BUG #412 fix — mirror single adjust-tip)
+    // Fire-and-forget tip ledger delta adjustments — mirrors single adjust-tip route.
+    // Posts only the delta (new - old) to the ledger, NOT the full new amount.
     for (const alloc of allocationInfos) {
       void (async () => {
-        const settings = await getLocationSettings(alloc.locationId)
-        const locSettings = parseSettings(settings)
-        return allocateTipsForPayment({
-          locationId: alloc.locationId,
-          orderId: alloc.orderId,
-          primaryEmployeeId: alloc.employeeId,
-          createdPayments: [{ id: alloc.paymentId, paymentMethod: alloc.paymentMethod, tipAmount: alloc.tipAmount }],
-          totalTipsDollars: alloc.tipAmount,
-          tipBankSettings: locSettings.tipBank,
+        const deltaDollars = alloc.newTipAmount - alloc.oldTipAmount
+        if (deltaDollars === 0) return // No change — nothing to post
+
+        const deltaCents = dollarsToCents(deltaDollars)
+
+        // Find the existing TipTransaction for this payment
+        const existingTipTxn = await db.tipTransaction.findFirst({
+          where: {
+            paymentId: alloc.paymentId,
+            locationId: alloc.locationId,
+            deletedAt: null,
+          },
+        })
+
+        if (!existingTipTxn) {
+          log.warn(`[batch-adjust] No TipTransaction for paymentId=${alloc.paymentId} — skipping ledger delta`)
+          return
+        }
+
+        // Find original CREDIT entries to determine proportional split
+        const originalCredits = await db.tipLedgerEntry.findMany({
+          where: {
+            sourceId: existingTipTxn.id,
+            sourceType: { in: ['DIRECT_TIP', 'TIP_GROUP'] },
+            type: 'CREDIT',
+            deletedAt: null,
+          },
+        })
+
+        if (originalCredits.length === 0) {
+          log.warn(`[batch-adjust] No CREDIT entries for TipTransaction ${existingTipTxn.id} — skipping ledger delta`)
+          return
+        }
+
+        // Post proportional delta to each original recipient
+        const originalTotalCents = originalCredits.reduce((sum, c) => sum + Math.abs(Number(c.amountCents)), 0)
+        let remainingDelta = Math.abs(deltaCents)
+
+        for (let i = 0; i < originalCredits.length; i++) {
+          const credit = originalCredits[i]
+          const creditCents = Math.abs(Number(credit.amountCents))
+
+          // Last entry absorbs rounding remainder
+          let entryDeltaCents: number
+          if (i === originalCredits.length - 1) {
+            entryDeltaCents = remainingDelta
+          } else {
+            entryDeltaCents = Math.round(Math.abs(deltaCents) * (creditCents / originalTotalCents))
+            remainingDelta -= entryDeltaCents
+          }
+
+          if (entryDeltaCents <= 0) continue
+
+          await postToTipLedger({
+            locationId: alloc.locationId,
+            employeeId: credit.employeeId,
+            amountCents: entryDeltaCents,
+            type: deltaCents > 0 ? 'CREDIT' : 'DEBIT',
+            sourceType: 'ADJUSTMENT',
+            sourceId: existingTipTxn.id,
+            orderId: alloc.orderId,
+            memo: `Batch tip adjustment: ${deltaCents > 0 ? 'increased' : 'decreased'} by $${Math.abs(deltaDollars).toFixed(2)} on order ${alloc.orderId}`,
+            idempotencyKey: `tip-adjust-batch:${alloc.orderId}:${alloc.paymentId}:${credit.employeeId}:${Date.now()}`,
+          })
+        }
+
+        // Update the TipTransaction amount to reflect the new total
+        const newTipCents = dollarsToCents(alloc.newTipAmount)
+        await db.tipTransaction.update({
+          where: { id: existingTipTxn.id },
+          data: { amountCents: newTipCents },
         })
       })().catch(err => {
-        console.error('Background tip allocation failed (batch-adjust-tip):', err)
+        log.error({ err }, 'Background tip ledger delta failed (batch-adjust-tip)')
       })
     }
 

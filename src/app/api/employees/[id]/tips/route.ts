@@ -31,13 +31,13 @@ export const GET = withVenue(async function GET(
       locationId = employee.locationId
     }
 
-    // ── Pending tips: ROLE_TIPOUT credits (tip shares received) ──────────
+    // ── Pending tips: tip share credits (role-based + custom shift shares) ──
     // These replace the old db.tipShare.findMany({ status: 'pending' })
     const roleTipoutCredits = await db.tipLedgerEntry.findMany({
       where: {
         employeeId,
         locationId,
-        sourceType: 'ROLE_TIPOUT',
+        sourceType: { in: ['ROLE_TIPOUT', 'MANUAL_TRANSFER'] },
         type: 'CREDIT',
         deletedAt: null,
       },
@@ -54,7 +54,7 @@ export const GET = withVenue(async function GET(
       ? await db.tipLedgerEntry.findMany({
           where: {
             sourceId: { in: sourceIds },
-            sourceType: 'ROLE_TIPOUT',
+            sourceType: { in: ['ROLE_TIPOUT', 'MANUAL_TRANSFER'] },
             type: 'DEBIT',
             deletedAt: null,
             employeeId: { not: employeeId },

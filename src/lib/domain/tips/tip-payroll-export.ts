@@ -282,6 +282,7 @@ export async function aggregatePayrollData(params: {
         break
 
       case 'ROLE_TIPOUT':
+      case 'MANUAL_TRANSFER':
         if (amt < 0) {
           // Debit = tip-out given (store as positive for readability)
           bucket.roleTipOutsGivenCents += Math.abs(amt)

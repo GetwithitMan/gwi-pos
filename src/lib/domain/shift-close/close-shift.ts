@@ -97,13 +97,15 @@ export async function closeShift(
   // SHIFT-1 invariant: NEVER close a shift with pending $0-tip card payments.
   // This check runs INSIDE the transaction to prevent TOCTOU races where tips
   // are modified between a pre-transaction check and the actual close.
+  // Must match the full card-tender set: 'card', 'credit', and 'debit' —
+  // mirrors the clock-out warning check in time-clock/route.ts.
   if (!forceClose) {
     const pendingTipCount = await tx.payment.count({
       where: {
         order: { employeeId, locationId },
         status: 'completed',
         tipAmount: { equals: 0 },
-        paymentMethod: 'card',
+        paymentMethod: { in: ['card', 'credit', 'debit'] },
         createdAt: { gte: shiftStartedAt },
       },
     })

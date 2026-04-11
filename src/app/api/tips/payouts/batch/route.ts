@@ -72,10 +72,10 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
         await queueIfOutageOrFail('TipLedgerEntry', locationId, entry.ledgerEntryId, 'INSERT')
       }
     } catch (caughtErr) {
-      if (err instanceof OutageQueueFullError) {
+      if (caughtErr instanceof OutageQueueFullError) {
         return err('Service temporarily unavailable — outage queue full', 507)
       }
-      throw err
+      throw caughtErr
     }
 
     // ── Return success ────────────────────────────────────────────────────

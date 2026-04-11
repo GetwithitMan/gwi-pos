@@ -8,6 +8,7 @@
  * is traceable via immutable ledger entries.
  */
 
+import crypto from 'crypto'
 import { db } from '@/lib/db'
 import { getOrCreateLedger, postToTipLedger } from './tip-ledger'
 

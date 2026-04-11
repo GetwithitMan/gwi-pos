@@ -33,8 +33,10 @@ const EMPLOYEE_SELECT_BASIC = {
 } as const
 
 /**
- * Fetch tip-out entries (ROLE_TIPOUT type) for the tips report.
- * Returns both DEBIT and CREDIT entries with employee info.
+ * Fetch tip-out/share entries for the tips report.
+ * Includes both ROLE_TIPOUT (standard role-based tip-outs) and
+ * MANUAL_TRANSFER (custom shift-close shares) so reports reflect
+ * all tip movement, not just role-based distributions.
  */
 export async function getTipOutEntries(
   locationId: string,
@@ -43,7 +45,7 @@ export async function getTipOutEntries(
 ) {
   const where: Prisma.TipLedgerEntryWhereInput = {
     locationId,
-    sourceType: 'ROLE_TIPOUT',
+    sourceType: { in: ['ROLE_TIPOUT', 'MANUAL_TRANSFER'] },
     deletedAt: null,
     ...dateFilter,
   }
@@ -113,7 +115,7 @@ export async function getTipOutCounterparts(
   return db.tipLedgerEntry.findMany({
     where: {
       locationId,
-      sourceType: 'ROLE_TIPOUT',
+      sourceType: { in: ['ROLE_TIPOUT', 'MANUAL_TRANSFER'] },
       sourceId: { in: sourceIds },
       deletedAt: null,
       employeeId: { not: excludeEmployeeId },
@@ -200,7 +202,7 @@ export async function getTipSharesDistributedInRange(
   return db.tipLedgerEntry.findMany({
     where: {
       locationId,
-      sourceType: 'ROLE_TIPOUT',
+      sourceType: { in: ['ROLE_TIPOUT', 'MANUAL_TRANSFER'] },
       deletedAt: null,
       createdAt: { gte: range.start, lte: range.end },
     },
