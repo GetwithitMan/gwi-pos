@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# gwi-node.sh — GWI POS node agent (install | deploy | rollback | status | self-update | watch)
+# gwi-node.sh — GWI POS node agent (install | deploy | rollback | status | self-update | watch | dashboard-check)
 # One agent. One runtime. One flow. Install and update are the same operation.
 set -euo pipefail
 
@@ -598,22 +598,28 @@ update_dashboard() {
     return 0
   fi
 
-  local installed available deb_url deb_path
+  local installed available deb_url deb_path _dashboard_warning=""
 
   # Read desired version from the running container's version-contract
   available=$(docker exec "$CONTAINER_NAME" cat /app/public/version-contract.json 2>/dev/null \
     | python3 -c "import json,sys; print(json.load(sys.stdin).get('dashboardVersion',''))" 2>/dev/null || true)
-  [[ -z "$available" ]] && { log "Dashboard: no dashboardVersion in version-contract — skipping"; return 0; }
+  if [[ -z "$available" ]]; then
+    _dashboard_warning="no dashboardVersion in version-contract"
+    err "Dashboard: $_dashboard_warning"
+    _write_dashboard_warning "$_dashboard_warning" "" ""
+    return 0
+  fi
 
   # Get currently installed version
   installed=$(dpkg-query -W -f='${Version}' gwi-nuc-dashboard 2>/dev/null || echo "0.0.0")
 
   if [[ "$installed" == "$available" ]]; then
-    log "Dashboard: already at v${installed} — no update needed"
+    log "Dashboard: converged at v${installed}"
+    _clear_dashboard_warning
     return 0
   fi
 
-  log "Dashboard: updating v${installed} → v${available}"
+  log "Dashboard: updating v${installed} -> v${available}"
 
   # Download .deb from the POS app (Vercel serves static files from /public)
   deb_path="/tmp/gwi-nuc-dashboard-${available}.deb"
@@ -622,7 +628,9 @@ update_dashboard() {
   if ! curl -sfL "$deb_url" -o "$deb_path" 2>/dev/null; then
     # Fallback: try the container's static files directly
     docker cp "${CONTAINER_NAME}:/app/public/gwi-nuc-dashboard.deb" "$deb_path" 2>/dev/null || {
-      log "Dashboard: download failed — skipping"
+      _dashboard_warning="download failed from $deb_url and container copy failed"
+      err "Dashboard: $_dashboard_warning"
+      _write_dashboard_warning "$_dashboard_warning" "$available" "$installed"
       rm -f "$deb_path" 2>/dev/null
       return 0
     }
@@ -632,14 +640,18 @@ update_dashboard() {
   local size
   size=$(stat -c%s "$deb_path" 2>/dev/null || echo 0)
   if [[ "$size" -lt 100000 ]]; then
-    log "Dashboard: downloaded file too small (${size} bytes) — skipping"
+    _dashboard_warning="downloaded file too small (${size} bytes)"
+    err "Dashboard: $_dashboard_warning"
+    _write_dashboard_warning "$_dashboard_warning" "$available" "$installed"
     rm -f "$deb_path" 2>/dev/null
     return 0
   fi
 
   # Validate .deb structure
   if ! dpkg --info "$deb_path" > /dev/null 2>&1; then
-    log "Dashboard: downloaded file is not a valid .deb package — skipping"
+    _dashboard_warning="downloaded file is not a valid .deb package"
+    err "Dashboard: $_dashboard_warning"
+    _write_dashboard_warning "$_dashboard_warning" "$available" "$installed"
     rm -f "$deb_path"
     return 0
   fi
@@ -648,7 +660,9 @@ update_dashboard() {
   local pkg_name
   pkg_name=$(dpkg-deb -f "$deb_path" Package 2>/dev/null)
   if [[ "$pkg_name" != "gwi-nuc-dashboard" ]]; then
-    log "Dashboard: unexpected package name '$pkg_name' — expected gwi-nuc-dashboard — skipping"
+    _dashboard_warning="unexpected package name '$pkg_name' — expected gwi-nuc-dashboard"
+    err "Dashboard: $_dashboard_warning"
+    _write_dashboard_warning "$_dashboard_warning" "$available" "$installed"
     rm -f "$deb_path"
     return 0
   fi
@@ -661,7 +675,9 @@ update_dashboard() {
     local actual_sha
     actual_sha=$(sha256sum "$deb_path" | awk '{print $1}')
     if [[ "$actual_sha" != "$expected_sha" ]]; then
-      log "Dashboard: SHA256 mismatch — expected $expected_sha, got $actual_sha — skipping"
+      _dashboard_warning="SHA256 mismatch — expected $expected_sha, got $actual_sha"
+      err "Dashboard: $_dashboard_warning"
+      _write_dashboard_warning "$_dashboard_warning" "$available" "$installed"
       rm -f "$deb_path"
       return 0
     fi
@@ -674,11 +690,14 @@ update_dashboard() {
   sudo dpkg --configure -a 2>&1 | while IFS= read -r line; do log "Dashboard: configure: $line"; done || true
   sudo apt-get install -f -y -qq 2>/dev/null || true
 
-  # Verify the install actually worked by checking the installed version
+  # ── Version reconciliation check ──────────────────────────────────────────
+  # After install, compare installed version vs target. If mismatch, log an
+  # explicit WARNING that persists in deploy results.
   local final_version
   final_version=$(dpkg-query -W -f='${Version}' gwi-nuc-dashboard 2>/dev/null || echo "0.0.0")
   if [[ "$final_version" == "$available" ]]; then
     log "Dashboard: v${available} installed and configured successfully"
+    _clear_dashboard_warning
     # Ensure systemd user service exists (may be first install on this NUC)
     local _posuser="${POSUSER:-gwipos}"
     local _svc_dir
@@ -713,17 +732,117 @@ SVCEOF
     fi
     # Start or restart the service
     sudo -u "${_posuser}" bash -c \
-      "XDG_RUNTIME_DIR=/run/user/\$(id -u) systemctl --user daemon-reload && systemctl --user enable gwi-dashboard.service && systemctl --user start gwi-dashboard.service" 2>/dev/null || true
+      "XDG_RUNTIME_DIR=/run/user/\$(id -u) systemctl --user daemon-reload && systemctl --user enable gwi-dashboard.service && systemctl --user restart gwi-dashboard.service" 2>/dev/null || true
     # Audit log for dashboard update
     mkdir -p "${RESULTS_DIR}" 2>/dev/null || true
-    echo "{\"action\":\"dashboard_update\",\"version\":\"$available\",\"installedVersion\":\"$final_version\",\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" \
+    echo "{\"action\":\"dashboard_update\",\"version\":\"$available\",\"installedVersion\":\"$final_version\",\"status\":\"converged\",\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" \
       > "${RESULTS_DIR}/dashboard-$(date +%s).json" 2>/dev/null || true
   else
-    log "Dashboard: install may have failed — expected v${available}, got v${final_version}"
+    _dashboard_warning="VERSION MISMATCH after install — expected v${available}, got v${final_version}"
+    err "Dashboard: WARNING: $_dashboard_warning"
+    _write_dashboard_warning "$_dashboard_warning" "$available" "$final_version"
   fi
 
   rm -f "$deb_path" 2>/dev/null
   return 0
+}
+
+# ── Dashboard warning state (persistent) ────────────────────────────────────
+# Writes/clears a persistent warning file so operators and MC can detect
+# dashboard convergence failures without scrolling through deploy logs.
+# ─────────────────────────────────────────────────────────────────────────────
+_write_dashboard_warning() {
+  local reason="$1" target="$2" installed="$3"
+  mkdir -p "${RESULTS_DIR}" 2>/dev/null || true
+  cat > "${STATE_DIR}/dashboard-warning.json" <<WEOF
+{
+  "warning": true,
+  "reason": "${reason}",
+  "targetVersion": "${target}",
+  "installedVersion": "${installed}",
+  "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "hostname": "$(hostname 2>/dev/null || echo unknown)"
+}
+WEOF
+  chmod 644 "${STATE_DIR}/dashboard-warning.json" 2>/dev/null || true
+  # Also write to results dir for deploy-level audit
+  cp "${STATE_DIR}/dashboard-warning.json" \
+    "${RESULTS_DIR}/dashboard-warning-$(date +%s).json" 2>/dev/null || true
+}
+
+_clear_dashboard_warning() {
+  rm -f "${STATE_DIR}/dashboard-warning.json" 2>/dev/null || true
+}
+
+# ── dashboard_check ──────────────────────────────────────────────────────────
+# Manual convergence tool: checks current vs target dashboard version and
+# installs if mismatched. Operators can run: gwi-node dashboard-check
+# ─────────────────────────────────────────────────────────────────────────────
+dashboard_check() {
+  log "=== Dashboard Convergence Check ==="
+
+  # Skip on terminal role
+  if [[ "${STATION_ROLE:-}" == "terminal" ]]; then
+    log "Dashboard: not applicable on terminal role"
+    return 0
+  fi
+
+  local installed available
+
+  # Get installed version
+  installed=$(dpkg-query -W -f='${Version}' gwi-nuc-dashboard 2>/dev/null || echo "not-installed")
+
+  # Get target version from running container
+  if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^${CONTAINER_NAME}$"; then
+    err "Dashboard check: no running ${CONTAINER_NAME} container — cannot determine target version"
+    return 1
+  fi
+
+  available=$(docker exec "$CONTAINER_NAME" cat /app/public/version-contract.json 2>/dev/null \
+    | python3 -c "import json,sys; print(json.load(sys.stdin).get('dashboardVersion',''))" 2>/dev/null || true)
+
+  if [[ -z "$available" ]]; then
+    err "Dashboard check: no dashboardVersion in version-contract"
+    return 1
+  fi
+
+  echo "  Target version:    v${available}"
+  echo "  Installed version: ${installed}"
+
+  # Check for persistent warning
+  if [[ -f "${STATE_DIR}/dashboard-warning.json" ]]; then
+    echo "  WARNING file:      ${STATE_DIR}/dashboard-warning.json"
+    cat "${STATE_DIR}/dashboard-warning.json" 2>/dev/null
+    echo ""
+  fi
+
+  # Check systemd service
+  local _posuser="${POSUSER:-gwipos}"
+  local _svc_status
+  _svc_status=$(sudo -u "${_posuser}" bash -c \
+    "XDG_RUNTIME_DIR=/run/user/\$(id -u) systemctl --user is-active gwi-dashboard.service" 2>/dev/null || echo "unknown")
+  echo "  Service status:    ${_svc_status}"
+
+  if [[ "$installed" == "$available" ]]; then
+    log "Dashboard: CONVERGED at v${installed}"
+    _clear_dashboard_warning
+    return 0
+  fi
+
+  log "Dashboard: DIVERGED — installed=${installed}, target=${available}. Attempting update..."
+  update_dashboard
+  local rc=$?
+
+  # Final reconciliation
+  local final_installed
+  final_installed=$(dpkg-query -W -f='${Version}' gwi-nuc-dashboard 2>/dev/null || echo "not-installed")
+  if [[ "$final_installed" == "$available" ]]; then
+    log "Dashboard: CONVERGED after update — now at v${final_installed}"
+    return 0
+  else
+    err "Dashboard: STILL DIVERGED after update — installed=${final_installed}, target=${available}"
+    return 1
+  fi
 }
 
 deploy_failure() {
@@ -797,6 +916,21 @@ status() {
   echo ""
   local port; port="$(read_port)"
   curl -sf "http://localhost:${port}/api/health/ready" 2>/dev/null | python3 -m json.tool 2>/dev/null || echo "Health: no response"
+  echo ""
+  # Dashboard convergence status
+  local _dash_installed _dash_target
+  _dash_installed=$(dpkg-query -W -f='${Version}' gwi-nuc-dashboard 2>/dev/null || echo "not-installed")
+  _dash_target=$(docker exec "$CONTAINER_NAME" cat /app/public/version-contract.json 2>/dev/null \
+    | python3 -c "import json,sys; print(json.load(sys.stdin).get('dashboardVersion',''))" 2>/dev/null || echo "unknown")
+  echo "Dashboard: installed=${_dash_installed} target=${_dash_target}"
+  if [[ "$_dash_installed" == "$_dash_target" ]]; then
+    echo "Dashboard: CONVERGED"
+  else
+    echo "Dashboard: DIVERGED (run 'gwi-node dashboard-check' to fix)"
+  fi
+  if [[ -f "${STATE_DIR}/dashboard-warning.json" ]]; then
+    echo "Dashboard WARNING: $(cat "${STATE_DIR}/dashboard-warning.json" 2>/dev/null)"
+  fi
 }
 
 self_update() {
@@ -1047,11 +1181,12 @@ while [[ $# -gt 0 ]]; do
 done
 
 case "$SUBCOMMAND" in
-  install)     install ;;
-  deploy)      deploy ;;
-  rollback)    rollback ;;
-  status)      status ;;
-  self-update) self_update ;;
-  watch)       watch_loop ;;
-  *)           echo "Usage: gwi-node.sh {install|deploy|rollback|status|self-update|watch}"; exit 1 ;;
+  install)          install ;;
+  deploy)           deploy ;;
+  rollback)         rollback ;;
+  status)           status ;;
+  self-update)      self_update ;;
+  watch)            watch_loop ;;
+  dashboard-check)  dashboard_check ;;
+  *)                echo "Usage: gwi-node.sh {install|deploy|rollback|status|self-update|watch|dashboard-check}"; exit 1 ;;
 esac

@@ -120,7 +120,12 @@ run_dashboard() {
       log "Downloaded dashboard: $(ls -lh "$DASHBOARD_DEB" | awk '{print $5}')"
     else
       rm -f "$DOWNLOAD_DIR/gwi-nuc-dashboard.deb" 2>/dev/null
-      track_warn "Dashboard download failed -- skipping (can be installed later)"
+      track_warn "Dashboard download failed -- skipping. Run 'gwi-node dashboard-check' after deploy to retry."
+      # Write persistent warning
+      local _state_dir="${APP_BASE:-/opt/gwi-pos}/shared/state"
+      mkdir -p "$_state_dir" 2>/dev/null || true
+      echo "{\"warning\":true,\"reason\":\"installer download failed\",\"targetVersion\":\"${_available_version:-unknown}\",\"installedVersion\":\"${_installed_version:-unknown}\",\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" \
+        > "${_state_dir}/dashboard-warning.json" 2>/dev/null || true
       end_timer "Stage 12 (dashboard)"
       return 0
     fi
@@ -166,13 +171,22 @@ run_dashboard() {
   dpkg --configure -a 2>/dev/null || true
   apt-get install -f -y -qq 2>/dev/null || true
 
-  # Verify the install actually worked
+  # ── Version reconciliation check ─────────────────────────────────────────
+  # After install, compare installed version vs target. If mismatch, log an
+  # explicit WARNING that persists in install results.
   local _final_version
   _final_version=$(dpkg-query -W -f='${Version}' gwi-nuc-dashboard 2>/dev/null || echo "0.0.0")
   if [[ -n "$_available_version" ]] && [[ "$_available_version" != "0.0.0" ]] && [[ "$_final_version" != "$_available_version" ]]; then
-    track_warn "Dashboard: expected v${_available_version}, got v${_final_version} -- may need manual install"
+    track_warn "Dashboard: VERSION MISMATCH after install -- expected v${_available_version}, got v${_final_version}. Run 'gwi-node dashboard-check' to retry."
+    # Write persistent warning so gwi-node status can detect it
+    local _state_dir="${APP_BASE:-/opt/gwi-pos}/shared/state"
+    mkdir -p "$_state_dir" 2>/dev/null || true
+    echo "{\"warning\":true,\"reason\":\"installer version mismatch\",\"targetVersion\":\"${_available_version}\",\"installedVersion\":\"${_final_version}\",\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" \
+      > "${_state_dir}/dashboard-warning.json" 2>/dev/null || true
   else
-    log "Dashboard v${_final_version} installed and configured"
+    log "Dashboard v${_final_version} installed and configured successfully"
+    # Clear any prior warning
+    rm -f "${APP_BASE:-/opt/gwi-pos}/shared/state/dashboard-warning.json" 2>/dev/null || true
   fi
 
   # ─────────────────────────────────────────────────────────────────────────
