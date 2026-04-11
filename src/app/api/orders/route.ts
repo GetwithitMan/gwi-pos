@@ -545,6 +545,41 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
       }
     })
 
+    // Defensive FK validation: null out modifierIds that don't exist locally (sync timing)
+    // The modifier data (name, price, etc.) is preserved — only the FK reference is nulled
+    const allModifierIds = new Set<string>()
+    for (const oi of orderItems) {
+      const mods = (oi as any).modifiers?.create
+      if (mods) {
+        for (const mod of mods) {
+          if (mod.modifierId) allModifierIds.add(mod.modifierId)
+        }
+      }
+    }
+    if (allModifierIds.size > 0) {
+      const idsArray = Array.from(allModifierIds)
+      const existingRows = await db.$queryRawUnsafe<{ id: string }[]>(
+        `SELECT id FROM "Modifier" WHERE id IN (${idsArray.map((_, i) => `$${i + 1}`).join(',')})`,
+        ...idsArray
+      )
+      const existingIds = new Set(existingRows.map(r => r.id))
+      const missingIds = idsArray.filter(id => !existingIds.has(id))
+      if (missingIds.length > 0) {
+        log.warn({ missingModifierIds: missingIds }, 'Order references modifiers not yet synced to NUC — FK references nulled')
+        const missingSet = new Set(missingIds)
+        for (const oi of orderItems) {
+          const mods = (oi as any).modifiers?.create
+          if (mods) {
+            for (const mod of mods) {
+              if (mod.modifierId && missingSet.has(mod.modifierId)) {
+                mod.modifierId = null
+              }
+            }
+          }
+        }
+      }
+    }
+
     // Get location settings for tax calculation (cached - FIX-009)
     const locationSettings = await getLocationSettings(locationId)
     const parsedSettings = locationSettings ? parseSettings(locationSettings) : null
