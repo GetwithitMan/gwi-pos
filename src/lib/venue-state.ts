@@ -70,9 +70,9 @@ const MAX_CONVERGENCE_ATTEMPTS = 5;
  */
 const VALID_TRANSITIONS: Record<VenueLifecycleState, Set<VenueLifecycleState>> = {
   BOOTSTRAPPING:     new Set(['CONVERGING', 'CONVERGED', 'BLOCKED']),
-  CONVERGING:        new Set(['CONVERGED', 'DEGRADED', 'BLOCKED', 'ROLLING_BACK']),
-  CONVERGED:         new Set(['CONVERGING', 'DEGRADED']),
-  DEGRADED:          new Set(['CONVERGING', 'CONVERGED', 'BLOCKED']),
+  CONVERGING:        new Set(['CONVERGED', 'DEGRADED', 'BLOCKED', 'ROLLING_BACK', 'RECOVERY_REQUIRED']),
+  CONVERGED:         new Set(['CONVERGING', 'DEGRADED', 'ROLLING_BACK', 'RECOVERY_REQUIRED']),
+  DEGRADED:          new Set(['CONVERGING', 'CONVERGED', 'BLOCKED', 'ROLLING_BACK', 'RECOVERY_REQUIRED']),
   BLOCKED:           new Set(['CONVERGING', 'RECOVERY_REQUIRED']),
   ROLLING_BACK:      new Set(['CONVERGED', 'DEGRADED', 'RECOVERY_REQUIRED']),
   RECOVERY_REQUIRED: new Set(['BOOTSTRAPPING', 'CONVERGING']),
@@ -171,10 +171,15 @@ export function writeVenueState(state: VenueState): void {
 export function computeVenueState(
   components: VenueState['components']
 ): { lifecycle: VenueLifecycleState; blockedReason: string | null; degradedReasons: string[] } {
+  // Managed components: server, schema, dashboard. Baseline is informational only
+  // (Ansible version is not managed by the convergence engine — it's updated by
+  // the hardening playbook independently). Including baseline in the convergence
+  // check would make CONVERGED unreachable since nothing ever reconciles it.
+  const managed = [components.server, components.schema, components.dashboard];
   const all = [components.server, components.schema, components.dashboard, components.baseline];
 
-  // Check for blocked components (failed after max attempts)
-  const blockedComponents = all.filter(
+  // Check for blocked managed components (failed after max attempts)
+  const blockedComponents = managed.filter(
     (c) => c.status === 'failed' && c.attemptCount >= MAX_CONVERGENCE_ATTEMPTS
   );
   if (blockedComponents.length > 0) {
@@ -184,15 +189,15 @@ export function computeVenueState(
     return { lifecycle: 'BLOCKED', blockedReason: reason, degradedReasons: [] };
   }
 
-  // All converged?
-  const allConverged = all.every((c) => c.status === 'converged');
+  // All managed components converged?
+  const allConverged = managed.every((c) => c.status === 'converged');
   if (allConverged) {
     return { lifecycle: 'CONVERGED', blockedReason: null, degradedReasons: [] };
   }
 
-  // Server healthy but other components behind → DEGRADED
+  // Server healthy but other managed components behind → DEGRADED
   const serverHealthy = components.server.status === 'converged';
-  const behindOrFailed = all.filter((c) => c.status === 'behind' || c.status === 'failed' || c.status === 'ahead');
+  const behindOrFailed = managed.filter((c) => c.status === 'behind' || c.status === 'failed' || c.status === 'ahead');
   if (serverHealthy && behindOrFailed.length > 0) {
     const reasons = behindOrFailed.map(
       (c) => `${c.name}: ${c.status} (current=${c.currentVersion}, target=${c.targetVersion})`

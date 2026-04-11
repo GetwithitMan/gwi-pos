@@ -602,6 +602,14 @@ EOF
   # Downloads from the POS Vercel deployment (same origin as version-contract).
   update_dashboard || log "WARN: Dashboard update skipped (non-fatal)"
 
+  # ── Convergence agent (auto-install on first deploy) ──────────────────────
+  # Ensures the recurring self-healing loop is active. Idempotent — skips if
+  # the service is already installed and running.
+  if ! systemctl is-active gwi-converge.service >/dev/null 2>&1; then
+    log "Installing convergence agent service..."
+    install_converge_service "${CONVERGE_INTERVAL:-300}" 2>/dev/null || log "WARN: Convergence service install failed (non-fatal)"
+  fi
+
   FINAL_STATUS="healthy"
   write_deploy_log
   log "Deploy $DEPLOY_ID complete: $IMAGE_REF"
@@ -864,12 +872,12 @@ if comp_status == 'converged':
     c['lastKnownGoodVersion'] = comp_current
     c['error'] = None
 
-# Recompute lifecycle
-comps = list(state['components'].values())
-all_converged = all(x['status'] == 'converged' for x in comps)
-blocked = [x for x in comps if x['status'] == 'failed' and x.get('attemptCount', 0) >= max_attempts]
+# Recompute lifecycle (baseline is informational only — not managed by convergence engine)
+managed = [state['components'][k] for k in ('server', 'schema', 'dashboard')]
+all_converged = all(x['status'] == 'converged' for x in managed)
+blocked = [x for x in managed if x['status'] == 'failed' and x.get('attemptCount', 0) >= max_attempts]
 server_healthy = state['components']['server']['status'] == 'converged'
-behind_or_failed = [x for x in comps if x['status'] in ('behind', 'failed', 'ahead')]
+behind_or_failed = [x for x in managed if x['status'] in ('behind', 'failed', 'ahead')]
 
 if blocked:
     new_lifecycle = 'BLOCKED'
@@ -893,9 +901,9 @@ else:
 
 VALID = {
     'BOOTSTRAPPING': {'CONVERGING','CONVERGED','BLOCKED'},
-    'CONVERGING': {'CONVERGED','DEGRADED','BLOCKED','ROLLING_BACK'},
-    'CONVERGED': {'CONVERGING','DEGRADED'},
-    'DEGRADED': {'CONVERGING','CONVERGED','BLOCKED'},
+    'CONVERGING': {'CONVERGED','DEGRADED','BLOCKED','ROLLING_BACK','RECOVERY_REQUIRED'},
+    'CONVERGED': {'CONVERGING','DEGRADED','ROLLING_BACK','RECOVERY_REQUIRED'},
+    'DEGRADED': {'CONVERGING','CONVERGED','BLOCKED','ROLLING_BACK','RECOVERY_REQUIRED'},
     'BLOCKED': {'CONVERGING','RECOVERY_REQUIRED'},
     'ROLLING_BACK': {'CONVERGED','DEGRADED','RECOVERY_REQUIRED'},
     'RECOVERY_REQUIRED': {'BOOTSTRAPPING','CONVERGING'},
@@ -936,9 +944,9 @@ with open(state_file) as f:
 
 VALID = {
     'BOOTSTRAPPING': {'CONVERGING','CONVERGED','BLOCKED'},
-    'CONVERGING': {'CONVERGED','DEGRADED','BLOCKED','ROLLING_BACK'},
-    'CONVERGED': {'CONVERGING','DEGRADED'},
-    'DEGRADED': {'CONVERGING','CONVERGED','BLOCKED'},
+    'CONVERGING': {'CONVERGED','DEGRADED','BLOCKED','ROLLING_BACK','RECOVERY_REQUIRED'},
+    'CONVERGED': {'CONVERGING','DEGRADED','ROLLING_BACK','RECOVERY_REQUIRED'},
+    'DEGRADED': {'CONVERGING','CONVERGED','BLOCKED','ROLLING_BACK','RECOVERY_REQUIRED'},
     'BLOCKED': {'CONVERGING','RECOVERY_REQUIRED'},
     'ROLLING_BACK': {'CONVERGED','DEGRADED','RECOVERY_REQUIRED'},
     'RECOVERY_REQUIRED': {'BOOTSTRAPPING','CONVERGING'},

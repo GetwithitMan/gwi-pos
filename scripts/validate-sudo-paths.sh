@@ -29,18 +29,35 @@ else
   critical "Docker is not accessible"
 fi
 
-# 3. gwi-node.sh is executable
-if test -x /opt/gwi-pos/app/public/scripts/gwi-node.sh; then
-  pass "gwi-node.sh is executable"
+# 3. gwi-node.sh is executable (check multiple possible locations)
+GWI_NODE=""
+for p in /opt/gwi-pos/gwi-node.sh /opt/gwi-pos/app/public/scripts/gwi-node.sh /usr/local/bin/gwi-node; do
+  if test -x "$p"; then GWI_NODE="$p"; break; fi
+done
+if [[ -n "$GWI_NODE" ]]; then
+  pass "gwi-node.sh is executable ($GWI_NODE)"
 else
-  fail "gwi-node.sh is missing or not executable"
+  # Also check inside Docker container (Docker-first model)
+  if docker exec gwi-pos test -f /app/public/scripts/gwi-node.sh 2>/dev/null; then
+    pass "gwi-node.sh accessible inside container"
+  else
+    fail "gwi-node.sh not found on host or in container"
+  fi
 fi
 
-# 4. installer.run is executable
-if test -x /opt/gwi-pos/app/public/installer.run; then
-  pass "installer.run is executable"
+# 4. installer.run is executable (check multiple locations)
+INSTALLER=""
+for p in /opt/gwi-pos/installer.run /opt/gwi-pos/app/public/installer.run; do
+  if test -x "$p"; then INSTALLER="$p"; break; fi
+done
+if [[ -n "$INSTALLER" ]]; then
+  pass "installer.run is executable ($INSTALLER)"
 else
-  fail "installer.run is missing or not executable"
+  if docker exec gwi-pos test -f /app/public/installer.run 2>/dev/null; then
+    pass "installer.run accessible inside container"
+  else
+    fail "installer.run not found on host or in container"
+  fi
 fi
 
 # 5. /opt/gwi-pos ownership is root:root
