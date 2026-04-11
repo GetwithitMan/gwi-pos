@@ -72,12 +72,19 @@ _refresh_modules_from_checkout() {
   [[ -f "${APP_DIR}/public/watchdog.service" ]] && cp "${APP_DIR}/public/watchdog.service" /opt/gwi-pos/ && log "  Deployed watchdog.service"
   [[ -f "${APP_DIR}/public/watchdog.timer" ]] && cp "${APP_DIR}/public/watchdog.timer" /opt/gwi-pos/ && log "  Deployed watchdog.timer"
 
-  for script in hardware-inventory.sh disk-pressure-monitor.sh version-compat.sh rolling-restart.sh; do
+  for script in hardware-inventory.sh disk-pressure-monitor.sh version-compat.sh; do
     if [[ -f "$checkout_scripts/$script" ]]; then
       cp "$checkout_scripts/$script" /opt/gwi-pos/scripts/ 2>/dev/null && chmod +x "/opt/gwi-pos/scripts/$script" \
         && log "  Deployed scripts/$script" || warn "  FAILED to deploy scripts/$script"
     fi
   done
+  # rolling-restart.sh is DEPRECATED (gwi-node handles restarts). Copy if available, warn if not.
+  if [[ -f "$checkout_scripts/rolling-restart.sh" ]]; then
+    cp "$checkout_scripts/rolling-restart.sh" /opt/gwi-pos/scripts/ 2>/dev/null && chmod +x "/opt/gwi-pos/scripts/rolling-restart.sh" \
+      && log "  Deployed scripts/rolling-restart.sh (legacy compat)" || true
+  else
+    log "  Skipping rolling-restart.sh (deprecated — gwi-node handles restarts)"
+  fi
   # NOTE: pre-update-backup.sh removed — DB backups handled by pre-update-safety.sh
   # library (sourced by gwi-node pre-deploy hook). Standalone wrapper is legacy.
 
@@ -215,14 +222,14 @@ _install_deploy_script() {
   if [[ -f "$_src_local" ]]; then
     cp "$_src_local" "$_target"
     chmod +x "$_target"
-    log "Installed deploy-release.sh from installer bundle"
+    log "Installed deploy-release.sh from installer bundle (legacy compat)"
   elif curl -fsSL --connect-timeout 10 --max-time 30 -o "$_target" "$_src_url" 2>/dev/null; then
     chmod +x "$_target"
-    log "Downloaded deploy-release.sh from $_src_url"
+    log "Downloaded deploy-release.sh from $_src_url (legacy compat)"
   else
-    err_code "ERR-INST-150" "Cannot find deploy-release.sh locally or download from $_src_url"
-    err "FATAL: deploy-release.sh not available. Cannot proceed with artifact deploy."
-    return 1
+    warn "deploy-release.sh not available (DEPRECATED — gwi-node.sh is the canonical deploy agent)"
+    track_warn "deploy-release.sh not found — not fatal, gwi-node handles deploys"
+    return 0
   fi
 
   chown root:gwipos "$_target" 2>/dev/null || true
