@@ -5,6 +5,8 @@
 # Entry: run_schema
 # Expects: APP_BASE, APP_DIR, ENV_FILE, DATABASE_URL, NEON_DATABASE_URL,
 #          POSUSER, STATION_ROLE, IS_REINSTALL
+# Container: deploy-tools operations run inside the gwi-pos Docker container
+#            via `docker exec`. The container must be running before this stage.
 #
 # Schema path: deploy-tools ONLY (no Prisma CLI on NUC runtime).
 #   1. deploy-tools/apply-schema.js -- bootstrap empty DBs from schema.sql
@@ -29,6 +31,13 @@ run_schema() {
     log "Stopping POS service for schema operations..."
     systemctl disable --now thepasspos 2>/dev/null || true
     sleep 2
+  fi
+
+  # Guard: gwi-pos container must be running for deploy-tools operations
+  if ! docker ps -q --filter name=gwi-pos --filter status=running | grep -q .; then
+    err "gwi-pos container is not running -- cannot execute deploy-tools"
+    err "Ensure stage 05 (deploy-app) completed successfully and the container is up."
+    return 1
   fi
 
   # Only server + backup roles need schema work
@@ -65,13 +74,6 @@ run_schema() {
     # Capture pre-push table list for drift detection
     local PRE_PUSH_TABLES
     PRE_PUSH_TABLES=$(sudo -u "$POSUSER" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename" 2>/dev/null || echo "")
-
-    local deploy_tools_dir="/opt/gwi-pos/deploy-tools"
-
-    # Ensure deploy-tools is readable by POSUSER (extracted as root by deploy-release.sh)
-    if [[ -d "$deploy_tools_dir" ]]; then
-      chown -R "$POSUSER":"$POSUSER" "$deploy_tools_dir" 2>/dev/null || true
-    fi
 
     # ── Check if deploy-release.sh already completed schema migrations ──────
     local _skip_migrations=false
@@ -118,11 +120,11 @@ run_schema() {
       fi
     fi
 
-    # ── Preferred path: deploy-tools (pg-only, no Prisma) ──
-    if [[ -f "$deploy_tools_dir/src/apply-schema.js" ]]; then
+    # ── Preferred path: deploy-tools inside gwi-pos container (pg-only, no Prisma) ──
+    if docker ps -q --filter name=gwi-pos --filter status=running | grep -q .; then
       if [[ "$_skip_migrations" == "false" ]]; then
-        log "Applying schema via deploy-tools (pg-only)..."
-        if ! timeout --kill-after=10 120 sudo -u "$POSUSER" bash -c "cd '$deploy_tools_dir' && DATABASE_URL='$DATABASE_URL' node src/apply-schema.js" 2>&1 | tail -5; then
+        log "Applying schema via deploy-tools (pg-only, docker exec)..."
+        if ! timeout --kill-after=10 120 docker exec gwi-pos bash -c "cd /app/deploy-tools && DATABASE_URL='$DATABASE_URL' node src/apply-schema.js" 2>&1 | tail -5; then
           if [[ "${IS_REINSTALL:-false}" == "false" ]]; then
             err_code "ERR-INST-183" "apply-schema.js failed on fresh install -- cannot continue with empty database"
             return 1
@@ -131,11 +133,11 @@ run_schema() {
           fi
         else
           log "Schema applied successfully (deploy-tools)"
-          touch /opt/gwi-pos/.schema-stage-done
+          touch "$APP_BASE/shared/state/.schema-stage-done"
         fi
 
-        log "Running local migrations via deploy-tools..."
-        if ! sudo -u "$POSUSER" bash -c "cd '$deploy_tools_dir' && DATABASE_URL='$DATABASE_URL' node src/migrate.js" 2>&1; then
+        log "Running local migrations via deploy-tools (docker exec)..."
+        if ! docker exec gwi-pos bash -c "cd /app/deploy-tools && DATABASE_URL='$DATABASE_URL' node src/migrate.js" 2>&1; then
           if [[ "${IS_REINSTALL:-false}" == "false" ]]; then
             err_code "ERR-INST-184" "Migration runner failed on fresh install -- cannot continue with partial schema"
             return 1
@@ -150,13 +152,13 @@ run_schema() {
       if [[ -n "${NEON_DATABASE_URL:-}" ]]; then
         log "Venue Neon migration skipped: MC is schema authority (observe-only mode)"
         # Read Neon migration count for diagnostics only — never execute migrations
-        _neon_mig_count=$(DATABASE_URL="$NEON_DATABASE_URL" node -e "
+        _neon_mig_count=$(docker exec gwi-pos bash -c "DATABASE_URL='$NEON_DATABASE_URL' node -e \"
           const { Client } = require('pg');
           const c = new Client({ connectionString: process.env.DATABASE_URL });
-          c.connect().then(() => c.query('SELECT COUNT(*)::int as cnt FROM \"_gwi_migrations\"'))
+          c.connect().then(() => c.query('SELECT COUNT(*)::int as cnt FROM \\\"_gwi_migrations\\\"'))
             .then(r => { console.log(r.rows[0].cnt); c.end(); })
             .catch(() => { console.log('-1'); c.end(); });
-        " 2>/dev/null || echo "-1")
+        \"" 2>/dev/null || echo "-1")
         if [[ "$_neon_mig_count" != "-1" ]]; then
           log "Neon migration count (observed): $_neon_mig_count"
         else
@@ -164,9 +166,9 @@ run_schema() {
         fi
       fi
     else
-      err_code "ERR-INST-184" "deploy-tools not found at $deploy_tools_dir/src/apply-schema.js"
-      warn "Schema migration requires the deploy-tools artifact"
-      track_warn "deploy-tools missing from artifact"
+      err_code "ERR-INST-184" "gwi-pos container not running -- deploy-tools unavailable"
+      warn "Schema migration requires the gwi-pos container to be running"
+      track_warn "gwi-pos container not running for deploy-tools"
     fi
 
     # Capture post-schema tables and detect dropped tables
@@ -205,7 +207,7 @@ run_schema() {
     # Seed local PG from Neon cloud (offline-first mode)
     if [[ "$SYNC_ENABLED" == "true" ]] && [[ -n "$NEON_DATABASE_URL" ]]; then
       log "Seeding local database from Neon cloud..."
-      if ! sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && APP_BASE='$APP_BASE' bash scripts/seed-from-neon.sh" 2>&1 | tail -5; then
+      if ! docker exec gwi-pos bash -c "cd /app && APP_BASE='$APP_BASE' bash scripts/seed-from-neon.sh" 2>&1 | tail -5; then
         # Check if seed wrote an INCOMPLETE marker
         if [[ -f "$APP_BASE/.seed-status" ]] && grep -q "^INCOMPLETE" "$APP_BASE/.seed-status"; then
           SEED_REASON=$(cat "$APP_BASE/.seed-status" | cut -d: -f3-)

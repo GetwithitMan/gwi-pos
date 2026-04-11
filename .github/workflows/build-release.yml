@@ -178,6 +178,20 @@ jobs:
             echo "Docker image contract validated: all required files present, version-contract.json well-formed"
           '
 
+      - name: Validate dashboard .deb
+        run: |
+          IMAGE="ghcr.io/getwithitman/gwi-pos:${{ steps.meta.outputs.version }}"
+          docker run --rm "$IMAGE" sh -c '
+            if [ -f public/gwi-nuc-dashboard.deb ]; then
+              dpkg --info public/gwi-nuc-dashboard.deb > /dev/null || exit 1
+              PKG=$(dpkg-deb -f public/gwi-nuc-dashboard.deb Package)
+              test "$PKG" = "gwi-nuc-dashboard" || exit 1
+              echo "Dashboard .deb validated: $(dpkg-deb -f public/gwi-nuc-dashboard.deb Version)"
+            else
+              echo "No dashboard .deb bundled (optional)"
+            fi
+          '
+
       # ── Phase C: Cosign signing + SBOM ──
 
       - name: Install Cosign

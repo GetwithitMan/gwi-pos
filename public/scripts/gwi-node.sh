@@ -637,6 +637,37 @@ update_dashboard() {
     return 0
   fi
 
+  # Validate .deb structure
+  if ! dpkg --info "$deb_path" > /dev/null 2>&1; then
+    log "Dashboard: downloaded file is not a valid .deb package — skipping"
+    rm -f "$deb_path"
+    return 0
+  fi
+
+  # Validate expected package name
+  local pkg_name
+  pkg_name=$(dpkg-deb -f "$deb_path" Package 2>/dev/null)
+  if [[ "$pkg_name" != "gwi-nuc-dashboard" ]]; then
+    log "Dashboard: unexpected package name '$pkg_name' — expected gwi-nuc-dashboard — skipping"
+    rm -f "$deb_path"
+    return 0
+  fi
+
+  # Checksum validation (if hash available in version-contract)
+  local expected_sha
+  expected_sha=$(docker exec "$CONTAINER_NAME" cat /app/public/version-contract.json 2>/dev/null \
+    | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('components',{}).get('dashboard',{}).get('sha256',''))" 2>/dev/null)
+  if [[ -n "$expected_sha" ]]; then
+    local actual_sha
+    actual_sha=$(sha256sum "$deb_path" | awk '{print $1}')
+    if [[ "$actual_sha" != "$expected_sha" ]]; then
+      log "Dashboard: SHA256 mismatch — expected $expected_sha, got $actual_sha — skipping"
+      rm -f "$deb_path"
+      return 0
+    fi
+    log "Dashboard: SHA256 verified"
+  fi
+
   # Install — dpkg may return non-zero on trigger warnings (icon cache),
   # so we always run --configure -a and verify the installed version afterward.
   sudo dpkg -i "$deb_path" 2>&1 | while IFS= read -r line; do log "Dashboard: $line"; done
@@ -683,6 +714,10 @@ SVCEOF
     # Start or restart the service
     sudo -u "${_posuser}" bash -c \
       "XDG_RUNTIME_DIR=/run/user/\$(id -u) systemctl --user daemon-reload && systemctl --user enable gwi-dashboard.service && systemctl --user start gwi-dashboard.service" 2>/dev/null || true
+    # Audit log for dashboard update
+    mkdir -p "${RESULTS_DIR}" 2>/dev/null || true
+    echo "{\"action\":\"dashboard_update\",\"version\":\"$available\",\"installedVersion\":\"$final_version\",\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" \
+      > "${RESULTS_DIR}/dashboard-$(date +%s).json" 2>/dev/null || true
   else
     log "Dashboard: install may have failed — expected v${available}, got v${final_version}"
   fi

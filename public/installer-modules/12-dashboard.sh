@@ -129,6 +129,25 @@ run_dashboard() {
   log "Found dashboard package: ${DASHBOARD_DEB}"
 
   # ─────────────────────────────────────────────────────────────────────────
+  # Validate .deb package integrity
+  # ─────────────────────────────────────────────────────────────────────────
+  if ! dpkg --info "$DASHBOARD_DEB" > /dev/null 2>&1; then
+    track_warn "Dashboard: file is not a valid .deb package — skipping"
+    end_timer "Stage 12 (dashboard)"
+    return 0
+  fi
+
+  local _pkg_name
+  _pkg_name=$(dpkg-deb -f "$DASHBOARD_DEB" Package 2>/dev/null)
+  if [[ "$_pkg_name" != "gwi-nuc-dashboard" ]]; then
+    track_warn "Dashboard: unexpected package name '$_pkg_name' — expected gwi-nuc-dashboard — skipping"
+    end_timer "Stage 12 (dashboard)"
+    return 0
+  fi
+
+  log "Dashboard .deb validated: package=$_pkg_name, version=$(dpkg-deb -f "$DASHBOARD_DEB" Version 2>/dev/null)"
+
+  # ─────────────────────────────────────────────────────────────────────────
   # Install dependencies
   # ─────────────────────────────────────────────────────────────────────────
   log "Installing dashboard dependencies..."
