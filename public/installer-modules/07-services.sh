@@ -67,12 +67,17 @@ _boot_step() {
   _BOOT_STEPS+=("{\"step\":\"$name\",\"status\":\"$status\",\"detail\":\"$detail\",\"elapsedMs\":$elapsed_ms}")
 }
 
-_APP_DIR="/opt/gwi-pos/app"
-cd "$_APP_DIR"
+_APP_DIR="/opt/gwi-pos/app"   # kept for host-side env/state paths only
+_CONTAINER="gwi-pos"           # Docker container name
 
-# Ensure app env files are symlinked to canonical /opt/gwi-pos/.env
-# (repairs broken symlinks or copies left by older installers)
+# Source .env for DATABASE_URL, NEON_DATABASE_URL (belt-and-suspenders:
+# systemd EnvironmentFile provides these, but manual runs need them too)
 _CANONICAL_ENV="/opt/gwi-pos/.env"
+if [[ -f "$_CANONICAL_ENV" ]]; then
+  set -a
+  source "$_CANONICAL_ENV"
+  set +a
+fi
 
 # ── Per-boot reconciliation gate -- prevents infinite restart loops ──
 BOOT_ID=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null | tr -d '-')
@@ -95,8 +100,20 @@ fi
 # 5-minute hard timeout
 PRE_START_DEADLINE=$(($(date +%s) + 300))
 
+# ── Container readiness gate ──
+if ! docker ps -q --filter "name=^${_CONTAINER}$" --filter status=running | grep -q .; then
+  echo "[pre-start] $_CONTAINER container not running — starting..."
+  docker start "$_CONTAINER" || { echo "[pre-start] CRITICAL: cannot start $_CONTAINER container"; exit 1; }
+  sleep 3
+  if ! docker ps -q --filter "name=^${_CONTAINER}$" --filter status=running | grep -q .; then
+    echo "[pre-start] CRITICAL: $_CONTAINER container failed to reach running state"
+    exit 1
+  fi
+fi
+_boot_step "container-ready" "ok" ""
+
 if [[ -f "$_CANONICAL_ENV" ]]; then
-  for _ef in .env .env.local; do
+  for _ef in "$_APP_DIR/.env" "$_APP_DIR/.env.local"; do
     if [[ ! -L "$_ef" ]] || [[ "$(readlink -f "$_ef" 2>/dev/null)" != "$(readlink -f "$_CANONICAL_ENV")" ]]; then
       rm -f "$_ef"
       ln -sf "$_CANONICAL_ENV" "$_ef"
@@ -105,12 +122,10 @@ if [[ -f "$_CANONICAL_ENV" ]]; then
   done
 fi
 
-# Clean stale .next.backup from inside project dir (Turbopack crash -- scans 17k+ files)
-rm -rf "$_APP_DIR/.next.backup" 2>/dev/null || true
-# Also clean the outside-project backup if it exists from a previously failed build
+# Clean stale build artifacts inside container (Turbopack crash -- scans 17k+ files)
+docker exec "$_CONTAINER" rm -rf /app/.next.backup /app/.next/lock 2>/dev/null || true
+# Also clean host-side backup if it exists from a previously failed build
 rm -rf /opt/gwi-pos/.next.backup 2>/dev/null || true
-# Remove stale .next/lock from interrupted builds (prevents build hangs)
-rm -f "$_APP_DIR/.next/lock" 2>/dev/null || true
 
 # Guard: DATABASE_URL must be set for any DB operations
 if [[ -z "${DATABASE_URL:-}" ]]; then
@@ -119,15 +134,15 @@ if [[ -z "${DATABASE_URL:-}" ]]; then
 fi
 
 # ── Prisma client validation (pre-built in artifact, never generated on NUC) ──
-# The artifact ships a pre-built Prisma client at src/generated/prisma/.
+# The Docker image ships a pre-built Prisma client at /app/src/generated/prisma/.
 # We validate it exists but do NOT regenerate — prisma generate is a
 # build-time step that runs on Vercel, never on a production NUC.
-if [[ -d "$_APP_DIR/src/generated/prisma" ]]; then
-  echo "[pre-start] Prisma client: present (pre-built in artifact)"
+if docker exec "$_CONTAINER" test -d /app/src/generated/prisma 2>/dev/null; then
+  echo "[pre-start] Prisma client: present (pre-built in image)"
   _boot_step "prisma-client" "ok" "pre-built"
 else
-  echo "[pre-start] WARNING: Prisma client not found at $_APP_DIR/src/generated/prisma"
-  echo "[pre-start] The app may fail to start. Redeploy with a complete artifact."
+  echo "[pre-start] WARNING: Prisma client not found in container at /app/src/generated/prisma"
+  echo "[pre-start] The app may fail to start. Redeploy with a complete image."
   _boot_step "prisma-client" "missing" ""
 fi
 
@@ -143,8 +158,8 @@ fi
 rm -f /opt/gwi-pos/.schema-stage-done 2>/dev/null || true
 
 # ── Schema validation + migrations (deploy-tools only) ──
-# The artifact ships a pre-built Prisma client at src/generated/prisma/.
-# Schema mutations use deploy-tools/migrate.js exclusively.
+# The Docker image ships a pre-built Prisma client at /app/src/generated/prisma/.
+# Schema mutations use deploy-tools/migrate.js exclusively (via docker exec).
 # prisma generate and prisma db push are build-time only — never on NUC boot.
 
 # Disable RLS on all tables before migrations.
@@ -179,16 +194,15 @@ if [[ $(date +%s) -gt $PRE_START_DEADLINE ]]; then
   exit 0
 fi
 
-# Run migrations via deploy-tools (pg-only, no Prisma CLI)
+# Run migrations via deploy-tools inside container (pg-only, no Prisma CLI)
 # TIMEOUT: 300s (5min) matches the internal timeout in the runner
-_DT_DIR="/opt/gwi-pos/deploy-tools"
-if [[ -f "$_DT_DIR/src/migrate.js" ]]; then
+if docker exec "$_CONTAINER" test -f /app/deploy-tools/src/migrate.js 2>/dev/null; then
   echo "[pre-start] Setting migration state..."
   mkdir -p /opt/gwi-pos/shared/state
   echo "migrating" > /opt/gwi-pos/shared/state/schema-state 2>/dev/null || true
 
-  echo "[pre-start] Running migrations via deploy-tools..."
-  _MIGRATE_OUTPUT=$(DATABASE_URL="$DATABASE_URL" timeout --kill-after=10 300 node "$_DT_DIR/src/migrate.js" 2>&1) && {
+  echo "[pre-start] Running migrations via deploy-tools (docker exec)..."
+  _MIGRATE_OUTPUT=$(docker exec "$_CONTAINER" bash -c "cd /app/deploy-tools && DATABASE_URL='$DATABASE_URL' timeout 300 node src/migrate.js" 2>&1) && {
     # Parse applied/skipped counts from output if available
     _m_applied=$(echo "$_MIGRATE_OUTPUT" | grep -c 'Applied\|applied' 2>/dev/null || echo "0")
     _m_skipped=$(echo "$_MIGRATE_OUTPUT" | grep -c 'Skipped\|skipped\|already' 2>/dev/null || echo "0")
@@ -214,18 +228,18 @@ if [[ -f "$_DT_DIR/src/migrate.js" ]]; then
 
   echo "ready" > /opt/gwi-pos/shared/state/schema-state 2>/dev/null || true
 else
-  echo "[pre-start] WARNING: deploy-tools not found at $_DT_DIR -- skipping migrations."
-  _boot_step "local-migrations" "skipped" "deploy-tools not found"
+  echo "[pre-start] WARNING: deploy-tools not found in container -- skipping migrations."
+  _boot_step "local-migrations" "skipped" "deploy-tools not found in container"
 fi
 
 # ── Neon schema VALIDATION (read-only -- NUC never mutates venue Neon) ──
 # MC owns venue Neon schema via /api/internal/provision and /api/internal/sync-schema.
 # NUC only validates that Neon migration count matches local, and warns if not.
-if [[ -n "$NEON_DATABASE_URL" ]]; then
+if [[ -n "${NEON_DATABASE_URL:-}" ]]; then
   echo "[pre-start] Validating Neon schema version (read-only)..."
-  _neon_count=$(DATABASE_URL="$NEON_DATABASE_URL" node -e "
+  _neon_count=$(docker exec "$_CONTAINER" node -e "
     const { Client } = require('pg');
-    const c = new Client({ connectionString: process.env.DATABASE_URL });
+    const c = new Client({ connectionString: '$NEON_DATABASE_URL' });
     c.connect().then(() => c.query('SELECT COUNT(*)::int as cnt FROM \"_gwi_migrations\"'))
       .then(r => { console.log(r.rows[0].cnt); c.end(); })
       .catch(() => { console.log('-1'); c.end(); });
@@ -292,13 +306,14 @@ if command -v gwi-dashboard >/dev/null 2>&1 || command -v gwi-nuc-dashboard >/de
   fi
 fi
 
-# Deploy latest scripts from checkout if available
-if [[ -d "$_APP_DIR/public/scripts" ]]; then
+# Deploy latest scripts from container image to host
+if docker exec "$_CONTAINER" test -d /app/public/scripts 2>/dev/null; then
   for _script in watchdog.sh; do
-    [[ -f "$_APP_DIR/public/$_script" ]] && cp "$_APP_DIR/public/$_script" /opt/gwi-pos/ && chmod +x "/opt/gwi-pos/$_script" 2>/dev/null || true
+    docker cp "$_CONTAINER:/app/public/$_script" /opt/gwi-pos/ 2>/dev/null && chmod +x "/opt/gwi-pos/$_script" 2>/dev/null || true
   done
+  mkdir -p /opt/gwi-pos/scripts
   for _script in hardware-inventory.sh disk-pressure-monitor.sh version-compat.sh rolling-restart.sh; do
-    [[ -f "$_APP_DIR/public/scripts/$_script" ]] && cp "$_APP_DIR/public/scripts/$_script" /opt/gwi-pos/scripts/ && chmod +x "/opt/gwi-pos/scripts/$_script" 2>/dev/null || true
+    docker cp "$_CONTAINER:/app/public/scripts/$_script" /opt/gwi-pos/scripts/ 2>/dev/null && chmod +x "/opt/gwi-pos/scripts/$_script" 2>/dev/null || true
   done
 fi
 
@@ -313,7 +328,7 @@ cat > "$_REPORT_DIR/boot-report.json" << BOOTEOF
   "timestamp": "$(date -u +%FT%TZ)",
   "durationMs": $_BOOT_DURATION_MS,
   "hostname": "$(hostname)",
-  "release": "$(basename "$(readlink -f /opt/gwi-pos/current 2>/dev/null)" 2>/dev/null || echo "unknown")",
+  "release": "$(docker exec "$_CONTAINER" node -e "const v = require('/app/public/version-contract.json'); console.log(v.version)" 2>/dev/null || basename "$(readlink -f /opt/gwi-pos/current 2>/dev/null)" 2>/dev/null || echo "unknown")",
   "steps": [$_STEPS_JSON]
 }
 BOOTEOF
@@ -399,6 +414,10 @@ Environment=NODE_ENV=production
 # Ensures enumerated NOPASSWD rules exist. Replaces legacy NOPASSWD: ALL on older venues.
 ExecStartPre=+/opt/gwi-pos/fix-sudoers.sh
 ExecStartPre=$APP_BASE/pre-start.sh
+# NOTE: ExecStart still launches node on host. In the Docker appliance model,
+# the container is started by pre-start.sh (container readiness gate) and managed
+# by gwi-node. This systemd unit ensures pre-start checks run and the service
+# lifecycle integrates with systemd. Future: ExecStart=docker start -a gwi-pos.
 ExecStart=/usr/bin/node -r ./preload.js server.js
 Restart=always
 RestartSec=3
