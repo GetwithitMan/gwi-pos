@@ -4,7 +4,8 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationSettings } from '@/lib/location-cache'
-import { parseSettings } from '@/lib/settings'
+import { parseSettings, getPricingProgram } from '@/lib/settings'
+import { calculateCardPrice, calculateDebitPrice, roundToCents } from '@/lib/pricing'
 import { err, notFound, ok, unauthorized } from '@/lib/api-response'
 
 const employeeSelect = { id: true, firstName: true, lastName: true } as const
@@ -246,49 +247,50 @@ export const GET = withVenue(async function GET(
       : []
     const discountEmployeeMap = new Map(discountEmployees.map(e => [e.id, e]))
 
-    // Fetch location tax settings for proper tax computation
+    // ── Use canonical pricing program + stored order values ──
     const locationSettings = parseSettings(await getLocationSettings(order.locationId))
+    const pp = getPricingProgram(locationSettings)
     const taxRateDecimal = (locationSettings.tax?.defaultRate ?? 0) / 100
-    const calculateAfterDiscount = locationSettings.tax?.calculateAfterDiscount ?? true
-
-    // Compute card-adjusted subtotal for dual pricing
-    const activeItems = items.filter(i => i.status === 'active')
-    const hasCardPricing = activeItems.some(i => i.cardPrice != null)
-
-    // Derive dual pricing multiplier from any item that has both price and cardPrice
-    const dualPricingMultiplier = (() => {
-      for (const item of activeItems) {
-        if (item.cardPrice != null && Number(item.price) > 0) {
-          return Number(item.cardPrice) / Number(item.price)
-        }
-      }
-      return 1
-    })()
-
-    // Compute cash subtotal from actual items (not stored order.subtotal which may be stale)
-    const computedCashSubtotal = Math.round(
-      activeItems.reduce((sum, i) => sum + Number(i.itemTotal), 0) * 100
-    ) / 100
-
-    // Card subtotal = computed cash subtotal × multiplier (scales base + modifiers)
-    const cardSubtotal = hasCardPricing
-      ? Math.round(computedCashSubtotal * dualPricingMultiplier * 100) / 100
-      : null
-    const subtotal = cardSubtotal ?? computedCashSubtotal
-    const discountTotal = Math.round(Number(order.discountTotal) * 100) / 100
-
-    // Tax: compute from location settings (not stored values which may be buggy)
-    const cashTaxableAmount = calculateAfterDiscount
-      ? Math.max(0, computedCashSubtotal - discountTotal)
-      : computedCashSubtotal
-    const computedCashTax = Math.round(cashTaxableAmount * taxRateDecimal * 100) / 100
-    const cardTaxableAmount = calculateAfterDiscount
-      ? Math.max(0, subtotal - discountTotal)
-      : subtotal
-    const displayTaxTotal = Math.round(cardTaxableAmount * taxRateDecimal * 100) / 100
     const taxRate = taxRateDecimal > 0
       ? Math.round(taxRateDecimal * 10000) / 10000
       : undefined
+
+    const isDualPricing = pp.enabled && (
+      pp.model === 'dual_price' || pp.model === 'dual_price_pan_debit' || pp.model === 'cash_discount'
+    )
+
+    // Determine the applied tier from the first card payment
+    const cardPayment = isDualPricing ? payments.find(p =>
+      (p as any).pricingMode === 'card' ||
+      (p as any).appliedPricingTier === 'credit' ||
+      (p as any).appliedPricingTier === 'debit'
+    ) : null
+    const appliedTier = (
+      (cardPayment as any)?.appliedPricingTier ||
+      ((cardPayment as any)?.pricingMode === 'card' ? 'credit' : null)
+    ) as 'credit' | 'debit' | null
+
+    const markupPercent = (() => {
+      if (!isDualPricing || !appliedTier) return 0
+      if (appliedTier === 'debit') return pp.debitMarkupPercent ?? 0
+      return pp.creditMarkupPercent ?? pp.cashDiscountPercent ?? 0
+    })()
+
+    const hasCardPricing = isDualPricing && !!cardPayment && markupPercent > 0
+
+    const applyMarkup = (amount: number): number =>
+      appliedTier === 'debit'
+        ? calculateDebitPrice(amount, markupPercent)
+        : calculateCardPrice(amount, markupPercent)
+
+    // Use STORED order values (never recalculate from items or settings)
+    const cashSubtotal = roundToCents(Number(order.subtotal))
+    const storedTax = roundToCents(Number(order.taxTotal))
+    const discountTotal = roundToCents(Number(order.discountTotal))
+
+    // Display values: markup applies to subtotal only (pre-tax per DP1 rule)
+    const subtotal = hasCardPricing ? applyMarkup(cashSubtotal) : cashSubtotal
+    const displayTaxTotal = storedTax
 
     const formatEmployee = (emp: { id: string; firstName: string; lastName: string } | null) =>
       emp ? { id: emp.id, firstName: emp.firstName, lastName: emp.lastName } : null
@@ -314,22 +316,19 @@ export const GET = withVenue(async function GET(
         closedBy: closedByLog ? formatEmployee(closedByLog.employee) : null,
         closedAt: order.closedAt?.toISOString(),
 
-        // Items — use card price when dual pricing is active
-        // Multiplier applies to base price AND modifier prices
+        // Items — use stored cardPrice when present, otherwise apply canonical markup
         items: items.map(item => {
           const cashPrice = Number(item.price)
-          const hasDP = item.cardPrice != null
-          const displayPrice = hasDP ? Number(item.cardPrice) : cashPrice
+          const hasDP = hasCardPricing && item.cardPrice != null
+          const displayPrice = hasDP ? Number(item.cardPrice)
+            : (hasCardPricing ? applyMarkup(cashPrice) : cashPrice)
           const cashItemTotal = Number(item.itemTotal)
-          // Full card-adjusted item total (base + modifiers, all scaled)
-          const displayTotal = hasDP
-            ? Math.round(cashItemTotal * dualPricingMultiplier * 100) / 100
-            : cashItemTotal
+          const displayTotal = hasCardPricing ? applyMarkup(cashItemTotal) : cashItemTotal
           return {
           id: item.id,
           name: item.name,
           price: displayPrice,
-          cashPrice: hasDP ? cashPrice : undefined,
+          cashPrice: hasCardPricing ? cashPrice : undefined,
           quantity: item.quantity,
           itemTotal: displayTotal,
           status: item.status,
@@ -343,7 +342,7 @@ export const GET = withVenue(async function GET(
           addedAt: item.createdAt.toISOString(),
           modifiers: item.modifiers.map(m => ({
             name: m.name,
-            price: hasDP ? Math.round(Number(m.price) * dualPricingMultiplier * 100) / 100 : Number(m.price),
+            price: hasCardPricing ? applyMarkup(Number(m.price)) : Number(m.price),
           })),
         }}),
 
@@ -356,18 +355,18 @@ export const GET = withVenue(async function GET(
           timestamp: log.createdAt.toISOString(),
         })),
 
-        // Financials (card price when dual pricing active)
+        // Financials — stored values, markup on subtotal only (pre-tax per DP1)
         subtotal,
         taxTotal: displayTaxTotal,
         taxRate,
         discountTotal,
         tipTotal: Number(order.tipTotal),
-        total: Math.round((subtotal - discountTotal + displayTaxTotal) * 100) / 100,
+        total: roundToCents(subtotal - discountTotal + displayTaxTotal),
         // Dual pricing breakdown
-        cashSubtotal: hasCardPricing ? computedCashSubtotal : undefined,
-        cashTax: hasCardPricing ? computedCashTax : undefined,
+        cashSubtotal: hasCardPricing ? cashSubtotal : undefined,
+        cashTax: hasCardPricing ? storedTax : undefined,
         cashTotal: hasCardPricing
-          ? Math.round((computedCashSubtotal - discountTotal + computedCashTax) * 100) / 100
+          ? roundToCents(cashSubtotal - discountTotal + storedTax)
           : undefined,
         isDualPricing: hasCardPricing || undefined,
 

@@ -21,6 +21,7 @@ import {
   type PreChargeResult,
   type TxClient,
 } from '@/lib/domain/payment'
+import { getPricingProgram } from '@/lib/settings'
 import type { LocationSettings } from '@/lib/settings'
 import { createChildLogger } from '@/lib/logger'
 
@@ -153,11 +154,11 @@ export async function processPaymentLoop(
     }
 
     // Dual pricing: record pricing mode and discount info
-    const dualPricing = settings.dualPricing
-    if (dualPricing.enabled) {
+    const pp = getPricingProgram(settings)
+    if (pp.enabled) {
       const isCash = payment.method === 'cash'
-      const isCard = (payment.method === 'credit' && dualPricing.applyToCredit) ||
-                     (payment.method === 'debit' && dualPricing.applyToDebit)
+      const isCard = (payment.method === 'credit' && (pp.creditMarkupPercent ?? 0) > 0) ||
+                     (payment.method === 'debit' && (pp.debitMarkupPercent ?? 0) > 0)
 
       if (isCash) {
         // Dual pricing fields calculated after cash rounding below
@@ -170,7 +171,10 @@ export async function processPaymentLoop(
         // Validate: card amount should match expected card price (warn, don't reject)
         // CRITICAL: exclude tipTotal from surcharge base — surcharge applies to order amount only
         const orderTotalExTip = toNumber(order.total ?? 0) - toNumber(order.tipTotal ?? 0)
-        const expectedCardAmount = calculateCardPrice(orderTotalExTip, dualPricing.cashDiscountPercent)
+        const markupPct = payment.method === 'debit'
+          ? (pp.debitMarkupPercent ?? 0)
+          : (pp.creditMarkupPercent ?? pp.cashDiscountPercent ?? 0)
+        const expectedCardAmount = calculateCardPrice(orderTotalExTip, markupPct)
         if (Math.abs(payment.amount - expectedCardAmount) > 0.01) {
           console.warn(`[DualPricing] Card payment amount $${payment.amount} differs from expected $${expectedCardAmount} for order ${orderId}`)
           // Route through audit log so it shows up in monitoring dashboards
@@ -186,7 +190,7 @@ export async function processPaymentLoop(
                 submittedAmount: payment.amount,
                 expectedCardAmount,
                 orderTotal: toNumber(order.total ?? 0),
-                cashDiscountPercent: dualPricing.cashDiscountPercent,
+                creditMarkupPercent: pp.creditMarkupPercent,
                 delta: roundToCents(payment.amount - expectedCardAmount),
               }),
             },
@@ -196,20 +200,20 @@ export async function processPaymentLoop(
     }
 
     // Snapshot pricing program config at transaction time (for audit trail)
-    if (settings.pricingProgram?.enabled && (payment.method === 'credit' || payment.method === 'debit' || payment.method === 'cash')) {
+    if (pp.enabled && (payment.method === 'credit' || payment.method === 'debit' || payment.method === 'cash')) {
       paymentRecord.pricingProgramSnapshot = {
-        model: settings.pricingProgram.model,
-        creditMarkupPercent: settings.pricingProgram.creditMarkupPercent,
-        debitMarkupPercent: settings.pricingProgram.debitMarkupPercent,
-        cashDiscountPercent: settings.pricingProgram.cashDiscountPercent,
-        surchargePercent: settings.pricingProgram.surchargePercent,
+        model: pp.model,
+        creditMarkupPercent: pp.creditMarkupPercent,
+        debitMarkupPercent: pp.debitMarkupPercent,
+        cashDiscountPercent: pp.cashDiscountPercent,
+        surchargePercent: pp.surchargePercent,
       }
     }
 
     if (payment.method === 'cash') {
       paymentRecord = processCashPayment(
         payment as PaymentInput, paymentRecord as PaymentRecord,
-        remaining, alreadyPaidInLoop, settings, dualPricing?.enabled ? dualPricing : undefined,
+        remaining, alreadyPaidInLoop, settings, pp.enabled ? pp : undefined,
         orderId, toNumber(order.total ?? 0),
       ) as typeof paymentRecord
     } else if (payment.method === 'credit' || payment.method === 'debit') {

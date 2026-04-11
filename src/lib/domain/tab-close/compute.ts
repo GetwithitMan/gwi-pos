@@ -8,15 +8,10 @@
 import type { TabCloseOrder, TabCloseCard, CardResolutionResult, BottleServiceTier } from './types'
 import { calculateCardPrice } from '@/lib/pricing'
 import { calculateAutoGratuity } from '@/lib/domain/payment'
-
-interface DualPricingSettings {
-  enabled: boolean
-  cashDiscountPercent?: number
-}
+import type { PricingProgram } from '@/lib/settings'
 
 interface LocationSettings {
   tipBank?: { tipGuide?: { percentages?: number[] } }
-  dualPricing?: DualPricingSettings
   autoGratuity?: { enabled: boolean; percent: number; minimumPartySize: number }
 }
 
@@ -39,17 +34,18 @@ export function parseTipSuggestions(settings: LocationSettings): number[] {
  *
  * Tab closes are always card payments (pre-auth capture), so if dual pricing is
  * enabled we must capture the card price, not the stored cash price.
- * Pricing model: stored order.total = cash price; card price = cash price * (1 + cashDiscountPercent/100)
+ * Pricing model: stored order.total = cash price; card price = cash price * (1 + creditMarkupPercent/100)
  *
  * PURE — no side effects.
  */
 export function computePurchaseAmount(
   order: TabCloseOrder,
-  dualPricing?: DualPricingSettings,
+  pricingProgram?: PricingProgram,
 ): { purchaseAmount: number; cashBaseAmount: number } {
   const cashBaseAmount = Number(order.total) - Number(order.tipTotal)
-  const purchaseAmount = dualPricing?.enabled
-    ? calculateCardPrice(cashBaseAmount, dualPricing.cashDiscountPercent ?? 4.0)
+  const markupPct = pricingProgram?.creditMarkupPercent ?? pricingProgram?.cashDiscountPercent ?? 4.0
+  const purchaseAmount = pricingProgram?.enabled
+    ? calculateCardPrice(cashBaseAmount, markupPct)
     : cashBaseAmount
   return { purchaseAmount, cashBaseAmount }
 }

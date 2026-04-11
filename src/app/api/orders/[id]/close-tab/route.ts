@@ -4,7 +4,7 @@ import { db } from '@/lib/db'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
 import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchTabClosed, dispatchTabStatusUpdate, dispatchOrderClosed, dispatchEntertainmentStatusChanged, dispatchPaymentProcessed, dispatchTabClosingStarted } from '@/lib/socket-dispatch'
-import { parseSettings } from '@/lib/settings'
+import { parseSettings, getPricingProgram } from '@/lib/settings'
 import { cleanupTemporarySeats } from '@/lib/cleanup-temp-seats'
 import { getLocationSettings } from '@/lib/location-cache'
 import { processNextDeduction } from '@/lib/deduction-processor'
@@ -144,8 +144,8 @@ export const POST = withVenue(async function POST(
     // Parse tip percentages from location settings (pure)
     const tipSuggestions = parseTipSuggestions(locSettings)
 
-    // Calculate purchase amount — applies dual pricing card surcharge if enabled (pure)
-    const { purchaseAmount } = computePurchaseAmount(order, locSettings.dualPricing)
+    // Calculate purchase amount — applies pricing program card markup if enabled (pure)
+    const { purchaseAmount } = computePurchaseAmount(order, getPricingProgram(locSettings))
     const initialGratuity = tipMode === 'included' && tipAmount != null ? Number(tipAmount) : undefined
 
     // ═══════════════════════════════════════════════════════════════════════════

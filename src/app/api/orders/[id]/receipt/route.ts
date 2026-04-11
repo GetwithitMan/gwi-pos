@@ -75,6 +75,13 @@ export const GET = withVenue(async function GET(
       return forbidden('Order does not belong to this location')
     }
 
+    // Look up actual loyalty points earned for this order (not recalculated)
+    const loyaltyEarnTxn = order.customer ? await db.loyaltyTransaction.findFirst({
+      where: { orderId: id, type: 'earn', customerId: order.customer.id },
+      select: { points: true },
+      orderBy: { createdAt: 'desc' },
+    }) : null
+
     const settings = parseSettings(order.location.settings)
     const pp = getPricingProgram(settings)
 
@@ -137,12 +144,12 @@ export const GET = withVenue(async function GET(
       if (!isDualCard) return {}
 
       const cardSubtotal = applyMarkup(cashSubtotal)
-      const cardTax = applyMarkup(cashTax)
-      const cardTotal = applyMarkup(cashTotal)
+      // Tax is NOT marked up — surcharge/markup is pre-tax per DP1 rule
+      const cardTotal = roundToCents(cardSubtotal + cashTax - discountTotal + tipTotal)
 
       return {
         cardSubtotal,
-        cardTax,
+        cardTax: cashTax,
         cardTotal,
         cashSubtotal,
         cashTax,
@@ -151,9 +158,12 @@ export const GET = withVenue(async function GET(
     })()
 
     // Effective totals: use card-adjusted values when dual pricing applies
+    // Tax is NOT marked up (pre-tax markup per DP1 rule)
     const effectiveSubtotal = isDualCard ? applyMarkup(cashSubtotal) : cashSubtotal
-    const effectiveTax = isDualCard ? applyMarkup(cashTax) : cashTax
-    const effectiveTotal = isDualCard ? applyMarkup(cashTotal) : cashTotal
+    const effectiveTax = cashTax
+    const effectiveTotal = isDualCard
+      ? roundToCents(applyMarkup(cashSubtotal) + cashTax - discountTotal + tipTotal)
+      : cashTotal
 
     // Surcharge disclosure
     const surchargeDisclosure = pp.enabled && pp.model === 'surcharge' && pp.surchargeDisclosure
@@ -239,7 +249,7 @@ export const GET = withVenue(async function GET(
           const match = p.transactionId?.match(/LOYALTY:(\d+)pts/)
           return sum + (match ? parseInt(match[1]) : 0)
         }, 0) || null,
-      loyaltyPointsEarned: order.customer?.loyaltyPoints ? Math.floor(Number(order.total)) : null,
+      loyaltyPointsEarned: loyaltyEarnTxn?.points ?? null,
       // Pricing disclosures
       surchargeDisclosure,
       cashDiscountDisclosure,

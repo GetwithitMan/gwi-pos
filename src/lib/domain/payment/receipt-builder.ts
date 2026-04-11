@@ -133,13 +133,17 @@ export function buildReceiptData(
     return pp.creditMarkupPercent ?? pp.cashDiscountPercent ?? 0
   })()
 
-  // Calculate totals
+  // Calculate totals — markup applies to subtotal only, NOT tax (pre-tax per DP1 rule)
   const cashTotal = Number(order.total ?? 0)
-  const total = isDualPricing && cardPayment && markupPercent > 0
-    ? (appliedTier === 'debit'
-        ? calculateDebitPrice(cashTotal, markupPercent)
-        : calculateCardPrice(cashTotal, markupPercent))
-    : cashTotal
+  const total = (() => {
+    if (!isDualPricing || !cardPayment || markupPercent <= 0) return cashTotal
+    const cashSub = Number(order.subtotal ?? 0)
+    const cardSub = appliedTier === 'debit'
+      ? calculateDebitPrice(cashSub, markupPercent)
+      : calculateCardPrice(cashSub, markupPercent)
+    const cashTax = Number(order.taxTotal ?? 0)
+    return roundToCents(cardSub + cashTax - Number(order.discountTotal ?? 0) + Number(order.tipTotal ?? 0))
+  })()
 
   // Build dual pricing breakdown fields for the receipt template
   const dualPricingBreakdown = (() => {
@@ -150,14 +154,13 @@ export function buildReceiptData(
     const cardSubtotal = appliedTier === 'debit'
       ? calculateDebitPrice(cashSubtotal, markupPercent)
       : calculateCardPrice(cashSubtotal, markupPercent)
-    const cardTax = appliedTier === 'debit'
-      ? calculateDebitPrice(cashTax, markupPercent)
-      : calculateCardPrice(cashTax, markupPercent)
+    // Tax is NOT marked up — surcharge/markup is pre-tax per DP1 rule
+    const cardTotal = roundToCents(cardSubtotal + cashTax - Number(order.discountTotal ?? 0) + Number(order.tipTotal ?? 0))
 
     return {
       cardSubtotal,
-      cardTax,
-      cardTotal: total, // Use the already-calculated total for consistency
+      cardTax: cashTax,
+      cardTotal,
       cashSubtotal,
       cashTax,
       cashTotal: roundToCents(cashSubtotal + cashTax - Number(order.discountTotal ?? 0) + Number(order.tipTotal ?? 0)),

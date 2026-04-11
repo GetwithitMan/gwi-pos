@@ -9,7 +9,7 @@ import * as OrderRepository from '@/lib/repositories/order-repository'
 import { mapOrderForResponse } from '@/lib/api/order-response-mapper'
 import { calculateCardPrice, roundToCents } from '@/lib/pricing'
 import { getLocationSettings } from '@/lib/location-cache'
-import { parseSettings } from '@/lib/settings'
+import { parseSettings, getPricingProgram } from '@/lib/settings'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { apiError, ERROR_CODES } from '@/lib/api/error-responses'
@@ -42,9 +42,9 @@ export async function computeDualPricing(
   try {
     const locSettings = await getLocationSettings(locationId)
     const parsed = parseSettings(locSettings as Record<string, unknown>)
-    const dp = parsed?.dualPricing
-    if (dp?.enabled) {
-      cashDiscountPercent = dp.cashDiscountPercent ?? 4.0
+    const pp = getPricingProgram(parsed)
+    if (pp.enabled) {
+      cashDiscountPercent = pp.creditMarkupPercent ?? pp.cashDiscountPercent ?? 4.0
       const sub = orderSubtotal
       const disc = orderDiscountTotal
       const discountedCashSub = Math.max(0, sub - disc)
