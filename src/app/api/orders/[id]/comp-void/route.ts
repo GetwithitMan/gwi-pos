@@ -15,7 +15,7 @@ import { emitCloudEvent } from '@/lib/cloud-events'
 import { getDatacapClient } from '@/lib/datacap/helpers'
 import { emitToLocation } from '@/lib/socket-server'
 import { withVenue } from '@/lib/with-venue'
-import { parseSettings } from '@/lib/settings'
+import { parseSettings, getPricingProgram } from '@/lib/settings'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
 import { queueIfOutageOrFail, OutageQueueFullError, pushUpstream } from '@/lib/sync/outage-safe-write'
@@ -354,19 +354,19 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
           const totalRefundable = reversiblePayments.reduce(
             (sum, p) => sum + Math.max(0, Number(p.totalAmount) - Number(p.refundedAmount ?? 0)), 0
           )
-          // Dual pricing fix: when the customer was charged the card price (credit/debit with dual
-          // pricing enabled), the refund must use the card price — not the stored cash price.
-          const dualPricing = settings.dualPricing
-          const cashDiscountPercent = dualPricing.cashDiscountPercent || 4.0
+          // Pricing program fix: when the customer was charged the card price (credit/debit with
+          // pricing program enabled), the refund must use the card price — not the stored cash price.
+          const pp = getPricingProgram(settings)
+          const creditMarkupPct = pp.creditMarkupPercent ?? 0
           const allReversibleAreCard = reversiblePayments.every(
             (p) => ['credit', 'debit'].includes(p.paymentMethod)
           )
-          const appliesForCard = dualPricing.enabled && (
-            (dualPricing.applyToCredit && reversiblePayments.some((p) => p.paymentMethod === 'credit')) ||
-            (dualPricing.applyToDebit  && reversiblePayments.some((p) => p.paymentMethod === 'debit'))
+          const appliesForCard = pp.enabled && (
+            (pp.applyToCredit && reversiblePayments.some((p) => p.paymentMethod === 'credit')) ||
+            (pp.applyToDebit  && reversiblePayments.some((p) => p.paymentMethod === 'debit'))
           )
           const refundBase = (allReversibleAreCard && appliesForCard)
-            ? calculateCardPrice(itemTotal, cashDiscountPercent)
+            ? calculateCardPrice(itemTotal, creditMarkupPct)
             : itemTotal
           let remainingRefund = Math.min(refundBase, totalRefundable)
           for (const payment of reversiblePayments) {

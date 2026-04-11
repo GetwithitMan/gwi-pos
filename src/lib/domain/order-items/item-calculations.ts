@@ -134,16 +134,16 @@ export function deriveTaxInclusiveSettings(
 // ─── Card Price ─────────────────────────────────────────────────────────────
 
 /**
- * Calculate the card price for an item when dual pricing is enabled.
- * Returns null if dual pricing is disabled.
+ * Calculate the card price for an item when the pricing program is enabled.
+ * Returns null if no pricing program markup applies.
  */
 export function calculateItemCardPrice(
   effectivePrice: number,
-  dualPricingEnabled: boolean,
-  cashDiscountPct: number
+  pricingEnabled: boolean,
+  creditMarkupPct: number
 ): number | null {
-  if (!dualPricingEnabled) return null
-  return calculateCardPrice(effectivePrice, cashDiscountPct)
+  if (!pricingEnabled) return null
+  return calculateCardPrice(effectivePrice, creditMarkupPct)
 }
 
 // ─── Open Item Detection ────────────────────────────────────────────────────

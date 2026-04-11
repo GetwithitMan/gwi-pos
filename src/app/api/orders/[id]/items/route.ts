@@ -540,12 +540,10 @@ export const POST = withVenue(async function POST(
         )
       }
 
-      // Derive tax-inclusive flags + dual pricing settings via domain
+      // Derive tax-inclusive flags + pricing program settings via domain
       const locSettings = existingOrder.location.settings
-      const parsedSettings = locSettings ? parseSettings(locSettings) : null
-      const dualPricingEnabled = parsedSettings?.dualPricing?.enabled ?? false
-      const cashDiscountPct = parsedSettings?.dualPricing?.cashDiscountPercent ?? 4.0
-      const pricingRules = parsedSettings?.pricingRules ?? []
+      const parsedSettings = parseSettings(locSettings)
+      const pricingRules = parsedSettings.pricingRules ?? []
 
       // Use cached tax rules + categories (5-min TTL) to avoid DB queries inside transaction
       const [taxRules, allCategories] = await Promise.all([
@@ -564,8 +562,7 @@ export const POST = withVenue(async function POST(
             orderId,
             locationId: existingOrder.locationId,
             prepData,
-            dualPricingEnabled,
-            cashDiscountPct,
+            parsedSettings,
             requestingEmployeeId: requestingEmployeeId || null,
             hasSentItems,
             idempotencyKey, // Now mandatory, always present

@@ -12,7 +12,7 @@
 
 import { createChildLogger } from '@/lib/logger'
 import { db } from '@/lib/db'
-import { parseSettings, DEFAULT_EOD_SETTINGS } from '@/lib/settings'
+import { parseSettings, getPricingProgram, DEFAULT_EOD_SETTINGS } from '@/lib/settings'
 import { getCurrentBusinessDay } from '@/lib/business-day'
 import { getDatacapClient, requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { detectPotentialWalkouts } from '@/lib/walkout-detector'
@@ -232,11 +232,11 @@ export async function executeEodReset(options: EodResetOptions): Promise<EodRese
           continue
         }
 
-        // Calculate purchase amount (card price if dual pricing)
+        // Calculate purchase amount (card price if pricing program applies)
         const cashBaseAmount = Number(tab.total) - Number(tab.tipTotal)
-        const dualPricing = locSettings.dualPricing
-        const purchaseAmount = dualPricing?.enabled
-          ? calculateCardPrice(cashBaseAmount, dualPricing.cashDiscountPercent ?? 4.0)
+        const pp = getPricingProgram(locSettings)
+        const purchaseAmount = pp.enabled
+          ? calculateCardPrice(cashBaseAmount, pp.creditMarkupPercent ?? 0)
           : cashBaseAmount
 
         // Zero-amount tab — release pre-auth instead of capturing $0

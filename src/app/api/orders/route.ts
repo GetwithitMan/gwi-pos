@@ -7,7 +7,7 @@ import { errorCapture } from '@/lib/error-capture'
 import { mapOrderForResponse, mapOrderItemForResponse } from '@/lib/api/order-response-mapper'
 import { calculateItemTotal, calculateItemCommission, calculateOrderTotals, isItemTaxInclusive, getConvenienceFeeForChannel } from '@/lib/order-calculations'
 import { calculateCardPrice, roundToCents } from '@/lib/pricing'
-import { parseSettings } from '@/lib/settings'
+import { parseSettings, getPricingProgram } from '@/lib/settings'
 import { apiError, ERROR_CODES } from '@/lib/api/error-responses'
 import { getLocationSettings, getLocationTimezone } from '@/lib/location-cache'
 import { dispatchFloorPlanUpdate, buildOrderSummary } from '@/lib/socket-dispatch'
@@ -583,8 +583,9 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
     // Get location settings for tax calculation (cached - FIX-009)
     const locationSettings = await getLocationSettings(locationId)
     const parsedSettings = locationSettings ? parseSettings(locationSettings) : null
-    const dualPricingEnabled = parsedSettings?.dualPricing?.enabled ?? false
-    const cashDiscountPct = parsedSettings?.dualPricing?.cashDiscountPercent ?? 4.0
+    const pp = parsedSettings ? getPricingProgram(parsedSettings) : null
+    const dualPricingEnabled = pp?.enabled ?? false
+    const cashDiscountPct = pp?.creditMarkupPercent ?? 0
 
     // Derive tax-inclusive flags from TaxRule records (same logic as /api/settings GET)
     // Uses 5-minute TTL cache to avoid hitting DB on every order creation

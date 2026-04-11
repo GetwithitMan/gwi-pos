@@ -8,8 +8,8 @@
 import type { TxClient, AddItemInput, ItemPrepData } from './types'
 import { isValidModifierId, calculateItemCardPrice, type ModifierPricingData } from './item-calculations'
 import { calculateItemTotal, calculateItemCommission } from '@/lib/order-calculations'
-import { getBestPricingRuleForItem } from '@/lib/settings'
-import type { PricingRule, PricingAdjustment } from '@/lib/settings'
+import { getBestPricingRuleForItem, getPricingProgram } from '@/lib/settings'
+import type { PricingRule, PricingAdjustment, LocationSettings } from '@/lib/settings'
 import { validateSpiritTier, validatePourMultiplier } from '@/lib/liquor-validation'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { createChildLogger } from '@/lib/logger'
@@ -22,8 +22,8 @@ export interface CreateOrderItemParams {
   orderId: string
   locationId: string
   prepData: ItemPrepData
-  dualPricingEnabled: boolean
-  cashDiscountPct: number
+  /** Resolved pricing program (from getPricingProgram). Replaces legacy dualPricingEnabled + cashDiscountPct. */
+  parsedSettings: LocationSettings
   requestingEmployeeId: string | null
   hasSentItems: boolean
   idempotencyKey: string | null
@@ -46,14 +46,16 @@ export async function createOrderItem(
     orderId,
     locationId,
     prepData,
-    dualPricingEnabled,
-    cashDiscountPct,
+    parsedSettings,
     requestingEmployeeId,
     hasSentItems,
     idempotencyKey,
     pricingRules,
     mutationOrigin = 'local',
   } = params
+  const pp = getPricingProgram(parsedSettings)
+  const dualPricingEnabled = pp.enabled
+  const cashDiscountPct = pp.creditMarkupPercent ?? 0
   const { item, effectivePrice, fullItemTotal: preRuleItemTotal, itemCommission: preRuleCommission, menuItem, catType, itemTaxInclusive } = prepData
 
   // Apply pricing rule (catalog-priced items only, skip manual/open price overrides)
