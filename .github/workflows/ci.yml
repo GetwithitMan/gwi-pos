@@ -60,8 +60,8 @@ jobs:
       - name: Check forbidden domains
         run: bash scripts/ci/check-forbidden-domains.sh
 
-      - name: Deploy engine state machine tests
-        run: bash scripts/tests/test-deploy-release.sh
+      # Deploy engine tests removed — deploy-release.sh is deprecated (gwi-node is canonical)
+      # Legacy test renamed to test-deploy-release-DEPRECATED.sh
 
       - name: Installer module validation
         run: bash scripts/tests/test-installer-modules.sh
