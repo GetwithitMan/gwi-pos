@@ -364,6 +364,19 @@ bootstrap_host_watcher() {
   fi
   rm -f "$_svc_tmp"
 
+  # Extract validate-sudo-paths.sh to host for manual diagnostics
+  local _vsp_tmp="/tmp/gwi-node-bootstrap-vsp-$$.sh"
+  if extract_from_image "$image" /app/scripts/validate-sudo-paths.sh "$_vsp_tmp"; then
+    if ! cmp -s "$_vsp_tmp" "${BASE_DIR}/validate-sudo-paths.sh" 2>/dev/null; then
+      cp "$_vsp_tmp" "${BASE_DIR}/validate-sudo-paths.sh"
+      chmod 755 "${BASE_DIR}/validate-sudo-paths.sh"
+      log "Bootstrap: validate-sudo-paths.sh updated"
+    fi
+  else
+    log "WARN: validate-sudo-paths.sh not extracted (non-critical)"
+  fi
+  rm -f "$_vsp_tmp"
+
   # Ensure trigger directories exist with correct permissions
   mkdir -p "${REQUESTS_DIR}" "${RESULTS_DIR}"
   chmod 777 "${REQUESTS_DIR}"
@@ -1862,6 +1875,16 @@ watch_loop() {
 # Idempotent: safe to run repeatedly. Uses existing deploy/update/vs_* functions.
 # ---------------------------------------------------------------------------
 
+# Check if a component is BLOCKED (>= VS_MAX_ATTEMPTS failed attempts).
+# Returns 0 (true) if blocked, 1 (false) otherwise.
+_cv_is_blocked() {
+  local component="$1"
+  local status attempts
+  status=$(python3 -c "import json; s=json.load(open('$VENUE_STATE_FILE')); print(s['components']['$component']['status'])" 2>/dev/null || echo "")
+  attempts=$(python3 -c "import json; s=json.load(open('$VENUE_STATE_FILE')); print(s['components']['$component'].get('attemptCount',0))" 2>/dev/null || echo 0)
+  [[ "$status" == "failed" && "${attempts:-0}" -ge "$VS_MAX_ATTEMPTS" ]]
+}
+
 # Read a field from the version-contract inside the running container.
 # Usage: _cv_read_contract <jq_expression>
 _cv_read_contract() {
@@ -1896,10 +1919,16 @@ converge() {
 
   if [[ "$_cv_server_running" == true ]]; then
     _cv_target_version=$(_cv_read_contract '.version // empty')
+    if [[ -z "$_cv_target_version" ]]; then
+      err "Cannot read version-contract from container — marking server unknown"
+      vs_update_component "server" "unknown" "${_cv_server_version:-?}" "?" 2>/dev/null || log "WARN: venue state update failed"
+    fi
   fi
 
   # ── Component: Server ──────────────────────────────────────────────────────
-  if [[ "$_cv_server_running" != true ]]; then
+  if _cv_is_blocked "server"; then
+    log "Converge/server: BLOCKED (>= ${VS_MAX_ATTEMPTS} failed attempts) — skipping until manual intervention"
+  elif [[ "$_cv_server_running" != true ]]; then
     log "Converge/server: NOT RUNNING — attempting start"
 
     local last_image=""
@@ -1982,7 +2011,9 @@ except: print('')
   fi
 
   # ── Component: Dashboard ───────────────────────────────────────────────────
-  if [[ "${STATION_ROLE:-}" == "terminal" ]]; then
+  if _cv_is_blocked "dashboard"; then
+    log "Converge/dashboard: BLOCKED (>= ${VS_MAX_ATTEMPTS} failed attempts) — skipping until manual intervention"
+  elif [[ "${STATION_ROLE:-}" == "terminal" ]]; then
     log "Converge/dashboard: skipped (terminal role)"
   elif [[ "$_cv_server_running" != true ]]; then
     log "Converge/dashboard: skipped (server not running)"
@@ -2035,7 +2066,9 @@ except: print('')
   fi
 
   # ── Component: Schema ──────────────────────────────────────────────────────
-  if [[ "$_cv_server_running" != true ]]; then
+  if _cv_is_blocked "schema"; then
+    log "Converge/schema: BLOCKED (>= ${VS_MAX_ATTEMPTS} failed attempts) — skipping until manual intervention"
+  elif [[ "$_cv_server_running" != true ]]; then
     log "Converge/schema: skipped (server not running)"
   else
     local _cv_schema_target _cv_schema_current
