@@ -162,6 +162,30 @@ echo "  ${BOLD}Fleet Readiness${RESET}"
 [[ "$VC_VER" == "$VERSION" ]] 2>/dev/null  && ok "Version contract aligned"    || fail "Version contract stale ($VC_VER)"
 echo ""
 
+# ── Next Safe Version ───────────────────────────────────────────────────────
+# Determine the highest observed version anywhere and recommend next
+_max_ver="$VERSION"
+for _v in "$VC_VERSION" "$NUC_VERSION"; do
+  if [[ -n "$_v" && "$_v" != "?" ]]; then
+    # Compare: if observed > max, update max
+    if printf '%s\n' "$_max_ver" "$_v" | sort -V | tail -1 | grep -q "^${_v}$" && [[ "$_v" != "$_max_ver" ]]; then
+      _max_ver="$_v"
+    fi
+  fi
+done
+# Compute next patch: increment last segment
+_next_ver=$(echo "$_max_ver" | awk -F. '{$NF=$NF+1; print}' OFS=.)
+echo "  Next Safe Version"
+if [[ "$VERSION" == "$_max_ver" ]]; then
+  echo "    Current:            ${BOLD}$VERSION${RESET} (highest observed)"
+  echo "    Next safe bump:     ${BOLD}$_next_ver${RESET}"
+else
+  echo "    ${YELLOW}WARNING:${RESET} $VERSION is not the highest observed version"
+  echo "    Highest observed:   $_max_ver (on NUC or contract)"
+  echo "    Next safe bump:     ${BOLD}$_next_ver${RESET}"
+fi
+echo ""
+
 # ── Verdict ─────────────────────────────────────────────────────────────────
 if ((FAIL == 0)); then
   echo "  ${GREEN}${BOLD}VERDICT: READY FOR FLEET DEPLOY${RESET}"

@@ -1,48 +1,157 @@
 ---
+# ===============================================================================
+# app_services — Systemd unit management for GWI POS (Docker-first)
+# ===============================================================================
+# Manages the gwi-node.service (host launcher) and gwi-converge.service
+# (baseline convergence timer) on Docker-based deployments.
+#
+# Legacy thepasspos/thepasspos-sync services are ONLY created when Docker is
+# not available (pre-migration nodes). Once a NUC is running Docker containers,
+# those legacy services are disabled and masked to prevent conflicts.
+# ===============================================================================
+
+# ── Detect Docker runtime ────────────────────────────────────────────────────
+- name: Check if gwi-pos Docker container exists
+  ansible.builtin.shell: docker ps -a --format '{{ '{{' }}.Names{{ '}}' }}' 2>/dev/null | grep -q '^gwi-pos$'
+  register: _docker_gwi_pos
+  changed_when: false
+  failed_when: false
+
+- name: Set Docker runtime fact
+  ansible.builtin.set_fact:
+    _is_docker_runtime: "{{ _docker_gwi_pos.rc == 0 }}"
+
 # ═══════════════════════════════════════════════════════════════════════════════
-# app_services — Systemd unit management for GWI POS
-# ═══════════════════════════════════════════════════════════════════════════════
-# Templates, enables, and starts the main POS server service and the
-# sync agent sidecar.
+# Docker-first path: gwi-node.service + gwi-converge.service
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# ── Main POS service ─────────────────────────────────────────────────────────
-- name: Template thepasspos.service
+# ── Disable and mask legacy services if Docker is active ─────────────────────
+- name: Stop legacy thepasspos service (Docker active)
+  ansible.builtin.systemd:
+    name: thepasspos
+    state: stopped
+    enabled: false
+  when: _is_docker_runtime | bool
+  ignore_errors: true
+
+- name: Mask legacy thepasspos service (Docker active)
+  ansible.builtin.systemd:
+    name: thepasspos
+    masked: true
+  when: _is_docker_runtime | bool
+  ignore_errors: true
+
+- name: Stop legacy thepasspos-sync service (Docker active)
+  ansible.builtin.systemd:
+    name: thepasspos-sync
+    state: stopped
+    enabled: false
+  when: _is_docker_runtime | bool
+  ignore_errors: true
+
+- name: Mask legacy thepasspos-sync service (Docker active)
+  ansible.builtin.systemd:
+    name: thepasspos-sync
+    masked: true
+  when: _is_docker_runtime | bool
+  ignore_errors: true
+
+# ── gwi-node.service (host launcher — starts/manages Docker containers) ──────
+- name: Template gwi-node.service
+  ansible.builtin.template:
+    src: gwi-node.service.j2
+    dest: /etc/systemd/system/gwi-node.service
+    owner: root
+    group: root
+    mode: "0644"
+  when: _is_docker_runtime | bool
+  notify:
+    - reload systemd
+    - restart gwi-node
+
+# ── gwi-converge.service + timer (periodic baseline convergence) ─────────────
+- name: Template gwi-converge.service
+  ansible.builtin.template:
+    src: gwi-converge.service.j2
+    dest: /etc/systemd/system/gwi-converge.service
+    owner: root
+    group: root
+    mode: "0644"
+  when: _is_docker_runtime | bool
+  notify:
+    - reload systemd
+
+- name: Template gwi-converge.timer
+  ansible.builtin.template:
+    src: gwi-converge.timer.j2
+    dest: /etc/systemd/system/gwi-converge.timer
+    owner: root
+    group: root
+    mode: "0644"
+  when: _is_docker_runtime | bool
+  notify:
+    - reload systemd
+    - restart gwi-converge timer
+
+# ── Flush handlers so daemon-reload runs before enable ───────────────────────
+# meta: flush_handlers always runs (does not support 'when'), but that's fine —
+# it's a no-op if no handlers have been notified.
+- name: Flush handlers before service enable
+  ansible.builtin.meta: flush_handlers
+
+# ── Enable + start Docker-era services ───────────────────────────────────────
+- name: Enable and start gwi-node service
+  ansible.builtin.systemd:
+    name: gwi-node
+    enabled: true
+    state: started
+  when: _is_docker_runtime | bool
+
+- name: Enable and start gwi-converge timer
+  ansible.builtin.systemd:
+    name: gwi-converge.timer
+    enabled: true
+    state: started
+  when: _is_docker_runtime | bool
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Legacy fallback: thepasspos + thepasspos-sync (pre-Docker nodes only)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+- name: Template thepasspos.service (legacy — no Docker)
   ansible.builtin.template:
     src: thepasspos.service.j2
     dest: /etc/systemd/system/thepasspos.service
     owner: root
     group: root
     mode: "0644"
+  when: not (_is_docker_runtime | bool)
   notify:
     - reload systemd
     - restart thepasspos
 
-# ── Sync agent service ───────────────────────────────────────────────────────
-- name: Template thepasspos-sync.service
+- name: Template thepasspos-sync.service (legacy — no Docker)
   ansible.builtin.template:
     src: thepasspos-sync.service.j2
     dest: /etc/systemd/system/thepasspos-sync.service
     owner: root
     group: root
     mode: "0644"
+  when: not (_is_docker_runtime | bool)
   notify:
     - reload systemd
     - restart sync agent
 
-# ── Flush handlers so daemon-reload runs before enable ───────────────────────
-- name: Flush handlers
-  ansible.builtin.meta: flush_handlers
-
-# ── Enable + start ───────────────────────────────────────────────────────────
-- name: Enable and start thepasspos service
+- name: Enable and start thepasspos service (legacy — no Docker)
   ansible.builtin.systemd:
     name: thepasspos
     enabled: true
     state: started
+  when: not (_is_docker_runtime | bool)
 
-- name: Enable and start thepasspos-sync service
+- name: Enable and start thepasspos-sync service (legacy — no Docker)
   ansible.builtin.systemd:
     name: thepasspos-sync
     enabled: true
     state: started
+  when: not (_is_docker_runtime | bool)

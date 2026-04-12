@@ -10,6 +10,13 @@
 # The dashboard is optional -- if the .deb is not found, the stage succeeds
 # with a warning. Only installed on server and backup roles (terminals don't
 # need a dashboard).
+#
+# DESIGN DECISION: Dashboard failures are warn-and-continue (not hard errors).
+# The dashboard is a non-critical monitoring UI -- orders, payments, KDS, and
+# all register functions operate without it. A dashboard install failure must
+# never block a POS deployment. Warnings are persisted to
+# $APP_BASE/shared/state/dashboard-warning.json for gwi-node status reporting
+# and MC heartbeat visibility.
 # =============================================================================
 
 run_dashboard() {
@@ -35,15 +42,13 @@ run_dashboard() {
   # Get installed version (0.0.0 if not installed)
   _installed_version=$(dpkg-query -W -f='${Version}' gwi-nuc-dashboard 2>/dev/null || echo "0.0.0")
 
-  # Get available version from version file or bundled .deb (container first, host fallback)
-  _available_version=$(docker exec gwi-pos cat /app/public/dashboard-version.txt 2>/dev/null || true)
-  if [[ -z "$_available_version" ]]; then
-    if [[ -f "${APP_DIR}/public/dashboard-version.txt" ]]; then
-      _available_version=$(cat "${APP_DIR}/public/dashboard-version.txt" 2>/dev/null || echo "0.0.0")
-    fi
-  fi
+  # Get available version from version-contract.json (PRIMARY source — pinned at build time).
+  # The contract is the single source of truth for all component versions. If it's not
+  # available, we extract the version from the bundled .deb as a last resort.
+  _available_version=$(docker exec gwi-pos cat /app/public/version-contract.json 2>/dev/null \
+    | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('components',{}).get('dashboard',{}).get('version',''))" 2>/dev/null || true)
   if [[ -z "$_available_version" ]] || [[ "$_available_version" == "0.0.0" ]]; then
-    # Try extracting .deb from container to check version
+    # Fallback: extract version directly from the bundled .deb
     if docker cp gwi-pos:/app/public/gwi-nuc-dashboard.deb /tmp/gwi-nuc-dashboard-check.deb 2>/dev/null; then
       _available_version=$(dpkg-deb -f /tmp/gwi-nuc-dashboard-check.deb Version 2>/dev/null || echo "0.0.0")
       rm -f /tmp/gwi-nuc-dashboard-check.deb
@@ -104,43 +109,29 @@ run_dashboard() {
     done
   fi
 
-  # If not found locally, download from POS deployment (Vercel) or GitHub releases
+  # If not found locally, download from POS deployment (Vercel).
+  # NOTE: No GitHub releases/latest fallback — if the artifact isn't available
+  # from the release path, that's a packaging problem to fix in CI, not a
+  # runtime fallback to paper over.
   if [[ -z "$DASHBOARD_DEB" ]]; then
-    log "Dashboard .deb not found locally -- downloading..."
+    log "Dashboard .deb not found locally -- downloading from Vercel..."
     local DOWNLOAD_DIR="$APP_BASE/dashboard"
     mkdir -p "$DOWNLOAD_DIR"
 
-    # Method 1: Download from POS Vercel deployment (no auth needed)
-    log "Downloading NUC Dashboard..."
     curl -sfL "${POS_BASE_URL:-https://ordercontrolcenter.com}/gwi-nuc-dashboard.deb" \
       -o "$DOWNLOAD_DIR/gwi-nuc-dashboard.deb" 2>/dev/null
 
-    # Method 2: If Vercel download failed, try GitHub releases with deploy token
-    if [[ ! -f "$DOWNLOAD_DIR/gwi-nuc-dashboard.deb" ]] || [[ $(stat -c%s "$DOWNLOAD_DIR/gwi-nuc-dashboard.deb" 2>/dev/null || echo 0) -lt 100000 ]]; then
-      rm -f "$DOWNLOAD_DIR/gwi-nuc-dashboard.deb" 2>/dev/null
-      log "Vercel download failed -- trying GitHub releases..."
-      local GIT_TOKEN=""
-      if [[ -f "$APP_BASE/.git-credentials" ]]; then
-        GIT_TOKEN=$(grep 'github.com' "$APP_BASE/.git-credentials" 2>/dev/null | sed 's|https://||;s|:x-oauth-basic@github.com||' | head -1)
-      fi
-      if [[ -n "$GIT_TOKEN" ]]; then
-        local API_URL="https://api.github.com/repos/GetwithitMan/gwi-dashboard/releases/latest"
-        local ASSET_URL=$(curl -sfL -H "Authorization: token $GIT_TOKEN" "$API_URL" 2>/dev/null \
-          | python3 -c "import json,sys;d=json.load(sys.stdin);assets=d.get('assets',[]);print(next((a['url'] for a in assets if a['name'].endswith('.deb')),''))" 2>/dev/null)
-        if [[ -n "$ASSET_URL" ]]; then
-          curl -sfL -H "Authorization: token $GIT_TOKEN" -H "Accept: application/octet-stream" \
-            "$ASSET_URL" -o "$DOWNLOAD_DIR/gwi-nuc-dashboard.deb" 2>/dev/null
-        fi
-      fi
-    fi
-
-    if [[ -f "$DOWNLOAD_DIR/gwi-nuc-dashboard.deb" ]] && [[ $(stat -c%s "$DOWNLOAD_DIR/gwi-nuc-dashboard.deb" 2>/dev/null) -gt 100000 ]]; then
+    if [[ -f "$DOWNLOAD_DIR/gwi-nuc-dashboard.deb" ]] && [[ $(stat -c%s "$DOWNLOAD_DIR/gwi-nuc-dashboard.deb" 2>/dev/null || echo 0) -gt 100000 ]]; then
       DASHBOARD_DEB="$DOWNLOAD_DIR/gwi-nuc-dashboard.deb"
       log "Downloaded dashboard: $(ls -lh "$DASHBOARD_DEB" | awk '{print $5}')"
     else
       rm -f "$DOWNLOAD_DIR/gwi-nuc-dashboard.deb" 2>/dev/null
+      # DESIGN DECISION: Dashboard update is warn-and-continue (not a hard failure).
+      # The dashboard is non-critical for POS operations — orders, payments, KDS,
+      # and all register functions work without it. A missing dashboard only affects
+      # the NUC monitoring UI. Failing the install over a dashboard download would
+      # be worse than running without it.
       track_warn "Dashboard download failed -- skipping. Run 'gwi-node dashboard-check' after deploy to retry."
-      # Write persistent warning
       local _state_dir="${APP_BASE:-/opt/gwi-pos}/shared/state"
       mkdir -p "$_state_dir" 2>/dev/null || true
       echo "{\"warning\":true,\"reason\":\"installer download failed\",\"targetVersion\":\"${_available_version:-unknown}\",\"installedVersion\":\"${_installed_version:-unknown}\",\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" \
