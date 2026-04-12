@@ -322,7 +322,7 @@ systemd_last_resort() {
 _prune_old_images() {
   local _current _lkg _kept=0 _removed=0
   _current=$(docker inspect --format='{{.Image}}' "$CONTAINER_NAME" 2>/dev/null || echo "")
-  _lkg=$(cat "${STATE_DIR}/${LKG_IMAGE_FILE}" 2>/dev/null || echo "")
+  _lkg=$(cat "$LKG_IMAGE_FILE" 2>/dev/null || echo "")
 
   # Get all gwi-pos image IDs
   local _all_images
