@@ -628,6 +628,59 @@ EOF
   log "Deploy $DEPLOY_ID complete: $IMAGE_REF"
 }
 
+# ── _reconcile_dashboard_service ──────────────────────────────────────────────
+# Ensures the dashboard systemd user service file has the correct environment
+# (DISPLAY, XAUTHORITY, XDG_RUNTIME_DIR). Always rewrites to pick up fixes.
+# Called from: update_dashboard, dashboard_check, converge.
+# ──────────────────────────────────────────────────────────────────────────────
+_reconcile_dashboard_service() {
+  local _posuser="${POSUSER:-gwipos}"
+  local _svc_dir
+  _svc_dir=$(eval echo "~${_posuser}/.config/systemd/user")
+  local _dash_bin
+  _dash_bin=$(command -v gwi-dashboard 2>/dev/null || command -v gwi-nuc-dashboard 2>/dev/null || true)
+  [[ -z "$_dash_bin" ]] && return 0  # dashboard not installed
+
+  mkdir -p "$_svc_dir"
+  chown -R "${_posuser}:${_posuser}" "$(eval echo "~${_posuser}/.config")" 2>/dev/null || true
+  cat > "${_svc_dir}/gwi-dashboard.service" <<SVCEOF
+[Unit]
+Description=GWI NUC Dashboard
+After=graphical-session.target
+
+[Service]
+ExecStart=${_dash_bin}
+Restart=on-failure
+RestartSec=5
+StartLimitBurst=5
+StartLimitIntervalSec=120
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/run/user/%U/.Xauthority
+Environment=XDG_RUNTIME_DIR=/run/user/%U
+Environment=GWI_POS_URL=http://localhost:3005
+
+[Install]
+WantedBy=default.target
+SVCEOF
+  chown "${_posuser}:${_posuser}" "${_svc_dir}/gwi-dashboard.service"
+  loginctl enable-linger "${_posuser}" 2>/dev/null || true
+
+  # Reload + restart to pick up changes
+  sudo -u "${_posuser}" bash -c \
+    "XDG_RUNTIME_DIR=/run/user/\$(id -u) systemctl --user daemon-reload && systemctl --user enable gwi-dashboard.service && systemctl --user restart gwi-dashboard.service" 2>/dev/null || true
+
+  # Verify it stayed up (10-second health window)
+  sleep 10
+  local _status
+  _status=$(sudo -u "${_posuser}" bash -c \
+    "XDG_RUNTIME_DIR=/run/user/\$(id -u) systemctl --user is-active gwi-dashboard.service" 2>/dev/null || echo "inactive")
+  if [[ "$_status" == "active" ]]; then
+    log "Dashboard: service reconciled and running"
+  else
+    err "Dashboard: service restarted but NOT active after 10s (status=${_status})"
+  fi
+}
+
 # ── update_dashboard ──────────────────────────────────────────────────────────
 # Downloads and installs the NUC dashboard .deb if a newer version is available.
 # Compares installed version (dpkg) against version-contract.json dashboardVersion.
@@ -746,43 +799,9 @@ update_dashboard() {
     log "Dashboard: last-known-good saved: v${available}"
     _clear_dashboard_warning
     vs_update_component "dashboard" "converged" "$available" "$available" 2>/dev/null || log "WARN: venue state update failed"
-    # Ensure systemd user service exists (may be first install on this NUC)
-    local _posuser="${POSUSER:-gwipos}"
-    local _svc_dir
-    _svc_dir=$(eval echo "~${_posuser}/.config/systemd/user")
-    if [[ ! -f "${_svc_dir}/gwi-dashboard.service" ]]; then
-      local _dash_bin
-      _dash_bin=$(command -v gwi-dashboard 2>/dev/null || command -v gwi-nuc-dashboard 2>/dev/null || true)
-      if [[ -n "$_dash_bin" ]]; then
-        mkdir -p "$_svc_dir"
-        chown -R "${_posuser}:${_posuser}" "$(eval echo "~${_posuser}/.config")"
-        cat > "${_svc_dir}/gwi-dashboard.service" <<SVCEOF
-[Unit]
-Description=GWI NUC Dashboard
-After=graphical-session.target
-
-[Service]
-ExecStart=${_dash_bin}
-Restart=on-failure
-RestartSec=5
-StartLimitBurst=5
-StartLimitIntervalSec=120
-Environment=DISPLAY=:0
-Environment=XAUTHORITY=/run/user/%U/.Xauthority
-Environment=XDG_RUNTIME_DIR=/run/user/%U
-Environment=GWI_POS_URL=http://localhost:3005
-
-[Install]
-WantedBy=default.target
-SVCEOF
-        chown "${_posuser}:${_posuser}" "${_svc_dir}/gwi-dashboard.service"
-        loginctl enable-linger "${_posuser}" 2>/dev/null || true
-        log "Dashboard: created systemd user service"
-      fi
-    fi
-    # Start or restart the service
-    sudo -u "${_posuser}" bash -c \
-      "XDG_RUNTIME_DIR=/run/user/\$(id -u) systemctl --user daemon-reload && systemctl --user enable gwi-dashboard.service && systemctl --user restart gwi-dashboard.service" 2>/dev/null || true
+    # Reconcile service file + restart (picks up XAUTHORITY and env fixes)
+    # Reconcile service file + restart (picks up XAUTHORITY and env fixes)
+    _reconcile_dashboard_service
     # Audit log for dashboard update
     mkdir -p "${RESULTS_DIR}" 2>/dev/null || true
     echo "{\"action\":\"dashboard_update\",\"version\":\"$available\",\"installedVersion\":\"$final_version\",\"status\":\"converged\",\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" \
@@ -1092,6 +1111,9 @@ dashboard_check() {
   _svc_status=$(sudo -u "${_posuser}" bash -c \
     "XDG_RUNTIME_DIR=/run/user/\$(id -u) systemctl --user is-active gwi-dashboard.service" 2>/dev/null || echo "unknown")
   echo "  Service status:    ${_svc_status}"
+
+  # Always reconcile service file (picks up env fixes even when version matches)
+  _reconcile_dashboard_service
 
   if [[ "$installed" == "$available" ]]; then
     log "Dashboard: CONVERGED at v${installed}"
@@ -2054,26 +2076,16 @@ except: print('')
         vs_update_component "dashboard" "failed" "${_cv_dash_installed:-0.0.0}" "$_cv_dash_target" "update_dashboard failed"
       fi
     else
-      # Version matches — check if service is running
+      # Version matches — reconcile service file + verify running
+      _reconcile_dashboard_service
       local _cv_dash_svc _posuser="${POSUSER:-gwipos}"
       _cv_dash_svc=$(sudo -u "${_posuser}" bash -c \
         "XDG_RUNTIME_DIR=/run/user/\$(id -u) systemctl --user is-active gwi-dashboard.service" 2>/dev/null || echo "inactive")
-      if [[ "$_cv_dash_svc" != "active" ]]; then
-        log "Converge/dashboard: service not running — starting"
-        sudo -u "${_posuser}" bash -c \
-          "XDG_RUNTIME_DIR=/run/user/\$(id -u) systemctl --user start gwi-dashboard.service" 2>/dev/null || true
-        sleep 2
-        _cv_dash_svc=$(sudo -u "${_posuser}" bash -c \
-          "XDG_RUNTIME_DIR=/run/user/\$(id -u) systemctl --user is-active gwi-dashboard.service" 2>/dev/null || echo "inactive")
-        if [[ "$_cv_dash_svc" == "active" ]]; then
-          vs_update_component "dashboard" "converged" "$_cv_dash_installed" "$_cv_dash_target"
-          log "Converge/dashboard: service started"
-        else
-          vs_update_component "dashboard" "failed" "$_cv_dash_installed" "$_cv_dash_target" "Service failed to start"
-        fi
-      else
+      if [[ "$_cv_dash_svc" == "active" ]]; then
         vs_update_component "dashboard" "converged" "$_cv_dash_installed" "$_cv_dash_target"
         log "Converge/dashboard: OK (${_cv_dash_installed})"
+      else
+        vs_update_component "dashboard" "failed" "$_cv_dash_installed" "$_cv_dash_target" "Service not active after reconciliation"
       fi
     fi
   fi
