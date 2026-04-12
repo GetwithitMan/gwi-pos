@@ -283,8 +283,10 @@ fi
 # ── Service health checks -- ensure critical services are running ──
 echo "[pre-start] Verifying critical services..."
 
-# Sync service
-if systemctl is-enabled thepasspos-sync >/dev/null 2>&1; then
+# Sync service (Docker-first: sync runs inside container; legacy: standalone service)
+if docker ps -q --filter name=gwi-pos --filter status=running 2>/dev/null | grep -q .; then
+  echo "[pre-start] Sync workers run inside gwi-pos container — skipping legacy sync check"
+elif systemctl is-enabled thepasspos-sync >/dev/null 2>&1; then
   if ! systemctl is-active thepasspos-sync >/dev/null 2>&1; then
     echo "[pre-start] Sync service not running -- starting..."
     systemctl start thepasspos-sync 2>/dev/null || echo "[pre-start] WARNING: Failed to start sync service"
@@ -703,11 +705,19 @@ SUDEOF
        || cp "$APP_DIR/public/sync-agent.js" "$SYNC_SCRIPT" 2>/dev/null; then
       chown "$POSUSER":"$POSUSER" "$SYNC_SCRIPT"
 
-      # thepasspos-sync.service -- Sync Agent (only created when script exists)
-      cat > /etc/systemd/system/thepasspos-sync.service <<SVCEOF
+      # In Docker-first mode, sync workers run inside the gwi-pos container.
+      # The standalone thepasspos-sync service is legacy — only created for pre-Docker installs.
+      if docker ps -a --filter name=gwi-pos --format '{{.Names}}' 2>/dev/null | grep -q '^gwi-pos$'; then
+        log "Docker runtime active — skipping host thepasspos-sync.service (sync runs inside container)"
+        systemctl stop thepasspos-sync 2>/dev/null || true
+        systemctl disable thepasspos-sync 2>/dev/null || true
+        systemctl mask thepasspos-sync 2>/dev/null || true
+      else
+        # Legacy host-mode: create thepasspos-sync.service
+        cat > /etc/systemd/system/thepasspos-sync.service <<SVCEOF
 [Unit]
 Description=ThePassPOS Sync Agent
-After=network-online.target thepasspos.service
+After=network-online.target docker.service
 Wants=network-online.target
 
 [Service]
@@ -724,10 +734,11 @@ SyslogIdentifier=thepasspos-sync
 WantedBy=multi-user.target
 SVCEOF
 
-      systemctl daemon-reload
-      systemctl enable thepasspos-sync
-      systemctl restart thepasspos-sync || { err_code "ERR-INST-213" "systemctl restart thepasspos-sync failed"; track_warn "Sync agent failed to start -- check journalctl -u thepasspos-sync"; }
-      log "Sync agent configured and started."
+        systemctl daemon-reload
+        systemctl enable thepasspos-sync
+        systemctl restart thepasspos-sync || { err_code "ERR-INST-213" "systemctl restart thepasspos-sync failed"; track_warn "Sync agent failed to start -- check journalctl -u thepasspos-sync"; }
+        log "Sync agent configured and started (host mode)."
+      fi
     else
       track_warn "sync-agent.js not found in container or at $APP_DIR/public/ -- sync agent will not start."
       systemctl disable thepasspos-sync 2>/dev/null || true
@@ -933,12 +944,12 @@ DIAGEOF
     chmod +x "$BOOT_DIAG_SCRIPT"
     chown "$POSUSER":"$POSUSER" "$BOOT_DIAG_SCRIPT"
 
-    # gwi-boot-diagnostic.service -- oneshot, runs 30s after POS starts
+    # gwi-boot-diagnostic.service -- oneshot, runs 30s after POS container starts
     cat > /etc/systemd/system/gwi-boot-diagnostic.service <<SVCEOF
 [Unit]
 Description=GWI POS Boot Diagnostic
-After=thepasspos.service
-Wants=thepasspos.service
+After=docker.service
+Wants=docker.service
 
 [Service]
 Type=oneshot
