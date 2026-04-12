@@ -779,9 +779,15 @@ update_dashboard() {
     log "Dashboard: SHA256 verified"
   fi
 
-  # Install — dpkg may return non-zero on trigger warnings (icon cache),
-  # so we always run --configure -a and verify the installed version afterward.
-  sudo dpkg -i "$deb_path" 2>&1 | while IFS= read -r line; do log "Dashboard: $line"; done
+  # Install — capture dpkg exit code separately from the logging pipe.
+  # Retry once on failure (transient filesystem issues on some hardened NUCs).
+  local _dpkg_exit=0
+  sudo dpkg -i "$deb_path" 2>&1 | while IFS= read -r line; do log "Dashboard: $line"; done || _dpkg_exit=$?
+  if [[ $_dpkg_exit -ne 0 ]]; then
+    log "Dashboard: dpkg -i failed (exit $_dpkg_exit) — retrying after 5s"
+    sleep 5
+    sudo dpkg -i "$deb_path" 2>&1 | while IFS= read -r line; do log "Dashboard: retry: $line"; done || true
+  fi
   sudo dpkg --configure -a 2>&1 | while IFS= read -r line; do log "Dashboard: configure: $line"; done || true
   sudo apt-get install -f -y -qq 2>/dev/null || true
 
@@ -1216,7 +1222,14 @@ dashboard_rollback() {
     return 1
   fi
 
-  sudo dpkg -i "$deb_path" 2>&1 | while IFS= read -r line; do log "Dashboard rollback: $line"; done
+  # Install with retry (transient filesystem issues on some hardened NUCs)
+  local _dpkg_exit=0
+  sudo dpkg -i "$deb_path" 2>&1 | while IFS= read -r line; do log "Dashboard rollback: $line"; done || _dpkg_exit=$?
+  if [[ $_dpkg_exit -ne 0 ]]; then
+    log "Dashboard rollback: dpkg -i failed (exit $_dpkg_exit) — retrying after 5s"
+    sleep 5
+    sudo dpkg -i "$deb_path" 2>&1 | while IFS= read -r line; do log "Dashboard rollback: retry: $line"; done || true
+  fi
   sudo dpkg --configure -a 2>&1 | while IFS= read -r line; do log "Dashboard rollback: configure: $line"; done || true
   sudo apt-get install -f -y -qq 2>/dev/null || true
 

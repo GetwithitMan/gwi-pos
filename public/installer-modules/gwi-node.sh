@@ -779,11 +779,22 @@ update_dashboard() {
     log "Dashboard: SHA256 verified"
   fi
 
-  # Install — dpkg may return non-zero on trigger warnings (icon cache),
-  # so we always run --configure -a and verify the installed version afterward.
+  # Install — hardened NUCs may have immutable /usr/bin (chattr +I).
+  # Temporarily remove the flag so dpkg can write the binary, then restore it.
+  local _usr_bin_immutable=false
+  if sudo lsattr -d /usr/bin/ 2>/dev/null | grep -q 'I'; then
+    _usr_bin_immutable=true
+    sudo chattr -I /usr/bin/ 2>/dev/null && log "Dashboard: temporarily removed /usr/bin immutable flag"
+  fi
+
   sudo dpkg -i "$deb_path" 2>&1 | while IFS= read -r line; do log "Dashboard: $line"; done
   sudo dpkg --configure -a 2>&1 | while IFS= read -r line; do log "Dashboard: configure: $line"; done || true
   sudo apt-get install -f -y -qq 2>/dev/null || true
+
+  # Restore immutable flag if it was set
+  if [[ "$_usr_bin_immutable" == true ]]; then
+    sudo chattr +I /usr/bin/ 2>/dev/null && log "Dashboard: restored /usr/bin immutable flag"
+  fi
 
   # ── Version reconciliation check ──────────────────────────────────────────
   # After install, compare installed version vs target. If mismatch, log an
@@ -1216,9 +1227,20 @@ dashboard_rollback() {
     return 1
   fi
 
+  # Handle immutable /usr/bin on hardened NUCs
+  local _usr_bin_immutable=false
+  if sudo lsattr -d /usr/bin/ 2>/dev/null | grep -q 'I'; then
+    _usr_bin_immutable=true
+    sudo chattr -I /usr/bin/ 2>/dev/null && log "Dashboard rollback: temporarily removed /usr/bin immutable flag"
+  fi
+
   sudo dpkg -i "$deb_path" 2>&1 | while IFS= read -r line; do log "Dashboard rollback: $line"; done
   sudo dpkg --configure -a 2>&1 | while IFS= read -r line; do log "Dashboard rollback: configure: $line"; done || true
   sudo apt-get install -f -y -qq 2>/dev/null || true
+
+  if [[ "$_usr_bin_immutable" == true ]]; then
+    sudo chattr +I /usr/bin/ 2>/dev/null && log "Dashboard rollback: restored /usr/bin immutable flag"
+  fi
 
   local final_version
   final_version=$(dpkg-query -W -f='${Version}' gwi-nuc-dashboard 2>/dev/null || echo "0.0.0")
