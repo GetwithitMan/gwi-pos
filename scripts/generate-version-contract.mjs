@@ -604,7 +604,23 @@ async function main() {
     // Structured component manifest — all deployable artifacts
     components: {
       pos: { version: appVersion, artifact: 'app' },
-      dashboard: { version: dashboardVersion, artifact: 'gwi-nuc-dashboard.deb', url: '/gwi-nuc-dashboard.deb' },
+      dashboard: {
+        version: dashboardVersion,
+        artifact: 'gwi-nuc-dashboard.deb',
+        url: '/gwi-nuc-dashboard.deb',
+        // SHA256 of bundled .deb — used by installer and gwi-node for integrity verification.
+        // Only populated when the .deb exists at build time (CI builds on Linux).
+        ...((() => {
+          try {
+            const debPath = path.join(root, 'public/gwi-nuc-dashboard.deb')
+            if (existsSync(debPath)) {
+              const hash = createHash('sha256').update(readFileSync(debPath)).digest('hex')
+              return { sha256: hash }
+            }
+          } catch { /* .deb not available — sha256 omitted */ }
+          return {}
+        })()),
+      },
       installer: { version: appVersion, artifact: 'installer.run' },
       syncAgent: { version: appVersion, artifact: 'sync-agent.js' },
       monitoring: { version: appVersion, artifact: 'scripts/' },

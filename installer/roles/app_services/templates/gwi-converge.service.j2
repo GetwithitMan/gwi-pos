@@ -1,0 +1,15 @@
+[Unit]
+Description=GWI Baseline Convergence Check
+After=network.target gwi-node.service
+Wants=gwi-node.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/ansible-playbook {{ gwi_installer_dir | default('/opt/gwi-pos/installer') }}/site.yml --extra-vars "gwi_posuser={{ gwi_posuser | default('gwipos') }} gwi_station_role={{ gwi_station_role | default('server') }}" --tags required
+TimeoutStartSec=600
+Environment=ANSIBLE_STDOUT_CALLBACK=json
+
+# Systemd hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true

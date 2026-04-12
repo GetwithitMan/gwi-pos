@@ -128,7 +128,9 @@ run_deploy_app() {
     return 1
   fi
   chmod 755 "$gwi_node"
-  chown "$POSUSER:$POSUSER" "$gwi_node"
+  # gwi-node.sh is owned by root (it manages Docker containers and systemd services)
+  # but remains executable by the POS user (mode 755) for status checks.
+  chown root:root "$gwi_node"
 
   # Ensure shared/.env exists (copied from canonical .env)
   if [[ -f "$APP_BASE/.env" ]] && [[ ! -f "$APP_BASE/shared/.env" ]]; then

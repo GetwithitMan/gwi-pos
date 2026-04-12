@@ -1,8 +1,20 @@
 ---
+# ── Docker-era handlers ──────────────────────────────────────────────────────
 - name: reload systemd
   systemd:
     daemon_reload: yes
 
+- name: restart gwi-node
+  systemd:
+    name: gwi-node
+    state: restarted
+
+- name: restart gwi-converge timer
+  systemd:
+    name: gwi-converge.timer
+    state: restarted
+
+# ── Legacy handlers (pre-Docker nodes) ───────────────────────────────────────
 - name: restart thepasspos
   systemd:
     name: thepasspos

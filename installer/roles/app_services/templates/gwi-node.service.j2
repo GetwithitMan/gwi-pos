@@ -1,0 +1,21 @@
+[Unit]
+Description=GWI Node Host Launcher
+After=network.target docker.service postgresql.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=true
+ExecStart=/bin/bash /opt/gwi-pos/gwi-node.sh start
+ExecStop=/bin/bash /opt/gwi-pos/gwi-node.sh stop
+TimeoutStartSec=120
+TimeoutStopSec=60
+Environment=NODE_ENV=production
+
+# Systemd hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
