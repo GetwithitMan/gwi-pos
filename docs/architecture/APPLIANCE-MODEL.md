@@ -157,6 +157,23 @@ Every 5 minutes (gwi-converge.service):
 
 Auto-installed on first successful deploy. Persistent across reboots via systemd.
 
+**BLOCKED behavior:** Suppresses automatic reconciliation for the blocked component only. Other components continue converging. Manual intervention required — run `gwi-node converge` after fixing the root cause, which resets the attempt count.
+
+---
+
+## State File Ownership
+
+| File | Writer | Location |
+|------|--------|----------|
+| `venue-state.json` | gwi-node + convergence loop | `/opt/gwi-pos/shared/state/` |
+| `running-version.json` | gwi-node deploy (on success) | `/opt/gwi-pos/shared/state/` |
+| `install-state.json` | installer.run (stage journal) | `/opt/gwi-pos/shared/state/` |
+| `dashboard-warning.json` | gwi-node dashboard update | `/opt/gwi-pos/shared/state/` |
+
+**Offline behavior:** The last valid `version-contract.json` is cached inside the running Docker container at `/app/public/version-contract.json`. If MC is unreachable, the venue converges toward the version-contract from the most recently deployed image.
+
+**Missing/corrupt version-contract:** If `version-contract.json` is missing or unreadable inside the container, convergence skips version comparison and marks the component as `unknown`. The venue enters DEGRADED until the contract is restored (typically by a fresh deploy).
+
 ---
 
 ## Rollback Policy
@@ -207,7 +224,8 @@ gwi-node dashboard-check
 gwi-node venue-state
 
 # Validate the box is correctly configured
-sudo bash /opt/gwi-pos/app/scripts/validate-sudo-paths.sh
+sudo bash /opt/gwi-pos/validate-sudo-paths.sh
+# (copied to /opt/gwi-pos/ during deploy; also inside container at /app/scripts/)
 ```
 
 ---
