@@ -181,16 +181,22 @@ jobs:
       - name: Validate dashboard .deb
         run: |
           IMAGE="ghcr.io/getwithitman/gwi-pos:${{ steps.meta.outputs.version }}"
-          docker run --rm "$IMAGE" sh -c '
+          # Extract .deb to host for validation (Alpine image has no dpkg)
+          DEB_TMP=$(mktemp -d)
+          docker run --rm -v "$DEB_TMP:/out" "$IMAGE" sh -c '
             if [ -f public/gwi-nuc-dashboard.deb ]; then
-              dpkg --info public/gwi-nuc-dashboard.deb > /dev/null || exit 1
-              PKG=$(dpkg-deb -f public/gwi-nuc-dashboard.deb Package)
-              test "$PKG" = "gwi-nuc-dashboard" || exit 1
-              echo "Dashboard .deb validated: $(dpkg-deb -f public/gwi-nuc-dashboard.deb Version)"
-            else
-              echo "No dashboard .deb bundled (optional)"
+              cp public/gwi-nuc-dashboard.deb /out/
             fi
           '
+          if [ -f "$DEB_TMP/gwi-nuc-dashboard.deb" ]; then
+            dpkg --info "$DEB_TMP/gwi-nuc-dashboard.deb" > /dev/null || exit 1
+            PKG=$(dpkg-deb -f "$DEB_TMP/gwi-nuc-dashboard.deb" Package)
+            test "$PKG" = "gwi-nuc-dashboard" || exit 1
+            echo "Dashboard .deb validated: $(dpkg-deb -f "$DEB_TMP/gwi-nuc-dashboard.deb" Version)"
+          else
+            echo "No dashboard .deb bundled (optional)"
+          fi
+          rm -rf "$DEB_TMP"
 
       - name: Appliance validation matrix
         run: |
