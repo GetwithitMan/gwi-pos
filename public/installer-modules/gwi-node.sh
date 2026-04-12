@@ -746,17 +746,17 @@ update_dashboard() {
     log "Dashboard: last-known-good saved: v${available}"
     _clear_dashboard_warning
     vs_update_component "dashboard" "converged" "$available" "$available" 2>/dev/null || log "WARN: venue state update failed"
-    # Ensure systemd user service exists (may be first install on this NUC)
+    # Always rewrite the dashboard service file to pick up environment fixes
+    # (e.g., XAUTHORITY path changes between releases)
     local _posuser="${POSUSER:-gwipos}"
     local _svc_dir
     _svc_dir=$(eval echo "~${_posuser}/.config/systemd/user")
-    if [[ ! -f "${_svc_dir}/gwi-dashboard.service" ]]; then
-      local _dash_bin
-      _dash_bin=$(command -v gwi-dashboard 2>/dev/null || command -v gwi-nuc-dashboard 2>/dev/null || true)
-      if [[ -n "$_dash_bin" ]]; then
-        mkdir -p "$_svc_dir"
-        chown -R "${_posuser}:${_posuser}" "$(eval echo "~${_posuser}/.config")"
-        cat > "${_svc_dir}/gwi-dashboard.service" <<SVCEOF
+    local _dash_bin
+    _dash_bin=$(command -v gwi-dashboard 2>/dev/null || command -v gwi-nuc-dashboard 2>/dev/null || true)
+    if [[ -n "$_dash_bin" ]]; then
+      mkdir -p "$_svc_dir"
+      chown -R "${_posuser}:${_posuser}" "$(eval echo "~${_posuser}/.config")"
+      cat > "${_svc_dir}/gwi-dashboard.service" <<SVCEOF
 [Unit]
 Description=GWI NUC Dashboard
 After=graphical-session.target
@@ -768,15 +768,16 @@ RestartSec=5
 StartLimitBurst=5
 StartLimitIntervalSec=120
 Environment=DISPLAY=:0
+Environment=XAUTHORITY=/run/user/%U/.Xauthority
+Environment=XDG_RUNTIME_DIR=/run/user/%U
 Environment=GWI_POS_URL=http://localhost:3005
 
 [Install]
 WantedBy=default.target
 SVCEOF
-        chown "${_posuser}:${_posuser}" "${_svc_dir}/gwi-dashboard.service"
-        loginctl enable-linger "${_posuser}" 2>/dev/null || true
-        log "Dashboard: created systemd user service"
-      fi
+      chown "${_posuser}:${_posuser}" "${_svc_dir}/gwi-dashboard.service"
+      loginctl enable-linger "${_posuser}" 2>/dev/null || true
+      log "Dashboard: service file updated"
     fi
     # Start or restart the service
     sudo -u "${_posuser}" bash -c \
@@ -1551,6 +1552,17 @@ full_status() {
     _dash_status="diverged (target=${_dash_target})"
   fi
   echo "Dashboard: v${_dash_installed} (${_dash_status})"
+
+  # ── Desktop session (dashboard doctor) ──
+  local _posuser="${POSUSER:-gwipos}"
+  local _uid=$(id -u "$_posuser" 2>/dev/null || echo "?")
+  local _xauth="/run/user/${_uid}/.Xauthority"
+  local _display=$(sudo -u "$_posuser" bash -c 'echo $DISPLAY' 2>/dev/null || echo "?")
+  local _session_type=$(loginctl show-session "$(loginctl list-sessions --no-legend 2>/dev/null | awk 'NR==1{print $1}')" -p Type --value 2>/dev/null || echo "?")
+  local _dm=$(systemctl is-active sddm 2>/dev/null && echo "sddm" || echo "?")
+  local _xauth_exists="no"; [[ -f "$_xauth" ]] && _xauth_exists="yes"
+  local _dash_svc=$(sudo -u "$_posuser" bash -c "XDG_RUNTIME_DIR=/run/user/\$(id -u) systemctl --user is-active gwi-dashboard.service" 2>/dev/null || echo "inactive")
+  echo "Session: ${_session_type} (${_dm}), DISPLAY=${_display}, Xauth=${_xauth_exists} (${_xauth}), dashboard-svc=${_dash_svc}"
 
   # ── Container health ──
   local _cstate _chealth _started _uptime_str
