@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -uo pipefail
 IMAGE="${1:?Usage: validate-dashboard-deb.sh <image-tag>}"
 echo "=== Dashboard .deb Validation: $IMAGE ==="
 
@@ -18,7 +18,7 @@ FAIL=0
 if dpkg --info "$TMP/gwi-nuc-dashboard.deb" >/dev/null 2>&1; then
   echo "  ✓ Valid .deb structure"
 else
-  echo "  ✗ Invalid .deb structure"; ((FAIL++))
+  echo "  ✗ Invalid .deb structure"; FAIL=$((FAIL + 1))
 fi
 
 # Package name
@@ -26,7 +26,7 @@ PKG=$(dpkg-deb -f "$TMP/gwi-nuc-dashboard.deb" Package 2>/dev/null)
 if [[ "$PKG" == "gwi-nuc-dashboard" ]]; then
   echo "  ✓ Package name: $PKG"
 else
-  echo "  ✗ Wrong package: $PKG (expected gwi-nuc-dashboard)"; ((FAIL++))
+  echo "  ✗ Wrong package: $PKG (expected gwi-nuc-dashboard)"; FAIL=$((FAIL + 1))
 fi
 
 # Version

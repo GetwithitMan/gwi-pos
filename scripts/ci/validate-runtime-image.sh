@@ -1,22 +1,23 @@
 #!/usr/bin/env bash
-set -euo pipefail
+# Do NOT use set -e — arithmetic increments return 0 which bash treats as failure
+set -uo pipefail
 
 IMAGE="${1:?Usage: validate-runtime-image.sh <image-tag>}"
 PASS=0; FAIL=0; INFO=0
 
 required() { # Fails build
   if docker run --rm "$IMAGE" "$@" >/dev/null 2>&1; then
-    echo "  ✓ $DESC"; ((PASS++))
+    echo "  ✓ $DESC"; PASS=$((PASS + 1))
   else
-    echo "  ✗ $DESC"; ((FAIL++))
+    echo "  ✗ $DESC"; FAIL=$((FAIL + 1))
   fi
 }
 
 optional() { # Informational only
   if docker run --rm "$IMAGE" "$@" >/dev/null 2>&1; then
-    echo "  ✓ $DESC"; ((PASS++))
+    echo "  ✓ $DESC"; PASS=$((PASS + 1))
   else
-    echo "  ○ $DESC (optional)"; ((INFO++))
+    echo "  ○ $DESC (optional)"; INFO=$((INFO + 1))
   fi
 }
 

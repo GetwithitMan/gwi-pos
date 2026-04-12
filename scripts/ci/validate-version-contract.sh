@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -uo pipefail
 IMAGE="${1:?Usage: validate-version-contract.sh <image-tag>}"
 echo "=== Version Contract Validation: $IMAGE ==="
 
@@ -17,7 +17,7 @@ for field in version schemaVersion migrationCount installerVersion buildDate git
     echo "  ✓ $field: $val"
   else
     echo "  ✗ $field: MISSING"
-    ((FAIL++))
+    FAIL=$((FAIL + 1))
   fi
 done
 
