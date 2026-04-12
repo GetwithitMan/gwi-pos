@@ -258,14 +258,32 @@ export async function handlePromotion(command: PromoteCommand): Promise<Promotio
     }
 
     // ── Step 6: Restart POS service ───────────────────────────────────────
-    const step6 = await runStep(6, 'Restart POS service', async () => {
+    const step6 = await runStep(6, 'Start POS service', async () => {
+      // Docker-first (appliance model): start via gwi-node or docker directly.
+      // gwi-node.sh is the canonical deploy agent — prefer it if available.
+      // Check known locations in priority order.
+      const gwiNodeCandidates = ['/opt/gwi-pos/gwi-node.sh', '/usr/local/bin/gwi-node']
+      const gwiNode = gwiNodeCandidates.find(p => existsSync(p)) || null
+
       try {
-        execSync('systemctl enable thepasspos', { timeout: 10000, stdio: 'pipe' })
-        execSync('systemctl restart thepasspos', { timeout: 10000, stdio: 'pipe' })
-        return 'POS service restarted'
+        if (gwiNode) {
+          execSync(`bash "${gwiNode}" promote --skip-pg-promote`, {
+            timeout: 60000,
+            stdio: 'pipe',
+            encoding: 'utf8',
+          })
+          return 'POS started via gwi-node promote'
+        }
       } catch (e) {
-        // Non-fatal — service may already be running in dev mode
-        return `systemctl restart returned error (may be dev mode): ${e instanceof Error ? e.message : String(e)}`
+        log.warn({ err: e }, 'gwi-node promote failed — falling back to docker start')
+      }
+
+      // Direct Docker fallback
+      try {
+        execSync('docker start gwi-pos', { timeout: 30000, stdio: 'pipe' })
+        return 'POS Docker container started (direct docker start)'
+      } catch {
+        return 'Docker start failed — POS container may not exist (dev mode?)'
       }
     })
     steps.push(step6)
@@ -297,14 +315,23 @@ export async function handlePromotion(command: PromoteCommand): Promise<Promotio
       }
     }
 
-    // ── Step 8: Start sync workers ────────────────────────────────────────
-    const step8 = await runStep(8, 'Start sync workers', async () => {
+    // ── Step 8: Verify sync workers ─────────────────────────────────────
+    const step8 = await runStep(8, 'Verify sync workers', async () => {
+      // In the Docker appliance model, sync workers run inside the gwi-pos
+      // container (sync-agent.js). No separate service to start.
       try {
-        execSync('systemctl start thepasspos-sync', { timeout: 10000, stdio: 'pipe' })
-        return 'Sync workers started'
+        const containers = execSync(
+          "docker ps --format '{{.Names}}' 2>/dev/null || true",
+          { timeout: 10000, encoding: 'utf8' }
+        )
+        if (containers.split('\n').some(name => name.trim() === 'gwi-pos')) {
+          return 'Sync workers run inside gwi-pos container (Docker appliance model)'
+        }
       } catch {
-        return 'Sync workers not available as systemd unit (may be in-process)'
+        // Docker not available
       }
+
+      return 'POS container not running — sync workers will start when container starts'
     })
     steps.push(step8)
 

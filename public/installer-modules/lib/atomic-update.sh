@@ -246,7 +246,8 @@ commit_update() {
 #   - Manual DB restore from backup is safer and allows operator judgment
 #
 # If a DB restore is needed, the operator should manually run:
-#   /opt/gwi-pos/scripts/nuc-restore.sh
+#   sudo bash /opt/gwi-pos/scripts/nuc-restore.sh
+# (Docker-first: stops containers, restores DB, runs migrations via Docker, restarts)
 #
 # Returns 0 on success, non-zero on failure.
 # =============================================================================

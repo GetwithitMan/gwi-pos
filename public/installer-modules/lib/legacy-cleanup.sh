@@ -128,24 +128,28 @@ DESK
 
   log "  Convergence verification:"
 
-  # Expected services for server role
-  local expected_enabled=(thepasspos thepasspos-sync)
-  for svc in "${expected_enabled[@]}"; do
-    if systemctl is-enabled "$svc" >/dev/null 2>&1; then
-      log "    $svc: enabled (correct)"
-    else
-      warn "  $svc: NOT enabled (expected for server role)"
-    fi
-  done
+  # ── Docker-first: verify gwi-pos and gwi-agent containers ────────────
+  if command -v docker >/dev/null 2>&1; then
+    for ctr in gwi-pos gwi-agent; do
+      if docker inspect --format='{{.State.Running}}' "$ctr" 2>/dev/null | grep -q true; then
+        log "    container $ctr: running (correct)"
+      else
+        warn "  container $ctr: NOT running (expected for server role)"
+      fi
+    done
+  else
+    warn "  Docker not installed -- cannot verify container state"
+  fi
 
-  # Legacy services that should NOT be enabled
-  local expected_absent=(thepasspos-kiosk thepasspos-exit-kiosk pulse-kiosk)
+  # ── Legacy systemd services must be masked/absent ────────────────────
+  local expected_absent=(thepasspos thepasspos-sync thepasspos-kiosk thepasspos-exit-kiosk pulse-kiosk)
   for svc in "${expected_absent[@]}"; do
     if systemctl is-enabled "$svc" >/dev/null 2>&1; then
-      warn "  Legacy $svc still enabled -- force-disabling"
-      systemctl disable "$svc" 2>/dev/null || true
+      warn "  Legacy $svc still enabled -- force-masking"
+      systemctl disable --now "$svc" 2>/dev/null || true
+      systemctl mask "$svc" 2>/dev/null || true
     else
-      log "    $svc: absent/disabled (correct)"
+      log "    $svc: absent/masked (correct)"
     fi
   done
 
@@ -191,23 +195,34 @@ converge_terminal_role() {
 converge_backup_role() {
   log "Converging backup role to current baseline..."
 
-  # POS service disabled (standby -- promote.sh starts it on takeover)
-  if systemctl is-enabled thepasspos >/dev/null 2>&1; then
-    systemctl disable thepasspos 2>/dev/null || true
-    log "    thepasspos: disabled (correct for backup/standby)"
+  # ── Docker-first: POS container should NOT be running on backup ──────
+  if command -v docker >/dev/null 2>&1; then
+    if docker inspect --format='{{.State.Running}}' gwi-pos 2>/dev/null | grep -q true; then
+      warn "  gwi-pos container running on backup -- stopping"
+      docker stop gwi-pos 2>/dev/null || true
+    else
+      log "    gwi-pos container: stopped (correct for backup/standby)"
+    fi
+    # gwi-agent should still run (receives promotion commands from MC)
+    if docker inspect --format='{{.State.Running}}' gwi-agent 2>/dev/null | grep -q true; then
+      log "    gwi-agent container: running (correct for backup)"
+    else
+      warn "  gwi-agent container: NOT running (expected for backup)"
+    fi
+  else
+    warn "  Docker not installed -- cannot verify container state"
   fi
 
-  # Sync agent enabled (receives promotion commands from MC)
-  if ! systemctl is-enabled thepasspos-sync >/dev/null 2>&1; then
-    systemctl enable thepasspos-sync 2>/dev/null || true
-    log "    thepasspos-sync: enabled (correct for backup)"
-  fi
-
-  # Remove legacy kiosk (same as server -- backup doesn't need kiosk)
-  local legacy_services=(thepasspos-kiosk.service thepasspos-exit-kiosk.service)
+  # ── Legacy systemd services must be masked/absent ────────────────────
+  local legacy_services=(thepasspos thepasspos-sync thepasspos-kiosk thepasspos-exit-kiosk)
   for svc in "${legacy_services[@]}"; do
-    systemctl disable --now "$svc" 2>/dev/null || true
-    rm -f "/etc/systemd/system/$svc" 2>/dev/null || true
+    if systemctl is-enabled "$svc" >/dev/null 2>&1; then
+      warn "  Legacy $svc still enabled -- force-masking"
+      systemctl disable --now "$svc" 2>/dev/null || true
+      systemctl mask "$svc" 2>/dev/null || true
+    else
+      log "    $svc: absent/masked (correct)"
+    fi
   done
 
   # Dashboard can be installed (shows standby status) but don't force-enable

@@ -35,6 +35,8 @@ async function main() {
   const directUrl = process.env.DIRECT_URL || process.env.DATABASE_URL
   if (directUrl) {
     // 2. Run pre-push migrations on master Neon DB (via PrismaClient + DIRECT_URL)
+    //    This is the CANONICAL Neon migration path. NUCs never run DDL against
+    //    Neon — only Vercel build (here) and MC provisioning may mutate Neon schema.
     console.log('[vercel-build] Running pre-push migrations (master)...')
     try {
       execSync('node scripts/nuc-pre-migrate.js', {

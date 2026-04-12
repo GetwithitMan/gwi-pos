@@ -431,11 +431,13 @@ fi
 header "Stopping Services"
 
 log "Stopping POS application..."
-pm2 stop gwi-pos 2>/dev/null || true
-systemctl stop thepasspos 2>/dev/null || true
-systemctl stop thepasspos-kiosk 2>/dev/null || true
-systemctl stop thepasspos-sync 2>/dev/null || true
-log "POS application stopped"
+# Docker-first: stop containers via gwi-node or directly
+if command -v docker &>/dev/null; then
+  docker stop gwi-agent 2>/dev/null || true
+  docker stop gwi-pos 2>/dev/null || true
+  log "Docker containers stopped"
+fi
+log "POS services stopped"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Create safety backup of current database (best-effort)
@@ -502,15 +504,29 @@ fi
 
 header "Running Migrations"
 
-POSUSER=$(stat -c '%U' "$APP_DIR" 2>/dev/null || echo "smarttab")
+# Docker-first: run migrations inside a temporary container
+GWI_NODE="/opt/gwi-pos/gwi-node.sh"
+CURRENT_IMAGE=$(docker inspect --format='{{.Config.Image}}' gwi-pos 2>/dev/null || true)
 
-log "Running pre-migrate backfill..."
-sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && node scripts/nuc-pre-migrate.js" 2>>"$LOG_FILE" || warn "Pre-migrate had warnings (non-fatal)"
+if [[ -n "$CURRENT_IMAGE" ]] && command -v docker &>/dev/null; then
+  log "Running migrations via Docker (image: $CURRENT_IMAGE)..."
 
-log "Applying Prisma migrations..."
-sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npx prisma migrate deploy" 2>>"$LOG_FILE" || warn "Prisma migrate had warnings (non-fatal)"
+  # Use deploy-tools inside the container image to run migrations
+  docker run --rm \
+    --network host \
+    --env-file /opt/gwi-pos/shared/.env \
+    -v /opt/gwi-pos/shared:/opt/gwi-pos/shared \
+    "$CURRENT_IMAGE" \
+    node deploy-tools/src/migrate.js 2>>"$LOG_FILE" || warn "Migrations had warnings (non-fatal)"
 
-log "Migrations complete"
+  log "Docker migrations complete"
+else
+  # Fallback: if no Docker image available, try legacy path
+  warn "No Docker image found — attempting legacy migration path"
+  POSUSER=$(stat -c '%U' "$APP_DIR" 2>/dev/null || echo "smarttab")
+  sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && node scripts/nuc-pre-migrate.js" 2>>"$LOG_FILE" || warn "Pre-migrate had warnings (non-fatal)"
+  log "Legacy migrations complete"
+fi
 
 # ─────────────────────────────────────────────────────────────────────────────
 # syncedAt: NOT stamped (sync worker owns this metadata)
@@ -539,10 +555,18 @@ fi
 header "Starting Services"
 
 log "Starting POS application..."
-if systemctl is-enabled thepasspos >/dev/null 2>&1; then
-  systemctl start thepasspos 2>>"$LOG_FILE" || warn "thepasspos failed to start"
+
+# Docker-first: restart containers via gwi-node
+GWI_NODE="/opt/gwi-pos/gwi-node.sh"
+if [[ -x "$GWI_NODE" ]]; then
+  log "Starting via gwi-node..."
+  bash "$GWI_NODE" start 2>>"$LOG_FILE" || warn "gwi-node start had warnings"
+elif command -v docker &>/dev/null && [[ -n "$CURRENT_IMAGE" ]]; then
+  log "Starting containers directly..."
+  docker start gwi-pos 2>>"$LOG_FILE" || warn "gwi-pos container failed to start"
+  docker start gwi-agent 2>>"$LOG_FILE" || true
 else
-  sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && pm2 start ecosystem.config.js" 2>>"$LOG_FILE" || warn "PM2 start failed"
+  warn "No Docker runtime available — cannot start POS"
 fi
 
 # Wait for POS to become healthy
@@ -558,14 +582,8 @@ for i in $(seq 1 30); do
 done
 
 if [[ "$APP_READY" != "true" ]]; then
-  warn "POS app did not become healthy within 60s — check: journalctl -u thepasspos"
+  warn "POS app did not become healthy within 60s — check: docker logs gwi-pos --tail 100"
 fi
-
-# Start sync agent
-if systemctl is-enabled thepasspos-sync >/dev/null 2>&1; then
-  systemctl start thepasspos-sync 2>>"$LOG_FILE" || true
-fi
-log "Sync agent started"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Post-restore reconciliation
@@ -686,14 +704,14 @@ fi
 
 if [[ "$APP_READY" != "true" ]]; then
   echo -e "  ${RED}WARNING: POS app is not healthy. Check:${NC}"
-  echo "    sudo journalctl -u thepasspos -f"
-  echo "    sudo systemctl status thepasspos"
+  echo "    docker logs gwi-pos --tail 100 -f"
+  echo "    docker inspect --format='{{.State.Health.Status}}' gwi-pos"
   echo ""
 fi
 
 echo -e "  ${CYAN}Useful commands:${NC}"
-echo "    sudo journalctl -u thepasspos -f     — View POS logs"
-echo "    sudo systemctl restart thepasspos     — Restart POS"
+echo "    docker logs gwi-pos --tail 100 -f    — View POS logs"
+echo "    docker restart gwi-pos               — Restart POS container"
 echo "    cat $RECONCILIATION_LOG              — View reconciliation report"
 if [[ -n "${SAFETY_FILE:-}" ]] && [[ -f "${SAFETY_FILE:-}" ]]; then
   echo "    Safety backup: $SAFETY_FILE"

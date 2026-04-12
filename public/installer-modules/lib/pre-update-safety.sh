@@ -2,8 +2,7 @@
 # =============================================================================
 # pre-update-safety.sh -- Shared safety library for pre-update backups & checks
 # =============================================================================
-# Sourced by: installer, sync-agent wrapper, update-agent wrapper,
-#             public/scripts/pre-update-backup.sh
+# Sourced by: installer, atomic-update.sh, gwi-node pre-deploy hook
 #
 # Functions:
 #   create_pre_update_backup   -- pg_dump + optional encrypt + manifest + rotation

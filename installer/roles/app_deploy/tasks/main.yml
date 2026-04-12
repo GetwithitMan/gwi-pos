@@ -1,10 +1,10 @@
 ---
 # ═══════════════════════════════════════════════════════════════════════════════
-# app_deploy — Thin deploy orchestrator
+# app_deploy — Thin deploy orchestrator (gwi-node.sh is the canonical agent)
 # ═══════════════════════════════════════════════════════════════════════════════
 # Ensures the gwipos system user, directory skeleton, signing key, and
-# deploy-release.sh are in place, then delegates the actual deploy to the
-# script.  Does NOT contain inline deploy logic.
+# gwi-node.sh are in place, then delegates the actual deploy to gwi-node.
+# deploy-release.sh is kept as a legacy fallback but never executed.
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # ── System user / group ──────────────────────────────────────────────────────
@@ -53,13 +53,31 @@
     group: gwipos
     mode: "0644"
 
-# ── Deploy script ────────────────────────────────────────────────────────────
+# ── Deploy agent (gwi-node.sh) ──────────────────────────────────────────────
 - name: Check if /opt/gwi-pos/current exists
   ansible.builtin.stat:
     path: /opt/gwi-pos/current
   register: _current_link
 
-- name: Copy deploy-release.sh from current release
+- name: Check if gwi-node.sh already installed
+  ansible.builtin.stat:
+    path: /opt/gwi-pos/gwi-node.sh
+  register: _gwi_node_installed
+
+- name: Copy gwi-node.sh from current release (if not already installed)
+  ansible.builtin.copy:
+    src: /opt/gwi-pos/current/public/scripts/gwi-node.sh
+    dest: /opt/gwi-pos/gwi-node.sh
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0755"
+  when:
+    - not (_gwi_node_installed.stat.exists | default(false))
+    - _current_link.stat.exists | default(false)
+
+# ── Legacy: deploy-release.sh (kept for backward compat, never executed) ────
+- name: Copy deploy-release.sh from current release (legacy fallback only)
   ansible.builtin.copy:
     src: /opt/gwi-pos/current/public/scripts/deploy-release.sh
     dest: /opt/gwi-pos/deploy-release.sh
@@ -68,10 +86,11 @@
     group: gwipos
     mode: "0755"
   when: _current_link.stat.exists | default(false)
+  ignore_errors: true
 
-# ── Run artifact deploy ──────────────────────────────────────────────────────
-- name: Run artifact deploy
-  command: /opt/gwi-pos/deploy-release.sh --manifest-url "{{ manifest_url }}" {{ '--force' if gwi_force_deploy | default(false) else '' }}
+# ── Run artifact deploy via gwi-node ─────────────────────────────────────────
+- name: Run artifact deploy via gwi-node
+  command: /opt/gwi-pos/gwi-node.sh deploy {{ '--force' if gwi_force_deploy | default(false) else '' }}
   register: deploy_result
   changed_when: "'healthy' in deploy_result.stdout"
   failed_when: deploy_result.rc != 0

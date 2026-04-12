@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
 # =============================================================================
-# test-deploy-release.sh — Unit tests for deploy-release.sh state machine
+# DEPRECATED: test-deploy-release.sh — Unit tests for deploy-release.sh
+# =============================================================================
+# deploy-release.sh is DEPRECATED. gwi-node.sh is the canonical deploy agent.
+# This test file is kept for historical reference only.
+# See gwi-node.sh for the current deploy pipeline.
 # =============================================================================
 # Validates deploy-release.sh functions in isolation WITHOUT deploying anything.
 # Sources deploy-release.sh with mocks and exercises the pure-logic functions.
 #
 # Usage:
-#   bash scripts/tests/test-deploy-release.sh
-#   bash scripts/tests/test-deploy-release.sh -v   # verbose (show all output)
+#   bash scripts/tests/test-deploy-release-DEPRECATED.sh
+#   bash scripts/tests/test-deploy-release-DEPRECATED.sh -v   # verbose
 # =============================================================================
 set -euo pipefail
 

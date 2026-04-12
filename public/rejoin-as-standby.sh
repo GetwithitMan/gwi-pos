@@ -210,37 +210,37 @@ if [[ "$AUTOMATED" != "true" ]]; then
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Step A: Stop sync workers
+# Step A: Stop sync workers (Docker appliance model — sync runs inside container)
 # ─────────────────────────────────────────────────────────────────────────────
 
 log "Stopping sync workers..."
+# In Docker appliance model, sync workers run inside gwi-pos container.
+# Stopping the container (Step B) stops them. Legacy cleanup just in case:
 pm2 stop sync-upstream 2>/dev/null || true
-systemctl stop thepasspos-sync 2>/dev/null || true
 log "Sync workers stopped"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Step B: Gracefully drain and stop POS application
+# Step B: Gracefully drain and stop POS application (Docker-first)
 # ─────────────────────────────────────────────────────────────────────────────
-# Send SIGTERM first to allow the Node.js server's graceful shutdown handler
-# to finish in-flight requests (typically a 10s drain timeout in server.ts).
-# Wait 15 seconds for draining, then force-stop if still running.
+# Docker stop sends SIGTERM then waits (default 10s) before SIGKILL.
+# The Node.js server's graceful shutdown handler drains in-flight requests.
 
-log "Sending graceful shutdown signal to POS app..."
+log "Stopping POS application..."
 
-# systemd: SIGTERM for connection draining
-systemctl kill --signal=SIGTERM thepasspos 2>/dev/null || true
-
-# PM2: send SIGINT (PM2's graceful stop signal)
-POSUSER=$(stat -c '%U' /opt/gwi-pos/app 2>/dev/null || echo "smarttab")
-sudo -u "$POSUSER" pm2 sendSignal SIGINT gwi-pos 2>/dev/null || true
-
-log "Waiting 15 seconds for in-flight requests to drain..."
-sleep 15
-
-# Now force-stop if still running
-systemctl stop thepasspos 2>/dev/null || true
-systemctl stop thepasspos-kiosk 2>/dev/null || true
-sudo -u "$POSUSER" pm2 stop all 2>/dev/null || true
+# Docker-first: stop the gwi-pos container (sends SIGTERM, 15s grace period)
+if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^gwi-pos$"; then
+  log "Stopping POS via Docker container (15s grace period for connection draining)..."
+  docker stop --time 15 gwi-pos 2>/dev/null || true
+else
+  log "gwi-pos container not running — checking legacy services..."
+  # Legacy fallback: systemd / pm2
+  POSUSER=$(stat -c '%U' /opt/gwi-pos/app 2>/dev/null || echo "smarttab")
+  systemctl kill --signal=SIGTERM thepasspos 2>/dev/null || true
+  sleep 15
+  systemctl stop thepasspos 2>/dev/null || true
+  systemctl stop thepasspos-kiosk 2>/dev/null || true
+  sudo -u "$POSUSER" pm2 stop all 2>/dev/null || true
+fi
 
 log "POS application stopped"
 

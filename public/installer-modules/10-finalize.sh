@@ -492,7 +492,7 @@ _run_verification() {
   # ── 11. Monitoring Scripts ─────────────────────────────────────────────────
   local scripts_total=0
   local scripts_found=0
-  for script in watchdog.sh scripts/hardware-inventory.sh scripts/disk-pressure-monitor.sh scripts/version-compat.sh scripts/rolling-restart.sh; do
+  for script in watchdog.sh scripts/hardware-inventory.sh scripts/disk-pressure-monitor.sh scripts/version-compat.sh gwi-node.sh; do
     ((scripts_total++))
     if [[ -x "/opt/gwi-pos/$script" ]]; then
       ((scripts_found++))

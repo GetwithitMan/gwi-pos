@@ -35,11 +35,21 @@ run_dashboard() {
   # Get installed version (0.0.0 if not installed)
   _installed_version=$(dpkg-query -W -f='${Version}' gwi-nuc-dashboard 2>/dev/null || echo "0.0.0")
 
-  # Get available version from version file or bundled .deb
-  if [[ -f "${APP_DIR}/public/dashboard-version.txt" ]]; then
-    _available_version=$(cat "${APP_DIR}/public/dashboard-version.txt" 2>/dev/null || echo "0.0.0")
-  elif [[ -f "${APP_DIR}/public/gwi-nuc-dashboard.deb" ]]; then
-    _available_version=$(dpkg-deb -f "${APP_DIR}/public/gwi-nuc-dashboard.deb" Version 2>/dev/null || echo "0.0.0")
+  # Get available version from version file or bundled .deb (container first, host fallback)
+  _available_version=$(docker exec gwi-pos cat /app/public/dashboard-version.txt 2>/dev/null || true)
+  if [[ -z "$_available_version" ]]; then
+    if [[ -f "${APP_DIR}/public/dashboard-version.txt" ]]; then
+      _available_version=$(cat "${APP_DIR}/public/dashboard-version.txt" 2>/dev/null || echo "0.0.0")
+    fi
+  fi
+  if [[ -z "$_available_version" ]] || [[ "$_available_version" == "0.0.0" ]]; then
+    # Try extracting .deb from container to check version
+    if docker cp gwi-pos:/app/public/gwi-nuc-dashboard.deb /tmp/gwi-nuc-dashboard-check.deb 2>/dev/null; then
+      _available_version=$(dpkg-deb -f /tmp/gwi-nuc-dashboard-check.deb Version 2>/dev/null || echo "0.0.0")
+      rm -f /tmp/gwi-nuc-dashboard-check.deb
+    elif [[ -f "${APP_DIR}/public/gwi-nuc-dashboard.deb" ]]; then
+      _available_version=$(dpkg-deb -f "${APP_DIR}/public/gwi-nuc-dashboard.deb" Version 2>/dev/null || echo "0.0.0")
+    fi
   fi
 
   if [[ "$_installed_version" != "0.0.0" ]] && [[ -n "$_available_version" ]] && [[ "$_available_version" != "0.0.0" ]]; then
@@ -61,29 +71,38 @@ run_dashboard() {
   fi
 
   # ─────────────────────────────────────────────────────────────────────────
-  # Locate the .deb package
+  # Locate the .deb package (container first, then host paths)
   # ─────────────────────────────────────────────────────────────────────────
   local DASHBOARD_DEB=""
 
-  local SEARCH_PATHS=(
-    "$APP_BASE/dashboard"
-    "$APP_DIR/packaging"
-    "$APP_DIR/dashboard"
-    "$APP_DIR/public"
-    "$(dirname "$0")"
-  )
+  # Try extracting .deb from the running container first
+  if docker cp gwi-pos:/app/public/gwi-nuc-dashboard.deb "$APP_BASE/dashboard/gwi-nuc-dashboard.deb" 2>/dev/null; then
+    DASHBOARD_DEB="$APP_BASE/dashboard/gwi-nuc-dashboard.deb"
+    log "Dashboard .deb extracted from gwi-pos container"
+  fi
 
-  for dir in "${SEARCH_PATHS[@]}"; do
-    if [[ ! -d "$dir" ]]; then
-      continue
-    fi
-    local found
-    found=$(find "$dir" -maxdepth 2 -name "gwi-nuc-dashboard*.deb" -type f 2>/dev/null | sort -V | tail -1)
-    if [[ -n "$found" ]]; then
-      DASHBOARD_DEB="$found"
-      break
-    fi
-  done
+  # Fall back to host search paths if container extraction failed
+  if [[ -z "$DASHBOARD_DEB" ]]; then
+    local SEARCH_PATHS=(
+      "$APP_BASE/dashboard"
+      "$APP_DIR/packaging"
+      "$APP_DIR/dashboard"
+      "$APP_DIR/public"
+      "$(dirname "$0")"
+    )
+
+    for dir in "${SEARCH_PATHS[@]}"; do
+      if [[ ! -d "$dir" ]]; then
+        continue
+      fi
+      local found
+      found=$(find "$dir" -maxdepth 2 -name "gwi-nuc-dashboard*.deb" -type f 2>/dev/null | sort -V | tail -1)
+      if [[ -n "$found" ]]; then
+        DASHBOARD_DEB="$found"
+        break
+      fi
+    done
+  fi
 
   # If not found locally, download from POS deployment (Vercel) or GitHub releases
   if [[ -z "$DASHBOARD_DEB" ]]; then
@@ -120,13 +139,58 @@ run_dashboard() {
       log "Downloaded dashboard: $(ls -lh "$DASHBOARD_DEB" | awk '{print $5}')"
     else
       rm -f "$DOWNLOAD_DIR/gwi-nuc-dashboard.deb" 2>/dev/null
-      track_warn "Dashboard download failed -- skipping (can be installed later)"
+      track_warn "Dashboard download failed -- skipping. Run 'gwi-node dashboard-check' after deploy to retry."
+      # Write persistent warning
+      local _state_dir="${APP_BASE:-/opt/gwi-pos}/shared/state"
+      mkdir -p "$_state_dir" 2>/dev/null || true
+      echo "{\"warning\":true,\"reason\":\"installer download failed\",\"targetVersion\":\"${_available_version:-unknown}\",\"installedVersion\":\"${_installed_version:-unknown}\",\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" \
+        > "${_state_dir}/dashboard-warning.json" 2>/dev/null || true
       end_timer "Stage 12 (dashboard)"
       return 0
     fi
   fi
 
   log "Found dashboard package: ${DASHBOARD_DEB}"
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Validate .deb package integrity
+  # ─────────────────────────────────────────────────────────────────────────
+  if ! dpkg --info "$DASHBOARD_DEB" > /dev/null 2>&1; then
+    track_warn "Dashboard: file is not a valid .deb package — skipping"
+    end_timer "Stage 12 (dashboard)"
+    return 0
+  fi
+
+  local _pkg_name
+  _pkg_name=$(dpkg-deb -f "$DASHBOARD_DEB" Package 2>/dev/null)
+  if [[ "$_pkg_name" != "gwi-nuc-dashboard" ]]; then
+    track_warn "Dashboard: unexpected package name '$_pkg_name' — expected gwi-nuc-dashboard — skipping"
+    end_timer "Stage 12 (dashboard)"
+    return 0
+  fi
+
+  log "Dashboard .deb validated: package=$_pkg_name, version=$(dpkg-deb -f "$DASHBOARD_DEB" Version 2>/dev/null)"
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # SHA256 verification (matches gwi-node.sh update_dashboard behavior)
+  # ─────────────────────────────────────────────────────────────────────────
+  local _expected_sha=""
+  # Try reading from version-contract.json inside the running container
+  _expected_sha=$(docker exec gwi-pos cat /app/public/version-contract.json 2>/dev/null \
+    | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('components',{}).get('dashboard',{}).get('sha256',''))" 2>/dev/null || true)
+  if [[ -n "$_expected_sha" ]]; then
+    local _actual_sha
+    _actual_sha=$(sha256sum "$DASHBOARD_DEB" | awk '{print $1}')
+    if [[ "$_actual_sha" != "$_expected_sha" ]]; then
+      track_warn "Dashboard: SHA256 mismatch — expected $_expected_sha, got $_actual_sha — skipping install"
+      end_timer "Stage 12 (dashboard)"
+      return 0
+    fi
+    log "Dashboard: SHA256 verified ($_actual_sha)"
+  else
+    # version-contract not available (container not running during install) — skip SHA check
+    log "Dashboard: SHA256 check skipped (version-contract not available from container)"
+  fi
 
   # ─────────────────────────────────────────────────────────────────────────
   # Install dependencies
@@ -147,13 +211,22 @@ run_dashboard() {
   dpkg --configure -a 2>/dev/null || true
   apt-get install -f -y -qq 2>/dev/null || true
 
-  # Verify the install actually worked
+  # ── Version reconciliation check ─────────────────────────────────────────
+  # After install, compare installed version vs target. If mismatch, log an
+  # explicit WARNING that persists in install results.
   local _final_version
   _final_version=$(dpkg-query -W -f='${Version}' gwi-nuc-dashboard 2>/dev/null || echo "0.0.0")
   if [[ -n "$_available_version" ]] && [[ "$_available_version" != "0.0.0" ]] && [[ "$_final_version" != "$_available_version" ]]; then
-    track_warn "Dashboard: expected v${_available_version}, got v${_final_version} -- may need manual install"
+    track_warn "Dashboard: VERSION MISMATCH after install -- expected v${_available_version}, got v${_final_version}. Run 'gwi-node dashboard-check' to retry."
+    # Write persistent warning so gwi-node status can detect it
+    local _state_dir="${APP_BASE:-/opt/gwi-pos}/shared/state"
+    mkdir -p "$_state_dir" 2>/dev/null || true
+    echo "{\"warning\":true,\"reason\":\"installer version mismatch\",\"targetVersion\":\"${_available_version}\",\"installedVersion\":\"${_final_version}\",\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" \
+      > "${_state_dir}/dashboard-warning.json" 2>/dev/null || true
   else
-    log "Dashboard v${_final_version} installed and configured"
+    log "Dashboard v${_final_version} installed and configured successfully"
+    # Clear any prior warning
+    rm -f "${APP_BASE:-/opt/gwi-pos}/shared/state/dashboard-warning.json" 2>/dev/null || true
   fi
 
   # ─────────────────────────────────────────────────────────────────────────

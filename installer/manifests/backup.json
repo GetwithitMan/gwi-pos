@@ -18,14 +18,18 @@
     ],
     "optional": [
       {
-        "name": "thepasspos",
+        "name": "gwi-pos",
+        "type": "docker",
         "tier": "degraded",
-        "description": "POS application (standby — started on failover promotion)"
+        "description": "POS application (standby — started on failover promotion)",
+        "health_check": "docker inspect --format='{{.State.Health.Status}}' gwi-pos 2>/dev/null || echo 'unhealthy'"
       },
       {
-        "name": "thepasspos-sync",
+        "name": "gwi-agent",
+        "type": "docker",
         "tier": "degraded",
-        "description": "Sync agent (standby — started on failover promotion)"
+        "description": "Sync agent (standby — started on failover promotion)",
+        "health_check": "docker inspect --format='{{.State.Status}}' gwi-agent 2>/dev/null || echo 'not running'"
       }
     ]
   },

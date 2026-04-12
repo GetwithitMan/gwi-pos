@@ -70,6 +70,7 @@ COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/deploy-tools ./deploy-tools
 COPY --from=builder /app/scripts/migrations ./scripts/migrations
 COPY --from=builder /app/scripts/migration-helpers.js ./scripts/migration-helpers.js
+COPY --from=builder /app/scripts/validate-sudo-paths.sh ./scripts/validate-sudo-paths.sh
 # migrate.js looks for migrations at deploy-tools/migrations (path.join(__dirname, '..', 'migrations'))
 COPY --from=builder /app/scripts/migrations ./deploy-tools/migrations
 COPY --from=builder /app/scripts/migration-helpers.js ./deploy-tools/migration-helpers.js

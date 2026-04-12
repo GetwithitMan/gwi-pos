@@ -2,23 +2,22 @@
   "schema_version": "1.0",
   "producer": "gwi-pos-baseline",
   "role": "server",
-  "description": "Primary POS server — runs the application, kiosk, sync agent, and manages peripherals.",
+  "description": "Primary POS server — runs gwi-pos and gwi-agent Docker containers, manages peripherals.",
   "services": {
     "required": [
       {
-        "name": "thepasspos",
+        "name": "gwi-pos",
+        "type": "docker",
         "tier": "critical",
-        "description": "POS application server (Node.js + Next.js)"
+        "description": "POS application server (Docker container)",
+        "health_check": "docker inspect --format='{{.State.Health.Status}}' gwi-pos 2>/dev/null || echo 'unhealthy'"
       },
       {
-        "name": "thepasspos-kiosk",
+        "name": "gwi-agent",
+        "type": "docker",
         "tier": "degraded",
-        "description": "Chromium kiosk displaying POS UI"
-      },
-      {
-        "name": "thepasspos-sync",
-        "tier": "degraded",
-        "description": "Sync agent for MC deploy commands and upstream replication"
+        "description": "Sync agent for MC deploy commands and upstream replication (Docker container)",
+        "health_check": "docker inspect --format='{{.State.Status}}' gwi-agent 2>/dev/null || echo 'not running'"
       }
     ],
     "optional": [

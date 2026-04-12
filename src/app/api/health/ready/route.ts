@@ -1,7 +1,7 @@
 /**
  * Readiness Probe — /api/health/ready
  *
- * Used by deploy-release.sh to gate deployments. Proves the release is
+ * Used by gwi-node deploy to gate deployments. Proves the release is
  * FULLY USABLE (env loaded, DB reachable, critical tables present, schema
  * version correct) — not just that the process is alive.
  *

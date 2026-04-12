@@ -113,8 +113,7 @@ function buildExecSyncMock(overrides: Record<string, () => string> = {}, tracker
     if (cmd.includes('psql')) return '90'
     if (cmd.includes('mv ')) return ''
     if (cmd.includes('rm -rf')) return ''
-    if (cmd.includes('deploy-release.sh')) return 'deploy ok'
-    if (cmd.includes('gwi-node.sh')) return 'deploy ok'
+    if (cmd.includes('gwi-node')) return 'deploy ok'
     return ''
   }
 }

@@ -67,12 +67,17 @@ _boot_step() {
   _BOOT_STEPS+=("{\"step\":\"$name\",\"status\":\"$status\",\"detail\":\"$detail\",\"elapsedMs\":$elapsed_ms}")
 }
 
-_APP_DIR="/opt/gwi-pos/app"
-cd "$_APP_DIR"
+_APP_DIR="/opt/gwi-pos/app"   # kept for host-side env/state paths only
+_CONTAINER="gwi-pos"           # Docker container name
 
-# Ensure app env files are symlinked to canonical /opt/gwi-pos/.env
-# (repairs broken symlinks or copies left by older installers)
+# Source .env for DATABASE_URL, NEON_DATABASE_URL (belt-and-suspenders:
+# systemd EnvironmentFile provides these, but manual runs need them too)
 _CANONICAL_ENV="/opt/gwi-pos/.env"
+if [[ -f "$_CANONICAL_ENV" ]]; then
+  set -a
+  source "$_CANONICAL_ENV"
+  set +a
+fi
 
 # ── Per-boot reconciliation gate -- prevents infinite restart loops ──
 BOOT_ID=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null | tr -d '-')
@@ -95,8 +100,20 @@ fi
 # 5-minute hard timeout
 PRE_START_DEADLINE=$(($(date +%s) + 300))
 
+# ── Container readiness gate ──
+if ! docker ps -q --filter "name=^${_CONTAINER}$" --filter status=running | grep -q .; then
+  echo "[pre-start] $_CONTAINER container not running — starting..."
+  docker start "$_CONTAINER" || { echo "[pre-start] CRITICAL: cannot start $_CONTAINER container"; exit 1; }
+  sleep 3
+  if ! docker ps -q --filter "name=^${_CONTAINER}$" --filter status=running | grep -q .; then
+    echo "[pre-start] CRITICAL: $_CONTAINER container failed to reach running state"
+    exit 1
+  fi
+fi
+_boot_step "container-ready" "ok" ""
+
 if [[ -f "$_CANONICAL_ENV" ]]; then
-  for _ef in .env .env.local; do
+  for _ef in "$_APP_DIR/.env" "$_APP_DIR/.env.local"; do
     if [[ ! -L "$_ef" ]] || [[ "$(readlink -f "$_ef" 2>/dev/null)" != "$(readlink -f "$_CANONICAL_ENV")" ]]; then
       rm -f "$_ef"
       ln -sf "$_CANONICAL_ENV" "$_ef"
@@ -105,12 +122,10 @@ if [[ -f "$_CANONICAL_ENV" ]]; then
   done
 fi
 
-# Clean stale .next.backup from inside project dir (Turbopack crash -- scans 17k+ files)
-rm -rf "$_APP_DIR/.next.backup" 2>/dev/null || true
-# Also clean the outside-project backup if it exists from a previously failed build
+# Clean stale build artifacts inside container (Turbopack crash -- scans 17k+ files)
+docker exec "$_CONTAINER" rm -rf /app/.next.backup /app/.next/lock 2>/dev/null || true
+# Also clean host-side backup if it exists from a previously failed build
 rm -rf /opt/gwi-pos/.next.backup 2>/dev/null || true
-# Remove stale .next/lock from interrupted builds (prevents build hangs)
-rm -f "$_APP_DIR/.next/lock" 2>/dev/null || true
 
 # Guard: DATABASE_URL must be set for any DB operations
 if [[ -z "${DATABASE_URL:-}" ]]; then
@@ -119,15 +134,15 @@ if [[ -z "${DATABASE_URL:-}" ]]; then
 fi
 
 # ── Prisma client validation (pre-built in artifact, never generated on NUC) ──
-# The artifact ships a pre-built Prisma client at src/generated/prisma/.
+# The Docker image ships a pre-built Prisma client at /app/src/generated/prisma/.
 # We validate it exists but do NOT regenerate — prisma generate is a
 # build-time step that runs on Vercel, never on a production NUC.
-if [[ -d "$_APP_DIR/src/generated/prisma" ]]; then
-  echo "[pre-start] Prisma client: present (pre-built in artifact)"
+if docker exec "$_CONTAINER" test -d /app/src/generated/prisma 2>/dev/null; then
+  echo "[pre-start] Prisma client: present (pre-built in image)"
   _boot_step "prisma-client" "ok" "pre-built"
 else
-  echo "[pre-start] WARNING: Prisma client not found at $_APP_DIR/src/generated/prisma"
-  echo "[pre-start] The app may fail to start. Redeploy with a complete artifact."
+  echo "[pre-start] WARNING: Prisma client not found in container at /app/src/generated/prisma"
+  echo "[pre-start] The app may fail to start. Redeploy with a complete image."
   _boot_step "prisma-client" "missing" ""
 fi
 
@@ -143,8 +158,8 @@ fi
 rm -f /opt/gwi-pos/.schema-stage-done 2>/dev/null || true
 
 # ── Schema validation + migrations (deploy-tools only) ──
-# The artifact ships a pre-built Prisma client at src/generated/prisma/.
-# Schema mutations use deploy-tools/migrate.js exclusively.
+# The Docker image ships a pre-built Prisma client at /app/src/generated/prisma/.
+# Schema mutations use deploy-tools/migrate.js exclusively (via docker exec).
 # prisma generate and prisma db push are build-time only — never on NUC boot.
 
 # Disable RLS on all tables before migrations.
@@ -179,16 +194,15 @@ if [[ $(date +%s) -gt $PRE_START_DEADLINE ]]; then
   exit 0
 fi
 
-# Run migrations via deploy-tools (pg-only, no Prisma CLI)
+# Run migrations via deploy-tools inside container (pg-only, no Prisma CLI)
 # TIMEOUT: 300s (5min) matches the internal timeout in the runner
-_DT_DIR="/opt/gwi-pos/deploy-tools"
-if [[ -f "$_DT_DIR/src/migrate.js" ]]; then
+if docker exec "$_CONTAINER" test -f /app/deploy-tools/src/migrate.js 2>/dev/null; then
   echo "[pre-start] Setting migration state..."
   mkdir -p /opt/gwi-pos/shared/state
   echo "migrating" > /opt/gwi-pos/shared/state/schema-state 2>/dev/null || true
 
-  echo "[pre-start] Running migrations via deploy-tools..."
-  _MIGRATE_OUTPUT=$(DATABASE_URL="$DATABASE_URL" timeout --kill-after=10 300 node "$_DT_DIR/src/migrate.js" 2>&1) && {
+  echo "[pre-start] Running migrations via deploy-tools (docker exec)..."
+  _MIGRATE_OUTPUT=$(docker exec "$_CONTAINER" bash -c "cd /app/deploy-tools && DATABASE_URL='$DATABASE_URL' timeout 300 node src/migrate.js" 2>&1) && {
     # Parse applied/skipped counts from output if available
     _m_applied=$(echo "$_MIGRATE_OUTPUT" | grep -c 'Applied\|applied' 2>/dev/null || echo "0")
     _m_skipped=$(echo "$_MIGRATE_OUTPUT" | grep -c 'Skipped\|skipped\|already' 2>/dev/null || echo "0")
@@ -214,18 +228,18 @@ if [[ -f "$_DT_DIR/src/migrate.js" ]]; then
 
   echo "ready" > /opt/gwi-pos/shared/state/schema-state 2>/dev/null || true
 else
-  echo "[pre-start] WARNING: deploy-tools not found at $_DT_DIR -- skipping migrations."
-  _boot_step "local-migrations" "skipped" "deploy-tools not found"
+  echo "[pre-start] WARNING: deploy-tools not found in container -- skipping migrations."
+  _boot_step "local-migrations" "skipped" "deploy-tools not found in container"
 fi
 
 # ── Neon schema VALIDATION (read-only -- NUC never mutates venue Neon) ──
 # MC owns venue Neon schema via /api/internal/provision and /api/internal/sync-schema.
 # NUC only validates that Neon migration count matches local, and warns if not.
-if [[ -n "$NEON_DATABASE_URL" ]]; then
+if [[ -n "${NEON_DATABASE_URL:-}" ]]; then
   echo "[pre-start] Validating Neon schema version (read-only)..."
-  _neon_count=$(DATABASE_URL="$NEON_DATABASE_URL" node -e "
+  _neon_count=$(docker exec "$_CONTAINER" node -e "
     const { Client } = require('pg');
-    const c = new Client({ connectionString: process.env.DATABASE_URL });
+    const c = new Client({ connectionString: '$NEON_DATABASE_URL' });
     c.connect().then(() => c.query('SELECT COUNT(*)::int as cnt FROM \"_gwi_migrations\"'))
       .then(r => { console.log(r.rows[0].cnt); c.end(); })
       .catch(() => { console.log('-1'); c.end(); });
@@ -269,8 +283,10 @@ fi
 # ── Service health checks -- ensure critical services are running ──
 echo "[pre-start] Verifying critical services..."
 
-# Sync service
-if systemctl is-enabled thepasspos-sync >/dev/null 2>&1; then
+# Sync service (Docker-first: sync runs inside container; legacy: standalone service)
+if docker ps -q --filter name=gwi-pos --filter status=running 2>/dev/null | grep -q .; then
+  echo "[pre-start] Sync workers run inside gwi-pos container — skipping legacy sync check"
+elif systemctl is-enabled thepasspos-sync >/dev/null 2>&1; then
   if ! systemctl is-active thepasspos-sync >/dev/null 2>&1; then
     echo "[pre-start] Sync service not running -- starting..."
     systemctl start thepasspos-sync 2>/dev/null || echo "[pre-start] WARNING: Failed to start sync service"
@@ -292,13 +308,14 @@ if command -v gwi-dashboard >/dev/null 2>&1 || command -v gwi-nuc-dashboard >/de
   fi
 fi
 
-# Deploy latest scripts from checkout if available
-if [[ -d "$_APP_DIR/public/scripts" ]]; then
+# Deploy latest scripts from container image to host
+if docker exec "$_CONTAINER" test -d /app/public/scripts 2>/dev/null; then
   for _script in watchdog.sh; do
-    [[ -f "$_APP_DIR/public/$_script" ]] && cp "$_APP_DIR/public/$_script" /opt/gwi-pos/ && chmod +x "/opt/gwi-pos/$_script" 2>/dev/null || true
+    docker cp "$_CONTAINER:/app/public/$_script" /opt/gwi-pos/ 2>/dev/null && chmod +x "/opt/gwi-pos/$_script" 2>/dev/null || true
   done
+  mkdir -p /opt/gwi-pos/scripts
   for _script in hardware-inventory.sh disk-pressure-monitor.sh version-compat.sh rolling-restart.sh; do
-    [[ -f "$_APP_DIR/public/scripts/$_script" ]] && cp "$_APP_DIR/public/scripts/$_script" /opt/gwi-pos/scripts/ && chmod +x "/opt/gwi-pos/scripts/$_script" 2>/dev/null || true
+    docker cp "$_CONTAINER:/app/public/scripts/$_script" /opt/gwi-pos/scripts/ 2>/dev/null && chmod +x "/opt/gwi-pos/scripts/$_script" 2>/dev/null || true
   done
 fi
 
@@ -313,7 +330,7 @@ cat > "$_REPORT_DIR/boot-report.json" << BOOTEOF
   "timestamp": "$(date -u +%FT%TZ)",
   "durationMs": $_BOOT_DURATION_MS,
   "hostname": "$(hostname)",
-  "release": "$(basename "$(readlink -f /opt/gwi-pos/current 2>/dev/null)" 2>/dev/null || echo "unknown")",
+  "release": "$(docker exec "$_CONTAINER" node -e "const v = require('/app/public/version-contract.json'); console.log(v.version)" 2>/dev/null || basename "$(readlink -f /opt/gwi-pos/current 2>/dev/null)" 2>/dev/null || echo "unknown")",
   "steps": [$_STEPS_JSON]
 }
 BOOTEOF
@@ -347,17 +364,16 @@ echo "[sudoers] Repairing: writing enumerated NOPASSWD rules for $POSUSER"
 cat > "\$SUDOERS_FILE" <<'SUDOFIX'
 # GWI POS -- enumerated passwordless sudo for POS service user
 # --- systemctl: service lifecycle ---
-$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart thepasspos, /usr/bin/systemctl stop thepasspos, /usr/bin/systemctl start thepasspos, /usr/bin/systemctl enable thepasspos
-$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart thepasspos-sync, /usr/bin/systemctl start thepasspos-sync
-$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart thepasspos-kiosk, /usr/bin/systemctl stop thepasspos-kiosk, /usr/bin/systemctl start thepasspos-kiosk
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart gwi-watchdog.timer, /usr/bin/systemctl restart gwi-watchdog.service
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl enable gwi-watchdog.timer, /usr/bin/systemctl enable --now gwi-watchdog.timer
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl daemon-reload
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl status *, /usr/bin/systemctl is-active *, /usr/bin/systemctl is-enabled *, /usr/bin/systemctl list-unit-files *
 # --- Database tools ---
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/psql, /usr/lib/postgresql/*/bin/psql, /usr/bin/pg_isready, /usr/bin/pg_dump
+# --- gwi-node: canonical deploy agent (v2.0.0+) ---
+$POSUSER ALL=(ALL) NOPASSWD: /opt/gwi-pos/gwi-node.sh
 # --- POS scripts ---
-$POSUSER ALL=(ALL) NOPASSWD: /opt/gwi-pos/deploy-release.sh, /opt/gwi-pos/scripts/*, /opt/gwi-pos/watchdog.sh, /opt/gwi-pos/heartbeat.sh
+$POSUSER ALL=(ALL) NOPASSWD: /opt/gwi-pos/scripts/*, /opt/gwi-pos/watchdog.sh, /opt/gwi-pos/heartbeat.sh
 $POSUSER ALL=(ALL) NOPASSWD: /opt/gwi-pos/backup-pos.sh, /opt/gwi-pos/disable-rls.sh, /opt/gwi-pos/pre-start.sh, /opt/gwi-pos/clear-kiosk-session.sh
 $POSUSER ALL=(ALL) NOPASSWD: /opt/gwi-pos/kiosk-control.sh, /opt/gwi-pos/boot-diagnostic.sh
 # --- Package management ---
@@ -376,15 +392,25 @@ FIXEOF
     log "Self-healing sudoers script created: $FIX_SUDOERS"
 
     # thepasspos.service -- POS backend/UI
-    PG_AFTER=""
-    PG_WANTS=""
-    if [[ "$USE_LOCAL_PG" == "true" ]]; then
-      PG_AFTER=" postgresql.service"
-      PG_WANTS="Wants=network-online.target postgresql.service"
+    # If Docker runtime is active (gwi-pos container exists), skip host-mode
+    # service creation entirely. Docker is the only runtime in the appliance model;
+    # gwi-node owns the container lifecycle. Stage 05 already disables thepasspos.
+    if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q "^gwi-pos$"; then
+      log "Docker runtime active (gwi-pos container exists) — skipping host thepasspos.service creation"
+      systemctl stop thepasspos 2>/dev/null || true
+      systemctl disable thepasspos 2>/dev/null || true
+      systemctl mask thepasspos 2>/dev/null || true
+      systemctl daemon-reload
     else
-      PG_WANTS="Wants=network-online.target"
-    fi
-    cat > /etc/systemd/system/thepasspos.service <<SVCEOF
+      PG_AFTER=""
+      PG_WANTS=""
+      if [[ "$USE_LOCAL_PG" == "true" ]]; then
+        PG_AFTER=" postgresql.service"
+        PG_WANTS="Wants=network-online.target postgresql.service"
+      else
+        PG_WANTS="Wants=network-online.target"
+      fi
+      cat > /etc/systemd/system/thepasspos.service <<SVCEOF
 [Unit]
 Description=ThePassPOS Server
 After=network-online.target${PG_AFTER}
@@ -411,32 +437,32 @@ SyslogIdentifier=thepasspos
 WantedBy=multi-user.target
 SVCEOF
 
-    systemctl daemon-reload
+      systemctl daemon-reload
 
-    if [[ "$STATION_ROLE" == "backup" ]]; then
-      # Backup role: DISABLE POS app so it does NOT auto-start on reboot.
-      # If backup reboots with POS enabled, the upstream sync worker would read
-      # stale standby PG and overwrite newer data in Neon. POS will be started
-      # by promote.sh if this NUC takes over as primary.
-      systemctl disable thepasspos 2>/dev/null || true
-      log "POS service installed but DISABLED (backup standby mode)."
-      log "POS will start automatically on promotion via promote.sh."
-    else
-      systemctl enable thepasspos
+      if [[ "$STATION_ROLE" == "backup" ]]; then
+        # Backup role: DISABLE POS app so it does NOT auto-start on reboot.
+        # If backup reboots with POS enabled, the upstream sync worker would read
+        # stale standby PG and overwrite newer data in Neon. POS will be started
+        # by promote.sh if this NUC takes over as primary.
+        systemctl disable thepasspos 2>/dev/null || true
+        log "POS service installed but DISABLED (backup standby mode)."
+        log "POS will start automatically on promotion via promote.sh."
+      else
+        systemctl enable thepasspos
 
-      # Ensure POSUSER owns the entire app directory -- root-created dirs/files
-      # from installer stages (mkdir, cp) cause "Permission denied" at runtime
-      chown -R "$POSUSER":"$POSUSER" "$APP_BASE" 2>/dev/null || true
-      # Keys stay root-owned (secrets)
-      [[ -d "$KEY_DIR" ]] && chown -R root:root "$KEY_DIR" && chmod 700 "$KEY_DIR"
+        # Ensure POSUSER owns the entire app directory -- root-created dirs/files
+        # from installer stages (mkdir, cp) cause "Permission denied" at runtime
+        chown -R "$POSUSER":"$POSUSER" "$APP_BASE" 2>/dev/null || true
+        # Keys stay root-owned (secrets)
+        [[ -d "$KEY_DIR" ]] && chown -R root:root "$KEY_DIR" && chmod 700 "$KEY_DIR"
 
-      log "Starting POS server..."
-      if ! timeout --kill-after=10 180 systemctl restart thepasspos; then
-        err_code "ERR-INST-211" "systemctl restart thepasspos failed"
-        err "POS service failed to start -- installer cannot continue"
-        track_warn "POS service restart failed"
-        return 1
-      fi
+        log "Starting POS server..."
+        if ! timeout --kill-after=10 180 systemctl restart thepasspos; then
+          err_code "ERR-INST-211" "systemctl restart thepasspos failed"
+          err "POS service failed to start -- installer cannot continue"
+          track_warn "POS service restart failed"
+          return 1
+        fi
 
       # Wait for POS to be order-ready, not just alive
       # Check /api/health AND verify response contains "status":"healthy"
@@ -485,7 +511,8 @@ SVCEOF
         return 1
       fi
       log "Services configured and started (no kiosk -- web UI for settings/admin only)."
-    fi
+      fi
+    fi  # end Docker runtime guard
 
     # ───────────────────────────────────────────────────────────────────────────
     # Server Role: Backup Script + Cron (local PostgreSQL only)
@@ -569,9 +596,9 @@ BKEOF
 
       # ── Cloud Backup Upload (encrypted -> S3) ──
       UPLOAD_SCRIPT="$APP_BASE/scripts/nuc-backup-upload.sh"
-      if [[ -f "$APP_DIR/public/nuc-backup-upload.sh" ]]; then
-        mkdir -p "$APP_BASE/scripts"
-        cp "$APP_DIR/public/nuc-backup-upload.sh" "$UPLOAD_SCRIPT"
+      mkdir -p "$APP_BASE/scripts"
+      if docker cp gwi-pos:/app/public/nuc-backup-upload.sh "$UPLOAD_SCRIPT" 2>/dev/null \
+         || cp "$APP_DIR/public/nuc-backup-upload.sh" "$UPLOAD_SCRIPT" 2>/dev/null; then
         chmod +x "$UPLOAD_SCRIPT"
         chown "$POSUSER":"$POSUSER" "$UPLOAD_SCRIPT"
 
@@ -581,7 +608,7 @@ BKEOF
 
         log "Cloud backup upload configured (4:15 AM daily -> S3)."
       else
-        track_warn "nuc-backup-upload.sh not found at $APP_DIR/public/nuc-backup-upload.sh -- cloud backup upload not configured."
+        track_warn "nuc-backup-upload.sh not found in container or at $APP_DIR/public/ -- cloud backup upload not configured."
       fi
     else
       log "Cloud database (Neon) -- backups managed by provider. Skipping local backup."
@@ -589,25 +616,27 @@ BKEOF
 
     # ── Restore Script ──
     RESTORE_SCRIPT="$APP_BASE/scripts/nuc-restore.sh"
-    if [[ -f "$APP_DIR/public/nuc-restore.sh" ]]; then
-      mkdir -p "$APP_BASE/scripts"
-      cp "$APP_DIR/public/nuc-restore.sh" "$RESTORE_SCRIPT"
+    mkdir -p "$APP_BASE/scripts"
+    if docker cp gwi-pos:/app/public/nuc-restore.sh "$RESTORE_SCRIPT" 2>/dev/null \
+       || cp "$APP_DIR/public/nuc-restore.sh" "$RESTORE_SCRIPT" 2>/dev/null; then
       chmod +x "$RESTORE_SCRIPT"
       chown root:root "$RESTORE_SCRIPT"
       log "Restore script installed: $RESTORE_SCRIPT"
     else
-      track_warn "nuc-restore.sh not found at $APP_DIR/public/nuc-restore.sh -- restore script not installed."
+      track_warn "nuc-restore.sh not found in container or at $APP_DIR/public/ -- restore script not installed."
     fi
 
     # ── Deploy full ha-check.sh (replaces bootstrap version written before git clone) ──
-    if [[ -n "${VIRTUAL_IP:-}" ]] && [[ -f "$APP_DIR/public/ha-check.sh" ]]; then
+    if [[ -n "${VIRTUAL_IP:-}" ]]; then
       mkdir -p "$APP_BASE/scripts"
-      cp "$APP_DIR/public/ha-check.sh" "$APP_BASE/scripts/ha-check.sh"
-      chmod +x "$APP_BASE/scripts/ha-check.sh"
-      chown root:root "$APP_BASE/scripts/ha-check.sh"
-      log "Full ha-check.sh deployed (pg_is_in_recovery, replication lag, MC alerting)."
-    elif [[ -n "${VIRTUAL_IP:-}" ]]; then
-      track_warn "ha-check.sh not found at $APP_DIR/public/ha-check.sh -- using bootstrap version (no replication lag monitoring)."
+      if docker cp gwi-pos:/app/public/ha-check.sh "$APP_BASE/scripts/ha-check.sh" 2>/dev/null \
+         || cp "$APP_DIR/public/ha-check.sh" "$APP_BASE/scripts/ha-check.sh" 2>/dev/null; then
+        chmod +x "$APP_BASE/scripts/ha-check.sh"
+        chown root:root "$APP_BASE/scripts/ha-check.sh"
+        log "Full ha-check.sh deployed (pg_is_in_recovery, replication lag, MC alerting)."
+      else
+        track_warn "ha-check.sh not found in container or at $APP_DIR/public/ -- using bootstrap version (no replication lag monitoring)."
+      fi
     fi
 
     # ───────────────────────────────────────────────────────────────────────────
@@ -624,10 +653,7 @@ BKEOF
 # Principle of least privilege: only commands the POS service actually needs.
 # If a new command is required, add it here -- do NOT revert to NOPASSWD: ALL.
 #
-# --- systemctl: service lifecycle (restart, stop, start, enable, daemon-reload) ---
-$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart thepasspos, /usr/bin/systemctl stop thepasspos, /usr/bin/systemctl start thepasspos, /usr/bin/systemctl enable thepasspos
-$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart thepasspos-sync, /usr/bin/systemctl start thepasspos-sync
-$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart thepasspos-kiosk, /usr/bin/systemctl stop thepasspos-kiosk, /usr/bin/systemctl start thepasspos-kiosk
+# --- systemctl: service lifecycle ---
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart gwi-watchdog.timer, /usr/bin/systemctl restart gwi-watchdog.service
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl enable gwi-watchdog.timer, /usr/bin/systemctl enable --now gwi-watchdog.timer
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl daemon-reload
@@ -636,8 +662,11 @@ $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl status *, /usr/bin/systemctl is-
 # --- Database tools ---
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/psql, /usr/lib/postgresql/*/bin/psql, /usr/bin/pg_isready, /usr/bin/pg_dump
 #
-# --- POS scripts (deploy, watchdog, backups, schema) ---
-$POSUSER ALL=(ALL) NOPASSWD: /opt/gwi-pos/deploy-release.sh, /opt/gwi-pos/scripts/*, /opt/gwi-pos/watchdog.sh, /opt/gwi-pos/heartbeat.sh
+# --- gwi-node: canonical deploy agent (v2.0.0+) ---
+$POSUSER ALL=(ALL) NOPASSWD: /opt/gwi-pos/gwi-node.sh
+#
+# --- POS scripts ---
+$POSUSER ALL=(ALL) NOPASSWD: /opt/gwi-pos/scripts/*, /opt/gwi-pos/watchdog.sh, /opt/gwi-pos/heartbeat.sh
 $POSUSER ALL=(ALL) NOPASSWD: /opt/gwi-pos/backup-pos.sh, /opt/gwi-pos/disable-rls.sh, /opt/gwi-pos/pre-start.sh, /opt/gwi-pos/clear-kiosk-session.sh
 $POSUSER ALL=(ALL) NOPASSWD: /opt/gwi-pos/kiosk-control.sh, /opt/gwi-pos/boot-diagnostic.sh
 #
@@ -665,16 +694,24 @@ SUDEOF
     header "Setting Up Sync Agent"
 
     SYNC_SCRIPT="$APP_BASE/sync-agent.js"
-    # Copy sync agent from repo (self-updating -- updated by FORCE_UPDATE deployments)
-    if [[ -f "$APP_DIR/public/sync-agent.js" ]]; then
-      cp "$APP_DIR/public/sync-agent.js" "$SYNC_SCRIPT"
+    # Copy sync agent from container (self-updating -- updated by FORCE_UPDATE deployments)
+    if docker cp gwi-pos:/app/public/sync-agent.js "$SYNC_SCRIPT" 2>/dev/null \
+       || cp "$APP_DIR/public/sync-agent.js" "$SYNC_SCRIPT" 2>/dev/null; then
       chown "$POSUSER":"$POSUSER" "$SYNC_SCRIPT"
 
-      # thepasspos-sync.service -- Sync Agent (only created when script exists)
-      cat > /etc/systemd/system/thepasspos-sync.service <<SVCEOF
+      # In Docker-first mode, sync workers run inside the gwi-pos container.
+      # The standalone thepasspos-sync service is a legacy fallback for pre-Docker installs only.
+      if docker ps -a --filter name=gwi-pos --format '{{.Names}}' 2>/dev/null | grep -q '^gwi-pos$'; then
+        log "Docker runtime active — skipping host thepasspos-sync.service (sync runs inside container)"
+        systemctl stop thepasspos-sync 2>/dev/null || true
+        systemctl disable thepasspos-sync 2>/dev/null || true
+        systemctl mask thepasspos-sync 2>/dev/null || true
+      else
+        # Legacy host-mode: create thepasspos-sync.service
+        cat > /etc/systemd/system/thepasspos-sync.service <<SVCEOF
 [Unit]
 Description=ThePassPOS Sync Agent
-After=network-online.target thepasspos.service
+After=network-online.target docker.service
 Wants=network-online.target
 
 [Service]
@@ -691,12 +728,13 @@ SyslogIdentifier=thepasspos-sync
 WantedBy=multi-user.target
 SVCEOF
 
-      systemctl daemon-reload
-      systemctl enable thepasspos-sync
-      systemctl restart thepasspos-sync || { err_code "ERR-INST-213" "systemctl restart thepasspos-sync failed"; track_warn "Sync agent failed to start -- check journalctl -u thepasspos-sync"; }
-      log "Sync agent configured and started."
+        systemctl daemon-reload
+        systemctl enable thepasspos-sync
+        systemctl restart thepasspos-sync || { err_code "ERR-INST-213" "systemctl restart thepasspos-sync failed"; track_warn "Sync agent failed to start -- check journalctl -u thepasspos-sync"; }
+        log "Sync agent configured and started (host mode)."
+      fi
     else
-      track_warn "sync-agent.js not found at $APP_DIR/public/sync-agent.js -- sync agent will not start."
+      track_warn "sync-agent.js not found in container or at $APP_DIR/public/ -- sync agent will not start."
       systemctl disable thepasspos-sync 2>/dev/null || true
     fi
 
@@ -707,27 +745,25 @@ SVCEOF
 
     header "Installing gwi-node Deploy Service"
 
-    # Copy gwi-node.sh to host location
-    GWI_NODE_SRC="$APP_DIR/public/scripts/gwi-node.sh"
+    # Copy gwi-node.sh to host location (container first, host fallback)
     GWI_NODE_DEST="$APP_BASE/gwi-node.sh"
-    if [[ -f "$GWI_NODE_SRC" ]]; then
-      cp "$GWI_NODE_SRC" "$GWI_NODE_DEST"
+    if docker cp gwi-pos:/app/public/scripts/gwi-node.sh "$GWI_NODE_DEST" 2>/dev/null \
+       || cp "$APP_DIR/public/scripts/gwi-node.sh" "$GWI_NODE_DEST" 2>/dev/null; then
       chown root:root "$GWI_NODE_DEST"
       chmod 755 "$GWI_NODE_DEST"
       log "gwi-node.sh installed at $GWI_NODE_DEST"
     else
-      track_warn "gwi-node.sh not found at $GWI_NODE_SRC"
+      track_warn "gwi-node.sh not found in container or at $APP_DIR/public/scripts/"
     fi
 
-    # Install gwi-node.service systemd unit
-    GWI_NODE_SVC_SRC="$APP_DIR/public/scripts/gwi-node.service"
-    if [[ -f "$GWI_NODE_SVC_SRC" ]]; then
-      cp "$GWI_NODE_SVC_SRC" /etc/systemd/system/gwi-node.service
+    # Install gwi-node.service systemd unit (container first, host fallback)
+    if docker cp gwi-pos:/app/public/scripts/gwi-node.service /etc/systemd/system/gwi-node.service 2>/dev/null \
+       || cp "$APP_DIR/public/scripts/gwi-node.service" /etc/systemd/system/gwi-node.service 2>/dev/null; then
       systemctl daemon-reload
       systemctl enable gwi-node.service
       log "gwi-node.service installed and enabled"
     else
-      track_warn "gwi-node.service not found at $GWI_NODE_SVC_SRC"
+      track_warn "gwi-node.service not found in container or at $APP_DIR/public/scripts/"
     fi
 
     # Create trigger file directories with correct ownership
@@ -902,12 +938,12 @@ DIAGEOF
     chmod +x "$BOOT_DIAG_SCRIPT"
     chown "$POSUSER":"$POSUSER" "$BOOT_DIAG_SCRIPT"
 
-    # gwi-boot-diagnostic.service -- oneshot, runs 30s after POS starts
+    # gwi-boot-diagnostic.service -- oneshot, runs 30s after POS container starts
     cat > /etc/systemd/system/gwi-boot-diagnostic.service <<SVCEOF
 [Unit]
 Description=GWI POS Boot Diagnostic
-After=thepasspos.service
-Wants=thepasspos.service
+After=docker.service
+Wants=docker.service
 
 [Service]
 Type=oneshot
@@ -1132,31 +1168,58 @@ SVCEOF
 
   header "Installing watchdog health monitor..."
 
-  # Resolve source directory: prefer $APP_DIR/public (post-clone), fall back to $MODULES_DIR/..
-  local _WD_SRC="${APP_DIR:-/opt/gwi-pos/app}/public"
-  [[ -f "$_WD_SRC/watchdog.sh" ]] || _WD_SRC="${MODULES_DIR:-$SCRIPT_DIR/installer-modules}/.."
+  # Copy watchdog files from container first, then host fallback
+  local _wd_copied=false
 
-  # Copy watchdog files
-  if [[ -f "$_WD_SRC/watchdog.sh" ]]; then
-    cp "$_WD_SRC/watchdog.sh" /opt/gwi-pos/watchdog.sh
+  # Try container extraction first
+  if docker cp gwi-pos:/app/public/watchdog.sh /opt/gwi-pos/watchdog.sh 2>/dev/null; then
+    _wd_copied=true
     chmod +x /opt/gwi-pos/watchdog.sh
 
-    if [[ -f "$_WD_SRC/watchdog.service" ]] && [[ -f "$_WD_SRC/watchdog.timer" ]]; then
-      cp "$_WD_SRC/watchdog.service" /etc/systemd/system/gwi-watchdog.service
-      cp "$_WD_SRC/watchdog.timer" /etc/systemd/system/gwi-watchdog.timer
-    else
-      track_warn "watchdog.service or watchdog.timer not found -- watchdog timer not installed"
+    docker cp gwi-pos:/app/public/watchdog.service /etc/systemd/system/gwi-watchdog.service 2>/dev/null || true
+    docker cp gwi-pos:/app/public/watchdog.timer /etc/systemd/system/gwi-watchdog.timer 2>/dev/null || true
+
+    if [[ ! -f /etc/systemd/system/gwi-watchdog.service ]] || [[ ! -f /etc/systemd/system/gwi-watchdog.timer ]]; then
+      track_warn "watchdog.service or watchdog.timer not found in container -- watchdog timer not installed"
     fi
 
-    # Copy monitoring scripts
+    # Copy monitoring scripts from container
     mkdir -p /opt/gwi-pos/scripts
     for script in hardware-inventory.sh disk-pressure-monitor.sh version-compat.sh rolling-restart.sh; do
-      if [[ -f "$_WD_SRC/scripts/$script" ]]; then
-        cp "$_WD_SRC/scripts/$script" /opt/gwi-pos/scripts/"$script"
-      fi
+      docker cp "gwi-pos:/app/public/scripts/$script" "/opt/gwi-pos/scripts/$script" 2>/dev/null || true
     done
     chmod +x /opt/gwi-pos/scripts/*.sh 2>/dev/null || true
+  fi
 
+  # Host fallback if container extraction failed
+  if [[ "$_wd_copied" != "true" ]]; then
+    local _WD_SRC="${APP_DIR:-/opt/gwi-pos/app}/public"
+    [[ -f "$_WD_SRC/watchdog.sh" ]] || _WD_SRC="${MODULES_DIR:-$SCRIPT_DIR/installer-modules}/.."
+
+    if [[ -f "$_WD_SRC/watchdog.sh" ]]; then
+      _wd_copied=true
+      cp "$_WD_SRC/watchdog.sh" /opt/gwi-pos/watchdog.sh
+      chmod +x /opt/gwi-pos/watchdog.sh
+
+      if [[ -f "$_WD_SRC/watchdog.service" ]] && [[ -f "$_WD_SRC/watchdog.timer" ]]; then
+        cp "$_WD_SRC/watchdog.service" /etc/systemd/system/gwi-watchdog.service
+        cp "$_WD_SRC/watchdog.timer" /etc/systemd/system/gwi-watchdog.timer
+      else
+        track_warn "watchdog.service or watchdog.timer not found -- watchdog timer not installed"
+      fi
+
+      # Copy monitoring scripts
+      mkdir -p /opt/gwi-pos/scripts
+      for script in hardware-inventory.sh disk-pressure-monitor.sh version-compat.sh rolling-restart.sh; do
+        if [[ -f "$_WD_SRC/scripts/$script" ]]; then
+          cp "$_WD_SRC/scripts/$script" /opt/gwi-pos/scripts/"$script"
+        fi
+      done
+      chmod +x /opt/gwi-pos/scripts/*.sh 2>/dev/null || true
+    fi
+  fi
+
+  if [[ "$_wd_copied" == "true" ]]; then
     # Create state and log directories
     mkdir -p /opt/gwi-pos/state /opt/gwi-pos/logs/watchdog-diagnostics
 

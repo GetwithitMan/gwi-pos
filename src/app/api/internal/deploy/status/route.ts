@@ -1,7 +1,7 @@
 /**
  * Deploy Status — GET /api/internal/deploy/status
  *
- * Calls deploy-release.sh --status and parses the output into JSON.
+ * Calls gwi-node.sh status and parses the output into JSON.
  * Also reads deploy-state.json, quarantine list, and maintenance mode flag.
  *
  * No authentication required — internal endpoint, called by NUC Dashboard
@@ -10,30 +10,42 @@
 
 import { NextResponse } from 'next/server'
 import { execSync } from 'child_process'
+import { existsSync } from 'fs'
 
 export const dynamic = 'force-dynamic'
 
-const DEPLOY_SCRIPT = '/opt/gwi-pos/deploy-release.sh'
+/** Resolve gwi-node.sh path, checking known locations in priority order. */
+function resolveGwiNode(): string | null {
+  const candidates = [
+    '/opt/gwi-pos/gwi-node.sh',
+    '/usr/local/bin/gwi-node',
+    '/opt/gwi-pos/app/public/scripts/gwi-node.sh',
+  ]
+  for (const p of candidates) {
+    if (existsSync(p)) return p
+  }
+  return null
+}
 
 export async function GET() {
   try {
     const fs = await import('fs')
 
-    // Check if deploy-release.sh exists
-    if (!fs.existsSync(DEPLOY_SCRIPT)) {
+    const gwiNode = resolveGwiNode()
+    if (!gwiNode) {
       return NextResponse.json(
-        { available: false, error: 'deploy-release.sh not installed' },
+        { available: false, error: 'gwi-node.sh not found' },
         { status: 404 },
       )
     }
 
-    const output = execSync(`bash "${DEPLOY_SCRIPT}" --status`, {
+    const output = execSync(`bash "${gwiNode}" status`, {
       encoding: 'utf8',
       timeout: 10_000,
     })
 
     // Parse the structured output into JSON
-    // deploy-release.sh --status outputs key: value pairs
+    // gwi-node.sh status outputs key: value pairs
     const status: Record<string, string> = {}
     for (const line of output.split('\n')) {
       const match = line.match(/^\s*(.+?):\s+(.+)$/)
