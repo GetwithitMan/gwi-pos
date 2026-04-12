@@ -315,6 +315,43 @@ systemd_last_resort() {
   log "CRITICAL: Venue may be down. Check journalctl -u gwi-node and docker ps."
 }
 
+# ── _prune_old_images ─────────────────────────────────────────────────────────
+# Remove old Docker images, keeping only the currently running image and the
+# last-known-good. Each image is ~6GB; without pruning, 40+ versions = 240GB+.
+# ──────────────────────────────────────────────────────────────────────────────
+_prune_old_images() {
+  local _current _lkg _kept=0 _removed=0
+  _current=$(docker inspect --format='{{.Image}}' "$CONTAINER_NAME" 2>/dev/null || echo "")
+  _lkg=$(cat "${STATE_DIR}/${LKG_IMAGE_FILE}" 2>/dev/null || echo "")
+
+  # Get all gwi-pos image IDs
+  local _all_images
+  _all_images=$(docker images "ghcr.io/getwithitman/gwi-pos" --format '{{.ID}} {{.Repository}}:{{.Tag}}' 2>/dev/null)
+  [[ -z "$_all_images" ]] && return 0
+
+  while IFS=' ' read -r _id _tag; do
+    # Keep current running image
+    if [[ -n "$_current" ]] && docker inspect --format='{{.Id}}' "$_tag" 2>/dev/null | grep -q "${_current:0:12}"; then
+      _kept=$((_kept + 1))
+      continue
+    fi
+    # Keep LKG image
+    if [[ "$_tag" == "$_lkg" ]]; then
+      _kept=$((_kept + 1))
+      continue
+    fi
+    # Remove everything else
+    docker rmi "$_tag" 2>/dev/null && _removed=$((_removed + 1)) || true
+  done <<< "$_all_images"
+
+  # Also prune dangling images
+  docker image prune -f 2>/dev/null || true
+
+  if [[ $_removed -gt 0 ]]; then
+    log "Image cleanup: removed $_removed old images, kept $_kept (current + LKG)"
+  fi
+}
+
 cleanup() {
   local rc=$?
   [[ -n "${LOCK_FD:-}" ]] && flock -u "$LOCK_FD" 2>/dev/null || true
@@ -605,7 +642,9 @@ EOF
   echo "$tag" > "$LKG_VERSION_FILE"
   log "Last-known-good saved: $IMAGE_REF (v${tag})"
 
-  docker image prune -f --filter "dangling=true" 2>/dev/null || true
+  # Aggressive image cleanup: remove ALL images except the current and LKG.
+  # Old images accumulate ~6GB each and can fill disks (44 images = 246GB).
+  _prune_old_images
   start_agent "$IMAGE_REF" || log "WARN: gwi-agent failed to start (non-fatal)"
 
   bootstrap_host_watcher "$IMAGE_REF"
@@ -2153,6 +2192,9 @@ except: print('')
     fi
   fi
 
+  # ── Disk cleanup (run every convergence cycle) ───────────────────────────
+  _prune_old_images
+
   # ── Summary ────────────────────────────────────────────────────────────────
   local lifecycle
   lifecycle=$(jq -r '.lifecycleState // "UNKNOWN"' "$VENUE_STATE_FILE" 2>/dev/null || echo "UNKNOWN")
@@ -2243,10 +2285,8 @@ SVCEOF
 cleanup_node() {
   log "=== GWI Node Cleanup ==="
 
-  # Prune dangling Docker images
-  local pruned
-  pruned=$(docker image prune -f --filter "dangling=true" 2>&1) || true
-  log "Docker image prune: $pruned"
+  # Remove old Docker images (keep only current + LKG)
+  _prune_old_images
 
   # Remove deploy logs older than 30 days
   local removed=0
