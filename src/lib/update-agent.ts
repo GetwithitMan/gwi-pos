@@ -100,7 +100,7 @@ export function isReadinessVerified(): boolean {
 
 /**
  * Get the current running app version.
- * Priority: running-version.json > /opt/gwi-pos/current/package.json > legacy APP_DIR
+ * Priority: running-version.json (gwi-node) > /opt/gwi-pos/current/package.json > legacy APP_DIR
  */
 export function getCurrentVersion(): string {
   // Single source of truth: running-version.json (written by gwi-node deploy)

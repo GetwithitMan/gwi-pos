@@ -364,9 +364,6 @@ echo "[sudoers] Repairing: writing enumerated NOPASSWD rules for $POSUSER"
 cat > "\$SUDOERS_FILE" <<'SUDOFIX'
 # GWI POS -- enumerated passwordless sudo for POS service user
 # --- systemctl: service lifecycle ---
-$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart thepasspos, /usr/bin/systemctl stop thepasspos, /usr/bin/systemctl start thepasspos, /usr/bin/systemctl enable thepasspos
-$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart thepasspos-sync, /usr/bin/systemctl start thepasspos-sync
-$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart thepasspos-kiosk, /usr/bin/systemctl stop thepasspos-kiosk, /usr/bin/systemctl start thepasspos-kiosk
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart gwi-watchdog.timer, /usr/bin/systemctl restart gwi-watchdog.service
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl enable gwi-watchdog.timer, /usr/bin/systemctl enable --now gwi-watchdog.timer
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl daemon-reload
@@ -375,8 +372,8 @@ $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl status *, /usr/bin/systemctl is-
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/psql, /usr/lib/postgresql/*/bin/psql, /usr/bin/pg_isready, /usr/bin/pg_dump
 # --- gwi-node: canonical deploy agent (v2.0.0+) ---
 $POSUSER ALL=(ALL) NOPASSWD: /opt/gwi-pos/gwi-node.sh
-# --- POS scripts (deploy-release.sh is DEPRECATED but kept in sudoers for legacy compat) ---
-$POSUSER ALL=(ALL) NOPASSWD: /opt/gwi-pos/deploy-release.sh, /opt/gwi-pos/scripts/*, /opt/gwi-pos/watchdog.sh, /opt/gwi-pos/heartbeat.sh
+# --- POS scripts ---
+$POSUSER ALL=(ALL) NOPASSWD: /opt/gwi-pos/scripts/*, /opt/gwi-pos/watchdog.sh, /opt/gwi-pos/heartbeat.sh
 $POSUSER ALL=(ALL) NOPASSWD: /opt/gwi-pos/backup-pos.sh, /opt/gwi-pos/disable-rls.sh, /opt/gwi-pos/pre-start.sh, /opt/gwi-pos/clear-kiosk-session.sh
 $POSUSER ALL=(ALL) NOPASSWD: /opt/gwi-pos/kiosk-control.sh, /opt/gwi-pos/boot-diagnostic.sh
 # --- Package management ---
@@ -656,10 +653,7 @@ BKEOF
 # Principle of least privilege: only commands the POS service actually needs.
 # If a new command is required, add it here -- do NOT revert to NOPASSWD: ALL.
 #
-# --- systemctl: service lifecycle (restart, stop, start, enable, daemon-reload) ---
-$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart thepasspos, /usr/bin/systemctl stop thepasspos, /usr/bin/systemctl start thepasspos, /usr/bin/systemctl enable thepasspos
-$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart thepasspos-sync, /usr/bin/systemctl start thepasspos-sync
-$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart thepasspos-kiosk, /usr/bin/systemctl stop thepasspos-kiosk, /usr/bin/systemctl start thepasspos-kiosk
+# --- systemctl: service lifecycle ---
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart gwi-watchdog.timer, /usr/bin/systemctl restart gwi-watchdog.service
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl enable gwi-watchdog.timer, /usr/bin/systemctl enable --now gwi-watchdog.timer
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl daemon-reload
@@ -671,8 +665,8 @@ $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/psql, /usr/lib/postgresql/*/bin/psql, /usr
 # --- gwi-node: canonical deploy agent (v2.0.0+) ---
 $POSUSER ALL=(ALL) NOPASSWD: /opt/gwi-pos/gwi-node.sh
 #
-# --- POS scripts (deploy-release.sh is DEPRECATED — kept for legacy compat) ---
-$POSUSER ALL=(ALL) NOPASSWD: /opt/gwi-pos/deploy-release.sh, /opt/gwi-pos/scripts/*, /opt/gwi-pos/watchdog.sh, /opt/gwi-pos/heartbeat.sh
+# --- POS scripts ---
+$POSUSER ALL=(ALL) NOPASSWD: /opt/gwi-pos/scripts/*, /opt/gwi-pos/watchdog.sh, /opt/gwi-pos/heartbeat.sh
 $POSUSER ALL=(ALL) NOPASSWD: /opt/gwi-pos/backup-pos.sh, /opt/gwi-pos/disable-rls.sh, /opt/gwi-pos/pre-start.sh, /opt/gwi-pos/clear-kiosk-session.sh
 $POSUSER ALL=(ALL) NOPASSWD: /opt/gwi-pos/kiosk-control.sh, /opt/gwi-pos/boot-diagnostic.sh
 #
@@ -706,7 +700,7 @@ SUDEOF
       chown "$POSUSER":"$POSUSER" "$SYNC_SCRIPT"
 
       # In Docker-first mode, sync workers run inside the gwi-pos container.
-      # The standalone thepasspos-sync service is legacy — only created for pre-Docker installs.
+      # The standalone thepasspos-sync service is a legacy fallback for pre-Docker installs only.
       if docker ps -a --filter name=gwi-pos --format '{{.Names}}' 2>/dev/null | grep -q '^gwi-pos$'; then
         log "Docker runtime active — skipping host thepasspos-sync.service (sync runs inside container)"
         systemctl stop thepasspos-sync 2>/dev/null || true

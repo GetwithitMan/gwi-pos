@@ -75,7 +75,7 @@ run_schema() {
     local PRE_PUSH_TABLES
     PRE_PUSH_TABLES=$(sudo -u "$POSUSER" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename" 2>/dev/null || echo "")
 
-    # ── Check if deploy-release.sh already completed schema migrations ──────
+    # ── Check if gwi-node already completed schema migrations ──────
     local _skip_migrations=false
     if [[ "${LEGACY_DEPLOY:-}" != "1" ]]; then
       local _ds_file="$APP_BASE/shared/state/deploy-state.json"

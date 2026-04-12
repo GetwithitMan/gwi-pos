@@ -437,10 +437,7 @@ if command -v docker &>/dev/null; then
   docker stop gwi-pos 2>/dev/null || true
   log "Docker containers stopped"
 fi
-# Mask legacy services (should already be masked; belt-and-suspenders)
-systemctl stop thepasspos 2>/dev/null || true
-systemctl stop thepasspos-sync 2>/dev/null || true
-log "POS application stopped"
+log "POS services stopped"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Create safety backup of current database (best-effort)
@@ -707,8 +704,8 @@ fi
 
 if [[ "$APP_READY" != "true" ]]; then
   echo -e "  ${RED}WARNING: POS app is not healthy. Check:${NC}"
-  echo "    sudo journalctl -u thepasspos -f"
-  echo "    sudo systemctl status thepasspos"
+  echo "    docker logs gwi-pos --tail 100 -f"
+  echo "    docker inspect --format='{{.State.Health.Status}}' gwi-pos"
   echo ""
 fi
 

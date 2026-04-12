@@ -78,13 +78,7 @@ _refresh_modules_from_checkout() {
         && log "  Deployed scripts/$script" || warn "  FAILED to deploy scripts/$script"
     fi
   done
-  # rolling-restart.sh is DEPRECATED (gwi-node handles restarts). Copy if available, warn if not.
-  if [[ -f "$checkout_scripts/rolling-restart.sh" ]]; then
-    cp "$checkout_scripts/rolling-restart.sh" /opt/gwi-pos/scripts/ 2>/dev/null && chmod +x "/opt/gwi-pos/scripts/rolling-restart.sh" \
-      && log "  Deployed scripts/rolling-restart.sh (legacy compat)" || true
-  else
-    log "  Skipping rolling-restart.sh (deprecated — gwi-node handles restarts)"
-  fi
+  # NOTE: rolling-restart.sh removed — gwi-node handles restarts natively.
   # NOTE: pre-update-backup.sh removed — DB backups handled by pre-update-safety.sh
   # library (sourced by gwi-node pre-deploy hook). Standalone wrapper is legacy.
 

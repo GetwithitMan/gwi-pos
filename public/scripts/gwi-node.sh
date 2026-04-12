@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# gwi-node.sh — GWI POS node agent (install | deploy | rollback | promote | rejoin | status | self-update | watch | dashboard-check | dashboard-rollback | converge | converge-loop | venue-state | cleanup | clear-quarantine)
+# gwi-node.sh — GWI POS node agent (install | deploy | rollback | promote | rejoin | status | full-status | self-update | watch | dashboard-check | dashboard-rollback | converge | converge-loop | venue-state | cleanup | clear-quarantine)
 # One agent. One runtime. One flow. Install and update are the same operation.
 set -euo pipefail
 
@@ -1461,55 +1461,156 @@ rejoin() {
 }
 
 status() {
-  echo "=== GWI Node Status ==="
-  cat "$VERSION_FILE" 2>/dev/null | python3 -m json.tool 2>/dev/null || echo "No version info"
-  echo ""
-  docker ps --filter "name=$CONTAINER_NAME" --format '{{.Names}}  {{.Image}}  {{.Status}}' 2>/dev/null || echo "No container"
-  echo ""
-  local port; port="$(read_port)"
-  curl -sf "http://localhost:${port}/api/health/ready" 2>/dev/null | python3 -m json.tool 2>/dev/null || echo "Health: no response"
-  echo ""
+  # Compact status — one-liner per component
+  echo "=== GWI Node Status (short) ==="
 
-  # Server last-known-good
-  local _lkg_image _lkg_version
-  _lkg_image="$(cat "$LKG_IMAGE_FILE" 2>/dev/null || echo none)"
-  _lkg_version="$(cat "$LKG_VERSION_FILE" 2>/dev/null || echo none)"
-  echo "Server LKG: image=${_lkg_image} version=${_lkg_version}"
-  echo ""
+  # Server version
+  local _ver _img
+  _ver="$(jq -r '.version // "unknown"' "$VERSION_FILE" 2>/dev/null || echo "unknown")"
+  _img="$(docker inspect --format='{{.Config.Image}}' "$CONTAINER_NAME" 2>/dev/null || echo "none")"
+  echo "Server: ${_ver} (${_img})"
 
-  # Dashboard convergence status
-  local _dash_installed _dash_target _dash_lkg _dash_svc_status
+  # Container state
+  local _cstate _chealth _uptime
+  _cstate="$(docker inspect --format='{{.State.Status}}' "$CONTAINER_NAME" 2>/dev/null || echo "not running")"
+  _chealth="$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}' "$CONTAINER_NAME" 2>/dev/null || echo "unknown")"
+  _uptime="$(docker inspect --format='{{.State.StartedAt}}' "$CONTAINER_NAME" 2>/dev/null || echo "")"
+  echo "Container: ${_cstate} (${_chealth})"
+
+  # Venue lifecycle
+  local _vs_lifecycle="not initialized"
+  [[ -f "$VENUE_STATE_FILE" ]] && _vs_lifecycle="$(jq -r '.lifecycleState // "UNKNOWN"' "$VENUE_STATE_FILE" 2>/dev/null || echo "UNKNOWN")"
+  echo "Venue: ${_vs_lifecycle}"
+
+  # Dashboard
+  local _dash_installed _dash_target
   _dash_installed=$(dpkg-query -W -f='${Version}' gwi-nuc-dashboard 2>/dev/null || echo "not-installed")
   _dash_target=$(docker exec "$CONTAINER_NAME" cat /app/public/version-contract.json 2>/dev/null \
     | python3 -c "import json,sys; print(json.load(sys.stdin).get('dashboardVersion',''))" 2>/dev/null || echo "unknown")
-  _dash_lkg="$(cat "$LKG_DASHBOARD_FILE" 2>/dev/null || echo none)"
+  local _dash_label="v${_dash_installed}"
+  [[ "$_dash_installed" == "$_dash_target" ]] && _dash_label="${_dash_label} (converged)" || _dash_label="${_dash_label} (diverged)"
+  echo "Dashboard: ${_dash_label}"
 
-  # Dashboard service status
-  local _posuser="${POSUSER:-gwipos}"
-  _dash_svc_status=$(sudo -u "${_posuser}" bash -c \
-    "XDG_RUNTIME_DIR=/run/user/\$(id -u) systemctl --user is-active gwi-dashboard.service" 2>/dev/null || echo "unknown")
-
-  echo "Dashboard: installed=${_dash_installed} target=${_dash_target} lkg=${_dash_lkg}"
-  echo "Dashboard: service=${_dash_svc_status}"
-  if [[ "$_dash_installed" == "$_dash_target" ]]; then
-    echo "Dashboard: CONVERGED"
-  else
-    echo "Dashboard: DIVERGED (run 'gwi-node dashboard-check' to fix)"
-  fi
+  # Dashboard warning
   if [[ -f "${STATE_DIR}/dashboard-warning.json" ]]; then
-    echo "Dashboard WARNING: $(cat "${STATE_DIR}/dashboard-warning.json" 2>/dev/null)"
+    echo "Warning: $(jq -r '.message // .reason // "see dashboard-warning.json"' "${STATE_DIR}/dashboard-warning.json" 2>/dev/null || echo "active")"
   fi
 
-  # Venue state summary
   echo ""
-  if [[ -f "$VENUE_STATE_FILE" ]]; then
-    local _vs_lifecycle
-    _vs_lifecycle="$(jq -r '.lifecycleState // "UNKNOWN"' "$VENUE_STATE_FILE" 2>/dev/null || echo "UNKNOWN")"
-    echo "Venue State: ${_vs_lifecycle}"
-    echo "  (run 'gwi-node venue-state' for full details)"
-  else
-    echo "Venue State: not initialized"
+  echo "Run 'gwi-node full-status' for detailed report."
+}
+
+full_status() {
+  echo "=== GWI POS Appliance Status ==="
+  echo ""
+
+  # ── Venue lifecycle ──
+  local _vs_lifecycle="not initialized"
+  [[ -f "$VENUE_STATE_FILE" ]] && _vs_lifecycle="$(jq -r '.lifecycleState // "UNKNOWN"' "$VENUE_STATE_FILE" 2>/dev/null || echo "UNKNOWN")"
+  echo "Venue Lifecycle: ${_vs_lifecycle}"
+
+  # ── Server version ──
+  local _ver="unknown" _ver_status="unknown"
+  if [[ -f "$VERSION_FILE" ]]; then
+    _ver="$(jq -r '.version // "unknown"' "$VERSION_FILE" 2>/dev/null || echo "unknown")"
   fi
+  if [[ -f "$VENUE_STATE_FILE" ]]; then
+    _ver_status="$(jq -r '.components.server.status // "unknown"' "$VENUE_STATE_FILE" 2>/dev/null || echo "unknown")"
+  fi
+  echo "Server: v${_ver} (${_ver_status})"
+
+  # ── Schema ──
+  local _schema_count="unknown" _schema_status="unknown"
+  if [[ -f "$VENUE_STATE_FILE" ]]; then
+    _schema_status="$(jq -r '.components.schema.status // "unknown"' "$VENUE_STATE_FILE" 2>/dev/null || echo "unknown")"
+    _schema_count="$(jq -r '.components.schema.currentVersion // "unknown"' "$VENUE_STATE_FILE" 2>/dev/null || echo "unknown")"
+  fi
+  echo "Schema: ${_schema_count} migrations (${_schema_status})"
+
+  # ── Dashboard ──
+  local _dash_installed _dash_target _dash_status
+  _dash_installed=$(dpkg-query -W -f='${Version}' gwi-nuc-dashboard 2>/dev/null || echo "not-installed")
+  _dash_target=$(docker exec "$CONTAINER_NAME" cat /app/public/version-contract.json 2>/dev/null \
+    | python3 -c "import json,sys; print(json.load(sys.stdin).get('dashboardVersion',''))" 2>/dev/null || echo "unknown")
+  if [[ "$_dash_installed" == "$_dash_target" ]]; then
+    _dash_status="converged"
+  else
+    _dash_status="diverged (target=${_dash_target})"
+  fi
+  echo "Dashboard: v${_dash_installed} (${_dash_status})"
+
+  # ── Container health ──
+  local _cstate _chealth _started _uptime_str
+  _cstate="$(docker inspect --format='{{.State.Status}}' "$CONTAINER_NAME" 2>/dev/null || echo "not running")"
+  _chealth="$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}' "$CONTAINER_NAME" 2>/dev/null || echo "unknown")"
+  _started="$(docker inspect --format='{{.State.StartedAt}}' "$CONTAINER_NAME" 2>/dev/null || echo "")"
+  _uptime_str=""
+  if [[ -n "$_started" ]] && command -v python3 &>/dev/null; then
+    _uptime_str="$(python3 -c "
+from datetime import datetime, timezone
+try:
+    s = datetime.fromisoformat('${_started}'.replace('Z','+00:00'))
+    d = datetime.now(timezone.utc) - s
+    h, r = divmod(int(d.total_seconds()), 3600)
+    m = r // 60
+    print(f'uptime {h}h{m}m')
+except:
+    print('')
+" 2>/dev/null || echo "")"
+  fi
+  echo "Container: ${_cstate} (${_chealth}${_uptime_str:+, ${_uptime_str}})"
+
+  # ── Last deploy result ──
+  local _last_deploy="none"
+  if [[ -d "$RESULTS_DIR" ]]; then
+    local _latest_file
+    _latest_file="$(ls -1t "$RESULTS_DIR"/*.json 2>/dev/null | head -1)"
+    if [[ -n "$_latest_file" ]]; then
+      local _deploy_ts _deploy_status
+      _deploy_ts="$(jq -r '.timestamp // "unknown"' "$_latest_file" 2>/dev/null || echo "unknown")"
+      _deploy_status="$(jq -r '.finalStatus // "unknown"' "$_latest_file" 2>/dev/null || echo "unknown")"
+      _last_deploy="${_deploy_ts} (${_deploy_status})"
+    fi
+  fi
+  # Also check deploy logs dir
+  if [[ "$_last_deploy" == "none" ]] && [[ -d "$LOG_DIR" ]]; then
+    local _latest_log
+    _latest_log="$(ls -1t "$LOG_DIR"/*.json 2>/dev/null | head -1)"
+    if [[ -n "$_latest_log" ]]; then
+      local _deploy_ts _deploy_status
+      _deploy_ts="$(jq -r '.timestamp // "unknown"' "$_latest_log" 2>/dev/null || echo "unknown")"
+      _deploy_status="$(jq -r '.finalStatus // "unknown"' "$_latest_log" 2>/dev/null || echo "unknown")"
+      _last_deploy="${_deploy_ts} (${_deploy_status})"
+    fi
+  fi
+  echo "Last Deploy: ${_last_deploy}"
+
+  # ── Install state ──
+  local _install_state_file="${STATE_DIR}/install-state.json"
+  local _install_stage="unknown" _install_status="unknown"
+  if [[ -f "$_install_state_file" ]]; then
+    _install_stage="$(jq -r '.currentStage // "unknown"' "$_install_state_file" 2>/dev/null || echo "unknown")"
+    _install_status="$(jq -r '.stageStatus // "unknown"' "$_install_state_file" 2>/dev/null || echo "unknown")"
+    echo "Install State: ${_install_status} (stage: ${_install_stage})"
+  else
+    echo "Install State: no install-state.json"
+  fi
+
+  # ── Dashboard warning ──
+  if [[ -f "${STATE_DIR}/dashboard-warning.json" ]]; then
+    local _warn_msg
+    _warn_msg="$(jq -r '.message // .reason // "see dashboard-warning.json"' "${STATE_DIR}/dashboard-warning.json" 2>/dev/null || echo "active")"
+    echo "Dashboard Warning: ${_warn_msg}"
+  else
+    echo "Dashboard Warning: none"
+  fi
+
+  # ── LKG info ──
+  echo ""
+  echo "--- Last Known Good ---"
+  echo "  Server image:    $(cat "$LKG_IMAGE_FILE" 2>/dev/null || echo none)"
+  echo "  Server version:  $(cat "$LKG_VERSION_FILE" 2>/dev/null || echo none)"
+  echo "  Dashboard:       $(cat "$LKG_DASHBOARD_FILE" 2>/dev/null || echo none)"
 }
 
 self_update() {
@@ -2184,6 +2285,7 @@ case "$SUBCOMMAND" in
   promote)                    promote "${HA_ARGS[@]}" ;;
   rejoin)                     rejoin "${HA_ARGS[@]}" ;;
   status)                     status ;;
+  full-status)                full_status ;;
   self-update)                self_update ;;
   watch)                      watch_loop ;;
   dashboard-check)            dashboard_check ;;
@@ -2194,5 +2296,5 @@ case "$SUBCOMMAND" in
   install-converge-service)   install_converge_service "${CONVERGE_INTERVAL:-300}" ;;
   cleanup)                    cleanup_node ;;
   clear-quarantine)           clear_quarantine "${CLEAR_QUARANTINE_RELEASE:-}" ;;
-  *)                          echo "Usage: gwi-node.sh {install|deploy|rollback|promote|rejoin|status|self-update|watch|dashboard-check|dashboard-rollback|venue-state|converge|converge-loop|install-converge-service|cleanup|clear-quarantine}"; exit 1 ;;
+  *)                          echo "Usage: gwi-node.sh {install|deploy|rollback|promote|rejoin|status|full-status|self-update|watch|dashboard-check|dashboard-rollback|venue-state|converge|converge-loop|install-converge-service|cleanup|clear-quarantine}"; exit 1 ;;
 esac
