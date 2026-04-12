@@ -251,6 +251,8 @@ RestartSec=5
 StartLimitBurst=5
 StartLimitIntervalSec=120
 Environment=DISPLAY=:0
+Environment=XAUTHORITY=/run/user/%U/.Xauthority
+Environment=XDG_RUNTIME_DIR=/run/user/%U
 Environment=GWI_POS_URL=http://localhost:3005
 
 [Install]
@@ -363,6 +365,8 @@ RestartSec=5
 StartLimitBurst=5
 StartLimitIntervalSec=120
 Environment=DISPLAY=:0
+Environment=XAUTHORITY=/run/user/%U/.Xauthority
+Environment=XDG_RUNTIME_DIR=/run/user/%U
 Environment=GWI_POS_URL=http://localhost:3005
 
 [Install]

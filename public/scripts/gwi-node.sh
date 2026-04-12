@@ -768,6 +768,8 @@ RestartSec=5
 StartLimitBurst=5
 StartLimitIntervalSec=120
 Environment=DISPLAY=:0
+Environment=XAUTHORITY=/run/user/%U/.Xauthority
+Environment=XDG_RUNTIME_DIR=/run/user/%U
 Environment=GWI_POS_URL=http://localhost:3005
 
 [Install]
@@ -1551,6 +1553,17 @@ full_status() {
     _dash_status="diverged (target=${_dash_target})"
   fi
   echo "Dashboard: v${_dash_installed} (${_dash_status})"
+
+  # ── Desktop session (dashboard doctor) ──
+  local _posuser="${POSUSER:-gwipos}"
+  local _uid=$(id -u "$_posuser" 2>/dev/null || echo "?")
+  local _xauth="/run/user/${_uid}/.Xauthority"
+  local _display=$(sudo -u "$_posuser" bash -c 'echo $DISPLAY' 2>/dev/null || echo "?")
+  local _session_type=$(loginctl show-session "$(loginctl list-sessions --no-legend 2>/dev/null | awk 'NR==1{print $1}')" -p Type --value 2>/dev/null || echo "?")
+  local _dm=$(systemctl is-active sddm 2>/dev/null && echo "sddm" || echo "?")
+  local _xauth_exists="no"; [[ -f "$_xauth" ]] && _xauth_exists="yes"
+  local _dash_svc=$(sudo -u "$_posuser" bash -c "XDG_RUNTIME_DIR=/run/user/\$(id -u) systemctl --user is-active gwi-dashboard.service" 2>/dev/null || echo "inactive")
+  echo "Session: ${_session_type} (${_dm}), DISPLAY=${_display}, Xauth=${_xauth_exists} (${_xauth}), dashboard-svc=${_dash_svc}"
 
   # ── Container health ──
   local _cstate _chealth _started _uptime_str
