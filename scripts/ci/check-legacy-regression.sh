@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -uo pipefail
 
 echo "=== Legacy Regression Guard ==="
 FAIL=0
