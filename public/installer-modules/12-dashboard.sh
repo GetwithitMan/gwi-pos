@@ -405,3 +405,4 @@ SUDOERS
     log "Dashboard sudoers rules installed"
   fi
 }
+
