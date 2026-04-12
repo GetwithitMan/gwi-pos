@@ -45,8 +45,9 @@ run_dashboard() {
   # Get available version from version-contract.json (PRIMARY source — pinned at build time).
   # The contract is the single source of truth for all component versions. If it's not
   # available, we extract the version from the bundled .deb as a last resort.
+  # Read top-level dashboardVersion (same field gwi-node uses) with fallback to components.dashboard.version
   _available_version=$(docker exec gwi-pos cat /app/public/version-contract.json 2>/dev/null \
-    | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('components',{}).get('dashboard',{}).get('version',''))" 2>/dev/null || true)
+    | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('dashboardVersion','') or d.get('components',{}).get('dashboard',{}).get('version',''))" 2>/dev/null || true)
   if [[ -z "$_available_version" ]] || [[ "$_available_version" == "0.0.0" ]]; then
     # Fallback: extract version directly from the bundled .deb
     if docker cp gwi-pos:/app/public/gwi-nuc-dashboard.deb /tmp/gwi-nuc-dashboard-check.deb 2>/dev/null; then
@@ -196,9 +197,15 @@ run_dashboard() {
   # Install the .deb
   # ─────────────────────────────────────────────────────────────────────────
   log "Installing dashboard .deb..."
-  # dpkg may return non-zero on trigger warnings (icon cache), so we always
-  # run --configure -a afterward and verify the installed version.
-  dpkg -i "$DASHBOARD_DEB" 2>&1 | while IFS= read -r line; do log "  dpkg: $line"; done
+  # dpkg may return non-zero on trigger warnings or transient filesystem issues.
+  # Retry once on failure (same pattern as gwi-node update_dashboard).
+  local _dpkg_exit=0
+  dpkg -i "$DASHBOARD_DEB" 2>&1 | while IFS= read -r line; do log "  dpkg: $line"; done || _dpkg_exit=$?
+  if [[ $_dpkg_exit -ne 0 ]]; then
+    log "  dpkg -i failed (exit $_dpkg_exit) — retrying after 5s"
+    sleep 5
+    dpkg -i "$DASHBOARD_DEB" 2>&1 | while IFS= read -r line; do log "  dpkg retry: $line"; done || true
+  fi
   dpkg --configure -a 2>/dev/null || true
   apt-get install -f -y -qq 2>/dev/null || true
 
