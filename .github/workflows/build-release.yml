@@ -221,9 +221,9 @@ jobs:
           check "apply-schema.js exists" docker run --rm $IMAGE test -f /app/deploy-tools/src/apply-schema.js
           check "migration-helpers.js exists" docker run --rm $IMAGE test -f /app/scripts/migration-helpers.js
           check "version-contract.json exists" docker run --rm $IMAGE test -f /app/public/version-contract.json
-          check "version-contract has version" docker run --rm $IMAGE node -e "const v=require('/app/public/version-contract.json'); if(!v.version)process.exit(1)"
-          check "version-contract has schemaVersion" docker run --rm $IMAGE node -e "const v=require('/app/public/version-contract.json'); if(!v.schemaVersion)process.exit(1)"
-          check "version-contract has migrationCount" docker run --rm $IMAGE node -e "const v=require('/app/public/version-contract.json'); if(!v.migrationCount&&v.migrationCount!==0)process.exit(1)"
+          check "version-contract has version" "docker run --rm $IMAGE node -e 'const v=require(\"./public/version-contract.json\"); if(!v.version)process.exit(1)'"
+          check "version-contract has schemaVersion" "docker run --rm $IMAGE node -e 'const v=require(\"./public/version-contract.json\"); if(!v.schemaVersion)process.exit(1)'"
+          check "version-contract has migrationCount" "docker run --rm $IMAGE node -e 'const v=require(\"./public/version-contract.json\"); if(!v.migrationCount&&v.migrationCount!==0)process.exit(1)'"
 
           # ── Server runtime ──
           check "server.js exists" docker run --rm $IMAGE test -f /app/server.js
