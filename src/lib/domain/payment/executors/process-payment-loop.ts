@@ -219,14 +219,17 @@ export async function processPaymentLoop(
       }
     }
 
-    // Snapshot pricing program config at transaction time (for audit trail)
+    // Snapshot pricing program config at transaction time (Invariant #9: receipts use persisted fields)
     if (pp.enabled && (payment.method === 'credit' || payment.method === 'debit' || payment.method === 'cash')) {
       paymentRecord.pricingProgramSnapshot = {
         model: pp.model,
+        enabled: pp.enabled,
         creditMarkupPercent: pp.creditMarkupPercent,
         debitMarkupPercent: pp.debitMarkupPercent,
         cashDiscountPercent: pp.cashDiscountPercent,
         surchargePercent: pp.surchargePercent,
+        surchargeDisclosure: pp.surchargeDisclosure,
+        cashDiscountDisclosure: pp.cashDiscountDisclosure,
       }
     }
 
