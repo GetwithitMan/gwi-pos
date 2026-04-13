@@ -159,6 +159,17 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
       return notFound('Terminal not found')
     }
 
+    // If name is being changed, check for active duplicate (soft-delete-safe)
+    if (name !== undefined && name !== existing.name) {
+      const nameConflict = await db.terminal.findFirst({
+        where: { locationId: existing.locationId, name, deletedAt: null, id: { not: id } },
+        select: { id: true },
+      })
+      if (nameConflict) {
+        return err('A terminal with this name already exists at this location', 409)
+      }
+    }
+
     // Validate category if provided
     if (category && !['FIXED_STATION', 'HANDHELD'].includes(category)) {
       return err('Category must be FIXED_STATION or HANDHELD')
@@ -374,7 +385,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
       return notFound('Terminal not found')
     }
 
-    // Soft delete
+    // Soft delete — clear fingerprint so hardware can re-pair to a new terminal
     await db.terminal.update({
       where: { id },
       data: {
@@ -382,6 +393,8 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
         isActive: false,
         isPaired: false,
         deviceToken: null,
+        deviceFingerprint: null,
+        lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
       },
     })
 

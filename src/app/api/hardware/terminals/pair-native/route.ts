@@ -73,7 +73,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Generate secure device token
     const deviceToken = crypto.randomBytes(32).toString('hex')
 
-    // Check if this hardware was previously paired (device re-identification after reinstall)
+    // Check if this hardware was previously paired to a DIFFERENT terminal.
+    // If so, unpair the old terminal to prevent zombie entries and dual-paired state.
     let previousDeviceName: string | null = null
     const fingerprintToMatch = stableDeviceId || deviceFingerprint
     if (fingerprintToMatch) {
@@ -84,14 +85,29 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           id: { not: terminal.id },
           deletedAt: null,
         },
-        select: { name: true },
+        select: { id: true, name: true },
         orderBy: { lastSeenAt: 'desc' },
       })
       if (previousTerminal) {
         previousDeviceName = previousTerminal.name
         console.log(
-          `[pair-native] Device re-identified: fingerprint ${fingerprintToMatch} was previously "${previousTerminal.name}"`
+          `[pair-native] Device re-identified: fingerprint ${fingerprintToMatch} was previously "${previousTerminal.name}" — unpairing old terminal`
         )
+
+        // Unpair the old terminal (preserve record for admin re-use, just clear pairing state)
+        await db.terminal.update({
+          where: { id: previousTerminal.id },
+          data: {
+            isPaired: false,
+            isOnline: false,
+            deviceToken: null,
+            deviceFingerprint: null,
+            lastMutatedBy: 'local',
+          },
+        })
+
+        void notifyDataChanged({ locationId, domain: 'hardware', action: 'updated', entityId: previousTerminal.id })
+        void pushUpstream()
       }
     }
 
