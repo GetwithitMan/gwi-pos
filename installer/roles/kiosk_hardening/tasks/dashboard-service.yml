@@ -16,6 +16,19 @@
     mode: "0755"
   become_user: "{{ gwi_posuser }}"
 
+- name: "Dashboard — Resolve binary path"
+  ansible.builtin.shell: command -v gwi-dashboard 2>/dev/null || command -v gwi-nuc-dashboard 2>/dev/null || echo "/usr/bin/gwi-dashboard"
+  args:
+    executable: /bin/bash
+  register: _dashboard_bin
+  changed_when: false
+  failed_when: false
+
+- name: "Dashboard — Set binary fact"
+  ansible.builtin.set_fact:
+    gwi_dashboard_bin: "{{ _dashboard_bin.stdout | trim }}"
+  when: _dashboard_bin.stdout | trim | length > 0
+
 - name: "Dashboard — Deploy systemd user service"
   ansible.builtin.copy:
     dest: "{{ gwi_posuser_home }}/.config/systemd/user/gwi-dashboard.service"
@@ -25,12 +38,18 @@
     content: |
       [Unit]
       Description=GWI NUC Dashboard
+      After=graphical-session.target
+      StartLimitBurst=5
+      StartLimitIntervalSec=120
 
       [Service]
-      ExecStart=/opt/gwi-pos/dashboard/gwi-nuc-dashboard
-      Restart=always
-      RestartSec=3
+      ExecStart={{ gwi_dashboard_bin | default('/usr/bin/gwi-dashboard') }}
+      Restart=on-failure
+      RestartSec=5
       Environment=DISPLAY=:0
+      Environment=XAUTHORITY=/run/user/%U/.Xauthority
+      Environment=XDG_RUNTIME_DIR=/run/user/%U
+      Environment=GWI_POS_URL=http://localhost:3005
 
       [Install]
       WantedBy=default.target

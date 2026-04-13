@@ -1,12 +1,12 @@
+# DEPRECATED: gwi-converge now uses a long-running service (converge-loop),
+# not a timer. This file is kept only to prevent Ansible errors during
+# transition. The timer is not enabled — only gwi-converge.service is used.
+# See gwi-node.sh converge-loop subcommand.
 [Unit]
-Description=GWI Baseline Convergence Timer
-After=network.target
+Description=GWI Converge Timer (DEPRECATED — use gwi-converge.service directly)
 
 [Timer]
-OnBootSec=5min
-OnUnitActiveSec=6h
-RandomizedDelaySec=30min
-Persistent=true
+OnBootSec=999h
 
 [Install]
 WantedBy=timers.target

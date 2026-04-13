@@ -9,9 +9,9 @@
     name: gwi-node
     state: restarted
 
-- name: restart gwi-converge timer
+- name: restart gwi-converge
   systemd:
-    name: gwi-converge.timer
+    name: gwi-converge
     state: restarted
 
 # ── Legacy handlers (pre-Docker nodes) ───────────────────────────────────────

@@ -669,13 +669,13 @@ _reconcile_dashboard_service() {
 [Unit]
 Description=GWI NUC Dashboard
 After=graphical-session.target
+StartLimitBurst=5
+StartLimitIntervalSec=120
 
 [Service]
 ExecStart=${_dash_bin}
 Restart=on-failure
 RestartSec=5
-StartLimitBurst=5
-StartLimitIntervalSec=120
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=/run/user/%U/.Xauthority
 Environment=XDG_RUNTIME_DIR=/run/user/%U
@@ -1688,6 +1688,59 @@ except:
     echo "Dashboard Warning: none"
   fi
 
+  # ── Version Truth Audit ──
+  echo ""
+  echo "--- Version Truth ---"
+  local _vt_contract _vt_container _vt_health _vt_state _vt_mismatch=false
+  _vt_contract=$(docker exec "$CONTAINER_NAME" cat /app/public/version-contract.json 2>/dev/null \
+    | jq -r '.version // "?"' 2>/dev/null || echo "?")
+  _vt_container=$(docker inspect --format='{{.Config.Image}}' "$CONTAINER_NAME" 2>/dev/null || echo "?")
+  _vt_container="${_vt_container##*:}"  # strip registry prefix
+  local _vt_port
+  _vt_port="$(read_port)"
+  _vt_health=$(curl -sf --max-time 3 "http://localhost:${_vt_port}/api/health" 2>/dev/null \
+    | jq -r '.version // "?"' 2>/dev/null || echo "?")
+  _vt_state="?"
+  [[ -f "$VERSION_FILE" ]] && _vt_state=$(jq -r '.version // "?"' "$VERSION_FILE" 2>/dev/null || echo "?")
+  echo "  version-contract:  ${_vt_contract}"
+  echo "  container tag:     ${_vt_container}"
+  echo "  health endpoint:   ${_vt_health}"
+  echo "  running-version:   ${_vt_state}"
+  # Check agreement
+  local _vt_sources=("$_vt_contract" "$_vt_container" "$_vt_health" "$_vt_state")
+  local _vt_ref="${_vt_contract}"
+  for _s in "${_vt_sources[@]}"; do
+    if [[ "$_s" != "?" && "$_s" != "$_vt_ref" && "$_vt_ref" != "?" ]]; then
+      _vt_mismatch=true
+    fi
+  done
+  if [[ "$_vt_mismatch" == true ]]; then
+    echo "  VERDICT: MISMATCH — sources disagree"
+  else
+    echo "  VERDICT: all sources agree (${_vt_ref})"
+  fi
+
+  # ── Host Policy ──
+  echo ""
+  echo "--- Host Policy ---"
+  if [[ -f "$HOST_POLICY_FILE" ]]; then
+    local _hp_status _hp_sleep _hp_display _hp_lock _hp_corrected _hp_checked
+    _hp_status=$(jq -r '.status // "unknown"' "$HOST_POLICY_FILE" 2>/dev/null || echo "unknown")
+    _hp_sleep=$(jq -r '.sleep_policy // "unknown"' "$HOST_POLICY_FILE" 2>/dev/null || echo "unknown")
+    _hp_display=$(jq -r '.display_policy // "unknown"' "$HOST_POLICY_FILE" 2>/dev/null || echo "unknown")
+    _hp_lock=$(jq -r '.lock_policy // "unknown"' "$HOST_POLICY_FILE" 2>/dev/null || echo "unknown")
+    _hp_corrected=$(jq -r '.last_corrected_at // "never"' "$HOST_POLICY_FILE" 2>/dev/null || echo "never")
+    _hp_checked=$(jq -r '.checked_at // "never"' "$HOST_POLICY_FILE" 2>/dev/null || echo "never")
+    echo "  Display policy:    ${_hp_display}"
+    echo "  Sleep policy:      ${_hp_sleep}"
+    echo "  Screen lock:       ${_hp_lock}"
+    echo "  Overall:           ${_hp_status}"
+    echo "  Last checked:      ${_hp_checked}"
+    [[ "$_hp_corrected" != "never" && -n "$_hp_corrected" ]] && echo "  Last corrected:    ${_hp_corrected}"
+  else
+    echo "  No host-policy state yet (run 'gwi-node converge' to generate)"
+  fi
+
   # ── LKG info ──
   echo ""
   echo "--- Last Known Good ---"
@@ -1971,6 +2024,289 @@ _cv_health_probe() {
   [[ "$code" == "200" ]]
 }
 
+# ---------------------------------------------------------------------------
+#  _converge_host_policy — verify and auto-correct appliance display/power/lock
+# ---------------------------------------------------------------------------
+# Checks that the NUC host policy hasn't drifted from the expected appliance
+# state. Auto-corrects: sleep targets, logind override, .xprofile DPMS,
+# KDE power/lock config, GNOME dconf, linger. Reports to host-policy.json.
+# ---------------------------------------------------------------------------
+readonly HOST_POLICY_FILE="${STATE_DIR}/host-policy-state.json"
+
+_converge_host_policy() {
+  local _posuser="${POSUSER:-gwipos}"
+  local _posuser_home
+  _posuser_home=$(eval echo "~${_posuser}" 2>/dev/null || echo "/home/${_posuser}")
+  local _uid
+  _uid=$(id -u "$_posuser" 2>/dev/null || echo "1000")
+  local _drifted=0 _corrected=0 _checks=0
+  local _corrections=()
+
+  # Detect desktop environment
+  local _desktop_env="unknown"
+  if command -v kwriteconfig5 &>/dev/null || [[ -f "${_posuser_home}/.config/kscreenlockerrc" ]]; then
+    _desktop_env="kde"
+  elif command -v gsettings &>/dev/null; then
+    _desktop_env="gnome"
+  fi
+
+  # Detect display manager
+  local _dm="unknown"
+  systemctl is-active sddm &>/dev/null && _dm="sddm"
+  systemctl is-active gdm3 &>/dev/null && _dm="gdm"
+  systemctl is-active gdm  &>/dev/null && _dm="gdm"
+  systemctl is-active lightdm &>/dev/null && _dm="lightdm"
+
+  log "Converge/host-policy: checking (desktop=${_desktop_env}, dm=${_dm})"
+
+  # ── 1. Sleep/suspend/hibernate targets must be masked ──────────────────
+  local _sleep_targets=("sleep.target" "suspend.target" "hibernate.target" "hybrid-sleep.target")
+  for _target in "${_sleep_targets[@]}"; do
+    _checks=$((_checks + 1))
+    if ! systemctl is-enabled "$_target" 2>/dev/null | grep -q "masked"; then
+      _drifted=$((_drifted + 1))
+      log "Converge/host-policy: ${_target} not masked — correcting"
+      systemctl mask "$_target" 2>/dev/null || true
+      _corrected=$((_corrected + 1))
+      _corrections+=("masked ${_target}")
+    fi
+  done
+
+  # ── 2. logind.conf.d override must be present ─────────────────────────
+  _checks=$((_checks + 1))
+  local _logind_conf="/etc/systemd/logind.conf.d/gwi-pos.conf"
+  if [[ ! -f "$_logind_conf" ]]; then
+    _drifted=$((_drifted + 1))
+    log "Converge/host-policy: logind override missing — rewriting"
+    mkdir -p /etc/systemd/logind.conf.d
+    cat > "$_logind_conf" <<'LOGINDEOF'
+# GWI POS — disable all suspend/hibernate/lid/idle actions
+# Managed by gwi-node host-policy convergence — do not edit manually
+[Login]
+HandleSuspendKey=ignore
+HandleHibernateKey=ignore
+HandleLidSwitch=ignore
+HandleLidSwitchExternalPower=ignore
+IdleAction=ignore
+LOGINDEOF
+    chmod 644 "$_logind_conf"
+    systemctl restart systemd-logind 2>/dev/null || true
+    _corrected=$((_corrected + 1))
+    _corrections+=("rewrote logind override")
+  fi
+
+  # ── 3. .xprofile must disable screen blanking / DPMS ──────────────────
+  _checks=$((_checks + 1))
+  local _xprofile="${_posuser_home}/.xprofile"
+  if [[ ! -f "$_xprofile" ]] || ! grep -q 'xset s off' "$_xprofile" 2>/dev/null; then
+    _drifted=$((_drifted + 1))
+    log "Converge/host-policy: .xprofile DPMS disable missing — rewriting"
+    if [[ -f "$_xprofile" ]]; then
+      echo "xset s off && xset -dpms  # GWI POS — screen stays on (managed by gwi-node)" >> "$_xprofile"
+    else
+      echo "xset s off && xset -dpms  # GWI POS — screen stays on (managed by gwi-node)" > "$_xprofile"
+      chown "${_posuser}:${_posuser}" "$_xprofile"
+      chmod 644 "$_xprofile"
+    fi
+    _corrected=$((_corrected + 1))
+    _corrections+=("fixed .xprofile DPMS")
+  fi
+
+  # ── 4. loginctl linger must be enabled for POS user ───────────────────
+  _checks=$((_checks + 1))
+  if ! loginctl show-user "$_posuser" --property=Linger 2>/dev/null | grep -q "Linger=yes"; then
+    _drifted=$((_drifted + 1))
+    log "Converge/host-policy: linger not enabled for ${_posuser} — correcting"
+    loginctl enable-linger "$_posuser" 2>/dev/null || true
+    _corrected=$((_corrected + 1))
+    _corrections+=("enabled linger for ${_posuser}")
+  fi
+
+  # ── 5. KDE-specific checks ────────────────────────────────────────────
+  if [[ "$_desktop_env" == "kde" ]]; then
+    # 5a. PowerDevil must be masked
+    _checks=$((_checks + 1))
+    local _pdev_status
+    _pdev_status=$(sudo -u "$_posuser" bash -c \
+      "XDG_RUNTIME_DIR=/run/user/${_uid} systemctl --user is-enabled plasma-powerdevil.service" 2>/dev/null || echo "unknown")
+    if [[ "$_pdev_status" != "masked" ]]; then
+      _drifted=$((_drifted + 1))
+      log "Converge/host-policy: plasma-powerdevil not masked — correcting"
+      sudo -u "$_posuser" bash -c \
+        "XDG_RUNTIME_DIR=/run/user/${_uid} systemctl --user mask plasma-powerdevil.service" 2>/dev/null || true
+      sudo -u "$_posuser" bash -c \
+        "XDG_RUNTIME_DIR=/run/user/${_uid} systemctl --user stop plasma-powerdevil.service" 2>/dev/null || true
+      _corrected=$((_corrected + 1))
+      _corrections+=("masked plasma-powerdevil")
+    fi
+
+    # 5b. kscreenlockerrc must disable lock
+    _checks=$((_checks + 1))
+    local _kslrc="${_posuser_home}/.config/kscreenlockerrc"
+    if [[ ! -f "$_kslrc" ]] || ! grep -q "Autolock=false" "$_kslrc" 2>/dev/null; then
+      _drifted=$((_drifted + 1))
+      log "Converge/host-policy: kscreenlockerrc lock not disabled — rewriting"
+      cat > "$_kslrc" <<'KSLEOF'
+# GWI POS — disable screen locking
+# Managed by gwi-node host-policy convergence — do not edit manually
+[Daemon]
+Autolock=false
+LockOnResume=false
+Timeout=0
+KSLEOF
+      chown "${_posuser}:${_posuser}" "$_kslrc"
+      _corrected=$((_corrected + 1))
+      _corrections+=("rewrote kscreenlockerrc")
+    fi
+
+    # 5c. powermanagementprofilesrc must disable idle actions
+    _checks=$((_checks + 1))
+    local _pmrc="${_posuser_home}/.config/powermanagementprofilesrc"
+    if [[ ! -f "$_pmrc" ]] || ! grep -q "idleTime=0" "$_pmrc" 2>/dev/null; then
+      _drifted=$((_drifted + 1))
+      log "Converge/host-policy: powermanagementprofilesrc not set — rewriting"
+      cat > "$_pmrc" <<'PMEOF'
+# GWI POS — disable all power management (screen stays on forever)
+# Managed by gwi-node host-policy convergence — do not edit manually
+[AC][DPMSControl]
+idleTime=0
+lockBeforeTurnOff=0
+
+[AC][DimDisplay]
+idleTime=0
+
+[AC][SuspendSession]
+idleTime=0
+suspendThenHibernate=false
+suspendType=0
+PMEOF
+      chown "${_posuser}:${_posuser}" "$_pmrc"
+      _corrected=$((_corrected + 1))
+      _corrections+=("rewrote powermanagementprofilesrc")
+    fi
+  fi
+
+  # ── 6. GNOME-specific checks ──────────────────────────────────────────
+  if [[ "$_desktop_env" == "gnome" ]]; then
+    # 6a. gsettings idle-delay must be 0
+    _checks=$((_checks + 1))
+    local _gnome_idle
+    _gnome_idle=$(sudo -u "$_posuser" bash -c \
+      "export DISPLAY=:0; export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${_uid}/bus; gsettings get org.gnome.desktop.session idle-delay" 2>/dev/null || echo "")
+    if [[ -n "$_gnome_idle" ]] && ! echo "$_gnome_idle" | grep -q "uint32 0"; then
+      _drifted=$((_drifted + 1))
+      log "Converge/host-policy: GNOME idle-delay not 0 — correcting"
+      sudo -u "$_posuser" bash -c \
+        "export DISPLAY=:0; export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${_uid}/bus; gsettings set org.gnome.desktop.session idle-delay 0" 2>/dev/null || true
+      _corrected=$((_corrected + 1))
+      _corrections+=("set GNOME idle-delay=0")
+    fi
+
+    # 6b. screen lock must be disabled
+    _checks=$((_checks + 1))
+    local _gnome_lock
+    _gnome_lock=$(sudo -u "$_posuser" bash -c \
+      "export DISPLAY=:0; export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${_uid}/bus; gsettings get org.gnome.desktop.screensaver lock-enabled" 2>/dev/null || echo "")
+    if [[ "$_gnome_lock" == "true" ]]; then
+      _drifted=$((_drifted + 1))
+      log "Converge/host-policy: GNOME screen lock enabled — correcting"
+      sudo -u "$_posuser" bash -c \
+        "export DISPLAY=:0; export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${_uid}/bus; gsettings set org.gnome.desktop.screensaver lock-enabled false" 2>/dev/null || true
+      _corrected=$((_corrected + 1))
+      _corrections+=("disabled GNOME screen lock")
+    fi
+
+    # 6c. dconf db override must exist
+    _checks=$((_checks + 1))
+    if [[ ! -f "/etc/dconf/db/gwi-pos.d/00-gwi-pos-hardening" ]]; then
+      _drifted=$((_drifted + 1))
+      log "Converge/host-policy: dconf override missing — rewriting"
+      mkdir -p /etc/dconf/db/gwi-pos.d
+      cat > /etc/dconf/db/gwi-pos.d/00-gwi-pos-hardening <<'DCONFEOF'
+# GWI POS — GNOME hardening overrides
+# Managed by gwi-node host-policy convergence — do not edit manually
+[org/gnome/desktop/session]
+idle-delay=uint32 0
+
+[org/gnome/desktop/screensaver]
+lock-enabled=false
+
+[org/gnome/desktop/notifications]
+show-banners=false
+DCONFEOF
+      dconf update 2>/dev/null || true
+      _corrected=$((_corrected + 1))
+      _corrections+=("rewrote dconf override")
+    fi
+  fi
+
+  # ── 7. X11: apply xset now (immediate effect) ─────────────────────────
+  _checks=$((_checks + 1))
+  if sudo -u "$_posuser" bash -c \
+    "export DISPLAY=:0; export XAUTHORITY=/run/user/${_uid}/.Xauthority; xset q 2>/dev/null | grep -q 'DPMS is Enabled'"; then
+    _drifted=$((_drifted + 1))
+    log "Converge/host-policy: DPMS currently enabled — disabling now"
+    sudo -u "$_posuser" bash -c \
+      "export DISPLAY=:0; export XAUTHORITY=/run/user/${_uid}/.Xauthority; xset s off -dpms; xset s noblank; xset dpms force on" 2>/dev/null || true
+    _corrected=$((_corrected + 1))
+    _corrections+=("disabled DPMS via xset")
+  fi
+
+  # ── Write state ────────────────────────────────────────────────────────
+  local _now
+  _now="$(date -u +%FT%TZ)"
+  local _policy_status="compliant"
+  [[ $_drifted -gt 0 ]] && _policy_status="corrected"
+  [[ $_drifted -gt $_corrected ]] && _policy_status="drifted"
+
+  local _corrections_json="[]"
+  if [[ ${#_corrections[@]} -gt 0 ]]; then
+    _corrections_json="["
+    local _first=true
+    for _c in "${_corrections[@]}"; do
+      $_first || _corrections_json="${_corrections_json},"
+      _corrections_json="${_corrections_json}\"${_c}\""
+      _first=false
+    done
+    _corrections_json="${_corrections_json}]"
+  fi
+
+  python3 -c "
+import json, os
+state = {
+  'schema_version': 1,
+  'checked_at': '${_now}',
+  'desktop_env': '${_desktop_env}',
+  'display_manager': '${_dm}',
+  'checks': ${_checks},
+  'drifted': ${_drifted},
+  'corrected': ${_corrected},
+  'status': '${_policy_status}',
+  'corrections': json.loads('${_corrections_json}'),
+  'sleep_policy': 'compliant' if ${_corrected} >= ${_drifted} else 'drifted',
+  'display_policy': 'compliant' if ${_corrected} >= ${_drifted} else 'drifted',
+  'lock_policy': 'compliant' if ${_corrected} >= ${_drifted} else 'drifted'
+}
+try:
+  existing = json.load(open('${HOST_POLICY_FILE}'))
+  if ${_corrected} > 0:
+    state['last_corrected_at'] = '${_now}'
+  else:
+    state['last_corrected_at'] = existing.get('last_corrected_at', '')
+except:
+  state['last_corrected_at'] = '${_now}' if ${_corrected} > 0 else ''
+json.dump(state, open('${HOST_POLICY_FILE}', 'w'), indent=2)
+" 2>/dev/null || log "WARN: failed to write host-policy state"
+
+  if [[ $_drifted -eq 0 ]]; then
+    log "Converge/host-policy: OK (${_checks} checks, all compliant)"
+  elif [[ $_corrected -ge $_drifted ]]; then
+    log "Converge/host-policy: CORRECTED (${_corrected}/${_drifted} drifts fixed)"
+  else
+    log "Converge/host-policy: DRIFTED (${_drifted} drifts, ${_corrected} corrected — manual review needed)"
+  fi
+}
+
 converge() {
   log "=== Convergence check ==="
   mkdir -p "$STATE_DIR"
@@ -2133,15 +2469,24 @@ except: print('')
   else
     local _cv_schema_target _cv_schema_current
     _cv_schema_target=$(_cv_read_contract '.migrationCount // 0')
-    # Query local PG for applied migration count
-    _cv_schema_current=$(docker exec "$CONTAINER_NAME" \
-      node -e "
-        const { PrismaClient } = require('@prisma/client');
-        const p = new PrismaClient();
-        p.\$queryRawUnsafe('SELECT COUNT(*) as c FROM _gwi_migrations')
-          .then(r => { console.log(r[0].c || 0); process.exit(0); })
-          .catch(() => { console.log(0); process.exit(0); });
-      " 2>/dev/null || echo 0)
+    # Query local PG for applied migration count using direct pg connection
+    # (Prisma client inside container may not have DATABASE_URL in its env)
+    local _db_url
+    _db_url=$(grep '^DATABASE_URL=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2-)
+    if [[ -n "$_db_url" ]]; then
+      _cv_schema_current=$(docker run --rm --network=host "$_cv_server_image" \
+        node -e "
+          const { Client } = require('pg');
+          const c = new Client({ connectionString: '${_db_url}' });
+          c.connect()
+            .then(() => c.query('SELECT COUNT(*)::int as c FROM _gwi_migrations'))
+            .then(r => { console.log(r.rows[0].c); process.exit(0); })
+            .catch(() => { console.log(0); process.exit(0); });
+        " 2>/dev/null || echo 0)
+    else
+      _cv_schema_current=0
+      log "Converge/schema: no DATABASE_URL in env — cannot check migration count"
+    fi
 
     if [[ "$_cv_schema_target" -eq 0 ]]; then
       log "Converge/schema: no migrationCount in version-contract"
@@ -2151,13 +2496,14 @@ except: print('')
 
       if docker run --rm --env-file "$ENV_FILE" --network=host "$_cv_server_image" \
         node deploy-tools/src/migrate.js 2>/dev/null; then
-        # Re-check
-        _cv_schema_current=$(docker exec "$CONTAINER_NAME" \
+        # Re-check using same direct pg connection
+        _cv_schema_current=$(docker run --rm --network=host "$_cv_server_image" \
           node -e "
-            const { PrismaClient } = require('@prisma/client');
-            const p = new PrismaClient();
-            p.\$queryRawUnsafe('SELECT COUNT(*) as c FROM _gwi_migrations')
-              .then(r => { console.log(r[0].c || 0); process.exit(0); })
+            const { Client } = require('pg');
+            const c = new Client({ connectionString: '${_db_url}' });
+            c.connect()
+              .then(() => c.query('SELECT COUNT(*)::int as c FROM _gwi_migrations'))
+              .then(r => { console.log(r.rows[0].c); process.exit(0); })
               .catch(() => { console.log(0); process.exit(0); });
           " 2>/dev/null || echo 0)
         if [[ "$_cv_schema_current" -ge "$_cv_schema_target" ]]; then
@@ -2177,6 +2523,9 @@ except: print('')
 
   # ── Disk cleanup (run every convergence cycle) ───────────────────────────
   _prune_old_images
+
+  # ── Host policy (display/power/lock drift detection + auto-correct) ─────
+  _converge_host_policy 2>/dev/null || log "WARN: host policy check failed (non-fatal)"
 
   # ── Summary ────────────────────────────────────────────────────────────────
   local lifecycle
@@ -2217,6 +2566,12 @@ install_converge_service() {
 
   # Prefer the installed copy; fall back to this script's location
   [[ -f "$script_path" ]] || script_path="$0"
+
+  # Clean up stale timer (Ansible legacy — convergence is now a long-running service)
+  if systemctl is-enabled gwi-converge.timer &>/dev/null; then
+    log "Disabling stale gwi-converge.timer (superseded by long-running service)"
+    systemctl disable --now gwi-converge.timer 2>/dev/null || true
+  fi
 
   log "Installing convergence service (interval: ${interval}s)"
 
