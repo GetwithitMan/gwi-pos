@@ -316,39 +316,22 @@ systemd_last_resort() {
 }
 
 # ── _prune_old_images ─────────────────────────────────────────────────────────
-# Remove old Docker images, keeping only the currently running image and the
-# last-known-good. Each image is ~6GB; without pruning, 40+ versions = 240GB+.
+# Remove old Docker images older than 72 hours. Each image is ~6GB; without
+# pruning, 40+ versions = 240GB+. Uses docker's built-in prune which handles
+# shared layers correctly (docker rmi on individual tags can fail due to
+# layer dependencies).
 # ──────────────────────────────────────────────────────────────────────────────
 _prune_old_images() {
-  local _current _lkg _kept=0 _removed=0
-  _current=$(docker inspect --format='{{.Image}}' "$CONTAINER_NAME" 2>/dev/null || echo "")
-  _lkg=$(cat "$LKG_IMAGE_FILE" 2>/dev/null || echo "")
+  local _before _after _reclaimed
+  _before=$(docker images "ghcr.io/getwithitman/gwi-pos" -q 2>/dev/null | wc -l)
 
-  # Get all gwi-pos image IDs
-  local _all_images
-  _all_images=$(docker images "ghcr.io/getwithitman/gwi-pos" --format '{{.ID}} {{.Repository}}:{{.Tag}}' 2>/dev/null)
-  [[ -z "$_all_images" ]] && return 0
+  # Prune all unused images older than 72h (keeps current + anything pulled recently)
+  _reclaimed=$(docker image prune -a --filter "until=72h" -f 2>/dev/null | grep "Total reclaimed" || echo "0B")
 
-  while IFS=' ' read -r _id _tag; do
-    # Keep current running image
-    if [[ -n "$_current" ]] && docker inspect --format='{{.Id}}' "$_tag" 2>/dev/null | grep -q "${_current:0:12}"; then
-      _kept=$((_kept + 1))
-      continue
-    fi
-    # Keep LKG image
-    if [[ "$_tag" == "$_lkg" ]]; then
-      _kept=$((_kept + 1))
-      continue
-    fi
-    # Remove everything else
-    docker rmi "$_tag" 2>/dev/null && _removed=$((_removed + 1)) || true
-  done <<< "$_all_images"
-
-  # Also prune dangling images
-  docker image prune -f 2>/dev/null || true
-
+  _after=$(docker images "ghcr.io/getwithitman/gwi-pos" -q 2>/dev/null | wc -l)
+  local _removed=$((_before - _after))
   if [[ $_removed -gt 0 ]]; then
-    log "Image cleanup: removed $_removed old images, kept $_kept (current + LKG)"
+    log "Image cleanup: removed $_removed old images ($_before -> $_after). $_reclaimed"
   fi
 }
 
