@@ -336,8 +336,17 @@ export async function buildPaymentFinancialContext(
       .reduce((sum, p) => sum + p.amount, 0)
 
     if (Math.abs(cardPaymentTotal - cardValidationRemaining) > 0.05) {
-      log.warn({ orderId, cardPaymentTotal, cardValidationRemaining, delta: cardPaymentTotal - cardValidationRemaining },
-        '[PAYMENT-AUDIT] Card payment amount does not match expected card total')
+      log.warn({
+        orderId,
+        submittedAmount: cardPaymentTotal,
+        expectedCashAmount: remaining,
+        expectedCardAmount: cardValidationRemaining,
+        tier: payments.find(p => ['credit', 'debit'].includes(p.method))?.appliedPricingTier || 'unknown',
+        delta: cardPaymentTotal - cardValidationRemaining,
+        mode: process.env.PAYMENT_HARD_REJECT === 'true' ? 'hard' : 'soft',
+        orderVersion: (order as any).version ?? null,
+        snapshotTs: new Date().toISOString(),
+      }, '[PAYMENT-AUDIT] Card payment amount does not match expected card total')
 
       if (process.env.PAYMENT_HARD_REJECT === 'true') {
         return { ok: false, response: NextResponse.json(

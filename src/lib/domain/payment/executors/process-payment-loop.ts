@@ -138,8 +138,12 @@ export async function processPaymentLoop(
     })()
 
     if (!tierMethodValid) {
-      log.warn({ orderId, method: payment.method, tier: (payment as any).appliedPricingTier },
-        '[TIER-REJECT] appliedPricingTier does not match payment method')
+      log.warn({
+        orderId,
+        method: payment.method,
+        tier: (payment as any).appliedPricingTier,
+        reason: `Method '${payment.method}' cannot use tier '${(payment as any).appliedPricingTier}'`,
+      }, '[TIER-REJECT] appliedPricingTier does not match payment method')
       if (process.env.PAYMENT_HARD_REJECT === 'true') {
         throw new Error(`Payment method '${payment.method}' cannot use pricing tier '${(payment as any).appliedPricingTier}'`)
       }
