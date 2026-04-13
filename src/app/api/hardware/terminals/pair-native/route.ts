@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { Prisma } from '@/generated/prisma/client'
 import crypto from 'crypto'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { getClientIp } from '@/lib/get-client-ip'
+import { revokeTerminal } from '@/lib/socket-server'
 import { err, ok } from '@/lib/api-response'
 const VALID_PLATFORMS = ['BROWSER', 'ANDROID', 'IOS'] as const
 
@@ -94,7 +96,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           `[pair-native] Device re-identified: fingerprint ${fingerprintToMatch} was previously "${previousTerminal.name}" — unpairing old terminal`
         )
 
-        // Unpair the old terminal (preserve record for admin re-use, just clear pairing state)
+        // Full unpair of the old terminal (matches unpair/route.ts contract exactly)
         await db.terminal.update({
           where: { id: previousTerminal.id },
           data: {
@@ -102,9 +104,18 @@ export const POST = withVenue(async function POST(request: NextRequest) {
             isOnline: false,
             deviceToken: null,
             deviceFingerprint: null,
+            deviceInfo: Prisma.JsonNull,
             lastMutatedBy: 'local',
           },
         })
+
+        // Clear CellularDevice so fingerprint doesn't block re-pairing
+        void db.$executeRaw`DELETE FROM "CellularDevice" WHERE "terminalId" = ${previousTerminal.id} AND "locationId" = ${locationId}`
+          .catch(e => console.warn('[pair-native] CellularDevice cleanup failed (non-fatal):', e instanceof Error ? e.message : e))
+
+        // Instantly disconnect the old terminal's socket session
+        void revokeTerminal(previousTerminal.id, 'Device re-paired to different terminal')
+          .catch(e => console.warn('[pair-native] revokeTerminal failed (non-fatal):', e instanceof Error ? e.message : e))
 
         void notifyDataChanged({ locationId, domain: 'hardware', action: 'updated', entityId: previousTerminal.id })
         void pushUpstream()

@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
+import { Prisma } from '@/generated/prisma/client'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
@@ -385,15 +386,18 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
       return notFound('Terminal not found')
     }
 
-    // Soft delete — clear fingerprint so hardware can re-pair to a new terminal
+    // Soft delete — clear all device-claiming fields so hardware can re-pair
     await db.terminal.update({
       where: { id },
       data: {
         deletedAt: new Date(),
         isActive: false,
         isPaired: false,
+        isOnline: false,
         deviceToken: null,
         deviceFingerprint: null,
+        deviceInfo: Prisma.JsonNull,
+        pushToken: null,
         lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
       },
     })
