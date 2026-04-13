@@ -221,6 +221,15 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       }
     }
 
+    // Check for active terminal with same name (soft-delete-safe uniqueness)
+    const existingActive = await db.terminal.findFirst({
+      where: { locationId, name, deletedAt: null },
+      select: { id: true },
+    })
+    if (existingActive) {
+      return err('A terminal with this name already exists at this location', 409)
+    }
+
     let terminal
     try {
       terminal = await db.terminal.create({

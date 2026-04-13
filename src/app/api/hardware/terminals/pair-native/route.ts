@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { Prisma } from '@/generated/prisma/client'
 import crypto from 'crypto'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { getClientIp } from '@/lib/get-client-ip'
+import { revokeTerminal } from '@/lib/socket-server'
 import { err, ok } from '@/lib/api-response'
 const VALID_PLATFORMS = ['BROWSER', 'ANDROID', 'IOS'] as const
 
@@ -73,7 +75,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Generate secure device token
     const deviceToken = crypto.randomBytes(32).toString('hex')
 
-    // Check if this hardware was previously paired (device re-identification after reinstall)
+    // Check if this hardware was previously paired to a DIFFERENT terminal.
+    // If so, unpair the old terminal to prevent zombie entries and dual-paired state.
     let previousDeviceName: string | null = null
     const fingerprintToMatch = stableDeviceId || deviceFingerprint
     if (fingerprintToMatch) {
@@ -84,14 +87,38 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           id: { not: terminal.id },
           deletedAt: null,
         },
-        select: { name: true },
+        select: { id: true, name: true },
         orderBy: { lastSeenAt: 'desc' },
       })
       if (previousTerminal) {
         previousDeviceName = previousTerminal.name
         console.log(
-          `[pair-native] Device re-identified: fingerprint ${fingerprintToMatch} was previously "${previousTerminal.name}"`
+          `[pair-native] Device re-identified: fingerprint ${fingerprintToMatch} was previously "${previousTerminal.name}" — unpairing old terminal`
         )
+
+        // Full unpair of the old terminal (matches unpair/route.ts contract exactly)
+        await db.terminal.update({
+          where: { id: previousTerminal.id },
+          data: {
+            isPaired: false,
+            isOnline: false,
+            deviceToken: null,
+            deviceFingerprint: null,
+            deviceInfo: Prisma.JsonNull,
+            lastMutatedBy: 'local',
+          },
+        })
+
+        // Clear CellularDevice so fingerprint doesn't block re-pairing
+        void db.$executeRaw`DELETE FROM "CellularDevice" WHERE "terminalId" = ${previousTerminal.id} AND "locationId" = ${locationId}`
+          .catch(e => console.warn('[pair-native] CellularDevice cleanup failed (non-fatal):', e instanceof Error ? e.message : e))
+
+        // Instantly disconnect the old terminal's socket session
+        void revokeTerminal(previousTerminal.id, 'Device re-paired to different terminal')
+          .catch(e => console.warn('[pair-native] revokeTerminal failed (non-fatal):', e instanceof Error ? e.message : e))
+
+        void notifyDataChanged({ locationId, domain: 'hardware', action: 'updated', entityId: previousTerminal.id })
+        void pushUpstream()
       }
     }
 

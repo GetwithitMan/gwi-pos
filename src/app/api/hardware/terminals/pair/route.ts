@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { Prisma } from '@/generated/prisma/client'
 import crypto from 'crypto'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { getClientIp } from '@/lib/get-client-ip'
+import { revokeTerminal } from '@/lib/socket-server'
 import { err } from '@/lib/api-response'
 
 // POST complete terminal pairing with code
@@ -61,6 +63,38 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
 
     // Generate secure device token
     const deviceToken = crypto.randomBytes(32).toString('hex')
+
+    // Reclaim: if this fingerprint is already paired to a different terminal, unpair the old one
+    if (deviceFingerprint) {
+      const previousTerminal = await db.terminal.findFirst({
+        where: {
+          locationId,
+          deviceFingerprint,
+          id: { not: terminal.id },
+          deletedAt: null,
+        },
+        select: { id: true, name: true },
+      })
+      if (previousTerminal) {
+        console.log(`[pair] Device fingerprint ${deviceFingerprint} was previously on "${previousTerminal.name}" — unpairing`)
+        await db.terminal.update({
+          where: { id: previousTerminal.id },
+          data: {
+            isPaired: false,
+            isOnline: false,
+            deviceToken: null,
+            deviceFingerprint: null,
+            deviceInfo: Prisma.JsonNull,
+            lastMutatedBy: 'local',
+          },
+        })
+        void db.$executeRaw`DELETE FROM "CellularDevice" WHERE "terminalId" = ${previousTerminal.id} AND "locationId" = ${locationId}`
+          .catch(e => console.warn('[pair] CellularDevice cleanup failed (non-fatal):', e instanceof Error ? e.message : e))
+        void revokeTerminal(previousTerminal.id, 'Device re-paired to different terminal')
+          .catch(e => console.warn('[pair] revokeTerminal failed (non-fatal):', e instanceof Error ? e.message : e))
+        void notifyDataChanged({ locationId, domain: 'hardware', action: 'updated', entityId: previousTerminal.id })
+      }
+    }
 
     // Complete pairing
     const updated = await db.terminal.update({
