@@ -669,13 +669,13 @@ _reconcile_dashboard_service() {
 [Unit]
 Description=GWI NUC Dashboard
 After=graphical-session.target
+StartLimitBurst=5
+StartLimitIntervalSec=120
 
 [Service]
 ExecStart=${_dash_bin}
 Restart=on-failure
 RestartSec=5
-StartLimitBurst=5
-StartLimitIntervalSec=120
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=/run/user/%U/.Xauthority
 Environment=XDG_RUNTIME_DIR=/run/user/%U
@@ -2133,15 +2133,24 @@ except: print('')
   else
     local _cv_schema_target _cv_schema_current
     _cv_schema_target=$(_cv_read_contract '.migrationCount // 0')
-    # Query local PG for applied migration count
-    _cv_schema_current=$(docker exec "$CONTAINER_NAME" \
-      node -e "
-        const { PrismaClient } = require('@prisma/client');
-        const p = new PrismaClient();
-        p.\$queryRawUnsafe('SELECT COUNT(*) as c FROM _gwi_migrations')
-          .then(r => { console.log(r[0].c || 0); process.exit(0); })
-          .catch(() => { console.log(0); process.exit(0); });
-      " 2>/dev/null || echo 0)
+    # Query local PG for applied migration count using direct pg connection
+    # (Prisma client inside container may not have DATABASE_URL in its env)
+    local _db_url
+    _db_url=$(grep '^DATABASE_URL=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2-)
+    if [[ -n "$_db_url" ]]; then
+      _cv_schema_current=$(docker run --rm --network=host "$_cv_server_image" \
+        node -e "
+          const { Client } = require('pg');
+          const c = new Client({ connectionString: '${_db_url}' });
+          c.connect()
+            .then(() => c.query('SELECT COUNT(*)::int as c FROM _gwi_migrations'))
+            .then(r => { console.log(r.rows[0].c); process.exit(0); })
+            .catch(() => { console.log(0); process.exit(0); });
+        " 2>/dev/null || echo 0)
+    else
+      _cv_schema_current=0
+      log "Converge/schema: no DATABASE_URL in env — cannot check migration count"
+    fi
 
     if [[ "$_cv_schema_target" -eq 0 ]]; then
       log "Converge/schema: no migrationCount in version-contract"
@@ -2151,13 +2160,14 @@ except: print('')
 
       if docker run --rm --env-file "$ENV_FILE" --network=host "$_cv_server_image" \
         node deploy-tools/src/migrate.js 2>/dev/null; then
-        # Re-check
-        _cv_schema_current=$(docker exec "$CONTAINER_NAME" \
+        # Re-check using same direct pg connection
+        _cv_schema_current=$(docker run --rm --network=host "$_cv_server_image" \
           node -e "
-            const { PrismaClient } = require('@prisma/client');
-            const p = new PrismaClient();
-            p.\$queryRawUnsafe('SELECT COUNT(*) as c FROM _gwi_migrations')
-              .then(r => { console.log(r[0].c || 0); process.exit(0); })
+            const { Client } = require('pg');
+            const c = new Client({ connectionString: '${_db_url}' });
+            c.connect()
+              .then(() => c.query('SELECT COUNT(*)::int as c FROM _gwi_migrations'))
+              .then(r => { console.log(r.rows[0].c); process.exit(0); })
               .catch(() => { console.log(0); process.exit(0); });
           " 2>/dev/null || echo 0)
         if [[ "$_cv_schema_current" -ge "$_cv_schema_target" ]]; then

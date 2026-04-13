@@ -250,13 +250,13 @@ run_dashboard() {
 [Unit]
 Description=GWI NUC Dashboard
 After=graphical-session.target
+StartLimitBurst=5
+StartLimitIntervalSec=120
 
 [Service]
 ExecStart=${DASHBOARD_EXEC}
 Restart=on-failure
 RestartSec=5
-StartLimitBurst=5
-StartLimitIntervalSec=120
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=/run/user/%U/.Xauthority
 Environment=XDG_RUNTIME_DIR=/run/user/%U
@@ -364,13 +364,13 @@ _ensure_dashboard_autostart() {
 [Unit]
 Description=GWI NUC Dashboard
 After=graphical-session.target
+StartLimitBurst=5
+StartLimitIntervalSec=120
 
 [Service]
 ExecStart=${DASHBOARD_EXEC}
 Restart=on-failure
 RestartSec=5
-StartLimitBurst=5
-StartLimitIntervalSec=120
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=/run/user/%U/.Xauthority
 Environment=XDG_RUNTIME_DIR=/run/user/%U
