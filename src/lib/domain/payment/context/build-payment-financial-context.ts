@@ -17,7 +17,7 @@
 import crypto from 'crypto'
 import { NextResponse } from 'next/server'
 import { roundAmount } from '@/lib/payment'
-import { applyPriceRounding, roundToCents, toNumber } from '@/lib/pricing'
+import { applyPriceRounding, calculateCardPrice, roundToCents, toNumber } from '@/lib/pricing'
 import { calculateCharge, type EntertainmentPricing, type OvertimeConfig } from '@/lib/entertainment-pricing'
 import { getLocationTaxRate, recalculatePercentDiscounts, calculateSplitTax } from '@/lib/order-calculations'
 import { ingestAndProject } from '@/lib/order-events/ingester'
@@ -33,6 +33,7 @@ import {
   type DrawerAttribution,
 } from '@/lib/domain/payment'
 import { dispatchPaymentProcessed } from '@/lib/socket-dispatch'
+import { getPricingProgram } from '@/lib/settings'
 import type { LocationSettings } from '@/lib/settings/types'
 
 const log = createChildLogger('payment-financial-context')
@@ -319,6 +320,41 @@ export async function buildPaymentFinancialContext(
       { error: `Payment amount ($${paymentBaseTotal.toFixed(2)}) exceeds remaining balance ($${validationRemaining.toFixed(2)})` },
       { status: 400 }
     ) }
+  }
+
+  // ── 4b. Card payment amount validation (dual pricing) ─────────────────
+  // When dual pricing is enabled and a card payment is present, validate that
+  // the card payment amount matches the expected card price (cash total + markup).
+  // order.total stores the CASH price; card price = calculateCardPrice(cashPrice, markupPercent).
+  const hasCardPayment = payments.some(p => ['credit', 'debit'].includes(p.method))
+  const pp = getPricingProgram(settings)
+  if (hasCardPayment && pp.enabled) {
+    const markupPct = pp.creditMarkupPercent ?? pp.cashDiscountPercent ?? 0
+    const cardValidationRemaining = calculateCardPrice(remaining, markupPct)
+    const cardPaymentTotal = payments
+      .filter(p => ['credit', 'debit'].includes(p.method))
+      .reduce((sum, p) => sum + p.amount, 0)
+
+    if (Math.abs(cardPaymentTotal - cardValidationRemaining) > 0.05) {
+      log.warn({
+        orderId,
+        submittedAmount: cardPaymentTotal,
+        expectedCashAmount: remaining,
+        expectedCardAmount: cardValidationRemaining,
+        tier: payments.find(p => ['credit', 'debit'].includes(p.method))?.appliedPricingTier || 'unknown',
+        delta: cardPaymentTotal - cardValidationRemaining,
+        mode: process.env.PAYMENT_HARD_REJECT === 'true' ? 'hard' : 'soft',
+        orderVersion: (order as any).version ?? null,
+        snapshotTs: new Date().toISOString(),
+      }, '[PAYMENT-AUDIT] Card payment amount does not match expected card total')
+
+      if (process.env.PAYMENT_HARD_REJECT === 'true') {
+        return { ok: false, response: NextResponse.json(
+          { error: `Card payment amount ($${cardPaymentTotal.toFixed(2)}) does not match expected card total ($${cardValidationRemaining.toFixed(2)})`, code: 'CARD_AMOUNT_MISMATCH' },
+          { status: 400 }
+        ) }
+      }
+    }
   }
 
   // Validate payment amounts and Datacap field consistency

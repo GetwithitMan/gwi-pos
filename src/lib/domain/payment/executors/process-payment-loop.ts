@@ -125,6 +125,30 @@ export async function processPaymentLoop(
       ? drawerAttribution
       : { drawerId: null, shiftId: null }
 
+    // Validate appliedPricingTier matches payment method
+    const tierMethodValid = (() => {
+      const method = payment.method
+      const tier = (payment as any).appliedPricingTier
+      if (!tier) return true // allow missing (will be defaulted)
+      if (method === 'cash' && tier !== 'cash') return false
+      if (method === 'credit' && tier !== 'credit') return false
+      if (method === 'debit' && !['debit', 'cash'].includes(tier)) return false // PAN-debit allows cash tier
+      if (['gift_card', 'house_account', 'room_charge', 'loyalty', 'loyalty_points'].includes(method) && tier !== 'cash') return false
+      return true
+    })()
+
+    if (!tierMethodValid) {
+      log.warn({
+        orderId,
+        method: payment.method,
+        tier: (payment as any).appliedPricingTier,
+        reason: `Method '${payment.method}' cannot use tier '${(payment as any).appliedPricingTier}'`,
+      }, '[TIER-REJECT] appliedPricingTier does not match payment method')
+      if (process.env.PAYMENT_HARD_REJECT === 'true') {
+        throw new Error(`Payment method '${payment.method}' cannot use pricing tier '${(payment as any).appliedPricingTier}'`)
+      }
+    }
+
     let paymentRecord: PaymentRecord & Record<string, unknown> = {
       locationId: order.locationId,
       orderId,
@@ -199,14 +223,17 @@ export async function processPaymentLoop(
       }
     }
 
-    // Snapshot pricing program config at transaction time (for audit trail)
+    // Snapshot pricing program config at transaction time (Invariant #9: receipts use persisted fields)
     if (pp.enabled && (payment.method === 'credit' || payment.method === 'debit' || payment.method === 'cash')) {
       paymentRecord.pricingProgramSnapshot = {
         model: pp.model,
+        enabled: pp.enabled,
         creditMarkupPercent: pp.creditMarkupPercent,
         debitMarkupPercent: pp.debitMarkupPercent,
         cashDiscountPercent: pp.cashDiscountPercent,
         surchargePercent: pp.surchargePercent,
+        surchargeDisclosure: pp.surchargeDisclosure,
+        cashDiscountDisclosure: pp.cashDiscountDisclosure,
       }
     }
 

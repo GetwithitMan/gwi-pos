@@ -82,6 +82,7 @@ interface BridgedPayment {
   changeGiven?: unknown
   pricingMode?: string
   appliedPricingTier?: string | null // 'cash' | 'debit' | 'credit'
+  pricingProgramSnapshot?: string | Record<string, unknown> | null
 }
 
 /**
@@ -93,7 +94,14 @@ export function buildReceiptData(
   pointsEarned: number,
   settings: Record<string, unknown>,
 ): ReceiptData {
-  const pp: PricingProgram = getPricingProgram(settings as any)
+  // Use historical pricing snapshot from payment time if available (Invariant #9:
+  // receipts render persisted fields, never re-derive from current settings)
+  const snapshotPayment = bridgedPayments.find(p => p.pricingProgramSnapshot)
+  const pp: PricingProgram = snapshotPayment?.pricingProgramSnapshot
+    ? (typeof snapshotPayment.pricingProgramSnapshot === 'string'
+      ? JSON.parse(snapshotPayment.pricingProgramSnapshot)
+      : snapshotPayment.pricingProgramSnapshot) as PricingProgram
+    : getPricingProgram(settings as any)
   const employeeName = order.employee?.displayName ||
     (order.employee ? `${order.employee.firstName} ${order.employee.lastName}` : 'Unknown')
 
