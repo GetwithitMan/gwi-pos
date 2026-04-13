@@ -129,7 +129,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         locationId,
         // W2-K1: Paid orders only shown for 2 hours to prevent KDS clutter
         OR: [
-          { status: { in: ['open', 'in_progress'] } },
+          { status: { in: ['open', 'sent', 'in_progress'] } },
           { status: 'paid', paidAt: { gte: new Date(Date.now() - 2 * 60 * 60 * 1000) } },
         ],
         // Only orders with items (sent to kitchen)
