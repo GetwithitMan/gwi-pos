@@ -451,6 +451,63 @@
         group: root
         mode: "0644"
 
+    # ── Write host-policy.json (expected appliance state for gwi-node) ────
+    - name: Detect display manager
+      ansible.builtin.shell: |
+        if systemctl is-active sddm >/dev/null 2>&1; then echo "sddm"
+        elif systemctl is-active gdm3 >/dev/null 2>&1 || systemctl is-active gdm >/dev/null 2>&1; then echo "gdm"
+        elif systemctl is-active lightdm >/dev/null 2>&1; then echo "lightdm"
+        else echo "unknown"; fi
+      args:
+        executable: /bin/bash
+      register: _detected_dm
+      changed_when: false
+      failed_when: false
+
+    - name: Write host-policy.json
+      ansible.builtin.copy:
+        content: |
+          {
+            "schema_version": 1,
+            "producer": "ansible-site-yml",
+            "applied_at": "{{ ansible_date_time.iso8601 }}",
+            "station_role": "{{ gwi_station_role }}",
+            "desktop_env": "{{ gwi_desktop_env }}",
+            "display_manager": "{{ _detected_dm.stdout | default('unknown') | trim }}",
+            "posuser": "{{ gwi_posuser }}",
+            "policy": {
+              "sleep_targets_masked": ["sleep.target", "suspend.target", "hibernate.target", "hybrid-sleep.target"],
+              "logind_override": "/etc/systemd/logind.conf.d/gwi-pos.conf",
+              "xprofile_dpms_disabled": true,
+              "screen_lock_disabled": true,
+              "autologin_enabled": true,
+              "linger_enabled": true,
+              "kde": {
+                "powerdevil_masked": true,
+                "kscreenlockerrc_managed": true,
+                "powermanagementprofilesrc_managed": true
+              },
+              "gnome": {
+                "idle_delay_zero": true,
+                "lock_enabled_false": true,
+                "dconf_db_managed": true
+              }
+            },
+            "dashboard": {
+              "service_managed": true,
+              "xauthority_path": "/run/user/%U/.Xauthority",
+              "pos_url": "http://localhost:3005"
+            },
+            "kiosk": {
+              "xauthority_path": "/run/user/%U/.Xauthority",
+              "keep_awake_timer": true
+            }
+          }
+        dest: "{{ gwi_state_dir }}/host-policy.json"
+        owner: root
+        group: root
+        mode: "0644"
+
     # ── Capture package versions for artifact manifest ─────────────────────
     - name: Get app commit SHA
       ansible.builtin.command: git -C {{ gwi_app_dir }} rev-parse --short HEAD

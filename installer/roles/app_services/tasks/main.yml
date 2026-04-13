@@ -81,17 +81,13 @@
   notify:
     - reload systemd
 
-- name: Template gwi-converge.timer
-  ansible.builtin.template:
-    src: gwi-converge.timer.j2
-    dest: /etc/systemd/system/gwi-converge.timer
-    owner: root
-    group: root
-    mode: "0644"
+- name: Disable stale gwi-converge.timer (superseded by long-running service)
+  ansible.builtin.systemd:
+    name: gwi-converge.timer
+    enabled: false
+    state: stopped
   when: _is_docker_runtime | bool
-  notify:
-    - reload systemd
-    - restart gwi-converge timer
+  failed_when: false
 
 # ── Flush handlers so daemon-reload runs before enable ───────────────────────
 # meta: flush_handlers always runs (does not support 'when'), but that's fine —
@@ -107,9 +103,9 @@
     state: started
   when: _is_docker_runtime | bool
 
-- name: Enable and start gwi-converge timer
+- name: Enable and start gwi-converge service (long-running convergence loop)
   ansible.builtin.systemd:
-    name: gwi-converge.timer
+    name: gwi-converge
     enabled: true
     state: started
   when: _is_docker_runtime | bool

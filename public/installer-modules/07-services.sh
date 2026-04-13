@@ -1046,7 +1046,7 @@ Type=simple
 User=$POSUSER
 Environment=DISPLAY=:0
 EnvironmentFile=-/opt/gwi-pos/kiosk-display.env
-Environment=XAUTHORITY=$POSUSER_HOME/.Xauthority
+Environment=XAUTHORITY=/run/user/%U/.Xauthority
 Environment=POS_SERVER_URL=$SERVER_URL
 ExecStartPre=-/usr/bin/pkill -u %u -f 'chromium.*kiosk'
 ExecStartPre=/opt/gwi-pos/clear-kiosk-session.sh

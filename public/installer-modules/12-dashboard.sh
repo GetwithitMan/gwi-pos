@@ -241,38 +241,8 @@ run_dashboard() {
   # Set up systemd user service (sole autostart mechanism)
   # ─────────────────────────────────────────────────────────────────────────
   if [[ -n "$DASHBOARD_EXEC" ]]; then
-    local SYSTEMD_USER_DIR
-    SYSTEMD_USER_DIR=$(eval echo "~${POSUSER}/.config/systemd/user")
-    mkdir -p "$SYSTEMD_USER_DIR"
-    chown -R "${POSUSER}:${POSUSER}" "$(eval echo "~${POSUSER}/.config")"
-
-    cat > "${SYSTEMD_USER_DIR}/gwi-dashboard.service" << SVCEOF
-[Unit]
-Description=GWI NUC Dashboard
-After=graphical-session.target
-StartLimitBurst=5
-StartLimitIntervalSec=120
-
-[Service]
-ExecStart=${DASHBOARD_EXEC}
-Restart=on-failure
-RestartSec=5
-Environment=DISPLAY=:0
-Environment=XAUTHORITY=/run/user/%U/.Xauthority
-Environment=XDG_RUNTIME_DIR=/run/user/%U
-Environment=GWI_POS_URL=http://localhost:3005
-
-[Install]
-WantedBy=default.target
-SVCEOF
-    chown "${POSUSER}:${POSUSER}" "${SYSTEMD_USER_DIR}/gwi-dashboard.service"
-
-    # Enable the user service (requires loginctl enable-linger for boot-time start)
-    loginctl enable-linger "${POSUSER}" 2>/dev/null || true
-    sudo -u "${POSUSER}" bash -c "XDG_RUNTIME_DIR=/run/user/\$(id -u) systemctl --user daemon-reload && systemctl --user enable gwi-dashboard.service && systemctl --user start gwi-dashboard.service" 2>/dev/null || {
-      track_warn "Could not enable/start systemd user service for dashboard"
-    }
-    log "Systemd user service created at ${SYSTEMD_USER_DIR}/gwi-dashboard.service (Restart=on-failure, RestartSec=5, burst=5/120s)"
+    _write_dashboard_service "$DASHBOARD_EXEC"
+    log "Systemd user service created (Restart=on-failure, RestartSec=5, burst=5/120s)"
   fi
 
   # Remove stale XDG autostart entry if it exists from a previous install
@@ -355,34 +325,8 @@ _ensure_dashboard_autostart() {
   DASHBOARD_EXEC=$(command -v gwi-dashboard 2>/dev/null || command -v gwi-nuc-dashboard 2>/dev/null || true)
 
   # Systemd user service
-  local SYSTEMD_USER_DIR
-  SYSTEMD_USER_DIR=$(eval echo "~${POSUSER}/.config/systemd/user")
   if [[ -n "$DASHBOARD_EXEC" ]]; then
-    mkdir -p "$SYSTEMD_USER_DIR"
-    chown -R "${POSUSER}:${POSUSER}" "$(eval echo "~${POSUSER}/.config")"
-    cat > "${SYSTEMD_USER_DIR}/gwi-dashboard.service" << SVCEOF
-[Unit]
-Description=GWI NUC Dashboard
-After=graphical-session.target
-StartLimitBurst=5
-StartLimitIntervalSec=120
-
-[Service]
-ExecStart=${DASHBOARD_EXEC}
-Restart=on-failure
-RestartSec=5
-Environment=DISPLAY=:0
-Environment=XAUTHORITY=/run/user/%U/.Xauthority
-Environment=XDG_RUNTIME_DIR=/run/user/%U
-Environment=GWI_POS_URL=http://localhost:3005
-
-[Install]
-WantedBy=default.target
-SVCEOF
-    chown "${POSUSER}:${POSUSER}" "${SYSTEMD_USER_DIR}/gwi-dashboard.service"
-    loginctl enable-linger "${POSUSER}" 2>/dev/null || true
-    # Always enable (idempotent) -- ensures service starts on boot even after fresh OS install
-    sudo -u "${POSUSER}" bash -c "XDG_RUNTIME_DIR=/run/user/\$(id -u) systemctl --user daemon-reload && systemctl --user enable gwi-dashboard.service && systemctl --user start gwi-dashboard.service" 2>/dev/null || true
+    _write_dashboard_service "$DASHBOARD_EXEC"
     log "Dashboard autostart configured and started"
   fi
 
@@ -404,4 +348,41 @@ SUDOERS
     chmod 440 "$SUDOERS_FILE"
     log "Dashboard sudoers rules installed"
   fi
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# _write_dashboard_service — Single source of truth for the dashboard systemd
+# user service unit. Called by both run_dashboard() and _ensure_dashboard_autostart().
+# Matches gwi-node.sh _reconcile_dashboard_service() template exactly.
+# ─────────────────────────────────────────────────────────────────────────────
+_write_dashboard_service() {
+  local _dash_bin="$1"
+  local _svc_dir
+  _svc_dir=$(eval echo "~${POSUSER}/.config/systemd/user")
+  mkdir -p "$_svc_dir"
+  chown -R "${POSUSER}:${POSUSER}" "$(eval echo "~${POSUSER}/.config")" 2>/dev/null || true
+
+  cat > "${_svc_dir}/gwi-dashboard.service" <<SVCEOF
+[Unit]
+Description=GWI NUC Dashboard
+After=graphical-session.target
+StartLimitBurst=5
+StartLimitIntervalSec=120
+
+[Service]
+ExecStart=${_dash_bin}
+Restart=on-failure
+RestartSec=5
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/run/user/%U/.Xauthority
+Environment=XDG_RUNTIME_DIR=/run/user/%U
+Environment=GWI_POS_URL=http://localhost:3005
+
+[Install]
+WantedBy=default.target
+SVCEOF
+  chown "${POSUSER}:${POSUSER}" "${_svc_dir}/gwi-dashboard.service"
+  loginctl enable-linger "${POSUSER}" 2>/dev/null || true
+  sudo -u "${POSUSER}" bash -c \
+    "XDG_RUNTIME_DIR=/run/user/\$(id -u) systemctl --user daemon-reload && systemctl --user enable gwi-dashboard.service && systemctl --user start gwi-dashboard.service" 2>/dev/null || true
 }

@@ -1,15 +1,16 @@
 [Unit]
-Description=GWI Baseline Convergence Check
-After=network.target gwi-node.service
-Wants=gwi-node.service
+Description=GWI POS Venue Convergence Agent
+After=docker.service
+Requires=docker.service
 
 [Service]
-Type=oneshot
-ExecStart=/usr/bin/ansible-playbook {{ gwi_installer_dir | default('/opt/gwi-pos/installer') }}/site.yml --extra-vars "gwi_posuser={{ gwi_posuser | default('gwipos') }} gwi_station_role={{ gwi_station_role | default('server') }}" --tags required
-TimeoutStartSec=600
-Environment=ANSIBLE_STDOUT_CALLBACK=json
+Type=simple
+ExecStart={{ gwi_base_dir | default('/opt/gwi-pos') }}/gwi-node.sh converge-loop 300
+Restart=always
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=gwi-converge
 
-# Systemd hardening
-NoNewPrivileges=true
-PrivateTmp=true
-ProtectHome=true
+[Install]
+WantedBy=multi-user.target
