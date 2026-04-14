@@ -219,6 +219,15 @@ These items were discovered by auditing system outputs backwards (socket events,
 #### ~~P2-P04 — Tip Adjustment Report (T-022)~~ ✅ RESOLVED
 **Status:** ✅ RESOLVED — /reports/tip-adjustments page built + /api/payments/tip-eligible endpoint. Date filters, editable tip column, CSV export. Commit f51f2a6.
 
+#### P2-P05 — Reopen → Void Payment → Repay on Register
+**Status:** 🔲 PLANNED — Register can reopen closed orders (tap in Closed tab → "Tab reopened"), but has no UI to void existing payments and take new payment. Server APIs exist (`/api/orders/[id]/void-payment/`, Datacap void/refund), but the Android register doesn't expose this flow. Discovered during ADB canary testing 2026-04-14.
+**Required:**
+1. Reopened order shows existing payments with per-payment Void action
+2. Manager PIN approval for void (already built)
+3. Datacap reversal for card payments (server-side already built)
+4. After void, order reverts to open with full remaining balance → normal pay flow
+**Why:** Operators need to correct wrong payments (wrong amount, wrong method, wrong order) without involving the server admin panel.
+
 ---
 
 ### REPORTS
