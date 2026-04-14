@@ -1,7 +1,14 @@
 /**
  * Loyalty Points Payment Processing
  *
- * Handles points validation, balance check, and deduction.
+ * RESERVED / DEPRECATED (2026-04-14): Loyalty is now discount-only, not a tender.
+ * Points redemption reduces the payable amount via RewardRedemptionBenefit in the
+ * checkout engine. Payment still uses cash/card/gift_card/house_account.
+ *
+ * This file is preserved for backward compatibility — no new callers may be added.
+ * If a future product decision requires points-as-tender, re-evaluate before using.
+ *
+ * Original: Handles points validation, balance check, and deduction.
  */
 
 import { Prisma } from '@/generated/prisma/client'
