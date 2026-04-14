@@ -155,6 +155,29 @@ Rules discovered via penetration testing:
 
 ---
 
+## Pricing Tier & Customer Rules
+
+### Pricing Tier Determination
+- **Payment method determines pricing tier** — cash/gift_card/house_account/room_charge → `'cash'` tier. credit/debit → `'credit'`/`'debit'` tier.
+- **Customer tier does NOT change pricing tier.** A VIP customer paying by card still gets the card price. Customer tier affects discounts/benefits and loyalty accrual multiplier, not the dual-pricing surcharge/discount program.
+- This is intentional — tier → discount/reward benefits, payment method → pricing tier.
+
+### Loyalty: Discount Only, Not a Tender
+- Loyalty points are a **discount/redemption mechanism**, not a payment method.
+- Redeeming points reduces the payable amount via `RewardRedemptionBenefit` in the checkout engine.
+- The final payment still uses cash, card, gift_card, or house_account.
+- `processLoyaltyPayment()` on the server is **reserved/deprecated** — no new callers.
+- `TenderType.POINTS` is reserved in the engine but not offered as a payment method.
+- Receipts show points redeemed + dollar value as a discount line.
+- Reports track redemptions separately from tender totals.
+
+### Non-Card Tender Close Threshold
+- House account and gift card payments use the `'cash'` pricing tier for order close threshold.
+- Close tolerance: `max($0.01, priceRounding.increment / 2)` — same as cash.
+- This is correct: non-card tenders are cash-tier by design.
+
+---
+
 ## Key Files
 
 | File | Purpose |

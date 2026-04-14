@@ -320,9 +320,17 @@ export function buildCustomerReceipt(
       const label =
         pmt.method === 'cash'
           ? 'Cash'
-          : pmt.cardBrand
-            ? `${pmt.cardBrand} ****${pmt.cardLast4 || '????'}${entryLabel}`
-            : `Card ****${pmt.cardLast4 || '????'}${entryLabel}`
+          : pmt.method === 'house_account'
+            ? `House Acct${pmt.authCode ? ': ' + pmt.authCode : ''}`
+            : pmt.method === 'gift_card'
+              ? `Gift Card ****${pmt.cardLast4 || '????'}`
+              : pmt.method === 'loyalty_points'
+                ? 'Loyalty Points'
+                : pmt.method === 'room_charge'
+                  ? `Room Charge${pmt.authCode ? ' ' + pmt.authCode : ''}`
+                  : pmt.cardBrand
+                    ? `${pmt.cardBrand} ****${pmt.cardLast4 || '????'}${entryLabel}`
+                    : `Card ****${pmt.cardLast4 || '????'}${entryLabel}`
       content.push(twoColumnLine(label, `$${pmt.totalAmount.toFixed(2)}`, width))
 
       if (pmt.method !== 'cash' && pmt.authCode) {
