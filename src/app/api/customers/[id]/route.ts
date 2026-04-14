@@ -67,6 +67,24 @@ export const GET = withVenue(async function GET(
             },
           },
         },
+        loyaltyTier: {
+          select: {
+            id: true,
+            name: true,
+            pointsMultiplier: true,
+            perks: true,
+            color: true,
+          },
+        },
+        loyaltyProgram: {
+          select: {
+            id: true,
+            name: true,
+            pointsPerDollar: true,
+            pointValueCents: true,
+            minimumRedeemPoints: true,
+          },
+        },
       },
     })
 
@@ -234,6 +252,67 @@ export const GET = withVenue(async function GET(
         firstSeenAt: cp.firstSeenAt.toISOString(),
         lastSeenAt: cp.lastSeenAt.toISOString(),
       })),
+      // Loyalty tier info for checkout engine (1B2)
+      loyaltyTierInfo: customer.loyaltyTier ? (() => {
+        const tier = customer.loyaltyTier!
+        const program = customer.loyaltyProgram
+        const perks = (tier.perks as Record<string, unknown>) || {}
+        const multiplier = Number(tier.pointsMultiplier)
+
+        // Build earn rate description
+        const baseRate = program?.pointsPerDollar ?? 1
+        const earnRate = baseRate * multiplier
+        const earnRateDescription = multiplier > 1
+          ? `${earnRate}x points per dollar (${tier.name} tier)`
+          : `${baseRate} point${baseRate !== 1 ? 's' : ''} per dollar`
+
+        // Parse perks into structured redemptions
+        const availableRedemptions: Array<{
+          id: string; label: string; description: string;
+          pointsCost: number | null; valueCents: number; type: string;
+        }> = []
+
+        // Tier discount perk → redemption option
+        const discountPercent = Number(perks.discountPercent || 0)
+        if (discountPercent > 0) {
+          availableRedemptions.push({
+            id: `tier-discount-${tier.id}`,
+            label: `${tier.name} ${discountPercent}% Off`,
+            description: `${discountPercent}% off as a ${tier.name} member`,
+            pointsCost: null, // Free with tier
+            valueCents: discountPercent * 100, // Percentage encoded as basis points
+            type: 'PERCENTAGE_OFF',
+          })
+        }
+
+        // Points redemption if program supports it
+        if (program && program.pointValueCents > 0 && customer.loyaltyPoints >= (program.minimumRedeemPoints || 0)) {
+          const redeemableValue = Math.floor(customer.loyaltyPoints / (program.pointValueCents > 0 ? (100 / program.pointValueCents) : 100))
+          if (redeemableValue > 0) {
+            availableRedemptions.push({
+              id: `points-redeem-${customer.id}`,
+              label: `Redeem ${customer.loyaltyPoints} Points`,
+              description: `$${(redeemableValue / 100).toFixed(2)} off`,
+              pointsCost: customer.loyaltyPoints,
+              valueCents: redeemableValue,
+              type: 'DOLLARS_OFF',
+            })
+          }
+        }
+
+        return {
+          tierId: tier.id,
+          tierName: tier.name,
+          tierColor: tier.color,
+          pointsMultiplier: multiplier,
+          earnRateDescription,
+          autoDiscountRule: discountPercent > 0 ? {
+            discountPercent,
+            label: `${tier.name} ${discountPercent}% Discount`,
+          } : null,
+          availableRedemptions,
+        }
+      })() : null,
       memberships: memberships.map((m: any) => ({
         id: m.id,
         status: m.status,
