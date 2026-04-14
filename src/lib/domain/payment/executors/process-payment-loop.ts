@@ -241,7 +241,7 @@ export async function processPaymentLoop(
       paymentRecord = processCashPayment(
         payment as PaymentInput, paymentRecord as PaymentRecord,
         remaining, alreadyPaidInLoop, settings, pp.enabled ? pp : undefined,
-        orderId, toNumber(order.total ?? 0),
+        orderId, orderTotal,
       ) as typeof paymentRecord
     } else if (payment.method === 'credit' || payment.method === 'debit') {
       paymentRecord = processCardPayment(

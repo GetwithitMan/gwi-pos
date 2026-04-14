@@ -43,6 +43,7 @@ const log = createChildLogger('payment-financial-context')
 export interface PaymentFinancialContext {
   alreadyPaid: number
   remaining: number
+  orderTotal: number
   validationRemaining: number
   paymentBaseTotal: number
   totalDriftWarning: { capturedTotal: number; currentTotal: number; drift: number } | null
@@ -247,21 +248,30 @@ export async function buildPaymentFinancialContext(
     const rawTotal = toNumber(order.total ?? 0)  // subtotal - discounts (cash basis)
     const storedTax = toNumber(order.taxTotal ?? 0)
 
-    // If tax is already stored on the order, use it (entertainment settlement or
-    // orders where tax was pre-computed at send time)
+    // Step 1: Compute tax-inclusive amount
+    let taxInclusiveTotal = rawTotal
     if (storedTax > 0) {
-      return roundToCents(rawTotal + storedTax)
+      // Tax already stored on the order (entertainment settlement or pre-computed)
+      taxInclusiveTotal = roundToCents(rawTotal + storedTax)
+    } else {
+      // Compute tax from venue settings (same as register engine)
+      const taxSettings = settings.tax
+      const taxRate = taxSettings?.defaultRate ?? 0  // percentage, e.g. 10.0
+      if (taxRate > 0) {
+        const computedTax = roundToCents(rawTotal * taxRate / 100)
+        taxInclusiveTotal = roundToCents(rawTotal + computedTax)
+      }
     }
 
-    // Otherwise compute tax from venue settings (same as register engine)
-    const taxSettings = settings.tax
-    const taxRate = taxSettings?.defaultRate ?? 0  // percentage, e.g. 8.0
-    if (taxRate > 0) {
-      const computedTax = roundToCents(rawTotal * taxRate / 100)
-      return roundToCents(rawTotal + computedTax)
+    // Step 2: Apply cash rounding (mirrors register checkout engine)
+    // The register rounds the tax-inclusive total before submitting. The server must
+    // compute the same rounded amount or validation will reject for mismatch.
+    const isAllocChild = order.parentOrderId && (order as any).splitClass === 'allocation'
+    if (!isAllocChild && settings.priceRounding?.enabled && settings.priceRounding.applyToCash) {
+      return applyPriceRounding(taxInclusiveTotal, settings.priceRounding, 'cash')
     }
 
-    return rawTotal
+    return taxInclusiveTotal
   })()
 
   const remaining = roundToCents(splitPayRemainingOverride != null
@@ -525,6 +535,7 @@ export async function buildPaymentFinancialContext(
     ctx: {
       alreadyPaid,
       remaining,
+      orderTotal,
       validationRemaining,
       paymentBaseTotal,
       totalDriftWarning,

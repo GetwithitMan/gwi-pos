@@ -161,30 +161,30 @@ export const ORDER_INVENTORY_INCLUDE = {
       },
       modifiers: {
         include: {
-          // Spirit substitution: which bottle was actually used for upgrades
-          linkedBottleProduct: {
-            select: {
-              id: true,
-              spiritCategoryId: true,
-              pourSizeOz: true,
-              inventoryItem: {
-                select: {
-                  id: true,
-                  name: true,
-                  category: true,
-                  department: true,
-                  storageUnit: true,
-                  costPerUnit: true,
-                  yieldCostPerUnit: true,
-                  currentStock: true,
-                },
-              },
-            },
-          },
           modifier: {
             select: {
               liteMultiplier: true,
               extraMultiplier: true,
+              // Spirit substitution: which bottle was actually used for upgrades
+              linkedBottleProduct: {
+                select: {
+                  id: true,
+                  spiritCategoryId: true,
+                  pourSizeOz: true,
+                  inventoryItem: {
+                    select: {
+                      id: true,
+                      name: true,
+                      category: true,
+                      department: true,
+                      storageUnit: true,
+                      costPerUnit: true,
+                      yieldCostPerUnit: true,
+                      currentStock: true,
+                    },
+                  },
+                },
+              },
               inventoryLink: {
                 include: {
                   inventoryItem: {
