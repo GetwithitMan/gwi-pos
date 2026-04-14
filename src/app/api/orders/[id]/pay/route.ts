@@ -740,6 +740,7 @@ export const POST = withVenue(withTiming(async function POST(
     const {
       alreadyPaid,
       remaining,
+      orderTotal,
       paymentBaseTotal,
       totalDriftWarning,
       autoGratApplied,
@@ -750,10 +751,6 @@ export const POST = withVenue(withTiming(async function POST(
     // Use the (potentially auto-grat-mutated) payments from the context builder
     // Reassign to the mutable binding so the payment loop sees the updated tipAmounts
     payments.splice(0, payments.length, ...resolvedPayments)
-
-    const orderTotal = splitPayRemainingOverride != null
-      ? splitPayRemainingOverride
-      : toNumber(order.total ?? 0)
 
     // Training mode: if order is a training order and suppressPayments is enabled,
     // create simulated payment records without hitting Datacap or deducting real balances.
