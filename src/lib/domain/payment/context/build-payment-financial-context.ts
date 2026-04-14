@@ -233,9 +233,37 @@ export async function buildPaymentFinancialContext(
     .filter((p: any) => p.status === 'completed')
     .reduce((sum: number, p: any) => sum + toNumber(p.amount), 0))
 
-  const orderTotal = splitPayRemainingOverride != null
-    ? splitPayRemainingOverride
-    : toNumber(order.total ?? 0)
+  // ── Compute authoritative payable amount from venue pricing program ──────
+  // order.total is the cash subtotal (items - discounts). It does NOT include tax,
+  // surcharge, or rounding. The register's checkout engine computes the full payable
+  // amount from the pricing program. The server must compute the SAME amount or
+  // payments will be rejected for mismatch.
+  //
+  // For split children with splitPayRemainingOverride, the family balance is already
+  // the authoritative amount and should not be recomputed.
+  const orderTotal = (() => {
+    if (splitPayRemainingOverride != null) return splitPayRemainingOverride
+
+    const rawTotal = toNumber(order.total ?? 0)  // subtotal - discounts (cash basis)
+    const storedTax = toNumber(order.taxTotal ?? 0)
+
+    // If tax is already stored on the order, use it (entertainment settlement or
+    // orders where tax was pre-computed at send time)
+    if (storedTax > 0) {
+      return roundToCents(rawTotal + storedTax)
+    }
+
+    // Otherwise compute tax from venue settings (same as register engine)
+    const taxSettings = settings.tax
+    const taxRate = taxSettings?.defaultRate ?? 0  // percentage, e.g. 8.0
+    if (taxRate > 0) {
+      const computedTax = roundToCents(rawTotal * taxRate / 100)
+      return roundToCents(rawTotal + computedTax)
+    }
+
+    return rawTotal
+  })()
+
   const remaining = roundToCents(splitPayRemainingOverride != null
     ? splitPayRemainingOverride  // Family balance already accounts for all paid amounts
     : orderTotal - alreadyPaid)

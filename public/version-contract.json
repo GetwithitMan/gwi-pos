@@ -10,9 +10,9 @@
   "syncAgentVersion": "2.0.58",
   "monitoringVersion": "2.0.58",
   "ansibleBaselineVersion": "2026.03.20.1",
-  "buildDate": "2026-04-13T19:14:42.547Z",
-  "gitSha": "e7d397e3",
-  "generatedAt": "2026-04-13T19:14:42.547Z",
+  "buildDate": "2026-04-14T13:48:46.290Z",
+  "gitSha": "7b759a63",
+  "generatedAt": "2026-04-14T13:48:46.290Z",
   "components": {
     "pos": {
       "version": "2.0.58",
