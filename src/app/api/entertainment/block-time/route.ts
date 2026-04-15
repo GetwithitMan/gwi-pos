@@ -704,8 +704,10 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
     void notifyDataChanged({ locationId, domain: 'events', action: 'updated', entityId: orderItemId })
     void pushUpstream()
 
-    // Fire-and-forget: recalculate full order totals (subtotal, tax, total)
-    void recalculateOrderAfterPriceChange(orderItem.orderId, orderItem.order.locationId)
+    // MUST await: recalculate full order totals (subtotal, tax, total) before
+    // returning — payment may follow immediately after stop, and needs the
+    // updated order.total in the DB for validation.
+    await recalculateOrderAfterPriceChange(orderItem.orderId, orderItem.order.locationId)
 
     // Determine event type based on reason
     const eventType = (reason === 'void' || reason === 'comp') ? 'COMP_VOID_APPLIED' as const : 'ITEM_UPDATED' as const
