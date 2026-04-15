@@ -175,6 +175,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         linkedMenuItemId: true, sectionId: true,
         posX: true, posY: true, width: true, height: true, rotation: true,
         fillColor: true, opacity: true, status: true, currentOrderId: true,
+        sessionStartedAt: true, sessionExpiresAt: true,
       },
     }),
     db.cfdSettings.findFirst({ where: { locationId, deletedAt: null } }),
