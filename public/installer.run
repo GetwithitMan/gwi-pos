@@ -44,7 +44,7 @@ INSTALLER_BUILD_DATE="2026-04-15T20:11:37Z"
 # commit). The build-installer-bundle.sh script and CI check-version-stamps.sh
 # both understand this convention. This is an accepted limitation — the SHA is
 # informational only and not used for integrity verification (Cosign handles that).
-INSTALLER_GIT_SHA="41542283"
+INSTALLER_GIT_SHA="__INSTALLER_GIT_SHA__"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # SELF-UPDATE -- ALWAYS download latest installer before doing ANYTHING
