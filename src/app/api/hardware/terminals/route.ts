@@ -1,3 +1,4 @@
+import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { TerminalCategory } from '@/generated/prisma/client'
@@ -138,9 +139,13 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       return err('locationId is required')
     }
 
+    const isCFD = category === 'CFD_DISPLAY'
+
     // Device count limit check (subscription-gated)
     const { checkDeviceLimit } = await import('@/lib/device-limits')
-    const deviceType = category === 'HANDHELD' ? 'handheld' as const : 'terminal' as const
+    const deviceType = isCFD
+      ? 'cfd' as const
+      : category === 'HANDHELD' ? 'handheld' as const : 'terminal' as const
     const limitCheck = await checkDeviceLimit(locationId, deviceType)
     if (!limitCheck.allowed) {
       return NextResponse.json(
@@ -160,8 +165,8 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     }
 
     // Validate category
-    if (!['FIXED_STATION', 'HANDHELD'].includes(category)) {
-      return err('Category must be FIXED_STATION or HANDHELD')
+    if (!['FIXED_STATION', 'HANDHELD', 'CFD_DISPLAY'].includes(category)) {
+      return err('Category must be FIXED_STATION, HANDHELD, or CFD_DISPLAY')
     }
 
     // Validate platform
@@ -169,55 +174,57 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       return err('Platform must be BROWSER, ANDROID, or IOS')
     }
 
-    // Validate IP address format if provided
-    if (staticIp) {
-      if (!isValidIPv4(staticIp)) {
-        return err('Invalid IP address format')
-      }
-    }
-
-    // Validate printers belong to the same location
-    const printerChecks: { id: string; label: string; requiredRole?: string }[] = []
-    if (receiptPrinterId) printerChecks.push({ id: receiptPrinterId, label: 'Receipt printer', requiredRole: 'receipt' })
-    if (kitchenPrinterId) printerChecks.push({ id: kitchenPrinterId, label: 'Kitchen printer', requiredRole: 'kitchen' })
-    if (barPrinterId) printerChecks.push({ id: barPrinterId, label: 'Bar printer', requiredRole: 'bar' })
-
-    if (printerChecks.length > 0) {
-      const printerIds = printerChecks.map((p) => p.id)
-      const printers = await db.printer.findMany({
-        where: { id: { in: printerIds } },
-        select: { id: true, locationId: true, printerRole: true },
-      })
-
-      for (const check of printerChecks) {
-        const printer = printers.find((p) => p.id === check.id)
-        if (!printer) {
-          return err(`${check.label} not found`)
-        }
-        if (printer.locationId !== locationId) {
-          return forbidden(`${check.label} belongs to a different location`)
-        }
-        if (check.requiredRole && printer.printerRole !== check.requiredRole) {
-          return err(`${check.label} must have ${check.requiredRole} role`)
+    if (!isCFD) {
+      // Validate IP address format if provided
+      if (staticIp) {
+        if (!isValidIPv4(staticIp)) {
+          return err('Invalid IP address format')
         }
       }
-    }
 
-    // Validate scale if provided (skip if table doesn't exist)
-    const cleanScaleId = scaleId || null
-    if (cleanScaleId) {
-      try {
-        const scale = await db.scale.findFirst({
-          where: { id: cleanScaleId, deletedAt: null },
+      // Validate printers belong to the same location
+      const printerChecks: { id: string; label: string; requiredRole?: string }[] = []
+      if (receiptPrinterId) printerChecks.push({ id: receiptPrinterId, label: 'Receipt printer', requiredRole: 'receipt' })
+      if (kitchenPrinterId) printerChecks.push({ id: kitchenPrinterId, label: 'Kitchen printer', requiredRole: 'kitchen' })
+      if (barPrinterId) printerChecks.push({ id: barPrinterId, label: 'Bar printer', requiredRole: 'bar' })
+
+      if (printerChecks.length > 0) {
+        const printerIds = printerChecks.map((p) => p.id)
+        const printers = await db.printer.findMany({
+          where: { id: { in: printerIds } },
+          select: { id: true, locationId: true, printerRole: true },
         })
-        if (!scale) {
-          return err('Scale not found')
+
+        for (const check of printerChecks) {
+          const printer = printers.find((p) => p.id === check.id)
+          if (!printer) {
+            return err(`${check.label} not found`)
+          }
+          if (printer.locationId !== locationId) {
+            return forbidden(`${check.label} belongs to a different location`)
+          }
+          if (check.requiredRole && printer.printerRole !== check.requiredRole) {
+            return err(`${check.label} must have ${check.requiredRole} role`)
+          }
         }
-        if (scale.locationId !== locationId) {
-          return forbidden('Scale belongs to a different location')
+      }
+
+      // Validate scale if provided (skip if table doesn't exist)
+      const cleanScaleId = scaleId || null
+      if (cleanScaleId) {
+        try {
+          const scale = await db.scale.findFirst({
+            where: { id: cleanScaleId, deletedAt: null },
+          })
+          if (!scale) {
+            return err('Scale not found')
+          }
+          if (scale.locationId !== locationId) {
+            return forbidden('Scale belongs to a different location')
+          }
+        } catch {
+          // Scale table doesn't exist on un-migrated DB — ignore scaleId
         }
-      } catch {
-        // Scale table doesn't exist on un-migrated DB — ignore scaleId
       }
     }
 
@@ -230,6 +237,11 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       return err('A terminal with this name already exists at this location', 409)
     }
 
+    const cfdData = isCFD ? {
+      deviceToken: crypto.randomBytes(32).toString('hex'),
+      isPaired: true,
+    } : {}
+
     let terminal
     try {
       terminal = await db.terminal.create({
@@ -239,12 +251,13 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
           category,
           platform,
           staticIp: staticIp || null,
-          receiptPrinterId: receiptPrinterId || null,
-          kitchenPrinterId: kitchenPrinterId || null,
-          barPrinterId: barPrinterId || null,
+          receiptPrinterId: isCFD ? null : (receiptPrinterId || null),
+          kitchenPrinterId: isCFD ? null : (kitchenPrinterId || null),
+          barPrinterId: isCFD ? null : (barPrinterId || null),
           roleSkipRules: roleSkipRules || {},
-          scaleId: cleanScaleId,
+          scaleId: isCFD ? null : (scaleId || null),
           lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
+          ...cfdData,
         },
         include: {
           receiptPrinter: {
@@ -290,11 +303,12 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
           category,
           platform,
           staticIp: staticIp || null,
-          receiptPrinterId: receiptPrinterId || null,
-          kitchenPrinterId: kitchenPrinterId || null,
-          barPrinterId: barPrinterId || null,
+          receiptPrinterId: isCFD ? null : (receiptPrinterId || null),
+          kitchenPrinterId: isCFD ? null : (kitchenPrinterId || null),
+          barPrinterId: isCFD ? null : (barPrinterId || null),
           roleSkipRules: roleSkipRules || {},
           lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
+          ...cfdData,
         },
         include: {
           receiptPrinter: {
