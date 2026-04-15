@@ -242,11 +242,19 @@ export async function buildPaymentFinancialContext(
   //
   // For split children with splitPayRemainingOverride, the family balance is already
   // the authoritative amount and should not be recomputed.
+  // Re-read order total from DB to capture any recent entertainment settlement
+  // (stop session recalculates item price + order.total, but the order object passed
+  // to this function may be stale if stop and pay happen in quick succession)
+  const freshOrderTotals = await tx.order.findUnique({
+    where: { id: orderId },
+    select: { total: true, taxTotal: true }
+  })
+
   const orderTotal = (() => {
     if (splitPayRemainingOverride != null) return splitPayRemainingOverride
 
-    const rawTotal = toNumber(order.total ?? 0)  // subtotal - discounts (cash basis)
-    const storedTax = toNumber(order.taxTotal ?? 0)
+    const rawTotal = toNumber(freshOrderTotals?.total ?? order.total ?? 0)
+    const storedTax = toNumber(freshOrderTotals?.taxTotal ?? order.taxTotal ?? 0)
 
     // Step 1: Compute tax-inclusive amount
     let taxInclusiveTotal = rawTotal
