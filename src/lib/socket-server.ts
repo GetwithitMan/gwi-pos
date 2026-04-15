@@ -1119,14 +1119,21 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
     // Register → CFD: relay payment flow events to the paired CFD display.
     // These events come FROM the register (Android app) and must reach the A3700 terminal.
     const CFD_REGISTER_TO_CFD_EVENTS = [
+      'cfd:show-order',
+      'cfd:show-order-detail',
+      'cfd:order-updated',
       'cfd:payment-started',
       'cfd:tip-prompt',
+      'cfd:signature-request',
       'cfd:processing',
       'cfd:approved',
       'cfd:declined',
       'cfd:idle',
+      'cfd:receipt-sent',
       'cfd:charge-card',
       'cfd:cancel-charge',
+      'cfd:customer-recognized',
+      'cfd:settings-updated',
     ]
     for (const cfdEvent of CFD_REGISTER_TO_CFD_EVENTS) {
       socket.on(cfdEvent, (data: unknown) => {
