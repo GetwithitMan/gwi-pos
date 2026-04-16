@@ -386,6 +386,12 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
       return notFound('Terminal not found')
     }
 
+    // C8: If this is a CFD being deleted, unpair any registers pointing to it
+    await (db.terminal.updateMany as any)({
+      where: { cfdTerminalId: id, deletedAt: null },
+      data: { cfdTerminalId: null, cfdIpAddress: null, cfdConnectionMode: null, lastMutatedBy: 'local' },
+    })
+
     // Soft delete — clear all device-claiming fields so hardware can re-pair
     await db.terminal.update({
       where: { id },
