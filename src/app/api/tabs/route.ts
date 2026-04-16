@@ -67,6 +67,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         employee: {
           select: { id: true, displayName: true, firstName: true, lastName: true },
         },
+        // TODO(combo-phase5): tabs list response projects narrow item fields only
+        // (no comboSelections consumed here). If tab cards start showing combo
+        // details, switch to ORDER_ITEM_FULL_INCLUDE + mapOrderItemForWire.
         items: {
           where: { deletedAt: null },
           include: {

@@ -7,6 +7,17 @@
  * the `include`/`select` used in each query. The output shapes are well-typed.
  */
 
+/** Mapped combo selection shape (Combo Pick N of M). */
+export interface MappedComboSelection {
+  id: string
+  comboComponentId: string | null
+  comboComponentOptionId: string | null
+  menuItemId: string
+  optionName: string
+  upchargeApplied: number
+  sortIndex: number
+}
+
 /** Mapped order item shape returned by the API */
 export interface MappedOrderItem {
   id: string
@@ -61,6 +72,8 @@ export interface MappedOrderItem {
   pourMultiplier: number | null
   // Tip-exempt — excluded from tip suggestion basis
   tipExempt: boolean
+  // Combo Pick N of M — customer-pick snapshots (empty array when none).
+  comboSelections: MappedComboSelection[]
   // Price correction tracking (when server enforces catalog price over client price)
   priceCorrected?: boolean
   originalClientPrice?: number
@@ -243,6 +256,18 @@ export function mapOrderItemForResponse(item: any, correlationId?: string): Mapp
     pourSize: item.pourSize || null,
     pourMultiplier: item.pourMultiplier ? Number(item.pourMultiplier) : null,
     tipExempt: item.tipExempt ?? false,
+    // Combo Pick N of M — pass-through when hydrated via ORDER_ITEM_FULL_INCLUDE.
+    comboSelections: Array.isArray(item.comboSelections)
+      ? item.comboSelections.map((sel: Record<string, unknown>) => ({
+          id: String(sel.id),
+          comboComponentId: (sel.comboComponentId as string | null) ?? null,
+          comboComponentOptionId: (sel.comboComponentOptionId as string | null) ?? null,
+          menuItemId: String(sel.menuItemId),
+          optionName: String(sel.optionName ?? ''),
+          upchargeApplied: Number(sel.upchargeApplied ?? 0),
+          sortIndex: Number(sel.sortIndex ?? 0),
+        }))
+      : [],
     createdAt: item.createdAt,
   }
 }

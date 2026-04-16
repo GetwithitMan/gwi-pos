@@ -83,4 +83,21 @@ export {
   validateRequiredModifierGroups,
 } from './item-operations'
 
-export type { CreateOrderItemParams, ComboValidationError, RequiredModifierError } from './item-operations'
+export type { CreateOrderItemParams, RequiredModifierError } from './item-operations'
+export type { ComboValidationError as LegacyComboValidationError } from './item-operations'
+
+// ─── Combo Pick N of M (Phase 5) ───────────────────────────────────────────
+
+export {
+  ORDER_ITEM_FULL_INCLUDE,
+  mapOrderItemForWire,
+  validateAndBuildComboSelections,
+  ComboValidationError,
+} from './combo-selections'
+export type {
+  ComboSelectionInput,
+  ValidateAndBuildArgs,
+  ValidateAndBuildResult,
+  WireComboSelection,
+  WireOrderItemExtras,
+} from './combo-selections'

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { dispatchOpenOrdersChanged, dispatchItemStatus } from '@/lib/socket-dispatch'
+import { dispatchOpenOrdersChanged, dispatchItemStatus, dispatchOrderTotalsUpdate, dispatchOrderSummaryUpdated, buildOrderSummary } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { mapOrderForResponse } from '@/lib/api/order-response-mapper'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
@@ -16,6 +16,12 @@ import {
   calculateUpdatedItemTotal,
   softDeleteOrderItem,
   recalculateOrderTotals,
+  // Combo Pick N of M (Phase 5b)
+  validateAndBuildComboSelections,
+  ComboValidationError,
+  ORDER_ITEM_FULL_INCLUDE,
+  mapOrderItemForWire,
+  type ComboSelectionInput,
 } from '@/lib/domain/order-items'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
@@ -89,6 +95,163 @@ export const PUT = withVenue(async function PUT(
     if (!action && item.kitchenStatus !== 'pending' && requestingEmployeeId) {
       const auth = await requirePermission(requestingEmployeeId as string, order.locationId, PERMISSIONS.MGR_EDIT_SENT_ITEMS)
       if (!auth.authorized) return err(auth.error, auth.status)
+    }
+
+    // ─── Combo Pick N of M — replace-all flow (Phase 5b) ────────────────────
+    // When the client sends `comboSelections` (non-undefined), we replace the
+    // entire snapshot set for this OrderItem in one transaction. Idempotency
+    // is enforced via OrderItem.idempotencyKey (same store POST uses).
+    const comboSelectionsField = (body as { comboSelections?: ComboSelectionInput[] | null }).comboSelections
+    const comboIdempotencyKey = (body as { idempotencyKey?: string }).idempotencyKey
+      || request.headers.get('idempotency-key')
+      || null
+    if (comboSelectionsField !== undefined) {
+      try {
+        const comboResult = await db.$transaction(async (tx) => {
+          // Lock the OrderItem row to serialize concurrent replace-alls.
+          // Using the Order row keeps parity with POST's locking pattern.
+          await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${orderId} FOR UPDATE`
+
+          // Idempotency check — if this key was already processed for this
+          // order+item, short-circuit with the current state.
+          if (comboIdempotencyKey) {
+            const prior = await tx.orderItem.findFirst({
+              where: {
+                id: itemId,
+                orderId,
+                locationId,
+                idempotencyKey: comboIdempotencyKey,
+                deletedAt: null,
+              },
+              select: { id: true },
+            })
+            if (prior) {
+              const currentOrder = await OrderRepository.getOrderByIdWithInclude(orderId, locationId, {
+                employee: { select: { id: true, displayName: true, firstName: true, lastName: true } },
+                table: { select: { id: true, name: true } },
+                items: {
+                  where: { deletedAt: null },
+                  include: ORDER_ITEM_FULL_INCLUDE,
+                },
+                payments: true,
+                discounts: true,
+              }, tx)
+              if (!currentOrder) throw new Error('Order not found')
+              return { idempotent: true, updatedOrder: currentOrder, updatedItem: null as any }
+            }
+          }
+
+          // Soft-delete existing combo selection rows for this OrderItem.
+          await tx.orderItemComboSelection.updateMany({
+            where: { orderItemId: itemId, locationId, deletedAt: null },
+            data: { deletedAt: new Date() },
+          })
+
+          // Validate + build new rows. Quantity rule enforced by validator.
+          const targetQuantity = body.quantity !== undefined ? Number(body.quantity) : item.quantity
+          const built = await validateAndBuildComboSelections({
+            prisma: tx,
+            locationId,
+            orderItemId: itemId,
+            menuItemId: item.menuItemId,
+            quantity: targetQuantity,
+            selections: comboSelectionsField ?? [],
+          })
+
+          if (built.rowsToCreate.length > 0) {
+            await tx.orderItemComboSelection.createMany({ data: built.rowsToCreate })
+          }
+
+          // Update OrderItem.price + itemTotal from server-authoritative price.
+          // If validator returns null (no selections), we leave existing price alone.
+          const itemUpdateData: Record<string, unknown> = {
+            lastMutatedBy: mutationOrigin,
+          }
+          if (built.price != null) {
+            itemUpdateData.price = built.price
+            itemUpdateData.itemTotal = built.price
+          }
+          if (comboIdempotencyKey) {
+            itemUpdateData.idempotencyKey = comboIdempotencyKey
+          }
+          await tx.orderItem.update({
+            where: { id: itemId },
+            data: itemUpdateData,
+          })
+
+          // Recompute order totals using the existing helper (same as POST path).
+          const orderForTotals = await OrderRepository.getOrderByIdWithSelect(orderId, locationId, {
+            tipTotal: true,
+            isTaxExempt: true,
+            location: { select: { settings: true } },
+          }, tx)
+          if (!orderForTotals) throw new Error('Order not found after combo update')
+
+          const totals = await recalculateOrderTotals(
+            tx as any, orderId, orderForTotals.location.settings,
+            Number(orderForTotals.tipTotal) || 0, orderForTotals.isTaxExempt,
+          )
+
+          await OrderRepository.updateOrder(orderId, locationId, {
+            ...totals,
+            version: { increment: 1 },
+            lastMutatedBy: mutationOrigin,
+          }, tx)
+
+          const updatedOrder = await OrderRepository.getOrderByIdWithInclude(orderId, locationId, {
+            employee: { select: { id: true, displayName: true, firstName: true, lastName: true } },
+            table: { select: { id: true, name: true } },
+            items: {
+              where: { deletedAt: null },
+              include: ORDER_ITEM_FULL_INCLUDE,
+            },
+            payments: true,
+            discounts: true,
+          }, tx)
+          if (!updatedOrder) throw new Error('Order not found after combo totals update')
+
+          const updatedItem = (updatedOrder.items as any[]).find(i => i.id === itemId) ?? null
+          return { idempotent: false, updatedOrder, updatedItem }
+        })
+
+        // Parity with POST emissions — fire-and-forget.
+        void dispatchOrderTotalsUpdate(order.locationId, orderId, {
+          subtotal: Number((comboResult.updatedOrder as any).subtotal),
+          taxTotal: Number((comboResult.updatedOrder as any).taxTotal),
+          tipTotal: Number((comboResult.updatedOrder as any).tipTotal),
+          discountTotal: Number((comboResult.updatedOrder as any).discountTotal),
+          total: Number((comboResult.updatedOrder as any).total),
+          commissionTotal: Number((comboResult.updatedOrder as any).commissionTotal || 0),
+        }, { async: true }).catch(emitErr => log.warn({ err: emitErr }, 'combo totals dispatch failed'))
+        void dispatchOpenOrdersChanged(order.locationId, {
+          trigger: 'item_updated',
+          orderId,
+        }, { async: true }).catch(emitErr => log.warn({ err: emitErr }, 'combo open-orders dispatch failed'))
+        void dispatchOrderSummaryUpdated(
+          order.locationId,
+          buildOrderSummary(comboResult.updatedOrder as any),
+          { async: true },
+        ).catch(emitErr => log.warn({ err: emitErr }, 'combo summary dispatch failed'))
+        void emitOrderEvent(order.locationId, orderId, 'ITEM_UPDATED', {
+          lineItemId: itemId,
+          comboSelectionsReplaced: true,
+        }).catch(emitErr => log.warn({ err: emitErr }, 'Failed to emit ITEM_UPDATED for combo'))
+
+        pushUpstream()
+
+        // Response — use wire mapper so combo selections are echoed back.
+        const mappedOrder = mapOrderForResponse(comboResult.updatedOrder as any)
+        const itemsWithCombos = (comboResult.updatedOrder as any).items.map((it: any) => mapOrderItemForWire(it))
+        return ok({ ...mappedOrder, items: itemsWithCombos })
+      } catch (comboErr) {
+        if (comboErr instanceof ComboValidationError) {
+          return NextResponse.json(
+            { error: comboErr.message, code: comboErr.code },
+            { status: comboErr.status },
+          )
+        }
+        throw comboErr
+      }
     }
 
     // Handle actions
@@ -256,7 +419,7 @@ export const PUT = withVenue(async function PUT(
         const updatedOrder = await OrderRepository.getOrderByIdWithInclude(orderId, locationId, {
           items: {
             where: { deletedAt: null },
-            include: { modifiers: { where: { deletedAt: null } } },
+            include: ORDER_ITEM_FULL_INCLUDE,
           },
           employee: { select: { id: true, displayName: true, firstName: true, lastName: true } },
           table: { select: { id: true, name: true } },
@@ -290,7 +453,9 @@ export const PUT = withVenue(async function PUT(
 
       pushUpstream()
 
-      return ok(mapOrderForResponse(txResult))
+      const qtyResponse = mapOrderForResponse(txResult)
+      qtyResponse.items = (txResult as any).items.map((it: any) => mapOrderItemForWire(it)) as any
+      return ok(qtyResponse)
     }
 
     // Non-quantity update (no total recalculation needed, no lock required)
@@ -306,9 +471,7 @@ export const PUT = withVenue(async function PUT(
       holdUntil: updateData.holdUntil ? new Date(updateData.holdUntil) : undefined,
       specialNotes: updateData.specialNotes,
     })
-    const updated = await OrderItemRepository.getItemByIdWithInclude(itemId, locationId, {
-      modifiers: { where: { deletedAt: null } },
-    })
+    const updated = await OrderItemRepository.getItemByIdWithInclude(itemId, locationId, ORDER_ITEM_FULL_INCLUDE)
     if (!updated) throw new Error('OrderItem not found after update')
 
     // Emit ITEM_UPDATED event with only changed fields (fire-and-forget)
@@ -337,16 +500,7 @@ export const PUT = withVenue(async function PUT(
 
     return ok({
       success: true,
-      item: {
-        ...updated,
-        price: Number(updated.price),
-        modifierTotal: Number(updated.modifierTotal),
-        itemTotal: Number(updated.itemTotal),
-        modifiers: updated.modifiers.map(m => ({
-          ...m,
-          price: Number(m.price),
-        })),
-      },
+      item: mapOrderItemForWire(updated as any),
     })
   } catch (error) {
     console.error('Failed to update order item:', error)
@@ -496,7 +650,7 @@ export const DELETE = withVenue(async function DELETE(
       const updatedOrder = await OrderRepository.getOrderByIdWithInclude(orderId, locationId, {
         items: {
           where: { deletedAt: null },
-          include: { modifiers: { where: { deletedAt: null } } },
+          include: ORDER_ITEM_FULL_INCLUDE,
         },
         employee: { select: { id: true, displayName: true, firstName: true, lastName: true } },
         table: { select: { id: true, name: true } },
@@ -511,7 +665,9 @@ export const DELETE = withVenue(async function DELETE(
         orderId: order.id,
       }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.items.itemId'))
 
-      return ok(mapOrderForResponse(updatedOrder))
+      const deleteResponse = mapOrderForResponse(updatedOrder as any)
+      deleteResponse.items = (updatedOrder as any).items.map((it: any) => mapOrderItemForWire(it)) as any
+      return ok(deleteResponse)
     })
 
     pushUpstream()

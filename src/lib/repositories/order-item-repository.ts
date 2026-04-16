@@ -21,7 +21,8 @@ const MODIFIERS_INCLUDE = {
   modifiers: { where: { deletedAt: null } },
 } satisfies Prisma.OrderItemInclude
 
-/** Full item include -- modifiers + ingredient mods + pizza data + item discounts. */
+/** Full item include -- modifiers + ingredient mods + pizza data + item discounts + combo selections.
+ *  Aligned with ORDER_ITEM_FULL_INCLUDE in @/lib/domain/order-items/combo-selections.ts. */
 export const FULL_ITEM_INCLUDE = {
   modifiers: { where: { deletedAt: null } },
   ingredientModifications: true,
@@ -29,6 +30,16 @@ export const FULL_ITEM_INCLUDE = {
   itemDiscounts: {
     where: { deletedAt: null },
     select: { id: true, amount: true, percent: true, reason: true },
+  },
+  // Combo Pick N of M (Migration 129) — snapshot picks, ordered for receipts/print.
+  comboSelections: {
+    where: { deletedAt: null },
+    orderBy: { sortIndex: 'asc' as const },
+    include: {
+      comboComponent: true,
+      comboComponentOption: true,
+      menuItem: true,
+    },
   },
 } satisfies Prisma.OrderItemInclude
 

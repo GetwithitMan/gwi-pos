@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
-import { mapOrderForResponse, mapOrderItemForResponse } from '@/lib/api/order-response-mapper'
+import { mapOrderForResponse } from '@/lib/api/order-response-mapper'
 import { parseSettings } from '@/lib/settings'
 import { apiError, ERROR_CODES, getErrorMessage } from '@/lib/api/error-responses'
 import { dispatchOrderTotalsUpdate, dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchTabItemsUpdated, dispatchOrderSummaryUpdated, buildOrderSummary } from '@/lib/socket-dispatch'
@@ -35,6 +35,12 @@ import {
   validateRequiredModifierGroups,
   recalculateOrderTotalsForAdd,
   recalculateParentOrderTotals,
+  // Combo Pick N of M (Phase 5)
+  validateAndBuildComboSelections,
+  ComboValidationError,
+  ORDER_ITEM_FULL_INCLUDE,
+  mapOrderItemForWire,
+  type ComboSelectionInput,
 } from '@/lib/domain/order-items'
 import { createChildLogger } from '@/lib/logger'
 import { err, ok } from '@/lib/api-response'
@@ -61,6 +67,16 @@ const AddItemModifierSchema = z.object({
   swapEffectivePrice: z.number().nullable().optional(),
 }).passthrough()
 
+const ComboSelectionInputSchema = z.object({
+  id: z.string().nullable().optional(),
+  comboComponentId: z.string().nullable().optional(),
+  comboComponentOptionId: z.string().nullable().optional(),
+  menuItemId: z.string().nullable().optional(),
+  optionName: z.string().nullable().optional(),
+  upchargeApplied: z.number().nullable().optional(),
+  sortIndex: z.number().int().nullable().optional(),
+}).passthrough()
+
 const AddItemSchema = z.object({
   menuItemId: z.string().min(1),
   name: z.string().min(1),
@@ -85,6 +101,8 @@ const AddItemSchema = z.object({
   blockTimeMinutes: z.number().nullable().optional(),
   pizzaConfig: z.record(z.string(), z.unknown()).nullable().optional(),
   ingredientModifications: z.array(z.record(z.string(), z.unknown())).optional(),
+  // Combo Pick N of M (Phase 5) — customer-pick snapshots
+  comboSelections: z.array(ComboSelectionInputSchema).nullable().optional(),
 }).passthrough()
 
 const AddItemsBodySchema = z.object({
@@ -378,11 +396,8 @@ export const POST = withVenue(async function POST(
             select: { id: true, displayName: true, firstName: true, lastName: true },
           },
           items: {
-            include: {
-              modifiers: true,
-              ingredientModifications: true,
-              pizzaData: true,
-            },
+            where: { deletedAt: null },
+            include: ORDER_ITEM_FULL_INCLUDE,
           },
         }, tx)
         if (!order) throw new Error('Order not found')
@@ -575,6 +590,45 @@ export const POST = withVenue(async function POST(
         )
       )
 
+      // Combo Pick N of M (Phase 5) — validate + write snapshots for items that carry them.
+      // Runs inside the same transaction as item creation so we can still abort on validation error.
+      for (let i = 0; i < items.length; i++) {
+        const incoming = items[i] as AddItemInput & { comboSelections?: ComboSelectionInput[] | null }
+        const created = createdItems[i]
+        const comboSelections = incoming.comboSelections
+        if (!comboSelections || comboSelections.length === 0) continue
+
+        const comboResult = await validateAndBuildComboSelections({
+          prisma: tx,
+          locationId: existingOrder.locationId,
+          orderItemId: created.id,
+          menuItemId: created.menuItemId,
+          quantity: created.quantity,
+          selections: comboSelections,
+        })
+
+        if (comboResult.rowsToCreate.length > 0) {
+          await tx.orderItemComboSelection.createMany({
+            data: comboResult.rowsToCreate,
+          })
+        }
+
+        if (comboResult.price != null) {
+          // Server-authoritative price: template.basePrice + Σ upcharges.
+          // Recompute itemTotal from finalPrice × quantity (quantity must be 1 per validator rule).
+          await tx.orderItem.update({
+            where: { id: created.id },
+            data: {
+              price: comboResult.price,
+              itemTotal: comboResult.price,
+            },
+          })
+          // Keep the in-memory copy consistent for downstream event emission
+          created.price = comboResult.price
+          created.itemTotal = comboResult.price
+        }
+      }
+
       // Recalculate order totals from current database state via domain
       const totals = await recalculateOrderTotalsForAdd(
         tx, orderId, existingOrder.location.settings,
@@ -595,11 +649,8 @@ export const POST = withVenue(async function POST(
             select: { id: true, displayName: true, firstName: true, lastName: true },
           },
           items: {
-            include: {
-              modifiers: true,
-              ingredientModifications: true,
-              pizzaData: true,
-            },
+            where: { deletedAt: null },
+            include: ORDER_ITEM_FULL_INCLUDE,
           },
         },
         tx,
@@ -780,9 +831,10 @@ export const POST = withVenue(async function POST(
 
     const response = {
       ...mapOrderForResponse(updatedOrder),
-      // Map items with correlationId for newly created items
+      // Map items with correlationId for newly created items — use wire mapper
+      // so comboSelections are always included alongside the regular fields.
       items: updatedOrder.items.map((item: any) => {
-        const mapped = mapOrderItemForResponse(item, correlationMap.get(item.id))
+        const mapped = mapOrderItemForWire(item, correlationMap.get(item.id))
         const correction = priceCorrectionMap.get(item.menuItemId)
         if (correction) {
           return {
@@ -874,6 +926,13 @@ export const POST = withVenue(async function POST(
     console.error('Failed to add items to order:', error)
     if (error instanceof Error) {
       console.error('Error stack:', error.stack)
+    }
+    // Combo validation errors → 400 JSON with stable code (Phase 5)
+    if (error instanceof ComboValidationError) {
+      return NextResponse.json(
+        { error: error.message, code: error.code },
+        { status: error.status },
+      )
     }
     const message = getErrorMessage(error)
 
