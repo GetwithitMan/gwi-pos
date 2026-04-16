@@ -84,12 +84,27 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       itemModifierMap[mg.menuItemId].push(mg)
     }
 
+    // Collect menu item IDs referenced by options so we can attach names/prices
+    const optionMenuItemIds = Array.from(new Set(
+      comboTemplates.flatMap(t => t.components.flatMap(c => c.options.map(o => o.menuItemId)))
+    ))
+    const optionMenuItems = optionMenuItemIds.length > 0
+      ? await prisma.menuItem.findMany({
+          where: { id: { in: optionMenuItemIds } },
+          select: { id: true, name: true, price: true },
+        })
+      : []
+    const optionMenuItemMap = Object.fromEntries(
+      optionMenuItems.map(mi => [mi.id, { name: mi.name, price: Number(mi.price) }])
+    )
+
     // Build template map
     const templateMap = Object.fromEntries(
       comboTemplates.map(t => [t.menuItemId, {
         id: t.id,
         basePrice: Number(t.basePrice),
         comparePrice: t.comparePrice ? Number(t.comparePrice) : null,
+        allowUpcharges: t.allowUpcharges,
         components: t.components.map(c => ({
           id: c.id,
           slotName: c.slotName,
@@ -124,6 +139,15 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           } : null,
           itemPriceOverride: c.itemPriceOverride ? Number(c.itemPriceOverride) : null,
           modifierPriceOverrides: c.modifierPriceOverrides as Record<string, number> | null,
+          options: c.options.map(o => ({
+            id: o.id,
+            menuItemId: o.menuItemId,
+            name: optionMenuItemMap[o.menuItemId]?.name ?? '',
+            price: optionMenuItemMap[o.menuItemId]?.price ?? 0,
+            upcharge: Number(o.upcharge),
+            sortOrder: o.sortOrder,
+            isAvailable: o.isAvailable,
+          })),
         })),
       }])
     )
@@ -148,6 +172,29 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   }
 })
 
+// Input shape for component options on create/update
+type OptionInput = {
+  id?: string
+  menuItemId: string
+  upcharge?: number
+  sortOrder?: number
+  isAvailable?: boolean
+}
+
+type ComponentInput = {
+  id?: string
+  slotName: string
+  displayName: string
+  sortOrder?: number
+  isRequired?: boolean
+  minSelections?: number
+  maxSelections?: number
+  menuItemId?: string | null
+  itemPriceOverride?: number | null
+  modifierPriceOverrides?: Record<string, number> | null
+  options?: OptionInput[]
+}
+
 // POST - Create a new combo
 export const POST = withVenue(withAuth('ADMIN', async function POST(request: NextRequest) {
   try {
@@ -161,47 +208,58 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       price,
       comparePrice,
       isActive = true,
+      allowUpcharges = false,
       components = [],
-    } = body
+    } = body as {
+      locationId?: string
+      categoryId?: string
+      name?: string
+      displayName?: string
+      description?: string
+      price?: number
+      comparePrice?: number | null
+      isActive?: boolean
+      allowUpcharges?: boolean
+      components?: ComponentInput[]
+    }
 
     if (!locationId || !categoryId || !name || price === undefined) {
       return err('Missing required fields')
     }
 
-    // Create the menu item as a combo
-    const menuItem = await prisma.menuItem.create({
-      data: {
-        locationId,
-        categoryId,
-        name,
-        displayName,
-        description,
-        price,
-        itemType: 'combo',
-        isActive,
-      },
-    })
+    // Create menu item + template + components + options in a single transaction.
+    const result = await prisma.$transaction(async (tx) => {
+      const menuItem = await tx.menuItem.create({
+        data: {
+          locationId,
+          categoryId,
+          name,
+          displayName,
+          description,
+          price,
+          itemType: 'combo',
+          isActive,
+        },
+      })
 
-    // Create the combo template
-    const template = await prisma.comboTemplate.create({
-      data: {
-        locationId,
-        menuItemId: menuItem.id,
-        basePrice: price,
-        comparePrice,
-        components: {
-          create: components.map((comp: {
-            slotName: string
-            displayName: string
-            sortOrder?: number
-            isRequired?: boolean
-            minSelections?: number
-            maxSelections?: number
-            menuItemId?: string
-            itemPriceOverride?: number
-            modifierPriceOverrides?: Record<string, number>
-          }, idx: number) => ({
+      const template = await tx.comboTemplate.create({
+        data: {
+          locationId,
+          menuItemId: menuItem.id,
+          basePrice: price,
+          comparePrice: comparePrice ?? null,
+          allowUpcharges: !!allowUpcharges,
+        },
+      })
+
+      // Create components one-by-one so we have the component id for option inserts.
+      for (let idx = 0; idx < (components?.length ?? 0); idx++) {
+        const comp = components![idx]
+        const createdComp = await tx.comboComponent.create({
+          data: {
+            ...(comp.id ? { id: comp.id } : {}),
             locationId,
+            comboTemplateId: template.id,
             slotName: comp.slotName,
             displayName: comp.displayName,
             sortOrder: comp.sortOrder ?? idx,
@@ -210,28 +268,44 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
             maxSelections: comp.maxSelections ?? 1,
             menuItemId: comp.menuItemId || null,
             itemPriceOverride: comp.itemPriceOverride ?? null,
-            modifierPriceOverrides: comp.modifierPriceOverrides || null,
-          })),
-        },
-      },
-      include: {
-        components: true,
-      },
+            modifierPriceOverrides: comp.modifierPriceOverrides || undefined,
+          },
+        })
+
+        const opts = comp.options ?? []
+        for (let optIdx = 0; optIdx < opts.length; optIdx++) {
+          const opt = opts[optIdx]
+          if (!opt.menuItemId) continue
+          await tx.comboComponentOption.create({
+            data: {
+              ...(opt.id ? { id: opt.id } : {}),
+              locationId,
+              comboComponentId: createdComp.id,
+              menuItemId: opt.menuItemId,
+              upcharge: opt.upcharge ?? 0,
+              sortOrder: opt.sortOrder ?? optIdx,
+              isAvailable: opt.isAvailable ?? true,
+            },
+          })
+        }
+      }
+
+      return { menuItem, template }
     })
 
-    void notifyDataChanged({ locationId, domain: 'combos', action: 'created', entityId: menuItem.id })
+    void notifyDataChanged({ locationId, domain: 'combos', action: 'created', entityId: result.menuItem.id })
     void pushUpstream()
 
     return ok({
       combo: {
-        id: menuItem.id,
-        name: menuItem.name,
-        price: Number(menuItem.price),
+        id: result.menuItem.id,
+        name: result.menuItem.name,
+        price: Number(result.menuItem.price),
         template: {
-          id: template.id,
-          basePrice: Number(template.basePrice),
-          comparePrice: template.comparePrice ? Number(template.comparePrice) : null,
-          components: template.components,
+          id: result.template.id,
+          basePrice: Number(result.template.basePrice),
+          comparePrice: result.template.comparePrice ? Number(result.template.comparePrice) : null,
+          allowUpcharges: result.template.allowUpcharges,
         },
       },
     })
