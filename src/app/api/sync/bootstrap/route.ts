@@ -111,7 +111,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   // Create the inflight promise for this locationId — other concurrent requests will await it
   const bootstrapPromise = (async () => {
 
-  const [categories, employees, tables, orderTypes, location, paymentReaders, printers, sections, floorPlanElements, cfdSettings, openOrders, taxRules, pizzaToppings, discountRules, voidReasons, compReasons] = await Promise.all([
+  const [categories, employees, tables, orderTypes, location, paymentReaders, printers, sections, floorPlanElements, cfdSettings, openOrders, taxRules, pizzaToppings, discountRules, voidReasons, compReasons, comboTemplatesRaw] = await Promise.all([
     db.category.findMany({
       where: { locationId, deletedAt: null },
       include: {
@@ -288,6 +288,26 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         isActive: true, sortOrder: true,
       },
       orderBy: { sortOrder: 'asc' },
+    }),
+    // Combo templates: customer-pick combos (pick N of M) for Android builder UI.
+    // Includes components + options with snapshotted option names from joined MenuItem.
+    db.comboTemplate.findMany({
+      where: { locationId, deletedAt: null },
+      include: {
+        components: {
+          where: { deletedAt: null },
+          orderBy: { sortOrder: 'asc' },
+          include: {
+            options: {
+              where: { deletedAt: null },
+              orderBy: { sortOrder: 'asc' },
+              include: {
+                menuItem: { select: { name: true } },
+              },
+            },
+          },
+        },
+      },
     }),
   ])
 
@@ -542,6 +562,37 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
   }
 
+  // ─── Combo templates (customer-pick combos) ─────────────────────────────────
+  // Shape mirrors admin GET /api/combos. Money normalized via .toNumber() for
+  // Android's boundary Long-cents conversion. Option name is snapshotted from the
+  // joined MenuItem at fetch time so the picker can render without extra lookups.
+  const comboTemplates = comboTemplatesRaw.map((tpl: any) => ({
+    id: tpl.id,
+    menuItemId: tpl.menuItemId,
+    basePrice: tpl.basePrice != null ? Number(tpl.basePrice) : 0,
+    comparePrice: tpl.comparePrice != null ? Number(tpl.comparePrice) : null,
+    allowUpcharges: tpl.allowUpcharges,
+    components: tpl.components.map((c: any) => ({
+      id: c.id,
+      slotName: c.slotName,
+      displayName: c.displayName,
+      sortOrder: c.sortOrder,
+      isRequired: c.isRequired,
+      minSelections: c.minSelections,
+      maxSelections: c.maxSelections,
+      menuItemId: c.menuItemId ?? null,
+      itemPriceOverride: c.itemPriceOverride != null ? Number(c.itemPriceOverride) : null,
+      options: c.options.map((opt: any) => ({
+        id: opt.id,
+        menuItemId: opt.menuItemId,
+        name: opt.menuItem?.name ?? '',
+        upcharge: opt.upcharge != null ? Number(opt.upcharge) : 0,
+        sortOrder: opt.sortOrder,
+        isAvailable: opt.isAvailable,
+      })),
+    })),
+  }))
+
   const responseData = {
       menu: {
         categories: mappedCategories,
@@ -637,6 +688,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       // Void/comp reasons: required for item void/comp operations
       voidReasons,
       compReasons,
+      // Combo templates: customer-pick combos with components + options
+      comboTemplates,
       // Flag: true if there are more open orders beyond the 500 limit
       hasMoreOrders: openOrders.length >= 500,
       // Pagination cursors (only present when cursor/pageSize params are provided)
