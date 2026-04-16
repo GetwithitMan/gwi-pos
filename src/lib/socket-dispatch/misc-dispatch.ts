@@ -297,6 +297,7 @@ export async function dispatchEntertainmentPriceUpdate(
     currentCharge: number // in cents
     elapsedMinutes: number
     isOvertime: boolean
+    ratePerMinute: number | null
     nextIncrementAt: string // ISO 8601 timestamp
   },
   options: DispatchOptions = {}

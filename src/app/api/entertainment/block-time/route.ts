@@ -200,6 +200,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       blockTimeMinutes: minutes,
       blockTimeStartedAt: now.toISOString(),
       blockTimeExpiresAt: expiresAt.toISOString(),
+      ratePerMinute: orderItem.menuItem?.ratePerMinute ? Number(orderItem.menuItem.ratePerMinute) : null,
     })
 
     // Dispatch socket updates (fire-and-forget)
@@ -394,6 +395,7 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
       price: newPrice,
       blockTimeMinutes: newTotalMinutes,
       blockTimeExpiresAt: newExpiresAt.toISOString(),
+      ratePerMinute: orderItem.menuItem?.ratePerMinute ? Number(orderItem.menuItem.ratePerMinute) : null,
     })
 
     // Dispatch socket updates (fire-and-forget)
@@ -547,6 +549,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       price: newPrice,
       blockTimeMinutes: newDurationMinutes,
       blockTimeExpiresAt: parsedExpiresAt.toISOString(),
+      ratePerMinute: orderItem.menuItem?.ratePerMinute ? Number(orderItem.menuItem.ratePerMinute) : null,
       managerOverride: true,
       reason: reason || 'time_override',
     })
@@ -729,6 +732,7 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
       blockTimeMinutes: orderItem.blockTimeMinutes,
       blockTimeStartedAt: 'CLEARED',
       blockTimeExpiresAt: now.toISOString(),
+      ratePerMinute: orderItem.menuItem?.ratePerMinute ? Number(orderItem.menuItem.ratePerMinute) : null,
       actualMinutesUsed: actualMinutes,
       reason,
       ...(reason === 'comp' ? { status: 'comped' } : {}),
