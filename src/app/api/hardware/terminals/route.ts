@@ -78,6 +78,12 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
               isConnected: true,
             },
           },
+          cfdTerminal: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
         },
         orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
       })
@@ -104,6 +110,12 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
               name: true,
               isOnline: true,
               lastSeenAt: true,
+            },
+          },
+          cfdTerminal: {
+            select: {
+              id: true,
+              name: true,
             },
           },
         },
