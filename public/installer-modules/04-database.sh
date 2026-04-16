@@ -300,6 +300,15 @@ elif [ -f /opt/gwi-pos/state/sync-status.json ] && jq empty /opt/gwi-pos/state/s
   }' /opt/gwi-pos/state/sync-status.json 2>/dev/null || echo 'null')
 fi
 
+# ── Android proxy health — counters from the NUC's /api/android/update/* routes ──
+ANDROID_PROXY_JSON='null'
+if [ -n "$PROVISION_API_KEY" ]; then
+  ANDROID_PROXY_RAW=$(curl -sf --max-time 2 -H "x-api-key: $PROVISION_API_KEY" http://localhost:3005/api/internal/android-proxy-stats 2>/dev/null || echo "")
+  if [ -n "$ANDROID_PROXY_RAW" ] && echo "$ANDROID_PROXY_RAW" | jq empty 2>/dev/null; then
+    ANDROID_PROXY_JSON="$ANDROID_PROXY_RAW"
+  fi
+fi
+
 BODY=$(jq -nc \
   --arg version "$VERSION" \
   --argjson uptime "${UPTIME:-0}" \
@@ -324,8 +333,9 @@ BODY=$(jq -nc \
   --argjson dashboard "$DASHBOARD_JSON" \
   --argjson componentVersions "$COMPONENT_VERSIONS_JSON" \
   --argjson nucReadiness "${NUC_READINESS_JSON:-null}" \
+  --argjson androidProxy "$ANDROID_PROXY_JSON" \
   --argjson replication "${REPLICATION_JSON:-null}" \
-  '{version:$version,uptime:$uptime,activeOrders:0,cpuPercent:$cpuPercent,memoryUsedMb:$memoryUsedMb,memoryTotalMb:$memoryTotalMb,diskUsedGb:$diskUsedGb,diskTotalGb:$diskTotalGb,localIp:$localIp,posLocationId:$posLocationId,batchClosedAt:$batchClosedAt,batchStatus:$batchStatus,batchItemCount:$batchItemCount,batchNo:$batchNo,openOrderCount:$openOrderCount,unadjustedTipCount:$unadjustedTipCount,currentBatchTotal:$currentBatchTotal,hardware:$hardware,diskPressure:$diskPressure,watchdog:$watchdog,watchdogEscalation:$watchdogEscalation,dashboard:$dashboard,componentVersions:$componentVersions,nucReadiness:$nucReadiness,replication:$replication}')
+  '{version:$version,uptime:$uptime,activeOrders:0,cpuPercent:$cpuPercent,memoryUsedMb:$memoryUsedMb,memoryTotalMb:$memoryTotalMb,diskUsedGb:$diskUsedGb,diskTotalGb:$diskTotalGb,localIp:$localIp,posLocationId:$posLocationId,batchClosedAt:$batchClosedAt,batchStatus:$batchStatus,batchItemCount:$batchItemCount,batchNo:$batchNo,openOrderCount:$openOrderCount,unadjustedTipCount:$unadjustedTipCount,currentBatchTotal:$currentBatchTotal,hardware:$hardware,diskPressure:$diskPressure,watchdog:$watchdog,watchdogEscalation:$watchdogEscalation,dashboard:$dashboard,componentVersions:$componentVersions,nucReadiness:$nucReadiness,androidProxy:$androidProxy,replication:$replication}')
 
 SIG=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$SERVER_API_KEY" 2>/dev/null | awk '{print $NF}')
 
