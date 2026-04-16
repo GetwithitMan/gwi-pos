@@ -497,7 +497,7 @@ export async function buildPaymentFinancialContext(
   let autoGratSubtotal = roundToCents(toNumber(order.subtotal ?? order.total ?? 0) - toNumber(order.tipTotal ?? 0))
   if (settings.tipBank?.entertainmentTipsEnabled === false) {
     const entertainmentTotal = (order.items ?? [])
-      .filter((i: any) => i.status !== 'voided' && i.categoryType === 'entertainment')
+      .filter((i: any) => i.status !== 'voided' && i.menuItem?.itemType === 'timed_rental')
       .reduce((sum: number, i: any) => sum + (Number(i.itemTotal) || (Number(i.price) * (i.quantity || 1))), 0)
     autoGratSubtotal = roundToCents(Math.max(0, autoGratSubtotal - entertainmentTotal))
   }

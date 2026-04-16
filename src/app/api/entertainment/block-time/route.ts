@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
-import { dispatchFloorPlanUpdate, dispatchEntertainmentStatusChanged, dispatchEntertainmentUpdate, dispatchOrderTotalsUpdate } from '@/lib/socket-dispatch'
+import { dispatchFloorPlanUpdate, dispatchEntertainmentStatusChanged, dispatchEntertainmentUpdate, dispatchOrderTotalsUpdate, dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import type { OvertimeConfig } from '@/lib/entertainment-pricing'
@@ -63,6 +63,7 @@ async function recalculateOrderAfterPriceChange(
     }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
   } catch (err) {
     console.error('[block-time] Failed to recalculate order totals after price change:', err)
+    throw err
   }
 }
 
@@ -219,6 +220,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       expiresAt: expiresAt.toISOString(),
       startedAt: updatedItem.blockTimeStartedAt?.toISOString() ?? null,
     }, { async: true }).catch(err => log.warn({ err }, 'Socket dispatch failed'))
+
+    // Notify open-orders list changed (cross-terminal awareness)
+    void dispatchOpenOrdersChanged(orderItem.order.locationId, { trigger: 'item_updated', orderId: orderItem.orderId }, { async: true }).catch(err => log.warn({ err }, 'Socket dispatch failed'))
 
     // Audit trail: session started
     void db.auditLog.create({
@@ -412,6 +416,9 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
       addedMinutes: additionalMinutes,
     }, { async: true }).catch(err => log.warn({ err }, 'Socket dispatch failed'))
 
+    // Notify open-orders list changed (cross-terminal awareness)
+    void dispatchOpenOrdersChanged(orderItem.order.locationId, { trigger: 'item_updated', orderId: orderItem.orderId }, { async: true }).catch(err => log.warn({ err }, 'Socket dispatch failed'))
+
     // Audit trail: session extended
     void db.auditLog.create({
       data: {
@@ -562,6 +569,9 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       expiresAt: parsedExpiresAt.toISOString(),
       startedAt: txResult.blockTimeStartedAt?.toISOString() ?? null,
     }, { async: true }).catch(err => log.warn({ err }, 'Socket dispatch failed'))
+
+    // Notify open-orders list changed (cross-terminal awareness)
+    void dispatchOpenOrdersChanged(orderItem.order.locationId, { trigger: 'item_updated', orderId: orderItem.orderId }, { async: true }).catch(err => log.warn({ err }, 'Socket dispatch failed'))
 
     // Audit trail: management time override
     void db.auditLog.create({
@@ -748,6 +758,9 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
       expiresAt: null,
       startedAt: null,
     }, { async: true }).catch(err => log.warn({ err }, 'Socket dispatch failed'))
+
+    // Notify open-orders list changed (cross-terminal awareness)
+    void dispatchOpenOrdersChanged(orderItem.order.locationId, { trigger: 'item_updated', orderId: orderItem.orderId }, { async: true }).catch(err => log.warn({ err }, 'Socket dispatch failed'))
 
     // Auto-notify next waitlist entry for this entertainment item
     void notifyNextWaitlistEntry(orderItem.order.locationId, orderItem.menuItemId, itemName).catch(err => log.warn({ err }, 'Socket dispatch failed'))

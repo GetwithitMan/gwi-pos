@@ -569,7 +569,7 @@ export async function cleanupOrphanSessions(
       o."status" as "orderStatus"
     FROM "MenuItem" m
     LEFT JOIN "Order" o ON m."currentOrderId" = o."id"
-    WHERE m."locationId" = ${locationId}
+    WHERE (${locationId} = '' OR m."locationId" = ${locationId})
       AND m."entertainmentStatus" = 'in_use'
       AND m."currentOrderId" IS NOT NULL
       AND (
@@ -659,7 +659,7 @@ export async function findStaleSessions(
       oi."blockTimeStartedAt"
     FROM "OrderItem" oi
     JOIN "MenuItem" mi ON oi."menuItemId" = mi."id"
-    WHERE mi."locationId" = ${locationId}
+    WHERE (${locationId} = '' OR mi."locationId" = ${locationId})
       AND mi."entertainmentStatus" = 'in_use'
       AND oi."blockTimeStartedAt" IS NOT NULL
       AND (NOW() - oi."blockTimeStartedAt")::text::interval > CAST(${Math.floor(maxSessionAgeMs / 1000)} || ' seconds' AS interval)
