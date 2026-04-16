@@ -304,6 +304,8 @@ export interface OrderItem {
   ingredientModifications?: IngredientModification[]
   // Pizza builder configuration (for pizza items)
   pizzaConfig?: PizzaOrderConfig
+  // Combo Pick N of M — customer-pick snapshots (one row per pick; no quantity)
+  comboSelections?: ComboSelection[]
 }
 
 /**
@@ -345,7 +347,24 @@ export interface ComboTemplate {
   id: string
   basePrice: number
   comparePrice?: number | null
+  allowUpcharges?: boolean
   components: ComboComponent[]
+}
+
+/**
+ * Combo Pick N of M — one customer pick at order time.
+ * Snapshot-first: menuItemId/optionName/upchargeApplied survive template edits.
+ * One row per pick — NO quantity column ("4 Bud" = 4 rows with distinct sortIndex).
+ */
+export interface ComboSelection {
+  id: string
+  orderItemId: string
+  comboComponentId?: string | null
+  comboComponentOptionId?: string | null
+  menuItemId: string
+  optionName: string
+  upchargeApplied: number
+  sortIndex: number
 }
 
 /**

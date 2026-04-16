@@ -722,9 +722,10 @@ model Location {
   modifiers Modifier[]
 
   // Combos (multi-tenancy)
-  comboTemplates        ComboTemplate[]
-  comboComponents       ComboComponent[]
-  comboComponentOptions ComboComponentOption[]
+  comboTemplates           ComboTemplate[]
+  comboComponents          ComboComponent[]
+  comboComponentOptions    ComboComponentOption[]
+  orderItemComboSelections OrderItemComboSelection[]
 
   // Multi-role support (multi-tenancy)
   employeeRoles EmployeeRole[]
@@ -900,8 +901,8 @@ model Location {
   itemBarcodes ItemBarcode[]
 
   // Cloud-Primary Architecture (Fulfillment + Bridge + Outage Queue)
-  fulfillmentEvents  FulfillmentEvent[]
-  bridgeCheckpoints  BridgeCheckpoint[]
+  fulfillmentEvents       FulfillmentEvent[]
+  bridgeCheckpoints       BridgeCheckpoint[]
   outageQueueEntries      OutageQueueEntry[]
   integrationRetryEntries IntegrationRetryEntry[]
 
@@ -925,7 +926,7 @@ model Location {
   // Multi-tenancy hardening (5K-merchant audit)
   reservationTables ReservationTable[] @relation("ReservationTableLocation")
   deductionRuns     DeductionRun[]
-  loyaltyTiers      LoyaltyTier[]     @relation("LoyaltyTierLocation")
+  loyaltyTiers      LoyaltyTier[]      @relation("LoyaltyTierLocation")
 
   // Peripheral Snapshot (upstream sync to MC)
   peripheralSnapshots PeripheralSnapshot[]
@@ -1036,7 +1037,7 @@ model Role {
   roleType    String @default("FOH") // FOH | BOH | ADMIN
   accessLevel String @default("STAFF") // STAFF | MANAGER | OWNER_ADMIN
 
-  sessionTimeoutMinutes  Int?  // Idle timeout for this role (minutes). 0 = no timeout. null = use venue default.
+  sessionTimeoutMinutes Int? // Idle timeout for this role (minutes). 0 = no timeout. null = use venue default.
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -1763,11 +1764,12 @@ model MenuItem {
   syncedAt  DateTime?
 
   // Relations
-  ownedModifierGroups    ModifierGroup[]        @relation("ItemModifierGroups") // Item-specific modifier groups
-  orderItems             OrderItem[]
-  comboComponentItems    ComboComponent[]       @relation("ComboComponentItem")
-  comboComponentDefaults ComboComponent[]       @relation("ComboComponentDefault")
-  comboOptions           ComboComponentOption[]
+  ownedModifierGroups      ModifierGroup[]           @relation("ItemModifierGroups") // Item-specific modifier groups
+  orderItems               OrderItem[]
+  comboComponentItems      ComboComponent[]          @relation("ComboComponentItem")
+  comboComponentDefaults   ComboComponent[]          @relation("ComboComponentDefault")
+  comboOptions             ComboComponentOption[]
+  orderItemComboSelections OrderItemComboSelection[]
 
   // Liquor Builder - Recipe ingredients for cocktails
   recipeIngredients RecipeIngredient[]
@@ -2036,8 +2038,9 @@ model ComboTemplate {
   menuItemId String   @unique // Links to MenuItem with itemType="combo"
   menuItem   MenuItem @relation("ComboTemplateMenuItem", fields: [menuItemId], references: [id])
 
-  basePrice    Decimal  @db.Decimal(10, 2)
-  comparePrice Decimal? @db.Decimal(10, 2) // A la carte total for savings display
+  basePrice      Decimal  @db.Decimal(10, 2)
+  comparePrice   Decimal? @db.Decimal(10, 2) // A la carte total for savings display
+  allowUpcharges Boolean  @default(false) // Per-combo opt-in: when false, server forces upchargeApplied = 0
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -2091,6 +2094,9 @@ model ComboComponent {
 
   options ComboComponentOption[]
 
+  // Reverse relation for customer-pick snapshots
+  orderItemComboSelections OrderItemComboSelection[]
+
   @@index([locationId])
   @@index([modifierGroupId])
   @@index([menuItemId])
@@ -2115,9 +2121,53 @@ model ComboComponentOption {
   deletedAt DateTime?
   syncedAt  DateTime?
 
+  // Reverse relation for customer-pick snapshots
+  orderItemComboSelections OrderItemComboSelection[]
+
   @@unique([comboComponentId, menuItemId])
   @@index([locationId])
   @@index([menuItemId])
+}
+
+/// OrderItemComboSelection — snapshot of one customer pick at order time.
+/// INVARIANTS (see docs/features/combos.md):
+///  - One row per pick; NO quantity column. "4 Bud" = 4 rows with distinct sortIndex.
+///  - Snapshot fields (menuItemId, optionName, upchargeApplied) survive admin edits to templates.
+///  - comboComponentId/comboComponentOptionId are soft refs with onDelete: SetNull — history persists.
+///  - When OrderItem.deletedAt is set, children are implicitly ignored downstream.
+model OrderItemComboSelection {
+  id          String    @id @default(cuid())
+  locationId  String
+  location    Location  @relation(fields: [locationId], references: [id])
+  orderItemId String
+  orderItem   OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+
+  // Soft references to the template rows that produced this pick (nullable; survive admin delete-recreate).
+  comboComponentId       String?
+  comboComponent         ComboComponent?       @relation(fields: [comboComponentId], references: [id], onDelete: SetNull)
+  comboComponentOptionId String?
+  comboComponentOption   ComboComponentOption? @relation(fields: [comboComponentOptionId], references: [id], onDelete: SetNull)
+
+  // Required snapshot fields — always populated at pick time.
+  menuItemId      String
+  menuItem        MenuItem @relation(fields: [menuItemId], references: [id])
+  optionName      String // At-pick-time display name snapshot
+  upchargeApplied Decimal  @default(0) @db.Decimal(10, 2) // 0 when template.allowUpcharges=false
+  sortIndex       Int      @default(0) // Deterministic receipt/print ordering
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  // HA cellular sync — mutation origin tracking (matches OrderItem pattern)
+  lastMutatedBy String?
+
+  @@index([orderItemId])
+  @@index([locationId])
+  @@index([menuItemId])
+  @@index([orderItemId, sortIndex])
+  @@index([comboComponentId])
 }
 
 // ============================================
@@ -2448,9 +2498,9 @@ model OrderType {
 /// Mutations MUST also emit events via emitOrderEvent() for the OrderSnapshot projection.
 /// Order is the source of truth; OrderSnapshot is a materialized read-optimized view.
 model Order {
-  id         String   @id @default(cuid())
+  id         String    @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location  @relation(fields: [locationId], references: [id])
   employeeId String?
   employee   Employee? @relation(fields: [employeeId], references: [id])
 
@@ -2528,9 +2578,9 @@ model Order {
   taxTotal         Decimal  @default(0) @db.Decimal(10, 2)
   taxFromInclusive Decimal  @default(0) @db.Decimal(10, 2) // Tax backed out of inclusive items
   taxFromExclusive Decimal  @default(0) @db.Decimal(10, 2) // Tax added on top of exclusive items
-  inclusiveTaxRate  Decimal  @default(0) @db.Decimal(10, 4) // Inclusive tax rate snapshot at order creation (survives setting changes)
-  exclusiveTaxRate  Decimal? @db.Decimal(10, 4)             // Exclusive tax rate snapshot at creation (null = use live rate)
-  tipTotal          Decimal  @default(0) @db.Decimal(10, 2)
+  inclusiveTaxRate Decimal  @default(0) @db.Decimal(10, 4) // Inclusive tax rate snapshot at order creation (survives setting changes)
+  exclusiveTaxRate Decimal? @db.Decimal(10, 4) // Exclusive tax rate snapshot at creation (null = use live rate)
+  tipTotal         Decimal  @default(0) @db.Decimal(10, 2)
   donationAmount   Decimal? @db.Decimal(10, 2) // Optional donation added to order
   total            Decimal  @default(0) @db.Decimal(10, 2)
 
@@ -2850,6 +2900,9 @@ model OrderItem {
 
   // Unified Split Checks — ItemShare reverse relation (Migration 118)
   itemShares ItemShare[] @relation("ItemShareSource")
+
+  // Combo Pick N of M — customer-pick snapshots (Migration 129)
+  comboSelections OrderItemComboSelection[]
 
   @@index([locationId])
   @@index([orderId])
@@ -9924,20 +9977,20 @@ model ItemShare {
 
 // ── Integration Retry Queue ────────────────────────────────────────────────
 model IntegrationRetryEntry {
-  id           String   @id @default(cuid())
-  locationId   String
-  integration  String
-  action       String
-  payload      Json
-  retryCount   Int      @default(0)
-  maxRetries   Int      @default(5)
-  lastError    String?
-  status       String   @default("pending")
-  nextRetryAt  DateTime @default(now())
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  completedAt  DateTime?
-  location     Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  id          String    @id @default(cuid())
+  locationId  String
+  integration String
+  action      String
+  payload     Json
+  retryCount  Int       @default(0)
+  maxRetries  Int       @default(5)
+  lastError   String?
+  status      String    @default("pending")
+  nextRetryAt DateTime  @default(now())
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  completedAt DateTime?
+  location    Location  @relation(fields: [locationId], references: [id], onDelete: Cascade)
 
   @@index([locationId, status, nextRetryAt])
   @@index([integration, status])
@@ -9951,21 +10004,21 @@ model IntegrationRetryEntry {
 /// Written every 60 seconds by the peripheral snapshot writer on the NUC.
 /// Enables MC fleet dashboard to show live device health across all venues.
 model PeripheralSnapshot {
-  id          String   @id @default(cuid())
-  locationId  String
-  location    Location @relation(fields: [locationId], references: [id])
-  deviceType  String   // 'terminal' | 'printer' | 'reader' | 'scale' | 'kds'
-  deviceId    String
-  deviceName  String
-  isOnline    Boolean  @default(false)
-  lastSeenAt  DateTime?
-  lastError   String?
-  metadata    Json?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  deletedAt   DateTime?
+  id            String    @id @default(cuid())
+  locationId    String
+  location      Location  @relation(fields: [locationId], references: [id])
+  deviceType    String // 'terminal' | 'printer' | 'reader' | 'scale' | 'kds'
+  deviceId      String
+  deviceName    String
+  isOnline      Boolean   @default(false)
+  lastSeenAt    DateTime?
+  lastError     String?
+  metadata      Json?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
   lastMutatedBy String? // 'cloud' | 'local' | null
-  syncedAt    DateTime?
+  syncedAt      DateTime?
 
   @@unique([locationId, deviceType, deviceId])
   @@index([locationId])
