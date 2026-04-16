@@ -114,6 +114,20 @@ export class OrderRouter {
                 cheese: { select: { name: true } },
               },
             },
+            // Combo Pick N of M — hydrate selections for kitchen ticket rendering.
+            comboSelections: {
+              where: { deletedAt: null },
+              orderBy: { sortIndex: 'asc' },
+              select: {
+                id: true,
+                menuItemId: true,
+                optionName: true,
+                upchargeApplied: true,
+                sortIndex: true,
+                comboComponentId: true,
+                comboComponentOptionId: true,
+              },
+            },
             menuItem: {
               select: {
                 id: true,
@@ -183,6 +197,20 @@ export class OrderRouter {
                   crust: { select: { name: true } },
                   sauce: { select: { name: true } },
                   cheese: { select: { name: true } },
+                },
+              },
+              // Combo Pick N of M — hydrate selections for kitchen ticket rendering.
+              comboSelections: {
+                where: { deletedAt: null },
+                orderBy: { sortIndex: 'asc' },
+                select: {
+                  id: true,
+                  menuItemId: true,
+                  optionName: true,
+                  upchargeApplied: true,
+                  sortIndex: true,
+                  comboComponentId: true,
+                  comboComponentOptionId: true,
                 },
               },
               menuItem: {
@@ -547,6 +575,18 @@ export class OrderRouter {
         modificationType: i.modificationType,
         swappedToModifierName: i.swappedToModifierName,
       })),
+      // Combo Pick N of M — pass-through when hydrated; sorted by sortIndex asc.
+      comboSelections: Array.isArray(item.comboSelections)
+        ? (item.comboSelections as any[]).map(sel => ({
+            id: String(sel.id),
+            menuItemId: String(sel.menuItemId),
+            optionName: String(sel.optionName ?? ''),
+            upchargeApplied: Number(sel.upchargeApplied ?? 0),
+            sortIndex: Number(sel.sortIndex ?? 0),
+            comboComponentId: (sel.comboComponentId as string | null) ?? null,
+            comboComponentOptionId: (sel.comboComponentOptionId as string | null) ?? null,
+          }))
+        : undefined,
       pizzaData,
       menuItem: {
         id: item.menuItem?.id || '',

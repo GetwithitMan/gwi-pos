@@ -55,6 +55,17 @@ export interface EnrichedItem {
     ingredientName: string
     modificationType: string
   }>
+  // Combo Pick N of M — customer-chosen option snapshots. Empty/undefined for classic combos.
+  // Hydrated via ORDER_ITEM_FULL_INCLUDE; sorted by sortIndex asc.
+  comboSelections?: Array<{
+    id: string
+    menuItemId: string
+    optionName: string
+    upchargeApplied: number | string | { toString(): string }
+    sortIndex: number
+    comboComponentId?: string | null
+    comboComponentOptionId?: string | null
+  }>
   pizzaData: {
     sizeId: string
     crustId: string

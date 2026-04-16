@@ -20,6 +20,7 @@ import {
   PrinterSettings,
   getDefaultPrinterSettings,
 } from '@/types/print'
+import { formatCurrency } from '@/lib/utils'
 import type { EnrichedItem } from './kitchen-route-resolver'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -367,11 +368,25 @@ export function buildKitchenTicket(
       content.push(NORMAL)
     }
 
+    // Shared indented-line helper — used for both modifiers and combo selections so
+    // indentation matches existing ticket aesthetics. Depth 0 gets a 2-space indent;
+    // deeper modifiers use the modifier depth convention (`  ` * depth + `- `).
+    const indentFor = (depth: number) => (depth > 0 ? '  '.repeat(depth) + '- ' : '  ')
+    const emitIndentedModifierLine = (label: string, depth: number) => {
+      const text = truncateForPrint(`${indentFor(depth)}${label}`, width)
+      if (hasRed && useRedModifiers) content.push(RED)
+      content.push(toppingSizeCmd)
+      if (boldMods && !isImpact) content.push(ESCPOS.BOLD_ON)
+      content.push(line(text))
+      if (boldMods && !isImpact) content.push(ESCPOS.BOLD_OFF)
+      content.push(NORMAL)
+      if (hasRed && useRedModifiers) content.push(BLACK)
+    }
+
     // Modifiers (skip for pizza items)
     if (!item.pizzaData) {
       for (const mod of item.modifiers) {
         if (mod.isNoneSelection && !mod.modifier?.modifierGroup?.nonePrintsToKitchen) continue
-        const prefix = mod.depth > 0 ? '  '.repeat(mod.depth) + '- ' : '  '
         const preLabel = mod.preModifier
           ? mod.preModifier.split(',').map(t => t.trim()).filter(Boolean).map(t => t.charAt(0).toUpperCase() + t.slice(1)).join(' ') + ' '
           : ''
@@ -379,15 +394,24 @@ export function buildKitchenTicket(
         const swapSuffix = mod.swapTargetName ? ` \u2192 ${mod.swapTargetName}` : ''
         let modLine = `${customPrefix}${preLabel}${mod.name}${swapSuffix}`
         if (allCapsMods) modLine = modLine.toUpperCase()
-        const fullModLine = truncateForPrint(`${prefix}${modLine}`, width)
+        emitIndentedModifierLine(modLine, mod.depth)
+      }
+    }
 
-        if (hasRed && useRedModifiers) content.push(RED)
-        content.push(toppingSizeCmd)
-        if (boldMods && !isImpact) content.push(ESCPOS.BOLD_ON)
-        content.push(line(fullModLine))
-        if (boldMods && !isImpact) content.push(ESCPOS.BOLD_OFF)
-        content.push(NORMAL)
-        if (hasRed && useRedModifiers) content.push(BLACK)
+    // Combo Pick N of M — render each customer-picked option as an indented child line
+    // using the same formatter as modifiers. Selections are already sorted by sortIndex asc
+    // via ORDER_ITEM_FULL_INCLUDE. Classic combos (no selections) render unchanged.
+    const comboSelections = (item as unknown as {
+      comboSelections?: Array<{ optionName?: string; upchargeApplied?: number }>
+    }).comboSelections
+    if (comboSelections && comboSelections.length > 0 && !item.pizzaData) {
+      for (const sel of comboSelections) {
+        const rawName = (sel.optionName ?? '').toString().trim()
+        if (!rawName) continue
+        const upcharge = Number(sel.upchargeApplied ?? 0)
+        const upchargeSuffix = upcharge > 0 ? ` (+${formatCurrency(upcharge)})` : ''
+        const displayName = allCapsMods ? rawName.toUpperCase() : rawName
+        emitIndentedModifierLine(`${displayName}${upchargeSuffix}`, 0)
       }
     }
 

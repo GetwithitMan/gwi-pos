@@ -22,6 +22,7 @@ import {
   type PrintTemplateSettings,
   mergePrintTemplateSettings,
 } from '@/types/print'
+import { formatCurrency } from '@/lib/utils'
 
 // ── Data shapes ──
 
@@ -54,6 +55,14 @@ export interface ReceiptItem {
   quantity: number
   price: number
   modifiers: { name: string; price: number; depth?: number; preModifier?: string | null; isCustomEntry?: boolean; isNoneSelection?: boolean; noneShowOnReceipt?: boolean; customEntryName?: string | null; swapTargetName?: string | null }[]
+  // Combo Pick N of M — customer-chosen option snapshots (sorted by sortIndex asc).
+  // Empty/undefined for classic combos and non-combo items.
+  comboSelections?: Array<{
+    optionName: string
+    upchargeApplied: number
+    sortIndex: number
+    menuItemId?: string
+  }>
   specialNotes?: string | null
 }
 
@@ -188,6 +197,19 @@ export function buildCustomerReceipt(
 
   content.push(divider(width))
 
+  // Shared indented-line helper — used for both modifiers and combo selections so
+  // the receipt aesthetic stays consistent. Matches the existing modifier convention
+  // (2-space indent at depth 0, extra indent per depth level).
+  const indentFor = (depth: number) => (depth && depth > 0 ? '  '.repeat(depth + 1) : '  ')
+  const emitIndentedReceiptLine = (label: string, amount: number | undefined, depth: number) => {
+    const indent = indentFor(depth)
+    if (amount != null && amount > 0) {
+      content.push(twoColumnLine(`${indent}${label}`, `$${amount.toFixed(2)}`, width))
+    } else {
+      content.push(line(`${indent}${label}`))
+    }
+  }
+
   // ── Items ──
   for (const item of items) {
     const qty = item.quantity > 1 ? `${item.quantity}x ` : ''
@@ -212,11 +234,22 @@ export function buildCustomerReceipt(
       if (mod.swapTargetName) {
         modDisplayName = `${mod.name} → ${mod.swapTargetName}`
       }
-      const indent = mod.depth && mod.depth > 0 ? '  '.repeat(mod.depth + 1) : '  '
-      if (mod.price > 0) {
-        content.push(twoColumnLine(`${indent}${modDisplayName}`, `$${mod.price.toFixed(2)}`, width))
-      } else {
-        content.push(line(`${indent}${modDisplayName}`))
+      emitIndentedReceiptLine(modDisplayName, mod.price > 0 ? mod.price : undefined, mod.depth ?? 0)
+    }
+
+    // Combo Pick N of M — render each customer-picked option as an indented child line
+    // using the same formatter as modifiers. Selections are already sorted by sortIndex asc.
+    // Upcharge renders as `(+$X.XX)` inline when > 0; zero-upcharge picks print name only.
+    // Classic combos (no comboSelections) render unchanged.
+    if (item.comboSelections && item.comboSelections.length > 0) {
+      for (const sel of item.comboSelections) {
+        const rawName = (sel.optionName ?? '').toString().trim()
+        if (!rawName) continue
+        const upcharge = Number(sel.upchargeApplied ?? 0)
+        const label = upcharge > 0
+          ? `${rawName} (+${formatCurrency(upcharge)})`
+          : rawName
+        emitIndentedReceiptLine(label, undefined, 0)
       }
     }
 
