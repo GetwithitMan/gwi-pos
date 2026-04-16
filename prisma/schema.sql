@@ -767,6 +767,7 @@ CREATE TABLE "ComboTemplate" (
     "menuItemId" TEXT NOT NULL,
     "basePrice" DECIMAL(10,2) NOT NULL,
     "comparePrice" DECIMAL(10,2),
+    "allowUpcharges" BOOLEAN NOT NULL DEFAULT false,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "deletedAt" TIMESTAMP(3),
@@ -815,6 +816,26 @@ CREATE TABLE "ComboComponentOption" (
     "syncedAt" TIMESTAMP(3),
 
     CONSTRAINT "ComboComponentOption_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "OrderItemComboSelection" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "orderItemId" TEXT NOT NULL,
+    "comboComponentId" TEXT,
+    "comboComponentOptionId" TEXT,
+    "menuItemId" TEXT NOT NULL,
+    "optionName" TEXT NOT NULL,
+    "upchargeApplied" DECIMAL(10,2) NOT NULL DEFAULT 0,
+    "sortIndex" INTEGER NOT NULL DEFAULT 0,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "deletedAt" TIMESTAMP(3),
+    "syncedAt" TIMESTAMP(3),
+    "lastMutatedBy" TEXT,
+
+    CONSTRAINT "OrderItemComboSelection_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -5710,6 +5731,21 @@ CREATE INDEX "ComboComponentOption_menuItemId_idx" ON "ComboComponentOption"("me
 CREATE UNIQUE INDEX "ComboComponentOption_comboComponentId_menuItemId_key" ON "ComboComponentOption"("comboComponentId", "menuItemId");
 
 -- CreateIndex
+CREATE INDEX "OrderItemComboSelection_orderItemId_idx" ON "OrderItemComboSelection"("orderItemId");
+
+-- CreateIndex
+CREATE INDEX "OrderItemComboSelection_locationId_idx" ON "OrderItemComboSelection"("locationId");
+
+-- CreateIndex
+CREATE INDEX "OrderItemComboSelection_menuItemId_idx" ON "OrderItemComboSelection"("menuItemId");
+
+-- CreateIndex
+CREATE INDEX "OrderItemComboSelection_orderItemId_sortIndex_idx" ON "OrderItemComboSelection"("orderItemId", "sortIndex");
+
+-- CreateIndex
+CREATE INDEX "OrderItemComboSelection_comboComponentId_idx" ON "OrderItemComboSelection"("comboComponentId");
+
+-- CreateIndex
 CREATE INDEX "Section_locationId_idx" ON "Section"("locationId");
 
 -- CreateIndex
@@ -8126,6 +8162,21 @@ ALTER TABLE "ComboComponentOption" ADD CONSTRAINT "ComboComponentOption_comboCom
 
 -- AddForeignKey
 ALTER TABLE "ComboComponentOption" ADD CONSTRAINT "ComboComponentOption_menuItemId_fkey" FOREIGN KEY ("menuItemId") REFERENCES "MenuItem"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "OrderItemComboSelection" ADD CONSTRAINT "OrderItemComboSelection_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "OrderItemComboSelection" ADD CONSTRAINT "OrderItemComboSelection_orderItemId_fkey" FOREIGN KEY ("orderItemId") REFERENCES "OrderItem"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "OrderItemComboSelection" ADD CONSTRAINT "OrderItemComboSelection_comboComponentId_fkey" FOREIGN KEY ("comboComponentId") REFERENCES "ComboComponent"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "OrderItemComboSelection" ADD CONSTRAINT "OrderItemComboSelection_comboComponentOptionId_fkey" FOREIGN KEY ("comboComponentOptionId") REFERENCES "ComboComponentOption"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "OrderItemComboSelection" ADD CONSTRAINT "OrderItemComboSelection_menuItemId_fkey" FOREIGN KEY ("menuItemId") REFERENCES "MenuItem"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Section" ADD CONSTRAINT "Section_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
