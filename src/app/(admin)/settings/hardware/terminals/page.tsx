@@ -53,6 +53,7 @@ interface Terminal {
   cfdIpAddress: string | null
   cfdConnectionMode: string | null
   cfdTerminal?: { id: string; name: string } | null
+  deviceToken?: string | null
   platform?: string
   appVersion?: string
   deviceInfo?: {
@@ -93,6 +94,10 @@ export default function TerminalsPage() {
   const [showAddModal, setShowAddModal] = useState(false)
   const [editingTerminal, setEditingTerminal] = useState<Terminal | null>(null)
   const [pairingCode, setPairingCode] = useState<{ code: string; terminalId: string; expiresAt: string } | null>(null)
+  const [showCfdModal, setShowCfdModal] = useState(false)
+  const [cfdName, setCfdName] = useState('')
+  const [cfdCreating, setCfdCreating] = useState(false)
+  const [createdCfdToken, setCreatedCfdToken] = useState<string | null>(null)
 
   const fetchData = useCallback(async () => {
     if (!locationId) return
@@ -291,6 +296,64 @@ export default function TerminalsPage() {
     }
   }
 
+  const handleCreateCfd = async () => {
+    if (!cfdName.trim() || !locationId) return
+    setCfdCreating(true)
+    try {
+      const res = await fetch('/api/hardware/terminals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: cfdName.trim(),
+          category: 'CFD_DISPLAY',
+          locationId,
+          employeeId: employee?.id,
+        }),
+      })
+      if (res.ok) {
+        const json = await res.json()
+        const created = json.data?.terminal
+        setCreatedCfdToken(created?.deviceToken || null)
+        setCfdName('')
+        fetchData()
+        if (!created?.deviceToken) {
+          toast.success('CFD display created')
+          setShowCfdModal(false)
+        }
+      } else {
+        const data = await res.json()
+        toast.error(data.error || 'Failed to create CFD display')
+      }
+    } catch {
+      toast.error('Failed to create CFD display')
+    } finally {
+      setCfdCreating(false)
+    }
+  }
+
+  const handleDeleteCfd = async (id: string) => {
+    if (!confirm('Delete this display? Any paired register will be unpaired.')) return
+    try {
+      const res = await fetch(`/api/hardware/terminals/${id}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ employeeId: employee?.id, locationId }),
+      })
+      if (res.ok) {
+        setTerminals(prev => prev.filter(t => t.id !== id))
+        toast.success('CFD display deleted')
+      } else {
+        toast.error('Failed to delete CFD display')
+      }
+    } catch {
+      toast.error('Failed to delete CFD display')
+    }
+  }
+
+  const handleCopyToken = (token: string) => {
+    navigator.clipboard.writeText(token).then(() => toast.success('Token copied to clipboard'))
+  }
+
   if (loading) {
     return (
       <div className="p-6 flex items-center justify-center">
@@ -386,6 +449,45 @@ export default function TerminalsPage() {
           )}
         </div>
 
+        {/* Customer-Facing Displays */}
+        <div className="mt-8">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+              <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+              </svg>
+              Customer Displays ({cfdDisplays.length})
+            </h2>
+            <button
+              onClick={() => { setShowCfdModal(true); setCreatedCfdToken(null); setCfdName('') }}
+              className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-xl font-bold flex items-center gap-2 transition-colors"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Add CFD Display
+            </button>
+          </div>
+
+          {cfdDisplays.length === 0 ? (
+            <div className="bg-white border border-gray-200 rounded-2xl p-8 text-center shadow">
+              <p className="text-gray-500 text-sm">No customer displays configured. Add one to pair with a register.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {cfdDisplays.map(cfd => (
+                <CfdDisplayCard
+                  key={cfd.id}
+                  terminal={cfd}
+                  registerTerminals={registerTerminals}
+                  onDelete={() => handleDeleteCfd(cfd.id)}
+                  onCopyToken={handleCopyToken}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+
         {/* Failover Configuration */}
         <TerminalFailoverManager terminals={terminals} onUpdate={fetchData} />
 
@@ -417,6 +519,70 @@ export default function TerminalsPage() {
           expiresAt={pairingCode.expiresAt}
           onClose={() => setPairingCode(null)}
         />
+      )}
+
+      {/* Add CFD Display Modal */}
+      {showCfdModal && (
+        <Modal isOpen={true} onClose={() => { setShowCfdModal(false); setCreatedCfdToken(null) }} title={createdCfdToken ? 'CFD Display Created' : 'Add CFD Display'} size="md">
+          {createdCfdToken ? (
+            <div className="text-center">
+              <p className="text-gray-900 text-sm mb-4">
+                Your CFD display has been created. Enter this device token on the PAX A3700 to connect it.
+              </p>
+              <div className="bg-gray-50 rounded-2xl p-4 mb-4 border border-gray-200">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-gray-500 block mb-2">Device Token</label>
+                <div className="font-mono text-xs text-gray-900 break-all select-all leading-relaxed">{createdCfdToken}</div>
+              </div>
+              <button
+                onClick={() => handleCopyToken(createdCfdToken)}
+                className="w-full py-3 bg-green-600 hover:bg-green-500 text-white font-bold rounded-xl transition-colors mb-3"
+              >
+                Copy Token
+              </button>
+              <button
+                onClick={() => { setShowCfdModal(false); setCreatedCfdToken(null) }}
+                className="w-full py-3 bg-gray-200 hover:bg-gray-300 text-gray-900 font-bold rounded-xl transition-colors"
+              >
+                Done
+              </button>
+            </div>
+          ) : (
+            <div>
+              <div className="mb-4">
+                <label className="text-[10px] font-black text-gray-900 uppercase tracking-widest block mb-2">
+                  Display Name *
+                </label>
+                <input
+                  type="text"
+                  value={cfdName}
+                  onChange={(e) => setCfdName(e.target.value)}
+                  placeholder="e.g., Bar CFD, Register 1 Display"
+                  className="w-full bg-white border border-gray-300 rounded-xl px-4 py-3 text-sm text-gray-900 focus:border-green-500 focus:ring-2 focus:ring-green-500/20 outline-none"
+                  autoFocus
+                  onKeyDown={(e) => { if (e.key === 'Enter' && cfdName.trim()) handleCreateCfd() }}
+                />
+                <p className="text-[10px] text-gray-500 mt-1">
+                  Give this display a name that identifies which register it belongs to.
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => { setShowCfdModal(false); setCreatedCfdToken(null) }}
+                  className="flex-1 py-3 text-gray-600 font-bold hover:text-gray-900 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleCreateCfd}
+                  disabled={cfdCreating || !cfdName.trim()}
+                  className="flex-1 py-3 bg-green-600 hover:bg-green-500 text-white font-bold rounded-xl shadow-lg disabled:opacity-50 transition-colors"
+                >
+                  {cfdCreating ? 'Creating...' : 'Create Display'}
+                </button>
+              </div>
+            </div>
+          )}
+        </Modal>
       )}
     </div>
   )
@@ -480,6 +646,88 @@ function getTerminalStatus(terminal: Terminal): 'online' | 'stale' | 'offline' |
   }
 
   return 'online'
+}
+
+// CFD Display Card Component
+function CfdDisplayCard({
+  terminal,
+  registerTerminals,
+  onDelete,
+  onCopyToken,
+}: {
+  terminal: Terminal
+  registerTerminals: Terminal[]
+  onDelete: () => void
+  onCopyToken: (token: string) => void
+}) {
+  const pairedRegister = registerTerminals.find(r => r.cfdTerminalId === terminal.id)
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden hover:border-gray-300 transition-colors shadow">
+      {/* Header */}
+      <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-green-50 rounded-xl flex items-center justify-center">
+            <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+            </svg>
+          </div>
+          <div>
+            <h3 className="font-bold text-gray-900">{terminal.name}</h3>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <div className={`w-2 h-2 rounded-full ${terminal.isOnline ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`} />
+              <span className={`text-[10px] font-bold uppercase tracking-wide ${terminal.isOnline ? 'text-green-400' : 'text-gray-500'}`}>
+                {terminal.isOnline ? 'Online' : 'Offline'}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="p-4 space-y-3">
+        {/* Paired Register */}
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-gray-900">Paired to</span>
+          <span className={pairedRegister ? 'text-gray-900 font-medium' : 'text-gray-400'}>
+            {pairedRegister ? pairedRegister.name : 'Not paired'}
+          </span>
+        </div>
+
+        {/* Device Token */}
+        {terminal.deviceToken && (
+          <div className="pt-2 border-t border-gray-100">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Device Token</span>
+              <button
+                onClick={() => onCopyToken(terminal.deviceToken!)}
+                className="px-2 py-0.5 text-[9px] font-bold uppercase bg-green-50 hover:bg-green-100 text-green-600 rounded transition-colors"
+              >
+                Copy
+              </button>
+            </div>
+            <div className="bg-gray-50 rounded-lg px-3 py-2 border border-gray-200">
+              <p className="font-mono text-[10px] text-gray-700 break-all leading-relaxed select-all">{terminal.deviceToken}</p>
+            </div>
+            <p className="text-[10px] text-gray-400 mt-1.5">Enter this token on the PAX A3700 to connect</p>
+          </div>
+        )}
+      </div>
+
+      {/* Actions */}
+      <div className="p-4 border-t border-gray-200 flex justify-end">
+        <button
+          onClick={onDelete}
+          className="px-4 py-2 bg-red-50 hover:bg-red-100 text-red-600 text-sm rounded-lg font-medium transition-colors flex items-center gap-1.5"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+          Delete
+        </button>
+      </div>
+    </div>
+  )
 }
 
 // Terminal Card Component
