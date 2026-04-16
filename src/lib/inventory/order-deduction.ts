@@ -117,6 +117,100 @@ export const ORDER_INVENTORY_INCLUDE = {
           },
         },
       },
+      // Combo Pick N of M — customer-pick snapshots hydrated with each selection's
+      // menuItem + recipe tree so inventory deducts the ACTUAL picks (not defaults).
+      comboSelections: {
+        where: { deletedAt: null },
+        orderBy: { sortIndex: 'asc' },
+        include: {
+          menuItem: {
+            include: {
+              recipe: {
+                include: {
+                  ingredients: {
+                    include: {
+                      inventoryItem: {
+                        select: {
+                          id: true,
+                          name: true,
+                          category: true,
+                          department: true,
+                          storageUnit: true,
+                          costPerUnit: true,
+                          yieldCostPerUnit: true,
+                          currentStock: true,
+                        },
+                      },
+                      prepItem: {
+                        include: {
+                          ingredients: {
+                            include: {
+                              inventoryItem: {
+                                select: {
+                                  id: true,
+                                  name: true,
+                                  category: true,
+                                  department: true,
+                                  storageUnit: true,
+                                  costPerUnit: true,
+                                  yieldCostPerUnit: true,
+                                  currentStock: true,
+                                },
+                              },
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+              linkedBottleProduct: {
+                select: {
+                  id: true,
+                  pourSizeOz: true,
+                  inventoryItem: {
+                    select: {
+                      id: true,
+                      name: true,
+                      category: true,
+                      department: true,
+                      storageUnit: true,
+                      costPerUnit: true,
+                      yieldCostPerUnit: true,
+                      currentStock: true,
+                    },
+                  },
+                },
+              },
+              recipeIngredients: {
+                where: { deletedAt: null },
+                select: {
+                  pourCount: true,
+                  pourSizeOz: true,
+                  isSubstitutable: true,
+                  bottleProduct: {
+                    include: {
+                      inventoryItem: {
+                        select: {
+                          id: true,
+                          name: true,
+                          category: true,
+                          department: true,
+                          storageUnit: true,
+                          costPerUnit: true,
+                          yieldCostPerUnit: true,
+                          currentStock: true,
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
       // Pricing option inventory links (additive deduction for size/variant)
       pricingOption: {
         include: {
@@ -341,22 +435,126 @@ export async function deductInventoryForOrder(
 
     // Expand combo items to their component menu items for inventory deduction
     // Combo wrappers typically have no recipe; their components do.
+    //
+    // Two paths:
+    //   (A) Combo Pick N of M — `orderItem.comboSelections[]` has one row per
+    //       customer pick (snapshot-first). Deduct each selection's menuItem recipe.
+    //   (B) Classic combo — no selections present. Fall back to the template's
+    //       ComboComponent.menuItemId (or defaultItemId) recipes.
     const comboOrderItems = order.items.filter(
       (oi) => (oi.menuItem as any)?.itemType === 'combo'
     )
-    if (comboOrderItems.length > 0) {
-      const comboMenuItemIds = comboOrderItems.map(oi => oi.menuItemId)
+
+    // Split combo order items into "has selections" vs "classic" for routing.
+    const comboItemsWithSelections = comboOrderItems.filter(
+
+      (oi) => Array.isArray((oi as any).comboSelections) && (oi as any).comboSelections.length > 0
+    )
+    const comboItemsClassic = comboOrderItems.filter(
+
+      (oi) => !Array.isArray((oi as any).comboSelections) || (oi as any).comboSelections.length === 0
+    )
+
+    // ── Path A: Combo Pick N of M — deduct the actual picks ──────────────
+    // selection.menuItem.recipe is already hydrated by ORDER_INVENTORY_INCLUDE above.
+    for (const comboItem of comboItemsWithSelections) {
+
+      const selections = ((comboItem as any).comboSelections || []) as Array<any>
+      const compQty = comboItem.quantity
+
+      for (const selection of selections) {
+        // Soft-delete guard — selections edited via PUT have old rows marked deletedAt.
+        if (selection?.deletedAt) continue
+
+        const selMenuItem = selection?.menuItem
+        const selMenuItemId = selection?.menuItemId ?? selMenuItem?.id ?? null
+
+        // Missing-recipe hardening (plan invariant #6):
+        // Skip with a structured warning if the snapshotted menuItem is gone,
+        // soft-deleted, or has no recipe. Do NOT throw — the rest of the order
+        // must still deduct.
+        // TODO(combo-hardening): plug into a dedicated inventory-anomalies channel
+        // if/when one exists (see `dispatchAlert` paths above). For now warn only.
+        if (!selMenuItem || selMenuItem.deletedAt || !selMenuItem.recipe) {
+          console.warn('[inventory] combo selection missing recipe — skipping', {
+            orderId,
+            orderItemId: comboItem.id,
+            selectionId: selection?.id ?? null,
+            menuItemId: selMenuItemId,
+            reason: !selMenuItem
+              ? 'menuItem_missing'
+              : selMenuItem.deletedAt
+                ? 'menuItem_soft_deleted'
+                : 'recipe_missing',
+          })
+          continue
+        }
+
+        // Process recipe ingredients for this picked menu item.
+        for (const ing of selMenuItem.recipe.ingredients) {
+          const ingQty = toNumber(ing.quantity) * compQty
+          if (ing.inventoryItem) {
+            addUsage(ing.inventoryItem, ingQty)
+          } else if (ing.prepItem) {
+            const exploded = explodePrepItem(
+              ing.prepItem as PrepItemWithIngredients,
+              ingQty,
+              ing.unit,
+            )
+            for (const exp of exploded) {
+              addUsage(exp.inventoryItem as InventoryItemWithStock, exp.quantity)
+            }
+          }
+        }
+
+        // Process liquor recipe ingredients for this picked menu item.
+
+        const selRecipeIngs = (selMenuItem as any)?.recipeIngredients
+        if (selRecipeIngs && Array.isArray(selRecipeIngs)) {
+          for (const ing of selRecipeIngs) {
+            const inventoryItem = ing.bottleProduct?.inventoryItem
+            if (!inventoryItem) continue
+            const pourCount = toNumber(ing.pourCount) || 1
+            const pourSizeOz =
+              toNumber(ing.pourSizeOz) ||
+              toNumber(ing.bottleProduct?.pourSizeOz) ||
+              1.5
+            const totalOz = pourCount * pourSizeOz * compQty
+            addUsage(inventoryItem, totalOz)
+          }
+        }
+
+        // Process direct bottle link for this picked menu item.
+
+        const linkedBottle = (selMenuItem as any)?.linkedBottleProduct
+        if (
+          linkedBottle?.inventoryItem &&
+          (!selRecipeIngs || selRecipeIngs.length === 0)
+        ) {
+          const pourSizeOz = toNumber(linkedBottle.pourSizeOz) || 1.5
+          const totalOz = pourSizeOz * compQty
+          addUsage(linkedBottle.inventoryItem as InventoryItemWithStock, totalOz)
+        }
+      }
+    }
+
+    // ── Path B: Classic combo — fall through to template default components ──
+    if (comboItemsClassic.length > 0) {
+      const comboMenuItemIds = comboItemsClassic.map(oi => oi.menuItemId)
       const comboTemplates = await db.comboTemplate.findMany({
         where: { menuItemId: { in: comboMenuItemIds }, deletedAt: null },
         include: {
           components: {
-            where: { deletedAt: null, menuItemId: { not: null } },
-            select: { menuItemId: true },
+            where: { deletedAt: null },
+            select: { menuItemId: true, defaultItemId: true },
           },
         },
       })
+      // Resolve each component to a concrete menuItem — prefer menuItemId, fall back to defaultItemId.
       const componentMenuItemIds = comboTemplates.flatMap(t =>
-        t.components.map(c => c.menuItemId!)
+        t.components
+          .map(c => c.menuItemId ?? c.defaultItemId)
+          .filter((id): id is string => !!id),
       )
 
       if (componentMenuItemIds.length > 0) {
@@ -424,14 +622,19 @@ export async function deductInventoryForOrder(
         })
         const componentMap = new Map(componentMenuItems.map(mi => [mi.id, mi]))
 
-        // Build a map of combo menuItemId -> component menuItemIds
+        // Build a map of combo menuItemId -> resolved component menuItemIds
         const comboComponentMap = new Map<string, string[]>()
         for (const t of comboTemplates) {
-          comboComponentMap.set(t.menuItemId, t.components.map(c => c.menuItemId!))
+          comboComponentMap.set(
+            t.menuItemId,
+            t.components
+              .map(c => c.menuItemId ?? c.defaultItemId)
+              .filter((id): id is string => !!id),
+          )
         }
 
         // Process each combo order item's components
-        for (const comboItem of comboOrderItems) {
+        for (const comboItem of comboItemsClassic) {
           const componentIds = comboComponentMap.get(comboItem.menuItemId) || []
           for (const compId of componentIds) {
             const compMenuItem = componentMap.get(compId)
