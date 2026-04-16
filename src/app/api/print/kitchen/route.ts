@@ -14,6 +14,7 @@ import {
   truncateForPrint,
 } from '@/lib/escpos/commands'
 import { PizzaPrintSettings, DEFAULT_PIZZA_PRINT_SETTINGS, PrinterSettings, getDefaultPrinterSettings } from '@/types/print'
+import { formatCurrency } from '@/lib/utils'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
@@ -70,6 +71,20 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
                 crust: { select: { name: true } },
                 sauce: { select: { name: true } },
                 cheese: { select: { name: true } },
+              },
+            },
+            // Combo Pick N of M — hydrate selections for kitchen ticket rendering (Phase 7).
+            comboSelections: {
+              where: { deletedAt: null },
+              orderBy: { sortIndex: 'asc' },
+              select: {
+                id: true,
+                menuItemId: true,
+                optionName: true,
+                upchargeApplied: true,
+                sortIndex: true,
+                comboComponentId: true,
+                comboComponentOptionId: true,
               },
             },
             menuItem: {
@@ -542,6 +557,14 @@ function buildKitchenTicket(
     _modifierOnlyFor?: string
     _specialtyName?: string | null
     pricingOptionLabel?: string | null
+    // Combo Pick N of M — customer-chosen option snapshots (sorted by sortIndex asc).
+    comboSelections?: Array<{
+      id: string
+      menuItemId: string
+      optionName: string
+      upchargeApplied: unknown
+      sortIndex: number
+    }>
   }>,
   width: number,
   printerType: string = 'thermal',
@@ -864,12 +887,25 @@ function buildKitchenTicket(
       content.push(NORMAL)
     }
 
+    // Shared indented-line helper — used for both modifiers and combo selections so
+    // indentation stays consistent with existing ticket aesthetics.
+    const indentFor = (depth: number) => (depth > 0 ? '  '.repeat(depth) + '- ' : '  ')
+    const emitIndentedModifierLine = (label: string, depth: number) => {
+      const text = truncateForPrint(`${indentFor(depth)}${label}`, width)
+      if (hasRed && useRedModifiers) content.push(RED)
+      content.push(toppingSizeCmd)
+      if (boldMods && !isImpact) content.push(ESCPOS.BOLD_ON)
+      content.push(line(text))
+      if (boldMods && !isImpact) content.push(ESCPOS.BOLD_OFF)
+      content.push(NORMAL)
+      if (hasRed && useRedModifiers) content.push(BLACK)
+    }
+
     // Modifiers - SKIP for pizza items (pizzaData has the organized toppings)
     if (!item.pizzaData) {
       for (const mod of item.modifiers) {
         // Skip "None" selections unless the parent group has nonePrintsToKitchen enabled
         if (mod.isNoneSelection && !mod.modifier?.modifierGroup?.nonePrintsToKitchen) continue
-        const prefix = mod.depth > 0 ? '  '.repeat(mod.depth) + '- ' : '  '
         // T-042: handle compound preModifier strings (e.g. "side,extra" → "Side Extra Ranch")
         const preLabel = mod.preModifier
           ? mod.preModifier.split(',').map(t => t.trim()).filter(Boolean).map(t => t.charAt(0).toUpperCase() + t.slice(1)).join(' ') + ' '
@@ -880,19 +916,21 @@ function buildKitchenTicket(
         if (allCapsMods) {
           modLine = modLine.toUpperCase()
         }
-        const fullModLine = truncateForPrint(`${prefix}${modLine}`, width)
-        // Apply red for modifiers if enabled
-        if (hasRed && useRedModifiers) content.push(RED)
-        content.push(toppingSizeCmd)
-        if (boldMods && !isImpact) {
-          content.push(ESCPOS.BOLD_ON)
-        }
-        content.push(line(fullModLine))
-        if (boldMods && !isImpact) {
-          content.push(ESCPOS.BOLD_OFF)
-        }
-        content.push(NORMAL)
-        if (hasRed && useRedModifiers) content.push(BLACK)
+        emitIndentedModifierLine(modLine, mod.depth)
+      }
+    }
+
+    // Combo Pick N of M — render each customer-picked option as an indented child line
+    // using the same modifier formatter. Selections are already sorted by sortIndex asc.
+    // Classic combos (no comboSelections) render unchanged.
+    if (!item.pizzaData && item.comboSelections && item.comboSelections.length > 0) {
+      for (const sel of item.comboSelections) {
+        const rawName = (sel.optionName ?? '').toString().trim()
+        if (!rawName) continue
+        const upcharge = Number(sel.upchargeApplied ?? 0)
+        const upchargeSuffix = upcharge > 0 ? ` (+${formatCurrency(upcharge)})` : ''
+        const displayName = allCapsMods ? rawName.toUpperCase() : rawName
+        emitIndentedModifierLine(`${displayName}${upchargeSuffix}`, 0)
       }
     }
 

@@ -135,6 +135,20 @@ export const POST = withVenue(withTiming(async function POST(
                 cheese: { select: { name: true } },
               },
             },
+            // Combo Pick N of M — hydrate selections for kitchen ticket rendering (Phase 7).
+            comboSelections: {
+              where: { deletedAt: null },
+              orderBy: { sortIndex: 'asc' },
+              select: {
+                id: true,
+                menuItemId: true,
+                optionName: true,
+                upchargeApplied: true,
+                sortIndex: true,
+                comboComponentId: true,
+                comboComponentOptionId: true,
+              },
+            },
           }
         }
       }, tx)

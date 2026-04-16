@@ -252,11 +252,11 @@ This matrix answers: "If I change feature X, what else might break?"
 ### Combo Meals
 | | |
 |---|---|
-| **Depends On** | Menu (combo components are menu items) |
-| **Depended On By** | Orders (combo adds multiple items), Payments (combo pricing) |
-| **Shared Models** | `ComboTemplate`, `ComboComponent`, `MenuItem.categoryType = 'combos'` |
-| **Shared Socket Events** | `menu:updated` |
-| **Critical Rules** | Combo price is composite — not sum of parts. Component substitutions track price delta. |
+| **Depends On** | Menu (combo components are menu items), Inventory (per-selection deduction), Offline Sync (bootstrap delivers templates + outage queue protects item writes), Orders (OrderItem lifecycle, ADD/PUT items routes) |
+| **Depended On By** | Orders (combo adds multiple items), Payments (combo pricing), Inventory (deductions now read `comboSelections[]`), Sync/Bootstrap (combo templates delivered to Android), Print Routing (receipts + kitchen tickets render indented selection lines) |
+| **Shared Models** | `ComboTemplate` (+ `allowUpcharges`), `ComboComponent`, `ComboComponentOption`, `OrderItemComboSelection`, `MenuItem.categoryType = 'combos'` |
+| **Shared Socket Events** | `menu:updated`, `orders:list-changed`, `order:totals-updated`, `order:summary-updated` (on combo ADD/EDIT) |
+| **Critical Rules** | Combo price is composite — `ComboTemplate.basePrice + sum(upchargeApplied)`. `OrderItemComboSelection` is snapshot-first (soft FKs to template) so admin edits never break history. One row per pick, no quantity column. Line `quantity` must be `1` whenever `comboSelections` is non-empty (server rejects with 400 otherwise). Server forces `upchargeApplied = 0` when `template.allowUpcharges = false`. Edit = replace-all with idempotency key. |
 
 ---
 

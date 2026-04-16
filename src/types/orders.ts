@@ -55,6 +55,8 @@ export interface InlineOrderItem {
   firedAt?: Date | null
   isHeld?: boolean
   blockTimeMinutes?: number
+  // Combo Pick N of M — customer-pick snapshots (one row per pick; no quantity)
+  comboSelections?: import('./index').ComboSelection[]
 }
 
 /** Ingredient modification types — single source of truth */

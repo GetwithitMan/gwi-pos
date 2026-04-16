@@ -67,6 +67,17 @@ export interface RoutedItem {
     modificationType: IngredientModificationType
     swappedToModifierName?: string | null
   }>
+  // Combo Pick N of M — customer-chosen option snapshots (sorted by sortIndex asc).
+  // Empty/undefined for classic combos; hydrated via ORDER_ITEM_FULL_INCLUDE.
+  comboSelections?: Array<{
+    id: string
+    menuItemId: string
+    optionName: string
+    upchargeApplied: number
+    sortIndex: number
+    comboComponentId?: string | null
+    comboComponentOptionId?: string | null
+  }>
   pizzaData: PizzaItemData | null
   menuItem: {
     id: string

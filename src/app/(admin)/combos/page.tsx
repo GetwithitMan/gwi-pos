@@ -36,22 +36,36 @@ type MenuItem = Pick<BaseMenuItem, 'id' | 'name' | 'price' | 'categoryId'> & {
   }[]
 }
 
+interface ComboComponentOptionRow {
+  id: string
+  menuItemId: string
+  name?: string
+  price?: number
+  upcharge: number
+  sortOrder: number
+  isAvailable: boolean
+}
+
 interface ComboComponent {
   id?: string
   slotName: string
   displayName: string
   sortOrder: number
   isRequired: boolean
+  minSelections: number
+  maxSelections: number
   menuItemId?: string | null
   menuItem?: MenuItem | null
   itemPriceOverride?: number | null
   modifierPriceOverrides?: Record<string, number> | null
+  options?: ComboComponentOptionRow[]
 }
 
 interface ComboTemplate {
   id: string
   basePrice: number
   comparePrice?: number | null
+  allowUpcharges?: boolean
   components: ComboComponent[]
 }
 
@@ -95,6 +109,7 @@ export default function CombosPage() {
     comparePrice: '',
     categoryId: '',
     isActive: true,
+    allowUpcharges: false,
     components: [] as ComboComponent[],
   })
 
@@ -161,7 +176,21 @@ export default function CombosPage() {
         comparePrice: combo.template?.comparePrice?.toString() || '',
         categoryId: combo.categoryId,
         isActive: combo.isActive,
-        components: combo.template?.components || [],
+        allowUpcharges: combo.template?.allowUpcharges ?? false,
+        components: (combo.template?.components || []).map(c => ({
+          ...c,
+          minSelections: c.minSelections ?? (c.isRequired ? 1 : 0),
+          maxSelections: c.maxSelections ?? 1,
+          options: (c.options || []).map(o => ({
+            id: o.id,
+            menuItemId: o.menuItemId,
+            name: o.name,
+            price: o.price,
+            upcharge: o.upcharge ?? 0,
+            sortOrder: o.sortOrder ?? 0,
+            isAvailable: o.isAvailable ?? true,
+          })),
+        })),
       })
     } else {
       setEditingCombo(null)
@@ -173,6 +202,7 @@ export default function CombosPage() {
         comparePrice: '',
         categoryId: categories[0]?.id || '',
         isActive: true,
+        allowUpcharges: false,
         components: [],
       })
     }
@@ -185,16 +215,85 @@ export default function CombosPage() {
       components: [
         ...prev.components,
         {
+          id: crypto.randomUUID(),
           slotName: `slot_${prev.components.length + 1}`,
           displayName: `Item ${prev.components.length + 1}`,
           sortOrder: prev.components.length,
           isRequired: true,
+          minSelections: 1,
+          maxSelections: 1,
           menuItemId: null,
           menuItem: null,
           itemPriceOverride: null,
           modifierPriceOverrides: null,
+          options: [],
         },
       ],
+    }))
+  }
+
+  // Options helpers -------------------------------------------------------
+  const handleAddOption = (compIdx: number) => {
+    setFormData(prev => ({
+      ...prev,
+      components: prev.components.map((c, i) =>
+        i === compIdx
+          ? {
+              ...c,
+              options: [
+                ...(c.options ?? []),
+                {
+                  id: crypto.randomUUID(),
+                  menuItemId: '',
+                  upcharge: 0,
+                  sortOrder: (c.options?.length ?? 0),
+                  isAvailable: true,
+                },
+              ],
+            }
+          : c
+      ),
+    }))
+  }
+
+  const handleRemoveOption = (compIdx: number, optIdx: number) => {
+    setFormData(prev => ({
+      ...prev,
+      components: prev.components.map((c, i) =>
+        i === compIdx
+          ? { ...c, options: (c.options ?? []).filter((_, oi) => oi !== optIdx) }
+          : c
+      ),
+    }))
+  }
+
+  const handleUpdateOption = (
+    compIdx: number,
+    optIdx: number,
+    updates: Partial<ComboComponentOptionRow>
+  ) => {
+    setFormData(prev => ({
+      ...prev,
+      components: prev.components.map((c, i) => {
+        if (i !== compIdx) return c
+        const options = (c.options ?? []).map((o, oi) => {
+          if (oi !== optIdx) return o
+          const next = { ...o, ...updates }
+          // If the menuItem was changed, refresh cached name/price for the row
+          if (updates.menuItemId !== undefined) {
+            const picked = menuItems.find(m => m.id === updates.menuItemId)
+            if (picked) {
+              next.name = picked.name
+              next.price = picked.price
+            } else {
+              next.name = undefined
+              next.price = undefined
+            }
+          }
+          return next
+        })
+        return { ...c, options }
+      }),
     }))
   }
 
@@ -270,14 +369,27 @@ export default function CombosPage() {
         comparePrice: formData.comparePrice ? parseFloat(formData.comparePrice) : undefined,
         categoryId: formData.categoryId,
         isActive: formData.isActive,
-        components: formData.components.map(c => ({
+        allowUpcharges: formData.allowUpcharges,
+        components: formData.components.map((c, idx) => ({
+          id: c.id,
           slotName: c.slotName,
           displayName: c.displayName,
-          sortOrder: c.sortOrder,
+          sortOrder: c.sortOrder ?? idx,
           isRequired: c.isRequired,
+          minSelections: Math.max(0, Number.isFinite(c.minSelections) ? c.minSelections : (c.isRequired ? 1 : 0)),
+          maxSelections: Math.max(1, Number.isFinite(c.maxSelections) ? c.maxSelections : 1),
           menuItemId: c.menuItemId || undefined,
           itemPriceOverride: c.itemPriceOverride ?? undefined,
           modifierPriceOverrides: c.modifierPriceOverrides || undefined,
+          options: (c.options ?? [])
+            .filter(o => !!o.menuItemId)
+            .map((o, oi) => ({
+              id: o.id,
+              menuItemId: o.menuItemId,
+              upcharge: o.upcharge ?? 0,
+              sortOrder: o.sortOrder ?? oi,
+              isAvailable: o.isAvailable ?? true,
+            })),
         })),
       }
 
@@ -582,6 +694,24 @@ export default function CombosPage() {
                 />
               </div>
 
+              {/* Combo-level option pricing toggle */}
+              <div className="bg-gray-50 border rounded p-3">
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={formData.allowUpcharges}
+                    onChange={(e) => setFormData(prev => ({ ...prev, allowUpcharges: e.target.checked }))}
+                  />
+                  <div>
+                    <div className="font-medium text-sm">Allow option upcharges</div>
+                    <div className="text-xs text-gray-700 mt-0.5">
+                      When off, option upcharges are ignored and options are priced equal to the combo base price.
+                    </div>
+                  </div>
+                </label>
+              </div>
+
               {/* Combo Items */}
               <div>
                 <div className="flex justify-between items-center mb-3">
@@ -660,6 +790,175 @@ export default function CombosPage() {
                               </p>
                             )}
                           </div>
+                        </div>
+
+                        {/* Pick counts + required toggle */}
+                        <div className="grid grid-cols-3 gap-4 mb-3">
+                          <div>
+                            <label className="text-xs text-gray-900">Min picks</label>
+                            <input
+                              type="number"
+                              min={0}
+                              step={1}
+                              value={comp.minSelections ?? 1}
+                              onChange={(e) => {
+                                const raw = e.target.value
+                                const v = raw === '' ? 0 : parseInt(raw, 10)
+                                handleUpdateComponent(compIdx, {
+                                  minSelections: Number.isFinite(v) ? v : 0,
+                                })
+                              }}
+                              className="w-full border rounded px-2 py-1 text-sm"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-xs text-gray-900">Max picks</label>
+                            <input
+                              type="number"
+                              min={1}
+                              step={1}
+                              value={comp.maxSelections ?? 1}
+                              onChange={(e) => {
+                                const raw = e.target.value
+                                const v = raw === '' ? 1 : parseInt(raw, 10)
+                                handleUpdateComponent(compIdx, {
+                                  maxSelections: Number.isFinite(v) ? Math.max(1, v) : 1,
+                                })
+                              }}
+                              className="w-full border rounded px-2 py-1 text-sm"
+                            />
+                          </div>
+                          <div className="flex items-center">
+                            <label className="flex items-center gap-2 text-sm">
+                              <input
+                                type="checkbox"
+                                checked={!!comp.isRequired}
+                                onChange={(e) => {
+                                  const isReq = e.target.checked
+                                  handleUpdateComponent(compIdx, {
+                                    isRequired: isReq,
+                                    // Ensure min >= 1 when required, keep as-is otherwise
+                                    minSelections: isReq
+                                      ? Math.max(1, comp.minSelections ?? 1)
+                                      : (comp.minSelections ?? 0),
+                                  })
+                                }}
+                              />
+                              <span>Required</span>
+                            </label>
+                          </div>
+                        </div>
+
+                        {/* Per-component options (pick-N) */}
+                        <div className="border-t pt-3 mt-3">
+                          <div className="flex justify-between items-center mb-2">
+                            <div>
+                              <p className="text-xs font-medium text-gray-900">Options</p>
+                              <p className="text-[11px] text-gray-600">
+                                Items the customer can pick for this slot. Leave empty to use the component&apos;s default item only.
+                              </p>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleAddOption(compIdx)}
+                            >
+                              + Add Option
+                            </Button>
+                          </div>
+
+                          {(comp.options?.length ?? 0) === 0 ? (
+                            <p className="text-xs text-gray-700 bg-gray-50 rounded p-2">
+                              No options yet.
+                            </p>
+                          ) : (
+                            <div className="space-y-2">
+                              {(comp.options ?? []).map((opt, optIdx) => (
+                                <div
+                                  key={opt.id}
+                                  className="grid grid-cols-12 gap-2 items-center bg-gray-50 border rounded p-2"
+                                >
+                                  <div className="col-span-6">
+                                    <label className="text-[11px] text-gray-700 block">Menu item</label>
+                                    <select
+                                      value={opt.menuItemId || ''}
+                                      onChange={(e) => handleUpdateOption(compIdx, optIdx, { menuItemId: e.target.value })}
+                                      className="w-full border rounded px-2 py-1 text-sm"
+                                    >
+                                      <option value="">-- Select an Item --</option>
+                                      {categories.map(cat => (
+                                        <optgroup key={cat.id} label={cat.name}>
+                                          {menuItems
+                                            .filter(item => item.categoryId === cat.id && item.id !== editingCombo?.id)
+                                            .map(item => (
+                                              <option key={item.id} value={item.id}>
+                                                {item.name} ({formatCurrency(item.price)})
+                                              </option>
+                                            ))}
+                                        </optgroup>
+                                      ))}
+                                    </select>
+                                  </div>
+                                  <div className="col-span-2">
+                                    <label className="text-[11px] text-gray-700 block">Upcharge</label>
+                                    <input
+                                      type="number"
+                                      step="0.01"
+                                      min={0}
+                                      value={opt.upcharge ?? 0}
+                                      onChange={(e) => {
+                                        const raw = e.target.value
+                                        const v = raw === '' ? 0 : parseFloat(raw)
+                                        handleUpdateOption(compIdx, optIdx, {
+                                          upcharge: Number.isFinite(v) ? v : 0,
+                                        })
+                                      }}
+                                      disabled={!formData.allowUpcharges}
+                                      className="w-full border rounded px-2 py-1 text-sm disabled:bg-gray-100"
+                                      title={formData.allowUpcharges ? '' : 'Enable "Allow option upcharges" above to edit'}
+                                    />
+                                  </div>
+                                  <div className="col-span-2">
+                                    <label className="text-[11px] text-gray-700 block">Sort</label>
+                                    <input
+                                      type="number"
+                                      step={1}
+                                      value={opt.sortOrder ?? 0}
+                                      onChange={(e) => {
+                                        const raw = e.target.value
+                                        const v = raw === '' ? 0 : parseInt(raw, 10)
+                                        handleUpdateOption(compIdx, optIdx, {
+                                          sortOrder: Number.isFinite(v) ? v : 0,
+                                        })
+                                      }}
+                                      className="w-full border rounded px-2 py-1 text-sm"
+                                    />
+                                  </div>
+                                  <div className="col-span-1 flex items-center justify-center pt-4">
+                                    <label className="flex items-center gap-1 text-xs" title="Available">
+                                      <input
+                                        type="checkbox"
+                                        checked={opt.isAvailable ?? true}
+                                        onChange={(e) => handleUpdateOption(compIdx, optIdx, { isAvailable: e.target.checked })}
+                                      />
+                                      <span>On</span>
+                                    </label>
+                                  </div>
+                                  <div className="col-span-1 flex items-center justify-end pt-4">
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => handleRemoveOption(compIdx, optIdx)}
+                                    >
+                                      Remove
+                                    </Button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
 
                         {/* Show item's modifier groups */}

@@ -1177,6 +1177,16 @@ async function main() {
       description: 'Ribeye steak with two sides',
       itemType: 'combo',
     },
+    {
+      // Pick N of M combo — customer picks 6 beers from the domestic list.
+      // Flat price (no upcharges). See docs/features/combos.md → Customer-Chooses-Items.
+      id: 'combo-4',
+      categoryId: 'cat-5',
+      name: 'Bucket of Domestics',
+      price: 25.00,
+      description: 'Pick any 6 domestic beers — $25',
+      itemType: 'combo',
+    },
   ]
 
   for (const item of comboItems) {
@@ -1398,6 +1408,68 @@ async function main() {
     }
   }
   console.log('Created combo options')
+
+  // ─── Pick N of M combo: "Bucket of Domestics" ──────────────────────────────
+  // Flat $25 bucket of 6 from 4 domestic beers. allowUpcharges=false so
+  // every option's upcharge is forced to 0 server-side regardless of client
+  // payload. See docs/features/combos.md.
+  await prisma.comboTemplate.upsert({
+    where: { id: 'combo-template-4' },
+    update: {},
+    create: {
+      id: 'combo-template-4',
+      locationId: location.id,
+      menuItemId: 'combo-4',
+      basePrice: 25.00,
+      comparePrice: 30.00,      // 6 x $5 a la carte ≈ slight savings
+      allowUpcharges: false,    // flat bucket — no per-option upcharges
+    },
+  })
+
+  await prisma.comboComponent.upsert({
+    where: { id: 'comp-bucket-beers' },
+    update: {},
+    create: {
+      id: 'comp-bucket-beers',
+      locationId: location.id,
+      comboTemplateId: 'combo-template-4',
+      slotName: 'beers',
+      displayName: 'Pick 6 Beers',
+      sortOrder: 1,
+      isRequired: true,
+      minSelections: 6,
+      maxSelections: 6,
+      // NO defaultMenuItemId — the customer must pick.
+    },
+  })
+
+  // Four domestic beers already seeded above (see BEER block):
+  //   beer-bud (Budweiser), beer-bud-light (Bud Light),
+  //   beer-coors (Coors Light), beer-miller (Miller Lite).
+  const bucketBeerOptions = [
+    { id: 'beer-bud',       name: 'Budweiser' },
+    { id: 'beer-bud-light', name: 'Bud Light' },
+    { id: 'beer-coors',     name: 'Coors Light' },
+    { id: 'beer-miller',    name: 'Miller Lite' },
+  ]
+
+  for (let i = 0; i < bucketBeerOptions.length; i++) {
+    const opt = bucketBeerOptions[i]
+    await prisma.comboComponentOption.upsert({
+      where: { id: `comp-bucket-beers-${opt.id}` },
+      update: {},
+      create: {
+        id: `comp-bucket-beers-${opt.id}`,
+        locationId: location.id,
+        comboComponentId: 'comp-bucket-beers',
+        menuItemId: opt.id,
+        upcharge: 0,           // allowUpcharges=false on the template — forced 0 anyway
+        sortOrder: i,
+        isAvailable: true,
+      },
+    })
+  }
+  console.log('Created Bucket of Domestics combo (pick 6 of 4)')
 
   // Create Timed Rental Menu Items (Entertainment)
   const timedItems = [

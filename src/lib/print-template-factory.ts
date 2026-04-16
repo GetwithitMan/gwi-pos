@@ -22,6 +22,7 @@ import {
   ESCPOS,
   PAPER_WIDTH,
 } from '@/lib/escpos/commands'
+import { formatCurrency } from '@/lib/utils'
 
 const log = createChildLogger('print-template')
 import type {
@@ -438,6 +439,12 @@ function buildTicketBuffer(order: OrderContext, manifest: RoutingManifest): Buff
     if (!isImpact) content.push(ESCPOS.BOLD_OFF)
     content.push(NORMAL)
 
+    // Shared indented-line helper — used for both modifiers and combo selections so
+    // indentation stays consistent with the existing ticket formatter.
+    const indentFor = (depth: number) => (depth > 0 ? '  '.repeat(depth) + '- ' : '  ')
+    const formatIndentedLine = (label: string, depth: number = 0) =>
+      line(`${indentFor(depth)}${label}`)
+
     // Aggregate stacked modifiers by (name, preModifier, depth)
     const aggregatedMods = item.modifiers.reduce((acc, mod) => {
       const key = `${mod.name}|${mod.preModifier || ''}|${mod.depth || 0}`
@@ -452,14 +459,28 @@ function buildTicketBuffer(order: OrderContext, manifest: RoutingManifest): Buff
 
     // Modifiers with depth indentation and pre-modifier labels
     for (const mod of aggregatedMods) {
-      const indent = mod.depth > 0 ? '  '.repeat(mod.depth) + '- ' : '  '
       // T-042: handle compound preModifier strings (e.g. "side,extra" → "SIDE EXTRA Ranch")
       const preLabel = mod.preModifier
         ? mod.preModifier.split(',').map(t => t.trim().toUpperCase()).filter(Boolean).join(' ') + ' '
         : ''
       const countSuffix = mod.count > 1 ? ` ×${mod.count}` : ''
       const modText = `${preLabel}${mod.name.toUpperCase()}${countSuffix}`
-      content.push(line(`${indent}${modText}`))
+      content.push(formatIndentedLine(modText, mod.depth))
+    }
+
+    // Combo Pick N of M — render each customer-picked option as an indented child line.
+    // Kitchen only needs the option name + optional upcharge; already sorted by sortIndex asc.
+    const comboSelections = (item as any).comboSelections as
+      | Array<{ optionName?: string; upchargeApplied?: number }>
+      | undefined
+    if (comboSelections && comboSelections.length > 0) {
+      for (const sel of comboSelections) {
+        const rawName = (sel.optionName ?? '').toString().trim()
+        if (!rawName) continue
+        const upcharge = Number(sel.upchargeApplied ?? 0)
+        const upchargeSuffix = upcharge > 0 ? ` (+${formatCurrency(upcharge)})` : ''
+        content.push(formatIndentedLine(`${rawName.toUpperCase()}${upchargeSuffix}`))
+      }
     }
 
     // Ingredient modifications (NO/LITE/EXTRA)

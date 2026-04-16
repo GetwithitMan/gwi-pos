@@ -81,6 +81,7 @@ export const GET = withVenue(async function GET(
         id: template.id,
         basePrice: Number(template.basePrice),
         comparePrice: template.comparePrice ? Number(template.comparePrice) : null,
+        allowUpcharges: template.allowUpcharges,
         components: template.components.map(c => ({
           id: c.id,
           slotName: c.slotName,
@@ -134,7 +135,30 @@ export const GET = withVenue(async function GET(
   }
 })
 
-// PUT - Update combo
+// Input shapes for PUT (mirror POST)
+type OptionInput = {
+  id?: string
+  menuItemId: string
+  upcharge?: number
+  sortOrder?: number
+  isAvailable?: boolean
+}
+
+type ComponentInput = {
+  id?: string
+  slotName: string
+  displayName: string
+  sortOrder?: number
+  isRequired?: boolean
+  minSelections?: number
+  maxSelections?: number
+  menuItemId?: string | null
+  itemPriceOverride?: number | null
+  modifierPriceOverrides?: Record<string, number> | null
+  options?: OptionInput[]
+}
+
+// PUT - Update combo (stable-id diff, no delete-recreate)
 export const PUT = withVenue(async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -150,9 +174,21 @@ export const PUT = withVenue(async function PUT(
       comparePrice,
       categoryId,
       isActive,
+      allowUpcharges,
       components,
       requestingEmployeeId,
-    } = body
+    } = body as {
+      name?: string
+      displayName?: string
+      description?: string
+      price?: number
+      comparePrice?: number | null
+      categoryId?: string
+      isActive?: boolean
+      allowUpcharges?: boolean
+      components?: ComponentInput[]
+      requestingEmployeeId?: string
+    }
 
     const actor = await getActorFromRequest(request)
     const resolvedEmployeeId = requestingEmployeeId ?? actor.employeeId
@@ -168,59 +204,78 @@ export const PUT = withVenue(async function PUT(
       return err(auth.error, auth.status)
     }
 
-    // Update the menu item
-    const updateData: Record<string, unknown> = {}
-    if (name !== undefined) updateData.name = name
-    if (displayName !== undefined) updateData.displayName = displayName
-    if (description !== undefined) updateData.description = description
-    if (price !== undefined) updateData.price = price
-    if (categoryId !== undefined) updateData.categoryId = categoryId
-    if (isActive !== undefined) updateData.isActive = isActive
+    const locationId = existing.locationId
 
-    const menuItem = await db.menuItem.update({
-      where: { id },
-      data: updateData,
-    })
+    const menuItem = await db.$transaction(async (tx) => {
+      // Update the menu item
+      const updateData: Record<string, unknown> = {}
+      if (name !== undefined) updateData.name = name
+      if (displayName !== undefined) updateData.displayName = displayName
+      if (description !== undefined) updateData.description = description
+      if (price !== undefined) updateData.price = price
+      if (categoryId !== undefined) updateData.categoryId = categoryId
+      if (isActive !== undefined) updateData.isActive = isActive
 
-    // Update template if price or comparePrice changed
-    if (price !== undefined || comparePrice !== undefined) {
-      await db.comboTemplate.updateMany({
-        where: { menuItemId: id },
-        data: {
-          ...(price !== undefined && { basePrice: price }),
-          ...(comparePrice !== undefined && { comparePrice }),
-        },
-      })
-    }
-
-    // If components provided, rebuild them
-    if (components !== undefined) {
-      // Find existing template
-      const existingTemplate = await db.comboTemplate.findFirst({
-        where: { menuItemId: id },
+      const updatedMenuItem = await tx.menuItem.update({
+        where: { id },
+        data: updateData,
       })
 
-      if (existingTemplate) {
-        // Delete existing components and options
-        const existingComponents = await db.comboComponent.findMany({
-          where: { comboTemplateId: existingTemplate.id },
+      // Update template-level fields if any provided
+      if (price !== undefined || comparePrice !== undefined || allowUpcharges !== undefined) {
+        await tx.comboTemplate.updateMany({
+          where: { menuItemId: id, deletedAt: null },
+          data: {
+            ...(price !== undefined && { basePrice: price }),
+            ...(comparePrice !== undefined && { comparePrice: comparePrice ?? null }),
+            ...(allowUpcharges !== undefined && { allowUpcharges: !!allowUpcharges }),
+          },
+        })
+      }
+
+      // If components provided, diff-update them (stable ids, soft-delete removed)
+      if (components !== undefined) {
+        const existingTemplate = await tx.comboTemplate.findFirst({
+          where: { menuItemId: id, deletedAt: null },
+          include: {
+            components: {
+              where: { deletedAt: null },
+              include: {
+                options: { where: { deletedAt: null } },
+              },
+            },
+          },
         })
 
-        await db.comboComponentOption.deleteMany({
-          where: { comboComponentId: { in: existingComponents.map(c => c.id) } },
-        })
+        if (existingTemplate) {
+          const incomingComponentIds = new Set(
+            components.filter(c => !!c.id).map(c => c.id as string)
+          )
 
-        await db.comboComponent.deleteMany({
-          where: { comboTemplateId: existingTemplate.id },
-        })
+          // Soft-delete components (and their options) that no longer appear in payload
+          const removedComponents = existingTemplate.components.filter(
+            ec => !incomingComponentIds.has(ec.id)
+          )
+          if (removedComponents.length > 0) {
+            const removedIds = removedComponents.map(c => c.id)
+            await tx.comboComponentOption.updateMany({
+              where: { comboComponentId: { in: removedIds }, deletedAt: null },
+              data: { deletedAt: new Date() },
+            })
+            await tx.comboComponent.updateMany({
+              where: { id: { in: removedIds }, deletedAt: null },
+              data: { deletedAt: new Date() },
+            })
+          }
 
-        // Create new components
-        for (let idx = 0; idx < components.length; idx++) {
-          const comp = components[idx]
-          await db.comboComponent.create({
-            data: {
-              locationId: menuItem.locationId,
-              comboTemplateId: existingTemplate.id,
+          const existingCompById = new Map(
+            existingTemplate.components.map(c => [c.id, c])
+          )
+
+          // Upsert components (in submitted order)
+          for (let idx = 0; idx < components.length; idx++) {
+            const comp = components[idx]
+            const compData = {
               slotName: comp.slotName,
               displayName: comp.displayName,
               sortOrder: comp.sortOrder ?? idx,
@@ -229,14 +284,84 @@ export const PUT = withVenue(async function PUT(
               maxSelections: comp.maxSelections ?? 1,
               menuItemId: comp.menuItemId || null,
               itemPriceOverride: comp.itemPriceOverride ?? null,
-              modifierPriceOverrides: comp.modifierPriceOverrides || null,
-            },
-          })
+              modifierPriceOverrides: comp.modifierPriceOverrides ?? undefined,
+            }
+
+            let componentId: string
+            if (comp.id && existingCompById.has(comp.id)) {
+              // Update in place
+              await tx.comboComponent.update({
+                where: { id: comp.id },
+                data: compData,
+              })
+              componentId = comp.id
+            } else {
+              // Insert — honor client-supplied id when provided
+              const created = await tx.comboComponent.create({
+                data: {
+                  ...(comp.id ? { id: comp.id } : {}),
+                  locationId,
+                  comboTemplateId: existingTemplate.id,
+                  ...compData,
+                },
+              })
+              componentId = created.id
+            }
+
+            // Diff options for this component
+            const existingOptions = existingCompById.get(componentId)?.options ?? []
+            const existingOptionById = new Map(existingOptions.map(o => [o.id, o]))
+            const incomingOptions = comp.options ?? []
+            const incomingOptionIds = new Set(
+              incomingOptions.filter(o => !!o.id).map(o => o.id as string)
+            )
+
+            // Soft-delete removed options
+            const removedOptionIds = existingOptions
+              .filter(eo => !incomingOptionIds.has(eo.id))
+              .map(eo => eo.id)
+            if (removedOptionIds.length > 0) {
+              await tx.comboComponentOption.updateMany({
+                where: { id: { in: removedOptionIds }, deletedAt: null },
+                data: { deletedAt: new Date() },
+              })
+            }
+
+            // Upsert incoming options
+            for (let optIdx = 0; optIdx < incomingOptions.length; optIdx++) {
+              const opt = incomingOptions[optIdx]
+              if (!opt.menuItemId) continue
+              const optData = {
+                menuItemId: opt.menuItemId,
+                upcharge: opt.upcharge ?? 0,
+                sortOrder: opt.sortOrder ?? optIdx,
+                isAvailable: opt.isAvailable ?? true,
+              }
+
+              if (opt.id && existingOptionById.has(opt.id)) {
+                await tx.comboComponentOption.update({
+                  where: { id: opt.id },
+                  data: optData,
+                })
+              } else {
+                await tx.comboComponentOption.create({
+                  data: {
+                    ...(opt.id ? { id: opt.id } : {}),
+                    locationId,
+                    comboComponentId: componentId,
+                    ...optData,
+                  },
+                })
+              }
+            }
+          }
         }
       }
-    }
 
-    void notifyDataChanged({ locationId: existing.locationId, domain: 'combos', action: 'updated', entityId: id })
+      return updatedMenuItem
+    })
+
+    void notifyDataChanged({ locationId, domain: 'combos', action: 'updated', entityId: id })
     void pushUpstream()
 
     return ok({

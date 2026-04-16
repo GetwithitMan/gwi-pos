@@ -62,6 +62,18 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
             modifiers: {
               where: { deletedAt: null },
             },
+            // Combo Pick N of M — hydrate selections for guest receipt rendering (Phase 7).
+            comboSelections: {
+              where: { deletedAt: null },
+              orderBy: { sortIndex: 'asc' },
+              select: {
+                id: true,
+                menuItemId: true,
+                optionName: true,
+                upchargeApplied: true,
+                sortIndex: true,
+              },
+            },
           },
           orderBy: { createdAt: 'asc' },
         },
@@ -224,6 +236,19 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
           customEntryName: m.customEntryName ?? null,
           swapTargetName: m.swapTargetName ?? null,
         })),
+        // Combo Pick N of M — pass customer picks through to the renderer. Upcharges
+        // are never double-marked-up (they're already a line-item upcharge snapshot),
+        // but we apply the same dual-pricing markup so displayed totals reconcile.
+        comboSelections: Array.isArray((item as any).comboSelections)
+          ? ((item as any).comboSelections as any[]).map((sel) => ({
+              optionName: String(sel.optionName ?? ''),
+              upchargeApplied: isDualCard
+                ? applyMarkup(Number(sel.upchargeApplied ?? 0))
+                : Number(sel.upchargeApplied ?? 0),
+              sortIndex: Number(sel.sortIndex ?? 0),
+              menuItemId: sel.menuItemId ? String(sel.menuItemId) : undefined,
+            }))
+          : undefined,
         specialNotes: item.specialNotes,
       })),
       payments: order.payments.map((p) => ({

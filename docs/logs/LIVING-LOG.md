@@ -5,6 +5,36 @@
 
 ---
 
+## 2026-04-16 — Combo Pick N of M (Phases 1–8)
+
+Customer-chooses-items combos (classic "burger + pick one side" AND "bucket of 6, pick from 12" with optional upcharges). Snapshot-first selection model; reuses existing add/update item pipelines. Plan: `~/.claude/plans/shimmering-singing-lake.md`.
+
+### Commits
+
+- Phase 1 (POS `74041801`): snapshot-first `OrderItemComboSelection` schema + `ComboTemplate.allowUpcharges`, migration 129, TS + Kotlin DTO contracts.
+- Phase 1 (Android `253d9eb`): `ComboSelectionRequest` DTO added to `OrderItemRequest`.
+- Phase 2 (POS `afef6172`): admin UI + combo APIs support `allowUpcharges` and options; PUT uses stable-id diff + soft-delete.
+- Phase 3 (POS `52e7aaed`): bootstrap delivers `comboTemplates[]` to Android with components + options.
+- Phase 3 (Android `69ef666`): cache combo templates in Room (`ComboTemplateEntity` + siblings, DB v66 → v67).
+- Phase 4 (Android `3c18641`): count-based picker with edit-flow rehydration, stable sortIndex (DB v67 → v68).
+- Phase 5 (POS `406d9afb`): `POST` and `PUT /items` accept `comboSelections` via shared `validateAndBuildComboSelections`; quantity=1 guard, server-authoritative price, PUT replace-all with optional `idempotencyKey`.
+- Phase 6 (POS `4a73df55`): inventory deducts customer picks from `comboSelections[]` instead of component defaults; missing-recipe hardening; classic-combo fallback preserved.
+- Phase 7 (POS `fd03a73e`): receipts + kitchen tickets render combo selections as indented child lines via existing modifier formatter.
+- Phase 8 (this session): docs + seed + regression tests (no code change commits).
+
+### What Phase 8 Added
+
+- `docs/features/combos.md` — new "Customer-Chooses-Items (Pick N of M)" section with config matrix, six invariants, end-to-end flow, key files.
+- `docs/features/_CROSS-REF-MATRIX.md` — Combo Meals row updated with inventory / offline-sync / orders dependencies and new shared events/models.
+- `prisma/seed.ts` — "Bucket of Domestics" combo: pick 6 of 4 domestic beers, `allowUpcharges=false`, `basePrice=$25`.
+- `src/lib/domain/order-items/__tests__/combo-selections.test.ts` — regression coverage (quantity guard, empty-selection legacy path, admin edit preserves history, idempotency replay, post-paid template edits).
+
+### Plan Reference
+
+Full plan at `~/.claude/plans/shimmering-singing-lake.md`. Critical correctness fix: inventory previously deducted `ComboComponent.menuItemId` (default) instead of the customer's actual picks.
+
+---
+
 ## 2026-04-04 — v2.0.5 → v2.0.12: Trigger-File Deploy Architecture
 
 ### Commits

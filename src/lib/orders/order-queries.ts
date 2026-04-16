@@ -7,6 +7,7 @@
 import { db } from '@/lib/db'
 import * as OrderRepository from '@/lib/repositories/order-repository'
 import { mapOrderForResponse } from '@/lib/api/order-response-mapper'
+import { ORDER_ITEM_FULL_INCLUDE, mapOrderItemForWire } from '@/lib/domain/order-items'
 import { roundToCents } from '@/lib/pricing'
 import { getLocationSettings } from '@/lib/location-cache'
 import { parseSettings, getPricingProgram } from '@/lib/settings'
@@ -280,27 +281,7 @@ export async function getOrderFull(
     },
     items: {
       where: { deletedAt: null },
-      include: {
-        modifiers: {
-          where: { deletedAt: null },
-          select: {
-            id: true,
-            modifierId: true,
-            name: true,
-            price: true,
-            depth: true,
-            preModifier: true,
-            linkedMenuItemId: true,
-          },
-        },
-        pizzaData: true,
-        ingredientModifications: true,
-        menuItem: { select: { itemType: true } },
-        itemDiscounts: {
-          where: { deletedAt: null },
-          select: { id: true, amount: true, percent: true, reason: true },
-        },
-      },
+      include: ORDER_ITEM_FULL_INCLUDE,
     },
     payments: {
       where: { deletedAt: null },
@@ -333,6 +314,8 @@ export async function getOrderFull(
   }
 
   const response = mapOrderForResponse(order)
+  // Ensure combo selections are always included on full-order reads.
+  response.items = ((order as any).items || []).map((it: any) => mapOrderItemForWire(it)) as any
 
   const paidAmount = (order.payments as { status: string; totalAmount: unknown }[])
     .filter(p => p.status === 'completed')

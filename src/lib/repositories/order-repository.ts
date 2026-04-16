@@ -30,6 +30,16 @@ const ORDER_ITEMS_INCLUDE = {
       where: { deletedAt: null },
       select: { id: true, amount: true, percent: true, reason: true },
     },
+    // Combo Pick N of M (Migration 129) — customer-pick snapshots; ordered for receipts/print.
+    comboSelections: {
+      where: { deletedAt: null },
+      orderBy: { sortIndex: 'asc' as const },
+      include: {
+        comboComponent: true,
+        comboComponentOption: true,
+        menuItem: true,
+      },
+    },
   },
 } satisfies Prisma.OrderItemFindManyArgs
 

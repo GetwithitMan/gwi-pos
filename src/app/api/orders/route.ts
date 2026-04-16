@@ -19,6 +19,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
 import type { AddItemInput } from '@/lib/domain/order-items/types'
 import { validateRequiredModifierGroups } from '@/lib/domain/order-items/item-operations'
+import { ORDER_ITEM_FULL_INCLUDE } from '@/lib/domain/order-items'
 import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { isTrainingEmployee } from '@/lib/training-mode'
@@ -72,9 +73,10 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
       const existing = await OrderRepository.getOrderByIdempotencyKey(idempotencyKey, locationId)
       if (existing) {
         // Return existing order — this is a duplicate request (locationId already available from validation)
+        // Uses ORDER_ITEM_FULL_INCLUDE so comboSelections flow through to the client (Phase 5).
         const fullOrder = await OrderRepository.getOrderByIdWithInclude(existing.id, locationId, {
           employee: { select: { id: true, displayName: true, firstName: true, lastName: true } },
-          items: { where: { deletedAt: null }, include: { modifiers: true, ingredientModifications: true, pizzaData: true } },
+          items: { where: { deletedAt: null }, include: ORDER_ITEM_FULL_INCLUDE },
           table: { select: { id: true, name: true, sectionId: true } },
         })
         return NextResponse.json({ data: fullOrder, duplicate: true })
@@ -1105,10 +1107,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         },
         items: {
           where: { deletedAt: null },
-          include: {
-            modifiers: { where: { deletedAt: null } },
-            ingredientModifications: true,
-          },
+          include: ORDER_ITEM_FULL_INCLUDE,
         },
         payments: true,
       },
