@@ -6,7 +6,7 @@ import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { err, notFound, ok } from '@/lib/api-response'
 
-// POST — Link a CFD terminal to a register terminal
+// POST — Link a CFD terminal to a register terminal (1:1 enforced)
 export const POST = withVenue(withAuth('ADMIN', async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -17,36 +17,43 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
 
     const { cfdTerminalId, cfdIpAddress, cfdConnectionMode, cfdSerialNumber } = body
 
-    // Validate required field
     if (!cfdTerminalId) {
       return err('cfdTerminalId is required')
     }
 
-    // Prevent pairing a terminal to itself
     if (cfdTerminalId === id) {
       return err('A terminal cannot be paired to itself')
     }
 
-    // Find the register terminal
     const existing = await db.terminal.findUnique({ where: { id } })
     if (!existing || existing.deletedAt) {
       return notFound('Terminal not found')
     }
 
-    // Validate the register is not itself a CFD display
-     
     if ((existing as any).category === 'CFD_DISPLAY') {
       return err('A CFD terminal cannot be paired to another CFD terminal')
     }
 
-    // Find the CFD terminal
     const cfdExisting = await db.terminal.findUnique({ where: { id: cfdTerminalId } })
     if (!cfdExisting || cfdExisting.deletedAt) {
       return notFound('CFD terminal not found')
     }
 
-    // Update the register terminal with CFD pairing info
-     
+    // C6: Enforce 1:1 — if this CFD is already paired to another register, clear it first
+    await (db.terminal.updateMany as any)({
+      where: {
+        cfdTerminalId,
+        id: { not: id },
+        deletedAt: null,
+      },
+      data: {
+        cfdTerminalId: null,
+        cfdIpAddress: null,
+        cfdConnectionMode: null,
+        lastMutatedBy: 'local',
+      },
+    })
+
     const terminal = await (db.terminal.update as any)({
       where: { id },
       data: {
@@ -73,16 +80,14 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
 
     // Best-effort: mark the CFD terminal's category as CFD_DISPLAY
     try {
-       
       if ((cfdExisting as any).category !== 'CFD_DISPLAY') {
-         
         await (db.terminal.update as any)({
           where: { id: cfdTerminalId },
           data: { category: 'CFD_DISPLAY', lastMutatedBy: 'local' },
         })
       }
-    } catch (err) {
-      console.error('Failed to update CFD terminal category:', err)
+    } catch (catErr) {
+      console.error('Failed to update CFD terminal category:', catErr)
     }
 
     void notifyDataChanged({ locationId: existing.locationId, domain: 'hardware', action: 'updated', entityId: id })
@@ -103,14 +108,11 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
   try {
     const { id } = await params
 
-    // Find the register terminal
     const existing = await db.terminal.findUnique({ where: { id } })
     if (!existing || existing.deletedAt) {
       return notFound('Terminal not found')
     }
 
-    // Clear CFD pairing fields
-     
     await (db.terminal.update as any)({
       where: { id },
       data: {
