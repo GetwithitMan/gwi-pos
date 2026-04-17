@@ -8,7 +8,6 @@
 import { NextResponse } from 'next/server'
 import { readFileSync } from 'fs'
 import { z } from 'zod'
-import { db } from '@/lib/db'
 import { createChildLogger } from '@/lib/logger'
 import {
   getAndroidUpdate,
@@ -19,7 +18,7 @@ import {
 } from '@/lib/mc-fleet-client'
 import { recordCacheServe } from '@/lib/android-proxy-stats'
 import { consumeBucket } from '@/lib/android-update-rate-limit'
-import { authenticateAndroidUpdate } from '../_auth'
+import { authenticateAndroidUpdate, resolveCloudLocationId } from '../_auth'
 
 const log = createChildLogger('android-update-proxy')
 
@@ -141,18 +140,15 @@ export async function GET(request: Request) {
     )
   }
 
-  // 4. Resolve cloudLocationId from the authenticated locationId.
-  const location = await db.location.findUnique({
-    where: { id: terminalLocationId },
-    select: { cloudLocationId: true },
-  })
-  if (!location?.cloudLocationId) {
+  // 4. Resolve cloudLocationId — prefers CLOUD_LOCATION_ID env (single-venue
+  //    NUC appliance), falls back to Location.cloudLocationId DB field.
+  const cloudLocationId = await resolveCloudLocationId(terminalLocationId)
+  if (!cloudLocationId) {
     return jsonNoStore(
       { error: 'Location not registered with Mission Control' },
       { status: 409 },
     )
   }
-  const cloudLocationId = location.cloudLocationId
 
   // 5. Cache lookup.
   const now = Date.now()

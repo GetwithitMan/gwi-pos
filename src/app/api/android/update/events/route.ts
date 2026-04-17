@@ -9,7 +9,6 @@
 
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { db } from '@/lib/db'
 import { createChildLogger } from '@/lib/logger'
 import {
   postAndroidEvents,
@@ -19,8 +18,7 @@ import {
   type AndroidEventsBody,
 } from '@/lib/mc-fleet-client'
 import { recordForward, recordForwardError } from '@/lib/android-proxy-stats'
-import { consumeBucket } from '@/lib/android-update-rate-limit'
-import { authenticateAndroidUpdate } from '../_auth'
+import { authenticateAndroidUpdate, resolveCloudLocationId } from '../_auth'
 
 const log = createChildLogger('android-update-proxy')
 
@@ -112,28 +110,19 @@ export async function POST(request: Request) {
   }
   const { events, snapshot } = parsed.data
 
-  // 3. Rate limit per (snapshot.deviceFingerprint, snapshot.appKind).
-  const gate = consumeBucket(snapshot.deviceFingerprint, snapshot.appKind)
-  if (!gate.ok) {
-    log.info({ path: '/api/android/update/events', outcome: '429' })
-    return jsonNoStore(
-      { error: 'rate_limited' },
-      { status: 429, headers: { 'Retry-After': String(gate.retryAfterSec) } },
-    )
-  }
+  // 3. No rate limit on events POST — per plan §APIs, only the GET /latest
+  //    endpoint is rate-limited. Events are device-driven (ring buffer
+  //    retries), sharing a bucket with /latest caused same-cycle 429s.
 
-  // 4. Resolve cloudLocationId from the authenticated locationId.
-  const location = await db.location.findUnique({
-    where: { id: terminalLocationId },
-    select: { cloudLocationId: true },
-  })
-  if (!location?.cloudLocationId) {
+  // 4. Resolve cloudLocationId — prefers CLOUD_LOCATION_ID env (single-venue
+  //    NUC appliance), falls back to Location.cloudLocationId DB field.
+  const cloudLocationId = await resolveCloudLocationId(terminalLocationId)
+  if (!cloudLocationId) {
     return jsonNoStore(
       { error: 'Location not registered with Mission Control' },
       { status: 409 },
     )
   }
-  const cloudLocationId = location.cloudLocationId
 
   // 5. Inject cloudLocationId into events + snapshot for MC contract.
   const mcBody: AndroidEventsBody = {
