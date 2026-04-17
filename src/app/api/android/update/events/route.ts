@@ -20,6 +20,7 @@ import {
 } from '@/lib/mc-fleet-client'
 import { recordForward, recordForwardError } from '@/lib/android-proxy-stats'
 import { consumeBucket } from '@/lib/android-update-rate-limit'
+import { authenticateAndroidUpdate } from '../_auth'
 
 const log = createChildLogger('android-update-proxy')
 
@@ -77,7 +78,8 @@ function jsonNoStore(body: unknown, init?: { status?: number; headers?: Record<s
 // ─── Handler ──────────────────────────────────────────────────────────────
 
 export async function POST(request: Request) {
-  // 1. Authentication — Bearer deviceToken against Terminal.
+  // 1. Authentication — Bearer accepts cellular JWT, session JWT, or WiFi
+  //    device token. See _auth.ts for the Phase 4 rationale.
   const authHeader = request.headers.get('authorization')
   if (!authHeader?.startsWith('Bearer ')) {
     return jsonNoStore({ error: 'Authentication required' }, { status: 401 })
@@ -87,13 +89,11 @@ export async function POST(request: Request) {
     return jsonNoStore({ error: 'Authentication required' }, { status: 401 })
   }
 
-  const terminal = await db.terminal.findFirst({
-    where: { deviceToken: token, deletedAt: null },
-    select: { id: true, locationId: true },
-  })
-  if (!terminal) {
-    return jsonNoStore({ error: 'Invalid device token' }, { status: 401 })
+  const auth = await authenticateAndroidUpdate(token)
+  if (!auth) {
+    return jsonNoStore({ error: 'Invalid token' }, { status: 401 })
   }
+  const terminalLocationId = auth.locationId
 
   // 2. Parse + validate body.
   let rawBody: unknown
@@ -122,9 +122,9 @@ export async function POST(request: Request) {
     )
   }
 
-  // 4. Resolve cloudLocationId from Terminal.locationId.
+  // 4. Resolve cloudLocationId from the authenticated locationId.
   const location = await db.location.findUnique({
-    where: { id: terminal.locationId },
+    where: { id: terminalLocationId },
     select: { cloudLocationId: true },
   })
   if (!location?.cloudLocationId) {
