@@ -49,3 +49,29 @@ export async function authenticateAndroidUpdate(
 
   return null
 }
+
+/**
+ * Resolve the MC CloudLocation ID for the venue this NUC serves.
+ *
+ * A NUC is a single-venue appliance. Its identity comes from the installer-
+ * populated `.env` (`CLOUD_LOCATION_ID`), which is the canonical source.
+ * The DB `Location.cloudLocationId` field is kept in sync by registration /
+ * heartbeat but can be NULL on older venues until the next heartbeat
+ * refreshes it — the env var is the durable fallback.
+ *
+ * Returns null only when the NUC has never been paired with MC.
+ */
+export async function resolveCloudLocationId(
+  localLocationId: string,
+): Promise<string | null> {
+  const envCloudLocationId = process.env.CLOUD_LOCATION_ID?.trim()
+  if (envCloudLocationId) {
+    return envCloudLocationId
+  }
+
+  const row = await db.location.findUnique({
+    where: { id: localLocationId },
+    select: { cloudLocationId: true },
+  })
+  return row?.cloudLocationId ?? null
+}
