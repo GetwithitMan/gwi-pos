@@ -51,6 +51,59 @@ export async function authenticateAndroidUpdate(
 }
 
 /**
+ * LAN-scoped auth path for KDS devices.
+ *
+ * Decision: `docs/decisions/2026-04-18-kds-update-auth.md` (Option A).
+ *
+ * `KDSScreen` has no `deviceToken` field and no pairing flow that mints one.
+ * KDS's existing `/api/kds?locationId=...&screenId=...` endpoint already
+ * trusts LAN + locationId for real-time order data, so the same trust model
+ * is acceptable for fleet-update metadata.
+ *
+ * Returns the NUC's own cloudLocationId on a valid KDS-LAN request;
+ * the route uses this directly (skipping `resolveCloudLocationId` because
+ * there's no terminal token to key off of).
+ *
+ * Qualifies only when:
+ *   - `app` starts with `KDS_` (KDS_PITBOSS / KDS_FOODKDS / KDS_DELIVERY)
+ *   - `cloudLocationId` query param is present AND equals the NUC's own
+ *     `CLOUD_LOCATION_ID` env (or cached `Location.cloudLocationId`)
+ *
+ * Non-KDS apps MUST use Bearer auth; this function returns null for them
+ * so the caller falls through to the existing 401 path.
+ */
+export async function authenticateKdsLanRequest(
+  app: string,
+  locationIdQueryParam: string | null,
+): Promise<{ cloudLocationId: string; tokenKind: 'kds-lan' } | null> {
+  if (!app.startsWith('KDS_')) return null
+  if (!locationIdQueryParam) return null
+
+  const nucCloudLocationId = await resolveCloudLocationId('')
+  if (!nucCloudLocationId) return null
+
+  // Accept either form the device may have stored at pairing time:
+  //   - cloud locationId (direct match against the NUC's env)
+  //   - local Location.id (translate via DB lookup, then match)
+  // KDS pairing historically stores the local id (that's what `/api/kds`
+  // uses), but newer venues may store the cloud id directly. Either way,
+  // a successful match means the request originates from this NUC's LAN.
+  if (locationIdQueryParam === nucCloudLocationId) {
+    return { cloudLocationId: nucCloudLocationId, tokenKind: 'kds-lan' }
+  }
+
+  const row = await db.location.findUnique({
+    where: { id: locationIdQueryParam },
+    select: { cloudLocationId: true },
+  })
+  if (row?.cloudLocationId === nucCloudLocationId) {
+    return { cloudLocationId: nucCloudLocationId, tokenKind: 'kds-lan' }
+  }
+
+  return null
+}
+
+/**
  * Resolve the MC CloudLocation ID for the venue this NUC serves.
  *
  * A NUC is a single-venue appliance. Its identity comes from the installer-

@@ -18,7 +18,11 @@ import {
   type AndroidEventsBody,
 } from '@/lib/mc-fleet-client'
 import { recordForward, recordForwardError } from '@/lib/android-proxy-stats'
-import { authenticateAndroidUpdate, resolveCloudLocationId } from '../_auth'
+import {
+  authenticateAndroidUpdate,
+  authenticateKdsLanRequest,
+  resolveCloudLocationId,
+} from '../_auth'
 
 const log = createChildLogger('android-update-proxy')
 
@@ -64,6 +68,10 @@ const DeviceSnapshotSchema = z.object({
 const DeviceBodySchema = z.object({
   events: z.array(DeviceEventSchema).max(200),
   snapshot: DeviceSnapshotSchema,
+  // KDS LAN-auth path only — see _auth.ts `authenticateKdsLanRequest`.
+  // Device sends whatever locationId it has (cloud or local — auth helper
+  // resolves either form). Non-KDS apps ignore.
+  locationId: z.string().min(1).optional(),
 })
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
@@ -76,31 +84,8 @@ function jsonNoStore(body: unknown, init?: { status?: number; headers?: Record<s
 // ─── Handler ──────────────────────────────────────────────────────────────
 
 export async function POST(request: Request) {
-  // 1. Authentication — Bearer accepts cellular JWT, session JWT, or WiFi
-  //    device token. See _auth.ts for the Phase 4 rationale.
-  const authHeader = request.headers.get('authorization')
-  if (!authHeader?.startsWith('Bearer ')) {
-    return jsonNoStore({ error: 'Authentication required' }, { status: 401 })
-  }
-  const token = authHeader.slice(7).trim()
-  if (!token) {
-    return jsonNoStore({ error: 'Authentication required' }, { status: 401 })
-  }
-
-  const auth = await authenticateAndroidUpdate(token)
-  if (!auth) {
-    // Distinct machine-readable code so the device can distinguish a stale
-    // pairing (recoverable by re-pair) from a transient 401 on a malformed
-    // request. After N consecutive device_token_unknown responses, Phase 10
-    // clients clear their stored token and return to the pairing screen.
-    return jsonNoStore(
-      { error: 'Invalid token', code: 'device_token_unknown' },
-      { status: 401 },
-    )
-  }
-  const terminalLocationId = auth.locationId
-
-  // 2. Parse + validate body.
+  // 1. Parse + validate body FIRST so the KDS LAN-auth branch can read
+  //    `snapshot.appKind` and `cloudLocationId` before the auth decision.
   let rawBody: unknown
   try {
     rawBody = await request.json()
@@ -115,21 +100,48 @@ export async function POST(request: Request) {
       { status: 400 },
     )
   }
-  const { events, snapshot } = parsed.data
+  const { events, snapshot, locationId: locationIdBody } = parsed.data
 
-  // 3. No rate limit on events POST — per plan §APIs, only the GET /latest
-  //    endpoint is rate-limited. Events are device-driven (ring buffer
-  //    retries), sharing a bucket with /latest caused same-cycle 429s.
+  // 2. Authentication — two paths:
+  //    a. KDS LAN-scoped (snapshot.appKind starts with KDS_ and the
+  //       cloudLocationId in the body matches the NUC's own venue)
+  //    b. Bearer Android update auth (all other apps)
+  //    See docs/decisions/2026-04-18-kds-update-auth.md.
+  let cloudLocationId: string | null = null
 
-  // 4. Resolve cloudLocationId — prefers CLOUD_LOCATION_ID env (single-venue
-  //    NUC appliance), falls back to Location.cloudLocationId DB field.
-  const cloudLocationId = await resolveCloudLocationId(terminalLocationId)
+  const kdsLan = await authenticateKdsLanRequest(snapshot.appKind, locationIdBody ?? null)
+  if (kdsLan) {
+    cloudLocationId = kdsLan.cloudLocationId
+  } else {
+    const authHeader = request.headers.get('authorization')
+    if (!authHeader?.startsWith('Bearer ')) {
+      return jsonNoStore({ error: 'Authentication required' }, { status: 401 })
+    }
+    const token = authHeader.slice(7).trim()
+    if (!token) {
+      return jsonNoStore({ error: 'Authentication required' }, { status: 401 })
+    }
+
+    const auth = await authenticateAndroidUpdate(token)
+    if (!auth) {
+      return jsonNoStore(
+        { error: 'Invalid token', code: 'device_token_unknown' },
+        { status: 401 },
+      )
+    }
+    cloudLocationId = await resolveCloudLocationId(auth.locationId)
+  }
+
   if (!cloudLocationId) {
     return jsonNoStore(
       { error: 'Location not registered with Mission Control' },
       { status: 409 },
     )
   }
+
+  // 3. No rate limit on events POST — per plan §APIs, only the GET /latest
+  //    endpoint is rate-limited. Events are device-driven (ring buffer
+  //    retries), sharing a bucket with /latest caused same-cycle 429s.
 
   // 5. Inject cloudLocationId into events + snapshot for MC contract.
   const mcBody: AndroidEventsBody = {

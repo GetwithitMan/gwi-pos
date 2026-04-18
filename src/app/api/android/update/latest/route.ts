@@ -18,7 +18,11 @@ import {
 } from '@/lib/mc-fleet-client'
 import { recordCacheServe } from '@/lib/android-proxy-stats'
 import { consumeBucket } from '@/lib/android-update-rate-limit'
-import { authenticateAndroidUpdate, resolveCloudLocationId } from '../_auth'
+import {
+  authenticateAndroidUpdate,
+  authenticateKdsLanRequest,
+  resolveCloudLocationId,
+} from '../_auth'
 
 const log = createChildLogger('android-update-proxy')
 
@@ -30,6 +34,10 @@ const QuerySchema = z.object({
   app: AppKind,
   versionCode: z.coerce.number().int().nonnegative(),
   deviceFingerprint: z.string().min(1).max(256),
+  // KDS LAN-auth path only (see _auth.ts `authenticateKdsLanRequest`).
+  // Device sends whatever locationId it learned at pairing (cloud or
+  // local — the auth helper resolves either form). Non-KDS apps ignore.
+  locationId: z.string().min(1).optional(),
 })
 
 // ─── Response cache (per (cloudLocationId, appKind, versionCode)) ─────────
@@ -97,37 +105,15 @@ function jsonNoStore(body: unknown, init?: { status?: number; headers?: Record<s
 // ─── Handler ──────────────────────────────────────────────────────────────
 
 export async function GET(request: Request) {
-  // 1. Authentication — Bearer accepts cellular JWT, session JWT, or WiFi
-  //    device token. See _auth.ts for the Phase 4 rationale (AuthInterceptor
-  //    swaps to session JWT after PIN login).
-  const authHeader = request.headers.get('authorization')
-  if (!authHeader?.startsWith('Bearer ')) {
-    return jsonNoStore({ error: 'Authentication required' }, { status: 401 })
-  }
-  const token = authHeader.slice(7).trim()
-  if (!token) {
-    return jsonNoStore({ error: 'Authentication required' }, { status: 401 })
-  }
-
-  const auth = await authenticateAndroidUpdate(token)
-  if (!auth) {
-    // Distinct machine-readable code so the device can distinguish a stale
-    // pairing (recoverable by re-pair) from a transient 401 on a malformed
-    // request. After N consecutive device_token_unknown responses, Phase 10
-    // clients clear their stored token and return to the pairing screen.
-    return jsonNoStore(
-      { error: 'Invalid token', code: 'device_token_unknown' },
-      { status: 401 },
-    )
-  }
-  const terminalLocationId = auth.locationId
-
-  // 2. Parse + validate query params.
+  // 1. Parse + validate query params (moved before auth so the KDS LAN
+  //    branch can read `app` and `cloudLocationId` before deciding the
+  //    auth path).
   const url = new URL(request.url)
   const parsed = QuerySchema.safeParse({
     app: url.searchParams.get('app'),
     versionCode: url.searchParams.get('versionCode'),
     deviceFingerprint: url.searchParams.get('deviceFingerprint'),
+    locationId: url.searchParams.get('locationId') ?? undefined,
   })
   if (!parsed.success) {
     return jsonNoStore(
@@ -135,7 +121,41 @@ export async function GET(request: Request) {
       { status: 400 },
     )
   }
-  const { app, versionCode, deviceFingerprint } = parsed.data
+  const { app, versionCode, deviceFingerprint, locationId: locationIdQuery } = parsed.data
+
+  // 2. Authentication — two paths:
+  //    a. KDS LAN-scoped (app starts with KDS_ and cloudLocationId query matches NUC)
+  //    b. Bearer Android update auth (all other apps)
+  //    See docs/decisions/2026-04-18-kds-update-auth.md for the KDS rationale.
+  let resolvedCloudLocationId: string | null = null
+
+  const kdsLan = await authenticateKdsLanRequest(app, locationIdQuery ?? null)
+  if (kdsLan) {
+    resolvedCloudLocationId = kdsLan.cloudLocationId
+  } else {
+    const authHeader = request.headers.get('authorization')
+    if (!authHeader?.startsWith('Bearer ')) {
+      return jsonNoStore({ error: 'Authentication required' }, { status: 401 })
+    }
+    const token = authHeader.slice(7).trim()
+    if (!token) {
+      return jsonNoStore({ error: 'Authentication required' }, { status: 401 })
+    }
+
+    const auth = await authenticateAndroidUpdate(token)
+    if (!auth) {
+      // Distinct machine-readable code so the device can distinguish a stale
+      // pairing (recoverable by re-pair) from a transient 401 on a malformed
+      // request. After N consecutive device_token_unknown responses, Phase 10
+      // clients clear their stored token and return to the pairing screen.
+      return jsonNoStore(
+        { error: 'Invalid token', code: 'device_token_unknown' },
+        { status: 401 },
+      )
+    }
+    const terminalLocationId = auth.locationId
+    resolvedCloudLocationId = await resolveCloudLocationId(terminalLocationId)
+  }
 
   // 3. Rate limit per (deviceFingerprint, appKind).
   const gate = consumeBucket(deviceFingerprint, app)
@@ -147,9 +167,9 @@ export async function GET(request: Request) {
     )
   }
 
-  // 4. Resolve cloudLocationId — prefers CLOUD_LOCATION_ID env (single-venue
-  //    NUC appliance), falls back to Location.cloudLocationId DB field.
-  const cloudLocationId = await resolveCloudLocationId(terminalLocationId)
+  // 4. Confirm we have a cloudLocationId (resolved above either from the
+  //    KDS LAN-auth path or the Bearer auth path + resolveCloudLocationId).
+  const cloudLocationId = resolvedCloudLocationId
   if (!cloudLocationId) {
     return jsonNoStore(
       { error: 'Location not registered with Mission Control' },
