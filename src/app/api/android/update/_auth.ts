@@ -82,22 +82,40 @@ export async function authenticateKdsLanRequest(
   const nucCloudLocationId = await resolveCloudLocationId('')
   if (!nucCloudLocationId) return null
 
-  // Accept either form the device may have stored at pairing time:
-  //   - cloud locationId (direct match against the NUC's env)
-  //   - local Location.id (translate via DB lookup, then match)
-  // KDS pairing historically stores the local id (that's what `/api/kds`
-  // uses), but newer venues may store the cloud id directly. Either way,
-  // a successful match means the request originates from this NUC's LAN.
+  // Accept any of three forms the device may have stored at pairing time:
+  //   a. Cloud locationId (direct match against NUC's env) — newer venues
+  //   b. Local `Location.id` with populated `cloudLocationId` matching env
+  //      — fully-bidirectional-registered venues
+  //   c. Local `Location.id` as the only row on this single-venue NUC
+  //      appliance, when `Location.cloudLocationId` is NULL (env is the
+  //      only cloud-identity source). This is common on venues migrated
+  //      before the cloud-identity backfill.
+  //
+  // Case (c) is safe because a NUC is a single-venue appliance — it only
+  // ever has one `Location` row, and any LAN device that knows that
+  // `Location.id` is provably paired with this NUC.
   if (locationIdQueryParam === nucCloudLocationId) {
     return { cloudLocationId: nucCloudLocationId, tokenKind: 'kds-lan' }
   }
 
   const row = await db.location.findUnique({
     where: { id: locationIdQueryParam },
-    select: { cloudLocationId: true },
+    select: { id: true, cloudLocationId: true },
   })
-  if (row?.cloudLocationId === nucCloudLocationId) {
+  if (row == null) return null
+
+  // (b) — translated match
+  if (row.cloudLocationId === nucCloudLocationId) {
     return { cloudLocationId: nucCloudLocationId, tokenKind: 'kds-lan' }
+  }
+
+  // (c) — single-venue appliance with NULL cloudLocationId on the row.
+  // Confirm this is the only Location on the box before accepting.
+  if (row.cloudLocationId == null) {
+    const count = await db.location.count()
+    if (count === 1) {
+      return { cloudLocationId: nucCloudLocationId, tokenKind: 'kds-lan' }
+    }
   }
 
   return null
