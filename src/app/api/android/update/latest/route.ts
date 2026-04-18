@@ -111,7 +111,14 @@ export async function GET(request: Request) {
 
   const auth = await authenticateAndroidUpdate(token)
   if (!auth) {
-    return jsonNoStore({ error: 'Invalid token' }, { status: 401 })
+    // Distinct machine-readable code so the device can distinguish a stale
+    // pairing (recoverable by re-pair) from a transient 401 on a malformed
+    // request. After N consecutive device_token_unknown responses, Phase 10
+    // clients clear their stored token and return to the pairing screen.
+    return jsonNoStore(
+      { error: 'Invalid token', code: 'device_token_unknown' },
+      { status: 401 },
+    )
   }
   const terminalLocationId = auth.locationId
 

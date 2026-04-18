@@ -89,7 +89,14 @@ export async function POST(request: Request) {
 
   const auth = await authenticateAndroidUpdate(token)
   if (!auth) {
-    return jsonNoStore({ error: 'Invalid token' }, { status: 401 })
+    // Distinct machine-readable code so the device can distinguish a stale
+    // pairing (recoverable by re-pair) from a transient 401 on a malformed
+    // request. After N consecutive device_token_unknown responses, Phase 10
+    // clients clear their stored token and return to the pairing screen.
+    return jsonNoStore(
+      { error: 'Invalid token', code: 'device_token_unknown' },
+      { status: 401 },
+    )
   }
   const terminalLocationId = auth.locationId
 
@@ -178,8 +185,21 @@ export async function POST(request: Request) {
       // Per plan: any MC non-2xx → 502 to device so it retries via ring buffer.
       // 4xx from MC indicates malformed batch — still 502, but log loudly.
       if (err.status >= 400 && err.status < 500) {
+        // Include MC's response body + a redacted snapshot hint so the exact
+        // field triggering the 4xx is visible without a re-roll-out.
         log.error(
-          { path: '/api/android/update/events', outcome: 'forward_err', mcStatus: err.status },
+          {
+            path: '/api/android/update/events',
+            outcome: 'forward_err',
+            mcStatus: err.status,
+            mcBody: err.body,
+            snapshotKeys: {
+              appKind: snapshot.appKind,
+              installedVersionCode: snapshot.installedVersionCode,
+              resolvedChannel: snapshot.resolvedChannel,
+              eventKinds: events.map((e) => e.kind),
+            },
+          },
           'MC rejected events batch (4xx) — device will retry; investigate payload shape',
         )
       } else {
