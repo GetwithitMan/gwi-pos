@@ -7,6 +7,7 @@ import { withAuth } from '@/lib/api-auth-middleware'
 import { parseSettings, getPricingProgram } from '@/lib/settings'
 import { calculateCardPrice, calculateDebitPrice } from '@/lib/pricing'
 import type { PrintTemplateSettings } from '@/types/print'
+import type { PricingProgram } from '@/lib/settings'
 import { createChildLogger } from '@/lib/logger'
 import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('print-receipt')
@@ -124,7 +125,12 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
 
     // ── Parse location settings — use canonical pricing program ──
     const locationSettings = parseSettings(order.location.settings)
-    const pp = getPricingProgram(locationSettings)
+    const snapshotPayment = order.payments.find((p: any) => p.pricingProgramSnapshot)
+    const pp: PricingProgram = snapshotPayment?.pricingProgramSnapshot
+      ? (typeof snapshotPayment.pricingProgramSnapshot === 'string'
+        ? JSON.parse(snapshotPayment.pricingProgramSnapshot)
+        : snapshotPayment.pricingProgramSnapshot) as PricingProgram
+      : getPricingProgram(locationSettings)
 
     const isDualPricing = pp.enabled && (
       pp.model === 'dual_price' || pp.model === 'dual_price_pan_debit' || pp.model === 'cash_discount'
