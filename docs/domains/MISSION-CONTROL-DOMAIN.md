@@ -49,6 +49,7 @@ Local Servers (Ubuntu + Docker)
 | **Provisioning** | Ubuntu host scripts | `/scripts/provision.sh`, `/scripts/collect-fingerprint.sh` |
 | **License Engine** | License validation + grace period | `/lib/license/*`, `/api/fleet/license/*` |
 | **Update Pipeline** | Cosign-signed image rollouts | GitHub Actions, `/api/admin/updates/*` |
+| **Android Fleet Update** | Release registry + HMAC fleet routes for APK delivery to register / PAX / KDS / CFD; NUC proxies, R2 hosts artifacts. See [`docs/operations/ANDROID-UPDATE-RUNBOOK.md`](../operations/ANDROID-UPDATE-RUNBOOK.md) for the full flow and [`docs/operations/ANDROID-UPDATE-STATUS-2026-04-18.md`](../operations/ANDROID-UPDATE-STATUS-2026-04-18.md) for current rollout state. | `/api/admin/android/releases`, `/api/fleet/android/update`, `/api/fleet/android/events` (MC side); `src/app/api/android/update/{latest,events}/route.ts` (NUC side) |
 | **Tenant Isolation** | Postgres Schemas + RLS | Migration scripts, DB roles, RLS policies |
 | **Wildcard Routing** | Online ordering subdomains | Edge Middleware, `*.gwipos.com` DNS |
 | **Payment Processing (PayFac)** | Centralized Datacap credential management, processing rate control | `/api/admin/locations/[id]/payment-config`, Sync Agent `update_payment_config` command |

@@ -8,7 +8,7 @@
 import crypto from 'crypto'
 import { NextResponse } from 'next/server'
 import { PaymentMethod, PaymentStatus } from '@/generated/prisma/client'
-import { calculateCardPrice, roundToCents, toNumber } from '@/lib/pricing'
+import { roundToCents, toNumber } from '@/lib/pricing'
 import {
   processCashPayment,
   processCardPayment,
@@ -191,35 +191,6 @@ export async function processPaymentLoop(
         paymentRecord.pricingMode = 'card'
         paymentRecord.cashDiscountAmount = 0
         paymentRecord.priceBeforeDiscount = payment.amount
-
-        // Validate: card amount should match expected card price (warn, don't reject)
-        // CRITICAL: exclude tipTotal from surcharge base — surcharge applies to order amount only
-        const orderTotalExTip = toNumber(order.total ?? 0) - toNumber(order.tipTotal ?? 0)
-        const markupPct = payment.method === 'debit'
-          ? (pp.debitMarkupPercent ?? 0)
-          : (pp.creditMarkupPercent ?? pp.cashDiscountPercent ?? 0)
-        const expectedCardAmount = calculateCardPrice(orderTotalExTip, markupPct)
-        if (Math.abs(payment.amount - expectedCardAmount) > 0.01) {
-          console.warn(`[DualPricing] Card payment amount $${payment.amount} differs from expected $${expectedCardAmount} for order ${orderId}`)
-          // Route through audit log so it shows up in monitoring dashboards
-          void tx.auditLog.create({
-            data: {
-              locationId: order.locationId,
-              action: 'DUAL_PRICING_MISMATCH',
-              employeeId: employeeId || null,
-              entityType: 'order',
-              entityId: orderId,
-              details: JSON.stringify({
-                orderNumber: order.orderNumber,
-                submittedAmount: payment.amount,
-                expectedCardAmount,
-                orderTotal: toNumber(order.total ?? 0),
-                creditMarkupPercent: pp.creditMarkupPercent,
-                delta: roundToCents(payment.amount - expectedCardAmount),
-              }),
-            },
-          }).catch(err => log.warn({ err }, 'fire-and-forget failed in payment-loop'))
-        }
       }
     }
 

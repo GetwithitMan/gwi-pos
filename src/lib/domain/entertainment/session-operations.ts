@@ -266,6 +266,7 @@ export async function extendSession(
     menuItemId: string
     additionalMinutes: number
     menuItem: MenuItemPricingFields
+    flatFee?: number
   }
 ): Promise<ExtendSessionResult | { error: string }> {
   const { orderItemId, menuItemId, additionalMinutes, menuItem } = input
@@ -298,7 +299,8 @@ export async function extendSession(
 
   // Calculate incremental charge
   const additionalCharge = calculateExtensionCharge(oldMinutes, additionalMinutes, menuItem)
-  const newPrice = oldPrice + additionalCharge
+  const flatFee = input.flatFee ?? 0
+  const newPrice = oldPrice + additionalCharge + flatFee
 
   // Update the order item with new duration and incremental price
   const updatedItem = await tx.orderItem.update({

@@ -6,6 +6,7 @@ import { withVenue } from '@/lib/with-venue'
 import { getLocationSettings } from '@/lib/location-cache'
 import { parseSettings, getPricingProgram } from '@/lib/settings'
 import { calculateCardPrice, calculateDebitPrice, roundToCents } from '@/lib/pricing'
+import type { PricingProgram } from '@/lib/settings'
 import { err, notFound, ok, unauthorized } from '@/lib/api-response'
 
 const employeeSelect = { id: true, firstName: true, lastName: true } as const
@@ -116,6 +117,9 @@ export const GET = withVenue(async function GET(
           amountAuthorized: true,
           amountTendered: true,
           changeGiven: true,
+          pricingMode: true,
+          appliedPricingTier: true,
+          pricingProgramSnapshot: true,
           processedAt: true,
           employeeId: true,
           employee: { select: employeeSelect },
@@ -249,7 +253,12 @@ export const GET = withVenue(async function GET(
 
     // ── Use canonical pricing program + stored order values ──
     const locationSettings = parseSettings(await getLocationSettings(order.locationId))
-    const pp = getPricingProgram(locationSettings)
+    const snapshotPayment = payments.find((p: any) => p.pricingProgramSnapshot)
+    const pp: PricingProgram = snapshotPayment?.pricingProgramSnapshot
+      ? (typeof snapshotPayment.pricingProgramSnapshot === 'string'
+        ? JSON.parse(snapshotPayment.pricingProgramSnapshot)
+        : snapshotPayment.pricingProgramSnapshot) as PricingProgram
+      : getPricingProgram(locationSettings)
     const taxRateDecimal = (locationSettings.tax?.defaultRate ?? 0) / 100
     const taxRate = taxRateDecimal > 0
       ? Math.round(taxRateDecimal * 10000) / 10000

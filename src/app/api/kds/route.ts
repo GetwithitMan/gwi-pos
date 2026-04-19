@@ -233,6 +233,19 @@ export const GET = withVenue(async function GET(request: NextRequest) {
                 cheese: { select: { name: true } },
               },
             },
+            // Combo Pick N of M — customer-picked option snapshots for kitchen display.
+            // Narrow select (not include): kitchen needs display name + sort order only.
+            comboSelections: {
+              where: { deletedAt: null },
+              orderBy: { sortIndex: 'asc' },
+              select: {
+                id: true,
+                menuItemId: true,
+                optionName: true,
+                upchargeApplied: true,
+                sortIndex: true,
+              },
+            },
           },
         },
       },
@@ -397,6 +410,14 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           })),
           // Allergen tracking — passed to KDS for display
           allergens: item.menuItem.allergens || [],
+          // Combo Pick N of M — customer-picked option snapshots (empty array for classic combos)
+          comboSelections: (item.comboSelections ?? []).map(sel => ({
+            id: sel.id,
+            menuItemId: sel.menuItemId,
+            optionName: sel.optionName,
+            upchargeApplied: Number(sel.upchargeApplied),
+            sortIndex: sel.sortIndex,
+          })),
           // Pizza builder data — size, crust, sauce, cheese, toppings
           pizzaData: item.pizzaData ? {
             size: item.pizzaData.size?.name || null,

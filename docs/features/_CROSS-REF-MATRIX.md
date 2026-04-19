@@ -789,4 +789,17 @@ When one of these changes, the entire cluster often needs review:
 
 ---
 
-*Last updated: 2026-03-17 (Delivery Management entry added)*
+### Android Update System
+| | |
+|---|---|
+| **Canonical Docs** | [`docs/operations/ANDROID-UPDATE-RUNBOOK.md`](../operations/ANDROID-UPDATE-RUNBOOK.md), [`docs/operations/ANDROID-UPDATE-STATUS-2026-04-18.md`](../operations/ANDROID-UPDATE-STATUS-2026-04-18.md), [`docs/operations/PRE-LAUNCH-SECURITY-CHECKLIST.md`](../operations/PRE-LAUNCH-SECURITY-CHECKLIST.md), [`docs/operations/MONUMENT-ONSITE-CHECKLIST.md`](../operations/MONUMENT-ONSITE-CHECKLIST.md), [`docs/decisions/2026-04-18-kds-update-auth.md`](../decisions/2026-04-18-kds-update-auth.md) |
+| **Depends On** | Mission Control (release registry, HMAC fleet routes, channel pins), R2 / Cloudflare (APK artifact storage), Hardware (device pairing + terminal tokens supply the Bearer used on `/latest`/`events`), Cellular Auth (cellular JWT path reuses the same multi-token auth on `/latest`), Settings (per-venue release channel + canary tier) |
+| **Depended On By** | Register app (`gwi-android-register`), PAX A6650 (`gwi-pax-a6650`), KDS Android — pitboss/foodkds/delivery (`gwi-kds-android`), CFD A3700 (`gwi-cfd`) — every Android app kind in the fleet polls NUC for updates and reports `INSTALL_CONFIRMED` / `INTEGRITY_FAILED` events |
+| **Shared Models** | MC-owned: `AndroidRelease`, `AndroidChannelPin`, `AndroidDeviceState` (MC schema). NUC-side: no dedicated Prisma model — auth derives from existing `Terminal`, session JWT, and cellular JWT. R2 keys: `android/<APP_KIND>/releases/<versionCode>/app-release.apk` |
+| **Shared Socket Events** | None — update flow is HTTP polling, not socket-driven. NUC→MC is HTTP HMAC; device→NUC is HTTP Bearer/LAN |
+| **NUC Code Paths** | `src/app/api/android/update/latest/route.ts`, `src/app/api/android/update/events/route.ts`, `src/app/api/android/update/_auth.ts`, `src/lib/mc-fleet-client.ts`, `src/lib/android-proxy-stats.ts`, `src/lib/android-update-rate-limit.ts` |
+| **Critical Rules** | NUC→MC MUST go through `mc-fleet-client.ts` (HMAC signed) — never bypass. Device-side integrity gate (SHA-256 artifact match → packageName match → signing-cert SHA-256 containment → versionCode strictly greater) is MANDATORY before install. Stale-token recovery is device-side mandatory: 3× `device_token_unknown` 401s within 15 min → `tokenProvider.clearAll()` → route to pairing. KDS uses LAN-scoped `locationId` auth (`authenticateKdsLanRequest`) — all other kinds use Bearer via `authenticateAndroidUpdate`. `/latest` is 30s-cached and token-bucket rate-limited per `(deviceFingerprint, appKind)`. Device polls on server-returned `pollAfterSeconds` — never shorter. |
+
+---
+
+*Last updated: 2026-04-18 (Android Update System entry added — engineering-complete, 3/4 apps canary-validated)*

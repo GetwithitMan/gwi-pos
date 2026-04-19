@@ -103,6 +103,13 @@ export async function buildPaymentFinancialContext(
   // (all items stay on the parent). Their totals were set during split creation.
   const isAllocationSplitChild = order.parentOrderId && (order as any).splitClass === 'allocation'
   if (perMinuteItems.length > 0 && !isAllocationSplitChild) {
+    // Lock per-minute items to prevent concurrent cron settlement race
+    const perMinuteItemIds = perMinuteItems.map((item: any) => item.id)
+    await tx.$queryRawUnsafe(
+      `SELECT id FROM "OrderItem" WHERE id = ANY($1::text[]) FOR UPDATE`,
+      perMinuteItemIds
+    )
+
     const now = new Date()
     const payLocSettings = order.location.settings as { tax?: { defaultRate?: number; inclusiveTaxRate?: number } } | null
     // Prefer order-level exclusive tax rate snapshot; fall back to live rate
