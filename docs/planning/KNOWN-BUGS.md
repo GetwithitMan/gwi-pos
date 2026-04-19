@@ -381,6 +381,78 @@ These were requested but are not bugs — they're missing features. Track them i
 | **12 pushUpstream routes missing — mutations not triggering immediate sync** | 2026-03-21 | `b2a587fb` — added pushUpstream() to 12 remaining upstream mutation routes |
 | **POS crash loop — CFD metadata column + stale tenant models** | 2026-03-21 | `3354e20f` — venue_schema_state guard, CFD metadata column existence check |
 
+---
+
+## Entertainment / Timed Rentals — Open Items (2026-04-16 audit)
+
+> **Context:** Full audit + validation run on 2026-04-16. See `docs/logs/ENTERTAINMENT-VALIDATION-2026-04-16.md` for details. Server fixes deployed in v2.0.66-v2.0.68. Android fixes committed + APK installed on test L1400.
+
+### Confirmed Fixed (v2.0.66-v2.0.68)
+
+| Bug | Fix | Commit |
+|-----|-----|--------|
+| C1: Cron `locationId=''` never matched rows — stale sessions never cleaned | WHERE clause treats '' as all-locations | `ce98019c` (v2.0.66) |
+| C2: Missing `orders:list-changed` on entertainment mutations | Added `dispatchOpenOrdersChanged` to all 4 block-time handlers | `ce98019c` (v2.0.66) |
+| H3: Auto-grat exemption used `categoryType` instead of `menuItem.itemType` | Changed to `menuItem?.itemType === 'timed_rental'` | `ce98019c` (v2.0.66) |
+| H6: `recalculateOrderAfterPriceChange` swallowed errors silently | Re-throw after logging | `ce98019c` (v2.0.66) |
+| C4: Register checkout engine had no per-minute pricing | Room v66 migration, engine `adjustEntertainmentPrices()`, server sends `ratePerMinute` in events | `5341c3b7` (v2.0.68) + Android `8fdd3df` |
+| Display: Cents rendered as dollars ($390.00 instead of $3.90) | Changed `.toCents()` to `.toLong()` in price update handlers | Android `84c012c` |
+| Display: `ItemUpdated` event missing price field — reducer never updated price | Added `price: Double?` to `ItemUpdated`, reducer maps via `toCents()` | Android `84c012c` |
+| M6: `status=in_use` with `currentOrderId=null` silent waitlist fallback | Diagnostic handling in `onEntertainmentElementClicked` | Already handled |
+| Email Receipt / Done button spacing | `PaymentSheet.kt` spacing 20dp → 40dp | `c14f6b7` |
+
+### Still Open — Next Validation Pass
+
+#### BUG-ENT-1 — Comp on entertainment items may be blocked by Link Customer dialog
+**Status:** 🔍 NEEDS VERIFICATION
+**Severity:** MEDIUM
+**Feature:** Entertainment, Comp/Void
+**Observed:** 2026-04-16 ADB test. After confirming comp reason, a "Link Customer" dialog appeared. Closing it appeared to cancel the comp (price unchanged).
+**Analysis:** The `compItem()` code path in `OrderViewModel.kt:2629` goes directly to `discountManager.compItem()` with no customer dialog. The dialog may be a post-comp prompt that doesn't block the comp, or the comp failed for another reason (e.g., server permission, entertainment-specific comp path via `DELETE /api/entertainment/block-time?reason=comp`).
+**Affected files:** `OrderViewModel.kt`, `DiscountCoordinator.kt`, `comp-void/route.ts`, `block-time/route.ts` DELETE handler
+**Repro:** Start entertainment session → send → stop → long-press item → Comp → select reason → Comp → observe Link Customer dialog → close → check if price changed
+**Next step:** Retest with fresh session. Verify server-side comp response. Check if the entertainment comp uses the standard comp-void route or the entertainment-specific stop-with-reason=comp path.
+
+#### BUG-ENT-2 — Register-server price mismatch on first payment after entertainment stop
+**Status:** ⚠️ OPEN (C4 residual)
+**Severity:** HIGH
+**Feature:** Entertainment, Payments
+**Observed:** 2026-04-16. After stopping Pool Table 1 session (~2 min used), register showed $0.00 for the item. Server had $15.00 (minimum charge from `timedPricing.minimum`). First cash payment rejected ($12.05 vs server's $29.11). Second attempt succeeded after register synced server total.
+**Root cause:** The C4 engine fix computes live per-minute charges, but block-time items with `timedPricing.minimum` need the minimum charge enforced in the engine too. The engine currently floors at `priceCents` (booked price) but doesn't know about `timedPricing.minimum`.
+**Affected files:** `DefaultCheckoutEvaluationEngine.kt` (`computeLiveEntertainmentPrice`), `entertainment-pricing.ts`
+**Condition:** Only affects block-time items with a minimum charge AND per-minute pricing in timedPricing JSON. Pure per-minute items (via `ratePerMinute` DB field) are handled by the C4 engine fix.
+**Mitigation:** Payment fails safely on first attempt, succeeds after server sync. No money lost, but UX friction.
+**Next step:** Add `minimumChargeCents` to the event pipeline (ITEM_UPDATED → OrderLineItem → CachedOrderItemEntity → OrderItemSnapshot → engine). Engine should enforce `max(liveCharge, minimumChargeCents)`.
+
+#### BUG-ENT-3 — Extend with flatFee updates DB twice outside transaction
+**Status:** ⚠️ OPEN
+**Severity:** MEDIUM
+**Feature:** Entertainment
+**Affected files:** `block-time/route.ts` PATCH handler, lines 373-383
+**Description:** If a flatFee > 0 is configured for extensions, the PATCH handler updates the OrderItem price inside the `extendSession()` transaction, then updates it AGAIN outside the transaction with the flatFee surcharge. Race condition: if payment happens between the two writes, the price is inconsistent.
+**Next step:** Move flatFee update inside the `extendSession()` transaction.
+
+#### BUG-ENT-4 — Settlement + cron race on same session
+**Status:** ⚠️ OPEN
+**Severity:** MEDIUM
+**Feature:** Entertainment, Payments
+**Description:** `build-payment-financial-context.ts` settles per-minute items during payment. The entertainment-expiry cron can also settle the same item. If both run concurrently, the final DB price is whichever wrote last — potential over/under billing.
+**Next step:** Add `FOR UPDATE` lock on the OrderItem in the payment settlement path to serialize with cron.
+
+#### BUG-ENT-5 — No entertainment reconciliation after offline/reconnect
+**Status:** ⚠️ OPEN
+**Severity:** LOW
+**Feature:** Entertainment, Sync
+**Description:** When a register reconnects after being offline, `catchUpAfterReconnect()` replays order events but has no entertainment-specific reconciliation. If entertainment events were missed during offline (session start/stop), the floor plan shows stale state until bootstrap.
+**Next step:** Add `refreshEntertainmentFloorPlan()` call in `catchUpAfterReconnect()`.
+
+#### BUG-ENT-6 — Live price update dispatchers defined but never called
+**Status:** ⚠️ OPEN
+**Severity:** LOW
+**Feature:** Entertainment
+**Description:** `dispatchEntertainmentPriceUpdate()` and `dispatchEntertainmentPriceBatchUpdate()` are defined in `socket-dispatch/misc-dispatch.ts` but no cron or periodic timer calls them. Active sessions show stale prices until the next event or manual refresh.
+**Next step:** Implement a periodic timer (every 60s) that emits price updates for all active per-minute sessions.
+
 > **2026-03-21 Note:** 16 upstream models had silent sync failures (missing `syncedAt`/`updatedAt`) — fixed in migrations 090-092. All 161 synced models now pass column verification. Instant sync (<500ms) achieved via `pushUpstream()` (40 routes) + `notifyDataChanged()` (99 routes).
 
 > **2026-03-21 (Session 2) — NUC Infrastructure Bugs Fixed:**
