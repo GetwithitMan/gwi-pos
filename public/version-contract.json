@@ -4,18 +4,18 @@
   "provisionerVersion": "1",
   "migrationCount": 131,
   "schemaSha256": "cf1e67ee0c4dd0a5cbec6c6e6f487de79d1a9a1fcd0ad5ab2f8c26f0fe813ccd",
-  "installerVersion": "2.0.68",
-  "version": "2.0.68",
+  "installerVersion": "2.0.70",
+  "version": "2.0.70",
   "dashboardVersion": "0.3.1",
-  "syncAgentVersion": "2.0.68",
-  "monitoringVersion": "2.0.68",
+  "syncAgentVersion": "2.0.70",
+  "monitoringVersion": "2.0.70",
   "ansibleBaselineVersion": "2026.03.20.1",
-  "buildDate": "2026-04-16T19:36:51.640Z",
-  "gitSha": "fd03a73e",
-  "generatedAt": "2026-04-16T19:36:51.640Z",
+  "buildDate": "2026-04-19T11:49:02.620Z",
+  "gitSha": "a4b07a19",
+  "generatedAt": "2026-04-19T11:49:02.620Z",
   "components": {
     "pos": {
-      "version": "2.0.68",
+      "version": "2.0.70",
       "artifact": "app"
     },
     "dashboard": {
@@ -25,15 +25,15 @@
       "sha256": "3c99afa4a5e5df366c518defaf01728ea2a48c83fb8f92449821014b3ea3debf"
     },
     "installer": {
-      "version": "2.0.68",
+      "version": "2.0.70",
       "artifact": "installer.run"
     },
     "syncAgent": {
-      "version": "2.0.68",
+      "version": "2.0.70",
       "artifact": "sync-agent.js"
     },
     "monitoring": {
-      "version": "2.0.68",
+      "version": "2.0.70",
       "artifact": "scripts/"
     },
     "ansibleBaseline": {

@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { parseSettings, getPricingProgram } from '@/lib/settings'
 import { calculateCardPrice, calculateDebitPrice, roundToCents } from '@/lib/pricing'
+import type { PricingProgram } from '@/lib/settings'
 import { err, forbidden, notFound, ok } from '@/lib/api-response'
 
 const DEFAULT_CASH_DISCOUNT_DISCLOSURE =
@@ -83,7 +84,12 @@ export const GET = withVenue(async function GET(
     }) : null
 
     const settings = parseSettings(order.location.settings)
-    const pp = getPricingProgram(settings)
+    const snapshotPayment = order.payments.find((p: any) => p.pricingProgramSnapshot)
+    const pp: PricingProgram = snapshotPayment?.pricingProgramSnapshot
+      ? (typeof snapshotPayment.pricingProgramSnapshot === 'string'
+        ? JSON.parse(snapshotPayment.pricingProgramSnapshot)
+        : snapshotPayment.pricingProgramSnapshot) as PricingProgram
+      : getPricingProgram(settings)
 
     // Dual pricing detection — works with both legacy dualPricing and new pricingProgram models
     const isDualPricing = pp.enabled && (

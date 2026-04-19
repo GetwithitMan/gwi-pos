@@ -605,6 +605,7 @@ export const POST = withVenue(async function POST(
           menuItemId: created.menuItemId,
           quantity: created.quantity,
           selections: comboSelections,
+          mutationOrigin,
         })
 
         if (comboResult.rowsToCreate.length > 0) {

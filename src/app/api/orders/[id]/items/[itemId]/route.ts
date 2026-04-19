@@ -156,6 +156,7 @@ export const PUT = withVenue(async function PUT(
             menuItemId: item.menuItemId,
             quantity: targetQuantity,
             selections: comboSelectionsField ?? [],
+            mutationOrigin,
           })
 
           if (built.rowsToCreate.length > 0) {

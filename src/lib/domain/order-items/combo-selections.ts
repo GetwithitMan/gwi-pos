@@ -115,9 +115,11 @@ export interface WireOrderItemExtras {
 /**
  * mapOrderItemForWire — serializes a Prisma OrderItem (hydrated with
  * ORDER_ITEM_FULL_INCLUDE) to the shape consumed by Android, KDS, print,
- * reports, and cached order views. Delegates the bulk of the mapping to the
- * existing `mapOrderItemForResponse` in the API layer and layers combo
- * selections on top so responses stay consistent with prior shapes.
+ * reports, and cached order views.
+ *
+ * Thin alias over `mapOrderItemForResponse` — kept as the single exported
+ * wire entry point per the combo-refactor rule (one include, one mapper).
+ * `comboSelections` is emitted directly by the underlying mapper.
  */
 export function mapOrderItemForWire(
   item: Record<string, unknown>,
@@ -126,28 +128,7 @@ export function mapOrderItemForWire(
   // Lazy import to avoid circular dep with api/order-response-mapper.
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { mapOrderItemForResponse } = require('@/lib/api/order-response-mapper') as typeof import('@/lib/api/order-response-mapper')
-  const mapped = mapOrderItemForResponse(item as any, correlationId) as unknown as Record<string, unknown>
-
-  const rawSelections = Array.isArray((item as any).comboSelections)
-    ? (item as any).comboSelections as Array<Record<string, unknown>>
-    : []
-
-  const comboSelections: WireComboSelection[] = rawSelections.map(sel => ({
-    id: String(sel.id),
-    comboComponentId: (sel.comboComponentId as string | null) ?? null,
-    comboComponentOptionId: (sel.comboComponentOptionId as string | null) ?? null,
-    menuItemId: String(sel.menuItemId),
-    optionName: String(sel.optionName ?? ''),
-    upchargeApplied: Number(sel.upchargeApplied ?? 0),
-    sortIndex: Number(sel.sortIndex ?? 0),
-  }))
-
-  // mapOrderItemForResponse already emits comboSelections (empty when absent);
-  // this override ensures consistency if callers pass an un-hydrated item.
-  return {
-    ...mapped,
-    comboSelections,
-  }
+  return mapOrderItemForResponse(item as any, correlationId) as unknown as Record<string, unknown> & WireOrderItemExtras
 }
 
 // ─── Validator + Builder ────────────────────────────────────────────────────
@@ -159,6 +140,13 @@ export interface ValidateAndBuildArgs {
   menuItemId: string
   quantity: number
   selections?: ComboSelectionInput[] | null
+  /**
+   * Origin of the mutation for bidirectional sync echo detection.
+   * Cellular terminals writing through Vercel → Neon MUST pass `'cloud'`.
+   * NUC LAN writes default to `'local'`.
+   * See CLAUDE.md: "Cloud routes mutating bidirectional models MUST set `lastMutatedBy: 'cloud'`".
+   */
+  mutationOrigin?: 'local' | 'cloud'
 }
 
 export interface ValidateAndBuildResult {
@@ -193,7 +181,7 @@ function toDecimal(n: number | string | Prisma.Decimal | null | undefined): Pris
 export async function validateAndBuildComboSelections(
   args: ValidateAndBuildArgs,
 ): Promise<ValidateAndBuildResult> {
-  const { prisma, locationId, orderItemId, menuItemId, quantity, selections } = args
+  const { prisma, locationId, orderItemId, menuItemId, quantity, selections, mutationOrigin = 'local' } = args
 
   const hasSelections = Array.isArray(selections) && selections.length > 0
 
@@ -348,7 +336,7 @@ export async function validateAndBuildComboSelections(
       optionName: snapshotOptionName,
       upchargeApplied,
       sortIndex,
-      lastMutatedBy: 'local',
+      lastMutatedBy: mutationOrigin,
     })
 
     if (component) {
