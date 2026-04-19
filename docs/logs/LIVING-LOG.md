@@ -5,6 +5,53 @@
 
 ---
 
+## 2026-04-18/19 — Android Fleet Update System (engineering-complete, 3/4 apps canary-validated)
+
+The fleet-wide Android update system went from plan-approved (2026-04-16) to engineering-complete with three of four app lines proven on real hardware. Canonical docs live in `docs/operations/` + `docs/decisions/`; this entry is the cross-repo summary.
+
+### Architecture (live)
+- **MC (`app.thepasspos.com`)**: release registry, channel pins, HMAC-authenticated fleet routes (`/api/fleet/android/update`, `/api/fleet/android/events`), admin UI for releases/pins/devices/per-venue health. `resolveEffectiveChannel` composes `releaseChannelTier × canaryTier → CANARY_N`.
+- **R2 (Cloudflare, `gwi-pos-artifacts` bucket)**: signed APK storage at `android/<APP_KIND>/releases/<versionCode>/app-release.apk`.
+- **NUC proxy (gwi-pos)**: `/api/android/update/{latest,events}` with Bearer auth for register/PAX/CFD (cellular JWT → session JWT → terminal token) and LAN-scoped `locationId` auth for KDS. 30s per-key response cache, 30s token-bucket rate limit on `/latest`, synchronous HMAC forward to MC for events. `device_token_unknown` 401 signal surfaced for stale-token recovery.
+- **Device integrity gate (all 4 apps)**: SHA-256 artifact match → packageName match → signing-cert SHA-256 containment → versionCode strictly greater. Any failure emits `INTEGRITY_FAILED` and aborts install.
+- **Stale-token recovery (all 4 apps)**: 3× consecutive `device_token_unknown` 401s within 15 min → `tokenProvider.clearAll()` → route to pairing.
+
+### Canary validations
+| App | Version | Where | Result |
+|-----|---------|-------|--------|
+| Register (`com.gwi.register`) | v1.7.1 / code 16 | Shaunels | End-to-end MC pin → device install → `INSTALL_CONFIRMED` convergence confirmed |
+| PAX A6650 (`com.gwi.pax`) | v1.2.4 / code 140 | Shaunels | Update loop proof on real A6650 hardware |
+| KDS (pitboss/foodkds/delivery, `com.gwi.kds.*`) | v1.2.0 / code 4 | Monument | LAN-scoped auth (Option A from `docs/decisions/2026-04-18-kds-update-auth.md`) shipped + validated across 4 KDS devices |
+| CFD A3700 (`com.gwi.cfd`) | v1.1.1 / code 3 | Monument (pending) | Awaiting physical on-site visit for debug-signed uninstall + re-pair + loop proof |
+
+### NUC code paths introduced / touched
+- `src/app/api/android/update/latest/route.ts`
+- `src/app/api/android/update/events/route.ts`
+- `src/app/api/android/update/_auth.ts` (`authenticateAndroidUpdate`, `authenticateKdsLanRequest`, `resolveCloudLocationId`)
+- `src/lib/mc-fleet-client.ts`
+- `src/lib/android-proxy-stats.ts`
+- `src/lib/android-update-rate-limit.ts`
+
+### Docs added this cycle
+- `docs/operations/ANDROID-UPDATE-RUNBOOK.md` — 10-section canonical runbook
+- `docs/operations/ANDROID-UPDATE-STATUS-2026-04-18.md` — what shipped / proven / remaining / blocked
+- `docs/operations/PRE-LAUNCH-SECURITY-CHECKLIST.md` — R2 rotation + per-NUC key audit + keystore + fleet DB audit + reaper + sign-off
+- `docs/operations/MONUMENT-ONSITE-CHECKLIST.md` — physical-access punch list
+- `docs/decisions/2026-04-18-kds-update-auth.md` — Option A (LAN-scoped) chosen for KDS
+- `CLAUDE.md`, `docs/features/_INDEX.md`, `docs/features/_CROSS-REF-MATRIX.md`, `docs/domains/MISSION-CONTROL-DOMAIN.md` — awareness updates, all link back to the canonical docs above (no duplication).
+
+### Remaining
+- CFD real-hardware canary at Monument (physical visit required).
+- R2 token rotation per `PRE-LAUNCH-SECURITY-CHECKLIST.md` before broader fleet promotion.
+- Broader promotion beyond CANARY_1 after all four app lines are canary-validated.
+
+### Hard rules codified
+- NUC→MC calls MUST go through `mc-fleet-client.ts` (HMAC). No bypass.
+- Device integrity gate is mandatory — never ship a client that skips any of the four checks.
+- Stale-token recovery is a mandatory device-side behavior across all four apps.
+
+---
+
 ## 2026-04-16 — Combo Pick N of M (Phases 1–8)
 
 Customer-chooses-items combos (classic "burger + pick one side" AND "bucket of 6, pick from 12" with optional upcharges). Snapshot-first selection model; reuses existing add/update item pipelines. Plan: `~/.claude/plans/shimmering-singing-lake.md`.

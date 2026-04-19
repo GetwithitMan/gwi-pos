@@ -194,6 +194,33 @@ Only after Steps 1–5:
 - Event-sourced orders: Android sends events → POS assigns `serverSequence`
 - **Full rules:** `docs/guides/ANDROID-INTEGRATION.md`
 
+### Android Fleet Update System (live — engineering-complete, 3/4 apps canary-validated)
+- MC (`app.thepasspos.com`) owns release metadata + HMAC fleet routes. R2 (`gwi-pos-artifacts`) hosts APK bytes. NUC proxies devices at `/api/android/update/{latest,events}` and forwards to MC via HMAC. Devices poll on server-returned `pollAfterSeconds` and enforce a client integrity gate (SHA → packageName → signing-cert containment → versionCode strictly greater) before install.
+- **Canonical docs (link, do NOT duplicate):**
+  - `docs/operations/ANDROID-UPDATE-RUNBOOK.md` — release publish, pin/promote, canary gate, stale-token recovery, debug-signed migration, rollback, secret rotation, hardware-validation checklist, known limitations, escalation
+  - `docs/operations/ANDROID-UPDATE-STATUS-2026-04-18.md` — what shipped / proven / remaining / blocked / rollout policy
+  - `docs/operations/PRE-LAUNCH-SECURITY-CHECKLIST.md` — R2 token rotation, per-NUC key audit, keystore, fleet DB audit, reaper liveness, sign-off
+  - `docs/operations/MONUMENT-ONSITE-CHECKLIST.md` — physical-access punch list for remaining real-hardware canaries
+  - `docs/decisions/2026-04-18-kds-update-auth.md` — KDS LAN-scoped auth choice (Option A)
+- **Fleet apps + canary status:**
+  | App | Repo | Latest | Real-hardware canary |
+  |-----|------|--------|----------------------|
+  | Register | `gwi-android-register` | v1.7.1 (code 16) | Shaunels — validated |
+  | PAX A6650 | `gwi-pax-a6650` | v1.2.4 (code 140) | Shaunels — validated |
+  | KDS (pitboss/foodkds/delivery) | `gwi-kds-android` | v1.2.0 (code 4) | Monument — validated |
+  | CFD A3700 | `gwi-cfd` | v1.1.1 (code 3) | pending (Monument on-site) |
+- **NUC-side code paths — touch these when changing update behavior:**
+  - `src/app/api/android/update/latest/route.ts` — GET handler (Bearer or KDS-LAN auth, 30s cache, rate-limited)
+  - `src/app/api/android/update/events/route.ts` — POST handler, synchronous MC forward
+  - `src/app/api/android/update/_auth.ts` — `authenticateAndroidUpdate` (cellular JWT → session JWT → terminal token) + `authenticateKdsLanRequest` (LAN-scoped for KDS_*) + `resolveCloudLocationId`
+  - `src/lib/mc-fleet-client.ts` — HMAC-signed NUC→MC client
+  - `src/lib/android-proxy-stats.ts` — 5-min sliding counters (forwarded on heartbeat)
+  - `src/lib/android-update-rate-limit.ts` — 30s token bucket per (deviceFingerprint, appKind)
+- **Hard rules for this system:**
+  - Do NOT bypass the HMAC path. Every NUC→MC request MUST go through `mc-fleet-client.ts`.
+  - Do NOT bypass the device-side integrity gate (SHA / packageName / signing-cert / monotonic versionCode). Skipping any check defeats the trust model.
+  - Stale-token recovery is a MANDATORY device-side behavior: 3 consecutive `device_token_unknown` 401s within 15 minutes MUST call `tokenProvider.clearAll()` and route the device back to pairing.
+
 ### Web UI
 - **Web UI is for admin/settings, KDS, and CFD only** — no register/ordering pages exist
 - All ordering, tab management, and payment happens on Android registers and PAX devices
