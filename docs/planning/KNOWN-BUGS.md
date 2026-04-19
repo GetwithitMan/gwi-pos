@@ -404,14 +404,13 @@ These were requested but are not bugs — they're missing features. Track them i
 ### Still Open — Next Validation Pass
 
 #### BUG-ENT-1 — Comp on entertainment items may be blocked by Link Customer dialog
-**Status:** 🔍 NEEDS VERIFICATION
+**Status:** ✅ NOT-A-BUG — Comp requires Manager PIN approval. ADB test skipped the PIN dialog which cancelled the comp. The "Link Customer" dialog was unrelated (from a previous interaction or venue setting). The comp flow itself is correct.
 **Severity:** MEDIUM
 **Feature:** Entertainment, Comp/Void
 **Observed:** 2026-04-16 ADB test. After confirming comp reason, a "Link Customer" dialog appeared. Closing it appeared to cancel the comp (price unchanged).
 **Analysis:** The `compItem()` code path in `OrderViewModel.kt:2629` goes directly to `discountManager.compItem()` with no customer dialog. The dialog may be a post-comp prompt that doesn't block the comp, or the comp failed for another reason (e.g., server permission, entertainment-specific comp path via `DELETE /api/entertainment/block-time?reason=comp`).
 **Affected files:** `OrderViewModel.kt`, `DiscountCoordinator.kt`, `comp-void/route.ts`, `block-time/route.ts` DELETE handler
 **Repro:** Start entertainment session → send → stop → long-press item → Comp → select reason → Comp → observe Link Customer dialog → close → check if price changed
-**Next step:** Retest with fresh session. Verify server-side comp response. Check if the entertainment comp uses the standard comp-void route or the entertainment-specific stop-with-reason=comp path.
 
 #### BUG-ENT-2 — Register-server price mismatch on first payment after entertainment stop
 **Status:** ⚠️ OPEN (C4 residual)

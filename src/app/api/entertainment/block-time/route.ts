@@ -201,6 +201,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       blockTimeStartedAt: now.toISOString(),
       blockTimeExpiresAt: expiresAt.toISOString(),
       ratePerMinute: orderItem.menuItem?.ratePerMinute ? Number(orderItem.menuItem.ratePerMinute) : null,
+      minimumCharge: orderItem.menuItem?.minimumCharge ? Number(orderItem.menuItem.minimumCharge) : null,
+      incrementMinutes: orderItem.menuItem?.incrementMinutes ?? null,
+      graceMinutes: orderItem.menuItem?.graceMinutes ?? null,
     })
 
     // Dispatch socket updates (fire-and-forget)
@@ -355,12 +358,14 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
     }
 
     // Wrap extend in a transaction with FOR UPDATE to prevent concurrent extends
+    const flatFee = (typeof finishGameCharge === 'number' && finishGameCharge > 0) ? finishGameCharge : 0
     const txResult = await db.$transaction(async (tx) => {
       return extendSession(tx, {
         orderItemId,
         menuItemId: orderItem.menuItemId,
         additionalMinutes,
         menuItem: orderItem.menuItem,
+        flatFee,
       })
     })
 
@@ -368,19 +373,7 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
       return err(txResult.error)
     }
 
-    const { updatedItem, newExpiresAt, newTotalMinutes, newPrice: tieredPrice } = txResult
-
-    // Apply flat Finish Game surcharge on top of the tiered extension charge
-    const flatFee = (typeof finishGameCharge === 'number' && finishGameCharge > 0) ? finishGameCharge : 0
-    const newPrice = tieredPrice + flatFee
-
-    if (flatFee > 0) {
-      // Persist the surcharge to the OrderItem price in DB
-      await db.orderItem.update({
-        where: { id: orderItemId },
-        data: { price: newPrice, itemTotal: newPrice },
-      })
-    }
+    const { updatedItem, newExpiresAt, newTotalMinutes, newPrice } = txResult
 
     // Sync: notify cloud of bidirectional OrderItem changes
     void notifyDataChanged({ locationId, domain: 'events', action: 'updated', entityId: orderItemId })
@@ -396,6 +389,9 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
       blockTimeMinutes: newTotalMinutes,
       blockTimeExpiresAt: newExpiresAt.toISOString(),
       ratePerMinute: orderItem.menuItem?.ratePerMinute ? Number(orderItem.menuItem.ratePerMinute) : null,
+      minimumCharge: orderItem.menuItem?.minimumCharge ? Number(orderItem.menuItem.minimumCharge) : null,
+      incrementMinutes: orderItem.menuItem?.incrementMinutes ?? null,
+      graceMinutes: orderItem.menuItem?.graceMinutes ?? null,
     })
 
     // Dispatch socket updates (fire-and-forget)
@@ -550,6 +546,9 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       blockTimeMinutes: newDurationMinutes,
       blockTimeExpiresAt: parsedExpiresAt.toISOString(),
       ratePerMinute: orderItem.menuItem?.ratePerMinute ? Number(orderItem.menuItem.ratePerMinute) : null,
+      minimumCharge: orderItem.menuItem?.minimumCharge ? Number(orderItem.menuItem.minimumCharge) : null,
+      incrementMinutes: orderItem.menuItem?.incrementMinutes ?? null,
+      graceMinutes: orderItem.menuItem?.graceMinutes ?? null,
       managerOverride: true,
       reason: reason || 'time_override',
     })
@@ -733,6 +732,9 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
       blockTimeStartedAt: 'CLEARED',
       blockTimeExpiresAt: now.toISOString(),
       ratePerMinute: orderItem.menuItem?.ratePerMinute ? Number(orderItem.menuItem.ratePerMinute) : null,
+      minimumCharge: orderItem.menuItem?.minimumCharge ? Number(orderItem.menuItem.minimumCharge) : null,
+      incrementMinutes: orderItem.menuItem?.incrementMinutes ?? null,
+      graceMinutes: orderItem.menuItem?.graceMinutes ?? null,
       actualMinutesUsed: actualMinutes,
       reason,
       ...(reason === 'comp' ? { status: 'comped' } : {}),

@@ -6,6 +6,7 @@ import {
   dispatchEntertainmentStatusChanged,
   dispatchEntertainmentUpdate,
   dispatchOrderTotalsUpdate,
+  dispatchEntertainmentPriceUpdate,
 } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
@@ -53,6 +54,7 @@ export async function GET(request: NextRequest) {
     let staleNotifiedCount = 0
     let orphanCleanedCount = 0
     let staleStopped = 0
+    let priceBroadcastCount = 0
 
     // ── Step 0: Cleanup orphaned sessions ──────────────────────
     // These are MenuItem entries still marked 'in_use' but linked to closed orders.
@@ -572,12 +574,70 @@ export async function GET(request: NextRequest) {
     }
     staleNotifiedCount = staleNotified.length
 
+    // ── Step 4: Broadcast live prices for active sessions ──────────────
+    // For all sessions with blockTimeStartedAt set and blockTimeExpiresAt NOT set
+    // (still running per-minute), compute current charge and emit price update.
+    try {
+      const activeSessions = await venueDb.orderItem.findMany({
+        where: {
+          blockTimeStartedAt: { not: null },
+          blockTimeExpiresAt: null,
+          status: 'active',
+          deletedAt: null,
+          menuItem: { itemType: 'timed_rental', entertainmentStatus: 'in_use' },
+        },
+        select: {
+          id: true,
+          orderId: true,
+          menuItemId: true,
+          blockTimeStartedAt: true,
+          blockTimeMinutes: true,
+          menuItem: {
+            select: {
+              ratePerMinute: true,
+              minimumCharge: true,
+              incrementMinutes: true,
+              graceMinutes: true,
+              locationId: true,
+            },
+          },
+        },
+      })
+
+      for (const session of activeSessions) {
+        if (!session.menuItem?.ratePerMinute || !session.blockTimeStartedAt) continue
+        const elapsedMs = now.getTime() - new Date(session.blockTimeStartedAt).getTime()
+        const elapsedMinutes = Math.max(1, Math.ceil(elapsedMs / 60000))
+        const ratePerMinute = Number(session.menuItem.ratePerMinute)
+        const minimumCharge = session.menuItem.minimumCharge ? Number(session.menuItem.minimumCharge) : 0
+        const rawCharge = elapsedMinutes * ratePerMinute
+        const currentCharge = Math.max(rawCharge, minimumCharge)
+        const isOvertime = session.blockTimeMinutes ? elapsedMinutes > session.blockTimeMinutes : false
+        const locationId = session.menuItem.locationId
+
+        void dispatchEntertainmentPriceUpdate(locationId, {
+          orderId: session.orderId,
+          orderItemId: session.id,
+          menuItemId: session.menuItemId,
+          currentCharge: Math.round(currentCharge * 100), // cents
+          elapsedMinutes,
+          isOvertime,
+          ratePerMinute,
+          nextIncrementAt: new Date(now.getTime() + 60000).toISOString(),
+        }, { async: true }).catch(err => log.warn({ err }, 'Price update dispatch failed'))
+      }
+      priceBroadcastCount = activeSessions.length
+    } catch (e) {
+      log.warn({ err: e }, 'Entertainment price broadcast failed (non-fatal)')
+    }
+
     allProcessed[slug] = {
       expiredSessions: expiredSessionCount,
       expiredWaitlist: expiredWaitlistCount,
       staleNotified: staleNotifiedCount,
       orphansCleaned: orphanCleanedCount,
       staleStopped: staleStopped,
+      priceBroadcasts: priceBroadcastCount,
     }
   }, { label: 'cron:entertainment-expiry' })
 
