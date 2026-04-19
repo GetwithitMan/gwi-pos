@@ -28,7 +28,11 @@ const log = createChildLogger('android-update-proxy')
 
 // ─── Body schema — device-facing (no cloudLocationId) ─────────────────────
 
-const AppKind = z.enum(['REGISTER', 'PAX_A6650', 'CFD', 'KDS_PITBOSS', 'KDS_FOODKDS'])
+// SOFTPOS is included for schema alignment with MC's AndroidAppKind enum,
+// but SoftPOS devices do NOT use this NUC-proxy route — they update via a
+// direct MC endpoint gated by trusted-WiFi on the client. Listing it here
+// prevents a Zod parse error on any misrouted request.
+const AppKind = z.enum(['REGISTER', 'PAX_A6650', 'CFD', 'KDS_PITBOSS', 'KDS_FOODKDS', 'SOFTPOS'])
 
 const EventKind = z.enum([
   'CHECKED',
@@ -101,6 +105,15 @@ export async function POST(request: Request) {
     )
   }
   const { events, snapshot, locationId: locationIdBody } = parsed.data
+
+  // SoftPOS does NOT use the NUC-proxy events path. Reject early with a
+  // machine-readable code so a misconfigured client fails loudly.
+  if (snapshot.appKind === 'SOFTPOS') {
+    return jsonNoStore(
+      { error: 'SoftPOS uses the direct MC events endpoint, not the NUC proxy', code: 'wrong_update_path' },
+      { status: 403 },
+    )
+  }
 
   // 2. Authentication — two paths:
   //    a. KDS LAN-scoped (snapshot.appKind starts with KDS_ and the
