@@ -593,6 +593,32 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     })),
   }))
 
+  // ─── Entertainment Resources & Active Sessions ─────────────────────────────
+  const [entertainmentResources, entertainmentSessions] = await Promise.all([
+    db.entertainmentResource.findMany({
+      where: { locationId, deletedAt: null },
+      select: {
+        id: true, locationId: true, name: true, resourceType: true, capacity: true,
+        sortOrder: true, status: true, linkedMenuItemId: true, linkedFloorPlanElementId: true,
+        activeSessionId: true, isBookable: true, updatedAt: true,
+      },
+    }),
+    db.entertainmentSession.findMany({
+      where: {
+        locationId,
+        sessionState: { in: ['pre_start', 'running', 'overtime'] },
+        deletedAt: null,
+      },
+      select: {
+        id: true, locationId: true, orderItemId: true, orderId: true, resourceId: true,
+        sessionState: true, version: true, scheduledMinutes: true, startedAt: true,
+        bookedEndAt: true, stoppedAt: true, overtimeStartedAt: true, lastExtendedAt: true,
+        totalExtendedMinutes: true, pricingSnapshot: true, finalPriceCents: true,
+        createdBy: true, stoppedBy: true, stopReason: true, createdAt: true, updatedAt: true,
+      },
+    }),
+  ])
+
   const responseData = {
       menu: {
         categories: mappedCategories,
@@ -630,6 +656,17 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       printers,
       sections: sections.map(s => ({ id: s.id, name: s.name, color: s.color, sortOrder: s.sortOrder, assignedEmployeeIds: s.assignments.map(a => a.employeeId) })),
       floorPlanElements,
+      entertainmentResources,
+      entertainmentSessions: entertainmentSessions.map((s: any) => ({
+        ...s,
+        startedAt: s.startedAt?.toISOString() ?? null,
+        bookedEndAt: s.bookedEndAt?.toISOString() ?? null,
+        stoppedAt: s.stoppedAt?.toISOString() ?? null,
+        overtimeStartedAt: s.overtimeStartedAt?.toISOString() ?? null,
+        lastExtendedAt: s.lastExtendedAt?.toISOString() ?? null,
+        createdAt: s.createdAt?.toISOString() ?? null,
+        updatedAt: s.updatedAt?.toISOString() ?? null,
+      })),
       syncVersion: Date.now(),
       terminalConfig: {
         terminalId: auth.terminal.id,

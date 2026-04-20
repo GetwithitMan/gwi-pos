@@ -288,6 +288,8 @@ export async function createOrderItem(
     pourMultiplier: createdItem.pourMultiplier != null
       ? Number(createdItem.pourMultiplier)
       : null,
+    itemType: menuItem?.itemType ?? null,
+    blockTimeMinutes: createdItem.blockTimeMinutes ?? null,
   }, {
     correlationId: item.correlationId ?? null,
   }).catch(err => log.error({ err }, 'Failed to emit ITEM_ADDED'))

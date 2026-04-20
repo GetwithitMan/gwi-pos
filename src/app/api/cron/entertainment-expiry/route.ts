@@ -16,7 +16,7 @@ import { notifyNuc } from '@/lib/cron-nuc-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { ok } from '@/lib/api-response'
 
-import { expireSession, cleanupOrphanSessions, findStaleSessions } from '@/lib/domain/entertainment'
+import { expireSession, cleanupOrphanSessions, findStaleSessions, transitionToOvertime } from '@/lib/domain/entertainment'
 import { recalculateOrderTotals } from '@/lib/domain/order-items'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('cron-entertainment-expiry')
@@ -55,6 +55,7 @@ export async function GET(request: NextRequest) {
     let orphanCleanedCount = 0
     let staleStopped = 0
     let priceBroadcastCount = 0
+    let overtimeTransitionCount = 0
 
     // ── Step 0: Cleanup orphaned sessions ──────────────────────
     // These are MenuItem entries still marked 'in_use' but linked to closed orders.
@@ -90,6 +91,31 @@ export async function GET(request: NextRequest) {
       }
     } catch (orphanErr) {
       log.warn({ err: orphanErr }, `Venue ${slug}: Failed to cleanup orphan sessions`)
+    }
+
+    // ── Step 1b: Transition RUNNING → OVERTIME for sessions past bookedEndAt ──
+    try {
+      const runningSessions = await venueDb.entertainmentSession.findMany({
+        where: {
+          sessionState: 'running',
+          bookedEndAt: { lt: now },
+          deletedAt: null,
+        },
+        select: { id: true, locationId: true },
+      })
+
+      for (const runningSession of runningSessions) {
+        try {
+          await venueDb.$transaction(async (tx: any) => {
+            await transitionToOvertime(tx, { sessionId: runningSession.id, locationId: runningSession.locationId })
+          })
+        } catch (err) {
+          log.warn({ err, sessionId: runningSession.id }, 'Overtime transition failed for session')
+        }
+      }
+      overtimeTransitionCount = runningSessions.length
+    } catch (err) {
+      log.warn({ err }, 'Overtime transition step failed (non-fatal)')
     }
 
     // ── Step 1: Find expired entertainment sessions ──────────────
@@ -638,6 +664,7 @@ export async function GET(request: NextRequest) {
       orphansCleaned: orphanCleanedCount,
       staleStopped: staleStopped,
       priceBroadcasts: priceBroadcastCount,
+      overtimeTransitions: overtimeTransitionCount,
     }
   }, { label: 'cron:entertainment-expiry' })
 

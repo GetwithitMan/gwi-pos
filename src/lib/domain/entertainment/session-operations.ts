@@ -10,6 +10,10 @@ import type { TxClient, StartSessionInput, StartSessionResult, StopSessionResult
 import type { MenuItemPricingFields } from './types'
 import type { ChargeBreakdown } from '@/lib/entertainment-pricing'
 import { calculateStopCharge, calculateExtensionCharge, calculateExpiryCharge } from './pricing'
+import { createEntertainmentSession, activateSession, stopSessionEntity, extendSessionEntity } from './session-entity-sync'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('entertainment-session-ops')
 
 // ─── Start Session ───────────────────────────────────────────────────────────
 
@@ -102,6 +106,32 @@ export async function startSession(
       sessionExpiresAt: expiresAt,
     },
   })
+
+  // 4. Dual-write: create EntertainmentSession entity + activate
+  try {
+    const resource = await tx.entertainmentResource.findFirst({
+      where: { linkedMenuItemId: menuItemId, deletedAt: null },
+      select: { id: true },
+    })
+    if (resource) {
+      await createEntertainmentSession(tx, {
+        locationId,
+        orderItemId,
+        orderId,
+        resourceId: resource.id,
+        scheduledMinutes: minutes,
+        pricingSnapshot: null,
+      })
+      await activateSession(tx, {
+        orderItemId,
+        locationId,
+        startedAt: now,
+        bookedEndAt: expiresAt,
+      })
+    }
+  } catch (err) {
+    log.warn({ err, orderItemId }, 'Entertainment session entity dual-write failed (non-fatal)')
+  }
 
   return { conflict: false, waitlistConflict: false, updatedItem, notifiedCustomer: null }
 }
@@ -243,6 +273,30 @@ export async function stopSession(
     },
   })
 
+  // Dual-write: stop EntertainmentSession entity
+  try {
+    const orderItemForLocation = await tx.orderItem.findUnique({
+      where: { id: orderItemId },
+      select: { order: { select: { locationId: true } } },
+    })
+    const locationId = orderItemForLocation?.order?.locationId
+    if (locationId) {
+      const resource = await tx.entertainmentResource.findFirst({
+        where: { linkedMenuItemId: menuItemId, deletedAt: null },
+        select: { id: true },
+      })
+      await stopSessionEntity(tx, {
+        orderItemId,
+        locationId,
+        resourceId: resource?.id ?? '',
+        finalPriceDollars: calculatedCharge,
+        stopReason: reason,
+      })
+    }
+  } catch (err) {
+    log.warn({ err, orderItemId }, 'Entertainment session entity dual-write failed (non-fatal)')
+  }
+
   return {
     alreadyProcessed: false,
     actualMinutes,
@@ -325,6 +379,25 @@ export async function extendSession(
     where: { linkedMenuItemId: menuItemId, deletedAt: null },
     data: { sessionExpiresAt: newExpiresAt },
   })
+
+  // Dual-write: extend EntertainmentSession entity
+  try {
+    const orderItemForLocation = await tx.orderItem.findUnique({
+      where: { id: orderItemId },
+      select: { order: { select: { locationId: true } } },
+    })
+    const locationId = orderItemForLocation?.order?.locationId
+    if (locationId) {
+      await extendSessionEntity(tx, {
+        orderItemId,
+        locationId,
+        additionalMinutes,
+        newBookedEndAt: newExpiresAt,
+      })
+    }
+  } catch (err) {
+    log.warn({ err, orderItemId }, 'Entertainment session entity dual-write failed (non-fatal)')
+  }
 
   return { updatedItem, newExpiresAt, newTotalMinutes, newPrice }
 }

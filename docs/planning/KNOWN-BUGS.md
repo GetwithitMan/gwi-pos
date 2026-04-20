@@ -413,44 +413,24 @@ These were requested but are not bugs — they're missing features. Track them i
 **Repro:** Start entertainment session → send → stop → long-press item → Comp → select reason → Comp → observe Link Customer dialog → close → check if price changed
 
 #### BUG-ENT-2 — Register-server price mismatch on first payment after entertainment stop
-**Status:** ⚠️ OPEN (C4 residual)
-**Severity:** HIGH
-**Feature:** Entertainment, Payments
-**Observed:** 2026-04-16. After stopping Pool Table 1 session (~2 min used), register showed $0.00 for the item. Server had $15.00 (minimum charge from `timedPricing.minimum`). First cash payment rejected ($12.05 vs server's $29.11). Second attempt succeeded after register synced server total.
-**Root cause:** The C4 engine fix computes live per-minute charges, but block-time items with `timedPricing.minimum` need the minimum charge enforced in the engine too. The engine currently floors at `priceCents` (booked price) but doesn't know about `timedPricing.minimum`.
-**Affected files:** `DefaultCheckoutEvaluationEngine.kt` (`computeLiveEntertainmentPrice`), `entertainment-pricing.ts`
-**Condition:** Only affects block-time items with a minimum charge AND per-minute pricing in timedPricing JSON. Pure per-minute items (via `ratePerMinute` DB field) are handled by the C4 engine fix.
-**Mitigation:** Payment fails safely on first attempt, succeeds after server sync. No money lost, but UX friction.
-**Next step:** Add `minimumChargeCents` to the event pipeline (ITEM_UPDATED → OrderLineItem → CachedOrderItemEntity → OrderItemSnapshot → engine). Engine should enforce `max(liveCharge, minimumChargeCents)`.
+**Status:** ✅ FIXED — `a4b07a19` (server) + Android `365ce7b`
+**Fix:** Server sends `minimumCharge`, `incrementMinutes`, `graceMinutes` in ITEM_UPDATED events. Android Room v67 migration. Engine `computeLiveEntertainmentPrice()` enforces minimum charge floor, grace subtraction, increment rounding.
 
 #### BUG-ENT-3 — Extend with flatFee updates DB twice outside transaction
-**Status:** ⚠️ OPEN
-**Severity:** MEDIUM
-**Feature:** Entertainment
-**Affected files:** `block-time/route.ts` PATCH handler, lines 373-383
-**Description:** If a flatFee > 0 is configured for extensions, the PATCH handler updates the OrderItem price inside the `extendSession()` transaction, then updates it AGAIN outside the transaction with the flatFee surcharge. Race condition: if payment happens between the two writes, the price is inconsistent.
-**Next step:** Move flatFee update inside the `extendSession()` transaction.
+**Status:** ✅ FIXED — `a4b07a19`
+**Fix:** Moved flatFee into `extendSession()` transaction via `flatFee` parameter. Outer DB update removed.
 
 #### BUG-ENT-4 — Settlement + cron race on same session
-**Status:** ⚠️ OPEN
-**Severity:** MEDIUM
-**Feature:** Entertainment, Payments
-**Description:** `build-payment-financial-context.ts` settles per-minute items during payment. The entertainment-expiry cron can also settle the same item. If both run concurrently, the final DB price is whichever wrote last — potential over/under billing.
-**Next step:** Add `FOR UPDATE` lock on the OrderItem in the payment settlement path to serialize with cron.
+**Status:** ✅ FIXED — `a4b07a19`
+**Fix:** Added `SELECT ... FOR UPDATE` lock on per-minute OrderItem rows in `build-payment-financial-context.ts`. Serializes with cron's `expireSession()`.
 
 #### BUG-ENT-5 — No entertainment reconciliation after offline/reconnect
-**Status:** ⚠️ OPEN
-**Severity:** LOW
-**Feature:** Entertainment, Sync
-**Description:** When a register reconnects after being offline, `catchUpAfterReconnect()` replays order events but has no entertainment-specific reconciliation. If entertainment events were missed during offline (session start/stop), the floor plan shows stale state until bootstrap.
-**Next step:** Add `refreshEntertainmentFloorPlan()` call in `catchUpAfterReconnect()`.
+**Status:** ✅ FIXED — Android `365ce7b`
+**Fix:** Added `refreshEntertainmentFloorPlan()` call in `catchUpAfterReconnect()`.
 
 #### BUG-ENT-6 — Live price update dispatchers defined but never called
-**Status:** ⚠️ OPEN
-**Severity:** LOW
-**Feature:** Entertainment
-**Description:** `dispatchEntertainmentPriceUpdate()` and `dispatchEntertainmentPriceBatchUpdate()` are defined in `socket-dispatch/misc-dispatch.ts` but no cron or periodic timer calls them. Active sessions show stale prices until the next event or manual refresh.
-**Next step:** Implement a periodic timer (every 60s) that emits price updates for all active per-minute sessions.
+**Status:** ✅ FIXED — `a4b07a19`
+**Fix:** Cron Step 4 broadcasts live prices for all active per-minute sessions via `dispatchEntertainmentPriceUpdate()`.
 
 > **2026-03-21 Note:** 16 upstream models had silent sync failures (missing `syncedAt`/`updatedAt`) — fixed in migrations 090-092. All 161 synced models now pass column verification. Instant sync (<500ms) achieved via `pushUpstream()` (40 routes) + `notifyDataChanged()` (99 routes).
 
