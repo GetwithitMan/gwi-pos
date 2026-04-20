@@ -7,7 +7,6 @@ import {
   dispatchEntertainmentUpdate,
   dispatchOrderTotalsUpdate,
   dispatchEntertainmentPriceUpdate,
-  dispatchEntertainmentSessionEntityUpdate,
 } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
