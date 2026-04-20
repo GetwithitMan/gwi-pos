@@ -415,6 +415,31 @@ enum EntertainmentWaitlistStatus {
   expired
 }
 
+enum EntertainmentSessionState {
+  pre_start
+  running
+  overtime
+  stopped
+  voided
+  comped
+  cancelled
+}
+
+enum EntertainmentSessionEventType {
+  created
+  started
+  extended
+  overtime_entered
+  stopped
+  voided
+  comped
+  cancelled
+  transferred
+  price_updated
+  resource_assigned
+  waitlist_notified
+}
+
 enum TimedSessionStatus {
   active
   paused
@@ -675,8 +700,11 @@ model Location {
   houseAccounts         HouseAccount[]
   coupons               Coupon[]
   reservations          Reservation[]
-  entertainmentWaitlist EntertainmentWaitlist[]
-  floorPlanElements     FloorPlanElement[]
+  entertainmentWaitlist      EntertainmentWaitlist[]
+  floorPlanElements          FloorPlanElement[]
+  entertainmentSessions      EntertainmentSession[]
+  entertainmentSessionEvents EntertainmentSessionEvent[]
+  entertainmentResources     EntertainmentResource[]
   // Seat-Level Ticketing
   seats                 Seat[]
   events                Event[]
@@ -2439,6 +2467,106 @@ model EntertainmentWaitlist {
 }
 
 // ============================================
+// ENTERTAINMENT SESSIONS (Timed Rental State Machine)
+// ============================================
+
+model EntertainmentSession {
+  id                  String   @id @default(cuid())
+  locationId          String
+  location            Location @relation(fields: [locationId], references: [id])
+  orderItemId         String   @unique
+  orderItem           OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
+  orderId             String
+  order               Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  resourceId          String
+
+  sessionState        EntertainmentSessionState @default(pre_start)
+  version             Int @default(1)
+
+  scheduledMinutes    Int?
+  startedAt           DateTime?
+  bookedEndAt         DateTime?
+  stoppedAt           DateTime?
+  overtimeStartedAt   DateTime?
+  lastExtendedAt      DateTime?
+  totalExtendedMinutes Int @default(0)
+
+  pricingSnapshot     Json?
+  finalPriceCents     Int?
+  finalPriceDollars   Decimal? @db.Decimal(10, 2)
+
+  createdBy           String?
+  stoppedBy           String?
+  stopReason          String?
+  sourceTerminalId    String?
+
+  lastMutatedBy       String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  deletedAt           DateTime?
+  syncedAt            DateTime?
+
+  events              EntertainmentSessionEvent[]
+
+  @@index([locationId])
+  @@index([orderId])
+  @@index([resourceId])
+  @@index([sessionState])
+  @@index([locationId, sessionState])
+}
+
+model EntertainmentSessionEvent {
+  id              String   @id @default(cuid())
+  locationId      String
+  location        Location @relation(fields: [locationId], references: [id])
+  sessionId       String
+  session         EntertainmentSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  eventType       EntertainmentSessionEventType
+  payload         Json?
+  actorId         String?
+  idempotencyKey  String?
+
+  createdAt       DateTime @default(now())
+
+  @@index([sessionId])
+  @@index([locationId, createdAt])
+  @@unique([sessionId, idempotencyKey])
+}
+
+model EntertainmentResource {
+  id                      String   @id @default(cuid())
+  locationId              String
+  location                Location @relation(fields: [locationId], references: [id])
+
+  name                    String
+  resourceType            String
+  capacity                Int @default(1)
+  sortOrder               Int @default(0)
+  status                  String @default("available")
+
+  linkedMenuItemId        String?
+  linkedFloorPlanElementId String?
+
+  activeSessionId         String? @unique
+
+  isBookable              Boolean @default(true)
+  defaultPricingPolicyId  String?
+
+  lastMutatedBy           String?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+  deletedAt               DateTime?
+  syncedAt                DateTime?
+
+  @@unique([locationId, name])
+  @@index([locationId])
+  @@index([linkedMenuItemId])
+  @@index([linkedFloorPlanElementId])
+  @@index([status])
+}
+
+// ============================================
 // ORDER TYPES (Configurable Order Workflow)
 // ============================================
 
@@ -2729,6 +2857,9 @@ model Order {
   itemSharesAsSource ItemShare[] @relation("ItemShareSourceOrder")
   itemSharesAsTarget ItemShare[] @relation("ItemShareTarget")
 
+  // Entertainment Sessions (Phase 1 — timed rental state machine)
+  entertainmentSessions EntertainmentSession[]
+
   @@index([employeeId])
   @@index([tableId])
   @@index([customerId])
@@ -2903,6 +3034,9 @@ model OrderItem {
 
   // Combo Pick N of M — customer-pick snapshots (Migration 129)
   comboSelections OrderItemComboSelection[]
+
+  // Entertainment Session (Phase 1 — timed rental state machine)
+  entertainmentSession EntertainmentSession?
 
   @@index([locationId])
   @@index([orderId])
