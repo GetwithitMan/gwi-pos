@@ -67,3 +67,14 @@ export {
   cleanupOrphanSessions,
   findStaleSessions,
 } from './session-operations'
+
+// Session entity sync (dual-write layer for EntertainmentSession + events)
+export {
+  isValidTransition,
+  createEntertainmentSession,
+  activateSession,
+  extendSessionEntity,
+  stopSessionEntity,
+  transitionToOvertime,
+  cancelSessionEntity,
+} from './session-entity-sync'
