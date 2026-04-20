@@ -359,6 +359,94 @@ export async function dispatchEntertainmentPriceBatchUpdate(
   return doEmit()
 }
 
+// ==================== Entertainment Session Entity ====================
+
+/**
+ * Dispatch entertainment session entity update
+ *
+ * Called when the EntertainmentSession entity is created, updated, or deleted.
+ * Keeps all displays in sync (Pit Boss dashboard, POS terminals, Android registers).
+ */
+export async function dispatchEntertainmentSessionEntityUpdate(
+  locationId: string,
+  payload: {
+    session: {
+      id: string
+      orderItemId: string
+      orderId: string
+      resourceId: string
+      sessionState: string
+      version: number
+      scheduledMinutes: number | null
+      startedAt: string | null
+      bookedEndAt: string | null
+      stoppedAt: string | null
+      overtimeStartedAt: string | null
+      totalExtendedMinutes: number
+      finalPriceCents: number | null
+      createdBy: string | null
+      stoppedBy: string | null
+      stopReason: string | null
+    }
+    action: 'created' | 'updated' | 'deleted'
+  },
+  options: DispatchOptions = {}
+): Promise<boolean> {
+  const doEmit = async () => {
+    try {
+      await emitToLocation(locationId, 'entertainment:session-entity-update', payload)
+      return true
+    } catch (error) {
+      log.error({ err: error }, 'Failed to dispatch entertainment:session-entity-update')
+      return false
+    }
+  }
+
+  if (options.async) {
+    doEmit().catch((err) => log.error({ err }, 'Async dispatch failed'))
+    return true
+  }
+
+  return doEmit()
+}
+
+/**
+ * Dispatch entertainment resource status update
+ *
+ * Called when a resource's status or activeSessionId changes.
+ * Keeps floor plan and resource list UIs in sync.
+ */
+export async function dispatchEntertainmentResourceStatusUpdate(
+  locationId: string,
+  payload: {
+    resource: {
+      id: string
+      status: string
+      activeSessionId: string | null
+      linkedMenuItemId: string | null
+      name: string
+    }
+  },
+  options: DispatchOptions = {}
+): Promise<boolean> {
+  const doEmit = async () => {
+    try {
+      await emitToLocation(locationId, 'entertainment:resource-status-update', payload)
+      return true
+    } catch (error) {
+      log.error({ err: error }, 'Failed to dispatch entertainment:resource-status-update')
+      return false
+    }
+  }
+
+  if (options.async) {
+    doEmit().catch((err) => log.error({ err }, 'Async dispatch failed'))
+    return true
+  }
+
+  return doEmit()
+}
+
 // ==================== Location Alerts ====================
 
 /**
