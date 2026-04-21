@@ -77,6 +77,8 @@ function handleItemAdded(
     pourSize: payload.pourSize ?? null,
     pourMultiplier: payload.pourMultiplier ?? null,
     isTaxInclusive: payload.isTaxInclusive ?? false,
+    itemType: payload.itemType ?? null,
+    blockTimeMinutes: payload.blockTimeMinutes ?? null,
     status: 'active',
     isCompleted: false,
     resendCount: 0,
@@ -126,6 +128,11 @@ function handleItemUpdated(
     ...(payload.status != null ? { status: payload.status } : {}),
     ...(payload.isCompleted != null ? { isCompleted: payload.isCompleted } : {}),
     ...(payload.resendCount != null ? { resendCount: payload.resendCount } : {}),
+    ...(payload.itemType != null ? { itemType: payload.itemType } : {}),
+    ...(payload.blockTimeMinutes != null ? { blockTimeMinutes: payload.blockTimeMinutes } : {}),
+    ...(payload.blockTimeStartedAt != null ? { blockTimeStartedAt: payload.blockTimeStartedAt === 'CLEARED' ? null : payload.blockTimeStartedAt } : {}),
+    ...(payload.blockTimeExpiresAt != null ? { blockTimeExpiresAt: payload.blockTimeExpiresAt } : {}),
+    ...(payload.price != null ? { priceCents: Math.round(payload.price * 100) } : {}),
   }
 
   return {
@@ -148,9 +155,11 @@ function handleOrderSent(
   for (const [id, item] of Object.entries(state.items)) {
     const shouldProcess = sendAll || sentSet.has(id)
     if (shouldProcess && !item.isHeld && item.kitchenStatus !== 'sent' && item.status === 'active') {
+      // Entertainment items (timed_rental) bypass kitchen — don't set kitchenStatus
+      const isEntertainment = item.itemType === 'timed_rental'
       updatedItems[id] = {
         ...item,
-        kitchenStatus: 'sent',
+        ...(isEntertainment ? {} : { kitchenStatus: 'sent' }),
         isHeld: false,
       }
     } else {
