@@ -74,6 +74,8 @@ export interface ItemAddedPayload {
   costAtSaleCents?: number | null
   pourSize?: string | null
   pourMultiplier?: number | null
+  itemType?: string | null
+  blockTimeMinutes?: number | null
 }
 
 export interface ItemRemovedPayload {
@@ -95,6 +97,11 @@ export interface ItemUpdatedPayload {
   status?: string | null
   isCompleted?: boolean | null
   resendCount?: number | null
+  itemType?: string | null
+  price?: number | null              // dollars (server convention)
+  blockTimeMinutes?: number | null
+  blockTimeStartedAt?: string | null  // ISO 8601 or 'CLEARED'
+  blockTimeExpiresAt?: string | null  // ISO 8601
 }
 
 export interface OrderSentPayload {
@@ -301,6 +308,7 @@ export interface OrderLineItem {
   delayStartedAt?: string | null
   completedAt?: string | null
   courseStatus?: string | null
+  itemType?: string | null
   blockTimeMinutes?: number | null
   blockTimeStartedAt?: string | null
   blockTimeExpiresAt?: string | null
