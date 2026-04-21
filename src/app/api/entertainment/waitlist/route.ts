@@ -137,7 +137,17 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.SETTINGS_ENTERTAINMENT)
     if (!auth.authorized) return err(auth.error, auth.status)
 
-    if (!elementId && !visualType) {
+    // Resolve elementId from menuItemId if not directly provided
+    let resolvedElementId = elementId
+    if (!resolvedElementId && !visualType && body.menuItemId) {
+      const linkedElement = await db.floorPlanElement.findFirst({
+        where: { linkedMenuItemId: body.menuItemId, elementType: 'entertainment', deletedAt: null },
+        select: { id: true },
+      })
+      if (linkedElement) resolvedElementId = linkedElement.id
+    }
+
+    if (!resolvedElementId && !visualType) {
       return err('Either elementId or visualType is required')
     }
 
@@ -146,13 +156,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Verify element exists if elementId provided
-    let linkedMenuItemId: string | null = null
-    if (elementId) {
+    let linkedMenuItemId: string | null = body.menuItemId || null
+    if (resolvedElementId) {
       const element = await db.floorPlanElement.findUnique({
-        where: { id: elementId },
+        where: { id: resolvedElementId },
         select: { id: true, locationId: true, linkedMenuItemId: true },
       })
-      linkedMenuItemId = element?.linkedMenuItemId || null
+      linkedMenuItemId = element?.linkedMenuItemId || linkedMenuItemId
 
       if (!element) {
         return notFound('Element not found')
@@ -175,14 +185,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           locationId,
           deletedAt: null,
           status: EntertainmentWaitlistStatus.waiting,
-          ...(elementId ? { elementId } : { visualType }),
+          ...(resolvedElementId ? { elementId: resolvedElementId } : { visualType }),
         },
       })
 
       return tx.entertainmentWaitlist.create({
         data: {
           locationId,
-          elementId: elementId || null,
+          elementId: resolvedElementId || null,
           visualType: visualType || null,
           tableId: tableId || null,
           customerName: customerName?.trim() || null,
