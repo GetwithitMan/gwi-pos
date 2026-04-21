@@ -268,7 +268,7 @@ export const POST = withVenue(withTiming(async function POST(
         // eslint-disable-next-line -- dynamic CASE clauses + spread params require $executeRawUnsafe; all values are parameterized
         await tx.$executeRawUnsafe(
           `UPDATE "OrderItem"
-           SET "kitchenStatus" = 'sent', "firedAt" = NOW(), "kitchenSentAt" = NOW(), "blockTimeStartedAt" = NOW(),
+           SET "firedAt" = NOW(), "blockTimeStartedAt" = NOW(),
                "blockTimeExpiresAt" = CASE ${caseClauses} END,
                "updatedAt" = NOW()
            WHERE id = ANY($1::text[]) AND "locationId" = $${params.length}`,
