@@ -10,6 +10,7 @@
  */
 
 import { db } from '@/lib/db'
+import * as OrderRepository from '@/lib/repositories/order-repository'
 import { parseSettings } from '@/lib/settings'
 import type { CFDLoyaltyCustomer } from '@/types/multi-surface'
 
@@ -23,13 +24,14 @@ export async function loadCfdLoyaltySnapshot(
   locationId: string,
 ): Promise<CFDLoyaltySnapshot> {
   try {
-    const order = await db.order.findFirst({
-      where: { id: orderId, locationId },
-      select: {
+    const order = await OrderRepository.getOrderByIdWithSelect(
+      orderId,
+      locationId,
+      {
         customerId: true,
         location: { select: { settings: true } },
       },
-    })
+    )
     if (!order) return { customer: null, loyaltyEnabled: false }
 
     const settings = parseSettings(order.location.settings)
