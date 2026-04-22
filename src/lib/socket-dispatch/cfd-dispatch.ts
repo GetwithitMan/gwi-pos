@@ -6,13 +6,27 @@
  * idle, order updated, charge card, cancel charge.
  */
 
-import { CFD_EVENTS } from '@/types/multi-surface'
+import { CFD_EVENTS, type CFDLoyaltyCustomer } from '@/types/multi-surface'
 import {
   log,
   emitToLocation,
   emitToTerminal,
   toCents,
 } from './emit-helpers'
+
+/**
+ * Normalize the loyalty fields that ride on cfd:show-order / cfd:order-updated
+ * payloads. When loyalty is disabled, customer is always stripped to null so
+ * the CFD never sees points/tier data it must not render.
+ */
+function resolveLoyaltyFields(input: {
+  customer?: CFDLoyaltyCustomer | null
+  loyaltyEnabled?: boolean
+}): { customer: CFDLoyaltyCustomer | null; loyaltyEnabled: boolean } {
+  const loyaltyEnabled = input.loyaltyEnabled === true
+  const customer = loyaltyEnabled ? (input.customer ?? null) : null
+  return { customer, loyaltyEnabled }
+}
 
 /**
  * Emit to a specific CFD terminal, falling back to location broadcast if the
@@ -62,7 +76,10 @@ export function dispatchCFDShowOrder(locationId: string, cfdTerminalId: string |
   total: number
   taxFromInclusive?: number
   taxFromExclusive?: number
+  customer?: CFDLoyaltyCustomer | null
+  loyaltyEnabled?: boolean
 }): void {
+  const { customer, loyaltyEnabled } = resolveLoyaltyFields(data)
   const payload = {
     ...data,
     // Android CFD expects cent-denominated fields
@@ -75,6 +92,8 @@ export function dispatchCFDShowOrder(locationId: string, cfdTerminalId: string |
       modifierLines: item.modifiers ?? [],
     })),
     currency: 'USD',
+    customer,
+    loyaltyEnabled,
   }
   if (cfdTerminalId) {
     void emitToCfdOrFallback(cfdTerminalId, locationId, CFD_EVENTS.SHOW_ORDER, payload)
@@ -102,7 +121,10 @@ export function dispatchCFDShowOrderDetail(locationId: string, cfdTerminalId: st
   discountTotal?: number
   taxFromInclusive?: number
   taxFromExclusive?: number
+  customer?: CFDLoyaltyCustomer | null
+  loyaltyEnabled?: boolean
 }): void {
+  const { customer, loyaltyEnabled } = resolveLoyaltyFields(data)
   const payload = {
     ...data,
     // Android CFD expects cent-denominated fields
@@ -115,6 +137,8 @@ export function dispatchCFDShowOrderDetail(locationId: string, cfdTerminalId: st
       modifierLines: item.modifiers ?? [],
     })),
     currency: 'USD',
+    customer,
+    loyaltyEnabled,
   }
   if (cfdTerminalId) {
     void emitToCfdOrFallback(cfdTerminalId, locationId, CFD_EVENTS.SHOW_ORDER_DETAIL, payload)
@@ -360,7 +384,10 @@ export function dispatchCFDOrderUpdated(locationId: string, data: {
   discountTotal?: number
   taxFromInclusive?: number
   taxFromExclusive?: number
+  customer?: CFDLoyaltyCustomer | null
+  loyaltyEnabled?: boolean
 }): void {
+  const { customer, loyaltyEnabled } = resolveLoyaltyFields(data)
   const payload = {
     ...data,
     subtotalCents: toCents(data.subtotal),
@@ -372,6 +399,8 @@ export function dispatchCFDOrderUpdated(locationId: string, data: {
       modifierLines: item.modifiers ?? [],
     })),
     currency: 'USD',
+    customer,
+    loyaltyEnabled,
   }
   void emitToLocation(locationId, CFD_EVENTS.ORDER_UPDATED, payload).catch((err) => log.error({ err }, 'CFD order-updated dispatch failed'))
   // Also emit as show-order so Android CFD picks it up (it doesn't handle order-updated)
