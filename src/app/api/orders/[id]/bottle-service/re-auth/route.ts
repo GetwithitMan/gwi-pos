@@ -20,7 +20,8 @@ export const POST = withVenue(withAuth(async function POST(
   try {
     const { id: orderId } = await params
     const body = await request.json().catch(() => ({}))
-    const { employeeId, additionalAmount } = body
+    const { employeeId, additionalAmount, correlationId } = body
+    if (correlationId) log.info({ correlationId, orderId }, '[BOTTLE-SERVICE] re-auth request received')
 
     if (!employeeId) {
       return err('Missing required field: employeeId')

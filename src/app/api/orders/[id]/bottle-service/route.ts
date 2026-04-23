@@ -25,7 +25,8 @@ export const POST = withVenue(async function POST(
   try {
     const { id: orderId } = await params
     const body = await request.json().catch(() => ({}))
-    const { readerId, employeeId, tierId } = body
+    const { readerId, employeeId, tierId, correlationId } = body
+    if (correlationId) log.info({ correlationId, orderId, tierId }, '[BOTTLE-SERVICE] upgrade request received')
 
     if (!readerId || !employeeId || !tierId) {
       return err('Missing required fields: readerId, employeeId, tierId')

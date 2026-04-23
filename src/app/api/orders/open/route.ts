@@ -209,6 +209,15 @@ export const GET = withVenue(withAuth({ allowCellular: true }, withTiming(async 
           claimedByEmployee: {
             select: { displayName: true, firstName: true, lastName: true },
           },
+          // Bottle service fields
+          isBottleService: true,
+          bottleServiceTierId: true,
+          bottleServiceDeposit: true,
+          bottleServiceMinSpend: true,
+          bottleServiceCurrentSpend: true,
+          bottleServiceTier: {
+            select: { name: true, color: true },
+          },
           cards: {
             where: { deletedAt: null, status: 'authorized' },
             select: { cardholderName: true, cardType: true, cardLast4: true },
@@ -336,6 +345,18 @@ export const GET = withVenue(withAuth({ allowCellular: true }, withTiming(async 
           paidAmount: o.payments
             .filter((p: { status: string }) => p.status === 'completed')
             .reduce((sum: number, p: { totalAmount: unknown }) => sum + Number(p.totalAmount), 0),
+          // Bottle service
+          isBottleService: (o as any).isBottleService ?? false,
+          bottleServiceTierName: (o as any).bottleServiceTier?.name ?? null,
+          bottleServiceTierColor: (o as any).bottleServiceTier?.color ?? null,
+          bottleServiceMinSpend: (o as any).bottleServiceMinSpend ? Number((o as any).bottleServiceMinSpend) : null,
+          bottleServiceDeposit: (o as any).bottleServiceDeposit ? Number((o as any).bottleServiceDeposit) : null,
+          reAuthNeeded: (o as any).isBottleService && (o as any).bottleServiceDeposit
+            ? Number((o as any).bottleServiceCurrentSpend ?? (o as any).subtotal ?? 0) >= Number((o as any).bottleServiceDeposit) * 0.8
+            : false,
+          minimumMet: (o as any).isBottleService && (o as any).bottleServiceMinSpend
+            ? Number((o as any).bottleServiceCurrentSpend ?? (o as any).subtotal ?? 0) >= Number((o as any).bottleServiceMinSpend)
+            : false,
           // Defaults for fields not in summary
           waitlist: [],
           isOnWaitlist: false,
@@ -398,6 +419,10 @@ export const GET = withVenue(withAuth({ allowCellular: true }, withTiming(async 
         },
         claimedByEmployee: {
           select: { displayName: true, firstName: true, lastName: true },
+        },
+        // Bottle service
+        bottleServiceTier: {
+          select: { name: true, color: true },
         },
         items: {
           include: {
@@ -579,6 +604,18 @@ export const GET = withVenue(withAuth({ allowCellular: true }, withTiming(async 
         subtotal: Number(order.subtotal),
         taxTotal: Number(order.taxTotal),
         total: Number(order.total),
+        // Bottle service
+        isBottleService: (order as any).isBottleService ?? false,
+        bottleServiceTierName: (order as any).bottleServiceTier?.name ?? null,
+        bottleServiceTierColor: (order as any).bottleServiceTier?.color ?? null,
+        bottleServiceMinSpend: (order as any).bottleServiceMinSpend ? Number((order as any).bottleServiceMinSpend) : null,
+        bottleServiceDeposit: (order as any).bottleServiceDeposit ? Number((order as any).bottleServiceDeposit) : null,
+        reAuthNeeded: (order as any).isBottleService && (order as any).bottleServiceDeposit
+          ? Number((order as any).bottleServiceCurrentSpend ?? (order as any).subtotal ?? 0) >= Number((order as any).bottleServiceDeposit) * 0.8
+          : false,
+        minimumMet: (order as any).isBottleService && (order as any).bottleServiceMinSpend
+          ? Number((order as any).bottleServiceCurrentSpend ?? (order as any).subtotal ?? 0) >= Number((order as any).bottleServiceMinSpend)
+          : false,
         // Pre-auth info (for bar tabs)
         hasPreAuth: !!order.preAuthId,
         preAuth: order.preAuthId ? {
