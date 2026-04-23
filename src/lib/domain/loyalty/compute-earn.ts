@@ -16,7 +16,15 @@
  *   - Optionally add tips when `earnOnTips=true`
  *   - Apply LoyaltyTier multiplier if customer has a tier
  *   - Skip earn if base < minimumEarnAmount
- *   - Round to nearest integer point (Math.round)
+ *   - Round per `LoyaltyProgram.roundingMode` (default `floor`)
+ *
+ * Rounding (resolved 2026-04-23, Q1):
+ *   - Config-driven via `LoyaltyProgram.roundingMode` ∈ {'floor','round','ceil'}.
+ *   - Default is `'floor'` when no program is configured OR the program omits
+ *     the field. This matches the schema default (`prisma/schema.prisma`,
+ *     `LoyaltyProgram.roundingMode @default("floor")`) and the existing
+ *     `/api/loyalty/earn` route default — venues without an explicit setting
+ *     do not change behavior.
  *
  * The `LoyaltyTier` table lookup is delegated via `lookupTierMultiplier` so the
  * caller controls the DB / tx client and graceful-fallback semantics. The POS
@@ -25,6 +33,33 @@
 
 import type { LoyaltySettings } from '@/lib/settings/types'
 import { toNumber } from '@/lib/pricing'
+
+export type LoyaltyRoundingMode = 'floor' | 'round' | 'ceil'
+
+/** Default rounding mode when no LoyaltyProgram is configured / omits it. */
+export const DEFAULT_LOYALTY_ROUNDING_MODE: LoyaltyRoundingMode = 'floor'
+
+/**
+ * Resolve a value to a known rounding mode, defaulting to `'floor'` when the
+ * input is null/undefined or not one of the three supported values.
+ */
+export function resolveRoundingMode(value: unknown): LoyaltyRoundingMode {
+  if (value === 'floor' || value === 'round' || value === 'ceil') return value
+  return DEFAULT_LOYALTY_ROUNDING_MODE
+}
+
+/** Apply the configured rounding mode to a fractional point amount. */
+export function applyRounding(rawPoints: number, mode: LoyaltyRoundingMode): number {
+  switch (mode) {
+    case 'ceil':
+      return Math.ceil(rawPoints)
+    case 'round':
+      return Math.round(rawPoints)
+    case 'floor':
+    default:
+      return Math.floor(rawPoints)
+  }
+}
 
 export interface LoyaltyEarnInput {
   /** Order subtotal (pre-tax, pre-tip) in dollars. */
@@ -43,6 +78,13 @@ export interface LoyaltyEarnInput {
    * Caller picks the DB client (outer db, tx, or venue db).
    */
   lookupTierMultiplier: (tierId: string) => Promise<number>
+  /**
+   * Rounding mode from the customer's `LoyaltyProgram.roundingMode`.
+   * When omitted, null, or not one of {'floor','round','ceil'} the engine
+   * uses `DEFAULT_LOYALTY_ROUNDING_MODE` (= 'floor'), which preserves the
+   * behavior of every venue whose program already uses the schema default.
+   */
+  roundingMode?: LoyaltyRoundingMode | string | null | undefined
 }
 
 export interface LoyaltyEarnResult {
@@ -95,7 +137,11 @@ export async function computeLoyaltyEarn(input: LoyaltyEarnInput): Promise<Loyal
 
   let pointsEarned = 0
   if (loyaltyEarningBase >= loyaltySettings.minimumEarnAmount) {
-    pointsEarned = Math.round(loyaltyEarningBase * loyaltySettings.pointsPerDollar * loyaltyTierMultiplier)
+    const roundingMode = resolveRoundingMode(input.roundingMode)
+    pointsEarned = applyRounding(
+      loyaltyEarningBase * loyaltySettings.pointsPerDollar * loyaltyTierMultiplier,
+      roundingMode,
+    )
   }
 
   return { pointsEarned, loyaltyEarningBase, loyaltyTierMultiplier }
@@ -116,5 +162,36 @@ export function makePrismaTierLookup(client: {
     `) as Array<{ pointsMultiplier: unknown }>
     if (rows.length === 0) return 1.0
     return Number(rows[0].pointsMultiplier) || 1.0
+  }
+}
+
+/**
+ * Look up the rounding mode from a customer's enrolled `LoyaltyProgram`.
+ *
+ * Returns `DEFAULT_LOYALTY_ROUNDING_MODE` ('floor') when:
+ *   - the customer has no enrolled program
+ *   - the program row is missing
+ *   - the LoyaltyProgram table doesn't exist yet (graceful fallback)
+ *   - the column holds an unrecognized value
+ *
+ * Caller passes any client exposing `$queryRaw` (Prisma client, tx, extended db).
+ */
+export async function lookupCustomerRoundingMode(
+  client: { $queryRaw: (template: TemplateStringsArray, ...values: unknown[]) => Promise<unknown> },
+  customerId: string,
+): Promise<LoyaltyRoundingMode> {
+  try {
+    const rows = (await client.$queryRaw`
+      SELECT lp."roundingMode" AS "roundingMode"
+      FROM "Customer" c
+      LEFT JOIN "LoyaltyProgram" lp ON lp."id" = c."loyaltyProgramId" AND lp."deletedAt" IS NULL
+      WHERE c."id" = ${customerId} AND c."deletedAt" IS NULL
+      LIMIT 1
+    `) as Array<{ roundingMode: unknown }>
+    if (rows.length === 0) return DEFAULT_LOYALTY_ROUNDING_MODE
+    return resolveRoundingMode(rows[0].roundingMode)
+  } catch {
+    // LoyaltyProgram table may not exist yet — fall back to default
+    return DEFAULT_LOYALTY_ROUNDING_MODE
   }
 }

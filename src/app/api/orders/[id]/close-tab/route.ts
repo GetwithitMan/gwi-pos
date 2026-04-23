@@ -1,7 +1,7 @@
 import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { computeLoyaltyEarn, makePrismaTierLookup } from '@/lib/domain/loyalty/compute-earn'
+import { computeLoyaltyEarn, makePrismaTierLookup, lookupCustomerRoundingMode } from '@/lib/domain/loyalty/compute-earn'
 import { enqueueLoyaltyEarn } from '@/lib/domain/loyalty/enqueue-loyalty-earn'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
@@ -557,6 +557,7 @@ export const POST = withVenue(async function POST(
                 SELECT "loyaltyTierId" FROM "Customer" WHERE "id" = ${lockedCustomerId} AND "locationId" = ${locationId} AND "deletedAt" IS NULL
               `
               const custTierId = custTierRows[0]?.loyaltyTierId ?? null
+              const roundingMode = await lookupCustomerRoundingMode(tx, lockedCustomerId)
               const earn = await computeLoyaltyEarn({
                 subtotal: Number(lockedRows[0].subtotal ?? 0),
                 total: Number(lockedRows[0].total ?? 0),
@@ -564,6 +565,7 @@ export const POST = withVenue(async function POST(
                 loyaltySettings: locSettings.loyalty,
                 customerLoyaltyTierId: custTierId,
                 lookupTierMultiplier: makePrismaTierLookup(tx),
+                roundingMode,
               })
               if (earn.pointsEarned > 0) {
                 const enq = await enqueueLoyaltyEarn({
