@@ -1119,6 +1119,18 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
     applicableTo: ['ADMIN'],
     risk: 'CRITICAL',
   },
+  'loyalty.adjust': {
+    label: 'Adjust Loyalty Points',
+    description: 'Allows manually adjusting a customer\'s loyalty points balance — for example, correcting a mistake, issuing a goodwill bonus, or removing points after a dispute. Every adjustment writes an audit row to LoyaltyTransaction with the reason, employee, before/after balance, and signed points delta. Direct database edits to a customer\'s points are blocked everywhere else, so this is the only path for a manual adjustment. Points-down adjustments do NOT reduce lifetime points (tier is preserved). Only give to owners and trusted managers — loyalty points carry real value when redeemed.',
+    details: [
+      'CRITICAL: adjustments change a customer\'s redeemable balance',
+      'Every adjustment is audited in LoyaltyTransaction with reason + employee',
+      'Negative adjustments do not reduce lifetime points (tier stays intact)',
+    ],
+    tab: 'BUSINESS_SETUP',
+    applicableTo: ['ADMIN'],
+    risk: 'CRITICAL',
+  },
 
   // =========================================================================
   // BUSINESS_SETUP — Tips Management
