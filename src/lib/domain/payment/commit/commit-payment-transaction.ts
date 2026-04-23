@@ -26,6 +26,7 @@ import type { LocationSettings } from '@/lib/settings'
 import type { PaymentLoopResult } from '@/lib/domain/payment/executors/process-payment-loop'
 import { createChildLogger } from '@/lib/logger'
 import { computeLoyaltyEarn, makePrismaTierLookup } from '@/lib/domain/loyalty/compute-earn'
+import { enqueueLoyaltyEarn } from '@/lib/domain/loyalty/enqueue-loyalty-earn'
 
 const log = createChildLogger('commit-payment')
 
@@ -101,6 +102,12 @@ export interface CommitPaymentSuccess {
   autoVoidTerminalId: string | undefined
   autoVoidLocationId: string | undefined
   loyaltyTierMultiplier: number
+  /**
+   * T4: true when a `PendingLoyaltyEarn` outbox row was enqueued atomically
+   * inside the commit transaction. Signals to post-commit effects that they
+   * should trigger the loyalty earn worker.
+   */
+  loyaltyEarnEnqueued: boolean
 }
 
 export type CommitPaymentResult =
@@ -312,6 +319,62 @@ export async function commitPaymentTransaction(params: CommitPaymentParams): Pro
   })
   timing?.end('db-pay', 'Payment ingestion')
 
+  // ── 5a. Loyalty earn outbox (T3 + T4) ───────────────────────────────
+  //
+  // T3: Re-read `customerId` from the LOCKED Order row at commit time.
+  // The outer pay route acquires `SELECT id FROM "Order" WHERE id = $1 FOR UPDATE`
+  // before calling us, so no concurrent `PUT /orders/:id/customer` can change
+  // customerId until this tx commits. Reading via `tx` guarantees we see the
+  // row-post-lock state and not the possibly-stale `order.customer` snapshot
+  // that was loaded earlier in the request.
+  //
+  // T4: Enqueue a durable `PendingLoyaltyEarn` inside THIS transaction so the
+  // enqueue is atomic with the payment. If the tx rolls back, the outbox row
+  // rolls back with it. The loyalty-earn-worker drains later and is idempotent
+  // via the partial unique index on LoyaltyTransaction(orderId) WHERE type='earn'.
+  let loyaltyEarnEnqueued = false
+  if (orderIsPaid && pointsEarned > 0 && settings.loyalty.enabled) {
+    try {
+      const lockedCustomerRows = await tx.$queryRaw<Array<{ customerId: string | null }>>`
+        SELECT "customerId" FROM "Order"
+         WHERE "id" = ${orderId} AND "locationId" = ${order.locationId}
+      `
+      const lockedCustomerId = lockedCustomerRows[0]?.customerId ?? null
+      if (lockedCustomerId) {
+        // If the customer was unlinked after `order.customer` was loaded but
+        // before the lock was acquired, `lockedCustomerId` is null and we
+        // correctly skip the earn (T3 rule: "no points if unlinked").
+        // If the customer was REPLACED with a different one, we honor the
+        // locked row — that customer gets the points, not the stale one.
+        const enqueueResult = await enqueueLoyaltyEarn({
+          tx,
+          locationId: order.locationId,
+          orderId,
+          customerId: lockedCustomerId,
+          pointsEarned,
+          loyaltyEarningBase,
+          tierMultiplier: loyaltyTierMultiplier,
+          employeeId,
+          orderNumber: typeof order.orderNumber === 'number' ? order.orderNumber : null,
+        })
+        loyaltyEarnEnqueued = enqueueResult.enqueued
+      } else {
+        log.info(
+          { orderId, inMemoryCustomerId: (order.customer as any)?.id ?? null },
+          'Order customer unlinked before commit — skipping loyalty earn'
+        )
+      }
+    } catch (enqueueErr) {
+      // Enqueue failure must NOT abort the payment. Log and let the partial
+      // unique index + idempotent worker path protect us. Worst case: no earn
+      // is written; best case: a future retry will re-enqueue.
+      log.error(
+        { err: enqueueErr, orderId, customerId: (order.customer as any)?.id ?? null },
+        'enqueueLoyaltyEarn failed — payment still committing'
+      )
+    }
+  }
+
   // ── 6. Pending capture completion ───────────────────────────────────
 
   // DOUBLE-CHARGE PREVENTION: Mark pending capture as 'completed' now that payment is recorded.
@@ -396,5 +459,6 @@ export async function commitPaymentTransaction(params: CommitPaymentParams): Pro
     autoVoidTerminalId,
     autoVoidLocationId,
     loyaltyTierMultiplier,
+    loyaltyEarnEnqueued,
   }
 }

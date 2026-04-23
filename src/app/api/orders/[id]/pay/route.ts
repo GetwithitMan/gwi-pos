@@ -268,6 +268,7 @@ export const POST = withVenue(withTiming(async function POST(
 
     // Hoisted for post-transaction access (populated inside tx)
     let loyaltyTierMultiplier: number = 1.0
+    let loyaltyEarnEnqueued: boolean = false
 
     const txResult = await db.$transaction(async (tx) => {
 
@@ -815,6 +816,7 @@ export const POST = withVenue(withTiming(async function POST(
     autoVoidTerminalId = commitResult.autoVoidTerminalId
     autoVoidLocationId = commitResult.autoVoidLocationId
     loyaltyTierMultiplier = commitResult.loyaltyTierMultiplier
+    loyaltyEarnEnqueued = commitResult.loyaltyEarnEnqueued
 
     return commitResult
 
@@ -891,6 +893,7 @@ export const POST = withVenue(withTiming(async function POST(
       isSplitPayRemaining,
       totalDriftWarning,
       loyaltyTierMultiplier,
+      loyaltyEarnEnqueued,
     })
 
     // Build receipt data via domain module (eliminates separate /receipt fetch)

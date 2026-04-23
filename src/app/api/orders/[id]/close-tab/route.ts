@@ -1,6 +1,8 @@
 import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { computeLoyaltyEarn, makePrismaTierLookup } from '@/lib/domain/loyalty/compute-earn'
+import { enqueueLoyaltyEarn } from '@/lib/domain/loyalty/enqueue-loyalty-earn'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
 import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchTabClosed, dispatchTabStatusUpdate, dispatchOrderClosed, dispatchEntertainmentStatusChanged, dispatchPaymentProcessed, dispatchTabClosingStarted } from '@/lib/socket-dispatch'
@@ -518,9 +520,10 @@ export const POST = withVenue(async function POST(
     // so we MUST record it. Retry up to 3 times with 500ms delay on transient DB failures.
     let createdPaymentId: string | undefined
     let phase3LastError: unknown = null
+    let loyaltyEarnEnqueuedInClose = false
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
-        createdPaymentId = await db.$transaction(async (tx) => {
+        const phase3Result = await db.$transaction(async (tx) => {
           const paymentId = await recordCaptureSuccess(tx, {
             orderId,
             locationId,
@@ -537,6 +540,52 @@ export const POST = withVenue(async function POST(
             now,
           })
 
+          // ── Loyalty earn enqueue (T2+T3+T4) ──────────────────────────
+          // Re-read customerId from the locked Order row to honor T3's rule:
+          // "no points if the order has been unlinked between request start
+          // and commit". recordCaptureSuccess has already acquired the row
+          // lock inside this tx via its own FOR UPDATE.
+          let earnEnqueued = false
+          try {
+            const lockedRows = await tx.$queryRaw<Array<{ customerId: string | null; orderNumber: number | null; subtotal: unknown; total: unknown }>>`
+              SELECT "customerId", "orderNumber", "subtotal", "total" FROM "Order"
+               WHERE "id" = ${orderId} AND "locationId" = ${locationId}
+            `
+            const lockedCustomerId = lockedRows[0]?.customerId ?? null
+            if (lockedCustomerId && locSettings.loyalty.enabled) {
+              const custTierRows = await tx.$queryRaw<Array<{ loyaltyTierId: string | null }>>`
+                SELECT "loyaltyTierId" FROM "Customer" WHERE "id" = ${lockedCustomerId} AND "locationId" = ${locationId} AND "deletedAt" IS NULL
+              `
+              const custTierId = custTierRows[0]?.loyaltyTierId ?? null
+              const earn = await computeLoyaltyEarn({
+                subtotal: Number(lockedRows[0].subtotal ?? 0),
+                total: Number(lockedRows[0].total ?? 0),
+                tipTotal: finalTipAmount,
+                loyaltySettings: locSettings.loyalty,
+                customerLoyaltyTierId: custTierId,
+                lookupTierMultiplier: makePrismaTierLookup(tx),
+              })
+              if (earn.pointsEarned > 0) {
+                const enq = await enqueueLoyaltyEarn({
+                  tx,
+                  locationId,
+                  orderId,
+                  customerId: lockedCustomerId,
+                  pointsEarned: earn.pointsEarned,
+                  loyaltyEarningBase: earn.loyaltyEarningBase,
+                  tierMultiplier: earn.loyaltyTierMultiplier,
+                  employeeId,
+                  orderNumber: lockedRows[0].orderNumber ?? null,
+                })
+                earnEnqueued = enq.enqueued
+              }
+            }
+          } catch (loyaltyEnqueueErr) {
+            // Enqueue failure must NOT abort the capture record write.
+            // The partial unique index on LoyaltyTransaction is the final guard.
+            log.warn({ err: loyaltyEnqueueErr, orderId }, 'close-tab loyalty enqueue failed (non-fatal)')
+          }
+
           // Outage queue writes INSIDE the transaction for atomicity:
           // if the process crashes after commit, both the payment record AND
           // the outage queue entry are guaranteed to exist (or neither does).
@@ -547,8 +596,10 @@ export const POST = withVenue(async function POST(
             if (fullOrder) await queueIfOutageOrFail('Order', locationId, orderId, 'UPDATE', fullOrder as unknown as Record<string, unknown>, tx)
           }
 
-          return paymentId
+          return { paymentId, earnEnqueued }
         })
+        createdPaymentId = phase3Result.paymentId
+        loyaltyEarnEnqueuedInClose = phase3Result.earnEnqueued
         phase3LastError = null
         break // Success
       } catch (phase3Err) {
@@ -868,91 +919,52 @@ export const POST = withVenue(async function POST(
         locationId,
       }, { async: true }),
     ]).catch(err => log.warn({ err }, 'Parallel socket dispatch failed in close-tab'))
+    // ── Loyalty + customer stats (T2+T4) ───────────────────────────────
+    // Canonical earn write was already enqueued INSIDE the Phase 3 capture
+    // transaction via PendingLoyaltyEarn (see loyaltyEarnEnqueuedInClose).
+    // That row is drained by the loyalty-earn-worker, whose partial unique
+    // index on LoyaltyTransaction(orderId) WHERE type='earn' guarantees
+    // exactly one persisted earn per order lifecycle — regardless of whether
+    // pay/route.ts also enqueued.
+    //
+    // This block just:
+    //   (a) Updates non-loyalty customer stats (totalSpent, totalOrders,
+    //       lastVisit, averageTicket). These are NOT loyalty points.
+    //   (b) Triggers the worker so the earn is processed promptly.
     void (async () => {
       try {
-        // Fetch the order's customer for loyalty check
-        const orderForLoyalty = await db.order.findUnique({
+        const orderForStats = await db.order.findUnique({
           where: { id: orderId },
           select: {
-            customerId: true, orderNumber: true, subtotal: true, total: true,
-            customer: {
-              select: { id: true, loyaltyPoints: true, lifetimePoints: true, loyaltyTierId: true, loyaltyProgramId: true, totalSpent: true, totalOrders: true },
+            customerId: true, total: true,
+            customer: { select: { id: true, totalSpent: true, totalOrders: true } },
+          },
+        })
+        if (orderForStats?.customer) {
+          const currentTotalSpent = Number(orderForStats.customer.totalSpent ?? 0)
+          const currentTotalOrders = Number(orderForStats.customer.totalOrders ?? 0)
+          const orderTotal = Number(orderForStats.total ?? 0)
+          const newTotalSpent = currentTotalSpent + orderTotal
+          const newTotalOrders = currentTotalOrders + 1
+          const newAverageTicket = Math.round((newTotalSpent / newTotalOrders) * 100) / 100
+
+          await db.customer.update({
+            where: { id: orderForStats.customer.id },
+            data: {
+              totalSpent: { increment: orderTotal },
+              totalOrders: { increment: 1 },
+              lastVisit: new Date(),
+              averageTicket: newAverageTicket,
             },
-          },
-        })
-        if (!orderForLoyalty?.customer) return
-        if (!locSettings.loyalty.enabled) return
-
-        const customer = orderForLoyalty.customer
-        let loyaltyEarningBase = locSettings.loyalty.earnOnSubtotal
-          ? Number(orderForLoyalty.subtotal ?? 0)
-          : Number(orderForLoyalty.total ?? 0)
-        if (locSettings.loyalty.earnOnTips) {
-          loyaltyEarningBase += finalTipAmount
+          })
         }
 
-        // Check for tier multiplier
-        let tierMultiplier = 1.0
-        if (customer.loyaltyTierId) {
-          try {
-            const tierRows = await db.$queryRaw<Array<{ pointsMultiplier: unknown }>>`SELECT "pointsMultiplier" FROM "LoyaltyTier" WHERE "id" = ${customer.loyaltyTierId} AND "deletedAt" IS NULL`
-            if (tierRows.length > 0) {
-              tierMultiplier = Number(tierRows[0].pointsMultiplier) || 1.0
-            }
-          } catch { /* table may not exist yet */ }
-        }
-
-        if (loyaltyEarningBase < locSettings.loyalty.minimumEarnAmount) return
-
-        const pointsEarned = Math.round(loyaltyEarningBase * locSettings.loyalty.pointsPerDollar * tierMultiplier)
-        if (pointsEarned <= 0) return
-
-        // Update customer: loyalty points + stats
-        const currentTotalSpent = Number(customer.totalSpent ?? 0)
-        const currentTotalOrders = Number(customer.totalOrders ?? 0)
-        const orderTotal = Number(orderForLoyalty.total ?? 0)
-        const newTotalSpent = currentTotalSpent + orderTotal
-        const newTotalOrders = currentTotalOrders + 1
-        const newAverageTicket = Math.round((newTotalSpent / newTotalOrders) * 100) / 100
-
-        await db.customer.update({
-          where: { id: customer.id },
-          data: {
-            loyaltyPoints: { increment: pointsEarned },
-            lifetimePoints: { increment: pointsEarned },
-            totalSpent: { increment: orderTotal },
-            totalOrders: { increment: 1 },
-            lastVisit: new Date(),
-            averageTicket: newAverageTicket,
-          },
-        })
-
-        // Create LoyaltyTransaction record
-        const currentPoints = Number(customer.loyaltyPoints ?? 0)
-        const currentLifetime = Number(customer.lifetimePoints ?? 0)
-        const txnId = crypto.randomUUID()
-        const loyaltyDescription = `Earned ${pointsEarned} points on tab #${orderForLoyalty.orderNumber}${tierMultiplier > 1 ? ` (${tierMultiplier}x tier)` : ''}`
-        await db.$executeRaw`INSERT INTO "LoyaltyTransaction" (
-            "id", "customerId", "locationId", "orderId", "type", "points",
-            "balanceBefore", "balanceAfter", "description", "employeeId", "createdAt"
-          ) VALUES (${txnId}, ${customer.id}, ${locationId}, ${orderId}, 'earn', ${pointsEarned}, ${currentPoints}, ${currentPoints + pointsEarned}, ${loyaltyDescription}, ${employeeId || null}, NOW())`
-
-        // Check tier promotion
-        const newLifetime = currentLifetime + pointsEarned
-        if (customer.loyaltyProgramId) {
-          const tiers = await db.$queryRaw<Array<{ id: string; name: string; minimumPoints: number }>>`SELECT "id", "name", "minimumPoints" FROM "LoyaltyTier"
-             WHERE "programId" = ${customer.loyaltyProgramId} AND "deletedAt" IS NULL ORDER BY "minimumPoints" DESC`
-          for (const tier of tiers) {
-            if (newLifetime >= Number(tier.minimumPoints)) {
-              if (tier.id !== customer.loyaltyTierId) {
-                await db.$executeRaw`UPDATE "Customer" SET "loyaltyTierId" = ${tier.id}, "updatedAt" = NOW() WHERE "id" = ${customer.id}`
-              }
-              break
-            }
-          }
+        if (loyaltyEarnEnqueuedInClose) {
+          const { processNextLoyaltyEarn } = await import('@/lib/domain/loyalty/loyalty-earn-worker')
+          await processNextLoyaltyEarn()
         }
       } catch (err) {
-        console.error('[close-tab] Loyalty points earning failed:', err)
+        console.error('[close-tab] Customer stats update / loyalty worker trigger failed:', err)
       }
     })()
 
