@@ -351,6 +351,12 @@ export const GET = withVenue(withAuth({ allowCellular: true }, withTiming(async 
           bottleServiceTierColor: (o as any).bottleServiceTier?.color ?? null,
           bottleServiceMinSpend: (o as any).bottleServiceMinSpend ? Number((o as any).bottleServiceMinSpend) : null,
           bottleServiceDeposit: (o as any).bottleServiceDeposit ? Number((o as any).bottleServiceDeposit) : null,
+          reAuthNeeded: (o as any).isBottleService && (o as any).bottleServiceDeposit
+            ? Number((o as any).bottleServiceCurrentSpend ?? (o as any).subtotal ?? 0) >= Number((o as any).bottleServiceDeposit) * 0.8
+            : false,
+          minimumMet: (o as any).isBottleService && (o as any).bottleServiceMinSpend
+            ? Number((o as any).bottleServiceCurrentSpend ?? (o as any).subtotal ?? 0) >= Number((o as any).bottleServiceMinSpend)
+            : false,
           // Defaults for fields not in summary
           waitlist: [],
           isOnWaitlist: false,
@@ -604,6 +610,12 @@ export const GET = withVenue(withAuth({ allowCellular: true }, withTiming(async 
         bottleServiceTierColor: (order as any).bottleServiceTier?.color ?? null,
         bottleServiceMinSpend: (order as any).bottleServiceMinSpend ? Number((order as any).bottleServiceMinSpend) : null,
         bottleServiceDeposit: (order as any).bottleServiceDeposit ? Number((order as any).bottleServiceDeposit) : null,
+        reAuthNeeded: (order as any).isBottleService && (order as any).bottleServiceDeposit
+          ? Number((order as any).bottleServiceCurrentSpend ?? (order as any).subtotal ?? 0) >= Number((order as any).bottleServiceDeposit) * 0.8
+          : false,
+        minimumMet: (order as any).isBottleService && (order as any).bottleServiceMinSpend
+          ? Number((order as any).bottleServiceCurrentSpend ?? (order as any).subtotal ?? 0) >= Number((order as any).bottleServiceMinSpend)
+          : false,
         // Pre-auth info (for bar tabs)
         hasPreAuth: !!order.preAuthId,
         preAuth: order.preAuthId ? {
