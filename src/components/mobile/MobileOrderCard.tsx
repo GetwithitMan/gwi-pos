@@ -128,10 +128,23 @@ export default function MobileOrderCard({ order, onTap, showDate, onLinkCustomer
     ? new Date(order.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' · '
     : ''
 
+  // The card is rendered as a div with role="button" rather than a real
+  // <button> so the inner "link customer" affordance can be a real <button>
+  // sibling without nesting interactive elements (invalid HTML, breaks
+  // assistive tech, and produces flaky tap behavior on mobile). Keyboard
+  // semantics are preserved via tabIndex + Enter/Space handler.
   return (
-    <button
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onTap}
-      className={`w-full text-left p-4 rounded-xl transition-colors active:scale-[0.98] ${
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onTap()
+        }
+      }}
+      className={`w-full text-left p-4 rounded-xl transition-colors active:scale-[0.98] cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 ${
         isPaid
           ? 'bg-green-900/20 border border-green-500/30'
           : order.isCaptureDeclined
@@ -150,20 +163,12 @@ export default function MobileOrderCard({ order, onTap, showDate, onLinkCustomer
           <span className="font-semibold text-white truncate">{displayName}</span>
         </div>
         {onLinkCustomer && !isPaid && (
-          <span
-            role="button"
-            tabIndex={0}
+          <button
+            type="button"
             aria-label={order.customer ? 'Edit linked customer' : 'Link customer'}
             onClick={(e) => {
               e.stopPropagation()
               onLinkCustomer(order)
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault()
-                e.stopPropagation()
-                onLinkCustomer(order)
-              }
             }}
             className={`ml-2 inline-flex items-center justify-center min-h-[36px] min-w-[36px] px-2 rounded-lg flex-shrink-0 ${
               order.customer
@@ -174,7 +179,7 @@ export default function MobileOrderCard({ order, onTap, showDate, onLinkCustomer
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
             </svg>
-          </span>
+          </button>
         )}
         <div className="ml-2 text-right flex-shrink-0">
           <span className={`text-lg font-bold ${isPaid ? 'text-green-400' : 'text-white'}`}>
@@ -274,7 +279,7 @@ export default function MobileOrderCard({ order, onTap, showDate, onLinkCustomer
           ))}
         </div>
       )}
-    </button>
+    </div>
   )
 }
 
