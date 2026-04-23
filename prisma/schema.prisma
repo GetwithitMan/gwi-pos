@@ -919,6 +919,7 @@ model Location {
   marginEdgeMappings    MarginEdgeProductMapping[]
   inventoryCountEntries InventoryCountEntry[]
   pendingDeductions     PendingDeduction[]
+  pendingLoyaltyEarns   PendingLoyaltyEarn[]
 
   // Berg Liquor Controls (Tier 1)
   bergPluMappings    BergPluMapping[]
@@ -9189,6 +9190,42 @@ model DeductionRun {
 
   @@index([pendingDeductionId])
   @@index([locationId])
+}
+
+// ============================================
+// LOYALTY EARN OUTBOX
+// ============================================
+// Durable post-commit loyalty earn queue. Enqueued atomically inside the
+// payment commit transaction; drained by loyalty-earn-worker.ts. The DB-level
+// partial unique index on LoyaltyTransaction(orderId) WHERE type='earn'
+// guarantees idempotency even under worker retry / duplicate enqueue races.
+
+model PendingLoyaltyEarn {
+  id          String   @id @default(cuid())
+  locationId  String
+  orderId     String   @unique // one earn job per order lifecycle
+  customerId  String // snapshotted at commit time (locked-row read)
+  pointsEarned Int
+  loyaltyEarningBase Decimal @db.Decimal(10, 2)
+  tierMultiplier Decimal @db.Decimal(6, 3) @default(1.000)
+  employeeId  String?
+  orderNumber Int?
+  // Idempotency / retry bookkeeping (mirrors PendingDeduction)
+  status      String   @default("pending") // 'pending' | 'processing' | 'succeeded' | 'failed' | 'dead'
+  attempts    Int      @default(0)
+  maxAttempts Int      @default(5)
+  availableAt DateTime @default(now())
+  lastError   String?
+  lastAttemptAt DateTime?
+  succeededAt DateTime?
+  syncedAt    DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  location    Location @relation(fields: [locationId], references: [id])
+
+  @@index([locationId, status, availableAt])
+  @@index([status, availableAt])
 }
 
 // ============================================

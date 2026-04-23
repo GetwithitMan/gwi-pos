@@ -6,7 +6,6 @@
  *
  * Extracted from: src/app/api/orders/[id]/pay/route.ts (lines ~1076-1956)
  */
-import crypto from 'crypto'
 import { db } from '@/lib/db'
 import * as OrderRepository from '@/lib/repositories/order-repository'
 import * as PaymentRepository from '@/lib/repositories/payment-repository'
@@ -80,6 +79,8 @@ export interface PostCommitEffectsParams {
   isSplitPayRemaining: boolean
   totalDriftWarning: any
   loyaltyTierMultiplier: number
+  /** T4: true when commitPaymentTransaction enqueued a PendingLoyaltyEarn row. */
+  loyaltyEarnEnqueued: boolean
 }
 
 // ─── Main Entry Point ─────────────────────────────────────────────────────────
@@ -279,6 +280,7 @@ async function handleSplitFamilyAndRemainingEffects(params: PostCommitEffectsPar
     isSplitPayRemaining,
     totalDriftWarning,
     loyaltyTierMultiplier,
+    loyaltyEarnEnqueued,
   } = params
 
   // 5. Split family closure
@@ -302,8 +304,8 @@ async function handleSplitFamilyAndRemainingEffects(params: PostCommitEffectsPar
     }
   }
 
-  // 6. Customer & loyalty updates
-  updateCustomerAndLoyalty(order, orderId, orderIsPaid, shouldUpdateCustomerStats, pointsEarned, newAverageTicket, loyaltyEarningBase, loyaltyTierMultiplier, employeeId)
+  // 6. Customer stats + trigger loyalty earn worker (if enqueued inside tx)
+  updateCustomerAndLoyalty(order, orderId, orderIsPaid, shouldUpdateCustomerStats, pointsEarned, newAverageTicket, loyaltyEarningBase, loyaltyTierMultiplier, employeeId, loyaltyEarnEnqueued)
 
   // 7. Audit logs (payment + closure)
   createPaymentAuditLogs(order, orderId, ingestResult, employeeId, orderIsPaid, newPaidTotal)
@@ -397,7 +399,15 @@ async function handleSplitFamilyAndRemainingEffects(params: PostCommitEffectsPar
   handleCardRecognition(order, orderId, ingestResult, settings)
 }
 
-// ─── 6. Customer & Loyalty Updates ───────────────────────────────────────────
+// ─── 6. Customer Stats Updates + Loyalty Earn Worker Trigger ─────────────────
+//
+// T2+T4 (Loyalty Rewards Cleanup): the canonical earn write moved INSIDE the
+// payment commit transaction as a `PendingLoyaltyEarn` outbox row. That row
+// is drained by `loyalty-earn-worker.ts`, which writes the LoyaltyTransaction
+// and increments `loyaltyPoints` / `lifetimePoints` atomically. This function
+// no longer touches those columns — it only updates the non-loyalty customer
+// stats (totalSpent, totalOrders, lastVisit, averageTicket) and kicks the
+// worker so the earn row is processed promptly.
 
 function updateCustomerAndLoyalty(
   order: any,
@@ -409,63 +419,31 @@ function updateCustomerAndLoyalty(
   loyaltyEarningBase: number,
   loyaltyTierMultiplier: number,
   employeeId: string | null,
+  loyaltyEarnEnqueued: boolean,
 ): void {
   if (!(orderIsPaid && shouldUpdateCustomerStats && order.customer)) return
 
   void db.customer.update({
     where: { id: order.customer.id },
     data: {
-      ...(pointsEarned > 0 ? { loyaltyPoints: { increment: pointsEarned }, lifetimePoints: { increment: pointsEarned } } : {}),
       totalSpent: { increment: toNumber(order.total ?? 0) },
       totalOrders: { increment: 1 },
       lastVisit: new Date(),
       averageTicket: newAverageTicket!,
       lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
     },
-  }).catch(err => console.error('Post-ingestion customer/loyalty update failed:', err))
+  }).catch(err => console.error('Post-ingestion customer stats update failed:', err))
 
-  // Create LoyaltyTransaction record + check tier promotion (fire-and-forget)
-  if (pointsEarned > 0) {
+  // Best-effort worker trigger. The loyalty earn worker is idempotent
+  // (partial unique index on LoyaltyTransaction) so a miss here is safe —
+  // the cron drains pending rows.
+  if (loyaltyEarnEnqueued && pointsEarned > 0) {
     void (async () => {
       try {
-        const custId = order.customer!.id
-        const currentPoints = Number((order.customer as any).loyaltyPoints ?? 0)
-        const currentLifetime = Number((order.customer as any).lifetimePoints ?? 0)
-        const txnId = crypto.randomUUID()
-        const balAfter = currentPoints + pointsEarned
-        const loyaltyDesc = `Earned ${pointsEarned} points on order #${order.orderNumber}${loyaltyTierMultiplier > 1 ? ` (${loyaltyTierMultiplier}x tier)` : ''}`
-        const loyaltyEmpId = employeeId || null
-        await db.$executeRaw`
-          INSERT INTO "LoyaltyTransaction" (
-            "id", "customerId", "locationId", "orderId", "type", "points",
-            "balanceBefore", "balanceAfter", "description", "employeeId", "createdAt"
-          ) VALUES (${txnId}, ${custId}, ${order.locationId}, ${orderId}, 'earn', ${pointsEarned},
-          ${currentPoints}, ${balAfter},
-          ${loyaltyDesc},
-          ${loyaltyEmpId}, NOW())
-        `
-        // Check tier promotion
-        const newLifetime = currentLifetime + pointsEarned
-        const custProgramId = (order.customer as any).loyaltyProgramId
-        if (custProgramId) {
-          const tiers = await db.$queryRaw<Array<{ id: string; name: string; minimumPoints: number }>>`
-            SELECT "id", "name", "minimumPoints" FROM "LoyaltyTier"
-             WHERE "programId" = ${custProgramId} AND "deletedAt" IS NULL ORDER BY "minimumPoints" DESC
-          `
-          const currentTierId = (order.customer as any).loyaltyTierId
-          for (const tier of tiers) {
-            if (newLifetime >= Number(tier.minimumPoints)) {
-              if (tier.id !== currentTierId) {
-                await db.$executeRaw`
-                  UPDATE "Customer" SET "loyaltyTierId" = ${tier.id}, "updatedAt" = NOW() WHERE "id" = ${custId}
-                `
-              }
-              break
-            }
-          }
-        }
-      } catch (caughtErr) {
-        console.error('Post-ingestion loyalty transaction/tier check failed:', caughtErr)
+        const { processNextLoyaltyEarn } = await import('@/lib/domain/loyalty/loyalty-earn-worker')
+        await processNextLoyaltyEarn()
+      } catch (workerErr) {
+        log.warn({ err: workerErr, orderId }, 'Best-effort loyalty earn worker trigger failed (cron will catch up)')
       }
     })()
   }

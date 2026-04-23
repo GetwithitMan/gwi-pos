@@ -222,6 +222,67 @@ This path does not touch `RefundLog` and does not require Datacap.
 
 ---
 
+## Loyalty Reversal Contract (T7, 2026-04-23)
+
+Refund or void on a payment that produced a loyalty earn **reverses exactly one earn event** through the canonical helper `src/lib/domain/loyalty/reverse-earn.ts` (`reverseEarnForOrder`). Every payment-reversal route funnels through this helper — no route writes `LoyaltyTransaction` rows of type `'reversal'` or `'tier_change'` inline.
+
+### The five rules
+
+1. **Full void of a payment that had an earn.** Decrement `Customer.loyaltyPoints` and `Customer.lifetimePoints` by the earned amount. Insert a `LoyaltyTransaction` with `type='reversal'`, `points = -N`, `orderId` set, `description = 'Reversal of earn from order #<N> (void)'`, and `metadata = { paymentId, source: 'void', isPartial: false }`. Decrement `Customer.totalSpent` by the payment's `totalAmount` and `Customer.totalOrders` by 1.
+
+2. **Full refund of a payment.** Same as void; description reads `(refund)` and `metadata.source = 'refund'`.
+
+3. **Partial refund or partial reversal (comp-void on a single item of a paid order).** Reverse proportionally: `pointsToReverse = Math.round(earnedPoints * (refundAmount / originalPaymentAmount))` — the **same rounding the earn path uses** (`Math.round` in `compute-earn.ts`). Decrement `Customer.totalSpent` by `refundAmount` only; **do not** decrement `totalOrders`.
+
+4. **Idempotency.** The helper looks up the original earn row via the partial unique index `(orderId) WHERE type='earn'` (added by T4). It then checks for any pre-existing `LoyaltyTransaction` with `orderId` matching, `points < 0`, and `metadata->>'paymentId'` equal to this paymentId. If one exists it no-ops and returns `{ reversed: false, alreadyReversed: true }`. A double-void or a re-run from the outbox is a safe no-op.
+
+5. **Tier demotion.** After decrementing lifetimePoints, the helper computes the highest tier (ordered by `minimumPoints DESC`) whose `minimumPoints <= newLifetimePoints`. If this differs from `Customer.loyaltyTierId`, it updates the customer's tier and inserts a second `LoyaltyTransaction` with `type='tier_change'`, `points=0`, `description='Tier demoted from <A> to <B> (earn reversal)'`, and `metadata = { reason: 'earn_reversal', paymentId, previousTierId, newTierId }`. Deterministic and idempotent — a second call with the same state cannot re-demote because the current tier will already match the target.
+
+### Which routes call the helper
+
+| Route | When it calls the helper |
+|-------|--------------------------|
+| `POST /api/orders/[id]/void-payment` | Always, if the order had a linked customer and loyalty is enabled. `source='void'`, `isPartial=false`. Fire-and-forget after the payment-state DB commit. |
+| `POST /api/orders/[id]/refund-payment` | Always, if the order had a linked customer and loyalty is enabled. `source='refund'`. `isPartial` equals the partial flag computed from `refundAmount < payment.amount`. |
+| `POST /api/orders/[id]/comp-void` | Only when the comp/void retroactively reverses a captured card payment — i.e., the per-payment Datacap reversal loop in comp-void successfully marked a payment `voided` or increased its `refundedAmount`. The route collects each reversal into a local list and calls the helper once per entry with `source='comp-void'`. Cash/house-account payments never reach the helper via comp-void. |
+| `POST /api/orders/[id]/void-tab` | **Does not call the helper.** A tab void releases pre-auth card holds (`OrderCard.status = 'authorized'`); no payment has been captured, so no earn can exist. This is verified, not assumed. |
+
+### Source labels
+
+The `source` field accepts `'void' | 'refund' | 'comp-void'`. It affects only the description string and the `metadata.source` value — the arithmetic is identical. This lets reports distinguish why points were clawed back without changing the ledger invariants.
+
+### What never happens here
+
+- No new earns are written. Reversal is strictly a decrement + insert of a negative `LoyaltyTransaction`.
+- No cross-order reversal. The helper reads the earn by `orderId + type='earn'` only.
+- No `LoyaltyTransaction` is deleted or updated. The ledger is append-only; the earn row remains, and the reversal row offsets it.
+- No promotion. Tier upgrades only happen on earn; the reversal path can demote but never promote.
+- No call into Datacap, Neon, or any external service. The helper is pure DB and runs after the payment reversal has already completed at the processor.
+
+### Invariants
+
+- **[L-1]** Every payment-reversal route calls `reverseEarnForOrder` at most once per `(orderId, paymentId)` pair. Calling it twice is safe (idempotent no-op) but a sign of a missed dedup elsewhere.
+- **[L-2]** `pointsReversed <= earnedPoints` for any single call. The helper clamps with `Math.max(0, ...)` to prevent negative balances.
+- **[L-3]** `Customer.loyaltyPoints` and `Customer.lifetimePoints` are floored at 0 (`GREATEST(0, ...)`) — a historical drift in stored values cannot force a negative balance.
+- **[L-4]** `LoyaltyTransaction.type` for a reversal is exactly `'reversal'`. For tier demotion, exactly `'tier_change'`. These are the T7 canonical type values; older inline code wrote `'adjust'` and has been removed from the routes in scope.
+- **[L-5]** The reversal is **fire-and-forget** on every route. The payment-state DB commit is the source of truth; loyalty is a projection. If the helper fails, the error is logged but the refund/void still completes. The partial unique index lets a retry worker safely replay.
+
+### Test coverage
+
+`src/lib/domain/loyalty/__tests__/reverse-earn.test.ts` — 10 tests covering:
+
+- Full void reverses the entire earn and writes one reversal row
+- Partial refund reverses proportionally (two rounding cases: `Math.round(33/100 * 10) = 3`, `Math.round(25/100 * 10) = 3`)
+- Double-void is idempotent (no extra writes)
+- No earn row: helper no-ops cleanly
+- Zero-point earn: helper no-ops
+- Tier demotion when lifetimePoints falls below the current tier threshold
+- No demotion when lifetimePoints stays above the threshold
+- Demotion all the way to no tier when lifetimePoints drops below every threshold
+- `comp-void` source label accepted and recorded
+
+---
+
 ## Cross-Feature Dependencies
 
 > See `_CROSS-REF-MATRIX.md` for full matrix.
@@ -234,6 +295,7 @@ This path does not touch `RefundLog` and does not require Datacap.
 | Tips | Void triggers `handleTipChargeback()` to reverse tip allocations |
 | Reports | Refunds and voids affect daily/shift revenue totals |
 | Orders | Void may set `Order.status = 'voided'` if no active payments remain |
+| Customers / Loyalty | Void/refund calls `reverseEarnForOrder` — decrements `Customer.loyaltyPoints`, `lifetimePoints`, `totalSpent`, `totalOrders` (full only); writes `LoyaltyTransaction{type:'reversal'}`; demotes `Customer.loyaltyTierId` if `lifetimePoints` falls below threshold |
 
 ### These features MODIFY this feature:
 
@@ -250,6 +312,7 @@ This path does not touch `RefundLog` and does not require Datacap.
 - [ ] **Permissions** — `manager.void_payments` must be present on the role; never allow standard employees to void
 - [ ] **Offline** — void path is local DB only and works offline; refund path requires network access to Datacap
 - [ ] **Socket** — `payment:processed` and `order:totals_updated` must fire after any void or refund
+- [ ] **Loyalty** — every reversal path funnels through `reverseEarnForOrder`; no route writes `LoyaltyTransaction{type:'reversal'}` inline; tier demotion is deterministic and idempotent
 
 ---
 
@@ -289,4 +352,4 @@ Voided and refunded payment statuses are synced to Android via the standard paym
 
 ---
 
-*Last updated: 2026-03-03*
+*Last updated: 2026-04-23 (T7 loyalty reversal contract)*

@@ -13,6 +13,7 @@ import { getPayApiClient, isPayApiSuccess } from '@/lib/datacap/payapi-client'
 import { parseError } from '@/lib/datacap/xml-parser'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { reverseEarnForOrder } from '@/lib/domain/loyalty/reverse-earn'
 import { restoreInventoryForOrder } from '@/lib/inventory/void-waste'
 import { enableSyncReplication } from '@/lib/db-helpers'
 import { dispatchAlert } from '@/lib/alert-service'
@@ -653,45 +654,24 @@ export const POST = withVenue(async function POST(
     })()
 
     // Loyalty point reversal: reverse earned points when payment is voided (fire-and-forget)
+    // Delegates to reverseEarnForOrder — idempotent, handles tier demotion.
     void (async () => {
       try {
         if (!order.customerId) return
         const locSettings = parseSettings(await getLocationSettings(order.locationId))
         if (!locSettings.loyalty.enabled) return
 
-        // Find all 'earn' loyalty transactions for this order
-        const earnTxns = await db.$queryRaw<Array<{ points: unknown }>>`
-          SELECT "points" FROM "LoyaltyTransaction" WHERE "orderId" = ${orderId} AND "type" = 'earn'
-        `.catch(() => [] as Array<{ points: unknown }>)
-
-        const earnedPoints = earnTxns.reduce((sum, t) => sum + (Number(t.points) || 0), 0)
-        if (earnedPoints <= 0) return
-
-        // Decrement customer loyalty points and stats
-        const voidTotalAmount = Number(payment.totalAmount)
-        await db.$executeRaw`
-          UPDATE "Customer" SET
-            "loyaltyPoints" = GREATEST(0, "loyaltyPoints" - ${earnedPoints}),
-            "lifetimePoints" = GREATEST(0, "lifetimePoints" - ${earnedPoints}),
-            "totalSpent" = GREATEST(0, "totalSpent" - ${voidTotalAmount}),
-            "totalOrders" = GREATEST(0, "totalOrders" - 1),
-            "updatedAt" = NOW()
-          WHERE "id" = ${order.customerId}
-        `
-
-        // Create reversal LoyaltyTransaction
-        const txnId = crypto.randomUUID()
-        const loyaltyDesc = `Reversed: payment voided on order #${order.orderNumber}`
-        const loyaltyMgrId = managerId || null
-        const negEarnedPoints = -earnedPoints
-        await db.$executeRaw`
-          INSERT INTO "LoyaltyTransaction" (
-            "id", "customerId", "locationId", "orderId", "type", "points",
-            "balanceBefore", "balanceAfter", "description", "employeeId", "createdAt"
-          ) VALUES (${txnId}, ${order.customerId}, ${order.locationId}, ${orderId}, 'adjust', ${negEarnedPoints}, 0, 0, ${loyaltyDesc}, ${loyaltyMgrId}, NOW())
-        `
+        await reverseEarnForOrder({
+          orderId,
+          locationId: order.locationId,
+          paymentId,
+          source: 'void',
+          originalPaymentAmount: Number(payment.totalAmount),
+          isPartial: false,
+          employeeId: managerId || null,
+        })
       } catch (caughtErr) {
-        console.error('[void-payment] Loyalty point reversal failed:', err)
+        console.error('[void-payment] Loyalty point reversal failed:', caughtErr)
       }
     })()
 

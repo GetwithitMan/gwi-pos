@@ -112,23 +112,19 @@ export async function upsertOnlineCustomer(
 }
 
 /**
- * Accrue loyalty points after successful checkout.
- * $1 spent = 1 point (configurable later).
+ * @deprecated Online loyalty earn now runs through the canonical loyalty engine
+ * module (`@/lib/domain/loyalty/compute-earn`). The earlier flat `Math.floor($)`
+ * path was removed because it ignored `pointsPerDollar`, tier multipliers,
+ * `earnOnSubtotal`/`earnOnTips`, and the minimum-earn threshold.
+ *
+ * Kept as a throwing stub so any accidental reintroduction of a parallel
+ * implementation fails loudly in CI instead of silently drifting from POS
+ * behavior. Callers must use `recordOnlineCustomerLoyaltyEarn` in
+ * `@/lib/domain/loyalty/record-online-earn` (which wraps the canonical engine
+ * and writes a `LoyaltyTransaction`).
  */
-export async function accrueOnlineLoyaltyPoints(
-  db: PrismaClient,
-  customerId: string,
-  orderTotal: number,
-): Promise<void> {
-  const pointsEarned = Math.floor(orderTotal) // $1 = 1 point
-  if (pointsEarned <= 0) return
-
-  await db.customer.update({
-    where: { id: customerId },
-    data: {
-      loyaltyPoints: { increment: pointsEarned },
-      totalOrders: { increment: 1 },
-      totalSpent: { increment: orderTotal },
-    }
-  })
+export function accrueOnlineLoyaltyPoints(): never {
+  throw new Error(
+    'accrueOnlineLoyaltyPoints is removed. Use recordOnlineCustomerLoyaltyEarn from @/lib/domain/loyalty/record-online-earn instead — it calls the canonical loyalty engine.'
+  )
 }

@@ -9,6 +9,8 @@ import { resolvePairedCfdTerminalId } from '@/lib/cfd-terminal'
 // deductInventoryForOrder replaced by PendingDeduction outbox pattern (see pay/route.ts)
 // import { deductInventoryForOrder } from '@/lib/inventory-calculations'
 import { allocateTipsForPayment } from '@/lib/domain/tips'
+import { computeLoyaltyEarn, makePrismaTierLookup } from '@/lib/domain/loyalty/compute-earn'
+import { enqueueLoyaltyEarn } from '@/lib/domain/loyalty/enqueue-loyalty-earn'
 import { parseSettings } from '@/lib/settings'
 import { calculateCardPrice, roundToCents } from '@/lib/pricing'
 import { calculateAutoGratuity } from '@/lib/domain/payment/auto-gratuity'
@@ -174,7 +176,7 @@ export const POST = withVenue(withAuth(async function POST(
     const unpaidSplitIds = unpaidSplits.map(s => s.id)
 
     // splitPaymentMap: splitOrderId → real payment row ID (populated inside tx, used outside for events)
-    const { paymentMap: splitPaymentMap, loyaltyPointsEarned } = await db.$transaction(async (tx) => {
+    const { paymentMap: splitPaymentMap, loyaltyPointsEarned, loyaltyEarnEnqueued } = await db.$transaction(async (tx) => {
       // RACE-CONDITION FIX: Lock the parent order first to prevent concurrent
       // pay-all-splits requests from double-paying all splits.
       await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${parentOrderId} FOR UPDATE`
@@ -250,90 +252,79 @@ export const POST = withVenue(withAuth(async function POST(
           : []),
       ])
 
-      // W2-P1: Loyalty points INSIDE transaction to prevent double-credit on retry
+      // ── Customer stats + loyalty earn outbox enqueue (T2+T3+T4) ────────
+      // Re-read customerId from the locked parent Order row (T3) and compute
+      // earn via the canonical engine. Enqueue PendingLoyaltyEarn atomically;
+      // the worker writes the LoyaltyTransaction and increments loyaltyPoints
+      // exactly once (DB-level partial unique index backstop).
+      // Customer stats (totalSpent, totalOrders, lastVisit) are still updated
+      // inline here — only the loyalty point credit moves to the outbox.
       let loyaltyPointsEarned = 0
-      if (parentOrder.customer && settings.loyalty.enabled) {
-        const earningBase = settings.loyalty.earnOnSubtotal
-          ? Number(parentOrder.splitOrders.reduce((sum, s) => sum + Number(s.subtotal), 0))
-          : combinedTotal
+      let loyaltyEarnEnqueued = false
+      const lockedParentRows = await tx.$queryRaw<Array<{ customerId: string | null; orderNumber: number | null }>>`
+        SELECT "customerId", "orderNumber" FROM "Order" WHERE "id" = ${parentOrderId} AND "locationId" = ${parentOrder.locationId}
+      `
+      const lockedCustomerId = lockedParentRows[0]?.customerId ?? null
 
-        // Check for tier multiplier from LoyaltyTier
-        let tierMultiplier = 1.0
-        const custTierId = (parentOrder.customer as any).loyaltyTierId
-        if (custTierId) {
-          try {
-            const tierRows = await tx.$queryRaw<Array<{ pointsMultiplier: unknown }>>`SELECT "pointsMultiplier" FROM "LoyaltyTier" WHERE "id" = ${custTierId} AND "deletedAt" IS NULL`
-            if (tierRows.length > 0) {
-              tierMultiplier = Number(tierRows[0].pointsMultiplier) || 1.0
-            }
-          } catch { /* table may not exist yet — graceful fallback */ }
-        }
+      if (lockedCustomerId) {
+        const custRows = await tx.$queryRaw<Array<{ loyaltyTierId: string | null }>>`
+          SELECT "loyaltyTierId" FROM "Customer" WHERE "id" = ${lockedCustomerId} AND "locationId" = ${parentOrder.locationId} AND "deletedAt" IS NULL
+        `
+        const custTierId = custRows[0]?.loyaltyTierId ?? null
 
-        if (earningBase >= settings.loyalty.minimumEarnAmount) {
-          loyaltyPointsEarned = Math.round(earningBase * settings.loyalty.pointsPerDollar * tierMultiplier)
-          if (loyaltyPointsEarned > 0) {
-            await tx.customer.update({
-              where: { id: parentOrder.customer.id },
-              data: {
-                loyaltyPoints: { increment: loyaltyPointsEarned },
-                lifetimePoints: { increment: loyaltyPointsEarned },
-                totalSpent: { increment: combinedTotal },
-                totalOrders: { increment: 1 },
-                lastVisit: new Date(),
-              },
-            })
-          }
+        // Update non-loyalty customer stats (mirrors close-tab + pay routes)
+        await tx.customer.update({
+          where: { id: lockedCustomerId },
+          data: {
+            totalSpent: { increment: combinedTotal },
+            totalOrders: { increment: 1 },
+            lastVisit: new Date(),
+          },
+        })
+
+        // Compute earn using canonical engine + enqueue
+        const splitsSubtotal = Number(parentOrder.splitOrders.reduce((sum, s) => sum + Number(s.subtotal), 0))
+        const earn = await computeLoyaltyEarn({
+          subtotal: splitsSubtotal,
+          total: combinedTotal,
+          tipTotal: 0, // pay-all-splits doesn't carry per-payment tip on the earn base today
+          loyaltySettings: settings.loyalty,
+          customerLoyaltyTierId: custTierId,
+          lookupTierMultiplier: makePrismaTierLookup(tx),
+        })
+        loyaltyPointsEarned = earn.pointsEarned
+        if (loyaltyPointsEarned > 0) {
+          const enq = await enqueueLoyaltyEarn({
+            tx,
+            locationId: parentOrder.locationId,
+            orderId: parentOrderId,
+            customerId: lockedCustomerId,
+            pointsEarned: loyaltyPointsEarned,
+            loyaltyEarningBase: earn.loyaltyEarningBase,
+            tierMultiplier: earn.loyaltyTierMultiplier,
+            employeeId,
+            orderNumber: lockedParentRows[0].orderNumber ?? null,
+          })
+          loyaltyEarnEnqueued = enq.enqueued
         }
       }
 
-      return { paymentMap, loyaltyPointsEarned }
+      return { paymentMap, loyaltyPointsEarned, loyaltyEarnEnqueued }
     })
 
-    // Create LoyaltyTransaction record + check tier promotion (fire-and-forget)
-    if (loyaltyPointsEarned > 0 && parentOrder.customer) {
+    // Trigger loyalty earn worker (T2+T4): the canonical LoyaltyTransaction
+    // write was enqueued atomically inside the tx above. The worker drains it,
+    // increments customer.loyaltyPoints / lifetimePoints, and runs tier promotion.
+    // The partial unique index on LoyaltyTransaction(orderId) WHERE type='earn'
+    // ensures exactly one persisted earn even if pay/route.ts later runs on a
+    // child split order in this family.
+    if (loyaltyEarnEnqueued && loyaltyPointsEarned > 0) {
       void (async () => {
         try {
-          const customer = parentOrder.customer!
-          const custId = customer.id
-          const currentPoints = Number((customer as any).loyaltyPoints ?? 0)
-          const currentLifetime = Number((customer as any).lifetimePoints ?? 0)
-          const custTierId = (customer as any).loyaltyTierId
-
-          // Resolve tier multiplier for description
-          let tierMultiplier = 1.0
-          if (custTierId) {
-            try {
-              const tierRows = await db.$queryRaw<Array<{ pointsMultiplier: unknown }>>`SELECT "pointsMultiplier" FROM "LoyaltyTier" WHERE "id" = ${custTierId} AND "deletedAt" IS NULL`
-              if (tierRows.length > 0) {
-                tierMultiplier = Number(tierRows[0].pointsMultiplier) || 1.0
-              }
-            } catch { /* table may not exist yet */ }
-          }
-
-          const txnId = crypto.randomUUID()
-          const loyaltyDescription = `Earned ${loyaltyPointsEarned} points on split order #${parentOrder.orderNumber}${tierMultiplier > 1 ? ` (${tierMultiplier}x tier)` : ''}`
-          await db.$executeRaw`INSERT INTO "LoyaltyTransaction" (
-              "id", "customerId", "locationId", "orderId", "type", "points",
-              "balanceBefore", "balanceAfter", "description", "employeeId", "createdAt"
-            ) VALUES (${txnId}, ${custId}, ${parentOrder.locationId}, ${parentOrderId}, 'earn', ${loyaltyPointsEarned}, ${currentPoints}, ${currentPoints + loyaltyPointsEarned}, ${loyaltyDescription}, ${employeeId || null}, NOW())`
-
-          // Check tier promotion
-          const newLifetime = currentLifetime + loyaltyPointsEarned
-          const custProgramId = (customer as any).loyaltyProgramId
-          if (custProgramId) {
-            const tiers = await db.$queryRaw<Array<{ id: string; name: string; minimumPoints: number }>>`SELECT "id", "name", "minimumPoints" FROM "LoyaltyTier"
-               WHERE "programId" = ${custProgramId} AND "deletedAt" IS NULL ORDER BY "minimumPoints" DESC`
-            for (const tier of tiers) {
-              if (newLifetime >= Number(tier.minimumPoints)) {
-                if (tier.id !== custTierId) {
-                  await db.$executeRaw`UPDATE "Customer" SET "loyaltyTierId" = ${tier.id}, "updatedAt" = NOW() WHERE "id" = ${custId}`
-                }
-                break
-              }
-            }
-          }
+          const { processNextLoyaltyEarn } = await import('@/lib/domain/loyalty/loyalty-earn-worker')
+          await processNextLoyaltyEarn()
         } catch (err) {
-          console.error('[pay-all-splits] Loyalty transaction/tier check failed:', err)
+          console.error('[pay-all-splits] Loyalty worker trigger failed (cron will catch up):', err)
         }
       })()
     }

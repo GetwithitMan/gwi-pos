@@ -163,6 +163,12 @@ export const PERMISSIONS = {
   CUSTOMERS_HOUSE_ACCOUNTS: 'customers.house_accounts',
   CUSTOMERS_COUPONS: 'customers.coupons',
 
+  // === LOYALTY ===
+  // Required for POST /api/loyalty/adjust — manual adjustments to a customer's
+  // loyalty balance. Writes a LoyaltyTransaction audit row (type='admin_adjustment').
+  // Direct writes to Customer.loyaltyPoints are blocked elsewhere; this is the only path.
+  LOYALTY_ADJUST: 'loyalty.adjust',
+
   // === EVENTS ===
   EVENTS_VIEW: 'events.view',
   EVENTS_MANAGE: 'events.manage',

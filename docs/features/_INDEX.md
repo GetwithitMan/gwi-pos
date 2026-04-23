@@ -88,6 +88,7 @@ Every feature in this registry has a dedicated doc in `docs/features/`. Before c
 | **Coursing** | [coursing.md](coursing.md) | Active | pos | Orders, KDS, Menu |
 | **Events & Tickets** | [events-tickets.md](events-tickets.md) | Active | pos | Orders, Customers, Payments |
 | **Customers** | [customers.md](customers.md) | Active | pos | Orders, Payments, Events |
+| **Loyalty Rewards** | [loyalty.md](loyalty.md) | Active | pos, android, pax, cfd | Customers, Orders, Payments, Refund/Void, Online Ordering, Settings |
 | **Bottle Service** | [bottle-service.md](bottle-service.md) | Active | pos, android | Tabs, Payments, Floor Plan, Menu |
 | **Reservations** | [reservations.md](reservations.md) | Active | pos | Customers, Floor Plan, Orders, Waitlist, Twilio, Resend, Datacap, Settings |
 | **Host Management** | [host-management.md](host-management.md) | Planned | pos | Floor Plan, Employees, Reservations |
@@ -294,10 +295,10 @@ Discovered during the 2026-03-03 documentation audit. Fix before going live.
 
 | Metric | Count |
 |--------|-------|
-| Feature docs (active/built) | 50 |
+| Feature docs (active/built) | 51 |
 | Feature docs (schema built) | 1 |
 | Feature docs (planned/roadmap) | 13 |
-| Feature docs total | 64 |
+| Feature docs total | 65 |
 | Flow docs | 12 |
 | API routes (gwi-pos) | 680+ |
 | UI pages (gwi-pos) | 324 |
@@ -313,4 +314,4 @@ Discovered during the 2026-03-03 documentation audit. Fix before going live.
 | Cron jobs | 14 |
 | Server workers | 6 |
 
-*Last updated: 2026-03-17 (delivery management MVP)*
+*Last updated: 2026-04-23 (loyalty.md added — spec for Loyalty Rewards Cleanup workstream)*

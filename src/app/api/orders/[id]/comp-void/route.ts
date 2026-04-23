@@ -17,6 +17,7 @@ import { emitToLocation } from '@/lib/socket-server'
 import { withVenue } from '@/lib/with-venue'
 import { parseSettings } from '@/lib/settings'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { reverseEarnForOrder } from '@/lib/domain/loyalty/reverse-earn'
 import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
 import { queueIfOutageOrFail, OutageQueueFullError, pushUpstream } from '@/lib/sync/outage-safe-write'
 import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
@@ -342,6 +343,15 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
 
     // W1-P1: Attempt Datacap reversal for card payments (outside transaction)
     let cardReversalWarning: string | null = null
+    // Track payments whose capture was reversed (fully or partially) so we can
+    // reverse the loyalty earn that they contributed to. Each entry pairs a
+    // paymentId with the refunded amount and the original capture amount.
+    const loyaltyReversalTargets: Array<{
+      paymentId: string
+      refundAmount: number
+      originalPaymentAmount: number
+      isPartial: boolean
+    }> = []
     if (cardPayments.length > 0) {
       const reversiblePayments = cardPayments.filter(
         (p) => ['credit', 'debit'].includes(p.paymentMethod) && p.datacapRecordNo && p.paymentReaderId
@@ -390,6 +400,12 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
                       await PaymentRepository.updatePayment(payment.id, order.locationId, {
                         status: 'voided', refundedAmount: payment.totalAmount, refundedAt: new Date(),
                       })
+                      loyaltyReversalTargets.push({
+                        paymentId: payment.id,
+                        refundAmount: Number(payment.totalAmount),
+                        originalPaymentAmount: Number(payment.totalAmount),
+                        isPartial: false,
+                      })
                       console.log(`[CompVoid] Datacap remaining refund of $${remainingToRefund.toFixed(2)} succeeded for payment ${payment.id} (card ***${payment.cardLast4})`)
                     } else {
                       cardReversalWarning = `Card refund declined for ***${payment.cardLast4}: ${result.textResponse}. Manual refund may be required.`
@@ -398,6 +414,12 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
                   } else {
                     // Already fully refunded via previous partial refunds — just mark voided
                     await PaymentRepository.updatePayment(payment.id, order.locationId, { status: 'voided' })
+                    loyaltyReversalTargets.push({
+                      paymentId: payment.id,
+                      refundAmount: Number(payment.totalAmount),
+                      originalPaymentAmount: Number(payment.totalAmount),
+                      isPartial: false,
+                    })
                     console.log(`[CompVoid] Payment ${payment.id} already fully refunded, marked voided`)
                   }
                 } else {
@@ -405,6 +427,12 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
                   const result = await datacapClient.voidSale(payment.paymentReaderId!, { recordNo: payment.datacapRecordNo! })
                   if (result.cmdStatus === 'Approved' || result.cmdStatus === 'Success') {
                     await PaymentRepository.updatePayment(payment.id, order.locationId, { status: 'voided' })
+                    loyaltyReversalTargets.push({
+                      paymentId: payment.id,
+                      refundAmount: Number(payment.totalAmount),
+                      originalPaymentAmount: Number(payment.totalAmount),
+                      isPartial: false,
+                    })
                     console.log(`[CompVoid] Datacap void succeeded for payment ${payment.id} (card ***${payment.cardLast4})`)
                   } else {
                     cardReversalWarning = `Card reversal declined for ***${payment.cardLast4}: ${result.textResponse}. Manual refund may be required.`
@@ -429,6 +457,12 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
                   await PaymentRepository.updatePayment(payment.id, order.locationId, {
                     refundedAmount: { increment: refundAmount }, refundedAt: new Date(),
                   })
+                  loyaltyReversalTargets.push({
+                    paymentId: payment.id,
+                    refundAmount,
+                    originalPaymentAmount: Number(payment.totalAmount),
+                    isPartial: refundAmount < Number(payment.totalAmount),
+                  })
                   remainingRefund -= refundAmount
                   console.log(`[CompVoid] Datacap partial refund of $${refundAmount.toFixed(2)} succeeded for payment ${payment.id}`)
                 } else {
@@ -447,6 +481,45 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
           console.error('[CompVoid] Failed to create Datacap client:', clientErr)
         }
       }
+    }
+
+    // Loyalty reversal: comp-void retroactively reverses captured payments when
+    // the item(s) are voided after payment. Delegate to the canonical helper —
+    // idempotent (skips if a reversal already exists for this paymentId) and
+    // handles tier demotion. Fire-and-forget per T7 contract.
+    if (loyaltyReversalTargets.length > 0) {
+      void (async () => {
+        try {
+          const orderWithCustomer = await db.order.findUnique({
+            where: { id: orderId },
+            select: { customerId: true },
+          })
+          if (!orderWithCustomer?.customerId) return
+          if (!settings.loyalty?.enabled) return
+
+          for (const target of loyaltyReversalTargets) {
+            try {
+              await reverseEarnForOrder({
+                orderId,
+                locationId: order.locationId,
+                paymentId: target.paymentId,
+                source: 'comp-void',
+                refundAmount: target.refundAmount,
+                originalPaymentAmount: target.originalPaymentAmount,
+                isPartial: target.isPartial,
+                employeeId: effectiveApprovedById || employeeId || null,
+              })
+            } catch (perTargetErr) {
+              console.error(
+                `[CompVoid] Loyalty reversal failed for payment ${target.paymentId}:`,
+                perTargetErr,
+              )
+            }
+          }
+        } catch (caughtErr) {
+          console.error('[CompVoid] Loyalty reversal dispatcher failed:', caughtErr)
+        }
+      })()
     }
 
     // Emit order event for comp/void (fire-and-forget)

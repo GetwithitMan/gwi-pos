@@ -31,7 +31,8 @@ import { getLocationTaxRate, calculateSplitTax, isItemTaxInclusive, type TaxIncl
 import { checkOnlineRateLimit } from '@/lib/online-rate-limiter'
 import { getClientIp } from '@/lib/get-client-ip'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
-import { upsertOnlineCustomer, accrueOnlineLoyaltyPoints } from '@/lib/customer-upsert'
+import { upsertOnlineCustomer } from '@/lib/customer-upsert'
+import { recordOnlineCustomerLoyaltyEarn } from '@/lib/domain/loyalty/record-online-earn'
 import { generateOrderViewToken } from '@/lib/public-order-status'
 import { mergeWithDefaults, DEFAULT_DELIVERY } from '@/lib/settings'
 import { createChildLogger } from '@/lib/logger'
@@ -1076,8 +1077,29 @@ export async function POST(request: NextRequest) {
         data: { customerId: customer.id },
       })
 
-      // Accrue loyalty points (fire-and-forget)
-      void accrueOnlineLoyaltyPoints(venueDb, customer.id, totalPlusTip).catch(err => log.warn({ err }, 'Background task failed'))
+      // Loyalty earn — canonical engine. No flat $1=1pt fallback, no parallel
+      // implementation. Uses the same formula as the POS commit path:
+      // earn base = subtotal (or total) ± tips, tier multiplier, minimumEarnAmount
+      // gate, Math.round. Writes a LoyaltyTransaction of the same shape POS does.
+      const settingsForLoyalty = mergeWithDefaults(locSettings as any)
+      void (async () => {
+        try {
+          await recordOnlineCustomerLoyaltyEarn({
+            db: venueDb as any,
+            locationId,
+            customerId: customer.id,
+            orderId: order.id,
+            orderNumber: order.orderNumber,
+            subtotal,
+            total: totalPlusTip,
+            tipTotal: tip,
+            loyaltySettings: settingsForLoyalty.loyalty,
+            employeeId,
+          })
+        } catch (err) {
+          log.warn({ err }, 'online loyalty earn failed')
+        }
+      })().catch(err => log.warn({ err }, 'Background task failed'))
     } catch (custErr) {
       // Customer upsert failure should not block order success
       console.error('[checkout] Customer upsert error:', custErr)

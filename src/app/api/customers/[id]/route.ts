@@ -358,6 +358,16 @@ export const PUT = withVenue(async function PUT(
     const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.CUSTOMERS_EDIT)
     if (!auth.authorized) return err(auth.error, auth.status)
 
+    // T8b: reject direct loyaltyPoints/lifetimePoints writes — they must flow through
+    // POST /api/loyalty/adjust so a LoyaltyTransaction audit row is always created.
+    // Returning 400 (not silently dropping) surfaces client bugs instead of masking them.
+    if (body.loyaltyPoints !== undefined || body.lifetimePoints !== undefined) {
+      return err(
+        'Direct loyaltyPoints/lifetimePoints writes are not allowed. Use POST /api/loyalty/adjust to adjust a customer balance (creates an audit transaction).',
+        400,
+      )
+    }
+
     const customer = await db.customer.findFirst({
       where: { id, locationId },
     })
@@ -379,7 +389,6 @@ export const PUT = withVenue(async function PUT(
       tags,
       marketingOptIn,
       birthday,
-      loyaltyPoints,
     } = body
 
     // Normalize phone for consistent storage
@@ -431,7 +440,8 @@ export const PUT = withVenue(async function PUT(
         ...(tags !== undefined && { tags }),
         ...(marketingOptIn !== undefined && { marketingOptIn }),
         ...(birthday !== undefined && { birthday: birthday ? new Date(birthday) : null }),
-        ...(loyaltyPoints !== undefined && { loyaltyPoints }),
+        // NOTE: loyaltyPoints/lifetimePoints are intentionally NOT writable here — see
+        // the body-level guard above. Adjustments must go through POST /api/loyalty/adjust.
         lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
       },
     })
