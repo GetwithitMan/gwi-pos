@@ -1,21 +1,21 @@
 {
-  "schemaVersion": "130",
+  "schemaVersion": "131",
   "seedVersion": "v1",
   "provisionerVersion": "1",
-  "migrationCount": 132,
-  "schemaSha256": "fa0c0aeca5ce24902142aef03fa120a2dff00b8366a0d0b184c4e58f431f95a6",
-  "installerVersion": "2.0.73",
-  "version": "2.0.73",
+  "migrationCount": 133,
+  "schemaSha256": "c92c927640b0ccdb5c1fd481b1e6f2ef49fb72b1a19780ccbe687a0fe2493717",
+  "installerVersion": "2.0.74",
+  "version": "2.0.74",
   "dashboardVersion": "0.3.1",
-  "syncAgentVersion": "2.0.73",
-  "monitoringVersion": "2.0.73",
+  "syncAgentVersion": "2.0.74",
+  "monitoringVersion": "2.0.74",
   "ansibleBaselineVersion": "2026.03.20.1",
-  "buildDate": "2026-04-23T18:53:17.222Z",
-  "gitSha": "b8f88b82",
-  "generatedAt": "2026-04-23T18:53:17.222Z",
+  "buildDate": "2026-04-23T20:22:19.812Z",
+  "gitSha": "7660fc4d",
+  "generatedAt": "2026-04-23T20:22:19.813Z",
   "components": {
     "pos": {
-      "version": "2.0.73",
+      "version": "2.0.74",
       "artifact": "app"
     },
     "dashboard": {
@@ -25,15 +25,15 @@
       "sha256": "3c99afa4a5e5df366c518defaf01728ea2a48c83fb8f92449821014b3ea3debf"
     },
     "installer": {
-      "version": "2.0.73",
+      "version": "2.0.74",
       "artifact": "installer.run"
     },
     "syncAgent": {
-      "version": "2.0.73",
+      "version": "2.0.74",
       "artifact": "sync-agent.js"
     },
     "monitoring": {
-      "version": "2.0.73",
+      "version": "2.0.74",
       "artifact": "scripts/"
     },
     "ansibleBaseline": {

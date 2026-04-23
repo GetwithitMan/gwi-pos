@@ -4760,6 +4760,31 @@ CREATE TABLE "DeductionRun" (
 );
 
 -- CreateTable
+CREATE TABLE "PendingLoyaltyEarn" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "orderId" TEXT NOT NULL,
+    "customerId" TEXT NOT NULL,
+    "pointsEarned" INTEGER NOT NULL,
+    "loyaltyEarningBase" DECIMAL(10,2) NOT NULL,
+    "tierMultiplier" DECIMAL(6,3) NOT NULL DEFAULT 1.000,
+    "employeeId" TEXT,
+    "orderNumber" INTEGER,
+    "status" TEXT NOT NULL DEFAULT 'pending',
+    "attempts" INTEGER NOT NULL DEFAULT 0,
+    "maxAttempts" INTEGER NOT NULL DEFAULT 5,
+    "availableAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "lastError" TEXT,
+    "lastAttemptAt" TIMESTAMP(3),
+    "succeededAt" TIMESTAMP(3),
+    "syncedAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "PendingLoyaltyEarn_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "BergPluMapping" (
     "id" TEXT NOT NULL,
     "locationId" TEXT NOT NULL,
@@ -7849,6 +7874,15 @@ CREATE INDEX "DeductionRun_pendingDeductionId_idx" ON "DeductionRun"("pendingDed
 CREATE INDEX "DeductionRun_locationId_idx" ON "DeductionRun"("locationId");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "PendingLoyaltyEarn_orderId_key" ON "PendingLoyaltyEarn"("orderId");
+
+-- CreateIndex
+CREATE INDEX "PendingLoyaltyEarn_locationId_status_availableAt_idx" ON "PendingLoyaltyEarn"("locationId", "status", "availableAt");
+
+-- CreateIndex
+CREATE INDEX "PendingLoyaltyEarn_status_availableAt_idx" ON "PendingLoyaltyEarn"("status", "availableAt");
+
+-- CreateIndex
 CREATE INDEX "BergPluMapping_locationId_idx" ON "BergPluMapping"("locationId");
 
 -- CreateIndex
@@ -9587,6 +9621,9 @@ ALTER TABLE "DeductionRun" ADD CONSTRAINT "DeductionRun_locationId_fkey" FOREIGN
 
 -- AddForeignKey
 ALTER TABLE "DeductionRun" ADD CONSTRAINT "DeductionRun_pendingDeductionId_fkey" FOREIGN KEY ("pendingDeductionId") REFERENCES "PendingDeduction"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "PendingLoyaltyEarn" ADD CONSTRAINT "PendingLoyaltyEarn_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "BergPluMapping" ADD CONSTRAINT "BergPluMapping_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
