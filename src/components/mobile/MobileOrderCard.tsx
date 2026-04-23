@@ -67,6 +67,13 @@ interface MobileOrderCardProps {
   order: MobileOrderCardOrder
   onTap: () => void
   showDate?: boolean
+  /**
+   * Optional handler for the inline "link customer" affordance.
+   * When provided, a person icon is rendered next to the order header.
+   * Tapping it fires this callback INSTEAD OF the card's onTap (event
+   * propagation is stopped) so the modal opens for that specific order.
+   */
+  onLinkCustomer?: (order: MobileOrderCardOrder) => void
 }
 
 function getOrderIcon(order: MobileOrderCardOrder): string {
@@ -109,7 +116,7 @@ function getAgeBadge(ageMinutes?: number, isRolledOver?: boolean): { text: strin
   return { text: `${h}h`, cls: ageMinutes < 480 ? 'bg-orange-600/30 text-orange-300' : 'bg-red-600/30 text-red-300' }
 }
 
-export default function MobileOrderCard({ order, onTap, showDate }: MobileOrderCardProps) {
+export default function MobileOrderCard({ order, onTap, showDate, onLinkCustomer }: MobileOrderCardProps) {
   const isPaid = order.status === 'paid' || order.status === 'closed'
   const icon = getOrderIcon(order)
   const typeLabel = getOrderTypeLabel(order)
@@ -136,12 +143,39 @@ export default function MobileOrderCard({ order, onTap, showDate }: MobileOrderC
                 : 'bg-white/5 border border-white/10 hover:bg-white/10'
       }`}
     >
-      {/* Top row: icon + name + total */}
+      {/* Top row: icon + name + (optional) link-customer affordance + total */}
       <div className="flex items-center justify-between mb-1.5">
         <div className="flex items-center gap-2 min-w-0 flex-1">
           <span className="text-base flex-shrink-0">{icon}</span>
           <span className="font-semibold text-white truncate">{displayName}</span>
         </div>
+        {onLinkCustomer && !isPaid && (
+          <span
+            role="button"
+            tabIndex={0}
+            aria-label={order.customer ? 'Edit linked customer' : 'Link customer'}
+            onClick={(e) => {
+              e.stopPropagation()
+              onLinkCustomer(order)
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                e.stopPropagation()
+                onLinkCustomer(order)
+              }
+            }}
+            className={`ml-2 inline-flex items-center justify-center min-h-[36px] min-w-[36px] px-2 rounded-lg flex-shrink-0 ${
+              order.customer
+                ? 'bg-blue-500/20 text-blue-300'
+                : 'bg-white/10 text-white/50 hover:bg-white/20'
+            }`}
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+            </svg>
+          </span>
+        )}
         <div className="ml-2 text-right flex-shrink-0">
           <span className={`text-lg font-bold ${isPaid ? 'text-green-400' : 'text-white'}`}>
             ${order.total.toFixed(2)}

@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import MobileOrderCard from '@/components/mobile/MobileOrderCard'
 import type { MobileOrderCardOrder } from '@/components/mobile/MobileOrderCard'
+import MobileCustomerLinkModal from '@/components/mobile/MobileCustomerLinkModal'
+import type { CurrentlyLinkedCustomer } from '@/components/mobile/MobileCustomerLinkModal'
 import { useSocket } from '@/hooks/useSocket'
 
 type ViewMode = 'open' | 'closed'
@@ -42,6 +44,9 @@ function MobileTabsContent() {
   // Closed orders pagination
   const [closedCursor, setClosedCursor] = useState<string | null>(null)
   const [hasMoreClosed, setHasMoreClosed] = useState(false)
+
+  // Customer link modal — opened from a card's person icon.
+  const [linkOrder, setLinkOrder] = useState<MobileOrderCardOrder | null>(null)
 
   const { socket, isConnected } = useSocket()
   const ordersRef = useRef(orders)
@@ -415,6 +420,7 @@ function MobileTabsContent() {
                 onTap={() => {
                   window.location.href = `/mobile/tabs/${order.id}`
                 }}
+                onLinkCustomer={(o) => setLinkOrder(o)}
               />
             ))}
 
@@ -432,6 +438,31 @@ function MobileTabsContent() {
           </>
         )}
       </div>
+
+      {/* Customer link modal — opened via the per-card person icon */}
+      {linkOrder && employeeId && (
+        <MobileCustomerLinkModal
+          isOpen={!!linkOrder}
+          onClose={() => setLinkOrder(null)}
+          orderId={linkOrder.id}
+          locationId={locationId}
+          employeeId={employeeId}
+          currentCustomer={
+            linkOrder.customer
+              ? ({
+                  id: linkOrder.customer.id,
+                  name: linkOrder.customer.name,
+                } satisfies CurrentlyLinkedCustomer)
+              : null
+          }
+          onLinked={() => {
+            // Refresh the list so the freshly-linked customer name shows on the card.
+            setLinkOrder(null)
+            if (viewMode === 'open') void loadOpenOrders(ageFilter === 'previous')
+            else void loadClosedOrders(null)
+          }}
+        />
+      )}
     </div>
   )
 }

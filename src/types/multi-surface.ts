@@ -229,6 +229,41 @@ export interface TabItemsUpdatedEvent {
   itemCount: number
 }
 
+/**
+ * Phone → Server: Link or unlink a customer to an order.
+ * `customerId: null` removes the existing link.
+ */
+export interface LinkCustomerRequestEvent {
+  orderId: string
+  customerId: string | null
+  employeeId: string
+  terminalId?: string
+}
+
+/**
+ * Server → Phone: Result of a customer link/unlink request.
+ * Always echoed both to the requesting socket and to the location room
+ * so other surfaces (CFD, other mobile clients, POS terminals) refresh.
+ */
+export interface CustomerLinkedEvent {
+  orderId: string
+  success: boolean
+  customerId: string | null
+  customer?: {
+    id: string
+    name: string
+    firstName: string
+    lastName: string
+    loyaltyPoints: number
+    totalSpent: number
+    totalOrders: number
+    tags: string[]
+    isBanned: boolean
+  } | null
+  loyaltyEnabled?: boolean
+  error?: string
+}
+
 export const MOBILE_EVENTS = {
   TAB_CLOSE_REQUEST: 'tab:close-request',
   TAB_CLOSED: 'tab:closed',
@@ -236,6 +271,8 @@ export const MOBILE_EVENTS = {
   TAB_TRANSFER_REQUEST: 'tab:transfer-request',
   TAB_ALERT_MANAGER: 'tab:alert-manager',
   TAB_ITEMS_UPDATED: 'tab:items-updated',
+  LINK_CUSTOMER_REQUEST: 'tab:link-customer-request',
+  CUSTOMER_LINKED: 'tab:customer-linked',
 } as const
 
 // ============================================

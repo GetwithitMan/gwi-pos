@@ -20,6 +20,8 @@ import { relayCellularEvent } from './cellular-event-relay'
 import type { Server as HTTPServer } from 'http'
 import type { Server as SocketServer, Socket } from 'socket.io'
 import { MOBILE_EVENTS, PAT_EVENTS } from '@/types/multi-surface'
+import type { LinkCustomerRequestEvent } from '@/types/multi-surface'
+import { processLinkCustomerRequest } from '@/lib/socket-handlers/link-customer'
 import { Prisma } from '@/generated/prisma/client'
 import { db } from '@/lib/db'
 import { verifySessionToken, POS_SESSION_COOKIE } from '@/lib/auth-session'
@@ -1000,6 +1002,35 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
         void emitToLocation(locationId, 'tab:manager-alert', { ...data, locationId }).catch(err => log.error({ err }, 'Failed to broadcast tab:manager-alert'))
       } catch (err) {
         log.error({ err, socketId: socket.id }, 'TAB_ALERT_MANAGER handler error')
+      }
+    })
+
+    // Phone → server forwards customer link/unlink to PUT /api/orders/{id}/customer.
+    // Mirrors the close-tab loopback pattern. The customer route owns the mutation,
+    // event sourcing, outbox, and downstream loyalty wiring; this handler is a
+    // thin transport shim that emits the result back over the socket.
+    //
+    // Emits CUSTOMER_LINKED on both the requesting socket AND the location room
+    // so other surfaces (CFD, other mobile clients, POS terminals) can refresh.
+    socket.on(MOBILE_EVENTS.LINK_CUSTOMER_REQUEST, async (data: Partial<LinkCustomerRequestEvent>) => {
+      const locationId = socket.data.locationId
+      try {
+        const result = await processLinkCustomerRequest(data, locationId, { log })
+        socket.emit(MOBILE_EVENTS.CUSTOMER_LINKED, result.payload)
+        if (result.broadcast && locationId) {
+          void emitToLocation(locationId, MOBILE_EVENTS.CUSTOMER_LINKED, result.payload).catch(err =>
+            log.error({ err }, 'Failed to broadcast CUSTOMER_LINKED'),
+          )
+        }
+      } catch (err) {
+        log.error({ err, socketId: socket.id }, 'LINK_CUSTOMER_REQUEST handler error')
+        const orderId = typeof data?.orderId === 'string' ? data.orderId : ''
+        socket.emit(MOBILE_EVENTS.CUSTOMER_LINKED, {
+          orderId,
+          success: false,
+          customerId: data?.customerId ?? null,
+          error: 'Failed to link customer',
+        })
       }
     })
 
