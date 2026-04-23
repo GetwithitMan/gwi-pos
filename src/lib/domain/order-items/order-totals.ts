@@ -63,7 +63,7 @@ export async function recalculateOrderTotals(
   // Fetch the order's stored inclusive/exclusive tax rates and donation amount (survives setting changes)
   const orderRow = await tx.order.findUnique({
     where: { id: orderId },
-    select: { inclusiveTaxRate: true, exclusiveTaxRate: true, donationAmount: true, convenienceFee: true },
+    select: { inclusiveTaxRate: true, exclusiveTaxRate: true, donationAmount: true, convenienceFee: true, isBottleService: true },
   })
   const orderInclRate = orderRow?.inclusiveTaxRate ? Number(orderRow.inclusiveTaxRate) : undefined
   const orderExclRate = orderRow?.exclusiveTaxRate != null ? Number(orderRow.exclusiveTaxRate) : undefined
@@ -114,6 +114,8 @@ export async function recalculateOrderTotals(
     total: finalTotal,
     commissionTotal: totals.commissionTotal,
     itemCount: allItems.reduce((sum, i) => sum + i.quantity, 0),
+    // Track bottle service current spend (denormalized subtotal mirror)
+    ...(orderRow?.isBottleService ? { bottleServiceCurrentSpend: totals.subtotal } : {}),
   }
 }
 
@@ -133,7 +135,7 @@ export async function recalculateOrderTotalsForAdd(
   // Fetch the order's stored inclusive/exclusive tax rates and donation amount (survives setting changes)
   const orderRow = await tx.order.findUnique({
     where: { id: orderId },
-    select: { inclusiveTaxRate: true, exclusiveTaxRate: true, donationAmount: true, convenienceFee: true },
+    select: { inclusiveTaxRate: true, exclusiveTaxRate: true, donationAmount: true, convenienceFee: true, isBottleService: true },
   })
   const orderInclRate = orderRow?.inclusiveTaxRate ? Number(orderRow.inclusiveTaxRate) : undefined
   const orderExclRate = orderRow?.exclusiveTaxRate != null ? Number(orderRow.exclusiveTaxRate) : undefined
@@ -182,6 +184,8 @@ export async function recalculateOrderTotalsForAdd(
     total: finalTotal,
     commissionTotal: totals.commissionTotal,
     itemCount: allItems.reduce((sum, i) => sum + i.quantity, 0),
+    // Track bottle service current spend (denormalized subtotal mirror)
+    ...(orderRow?.isBottleService ? { bottleServiceCurrentSpend: totals.subtotal } : {}),
   }
 }
 

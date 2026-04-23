@@ -130,6 +130,14 @@ export const POST = withVenue(async function POST(
         status: allVoided ? 'voided' : order.status,
         notes: `Tab voided: ${reason}`,
         lastMutatedBy: mutationOrigin,
+        // Clear bottle service state on void
+        ...((order as any).isBottleService ? {
+          isBottleService: false,
+          bottleServiceTierId: null,
+          bottleServiceDeposit: null,
+          bottleServiceMinSpend: null,
+          bottleServiceCurrentSpend: null,
+        } : {}),
       }, tx)
 
       // Audit trail — financial compliance requirement

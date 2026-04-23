@@ -95,6 +95,11 @@ export const POST = withVenue(async function POST(
       return err('Orders must be from the same location')
     }
 
+    // Block merging two bottle service tabs — each has its own pre-authorization
+    if ((sourceOrder as any).isBottleService && (targetOrder as any).isBottleService) {
+      return err('Cannot merge two bottle service tabs — each has its own pre-authorization', 409)
+    }
+
     // Block merging split children from different parent orders
     if (sourceOrder.parentOrderId && targetOrder.parentOrderId && sourceOrder.parentOrderId !== targetOrder.parentOrderId) {
       return err('Cannot merge split children from different parent orders')

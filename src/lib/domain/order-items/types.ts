@@ -182,4 +182,5 @@ export interface OrderTotalsUpdate {
   total: number
   commissionTotal: number | undefined
   itemCount: number
+  bottleServiceCurrentSpend?: number
 }
