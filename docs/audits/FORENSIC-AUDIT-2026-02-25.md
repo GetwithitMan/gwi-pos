@@ -1,4 +1,5 @@
 # GWI POS — Full-System Forensic Audit Report
+> Archive note: this report predates the current live CFD/socket and merchant-flow cleanup work. Several findings referenced below have since been resolved in the codebase and are retained for historical context only.
 **Date:** 2026-02-25
 **Scope:** 434 API routes, 6736-line Prisma schema, Socket.io, React/UI, infrastructure, business logic, code quality
 **Auditors:** 7 parallel deep-dive agents (6/7 reported)

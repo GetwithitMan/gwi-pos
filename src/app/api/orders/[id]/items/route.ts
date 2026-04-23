@@ -6,7 +6,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { mapOrderForResponse } from '@/lib/api/order-response-mapper'
 import { parseSettings } from '@/lib/settings'
 import { apiError, ERROR_CODES, getErrorMessage } from '@/lib/api/error-responses'
-import { dispatchOrderTotalsUpdate, dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchTabItemsUpdated, dispatchOrderSummaryUpdated, buildOrderSummary } from '@/lib/socket-dispatch'
+import { dispatchOrderTotalsUpdate, dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchTabItemsUpdated, dispatchOrderSummaryUpdated, dispatchCFDOrderUpdated, buildOrderSummary } from '@/lib/socket-dispatch'
 import { emitToLocation } from '@/lib/socket-server'
 import { withVenue } from '@/lib/with-venue'
 import { getCurrentBusinessDay } from '@/lib/business-day'
@@ -750,7 +750,6 @@ export const POST = withVenue(async function POST(
           }
           params.push(...ids)
           const idPlaceholders = ids.map((_, i) => `$${updates.length * 2 + i + 1}`).join(', ')
-          // eslint-disable-next-line -- dynamic CASE clauses + spread params require $executeRawUnsafe; all values are parameterized
           await db.$executeRawUnsafe(
             `UPDATE "OrderItem" SET "costAtSale" = CASE ${caseClauses} END, "updatedAt" = NOW() WHERE id IN (${idPlaceholders})`,
             ...params
@@ -877,6 +876,24 @@ export const POST = withVenue(async function POST(
 
     // Dispatch order:summary-updated for Android cross-terminal sync (fire-and-forget)
     void dispatchOrderSummaryUpdated(updatedOrder.locationId, buildOrderSummary(updatedOrder), { async: true }).catch(err => log.warn({ err }, 'order summary dispatch failed'))
+    dispatchCFDOrderUpdated(updatedOrder.locationId, {
+      orderId: updatedOrder.id,
+      orderNumber: updatedOrder.orderNumber,
+      items: updatedOrder.items
+        .filter((item: any) => item.status === 'active')
+        .map((item: any) => ({
+          name: item.name,
+          quantity: item.quantity,
+          price: Number(item.itemTotal ?? item.price ?? 0),
+          modifiers: item.modifiers?.map((m: any) => m.name) ?? [],
+        })),
+      subtotal: Number(updatedOrder.subtotal),
+      tax: Number(updatedOrder.taxTotal),
+      total: Number(updatedOrder.total),
+      discountTotal: Number(updatedOrder.discountTotal),
+      taxFromInclusive: Number(updatedOrder.taxFromInclusive ?? 0),
+      taxFromExclusive: Number(updatedOrder.taxFromExclusive ?? 0),
+    })
     if (updatedOrder.orderType === 'bar_tab' || updatedOrder.status === 'open') {
       const updatedItemCount = await OrderItemRepository.countItemsForOrder(orderId, locationId)
       dispatchTabItemsUpdated(updatedOrder.locationId, { orderId, itemCount: updatedItemCount })

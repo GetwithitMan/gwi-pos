@@ -7,6 +7,7 @@
 
 import { isModifiable } from '@/lib/domain/order-status'
 import { exceedsThreshold } from './calculations'
+import { resolveAllowedReasonIds } from '@/lib/settings/reason-access'
 import type {
   ValidationError,
   OrderForValidation,
@@ -293,7 +294,6 @@ export async function validateReasonPreset(
 
   // Check employee access rules (only if access rules exist for this reason type)
   const reasonType = action === 'comp' ? 'comp_reason' : 'void_reason'
-  const { resolveAllowedReasonIds } = await import('@/app/api/settings/reason-access/allowed/route')
   const { ids: allowedIds, hasRules } = await resolveAllowedReasonIds(locationId, employeeId, reasonType)
   if (hasRules && !allowedIds.includes(reasonMatch.id)) {
     return {

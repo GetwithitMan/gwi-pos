@@ -295,7 +295,6 @@ No dedicated `/api/pricing-rules` route. All persistence goes through `/api/sett
 - **Feature doc:** `docs/features/settings.md`
 - **Feature doc:** `docs/features/entertainment.md` (separate pricing system — not Pricing Rules)
 - **Architecture guide:** `docs/guides/CODING-STANDARDS.md`
-- **Deprecated spec:** `docs/skills/SPEC-16-HAPPY-HOUR.md` (superseded by this feature)
 
 ---
 

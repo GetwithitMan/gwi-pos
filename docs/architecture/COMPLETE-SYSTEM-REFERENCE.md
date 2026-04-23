@@ -247,9 +247,9 @@ syncLogs          — { timestamp, action, details, localId, serverId }
 - Used in: KDS, floor plan, entertainment, tabs
 - Never polls when socket connected
 
-### Disconnect UI (`src/components/OfflineDisconnectBanner.tsx`)
-- Fixed amber banner (z-9999): "Connection lost — reconnecting..."
-- Auto-hides when socket reconnects
+### Disconnect UI
+- Legacy amber disconnect banner was removed during later cleanup because it caused false positives on cloud access.
+- Current reconnect visibility is handled by the socket/failover banners and connection state listeners.
 
 ### Offline Operation Scenarios
 

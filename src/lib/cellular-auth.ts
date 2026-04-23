@@ -142,43 +142,6 @@ const MAX_RATE_LIMIT_BUCKETS = 10_000
 /** Max size for lastActivity map before evicting oldest 20% */
 const MAX_ACTIVITY_ENTRIES = 5_000
 
-/** File path for persisting activity timestamps across restarts */
-const ACTIVITY_PERSIST_FILE = '/opt/gwi-pos/.cellular-activity.json'
-
-/** Debounce file writes — only persist every 30 seconds */
-let _lastPersistTime = 0
-const PERSIST_INTERVAL_MS = 30_000
-
-function persistActivityToFile(): void {
-  const now = Date.now()
-  if (now - _lastPersistTime < PERSIST_INTERVAL_MS) return
-  _lastPersistTime = now
-  try {
-    const fs = require('node:fs')
-    const data: Record<string, number> = {}
-    for (const [id, ts] of lastActivity) {
-      data[id] = ts
-    }
-    fs.writeFileSync(ACTIVITY_PERSIST_FILE, JSON.stringify(data), { mode: 0o600 })
-  } catch { /* best-effort — don't block requests */ }
-}
-
-function loadPersistedActivity(): void {
-  try {
-    const fs = require('node:fs')
-    const raw = fs.readFileSync(ACTIVITY_PERSIST_FILE, 'utf8') as string
-    const data = JSON.parse(raw) as Record<string, number>
-    const now = Date.now()
-    for (const [id, ts] of Object.entries(data)) {
-      if (typeof ts === 'number' && now - ts < IDLE_TIMEOUT_MS) {
-        lastActivity.set(id, ts)
-      }
-    }
-  } catch { /* file doesn't exist or corrupt — start fresh */ }
-}
-
-loadPersistedActivity()
-
 // ═══════════════════════════════════════════════════════════
 // Base64url helpers (same pattern as cloud-auth.ts)
 // ═══════════════════════════════════════════════════════════
@@ -202,11 +165,8 @@ function base64urlDecode(str: string): Uint8Array {
 // Core JWT operations (Web Crypto — edge-compatible)
 // ═══════════════════════════════════════════════════════════
 
-/** Cached secret so we only read from disk once per process lifetime */
+/** Cached secret so we only resolve it once per process lifetime */
 let _cachedSecret: string | null = null
-
-/** Path to persist a generated secret so it survives server restarts */
-const CELLULAR_SECRET_FILE = '/opt/gwi-pos/.cellular-secret'
 
 function getCellularSecret(): string {
   // Fast path: already cached
@@ -215,63 +175,23 @@ function getCellularSecret(): string {
   // Priority 1: Try process.env first (works when systemd EnvironmentFile loads correctly)
   let secret = process.env.CELLULAR_TOKEN_SECRET
 
-  // Priority 2: Read directly from .env files on disk.
-  // Next.js 16 may sandbox process.env in API routes, so preload.js-set
-  // vars can be invisible here. Reading from disk bypasses this entirely.
-  if (!secret) {
-    try {
-      const fs = require('node:fs')
-      const envPaths = ['/opt/gwi-pos/.env', '/opt/gwi-pos/app/.env', '/opt/gwi-pos/app/.env.local']
-      for (const envPath of envPaths) {
-        try {
-          const content = fs.readFileSync(envPath, 'utf8') as string
-          const match = content.match(/^CELLULAR_TOKEN_SECRET=(.+)$/m)
-          if (match?.[1]) {
-            secret = match[1].trim()
-            break
-          }
-        } catch { /* file doesn't exist */ }
-      }
-    } catch { /* fs not available (edge runtime) */ }
-  }
-
-  // Priority 3: Read from persisted secret file (survives restarts)
-  if (!secret) {
-    try {
-      const fs = require('node:fs')
-      secret = (fs.readFileSync(CELLULAR_SECRET_FILE, 'utf8') as string).trim()
-      if (secret) {
-        log.info('[cellular-auth] Loaded secret from persisted file')
-      }
-    } catch { /* file doesn't exist yet */ }
-  }
-
-  // Priority 4: No secret found anywhere — fail hard in production, auto-generate in dev/test
+  // No secret found — fail hard in production, auto-generate in dev/test
   if (!secret) {
     if (process.env.NODE_ENV === 'production') {
       // FAIL HARD — do not auto-generate secrets in production
       throw new Error(
         'FATAL: CELLULAR_TOKEN_SECRET is not configured. ' +
-        'In production, this secret must be explicitly set via /opt/gwi-pos/.env. ' +
+        'In production, this secret must be explicitly set in the environment. ' +
         'Auto-generation is disabled in production to prevent unauthorized trust roots.'
       )
     }
 
     // Dev/test: auto-generate for convenience
-    try {
-      const crypto = require('node:crypto')
-      const fs = require('node:fs')
-      secret = (crypto.randomBytes(48) as Buffer).toString('hex')
-      log.warn('[cellular-auth] CELLULAR_TOKEN_SECRET not set — auto-generating for development')
-      try {
-        fs.writeFileSync(CELLULAR_SECRET_FILE, secret, { mode: 0o600 })
-      } catch (writeErr) {
-        log.warn('[cellular-auth] Could not persist secret to file:', writeErr instanceof Error ? writeErr.message : writeErr)
-      }
-    } catch {
-      // crypto/fs not available (edge runtime) — cannot generate
-      throw new Error('[cellular-auth] CELLULAR_TOKEN_SECRET is not set and cannot generate secret in this runtime')
-    }
+    const bytes = new Uint8Array(48)
+    crypto.getRandomValues(bytes)
+    secret = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
+    process.env.CELLULAR_TOKEN_SECRET = secret
+    log.warn('[cellular-auth] CELLULAR_TOKEN_SECRET not set — auto-generating ephemeral secret for development')
   }
 
   _cachedSecret = secret
@@ -591,8 +511,6 @@ export function recordActivity(terminalId: string): void {
       lastActivity.delete(entries[i][0])
     }
   }
-
-  void Promise.resolve().then(persistActivityToFile).catch(err => log.warn({ err }, 'activity persistence failed'))
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -750,8 +668,7 @@ export async function loadDenyListFromDb(): Promise<void> {
   }
 }
 
-// Load deny list from DB on module init (non-blocking — don't delay imports)
-void loadDenyListFromDb().catch(err => log.warn({ err }, 'deny list load failed'))
+// DCL: Call loadDenyListFromDb() during boot if you want cold-start cache warmup.
 // Rate limiting (in-memory, 1-second sliding window)
 // ═══════════════════════════════════════════════════════════
 

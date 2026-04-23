@@ -6,8 +6,9 @@ import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { getClientIp } from '@/lib/get-client-ip'
-import { revokeTerminal } from '@/lib/socket-server'
+import { clearCfdMapping, revokeTerminal } from '@/lib/socket-server'
 import { err, ok } from '@/lib/api-response'
+import { dispatchCFDIdle } from '@/lib/socket-dispatch/cfd-dispatch'
 const VALID_PLATFORMS = ['BROWSER', 'ANDROID', 'IOS'] as const
 
 // POST complete terminal pairing for native apps (Android/iOS)
@@ -80,16 +81,16 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     let previousDeviceName: string | null = null
     const fingerprintToMatch = stableDeviceId || deviceFingerprint
     if (fingerprintToMatch) {
-      const previousTerminal = await db.terminal.findFirst({
-        where: {
-          locationId,
-          deviceFingerprint: fingerprintToMatch,
-          id: { not: terminal.id },
-          deletedAt: null,
-        },
-        select: { id: true, name: true },
-        orderBy: { lastSeenAt: 'desc' },
-      })
+        const previousTerminal = await db.terminal.findFirst({
+          where: {
+            locationId,
+            deviceFingerprint: fingerprintToMatch,
+            id: { not: terminal.id },
+            deletedAt: null,
+          },
+          select: { id: true, name: true, cfdTerminalId: true },
+          orderBy: { lastSeenAt: 'desc' },
+        })
       if (previousTerminal) {
         previousDeviceName = previousTerminal.name
         console.log(
@@ -105,9 +106,18 @@ export const POST = withVenue(async function POST(request: NextRequest) {
             deviceToken: null,
             deviceFingerprint: null,
             deviceInfo: Prisma.JsonNull,
+            cfdTerminalId: null,
+            cfdIpAddress: null,
+            cfdConnectionMode: null,
+            cfdSerialNumber: null,
             lastMutatedBy: 'local',
           },
         })
+
+        if (previousTerminal.cfdTerminalId) {
+          dispatchCFDIdle(locationId, previousTerminal.cfdTerminalId)
+          clearCfdMapping(previousTerminal.cfdTerminalId)
+        }
 
         // Clear CellularDevice so fingerprint doesn't block re-pairing
         void db.$executeRaw`DELETE FROM "CellularDevice" WHERE "terminalId" = ${previousTerminal.id} AND "locationId" = ${locationId}`

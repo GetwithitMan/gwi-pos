@@ -2,12 +2,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getLocationTaxRate } from '@/lib/order-calculations'
 import { dispatchOpenOrdersChanged, dispatchSplitCreated } from '@/lib/socket-dispatch'
+import { dispatchCFDShowOrder } from '@/lib/socket-dispatch/cfd-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { checkOrderClaim } from '@/lib/order-claim'
 import { SPLITTABLE_STATUSES } from '@/lib/domain/order-status'
+import { calculateOrderTotals } from '@/lib/order-calculations'
+import { resolvePairedCfdTerminalId } from '@/lib/cfd-terminal'
 import {
   type SplitRequest,
   type SplitSourceOrder,
@@ -24,6 +27,85 @@ import { createChildLogger } from '@/lib/logger'
 import { err, notFound, ok } from '@/lib/api-response'
 
 const log = createChildLogger('orders.id.split')
+
+async function dispatchSplitCfdRefresh(params: {
+  locationId: string
+  sourceTerminalId: string | null
+  orderId: string
+  orderNumber: number
+  items: Array<{
+    name: string
+    quantity: number
+    price: number
+    modifiers?: string[]
+    status?: string
+    isTaxInclusive?: boolean
+    itemTotal?: number
+  }>
+  subtotal?: number
+  tax?: number
+  total?: number
+  locationSettings: { tax?: { defaultRate?: number; inclusiveTaxRate?: number } } | null
+  discountTotal: number
+  isTaxExempt: boolean
+  inclusiveTaxRate?: number
+  exclusiveTaxRate?: number | null
+}): Promise<void> {
+  const {
+    locationId,
+    sourceTerminalId,
+    orderId,
+    orderNumber,
+    items,
+    subtotal,
+    tax,
+    total,
+    locationSettings,
+    discountTotal,
+    isTaxExempt,
+    inclusiveTaxRate,
+    exclusiveTaxRate,
+  } = params
+
+  if (!sourceTerminalId) return
+
+  try {
+    const cfdTerminalId = await resolvePairedCfdTerminalId(sourceTerminalId)
+    if (!cfdTerminalId) return
+
+    const calculated = subtotal != null && tax != null && total != null
+      ? { subtotal, taxTotal: tax, total }
+      : calculateOrderTotals(
+          items as any,
+          locationSettings,
+          discountTotal,
+          0,
+          undefined,
+          'card',
+          isTaxExempt,
+          inclusiveTaxRate,
+          0,
+          exclusiveTaxRate,
+        )
+
+    dispatchCFDShowOrder(locationId, cfdTerminalId, {
+      terminalId: sourceTerminalId,
+      orderId,
+      orderNumber,
+      items: items.map(item => ({
+        name: item.name,
+        quantity: item.quantity,
+        price: item.price,
+        modifiers: item.modifiers,
+      })),
+      subtotal: calculated.subtotal,
+      tax: calculated.taxTotal,
+      total: calculated.total,
+    })
+  } catch (error) {
+    log.warn({ err: error, orderId }, 'Failed to dispatch split CFD refresh')
+  }
+}
 
 // POST - Split an order into multiple trackable sub-orders
 export const POST = withVenue(async function POST(
@@ -155,6 +237,8 @@ export const POST = withVenue(async function POST(
 
     // Cast to domain type (Prisma result is structurally compatible)
     const splitOrder = order as unknown as SplitSourceOrder
+    const sourceTerminalId = request.headers.get('x-terminal-id')
+    const locationSettings = (order.location.settings as { tax?: { defaultRate?: number; inclusiveTaxRate?: number } } | null) ?? null
 
     // Handle get_splits - return all split orders for navigation
     if (body.type === 'get_splits') {
@@ -487,6 +571,27 @@ export const POST = withVenue(async function POST(
 
       pushUpstream()
 
+      void dispatchSplitCfdRefresh({
+        locationId: order.locationId,
+        sourceTerminalId,
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        items: remainingItems.map(item => ({
+          name: item.name,
+          quantity: item.quantity,
+          price: Number(item.price),
+          modifiers: (item.modifiers || []).map((m: any) => m.name),
+          status: item.status ?? undefined,
+          isTaxInclusive: item.isTaxInclusive ?? false,
+          itemTotal: Number(item.itemTotal ?? 0) || undefined,
+        })),
+        locationSettings,
+        discountTotal: Number(order.discountTotal) || 0,
+        isTaxExempt: order.isTaxExempt,
+        inclusiveTaxRate: Number(order.inclusiveTaxRate) || undefined,
+        exclusiveTaxRate: (order as any).exclusiveTaxRate != null ? Number((order as any).exclusiveTaxRate) : undefined,
+      })
+
       // Split balance reconciliation — blocking check
       const bySeatBalanceCheck = await validateSplitBalance(db, order.id)
       if (!bySeatBalanceCheck.valid) {
@@ -611,6 +716,27 @@ export const POST = withVenue(async function POST(
       console.log(`[AUDIT] ORDER_SPLIT: parentId=${id}, type=by_table, children=${splitOrders.length}, by employee ${body.employeeId}`)
 
       pushUpstream()
+
+      void dispatchSplitCfdRefresh({
+        locationId: order.locationId,
+        sourceTerminalId,
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        items: remainingItems.map(item => ({
+          name: item.name,
+          quantity: item.quantity,
+          price: Number(item.price),
+          modifiers: (item.modifiers || []).map((m: any) => m.name),
+          status: item.status ?? undefined,
+          isTaxInclusive: item.isTaxInclusive ?? false,
+          itemTotal: Number(item.itemTotal ?? 0) || undefined,
+        })),
+        locationSettings,
+        discountTotal: Number(order.discountTotal) || 0,
+        isTaxExempt: order.isTaxExempt,
+        inclusiveTaxRate: Number(order.inclusiveTaxRate) || undefined,
+        exclusiveTaxRate: (order as any).exclusiveTaxRate != null ? Number((order as any).exclusiveTaxRate) : undefined,
+      })
 
       // Split balance reconciliation — blocking check
       const byTableBalanceCheck = await validateSplitBalance(db, order.id)

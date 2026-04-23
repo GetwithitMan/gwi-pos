@@ -4,6 +4,8 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission } from '@/lib/api-auth'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchTabUpdated, dispatchTabStatusUpdate, dispatchOrderClosed, dispatchEntertainmentStatusChanged, dispatchTableStatusChanged } from '@/lib/socket-dispatch'
+import { dispatchCFDIdle } from '@/lib/socket-dispatch/cfd-dispatch'
+import { resolvePairedCfdTerminalId } from '@/lib/cfd-terminal'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
@@ -225,6 +227,8 @@ export const POST = withVenue(async function POST(
 
     // Dispatch socket events for voided tab (fire-and-forget)
     if (allVoided) {
+      const terminalId = request.headers.get('x-terminal-id')
+      const cfdTerminalId = await resolvePairedCfdTerminalId(terminalId || null)
       void dispatchOpenOrdersChanged(locationId, {
         trigger: 'voided',
         orderId,
@@ -243,6 +247,7 @@ export const POST = withVenue(async function POST(
         closedByEmployeeId: employeeId,
         locationId,
       }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.void-tab'))
+      dispatchCFDIdle(locationId, cfdTerminalId)
       if (order.tableId) {
         void dispatchFloorPlanUpdate(locationId, { async: true }).catch(err => log.warn({ err }, 'floor plan dispatch failed'))
       }

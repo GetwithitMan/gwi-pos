@@ -20,6 +20,8 @@ import type {
 import { queueSocketEvent, flushOutboxSafe } from '@/lib/socket-outbox'
 import { getRequestLocationId } from '@/lib/request-context'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { resolvePairedCfdTerminalId } from '@/lib/cfd-terminal'
+import { dispatchCFDReceiptSent, dispatchCFDIdle } from '@/lib/socket-dispatch/cfd-dispatch'
 import { createChildLogger } from '@/lib/logger'
 import { err, forbidden, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-retry-capture')
@@ -35,6 +37,7 @@ export const POST = withVenue(withAuth(async function POST(
       employeeId: string
       retryMode: 'same_card' | 'cash' | 'manager_void'
     }
+    const terminalId = request.headers.get('x-terminal-id')
 
     if (!employeeId || !retryMode) {
       return err('Missing employeeId or retryMode')
@@ -217,6 +220,17 @@ export const POST = withVenue(withAuth(async function POST(
 
       // Floor plan update is non-critical UI — fire-and-forget
       if (order.tableId) void dispatchFloorPlanUpdate(locationId, { async: true }).catch(err => log.warn({ err }, 'floor plan dispatch failed'))
+      void (async () => {
+        try {
+          const cfdTerminalId = await resolvePairedCfdTerminalId(terminalId)
+          dispatchCFDReceiptSent(locationId, cfdTerminalId, {
+            orderId,
+            total: Number(order.total),
+          })
+        } catch (caughtErr) {
+          log.warn({ err: caughtErr }, 'CFD receipt dispatch failed')
+        }
+      })()
       void emitOrderEvents(locationId, orderId, [
         {
           type: 'PAYMENT_APPLIED',
@@ -320,6 +334,17 @@ export const POST = withVenue(withAuth(async function POST(
 
       // Floor plan update is non-critical UI — fire-and-forget
       if (order.tableId) void dispatchFloorPlanUpdate(locationId, { async: true }).catch(err => log.warn({ err }, 'floor plan dispatch failed'))
+      void (async () => {
+        try {
+          const cfdTerminalId = await resolvePairedCfdTerminalId(terminalId)
+          dispatchCFDReceiptSent(locationId, cfdTerminalId, {
+            orderId,
+            total: Number(order.total),
+          })
+        } catch (caughtErr) {
+          log.warn({ err: caughtErr }, 'CFD receipt dispatch failed')
+        }
+      })()
       void emitOrderEvents(locationId, orderId, [
         {
           type: 'PAYMENT_APPLIED',
@@ -408,6 +433,14 @@ export const POST = withVenue(withAuth(async function POST(
 
       // Floor plan update is non-critical UI — fire-and-forget
       if (order.tableId) void dispatchFloorPlanUpdate(locationId, { async: true }).catch(err => log.warn({ err }, 'floor plan dispatch failed'))
+      void (async () => {
+        try {
+          const cfdTerminalId = await resolvePairedCfdTerminalId(terminalId)
+          dispatchCFDIdle(locationId, cfdTerminalId)
+        } catch (caughtErr) {
+          log.warn({ err: caughtErr }, 'CFD idle dispatch failed')
+        }
+      })()
       void emitOrderEvent(locationId, orderId, 'ORDER_CLOSED', {
         closedStatus: PAYMENT_STATES.VOIDED,
         reason: 'Manager voided declined capture tab',

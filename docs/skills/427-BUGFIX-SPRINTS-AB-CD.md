@@ -102,7 +102,6 @@ Bug log audit identified 28 issues across multi-tenant isolation, floor plan, of
 | `public/manifest.json` | #635 | New file: PWA manifest |
 | `public/sw.js` | #636 | New file: Service worker |
 | `src/components/ServiceWorkerRegistration.tsx` | #636 | New file: SW registration component |
-| `src/components/OfflineDisconnectBanner.tsx` | — | New file: Offline disconnect banner |
 | `src/app/layout.tsx` | — | Disconnect banner + SW registration integrated |
 | `src/app/api/employees/[id]/route.ts` | — | locationId hardening |
 | `src/app/api/inventory/stock-adjust/route.ts` | — | locationId hardening |

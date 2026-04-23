@@ -5,6 +5,7 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchOrderTotalsUpdate, dispatchOrderUpdated, dispatchOpenOrdersChanged, dispatchOrderSummaryUpdated, buildOrderSummary } from '@/lib/socket-dispatch'
+import { dispatchCFDOrderUpdated } from '@/lib/socket-dispatch/cfd-dispatch'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { roundToCents } from '@/lib/pricing'
@@ -198,6 +199,52 @@ export const POST = withVenue(async function POST(
     void dispatchOrderUpdated(locationId, { orderId, changes: ['isTaxExempt'] }).catch(err => log.warn({ err }, 'Background task failed'))
     void dispatchOpenOrdersChanged(locationId, { trigger: 'updated', orderId }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
     void dispatchOrderSummaryUpdated(locationId, buildOrderSummary(updatedOrder), { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
+
+    const cfdOrder = await db.order.findUnique({
+      where: { id: orderId },
+      select: {
+        id: true,
+        orderNumber: true,
+        subtotal: true,
+        taxTotal: true,
+        discountTotal: true,
+        taxFromInclusive: true,
+        taxFromExclusive: true,
+        total: true,
+        items: {
+          where: { deletedAt: null, status: 'active' },
+          select: {
+            name: true,
+            quantity: true,
+            itemTotal: true,
+            status: true,
+            modifiers: {
+              where: { deletedAt: null },
+              select: { name: true },
+            },
+          },
+        },
+      },
+    })
+    if (cfdOrder) {
+      dispatchCFDOrderUpdated(locationId, {
+        orderId: cfdOrder.id,
+        orderNumber: cfdOrder.orderNumber,
+        items: cfdOrder.items.map(i => ({
+          name: i.name,
+          quantity: i.quantity,
+          price: Number(i.itemTotal),
+          modifiers: i.modifiers.map(m => m.name),
+          status: i.status,
+        })),
+        subtotal: Number(cfdOrder.subtotal),
+        tax: Number(cfdOrder.taxTotal),
+        total: Number(cfdOrder.total),
+        discountTotal: Number(cfdOrder.discountTotal),
+        taxFromInclusive: Number(cfdOrder.taxFromInclusive ?? 0),
+        taxFromExclusive: Number(cfdOrder.taxFromExclusive ?? 0),
+      })
+    }
 
     // Upstream sync
     pushUpstream()

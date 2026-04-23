@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server'
 import { db, adminDb } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
-import { resolveAllowedReasonIds } from '@/app/api/settings/reason-access/allowed/route'
+import { resolveAllowedReasonIds } from '@/lib/settings/reason-access'
 import { getRequestLocationId } from '@/lib/request-context'
 import { err, notFound, ok } from '@/lib/api-response'
 

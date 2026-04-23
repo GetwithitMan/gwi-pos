@@ -1,17 +1,11 @@
 import type { NextConfig } from "next";
-import { readFileSync } from "fs";
-import { join } from "path";
 
-// Read version from package.json at build time (avoids CJS require in ESM config).
-// Falls back to env var or '0.0.0' if package.json is unreadable.
-let _pkgVersion = '0.0.0'
-try {
-  const pkg = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf-8'))
-  _pkgVersion = pkg.version || '0.0.0'
-} catch {
-  // Fallback: env var from CI/Docker
-  _pkgVersion = process.env.NEXT_PUBLIC_APP_VERSION || '0.0.0'
-}
+// Read version from the environment rather than filesystem access so Next's
+// tracing does not treat the whole repo as build input.
+const _pkgVersion =
+  process.env.npm_package_version ||
+  process.env.NEXT_PUBLIC_APP_VERSION ||
+  '0.0.0'
 
 const nextConfig: NextConfig = {
   // Standalone output: used by Vercel for serverless deployment.
@@ -100,7 +94,7 @@ const nextConfig: NextConfig = {
     return [
       { source: '/(.*)', headers: securityHeaders },
       // Installer files must never be cached — NUCs must always get the latest version
-      ...['/installer.run', '/installer-bundle.run', '/setup-remote.sh', '/install.sh', '/uninstall.sh', '/usb-remote-setup.sh'].map(source => ({
+      ...['/installer.run', '/setup-remote.sh', '/install.sh', '/uninstall.sh', '/usb-remote-setup.sh'].map(source => ({
         source,
         headers: [
           { key: 'Cache-Control', value: 'no-store, no-cache, must-revalidate, max-age=0' },
@@ -133,25 +127,6 @@ const nextConfig: NextConfig = {
   },
 };
 
-// Sentry import + withSentryConfig deadlocks the dev server (OpenTelemetry
-// dependency tree blocks both Turbopack and webpack). Only wrap in production.
-let exportedConfig: NextConfig = nextConfig
-if (process.env.NODE_ENV === 'production') {
-  try {
-    const { withSentryConfig } = require('@sentry/nextjs')
-    exportedConfig = withSentryConfig(nextConfig, {
-      org: process.env.SENTRY_ORG,
-      project: process.env.SENTRY_PROJECT,
-      silent: !process.env.CI,
-      widenClientFileUpload: true,
-      tunnelRoute: '/monitoring',
-      sourcemaps: {
-        disable: true,
-      },
-    })
-  } catch {
-    // Sentry not available — use plain config
-  }
-}
-
-export default exportedConfig
+// Keep the Next config static. Sentry is initialized from instrumentation.ts
+// so we do not need the build-time withSentryConfig wrapper here.
+export default nextConfig

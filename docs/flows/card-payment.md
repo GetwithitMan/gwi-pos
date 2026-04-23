@@ -6,11 +6,11 @@
 
 ## 1. Purpose
 
-**Trigger:** A server initiates card payment on Android register or PAX device — a card transaction is sent to the Datacap reader, approved, and the order is closed.
+**Trigger:** A cashier initiates card payment from the POS flow on Android register, PAX, or web. The server sends the card transaction to Datacap, then drives CFD updates through server-side socket dispatch.
 
 **Why it matters:** Money integrity. A failed or corrupted payment path means a customer's card is charged but the order is not closed, or the order is closed but no payment is recorded. Either failure damages the venue financially and erodes trust.
 
-**Scope:** `gwi-pos` (API, Datacap client, payment logic, socket server), `gwi-android-register` (card reader interaction, PaymentManager), `gwi-cfd` (tip prompt, approval display).
+**Scope:** `gwi-pos` (API, Datacap client, payment logic, socket server, CFD dispatch), `gwi-android-register` (card reader interaction, PaymentManager), `gwi-cfd` (tip prompt, approval display).
 
 ---
 
@@ -18,7 +18,7 @@
 
 | Precondition | Detail |
 |-------------|--------|
-| Feature flags / settings | `dualPricingEnabled` (Location.settings) — determines if surcharge is added for card; `cfdEnabled` for tip-on-CFD path |
+| Feature flags / settings | `pricingProgram` / `dualPricingEnabled` (Location.settings) — determines whether card pricing differs from cash; `cfdDisplay.showDualPricing` controls whether CFD shows both prices |
 | Hardware required | Datacap VP3300 or VP3350 reader on LAN (192.168.x.x); receipt printer (fire-and-forget, not blocking); PAX A3700 CFD (if bar tab tip flow) |
 | Permissions required | `pos.card_payments` (standard employee); `manager.void_payments` only for void path |
 | Online / offline state | Happy path: NUC can reach Datacap reader over LAN. Offline (NUC can't reach Datacap) → SAF path; see `offline-payment-saf.md` |
@@ -46,13 +46,13 @@
                   cashDiscountAmount = cardTotal - cashTotal
                   Final charge amount = cardTotal (stored as cents)
 
-4.  [SIDE EFFECT] void emitToLocation(locationId, 'cfd:payment-started',
-                    { orderId, total }).catch(console.error)
-                  CFD transitions to payment-in-progress screen
+4.  [SIDE EFFECT] dispatchCFDPaymentStarted(locationId, cfdTerminalId,
+                    { orderId, amount: cardTotalCents, paymentMethod: 'credit' })
+                  CFD transitions to payment-in-progress screen via server-side socket dispatch
 
 5.  [CFD TIP PATH] (bar tab / CFD-enabled locations only)
-                  void emitToLocation(locationId, 'cfd:tip-prompt',
-                    { orderId, tipSuggestions[] }).catch(console.error)
+                  dispatchCFDTipPrompt(locationId, cfdTerminalId,
+                    { orderId, subtotal: cashTotalCents, suggestedTips[] })
                   CFD displays tip screen → customer selects tip
                   POS receives 'cfd:tip-selected' { orderId, tipAmountCents }
                   (race-free, 60s timeout — if no selection, proceeds with $0 tip)
@@ -65,8 +65,7 @@
                   })
                   → TCP to reader (LAN, 60s local timeout)
                   → Datacap EMVSale — reader prompts card (chip/tap/swipe)
-                  void emitToLocation(locationId, 'cfd:processing',
-                    { orderId }).catch(console.error)
+                  dispatchCFDProcessing(locationId, cfdTerminalId, { orderId })
 
 7a. [APPROVED]
     [DB]          db.payment.create {
@@ -99,7 +98,7 @@
                     { type: 'PAYMENT_APPLIED', ... })
                   emitToLocation(locationId, 'payment:applied',
                     { orderId, paymentId, status: 'completed' })
-                  emitToLocation(locationId, 'cfd:approved',
+                  dispatchCFDApproved(locationId, cfdTerminalId,
                     { orderId, cardLast4 })
 
 11. [SIDE EFFECTS — all fire-and-forget]
@@ -109,14 +108,14 @@
                   void printReceipt(orderId, paymentId).catch(console.error)
                     → TCP to receipt printer (fire-and-forget, 5s timeout)
                   void openCashDrawer() — NOT called for card payments
-                  void emitToLocation(locationId, 'cfd:receipt-sent',
-                    { orderId }).catch(console.error)
+                  dispatchCFDReceiptSent(locationId, cfdTerminalId,
+                    { orderId })
 
 7b. [DECLINED]
     [API]         Datacap returns declined response
                   Payment record NOT created (or set to status: 'failed')
-                  void emitToLocation(locationId, 'cfd:declined',
-                    { orderId, reason }).catch(console.error)
+                  dispatchCFDDeclined(locationId, cfdTerminalId,
+                    { orderId, reason })
                   Return 402 to client: { declined: true, reason, displayMessage }
                   PaymentSheet stays open — server can retry or change method
 ```
@@ -131,11 +130,11 @@
 | `ORDER_CLOSED` (OrderEvent) | `{ closedAt }` | `emitter.ts` | Android, POS UI | Immediately after PAYMENT_APPLIED if fully paid |
 | `payment:applied` (socket) | `{ orderId, paymentId, status }` | `socket-dispatch.ts` | POS orders list, Android order view | After PAYMENT_APPLIED event |
 | `order:event` (socket) | `{ type: 'PAYMENT_APPLIED', orderId, serverSequence, ... }` | `emitter.ts` | All terminals in location room | After DB persist |
-| `cfd:payment-started` (socket) | `{ orderId, total }` | pay route | CFD screen | Before Datacap call |
-| `cfd:tip-prompt` (socket) | `{ orderId, tipSuggestions[] }` | pay route | CFD screen | After cfd:payment-started |
-| `cfd:processing` (socket) | `{ orderId }` | pay route | CFD screen | After card inserted/tapped |
-| `cfd:approved` (socket) | `{ orderId, cardLast4 }` | pay route | CFD screen | After Payment record created |
-| `cfd:declined` (socket) | `{ orderId, reason }` | pay route | CFD screen | On Datacap decline response |
+| `cfd:payment-started` (socket) | `{ orderId, total }` | server payment handler | CFD screen | Before Datacap call |
+| `cfd:tip-prompt` (socket) | `{ orderId, tipSuggestions[] }` | server payment handler | CFD screen | After cfd:payment-started |
+| `cfd:processing` (socket) | `{ orderId }` | server payment handler | CFD screen | After card inserted/tapped |
+| `cfd:approved` (socket) | `{ orderId, cardLast4 }` | server payment handler | CFD screen | After Payment record created |
+| `cfd:declined` (socket) | `{ orderId, reason }` | server payment handler | CFD screen | On Datacap decline response |
 | `tip-group:updated` (socket) | `{ action: 'tip-received', tipAmountCents }` | `tip-ledger.ts` | POS tip group UI | After allocateTipsForPayment |
 
 ---

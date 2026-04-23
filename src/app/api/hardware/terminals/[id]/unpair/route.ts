@@ -6,7 +6,8 @@ import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { err, notFound, ok } from '@/lib/api-response'
-import { revokeTerminal } from '@/lib/socket-server'
+import { clearCfdMapping, revokeTerminal } from '@/lib/socket-server'
+import { dispatchCFDIdle } from '@/lib/socket-dispatch/cfd-dispatch'
 
 // POST unpair a terminal (manager action)
 export const POST = withVenue(withAuth('ADMIN', async function POST(
@@ -25,6 +26,8 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
       return err('Terminal is not paired')
     }
 
+    const previousCfdTerminalId = terminal.cfdTerminalId ?? null
+
     // Clear pairing data
     await db.terminal.update({
       where: { id },
@@ -34,10 +37,19 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
         deviceToken: null,
         deviceFingerprint: null,
         deviceInfo: Prisma.JsonNull,
+        cfdTerminalId: null,
+        cfdIpAddress: null,
+        cfdConnectionMode: null,
+        cfdSerialNumber: null,
         lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
         // Keep lastKnownIp and lastSeenAt for audit trail
       },
     })
+
+    if (previousCfdTerminalId) {
+      dispatchCFDIdle(terminal.locationId, previousCfdTerminalId)
+      clearCfdMapping(previousCfdTerminalId)
+    }
 
     // Clear CellularDevice record so the fingerprint doesn't block re-pairing.
     // Without this, the old ACTIVE record persists in Neon and the device

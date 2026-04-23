@@ -141,6 +141,7 @@ export default function DispatchPage() {
   })
 
   const [activeTab, setActiveTab] = useState<RightPanelTab>('ready')
+  const [now, setNow] = useState(() => Date.now())
 
   // Run builder state
   const [buildingRun, setBuildingRun] = useState(false)
@@ -180,6 +181,13 @@ export default function DispatchPage() {
       setIsLoading(false)
     }
   }, [employee?.location?.id, dispatchEnabled, loadDispatchData])
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNow(Date.now())
+    }, 60_000)
+    return () => clearInterval(timer)
+  }, [])
 
   // ─── Socket real-time updates ─────────────────────────────────────────
 
@@ -592,6 +600,7 @@ export default function DispatchPage() {
                 onToggleOrder={toggleOrderSelection}
                 onAssign={handleAssignSingle}
                 onSuggestDriver={suggestDriver}
+                now={now}
               />
             )}
             {activeTab === 'active' && (
@@ -746,6 +755,7 @@ function ReadyTab({
   onToggleOrder,
   onAssign,
   onSuggestDriver,
+  now,
 }: {
   orders: DispatchOrder[]
   drivers: DispatchDriver[]
@@ -754,6 +764,7 @@ function ReadyTab({
   onToggleOrder: (id: string) => void
   onAssign: (orderId: string, driverId: string) => void
   onSuggestDriver: (orderId: string) => DispatchDriver | null
+  now: number
 }) {
   const [assigningOrderId, setAssigningOrderId] = useState<string | null>(null)
   const [quickDriverId, setQuickDriverId] = useState('')
@@ -798,7 +809,7 @@ function ReadyTab({
                   </div>
                   {order.readyAt && (
                     <span className="text-xs text-gray-400">
-                      {Math.round((Date.now() - new Date(order.readyAt).getTime()) / 60000)}m ago
+                      {Math.round((now - new Date(order.readyAt).getTime()) / 60000)}m ago
                     </span>
                   )}
                 </div>

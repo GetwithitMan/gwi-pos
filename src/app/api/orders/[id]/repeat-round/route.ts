@@ -6,6 +6,7 @@ import { OrderRepository } from '@/lib/repositories'
 import { mapOrderForResponse, mapOrderItemForResponse } from '@/lib/api/order-response-mapper'
 import { recalculateOrderTotals } from '@/lib/domain/order-items'
 import { dispatchOrderTotalsUpdate, dispatchOpenOrdersChanged, dispatchOrderSummaryUpdated, buildOrderSummary } from '@/lib/socket-dispatch'
+import { dispatchCFDOrderUpdated } from '@/lib/socket-dispatch/cfd-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
@@ -162,6 +163,26 @@ export const POST = withVenue(async function POST(
 
     void dispatchOrderSummaryUpdated(updatedOrder.locationId, buildOrderSummary(updatedOrder), { async: true })
       .catch(e => log.warn({ err: e }, 'order summary dispatch failed'))
+
+    dispatchCFDOrderUpdated(updatedOrder.locationId, {
+      orderId: updatedOrder.id,
+      orderNumber: updatedOrder.orderNumber,
+      items: updatedOrder.items
+        .filter((item: any) => item.status === 'active')
+        .map((item: any) => ({
+          name: item.name,
+          quantity: item.quantity,
+          price: Number(item.itemTotal),
+          modifiers: item.modifiers.map((m: any) => m.name),
+          status: item.status,
+        })),
+      subtotal: Number(updatedOrder.subtotal),
+      tax: Number(updatedOrder.taxTotal),
+      total: Number(updatedOrder.total),
+      discountTotal: Number(updatedOrder.discountTotal),
+      taxFromInclusive: Number((updatedOrder as any).taxFromInclusive ?? 0),
+      taxFromExclusive: Number((updatedOrder as any).taxFromExclusive ?? 0),
+    })
 
     // Fire-and-forget: emit ITEM_ADDED events for each new item
     for (const item of newItems) {

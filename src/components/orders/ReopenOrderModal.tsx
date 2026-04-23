@@ -107,6 +107,11 @@ export function ReopenOrderModal({
           </h2>
 
           <div className="space-y-4">
+            <div className="rounded-lg border border-sky-500/20 bg-sky-500/10 p-3 text-sm text-sky-200">
+              Manager/admin action only. Reopening updates the shared order state and open-orders view;
+              it does not target a specific station or paired CFD display.
+            </div>
+
             {/* Order Info */}
             <div className="text-sm text-slate-400 space-y-1 bg-white/5 p-3 rounded-lg">
               <p>Customer: <span className="text-slate-300">{customerName}</span></p>
@@ -221,7 +226,7 @@ export function ReopenOrderModal({
         onClose={() => setShowPinModal(false)}
         onVerified={handlePinVerified}
         title="Manager Authorization Required"
-        message="Enter manager PIN to reopen order"
+        message="Enter manager PIN to reopen order (admin-only)"
         locationId={locationId}
       />
     </>

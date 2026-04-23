@@ -3,6 +3,8 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  --font-sans-stack: Arial, Helvetica, sans-serif;
+  --font-mono-stack: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
 
   /* Glassmorphism variables */
   --glass-blur: 20px;
@@ -32,8 +34,8 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-sans-stack);
+  --font-mono: var(--font-mono-stack);
 }
 
 /* Dark mode disabled — POS app uses light theme only.
@@ -42,7 +44,7 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans-stack);
 }
 
 /* Force all form elements to use black text by default */

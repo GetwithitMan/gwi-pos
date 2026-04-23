@@ -4,9 +4,11 @@ import { db } from '@/lib/db'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
 import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchTabClosed, dispatchTabStatusUpdate, dispatchOrderClosed, dispatchEntertainmentStatusChanged, dispatchPaymentProcessed, dispatchTabClosingStarted } from '@/lib/socket-dispatch'
+import { dispatchCFDPaymentStarted, dispatchCFDProcessing, dispatchCFDApproved, dispatchCFDDeclined, dispatchCFDReceiptSent } from '@/lib/socket-dispatch/cfd-dispatch'
 import { parseSettings, getPricingProgram } from '@/lib/settings'
 import { cleanupTemporarySeats } from '@/lib/cleanup-temp-seats'
 import { getLocationSettings } from '@/lib/location-cache'
+import { resolvePairedCfdTerminalId } from '@/lib/cfd-terminal'
 import { processNextDeduction } from '@/lib/deduction-processor'
 import { allocateTipsForPayment } from '@/lib/domain/tips'
 import { withVenue } from '@/lib/with-venue'
@@ -117,6 +119,7 @@ export const POST = withVenue(async function POST(
     // BETWEEN PHASES: Compute values that don't need a lock
     // ═══════════════════════════════════════════════════════════════════════════
     const locationId = order.locationId
+    const cfdTerminalId = await resolvePairedCfdTerminalId(terminalId)
 
     // Emit socket event: tab is starting to close
     // This notifies other terminals IMMEDIATELY that this tab is being closed,
@@ -147,6 +150,14 @@ export const POST = withVenue(async function POST(
     // Calculate purchase amount — applies pricing program card markup if enabled (pure)
     const { purchaseAmount } = computePurchaseAmount(order, getPricingProgram(locSettings))
     const initialGratuity = tipMode === 'included' && tipAmount != null ? Number(tipAmount) : undefined
+
+    if (cfdTerminalId) {
+      dispatchCFDPaymentStarted(locationId, cfdTerminalId, {
+        orderId,
+        amount: purchaseAmount,
+        paymentMethod: 'card',
+      })
+    }
 
     // ═══════════════════════════════════════════════════════════════════════════
     // BUG 5: Zero-tab handling — release pre-auth instead of $0 capture
@@ -362,6 +373,9 @@ export const POST = withVenue(async function POST(
         }
 
         // Standard capture (receipt tip or included tip)
+        if (cfdTerminalId) {
+          dispatchCFDProcessing(locationId, cfdTerminalId, { orderId })
+        }
         const response = await client.preAuthCapture(card.readerId, {
           recordNo: card.recordNo,
           purchaseAmount,
@@ -417,6 +431,12 @@ export const POST = withVenue(async function POST(
 
     // Handle capture failure (all cards failed)
     if (!capturedCard || !captureResult) {
+      if (cfdTerminalId) {
+        dispatchCFDDeclined(locationId, cfdTerminalId, {
+          orderId,
+          reason: 'All cards failed to capture',
+        })
+      }
       const failResult = await db.$transaction(async (tx) => {
         return recordCaptureFailure(tx, orderId, 'All cards failed to capture', {
           maxCaptureRetries: locSettings.barTabs?.maxCaptureRetries,
@@ -442,6 +462,12 @@ export const POST = withVenue(async function POST(
     const error = parseError(response)
 
     if (!approved) {
+      if (cfdTerminalId) {
+        dispatchCFDDeclined(locationId, cfdTerminalId, {
+          orderId,
+          reason: error?.text || 'Capture declined',
+        })
+      }
       // Capture was declined — record in a short transaction
       const declineResult = await db.$transaction(async (tx) => {
         return recordCaptureFailure(tx, orderId, error?.text || 'Capture declined', {
@@ -570,6 +596,20 @@ export const POST = withVenue(async function POST(
     // Flag payment processed during outage for reconciliation (fire-and-forget)
     if (isInOutageMode()) {
       void PaymentRepository.updatePayment(createdPaymentId, locationId, { needsReconciliation: true }).catch(err => log.warn({ err }, 'Background task failed'))
+    }
+
+    if (cfdTerminalId) {
+      dispatchCFDApproved(locationId, cfdTerminalId, {
+        orderId,
+        last4: capturedCard.cardLast4 || undefined,
+        cardType: capturedCard.cardType || undefined,
+        tipAmount: finalTipAmount,
+        total: totalCaptured,
+      })
+      dispatchCFDReceiptSent(locationId, cfdTerminalId, {
+        orderId,
+        total: totalCaptured,
+      })
     }
 
     // ═══════════════════════════════════════════════════════════════════════════

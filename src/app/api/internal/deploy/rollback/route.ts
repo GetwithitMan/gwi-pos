@@ -10,23 +10,9 @@
  */
 
 import { NextResponse } from 'next/server'
-import { execSync } from 'child_process'
-import { existsSync } from 'fs'
+import { spawnSync } from 'child_process'
 
 export const dynamic = 'force-dynamic'
-
-/** Resolve gwi-node.sh path, checking known locations in priority order. */
-function resolveGwiNode(): string | null {
-  const candidates = [
-    '/opt/gwi-pos/gwi-node.sh',
-    '/usr/local/bin/gwi-node',
-    '/opt/gwi-pos/app/public/scripts/gwi-node.sh',
-  ]
-  for (const p of candidates) {
-    if (existsSync(p)) return p
-  }
-  return null
-}
 
 export async function POST(request: Request) {
   // Auth check — require INTERNAL_API_SECRET
@@ -36,13 +22,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const gwiNode = resolveGwiNode()
-  if (!gwiNode) {
-    return NextResponse.json(
-      { error: 'gwi-node.sh not found' },
-      { status: 404 },
-    )
-  }
+  const gwiNode = process.env.GWI_NODE_SH_PATH || '/opt/gwi-pos/gwi-node.sh'
 
   // releaseId is accepted for audit trail but NOT passed to gwi-node.
   // gwi-node rollback always uses LKG (last-known-good) semantics.
@@ -53,19 +33,30 @@ export async function POST(request: Request) {
   }
 
   try {
-    const output = execSync(
-      `bash "${gwiNode}" rollback`,
-      {
-        encoding: 'utf8',
-        timeout: 300_000, // 5 minutes — rollbacks can take time
-      },
-    )
+    const result = spawnSync('bash', [gwiNode, 'rollback'], {
+      encoding: 'utf8',
+      timeout: 300_000, // 5 minutes — rollbacks can take time
+    })
+
+    if (result.error) {
+      if ((result.error as NodeJS.ErrnoException).code === 'ENOENT') {
+        return NextResponse.json(
+          { error: 'gwi-node.sh not found' },
+          { status: 404 },
+        )
+      }
+      throw result.error
+    }
+
+    if (result.status !== 0) {
+      throw new Error(result.stderr || `rollback exited with status ${result.status}`)
+    }
 
     return NextResponse.json({
       success: true,
       method: 'lkg-rollback',
       auditReleaseId: releaseId || null,
-      output: output.slice(-500),
+      output: (result.stdout || '').slice(-500),
     })
   } catch (err: any) {
     return NextResponse.json(

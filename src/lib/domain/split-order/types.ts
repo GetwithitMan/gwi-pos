@@ -69,6 +69,7 @@ export interface SplitOrderItem {
   price: any // Prisma Decimal
   quantity: number
   itemTotal: any // Prisma Decimal
+  status?: string | null
   specialNotes: string | null
   seatNumber: number | null
   courseNumber: number | null

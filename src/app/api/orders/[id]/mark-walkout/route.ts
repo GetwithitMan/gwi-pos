@@ -5,6 +5,8 @@ import { requirePermission } from '@/lib/api-auth'
 import { parseSettings } from '@/lib/settings'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
+import { dispatchCFDIdle } from '@/lib/socket-dispatch/cfd-dispatch'
+import { resolvePairedCfdTerminalId } from '@/lib/cfd-terminal'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
@@ -81,6 +83,9 @@ export const POST = withVenue(async function POST(
       orderId,
       tableId: order.tableId || undefined,
     }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.mark-walkout'))
+    const terminalId = request.headers.get('x-terminal-id')
+    const cfdTerminalId = await resolvePairedCfdTerminalId(terminalId || null)
+    dispatchCFDIdle(order.locationId, cfdTerminalId)
     const retries = []
     if (walkoutRetryEnabled) {
       const nextRetry = new Date(now)

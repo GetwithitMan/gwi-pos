@@ -3,21 +3,7 @@ import { db } from '@/lib/db'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { err, ok } from '@/lib/api-response'
-
-// Standard allergen list — used as default options in the UI
-export const STANDARD_ALLERGENS = [
-  'Milk',
-  'Eggs',
-  'Fish',
-  'Shellfish',
-  'Tree Nuts',
-  'Peanuts',
-  'Wheat',
-  'Soy',
-  'Sesame',
-  'Sulfites',
-  'Gluten',
-] as const
+import { STANDARD_ALLERGENS } from '@/lib/menu/allergens'
 
 // GET /api/menu/items/allergens — returns distinct allergens in use + standard list
 export const GET = withVenue(async function GET(request: NextRequest) {

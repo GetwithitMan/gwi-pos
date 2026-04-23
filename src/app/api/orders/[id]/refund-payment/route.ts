@@ -20,6 +20,7 @@ import { validateCellularRefundFromHeaders, validateManagerReauthFromHeaders, Ce
 import { validateMutationApproval } from '@/lib/approval-tokens'
 import { createChildLogger } from '@/lib/logger'
 import { err, notFound, ok } from '@/lib/api-response'
+import { dispatchCFDOrderUpdated } from '@/lib/socket-dispatch/cfd-dispatch'
 const log = createChildLogger('orders-refund-payment')
 
 export const POST = withVenue(async function POST(
@@ -412,6 +413,34 @@ export const POST = withVenue(async function POST(
       updatedAt: new Date().toISOString(),
       locationId: order.locationId,
     }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
+
+    void (async () => {
+      try {
+        const fullOrder = await OrderRepository.getFullOrder(id, order.locationId)
+        if (!fullOrder) return
+
+        dispatchCFDOrderUpdated(order.locationId, {
+          orderId: fullOrder.id,
+          orderNumber: fullOrder.orderNumber,
+          items: fullOrder.items
+            .filter((item: any) => item.status === 'active')
+            .map((item: any) => ({
+              name: item.name,
+              quantity: item.quantity,
+              price: Number(item.itemTotal ?? item.price ?? 0),
+              modifiers: item.modifiers?.map((m: any) => m.name) ?? [],
+            })),
+          subtotal: Number(fullOrder.subtotal),
+          tax: Number(fullOrder.taxTotal),
+          total: Number(fullOrder.total),
+          discountTotal: Number(fullOrder.discountTotal),
+          taxFromInclusive: Number(fullOrder.taxFromInclusive ?? 0),
+          taxFromExclusive: Number(fullOrder.taxFromExclusive ?? 0),
+        })
+      } catch (caughtErr) {
+        console.error('[refund-payment] CFD refresh failed:', caughtErr)
+      }
+    })()
 
     // Dispatch payment:processed with refunded status (fire-and-forget)
     void dispatchPaymentProcessed(order.locationId, {

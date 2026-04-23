@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
-import { dispatchOpenOrdersChanged, dispatchOrderSummaryUpdated, buildOrderSummary } from '@/lib/socket-dispatch'
+import { dispatchOpenOrdersChanged, dispatchOrderSummaryUpdated, dispatchCFDOrderUpdated, buildOrderSummary } from '@/lib/socket-dispatch'
 import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
 import { getRequestLocationId } from '@/lib/request-context'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
@@ -140,6 +140,12 @@ export const PUT = withVenue(withAuth({ allowCellular: true }, async function PU
         const freshOrder = await OrderRepository.getOrderByIdWithInclude(orderId, locationId, {
           table: { select: { name: true } },
           _count: { select: { items: true } },
+          items: {
+            where: { deletedAt: null },
+            include: {
+              modifiers: true,
+            },
+          },
         })
         if (freshOrder) {
           const summary = buildOrderSummary({
@@ -147,6 +153,24 @@ export const PUT = withVenue(withAuth({ allowCellular: true }, async function PU
             itemCount: freshOrder._count.items,
           })
           await dispatchOrderSummaryUpdated(locationId, summary)
+          dispatchCFDOrderUpdated(locationId, {
+            orderId,
+            orderNumber: (freshOrder as any).orderNumber,
+            items: (freshOrder as any).items
+              .filter((it: any) => it.status === 'active')
+              .map((it: any) => ({
+                name: it.name,
+                quantity: it.quantity,
+                price: Number(it.itemTotal ?? it.price ?? 0),
+                modifiers: it.modifiers?.map((m: any) => m.name) ?? [],
+              })),
+            subtotal: Number((freshOrder as any).subtotal ?? 0),
+            tax: Number((freshOrder as any).taxTotal ?? 0),
+            total: Number((freshOrder as any).total ?? 0),
+            discountTotal: Number((freshOrder as any).discountTotal ?? 0),
+            taxFromInclusive: Number((freshOrder as any).taxFromInclusive ?? 0),
+            taxFromExclusive: Number((freshOrder as any).taxFromExclusive ?? 0),
+          })
         }
       } catch (err) {
         console.error('[modifiers/route] Failed to dispatch order summary:', err)

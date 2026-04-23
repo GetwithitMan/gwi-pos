@@ -75,6 +75,25 @@ export function useCardListener({
   useEffect(() => { onCardDetectedRef.current = onCardDetected }, [onCardDetected])
   useEffect(() => { readerIdRef.current = readerId }, [readerId])
 
+  const stopHeartbeat = useCallback(() => {
+    if (heartbeatIntervalRef.current) {
+      clearInterval(heartbeatIntervalRef.current)
+      heartbeatIntervalRef.current = null
+    }
+  }, [])
+
+  const stopLoop = useCallback(() => {
+    activeRef.current = false
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+      abortControllerRef.current = null
+    }
+    stopHeartbeat()
+    if (!unmountedRef.current) {
+      setIsListening(false)
+    }
+  }, [stopHeartbeat])
+
   // ── Heartbeat ─────────────────────────────────────────────────────────
 
   const sendHeartbeat = useCallback(async () => {
@@ -101,19 +120,12 @@ export function useCardListener({
     } catch {
       // Network error — heartbeat is best-effort; lease TTL is the safety net
     }
-  }, [terminalId])
+  }, [terminalId, stopLoop])
 
   const startHeartbeat = useCallback(() => {
     stopHeartbeat()
     heartbeatIntervalRef.current = setInterval(sendHeartbeat, HEARTBEAT_INTERVAL_MS)
-  }, [sendHeartbeat])
-
-  function stopHeartbeat() {
-    if (heartbeatIntervalRef.current) {
-      clearInterval(heartbeatIntervalRef.current)
-      heartbeatIntervalRef.current = null
-    }
-  }
+  }, [sendHeartbeat, stopHeartbeat])
 
   // ── Release lease ─────────────────────────────────────────────────────
 
@@ -137,18 +149,6 @@ export function useCardListener({
   }, [terminalId])
 
   // ── Listen loop ───────────────────────────────────────────────────────
-
-  function stopLoop() {
-    activeRef.current = false
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort()
-      abortControllerRef.current = null
-    }
-    stopHeartbeat()
-    if (!unmountedRef.current) {
-      setIsListening(false)
-    }
-  }
 
   const listenLoop = useCallback(async () => {
     const rid = readerIdRef.current

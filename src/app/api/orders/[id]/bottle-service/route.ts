@@ -6,6 +6,7 @@ import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchOrderUpdated } from '@/lib/socket-dispatch'
+import { dispatchCFDOrderUpdated } from '@/lib/socket-dispatch/cfd-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { getRequestLocationId } from '@/lib/request-context'
 import { requirePermission } from '@/lib/api-auth'
@@ -206,6 +207,32 @@ export const POST = withVenue(async function POST(
       orderId,
       changes: ['bottle-service', 'tabStatus'],
     }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.bottle-service'))
+
+    const cfdOrder = await OrderRepository.getOrderByIdWithInclude(orderId, locationId, {
+      items: { include: { modifiers: true } },
+      discounts: true,
+    })
+    if (cfdOrder) {
+      dispatchCFDOrderUpdated(order.locationId, {
+        orderId: cfdOrder.id,
+        orderNumber: cfdOrder.orderNumber,
+        items: cfdOrder.items
+          .filter(i => i.status === 'active')
+          .map(i => ({
+            name: i.name,
+            quantity: i.quantity,
+            price: Number(i.itemTotal),
+            modifiers: i.modifiers.map(m => m.name),
+            status: i.status,
+          })),
+        subtotal: Number(cfdOrder.subtotal),
+        tax: Number(cfdOrder.taxTotal),
+        total: Number(cfdOrder.total),
+        discountTotal: Number(cfdOrder.discountTotal),
+        taxFromInclusive: Number(cfdOrder.taxFromInclusive ?? 0),
+        taxFromExclusive: Number(cfdOrder.taxFromExclusive ?? 0),
+      })
+    }
 
     pushUpstream()
 

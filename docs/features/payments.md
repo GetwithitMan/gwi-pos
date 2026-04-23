@@ -13,7 +13,7 @@ Payments handles all monetary transactions in GWI POS: cash, card (Datacap VP330
 |------|------|----------|
 | `gwi-pos` | API, Datacap client, payment logic, POS UI | Full |
 | `gwi-android-register` | Primary client — card reader interaction, payment flow | Full |
-| `gwi-cfd` | Customer-facing display — tip prompt, approval/decline | Full |
+| `gwi-cfd` | Customer-facing display — server-driven tip prompt, approval/decline | Full |
 | `gwi-backoffice` | Payment facts, settlement reporting | Partial |
 
 ---
@@ -104,9 +104,9 @@ Payments handles all monetary transactions in GWI POS: cash, card (Datacap VP330
 |-------|---------|---------|
 | `payment:applied` | `{ orderId, paymentId, status }` | Payment completed |
 | `payment:voided` | `{ orderId, paymentId, reason }` | Payment voided |
-| `cfd:payment-started` | `{ orderId, total }` | Payment flow begins |
-| `cfd:tip-prompt` | `{ orderId, tipSuggestions[] }` | Tip screen shown on CFD |
-| `cfd:processing` | `{ orderId }` | Card being processed |
+| `cfd:payment-started` | `{ orderId, total }` | Server payment handler begins card phase |
+| `cfd:tip-prompt` | `{ orderId, tipSuggestions[] }` | Server-dispatched tip screen on CFD |
+| `cfd:processing` | `{ orderId }` | Card is being processed |
 | `cfd:approved` | `{ orderId, cardLast4 }` | Transaction approved |
 | `cfd:declined` | `{ orderId, reason }` | Transaction declined |
 | `cfd:idle` | `{}` | CFD returns to idle |
@@ -215,7 +215,7 @@ successRate       Decimal?
 ## Business Logic
 
 ### Payment Flow (Card)
-1. POS sends `cfd:payment-started` to customer display
+1. POS/payment handler receives the card charge request and emits `cfd:payment-started` server-side
 2. CFD shows tip prompt → customer selects tip → `cfd:tip-selected` back to POS
 3. POS calls `processSale()` → Datacap EMVSale to reader
 4. Reader prompts card → chip/tap/swipe → auth response

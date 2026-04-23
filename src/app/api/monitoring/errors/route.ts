@@ -176,7 +176,7 @@ export const GET = withVenue(withAuth(async function GET(req: NextRequest) {
  * Get error statistics and aggregations
  * GET /api/monitoring/errors?stats=true
  */
-export async function getErrorStats(locationId?: string) {
+async function getErrorStats(locationId?: string) {
   const where: Prisma.ErrorLogWhereInput = locationId ? { locationId } : {}
 
   // Get counts by severity

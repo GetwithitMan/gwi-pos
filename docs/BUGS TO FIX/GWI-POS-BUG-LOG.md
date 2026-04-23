@@ -1,6 +1,8 @@
 # GWI POS - FORENSIC BUG LOG
 ## Area 1: API Routes, Socket Infrastructure & Frontend-Backend Alignment
 
+> Archive note: this report predates the current live CFD/socket cleanup work. Several CFD and socket findings were later resolved in the codebase and are kept here only as historical audit context.
+
 **Date:** February 23, 2026
 **Audit Method:** 3 parallel forensic agents deployed across the codebase
 **Scope:** ~348 API routes, all Socket.io events, 560 frontend fetch calls across 217 endpoints
