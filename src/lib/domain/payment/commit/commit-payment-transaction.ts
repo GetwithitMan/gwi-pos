@@ -25,6 +25,7 @@ import type { TxClient, PaymentRecord } from '@/lib/domain/payment/types'
 import type { LocationSettings } from '@/lib/settings'
 import type { PaymentLoopResult } from '@/lib/domain/payment/executors/process-payment-loop'
 import { createChildLogger } from '@/lib/logger'
+import { computeLoyaltyEarn, makePrismaTierLookup } from '@/lib/domain/loyalty/compute-earn'
 
 const log = createChildLogger('commit-payment')
 
@@ -206,32 +207,26 @@ export async function commitPaymentTransaction(params: CommitPaymentParams): Pro
 
   // ── 2. Loyalty points pre-compute ───────────────────────────────────
 
-  // Pre-compute loyalty points BEFORE the transaction (avoid nested findUnique inside tx)
+  // Pre-compute loyalty points BEFORE the transaction (avoid nested findUnique inside tx).
+  // Delegates to the canonical engine (`computeLoyaltyEarn`) so the POS commit
+  // path, online checkout, and any other surface use one earn formula.
   let pointsEarned = 0
   let loyaltyEarningBase = 0
   let loyaltyTierMultiplier = 1.0
-  if (updateData.status === 'paid' && order.customer && settings.loyalty.enabled) {
-    loyaltyEarningBase = settings.loyalty.earnOnSubtotal
-      ? toNumber(order.subtotal ?? 0)
-      : toNumber(order.total ?? 0)
-    if (settings.loyalty.earnOnTips) {
-      loyaltyEarningBase += newTipTotal
-    }
-    // Check for tier multiplier from LoyaltyTier (Loyalty System migration 098)
-    const custTierId = (order.customer as any).loyaltyTierId
-    if (custTierId) {
-      try {
-        const tierRows = await outerDb.$queryRaw<Array<{ pointsMultiplier: unknown }>>`
-          SELECT "pointsMultiplier" FROM "LoyaltyTier" WHERE "id" = ${custTierId} AND "deletedAt" IS NULL
-        `
-        if (tierRows.length > 0) {
-          loyaltyTierMultiplier = Number(tierRows[0].pointsMultiplier) || 1.0
-        }
-      } catch { /* table may not exist yet — graceful fallback */ }
-    }
-    if (loyaltyEarningBase >= settings.loyalty.minimumEarnAmount) {
-      pointsEarned = Math.round(loyaltyEarningBase * settings.loyalty.pointsPerDollar * loyaltyTierMultiplier)
-    }
+  if (updateData.status === 'paid' && order.customer) {
+    const earn = await computeLoyaltyEarn({
+      subtotal: toNumber(order.subtotal ?? 0),
+      total: toNumber(order.total ?? 0),
+      tipTotal: newTipTotal,
+      loyaltySettings: settings.loyalty,
+      customerLoyaltyTierId: (order.customer as any).loyaltyTierId ?? null,
+      // Use outerDb (outside tx lock) to match prior behavior — LoyaltyTier is
+      // an admin-owned table not mutated inside the payment transaction.
+      lookupTierMultiplier: makePrismaTierLookup(outerDb),
+    })
+    pointsEarned = earn.pointsEarned
+    loyaltyEarningBase = earn.loyaltyEarningBase
+    loyaltyTierMultiplier = earn.loyaltyTierMultiplier
   }
 
   // ── 3. Customer stats pre-compute ───────────────────────────────────
