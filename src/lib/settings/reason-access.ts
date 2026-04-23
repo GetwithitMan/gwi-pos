@@ -1,4 +1,5 @@
 import { db } from '@/lib/db'
+import { EmployeeRepository } from '@/lib/repositories'
 
 /**
  * Resolve allowed reasons/discounts for an employee.
@@ -15,9 +16,8 @@ export async function resolveAllowedReasonIds(
   employeeId: string,
   reasonType: 'void_reason' | 'comp_reason' | 'discount'
 ): Promise<{ ids: string[]; hasRules: boolean }> {
-  const employee = await db.employee.findUnique({
-    where: { id: employeeId },
-    select: { roleId: true, role: { select: { name: true } } },
+  const employee = await EmployeeRepository.getEmployeeByIdWithInclude(employeeId, locationId, {
+    role: { select: { name: true } },
   })
 
   if (!employee) {
