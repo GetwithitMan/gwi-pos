@@ -191,6 +191,13 @@ export function setCfdMapping(cfdTerminalId: string, registerTerminalId: string)
   ).catch((err) => log.warn({ err }, 'CFD pairing persist failed'))
 }
 
+/**
+ * Remove a CFD-to-register cache entry.
+ */
+export function clearCfdMapping(cfdTerminalId: string): void {
+  cfdToRegisterMap.delete(cfdTerminalId)
+}
+
 async function markTerminalOffline(terminalId: string, locationId: string, reason: string, socketId: string): Promise<void> {
   try {
     // KDS screens use a 'kds-' prefixed terminalId — they live in KDSScreen, not Terminal
@@ -1130,9 +1137,6 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
       'cfd:declined',
       'cfd:idle',
       'cfd:receipt-sent',
-      'cfd:charge-card',
-      'cfd:cancel-charge',
-      'cfd:customer-recognized',
       'cfd:settings-updated',
     ]
     for (const cfdEvent of CFD_REGISTER_TO_CFD_EVENTS) {
@@ -1154,8 +1158,6 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
       'cfd:tip-selected',
       'cfd:signature-done',
       'cfd:receipt-choice',
-      'cfd:charge-result',
-      'cfd:reader-status',
     ]
     for (const cfdEvent of CFD_TO_REGISTER_EVENTS) {
       socket.on(cfdEvent, (data: unknown) => {
@@ -1294,11 +1296,16 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
       try {
         if (socket.data.cfdTerminalId) {
           const cfdId = socket.data.cfdTerminalId
-          // Emit idle to paired CFD so it doesn't show stale order
-          void emitToTerminal(cfdId, 'cfd:idle', {}).catch((err) =>
-            log.warn({ err, cfdId }, 'Failed to send cfd:idle on register disconnect'))
-          cfdToRegisterMap.delete(cfdId)
-          log.info({ cfdId, registerId: socket.data.terminalId }, 'Sent cfd:idle on register disconnect')
+          const mappedRegisterId = cfdToRegisterMap.get(cfdId)
+          if (mappedRegisterId === socket.data.terminalId) {
+            // Emit idle to paired CFD so it doesn't show stale order
+            void emitToTerminal(cfdId, 'cfd:idle', {}).catch((err) =>
+              log.warn({ err, cfdId }, 'Failed to send cfd:idle on register disconnect'))
+            cfdToRegisterMap.delete(cfdId)
+            log.info({ cfdId, registerId: socket.data.terminalId }, 'Sent cfd:idle on register disconnect')
+          } else {
+            log.info({ cfdId, registerId: socket.data.terminalId, mappedRegisterId }, 'Skipped CFD cache cleanup on stale disconnect')
+          }
         }
       } catch (err) {
         log.error({ err, socketId: sid }, 'disconnect cleanup failed (CFD cache)')

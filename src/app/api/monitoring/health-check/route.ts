@@ -210,7 +210,7 @@ export const GET = withVenue(async function GET(req: NextRequest) {
  * }, 60000) // Every minute
  * ```
  */
-export async function runHealthCheck(
+async function runHealthCheck(
   checkType: string,
   locationId: string,
   healthCheckFn: () => Promise<boolean>,

@@ -108,7 +108,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
  * Capture the current menu state for a location.
  * Returns all categories, menu items, modifier groups, and modifiers.
  */
-export async function captureMenuSnapshot(locationId: string) {
+async function captureMenuSnapshot(locationId: string) {
   const [categories, items, modifierGroups, modifiers] = await Promise.all([
     db.category.findMany({
       where: { locationId, deletedAt: null },

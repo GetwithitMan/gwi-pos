@@ -7,6 +7,8 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { calculateOrderTotals } from '@/lib/order-calculations'
 import type { OrderItemForCalculation } from '@/lib/order-calculations'
 import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate, dispatchFloorPlanUpdate, dispatchTabUpdated, dispatchCFDOrderUpdated, dispatchTableStatusChanged } from '@/lib/socket-dispatch'
+import { dispatchCFDIdle } from '@/lib/socket-dispatch/cfd-dispatch'
+import { resolvePairedCfdTerminalId } from '@/lib/cfd-terminal'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { getRequestLocationId } from '@/lib/request-context'
@@ -317,6 +319,10 @@ export const POST = withVenue(async function POST(
       taxFromInclusive: Number(updatedOrder!.taxFromInclusive ?? 0),
       taxFromExclusive: Number(updatedOrder!.taxFromExclusive ?? 0),
     })
+
+    const terminalId = request.headers.get('x-terminal-id')
+    const cfdTerminalId = await resolvePairedCfdTerminalId(terminalId || null)
+    dispatchCFDIdle(locationId, cfdTerminalId)
 
     return ok({
       success: true,

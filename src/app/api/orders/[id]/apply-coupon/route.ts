@@ -4,6 +4,7 @@ import { calculateOrderTotals } from '@/lib/order-calculations'
 import type { OrderItemForCalculation } from '@/lib/order-calculations'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchOrderTotalsUpdate, dispatchOpenOrdersChanged, dispatchOrderSummaryUpdated } from '@/lib/socket-dispatch'
+import { dispatchCFDOrderUpdated } from '@/lib/socket-dispatch/cfd-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { OrderRepository } from '@/lib/repositories'
 import { roundToCents } from '@/lib/pricing'
@@ -375,6 +376,32 @@ export const POST = withVenue(async function POST(
       updatedAt: new Date().toISOString(),
       locationId: order.locationId,
     }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.apply-coupon'))
+
+    const cfdOrder = await OrderRepository.getOrderByIdWithInclude(orderId, order.locationId, {
+      items: { include: { modifiers: true } },
+      discounts: true,
+    })
+    if (cfdOrder) {
+      dispatchCFDOrderUpdated(order.locationId, {
+        orderId: cfdOrder.id,
+        orderNumber: cfdOrder.orderNumber,
+        items: cfdOrder.items
+          .filter(i => i.status === 'active')
+          .map(i => ({
+            name: i.name,
+            quantity: i.quantity,
+            price: Number(i.itemTotal),
+            modifiers: i.modifiers.map(m => m.name),
+            status: i.status,
+          })),
+        subtotal: Number(cfdOrder.subtotal),
+        tax: Number(cfdOrder.taxTotal),
+        total: Number(cfdOrder.total),
+        discountTotal: Number(cfdOrder.discountTotal),
+        taxFromInclusive: Number(cfdOrder.taxFromInclusive ?? 0),
+        taxFromExclusive: Number(cfdOrder.taxFromExclusive ?? 0),
+      })
+    }
 
     pushUpstream()
 

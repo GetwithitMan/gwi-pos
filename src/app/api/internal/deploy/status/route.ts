@@ -9,45 +9,38 @@
  */
 
 import { NextResponse } from 'next/server'
-import { execSync } from 'child_process'
-import { existsSync } from 'fs'
+import { spawnSync } from 'child_process'
 
 export const dynamic = 'force-dynamic'
-
-/** Resolve gwi-node.sh path, checking known locations in priority order. */
-function resolveGwiNode(): string | null {
-  const candidates = [
-    '/opt/gwi-pos/gwi-node.sh',
-    '/usr/local/bin/gwi-node',
-    '/opt/gwi-pos/app/public/scripts/gwi-node.sh',
-  ]
-  for (const p of candidates) {
-    if (existsSync(p)) return p
-  }
-  return null
-}
 
 export async function GET() {
   try {
     const fs = await import('fs')
+    const gwiNode = process.env.GWI_NODE_SH_PATH || '/opt/gwi-pos/gwi-node.sh'
 
-    const gwiNode = resolveGwiNode()
-    if (!gwiNode) {
-      return NextResponse.json(
-        { available: false, error: 'gwi-node.sh not found' },
-        { status: 404 },
-      )
-    }
-
-    const output = execSync(`bash "${gwiNode}" status`, {
+    const result = spawnSync('bash', [gwiNode, 'status'], {
       encoding: 'utf8',
       timeout: 10_000,
     })
 
+    if (result.error) {
+      if ((result.error as NodeJS.ErrnoException).code === 'ENOENT') {
+        return NextResponse.json(
+          { available: false, error: 'gwi-node.sh not found' },
+          { status: 404 },
+        )
+      }
+      throw result.error
+    }
+
+    if (result.status !== 0) {
+      throw new Error(result.stderr || `status exited with status ${result.status}`)
+    }
+
     // Parse the structured output into JSON
     // gwi-node.sh status outputs key: value pairs
     const status: Record<string, string> = {}
-    for (const line of output.split('\n')) {
+    for (const line of (result.stdout || '').split('\n')) {
       const match = line.match(/^\s*(.+?):\s+(.+)$/)
       if (match) {
         const key = match[1].trim().toLowerCase().replace(/[^a-z0-9]+/g, '_')

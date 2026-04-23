@@ -24,7 +24,7 @@
 ## 2026-02-23 — Bugfix Sprint C+D: PWA & Disconnect Banner
 - **#635**: PWA manifest added — standalone display mode, black theme, app-like experience (`public/manifest.json`)
 - **#636**: Service worker — cache-first for static assets, network-first for API calls (`public/sw.js`, `ServiceWorkerRegistration.tsx`)
-- **Offline disconnect banner** — Visual indicator when network is lost, auto-dismisses on reconnect (`OfflineDisconnectBanner.tsx`, `layout.tsx`)
+- **Offline disconnect banner** — Visual indicator when network is lost, auto-dismisses on reconnect. This was later removed during cleanup because it caused false positives on cloud access.
 
 ## 2026-02-23 — Bugfix Sprint A+B: Offline Wiring (B9-B12)
 - **B9**: Offline order creation wired to `OfflineManager.queueOrder()` — orders created while offline are queued for sync (`useActiveOrder.ts`)

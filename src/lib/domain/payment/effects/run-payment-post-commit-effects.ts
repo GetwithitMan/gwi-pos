@@ -40,6 +40,7 @@ import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worke
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
 import { resolveDrawerForPayment } from '@/lib/domain/payment'
+import { resolvePairedCfdTerminalId } from '@/lib/cfd-terminal'
 import { createChildLogger } from '@/lib/logger'
 
 const log = createChildLogger('payment-post-commit')
@@ -367,10 +368,17 @@ async function handleSplitFamilyAndRemainingEffects(params: PostCommitEffectsPar
 
   // Notify CFD that receipt was sent — transitions CFD to thank-you screen (fire-and-forget)
   if (orderIsPaid) {
-    dispatchCFDReceiptSent(order.locationId, null, {
-      orderId: order.id,
-      total: toNumber(order.total ?? 0),
-    })
+    void (async () => {
+      try {
+        const cfdTerminalId = await resolvePairedCfdTerminalId(terminalId)
+        dispatchCFDReceiptSent(order.locationId, cfdTerminalId, {
+          orderId: order.id,
+          total: toNumber(order.total ?? 0),
+        })
+      } catch (err) {
+        log.warn({ err, orderId: order.id }, 'CFD receipt dispatch failed')
+      }
+    })()
   }
 
   // 16. Cloud events, integrations, upstream sync, receipt
@@ -753,7 +761,6 @@ function recalculateCommission(
       }
 
       // Batch update all changed commissions in a single SQL statement
-      // eslint-disable-next-line -- $executeRawUnsafe required: dynamic CASE clause count with numbered params
       if (commissionUpdates.length > 0) {
         const caseClauses = commissionUpdates.map((_, i) => `WHEN id = $${i * 2 + 1} THEN $${i * 2 + 2}`).join(' ')
         const ids = commissionUpdates.map(u => u.id)

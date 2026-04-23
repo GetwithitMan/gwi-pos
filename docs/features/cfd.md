@@ -3,7 +3,7 @@
 > **Before editing this feature:** Read `_CROSS-REF-MATRIX.md` → find this feature → read every listed dependency doc.
 
 ## Summary
-The Customer-Facing Display (CFD) is a stateless display screen shown to customers during checkout. It runs an 8-state state machine driven entirely by socket events from the POS terminal. The CFD shows the live order summary, prompts for tip selection, captures signatures, displays payment processing status (approved/declined), and offers receipt delivery options. The primary hardware target is the PAX A3700 tablet running the `gwi-cfd` Android app; a web-based fallback exists at `/cfd`. All state transitions are server-driven — the CFD has no local persistence.
+The Customer-Facing Display (CFD) is a stateless display screen shown to customers during checkout. It runs an 8-state state machine driven entirely by socket events from the POS terminal. The CFD shows the live order summary, prompts for tip selection, captures signatures, displays payment processing status (approved/declined), and offers receipt delivery options. The primary hardware target is the PAX A3700 tablet running the `gwi-cfd` Android app. All state transitions are server-driven — the CFD has no local persistence.
 
 ## Status
 `Active`
@@ -11,7 +11,7 @@ The Customer-Facing Display (CFD) is a stateless display screen shown to custome
 ## Repos Involved
 | Repo | Role | Coverage |
 |------|------|----------|
-| `gwi-pos` | Socket dispatch, CFD settings API, web CFD page, admin config | Full |
+| `gwi-pos` | Socket dispatch, CFD settings API, admin config, loyalty snapshot plumbing | Full |
 | `gwi-android-register` | None (CFD is a separate app) | None |
 | `gwi-cfd` | Stateless Android kiosk app on PAX A3700 | Full |
 | `gwi-backoffice` | None | None |
@@ -23,7 +23,6 @@ The Customer-Facing Display (CFD) is a stateless display screen shown to custome
 
 | Interface | Path / Screen | Who Accesses |
 |-----------|--------------|--------------|
-| CFD Web | `/cfd` | Customer-facing (no direct access) |
 | Admin | `/settings/hardware/cfd` | Managers |
 | Android CFD | `CfdIdleScreen → CfdOrderScreen → CfdTipScreen → ...` | Customer-facing |
 
@@ -34,15 +33,10 @@ The Customer-Facing Display (CFD) is a stateless display screen shown to custome
 ### gwi-pos
 | File / Directory | Purpose |
 |-----------------|---------|
-| `src/app/(cfd)/cfd/page.tsx` | Web CFD state machine (8 states) |
-| `src/app/(cfd)/cfd/layout.tsx` | CFD layout (fullscreen, no nav) |
-| `src/components/cfd/CFDIdleScreen.tsx` | Clock + welcome screen |
-| `src/components/cfd/CFDOrderDisplay.tsx` | Live order display |
-| `src/components/cfd/CFDTipScreen.tsx` | Tip selection buttons |
-| `src/components/cfd/CFDSignatureScreen.tsx` | Signature capture canvas |
-| `src/components/cfd/CFDApprovedScreen.tsx` | Approval/decline screens |
+| `src/lib/cfd-loyalty-snapshot.ts` | Resolve order-linked customer + loyalty enablement for CFD payloads |
 | `src/types/multi-surface.ts` | CFD_EVENTS constants + multi-surface types |
-| `src/lib/socket-dispatch.ts` | `dispatchCFDShowOrder()`, `dispatchCFDPaymentStarted()`, `dispatchCFDTipPrompt()`, `dispatchCFDSignatureRequest()`, `dispatchCFDReceiptSent()` |
+| `src/lib/socket-dispatch/cfd-dispatch.ts` | `dispatchCFDShowOrder()`, `dispatchCFDShowOrderDetail()`, `dispatchCFDPaymentStarted()`, `dispatchCFDTipPrompt()`, `dispatchCFDSignatureRequest()`, `dispatchCFDReceiptSent()`, `dispatchCFDOrderUpdated()` |
+| `src/app/api/cfd/loyalty/enroll/route.ts` | Phone-entry enrollment/attach endpoint for loyalty prompt flow |
 | `src/app/api/hardware/cfd-settings/route.ts` | GET/PUT CFD settings |
 | `src/app/api/hardware/terminals/[id]/pair-cfd/route.ts` | POST/DELETE CFD pairing |
 | `src/app/(admin)/settings/hardware/cfd/page.tsx` | CFD settings page |
@@ -83,7 +77,7 @@ The Customer-Facing Display (CFD) is a stateless display screen shown to custome
 ### Emitted by POS → CFD
 | Event | Payload | Trigger |
 |-------|---------|---------|
-| `cfd:show-order` | `{ orderId, orderNumber, items[], subtotal, tax, total }` | Payment modal opened |
+| `cfd:show-order` | `{ orderId, orderNumber, items[], subtotal, tax, total, customer?, loyaltyEnabled? }` | Payment modal opened / order refresh |
 | `cfd:payment-started` | `{ orderId, amount, paymentMethod }` | Card reader activated |
 | `cfd:tip-prompt` | `{ orderId, subtotal, suggestedTips[] }` | Tip step shown to cashier |
 | `cfd:signature-request` | `{ orderId, transactionId? }` | Signature required |
@@ -92,6 +86,8 @@ The Customer-Facing Display (CFD) is a stateless display screen shown to custome
 | `cfd:declined` | `{ reason? }` | Payment declined |
 | `cfd:idle` | (none) | Return to idle screen |
 | `cfd:receipt-sent` | `{ orderId, total, emailEnabled, smsEnabled, printEnabled, timeoutSeconds }` | Payment complete, receipt options |
+| `cfd:order-updated` | `{ orderId, orderNumber, items[], subtotal, tax, total, customer?, loyaltyEnabled? }` | Any item/discount/void/tab mutation |
+| `cfd:settings-updated` | `{ cfdDisplay }` | CFD display settings changed |
 
 ### Emitted by CFD → POS
 | Event | Source | Purpose |
@@ -175,6 +171,15 @@ idle → order → payment-started → tip → signature → processing → appr
 - If socket disconnects, CFD returns to idle screen
 - Signature threshold: signatures only required above configurable amount (default $25)
 - Receipt timeout: auto-dismiss after configurable seconds (default 30)
+- Loyalty prompt is driven by the order payload, not by CFD settings:
+  - `loyaltyEnabled === false` → hide loyalty UI
+  - `loyaltyEnabled === true && customer == null` → show `Enter loyalty number`
+  - `loyaltyEnabled === true && customer != null` → show the customer name, tier, and points
+- The enroll endpoint is `POST /api/cfd/loyalty/enroll`:
+  - body: `{ orderId, phone, firstName?, lastName?, email? }`
+  - on match: attach customer to order/tab and refresh the CFD immediately
+  - on no match + no name: return `promptForName: true`
+  - on no match + name: create customer, attach, and refresh the CFD immediately
 
 ---
 
@@ -235,6 +240,8 @@ idle → order → payment-started → tip → signature → processing → appr
 - CfdViewModel manages state machine + auto-timeouts
 - Bootstrap pairing via `TokenProvider` + NUC API
 - `CfdSocketManager` singleton handles connect/disconnect/reconnect
+- Order payloads should render a distinct loyalty footer when `customer` is null and `loyaltyEnabled` is true.
+- The footer should submit phone entry to `/api/cfd/loyalty/enroll` and replace itself with customer/points state on success.
 
 ---
 

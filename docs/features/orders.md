@@ -99,7 +99,7 @@ Orders are the central transaction entity in GWI POS. Every sale, bar tab, takeo
 | `POST` | `/api/orders/[id]/comp-void` | `manager.void_items` | Comp or void item |
 | `POST` | `/api/orders/[id]/discount` | `manager.discounts` | Apply/toggle order discount |
 | `POST` | `/api/orders/[id]/split` | `pos.split_checks` | Split order |
-| `POST` | `/api/orders/[id]/reopen` | Manager | Reopen closed order |
+| `POST` | `/api/orders/[id]/reopen` | Manager | Reopen closed order; admin-only, venue-scoped, not paired-station-scoped |
 | `POST` | `/api/orders/[id]/open-tab` | Employee PIN | Open bar tab (pre-auth) |
 | `POST` | `/api/orders/[id]/close-tab` | Employee PIN | Close tab (capture + pay) |
 | `POST` | `/api/orders/[id]/merge` | Employee PIN | Merge orders |

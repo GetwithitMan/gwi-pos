@@ -8,9 +8,9 @@
  */
 
 import { NextRequest } from 'next/server'
-import { getUpdateAgentStatus, runPreflightChecks } from '@/lib/update-agent'
 import { verifySchema } from '@/lib/schema-verify'
 import { ok, unauthorized } from '@/lib/api-response'
+import { getUpdateAgentStatus, runPreflightChecks } from '@/lib/update-status'
 
 export const dynamic = 'force-dynamic'
 

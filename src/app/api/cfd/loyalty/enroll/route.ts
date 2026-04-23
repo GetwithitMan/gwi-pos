@@ -42,7 +42,7 @@ import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { dispatchCFDOrderUpdated } from '@/lib/socket-dispatch/cfd-dispatch'
 import { calculateOrderTotals, type OrderItemForCalculation } from '@/lib/order-calculations'
 import { createChildLogger } from '@/lib/logger'
-import { err, forbidden, notFound, ok } from '@/lib/api-response'
+import { err, forbidden, notFound, ok, unauthorized } from '@/lib/api-response'
 import type { CFDLoyaltyCustomer } from '@/types/multi-surface'
 
 const log = createChildLogger('cfd-loyalty-enroll')
@@ -106,13 +106,23 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     return err('phone_format_invalid')
   }
 
-  // 4. Load the order scoped to the caller's paired venue. Using a
-  // locationId-scoped lookup via OrderRepository (rather than a bare
-  // `db.order.findFirst`) satisfies the `no-restricted-syntax` lint
-  // guard AND folds the paired-venue check into the query itself —
-  // an order at a different location appears identically to a missing
-  // order, which deliberately prevents cross-venue existence leaks.
-  const locationId = callerTerminal.locationId
+  // 4. Load the order (bound to its locationId) with location settings.
+  const orderCheck = await OrderRepository.getOrderByIdWithSelect(orderId, callerTerminal.locationId, {
+    id: true,
+    locationId: true,
+  })
+  if (!orderCheck) {
+    return notFound('Order not found')
+  }
+
+  // Paired-venue check: the authenticated device MUST belong to the same
+  // location as the order. This prevents a paired CFD from mutating orders
+  // belonging to other venues even when we share a multi-tenant DB host.
+  if (callerTerminal.locationId !== orderCheck.locationId) {
+    return unauthorized('Terminal not authorized for this order')
+  }
+  const locationId = orderCheck.locationId
+
   const order = await OrderRepository.getOrderByIdWithInclude(orderId, locationId, {
     location: true,
   })
@@ -292,15 +302,11 @@ async function refreshCFD(
   locationId: string,
   customerId: string,
 ): Promise<void> {
-  const orderWithItems = await OrderRepository.getOrderByIdWithInclude(
-    orderId,
-    locationId,
-    {
-      items: { where: { deletedAt: null, status: 'active' } },
-      discounts: { where: { deletedAt: null } },
-      location: { select: { settings: true } },
-    },
-  )
+  const orderWithItems = await OrderRepository.getOrderByIdWithInclude(orderId, locationId, {
+    items: { where: { deletedAt: null, status: 'active' } },
+    discounts: { where: { deletedAt: null } },
+    location: { select: { settings: true } },
+  })
   if (!orderWithItems) return
 
   const settings = parseSettings(orderWithItems.location.settings)

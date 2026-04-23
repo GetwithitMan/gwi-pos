@@ -6,6 +6,8 @@ import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { err, notFound, ok } from '@/lib/api-response'
+import { clearCfdMapping } from '@/lib/socket-server'
+import { dispatchCFDIdle } from '@/lib/socket-dispatch/cfd-dispatch'
 
 // GET single terminal
 export const GET = withVenue(withAuth('ADMIN', async function GET(
@@ -387,6 +389,15 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     }
 
     // C8: If this is a CFD being deleted, unpair any registers pointing to it
+    if (existing.cfdTerminalId) {
+      dispatchCFDIdle(existing.locationId, existing.cfdTerminalId)
+    } else if ((existing as any).category === 'CFD_DISPLAY') {
+      dispatchCFDIdle(existing.locationId, id)
+    }
+    if (existing.cfdTerminalId) {
+      clearCfdMapping(existing.cfdTerminalId)
+    }
+    clearCfdMapping(id)
     await (db.terminal.updateMany as any)({
       where: { cfdTerminalId: id, deletedAt: null },
       data: { cfdTerminalId: null, cfdIpAddress: null, cfdConnectionMode: null, lastMutatedBy: 'local' },

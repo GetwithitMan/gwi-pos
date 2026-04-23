@@ -7,6 +7,7 @@
  */
 
 import { CFD_EVENTS, type CFDLoyaltyCustomer } from '@/types/multi-surface'
+import { loadCfdLoyaltySnapshot } from '@/lib/cfd-loyalty-snapshot'
 import {
   log,
   emitToLocation,
@@ -26,6 +27,21 @@ function resolveLoyaltyFields(input: {
   const loyaltyEnabled = input.loyaltyEnabled === true
   const customer = loyaltyEnabled ? (input.customer ?? null) : null
   return { customer, loyaltyEnabled }
+}
+
+async function resolveLoyaltySnapshot(
+  locationId: string,
+  data: {
+    orderId: string
+    customer?: CFDLoyaltyCustomer | null
+    loyaltyEnabled?: boolean
+  },
+): Promise<{ customer: CFDLoyaltyCustomer | null; loyaltyEnabled: boolean }> {
+  if (data.customer !== undefined || data.loyaltyEnabled !== undefined) {
+    return resolveLoyaltyFields(data)
+  }
+
+  return loadCfdLoyaltySnapshot(data.orderId, locationId)
 }
 
 /**
@@ -79,27 +95,33 @@ export function dispatchCFDShowOrder(locationId: string, cfdTerminalId: string |
   customer?: CFDLoyaltyCustomer | null
   loyaltyEnabled?: boolean
 }): void {
-  const { customer, loyaltyEnabled } = resolveLoyaltyFields(data)
-  const payload = {
-    ...data,
-    // Android CFD expects cent-denominated fields
-    subtotalCents: toCents(data.subtotal),
-    taxCents: toCents(data.tax),
-    totalCents: toCents(data.total),
-    items: data.items.map((item) => ({
-      ...item,
-      priceCents: toCents(item.price),
-      modifierLines: item.modifiers ?? [],
-    })),
-    currency: 'USD',
-    customer,
-    loyaltyEnabled,
-  }
-  if (cfdTerminalId) {
-    void emitToCfdOrFallback(cfdTerminalId, locationId, CFD_EVENTS.SHOW_ORDER, payload)
-  } else {
-    log.debug({ locationId, orderId: data.orderId }, 'CFD show-order skipped: no cfdTerminalId provided')
-  }
+  void (async () => {
+    try {
+      const { customer, loyaltyEnabled } = await resolveLoyaltySnapshot(locationId, data)
+      const payload = {
+        ...data,
+        // Android CFD expects cent-denominated fields
+        subtotalCents: toCents(data.subtotal),
+        taxCents: toCents(data.tax),
+        totalCents: toCents(data.total),
+        items: data.items.map((item) => ({
+          ...item,
+          priceCents: toCents(item.price),
+          modifierLines: item.modifiers ?? [],
+        })),
+        currency: 'USD',
+        customer,
+        loyaltyEnabled,
+      }
+      if (cfdTerminalId) {
+        void emitToCfdOrFallback(cfdTerminalId, locationId, CFD_EVENTS.SHOW_ORDER, payload)
+      } else {
+        log.debug({ locationId, orderId: data.orderId }, 'CFD show-order skipped: no cfdTerminalId provided')
+      }
+    } catch (err) {
+      log.warn({ err, locationId, orderId: data.orderId }, 'CFD show-order snapshot failed')
+    }
+  })()
 }
 
 /**
@@ -124,29 +146,35 @@ export function dispatchCFDShowOrderDetail(locationId: string, cfdTerminalId: st
   customer?: CFDLoyaltyCustomer | null
   loyaltyEnabled?: boolean
 }): void {
-  const { customer, loyaltyEnabled } = resolveLoyaltyFields(data)
-  const payload = {
-    ...data,
-    // Android CFD expects cent-denominated fields
-    subtotalCents: toCents(data.subtotal),
-    taxCents: toCents(data.tax),
-    totalCents: toCents(data.total),
-    items: data.items.map((item) => ({
-      ...item,
-      priceCents: toCents(item.price),
-      modifierLines: item.modifiers ?? [],
-    })),
-    currency: 'USD',
-    customer,
-    loyaltyEnabled,
-  }
-  if (cfdTerminalId) {
-    void emitToCfdOrFallback(cfdTerminalId, locationId, CFD_EVENTS.SHOW_ORDER_DETAIL, payload)
-    // Also emit as show-order so Android CFD picks it up (it doesn't handle show-order-detail)
-    void emitToCfdOrFallback(cfdTerminalId, locationId, CFD_EVENTS.SHOW_ORDER, payload)
-  } else {
-    log.debug({ locationId, orderId: data.orderId }, 'CFD show-order-detail skipped: no cfdTerminalId provided')
-  }
+  void (async () => {
+    try {
+      const { customer, loyaltyEnabled } = await resolveLoyaltySnapshot(locationId, data)
+      const payload = {
+        ...data,
+        // Android CFD expects cent-denominated fields
+        subtotalCents: toCents(data.subtotal),
+        taxCents: toCents(data.tax),
+        totalCents: toCents(data.total),
+        items: data.items.map((item) => ({
+          ...item,
+          priceCents: toCents(item.price),
+          modifierLines: item.modifiers ?? [],
+        })),
+        currency: 'USD',
+        customer,
+        loyaltyEnabled,
+      }
+      if (cfdTerminalId) {
+        void emitToCfdOrFallback(cfdTerminalId, locationId, CFD_EVENTS.SHOW_ORDER_DETAIL, payload)
+        // Also emit as show-order so Android CFD picks it up (it doesn't handle show-order-detail)
+        void emitToCfdOrFallback(cfdTerminalId, locationId, CFD_EVENTS.SHOW_ORDER, payload)
+      } else {
+        log.debug({ locationId, orderId: data.orderId }, 'CFD show-order-detail skipped: no cfdTerminalId provided')
+      }
+    } catch (err) {
+      log.warn({ err, locationId, orderId: data.orderId }, 'CFD show-order-detail snapshot failed')
+    }
+  })()
 }
 
 /**
@@ -387,22 +415,28 @@ export function dispatchCFDOrderUpdated(locationId: string, data: {
   customer?: CFDLoyaltyCustomer | null
   loyaltyEnabled?: boolean
 }): void {
-  const { customer, loyaltyEnabled } = resolveLoyaltyFields(data)
-  const payload = {
-    ...data,
-    subtotalCents: toCents(data.subtotal),
-    taxCents: toCents(data.tax),
-    totalCents: toCents(data.total),
-    items: data.items.map((item) => ({
-      ...item,
-      priceCents: toCents(item.price),
-      modifierLines: item.modifiers ?? [],
-    })),
-    currency: 'USD',
-    customer,
-    loyaltyEnabled,
-  }
-  void emitToLocation(locationId, CFD_EVENTS.ORDER_UPDATED, payload).catch((err) => log.error({ err }, 'CFD order-updated dispatch failed'))
-  // Also emit as show-order so Android CFD picks it up (it doesn't handle order-updated)
-  void emitToLocation(locationId, CFD_EVENTS.SHOW_ORDER, payload).catch((err) => log.error({ err }, 'CFD show-order (from update) dispatch failed'))
+  void (async () => {
+    try {
+      const { customer, loyaltyEnabled } = await resolveLoyaltySnapshot(locationId, data)
+      const payload = {
+        ...data,
+        subtotalCents: toCents(data.subtotal),
+        taxCents: toCents(data.tax),
+        totalCents: toCents(data.total),
+        items: data.items.map((item) => ({
+          ...item,
+          priceCents: toCents(item.price),
+          modifierLines: item.modifiers ?? [],
+        })),
+        currency: 'USD',
+        customer,
+        loyaltyEnabled,
+      }
+      void emitToLocation(locationId, CFD_EVENTS.ORDER_UPDATED, payload).catch((err) => log.error({ err }, 'CFD order-updated dispatch failed'))
+      // Also emit as show-order so Android CFD picks it up (it doesn't handle order-updated)
+      void emitToLocation(locationId, CFD_EVENTS.SHOW_ORDER, payload).catch((err) => log.error({ err }, 'CFD show-order (from update) dispatch failed'))
+    } catch (err) {
+      log.warn({ err, locationId, orderId: data.orderId }, 'CFD order-updated snapshot failed')
+    }
+  })()
 }

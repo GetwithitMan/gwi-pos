@@ -5,7 +5,7 @@ import { parseError } from '@/lib/datacap/xml-parser'
 import { parseSettings } from '@/lib/settings'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
-import { dispatchPaymentProcessed } from '@/lib/socket-dispatch'
+import { dispatchPaymentProcessed, dispatchOpenOrdersChanged, dispatchTabUpdated, dispatchTabStatusUpdate } from '@/lib/socket-dispatch'
 import { resolveDetection, ListenerError } from '@/lib/domain/payment-readers/listener-service'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
@@ -159,6 +159,12 @@ export const POST = withVenue(withAuth(async function POST(
         paymentId: orderCard.id,
         status: 'authorized',
       }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.cards'))
+      void dispatchTabUpdated(locationId, { orderId, status: 'open' }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.cards'))
+      dispatchTabStatusUpdate(locationId, { orderId, status: 'open' })
+      void dispatchOpenOrdersChanged(locationId, {
+        trigger: 'updated',
+        orderId,
+      }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.cards'))
 
       pushUpstream()
 
@@ -234,6 +240,12 @@ export const POST = withVenue(withAuth(async function POST(
       orderId,
       paymentId: orderCard.id,
       status: 'authorized',
+    }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.cards'))
+    void dispatchTabUpdated(locationId, { orderId, status: 'open' }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.cards'))
+    dispatchTabStatusUpdate(locationId, { orderId, status: 'open' })
+    void dispatchOpenOrdersChanged(locationId, {
+      trigger: 'updated',
+      orderId,
     }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.cards'))
 
     pushUpstream()

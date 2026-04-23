@@ -4,6 +4,8 @@ import { z } from 'zod'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchPaymentProcessed, dispatchOrderClosed, dispatchTableStatusChanged } from '@/lib/socket-dispatch'
+import { dispatchCFDReceiptSent } from '@/lib/socket-dispatch/cfd-dispatch'
+import { resolvePairedCfdTerminalId } from '@/lib/cfd-terminal'
 // deductInventoryForOrder replaced by PendingDeduction outbox pattern (see pay/route.ts)
 // import { deductInventoryForOrder } from '@/lib/inventory-calculations'
 import { allocateTipsForPayment } from '@/lib/domain/tips'
@@ -380,6 +382,19 @@ export const POST = withVenue(withAuth(async function POST(
       closedByEmployeeId: employeeId || null,
       locationId: parentOrder.locationId,
     }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
+
+    void (async () => {
+      try {
+        const cfdTerminalId = await resolvePairedCfdTerminalId(terminalId || null)
+        dispatchCFDReceiptSent(parentOrder.locationId, cfdTerminalId, {
+          orderId: parentOrderId,
+          total: Number(combinedTotal),
+        })
+      } catch (err) {
+        log.warn({ err }, 'CFD receipt dispatch failed for pay-all-splits')
+      }
+    })()
+
     for (const split of unpaidSplits) {
       const cashSplitTotal = roundToCents(Number(split.total))
       const splitTotal = dualPricingApplies

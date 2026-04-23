@@ -1,7 +1,7 @@
 'use client'
 
 import { Suspense } from 'react'
-import { TimedRentalsContent } from '../../timed-rentals/page'
+import { TimedRentalsContent } from '@/components/entertainment/TimedRentalsContent'
 
 export default function EntertainmentPage() {
   return (

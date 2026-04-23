@@ -5,6 +5,8 @@ import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { err, notFound, ok } from '@/lib/api-response'
+import { clearCfdMapping, setCfdMapping } from '@/lib/socket-server'
+import { dispatchCFDIdle } from '@/lib/socket-dispatch/cfd-dispatch'
 
 // POST — Link a CFD terminal to a register terminal (1:1 enforced)
 export const POST = withVenue(withAuth('ADMIN', async function POST(
@@ -29,6 +31,8 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     if (!existing || existing.deletedAt) {
       return notFound('Terminal not found')
     }
+
+    const previousCfdTerminalId = existing.cfdTerminalId ?? null
 
     if ((existing as any).category === 'CFD_DISPLAY') {
       return err('A CFD terminal cannot be paired to another CFD terminal')
@@ -78,6 +82,12 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
       },
     })
 
+    if (previousCfdTerminalId && previousCfdTerminalId !== cfdTerminalId) {
+      dispatchCFDIdle(existing.locationId, previousCfdTerminalId)
+      clearCfdMapping(previousCfdTerminalId)
+    }
+    setCfdMapping(cfdTerminalId, id)
+
     // Best-effort: mark the CFD terminal's category as CFD_DISPLAY
     try {
       if ((cfdExisting as any).category !== 'CFD_DISPLAY') {
@@ -113,15 +123,23 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
       return notFound('Terminal not found')
     }
 
+    const previousCfdTerminalId = existing.cfdTerminalId ?? null
+
     await (db.terminal.update as any)({
       where: { id },
       data: {
         cfdTerminalId: null,
         cfdIpAddress: null,
         cfdConnectionMode: null,
+        cfdSerialNumber: null,
         lastMutatedBy: 'local',
       },
     })
+
+    if (previousCfdTerminalId) {
+      dispatchCFDIdle(existing.locationId, previousCfdTerminalId)
+      clearCfdMapping(previousCfdTerminalId)
+    }
 
     void notifyDataChanged({ locationId: existing.locationId, domain: 'hardware', action: 'updated', entityId: id })
     void pushUpstream()

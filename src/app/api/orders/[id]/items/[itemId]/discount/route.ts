@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { calculateOrderTotals } from '@/lib/order-calculations'
 import type { OrderItemForCalculation } from '@/lib/order-calculations'
 import { withVenue } from '@/lib/with-venue'
-import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate } from '@/lib/socket-dispatch'
+import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate, dispatchCFDOrderUpdated } from '@/lib/socket-dispatch'
 import { parseSettings } from '@/lib/settings'
 import { requirePermission } from '@/lib/api-auth'
 import { withAuth, type AuthenticatedContext } from '@/lib/api-auth-middleware'
@@ -305,6 +305,24 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
         discountTotal: Number(updatedOrder.discountTotal),
         total: Number(updatedOrder.total),
       }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.items.itemId.discount'))
+      void dispatchCFDOrderUpdated(order.locationId, {
+        orderId,
+        orderNumber: order.orderNumber,
+        items: order.items
+          .filter((it: any) => it.status === 'active')
+          .map((it: any) => ({
+            name: it.name,
+            quantity: it.quantity,
+            price: Number(it.itemTotal ?? it.price ?? 0),
+            modifiers: it.modifiers?.map((m: any) => m.name) ?? [],
+          })),
+        subtotal: Number(updatedOrder.subtotal),
+        tax: Number(updatedOrder.taxTotal),
+        total: Number(updatedOrder.total),
+        discountTotal: Number(updatedOrder.discountTotal),
+        taxFromInclusive: Number((order as any).taxFromInclusive ?? 0),
+        taxFromExclusive: Number((order as any).taxFromExclusive ?? 0),
+      })
       // Audit log for manager-approved discount (W4-1)
       if (body.approvedById) {
         await tx.auditLog.create({
@@ -470,6 +488,24 @@ export const DELETE = withVenue(withAuth({ allowCellular: true }, async function
         discountTotal: Number(updatedOrder.discountTotal),
         total: Number(updatedOrder.total),
       }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.items.itemId.discount'))
+      void dispatchCFDOrderUpdated(order.locationId, {
+        orderId,
+        orderNumber: order.orderNumber,
+        items: order.items
+          .filter((it: any) => it.status === 'active')
+          .map((it: any) => ({
+            name: it.name,
+            quantity: it.quantity,
+            price: Number(it.itemTotal ?? it.price ?? 0),
+            modifiers: it.modifiers?.map((m: any) => m.name) ?? [],
+          })),
+        subtotal: Number(updatedOrder.subtotal),
+        tax: Number(updatedOrder.taxTotal),
+        total: Number(updatedOrder.total),
+        discountTotal: Number(updatedOrder.discountTotal),
+        taxFromInclusive: Number((order as any).taxFromInclusive ?? 0),
+        taxFromExclusive: Number((order as any).taxFromExclusive ?? 0),
+      })
 
       return ok({
           success: true,

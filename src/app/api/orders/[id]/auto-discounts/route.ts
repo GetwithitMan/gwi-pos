@@ -8,6 +8,7 @@ import {
   dispatchOrderSummaryUpdated,
   buildOrderSummary,
 } from '@/lib/socket-dispatch'
+import { dispatchCFDOrderUpdated } from '@/lib/socket-dispatch/cfd-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { OrderRepository } from '@/lib/repositories'
 import { getRequestLocationId } from '@/lib/request-context'
@@ -76,6 +77,8 @@ export const POST = withVenue(async function POST(
     // Fire-and-forget socket dispatches for cross-terminal sync
     if (result.applied.length > 0 || result.removed.length > 0) {
       const updatedOrder = await OrderRepository.getOrderByIdWithInclude(orderId, locationId, {
+        items: { include: { modifiers: true } },
+        discounts: true,
         table: { select: { name: true } },
       })
 
@@ -98,6 +101,26 @@ export const POST = withVenue(async function POST(
           order.locationId,
           buildOrderSummary(updatedOrder),
         ).catch(err => log.warn({ err }, 'Background task failed'))
+
+        dispatchCFDOrderUpdated(order.locationId, {
+          orderId: updatedOrder.id,
+          orderNumber: updatedOrder.orderNumber,
+          items: updatedOrder.items
+            .filter(i => i.status === 'active')
+            .map(i => ({
+              name: i.name,
+              quantity: i.quantity,
+              price: Number(i.itemTotal),
+              modifiers: i.modifiers.map(m => m.name),
+              status: i.status,
+            })),
+          subtotal: Number(updatedOrder.subtotal),
+          tax: Number(updatedOrder.taxTotal),
+          total: Number(updatedOrder.total),
+          discountTotal: Number(updatedOrder.discountTotal),
+          taxFromInclusive: Number(updatedOrder.taxFromInclusive ?? 0),
+          taxFromExclusive: Number(updatedOrder.taxFromExclusive ?? 0),
+        })
       }
     }
 

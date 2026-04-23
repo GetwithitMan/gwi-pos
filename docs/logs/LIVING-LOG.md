@@ -2875,7 +2875,6 @@ The sync agent on NUC had old code with wrong service name. Fix required:
 | `src/lib/draft-order-persistence.ts` | Draft order save/restore via localStorage |
 | `src/components/ui/SilentErrorBoundary.tsx` | Reusable error boundary with retry |
 | `src/components/ui/Skeleton.tsx` | CSS-only shimmer skeleton components |
-| `src/components/PendingSyncBadge.tsx` | Amber sync queue badge for POS header |
 | `src/hooks/useSocket.ts` | Thin wrapper over getSharedSocket/release |
 
 ### Schema Changes

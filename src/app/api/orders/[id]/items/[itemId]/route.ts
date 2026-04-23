@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { dispatchOpenOrdersChanged, dispatchItemStatus, dispatchOrderTotalsUpdate, dispatchOrderSummaryUpdated, buildOrderSummary } from '@/lib/socket-dispatch'
+import { dispatchOpenOrdersChanged, dispatchItemStatus, dispatchOrderTotalsUpdate, dispatchOrderSummaryUpdated, dispatchCFDOrderUpdated, buildOrderSummary } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { mapOrderForResponse } from '@/lib/api/order-response-mapper'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
@@ -436,6 +436,24 @@ export const PUT = withVenue(async function PUT(
         trigger: 'item_updated',
         orderId: order.id,
       }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.items.itemId'))
+      dispatchCFDOrderUpdated(order.locationId, {
+        orderId,
+        orderNumber: (txResult as any).orderNumber,
+        items: (txResult as any).items
+          .filter((it: any) => it.status === 'active')
+          .map((it: any) => ({
+            name: it.name,
+            quantity: it.quantity,
+            price: Number(it.itemTotal ?? it.price ?? 0),
+            modifiers: it.modifiers?.map((m: any) => m.name) ?? [],
+          })),
+        subtotal: Number((txResult as any).subtotal),
+        tax: Number((txResult as any).taxTotal),
+        total: Number((txResult as any).total),
+        discountTotal: Number((txResult as any).discountTotal),
+        taxFromInclusive: Number((txResult as any).taxFromInclusive ?? 0),
+        taxFromExclusive: Number((txResult as any).taxFromExclusive ?? 0),
+      })
       if (item.kitchenStatus && item.kitchenStatus !== 'pending') {
         void dispatchItemStatus(order.locationId, {
           orderId,
@@ -665,6 +683,24 @@ export const DELETE = withVenue(async function DELETE(
         trigger: 'voided',
         orderId: order.id,
       }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.items.itemId'))
+      void dispatchCFDOrderUpdated(order.locationId, {
+        orderId,
+        orderNumber: updatedOrder.orderNumber,
+        items: (updatedOrder as any).items
+          .filter((it: any) => it.status === 'active')
+          .map((it: any) => ({
+            name: it.name,
+            quantity: it.quantity,
+            price: Number(it.itemTotal ?? it.price ?? 0),
+            modifiers: it.modifiers?.map((m: any) => m.name) ?? [],
+          })),
+        subtotal: Number((updatedOrder as any).subtotal),
+        tax: Number((updatedOrder as any).taxTotal),
+        total: Number((updatedOrder as any).total),
+        discountTotal: Number((updatedOrder as any).discountTotal),
+        taxFromInclusive: Number((updatedOrder as any).taxFromInclusive ?? 0),
+        taxFromExclusive: Number((updatedOrder as any).taxFromExclusive ?? 0),
+      })
 
       const deleteResponse = mapOrderForResponse(updatedOrder as any)
       deleteResponse.items = (updatedOrder as any).items.map((it: any) => mapOrderItemForWire(it)) as any

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import Image from 'next/image'
 import { Modal } from '@/components/ui/modal'
+import { STANDARD_ALLERGENS } from '@/lib/menu/allergens'
 import { toast } from '@/stores/toast-store'
 import { SizingOptionsInline } from './SizingOptionsInline'
 import { useOrderSettings } from '@/hooks/useOrderSettings'
@@ -418,11 +419,6 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
     { id: 'pricing', label: 'Tax & Commission' },
     { id: 'compliance', label: 'Compliance' },
     { id: 'barcodes', label: 'Barcodes' },
-  ]
-
-  const STANDARD_ALLERGENS = [
-    'Milk', 'Eggs', 'Fish', 'Shellfish', 'Tree Nuts',
-    'Peanuts', 'Wheat', 'Soy', 'Sesame', 'Sulfites', 'Gluten',
   ]
 
   const ALLERGEN_COLORS: Record<string, string> = {

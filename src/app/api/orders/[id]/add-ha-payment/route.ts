@@ -13,6 +13,7 @@ import { getLocationSettings } from '@/lib/location-cache'
 import { SOCKET_EVENTS } from '@/lib/socket-events'
 import type { OrderTotalsUpdatedPayload, OrdersListChangedPayload, OrderSummaryUpdatedPayload } from '@/lib/socket-events'
 import { queueSocketEvent, flushOutboxSafe } from '@/lib/socket-outbox'
+import { dispatchCFDOrderUpdated } from '@/lib/socket-dispatch/cfd-dispatch'
 import { createChildLogger } from '@/lib/logger'
 import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-add-ha-payment')
@@ -281,6 +282,32 @@ export const POST = withVenue(async function POST(
     // Transaction committed — flush outbox (fire-and-forget, catch-up handles failures)
     if (outboxLocationId) {
       flushOutboxSafe(outboxLocationId)
+    }
+
+    const cfdOrder = await OrderRepository.getOrderByIdWithInclude(orderId, locationId, {
+      items: { include: { modifiers: true } },
+      discounts: true,
+    })
+    if (cfdOrder) {
+      dispatchCFDOrderUpdated(locationId, {
+        orderId: cfdOrder.id,
+        orderNumber: cfdOrder.orderNumber,
+        items: cfdOrder.items
+          .filter(i => i.status === 'active')
+          .map(i => ({
+            name: i.name,
+            quantity: i.quantity,
+            price: Number(i.itemTotal),
+            modifiers: i.modifiers.map(m => m.name),
+            status: i.status,
+          })),
+        subtotal: Number(cfdOrder.subtotal),
+        tax: Number(cfdOrder.taxTotal),
+        total: Number(cfdOrder.total),
+        discountTotal: Number(cfdOrder.discountTotal),
+        taxFromInclusive: Number(cfdOrder.taxFromInclusive ?? 0),
+        taxFromExclusive: Number(cfdOrder.taxFromExclusive ?? 0),
+      })
     }
 
     pushUpstream()

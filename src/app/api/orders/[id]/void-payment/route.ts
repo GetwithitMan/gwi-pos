@@ -7,6 +7,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission } from '@/lib/api-auth'
 import { handleTipChargeback } from '@/lib/domain/tips/tip-chargebacks'
 import { dispatchPaymentProcessed, dispatchOrderTotalsUpdate, dispatchFloorPlanUpdate, dispatchOpenOrdersChanged, dispatchOrderClosed, dispatchGiftCardBalanceChanged } from '@/lib/socket-dispatch'
+import { dispatchCFDIdle, dispatchCFDOrderUpdated } from '@/lib/socket-dispatch/cfd-dispatch'
 import { requireDatacapClient } from '@/lib/datacap/helpers'
 import { getPayApiClient, isPayApiSuccess } from '@/lib/datacap/payapi-client'
 import { parseError } from '@/lib/datacap/xml-parser'
@@ -17,6 +18,7 @@ import { enableSyncReplication } from '@/lib/db-helpers'
 import { dispatchAlert } from '@/lib/alert-service'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
+import { resolvePairedCfdTerminalId } from '@/lib/cfd-terminal'
 import { isInOutageMode } from '@/lib/sync/upstream-sync-worker'
 import { pushUpstream, queueIfOutageOrFail } from '@/lib/sync/outage-safe-write'
 import { getRequestLocationId } from '@/lib/request-context'
@@ -57,6 +59,7 @@ export const POST = withVenue(async function POST(
     const { paymentId, reason, notes, managerId, readerId, managerPinHash, approvalToken } = body as {
       paymentId?: string; reason?: string; notes?: string; managerId?: string; readerId?: string; managerPinHash?: string; approvalToken?: string
     }
+    const terminalId = request.headers.get('x-terminal-id')
 
     // Validate inputs
     if (!paymentId || !reason || !managerId) {
@@ -416,17 +419,6 @@ export const POST = withVenue(async function POST(
           `Reconcile manually via Datacap portal.`
         console.error(criticalMsg, dbError)
 
-        // Report to Sentry if available
-        try {
-          const Sentry = await import('@sentry/nextjs')
-          Sentry.captureException(dbError, {
-            tags: { handler: 'void-payment-db-failure', paymentId, orderId },
-            extra: { recordNo, amount: Number(payment.totalAmount), method: payment.paymentMethod },
-          })
-        } catch {
-          // Sentry not available — already logged above
-        }
-
         // Bug 7: Still attempt tip chargeback even when DB update failed — the Datacap
         // void succeeded so the customer won't be charged. Best effort.
         if (Number(payment.tipAmount) > 0) {
@@ -494,6 +486,40 @@ export const POST = withVenue(async function POST(
         locationId: order.locationId,
       }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
     }
+
+    void (async () => {
+      try {
+        const cfdTerminalId = await resolvePairedCfdTerminalId(terminalId)
+        if (newOrderStatus === 'voided') {
+          dispatchCFDIdle(order.locationId, cfdTerminalId)
+          return
+        }
+
+        const fullOrder = await OrderRepository.getFullOrder(orderId, order.locationId)
+        if (!fullOrder) return
+
+        dispatchCFDOrderUpdated(order.locationId, {
+          orderId: fullOrder.id,
+          orderNumber: fullOrder.orderNumber,
+          items: fullOrder.items
+            .filter((item: any) => item.status === 'active')
+            .map((item: any) => ({
+              name: item.name,
+              quantity: item.quantity,
+              price: Number(item.itemTotal ?? item.price ?? 0),
+              modifiers: item.modifiers?.map((m: any) => m.name) ?? [],
+            })),
+          subtotal: Number(fullOrder.subtotal),
+          tax: Number(fullOrder.taxTotal),
+          total: Number(fullOrder.total),
+          discountTotal: Number(fullOrder.discountTotal),
+          taxFromInclusive: Number(fullOrder.taxFromInclusive ?? 0),
+          taxFromExclusive: Number(fullOrder.taxFromExclusive ?? 0),
+        })
+      } catch (caughtErr) {
+        console.error('[void-payment] CFD refresh failed:', caughtErr)
+      }
+    })()
 
     // Reverse tip allocations for this voided payment (fire-and-forget)
     // The chargeback policy (BUSINESS_ABSORBS vs EMPLOYEE_CHARGEBACK) is

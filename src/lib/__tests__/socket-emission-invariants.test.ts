@@ -80,6 +80,56 @@ describe('Payment mutations must emit payment events', () => {
     )).toBe(true)
   })
 
+  it('pay post-commit effects dispatch CFD receipt to the paired CFD terminal', () => {
+    expect(fileContains(
+      'src/lib/domain/payment/effects/run-payment-post-commit-effects.ts',
+      'resolvePairedCfdTerminalId',
+      'dispatchCFDReceiptSent',
+    )).toBe(true)
+  })
+
+  it('pay-all-splits dispatches CFD receipt to the paired CFD terminal', () => {
+    expect(fileContains(
+      'src/app/api/orders/[id]/pay-all-splits/route.ts',
+      'resolvePairedCfdTerminalId',
+      'dispatchCFDReceiptSent',
+    )).toBe(true)
+  })
+
+  it('split route refreshes the paired CFD for item-moving splits', () => {
+    expect(fileContains(
+      'src/app/api/orders/[id]/split/route.ts',
+      'resolvePairedCfdTerminalId',
+      'dispatchCFDShowOrder',
+    )).toBe(true)
+  })
+
+  it('merge route refreshes the CFD display and idles the paired terminal', () => {
+    expect(fileContains(
+      'src/app/api/orders/[id]/merge/route.ts',
+      'dispatchCFDOrderUpdated',
+      'resolvePairedCfdTerminalId',
+      'dispatchCFDIdle',
+    )).toBe(true)
+  })
+
+  it('transfer-items route refreshes both CFD orders and idles the paired terminal on source cancel', () => {
+    expect(fileContains(
+      'src/app/api/orders/[id]/transfer-items/route.ts',
+      'dispatchCFDOrderUpdated',
+      'resolvePairedCfdTerminalId',
+      'dispatchCFDIdle',
+    )).toBe(true)
+  })
+
+  it('void-tab route idles the paired CFD terminal when the tab is fully voided', () => {
+    expect(fileContains(
+      'src/app/api/orders/[id]/void-tab/route.ts',
+      'resolvePairedCfdTerminalId',
+      'dispatchCFDIdle',
+    )).toBe(true)
+  })
+
   it('void-payment emits dispatchPaymentProcessed with voided status', () => {
     expect(fileContains(
       'src/app/api/orders/[id]/void-payment/route.ts',
@@ -106,6 +156,15 @@ describe('Payment mutations must emit payment events', () => {
     expect(fileContains(
       'src/app/api/orders/[id]/void-payment/route.ts',
       'dispatchOpenOrdersChanged',
+    )).toBe(true)
+  })
+
+  it('void-payment refreshes or idles the paired CFD terminal', () => {
+    expect(fileContains(
+      'src/app/api/orders/[id]/void-payment/route.ts',
+      'resolvePairedCfdTerminalId',
+      'dispatchCFDOrderUpdated',
+      'dispatchCFDIdle',
     )).toBe(true)
   })
 
@@ -142,6 +201,22 @@ describe('Payment mutations must emit payment events', () => {
     expect(fileContains(
       'src/app/api/orders/[id]/refund-payment/route.ts',
       'dispatchOrderSummaryUpdated',
+    )).toBe(true)
+  })
+
+  it('refund-payment refreshes the CFD display', () => {
+    expect(fileContains(
+      'src/app/api/orders/[id]/refund-payment/route.ts',
+      'dispatchCFDOrderUpdated',
+    )).toBe(true)
+  })
+
+  it('retry-capture dispatches CFD completion events', () => {
+    expect(fileContains(
+      'src/app/api/orders/[id]/retry-capture/route.ts',
+      'resolvePairedCfdTerminalId',
+      'dispatchCFDReceiptSent',
+      'dispatchCFDIdle',
     )).toBe(true)
   })
 })
@@ -295,6 +370,35 @@ describe('Order mutations must emit order events', () => {
     expect(fileContains(
       'src/app/api/orders/[id]/close-tab/route.ts',
       'dispatchPaymentProcessed',
+    )).toBe(true)
+  })
+
+  it('close-tab dispatches CFD payment lifecycle events', () => {
+    expect(fileContains(
+      'src/app/api/orders/[id]/close-tab/route.ts',
+      'dispatchCFDPaymentStarted',
+      'dispatchCFDProcessing',
+      'dispatchCFDApproved',
+      'dispatchCFDDeclined',
+      'dispatchCFDReceiptSent',
+    )).toBe(true)
+  })
+
+  it('pre-auth start-tab route dispatches tab updates', () => {
+    expect(fileContains(
+      'src/app/api/orders/[id]/pre-auth/route.ts',
+      'dispatchTabUpdated',
+      'dispatchTabStatusUpdate',
+      'dispatchOpenOrdersChanged',
+    )).toBe(true)
+  })
+
+  it('cards route dispatches tab updates when adding another card', () => {
+    expect(fileContains(
+      'src/app/api/orders/[id]/cards/route.ts',
+      'dispatchTabUpdated',
+      'dispatchTabStatusUpdate',
+      'dispatchOpenOrdersChanged',
     )).toBe(true)
   })
 })

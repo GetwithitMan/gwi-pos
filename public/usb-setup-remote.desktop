@@ -1,8 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=GWI POS — Setup Remote Access
-Comment=Enable SSH for remote access
-Exec=bash -c 'pkexec bash -c "curl -fsSL https://ordercontrolcenter.com/setup-remote.sh | bash" || xterm -e "sudo bash -c \"curl -fsSL https://ordercontrolcenter.com/setup-remote.sh | bash\"; read -p Press_Enter"'
-Icon=preferences-desktop-remote-desktop
-Terminal=true
-Categories=System;

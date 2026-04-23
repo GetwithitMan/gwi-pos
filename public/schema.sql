@@ -170,6 +170,12 @@ CREATE TYPE "TipTransactionSourceType" AS ENUM ('CARD', 'CASH', 'ADJUSTMENT');
 CREATE TYPE "EntertainmentWaitlistStatus" AS ENUM ('waiting', 'notified', 'seated', 'cancelled', 'expired');
 
 -- CreateEnum
+CREATE TYPE "EntertainmentSessionState" AS ENUM ('pre_start', 'running', 'overtime', 'stopped', 'voided', 'comped', 'cancelled');
+
+-- CreateEnum
+CREATE TYPE "EntertainmentSessionEventType" AS ENUM ('created', 'started', 'extended', 'overtime_entered', 'stopped', 'voided', 'comped', 'cancelled', 'transferred', 'price_updated', 'resource_assigned', 'waitlist_notified');
+
+-- CreateEnum
 CREATE TYPE "TimedSessionStatus" AS ENUM ('active', 'paused', 'completed', 'cancelled');
 
 -- CreateEnum
@@ -984,6 +990,75 @@ CREATE TABLE "EntertainmentWaitlist" (
     "syncedAt" TIMESTAMP(3),
 
     CONSTRAINT "EntertainmentWaitlist_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "EntertainmentSession" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "orderItemId" TEXT NOT NULL,
+    "orderId" TEXT NOT NULL,
+    "resourceId" TEXT NOT NULL,
+    "sessionState" "EntertainmentSessionState" NOT NULL DEFAULT 'pre_start',
+    "version" INTEGER NOT NULL DEFAULT 1,
+    "scheduledMinutes" INTEGER,
+    "startedAt" TIMESTAMP(3),
+    "bookedEndAt" TIMESTAMP(3),
+    "stoppedAt" TIMESTAMP(3),
+    "overtimeStartedAt" TIMESTAMP(3),
+    "lastExtendedAt" TIMESTAMP(3),
+    "totalExtendedMinutes" INTEGER NOT NULL DEFAULT 0,
+    "pricingSnapshot" JSONB,
+    "finalPriceCents" INTEGER,
+    "finalPriceDollars" DECIMAL(10,2),
+    "createdBy" TEXT,
+    "stoppedBy" TEXT,
+    "stopReason" TEXT,
+    "sourceTerminalId" TEXT,
+    "lastMutatedBy" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "deletedAt" TIMESTAMP(3),
+    "syncedAt" TIMESTAMP(3),
+
+    CONSTRAINT "EntertainmentSession_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "EntertainmentSessionEvent" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "sessionId" TEXT NOT NULL,
+    "eventType" "EntertainmentSessionEventType" NOT NULL,
+    "payload" JSONB,
+    "actorId" TEXT,
+    "idempotencyKey" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "EntertainmentSessionEvent_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "EntertainmentResource" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "resourceType" TEXT NOT NULL,
+    "capacity" INTEGER NOT NULL DEFAULT 1,
+    "sortOrder" INTEGER NOT NULL DEFAULT 0,
+    "status" TEXT NOT NULL DEFAULT 'available',
+    "linkedMenuItemId" TEXT,
+    "linkedFloorPlanElementId" TEXT,
+    "activeSessionId" TEXT,
+    "isBookable" BOOLEAN NOT NULL DEFAULT true,
+    "defaultPricingPolicyId" TEXT,
+    "lastMutatedBy" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "deletedAt" TIMESTAMP(3),
+    "syncedAt" TIMESTAMP(3),
+
+    CONSTRAINT "EntertainmentResource_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -5809,6 +5884,51 @@ CREATE INDEX "EntertainmentWaitlist_visualType_idx" ON "EntertainmentWaitlist"("
 CREATE INDEX "EntertainmentWaitlist_status_idx" ON "EntertainmentWaitlist"("status");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "EntertainmentSession_orderItemId_key" ON "EntertainmentSession"("orderItemId");
+
+-- CreateIndex
+CREATE INDEX "EntertainmentSession_locationId_idx" ON "EntertainmentSession"("locationId");
+
+-- CreateIndex
+CREATE INDEX "EntertainmentSession_orderId_idx" ON "EntertainmentSession"("orderId");
+
+-- CreateIndex
+CREATE INDEX "EntertainmentSession_resourceId_idx" ON "EntertainmentSession"("resourceId");
+
+-- CreateIndex
+CREATE INDEX "EntertainmentSession_sessionState_idx" ON "EntertainmentSession"("sessionState");
+
+-- CreateIndex
+CREATE INDEX "EntertainmentSession_locationId_sessionState_idx" ON "EntertainmentSession"("locationId", "sessionState");
+
+-- CreateIndex
+CREATE INDEX "EntertainmentSessionEvent_sessionId_idx" ON "EntertainmentSessionEvent"("sessionId");
+
+-- CreateIndex
+CREATE INDEX "EntertainmentSessionEvent_locationId_createdAt_idx" ON "EntertainmentSessionEvent"("locationId", "createdAt");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "EntertainmentSessionEvent_sessionId_idempotencyKey_key" ON "EntertainmentSessionEvent"("sessionId", "idempotencyKey");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "EntertainmentResource_activeSessionId_key" ON "EntertainmentResource"("activeSessionId");
+
+-- CreateIndex
+CREATE INDEX "EntertainmentResource_locationId_idx" ON "EntertainmentResource"("locationId");
+
+-- CreateIndex
+CREATE INDEX "EntertainmentResource_linkedMenuItemId_idx" ON "EntertainmentResource"("linkedMenuItemId");
+
+-- CreateIndex
+CREATE INDEX "EntertainmentResource_linkedFloorPlanElementId_idx" ON "EntertainmentResource"("linkedFloorPlanElementId");
+
+-- CreateIndex
+CREATE INDEX "EntertainmentResource_status_idx" ON "EntertainmentResource"("status");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "EntertainmentResource_locationId_name_key" ON "EntertainmentResource"("locationId", "name");
+
+-- CreateIndex
 CREATE INDEX "OrderType_locationId_idx" ON "OrderType"("locationId");
 
 -- CreateIndex
@@ -8222,6 +8342,24 @@ ALTER TABLE "EntertainmentWaitlist" ADD CONSTRAINT "EntertainmentWaitlist_elemen
 
 -- AddForeignKey
 ALTER TABLE "EntertainmentWaitlist" ADD CONSTRAINT "EntertainmentWaitlist_tableId_fkey" FOREIGN KEY ("tableId") REFERENCES "Table"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "EntertainmentSession" ADD CONSTRAINT "EntertainmentSession_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "EntertainmentSession" ADD CONSTRAINT "EntertainmentSession_orderItemId_fkey" FOREIGN KEY ("orderItemId") REFERENCES "OrderItem"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "EntertainmentSession" ADD CONSTRAINT "EntertainmentSession_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "Order"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "EntertainmentSessionEvent" ADD CONSTRAINT "EntertainmentSessionEvent_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "EntertainmentSessionEvent" ADD CONSTRAINT "EntertainmentSessionEvent_sessionId_fkey" FOREIGN KEY ("sessionId") REFERENCES "EntertainmentSession"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "EntertainmentResource" ADD CONSTRAINT "EntertainmentResource_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "OrderType" ADD CONSTRAINT "OrderType_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

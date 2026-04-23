@@ -8,10 +8,13 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { calculateOrderTotals } from '@/lib/order-calculations'
 import type { OrderItemForCalculation } from '@/lib/order-calculations'
 import { dispatchOpenOrdersChanged, dispatchOrderUpdated } from '@/lib/socket-dispatch'
+import { dispatchCFDOrderUpdated } from '@/lib/socket-dispatch/cfd-dispatch'
+import { dispatchCFDIdle } from '@/lib/socket-dispatch/cfd-dispatch'
 import { roundToCents } from '@/lib/pricing'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
 import { getRequestLocationId } from '@/lib/request-context'
+import { resolvePairedCfdTerminalId } from '@/lib/cfd-terminal'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 import { err, notFound, ok } from '@/lib/api-response'
@@ -303,6 +306,12 @@ export const POST = withVenue(async function POST(
       }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.transfer-items'))
     }
 
+    if (sourceWasCancelled) {
+      const terminalId = request.headers.get('x-terminal-id')
+      const cfdTerminalId = await resolvePairedCfdTerminalId(terminalId || null)
+      dispatchCFDIdle(fromOrder.locationId, cfdTerminalId)
+    }
+
     // Event emission: items removed from source order
     const sourceItemEvents = itemIds.map((lineItemId: string) => ({
       type: 'ITEM_REMOVED' as const,
@@ -345,6 +354,59 @@ export const POST = withVenue(async function POST(
     }
 
     pushUpstream()
+
+    const updatedSourceOrder = await OrderRepository.getOrderByIdWithInclude(fromOrderId, fromOrder.locationId, {
+      items: { include: { modifiers: true } },
+      discounts: true,
+    })
+    const updatedDestOrder = await OrderRepository.getOrderByIdWithInclude(toOrderId, fromOrder.locationId, {
+      items: { include: { modifiers: true } },
+      discounts: true,
+    })
+
+    if (updatedSourceOrder) {
+      dispatchCFDOrderUpdated(fromOrder.locationId, {
+        orderId: updatedSourceOrder.id,
+        orderNumber: updatedSourceOrder.orderNumber,
+        items: updatedSourceOrder.items
+          .filter(i => i.status === 'active')
+          .map(i => ({
+            name: i.name,
+            quantity: i.quantity,
+            price: Number(i.itemTotal),
+            modifiers: i.modifiers.map(m => m.name),
+            status: i.status,
+          })),
+        subtotal: Number(updatedSourceOrder.subtotal),
+        tax: Number(updatedSourceOrder.taxTotal),
+        total: Number(updatedSourceOrder.total),
+        discountTotal: Number(updatedSourceOrder.discountTotal),
+        taxFromInclusive: Number(updatedSourceOrder.taxFromInclusive ?? 0),
+        taxFromExclusive: Number(updatedSourceOrder.taxFromExclusive ?? 0),
+      })
+    }
+
+    if (updatedDestOrder) {
+      dispatchCFDOrderUpdated(fromOrder.locationId, {
+        orderId: updatedDestOrder.id,
+        orderNumber: updatedDestOrder.orderNumber,
+        items: updatedDestOrder.items
+          .filter(i => i.status === 'active')
+          .map(i => ({
+            name: i.name,
+            quantity: i.quantity,
+            price: Number(i.itemTotal),
+            modifiers: i.modifiers.map(m => m.name),
+            status: i.status,
+          })),
+        subtotal: Number(updatedDestOrder.subtotal),
+        tax: Number(updatedDestOrder.taxTotal),
+        total: Number(updatedDestOrder.total),
+        discountTotal: Number(updatedDestOrder.discountTotal),
+        taxFromInclusive: Number(updatedDestOrder.taxFromInclusive ?? 0),
+        taxFromExclusive: Number(updatedDestOrder.taxFromExclusive ?? 0),
+      })
+    }
 
     return ok({
       success: true,

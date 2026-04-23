@@ -2,75 +2,7 @@ import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { err, ok } from '@/lib/api-response'
-
-/**
- * Resolve allowed reasons/discounts for an employee.
- *
- * Logic:
- * 1. Get employee's role name
- * 2. Get role-level "allow" rules for that role name
- * 3. Add employee-level "allow" rules
- * 4. Subtract employee-level "deny" rules
- * 5. If NO role rules exist at all for this reasonType, return ALL active reasons (backward compat)
- */
- 
-export async function resolveAllowedReasonIds(
-  locationId: string,
-  employeeId: string,
-  reasonType: 'void_reason' | 'comp_reason' | 'discount'
-): Promise<{ ids: string[]; hasRules: boolean }> {
-  // Get employee's role name
-  const employee = await db.employee.findUnique({
-    where: { id: employeeId },
-    select: { roleId: true, role: { select: { name: true } } },
-  })
-
-  if (!employee) {
-    return { ids: [], hasRules: false }
-  }
-
-  const roleName = employee.role.name.toLowerCase()
-
-  // Get all access rules for this location + reasonType
-  const allRules = await db.reasonAccess.findMany({
-    where: { locationId, reasonType },
-  })
-
-  // If no rules exist at all for this reasonType, return empty with hasRules=false
-  // (caller should return all active reasons for backward compat)
-  if (allRules.length === 0) {
-    return { ids: [], hasRules: false }
-  }
-
-  // Role-level allows (matched by role name, case-insensitive)
-  const roleAllows = new Set(
-    allRules
-      .filter(r => r.subjectType === 'role' && r.subjectId.toLowerCase() === roleName && r.accessType === 'allow')
-      .map(r => r.reasonId)
-  )
-
-  // Employee-level allows
-  const empAllows = new Set(
-    allRules
-      .filter(r => r.subjectType === 'employee' && r.subjectId === employeeId && r.accessType === 'allow')
-      .map(r => r.reasonId)
-  )
-
-  // Employee-level denies
-  const empDenies = new Set(
-    allRules
-      .filter(r => r.subjectType === 'employee' && r.subjectId === employeeId && r.accessType === 'deny')
-      .map(r => r.reasonId)
-  )
-
-  // Merge: role allows + employee allows - employee denies
-  const merged = new Set([...roleAllows, ...empAllows])
-  for (const id of empDenies) {
-    merged.delete(id)
-  }
-
-  return { ids: Array.from(merged), hasRules: true }
-}
+import { resolveAllowedReasonIds } from '@/lib/settings/reason-access'
 
 // GET ?employeeId=X&reasonType=void_reason|comp_reason|discount
 export const GET = withVenue(async function GET(request: NextRequest) {

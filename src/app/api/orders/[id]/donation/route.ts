@@ -7,6 +7,7 @@ import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate, dispatchOrderSummaryUpdated } from '@/lib/socket-dispatch'
+import { dispatchCFDOrderUpdated } from '@/lib/socket-dispatch/cfd-dispatch'
 import { createChildLogger } from '@/lib/logger'
 import { err, notFound, ok } from '@/lib/api-response'
 const log = createChildLogger('orders-donation')
@@ -138,6 +139,52 @@ export const POST = withVenue(async function POST(
       updatedAt: new Date().toISOString(),
       locationId: order.locationId,
     }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
+
+    const cfdOrder = await db.order.findUnique({
+      where: { id: orderId },
+      select: {
+        id: true,
+        orderNumber: true,
+        subtotal: true,
+        taxTotal: true,
+        discountTotal: true,
+        taxFromInclusive: true,
+        taxFromExclusive: true,
+        total: true,
+        items: {
+          where: { deletedAt: null, status: 'active' },
+          select: {
+            name: true,
+            quantity: true,
+            itemTotal: true,
+            status: true,
+            modifiers: {
+              where: { deletedAt: null },
+              select: { name: true },
+            },
+          },
+        },
+      },
+    })
+    if (cfdOrder) {
+      dispatchCFDOrderUpdated(order.locationId, {
+        orderId: cfdOrder.id,
+        orderNumber: cfdOrder.orderNumber,
+        items: cfdOrder.items.map(i => ({
+          name: i.name,
+          quantity: i.quantity,
+          price: Number(i.itemTotal),
+          modifiers: i.modifiers.map(m => m.name),
+          status: i.status,
+        })),
+        subtotal: Number(cfdOrder.subtotal),
+        tax: Number(cfdOrder.taxTotal),
+        total: Number(cfdOrder.total),
+        discountTotal: Number(cfdOrder.discountTotal),
+        taxFromInclusive: Number(cfdOrder.taxFromInclusive ?? 0),
+        taxFromExclusive: Number(cfdOrder.taxFromExclusive ?? 0),
+      })
+    }
 
     // Sync
     pushUpstream()
@@ -283,6 +330,52 @@ export const DELETE = withVenue(async function DELETE(
       updatedAt: new Date().toISOString(),
       locationId: order.locationId,
     }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
+
+    const cfdDeletedOrder = await db.order.findUnique({
+      where: { id: orderId },
+      select: {
+        id: true,
+        orderNumber: true,
+        subtotal: true,
+        taxTotal: true,
+        discountTotal: true,
+        taxFromInclusive: true,
+        taxFromExclusive: true,
+        total: true,
+        items: {
+          where: { deletedAt: null, status: 'active' },
+          select: {
+            name: true,
+            quantity: true,
+            itemTotal: true,
+            status: true,
+            modifiers: {
+              where: { deletedAt: null },
+              select: { name: true },
+            },
+          },
+        },
+      },
+    })
+    if (cfdDeletedOrder) {
+      dispatchCFDOrderUpdated(order.locationId, {
+        orderId: cfdDeletedOrder.id,
+        orderNumber: cfdDeletedOrder.orderNumber,
+        items: cfdDeletedOrder.items.map(i => ({
+          name: i.name,
+          quantity: i.quantity,
+          price: Number(i.itemTotal),
+          modifiers: i.modifiers.map(m => m.name),
+          status: i.status,
+        })),
+        subtotal: Number(cfdDeletedOrder.subtotal),
+        tax: Number(cfdDeletedOrder.taxTotal),
+        total: Number(cfdDeletedOrder.total),
+        discountTotal: Number(cfdDeletedOrder.discountTotal),
+        taxFromInclusive: Number(cfdDeletedOrder.taxFromInclusive ?? 0),
+        taxFromExclusive: Number(cfdDeletedOrder.taxFromExclusive ?? 0),
+      })
+    }
 
     // Sync
     pushUpstream()

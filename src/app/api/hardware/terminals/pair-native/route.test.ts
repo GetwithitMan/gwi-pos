@@ -11,6 +11,7 @@ const mockDb = vi.hoisted(() => ({
     count: vi.fn(),
     update: vi.fn(),
   },
+  $executeRaw: vi.fn(() => Promise.resolve()),
 }))
 
 const mockCheckDeviceLimit = vi.hoisted(() => vi.fn())

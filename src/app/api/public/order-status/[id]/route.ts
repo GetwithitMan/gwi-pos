@@ -7,28 +7,10 @@
  * Cache-Control: private, no-store (user-specific data).
  */
 
-import crypto from 'crypto'
 import { NextRequest } from 'next/server'
 import { getDbForVenue } from '@/lib/db'
 import { err, forbidden, notFound, ok } from '@/lib/api-response'
-
-// ── Token Helpers (exported for checkout route) ──────────────────────────────
-
-function getOrderViewSecret(): string {
-  const secret = process.env.ORDER_VIEW_SECRET || process.env.PROVISION_API_KEY
-  if (!secret) throw new Error('ORDER_VIEW_SECRET or PROVISION_API_KEY required')
-  return secret
-}
-
-export function generateOrderViewToken(orderId: string): string {
-  return crypto.createHmac('sha256', getOrderViewSecret()).update(orderId).digest('hex')
-}
-
-function verifyOrderViewToken(orderId: string, token: string): boolean {
-  const expected = generateOrderViewToken(orderId)
-  if (expected.length !== token.length) return false
-  return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(token))
-}
+import { verifyOrderViewToken } from '@/lib/public-order-status'
 
 // ── Status Mapping ───────────────────────────────────────────────────────────
 

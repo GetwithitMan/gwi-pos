@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ToastContainer } from "@/components/ui/ToastContainer";
 import { ErrorBoundary } from "@/lib/error-boundary";
@@ -16,16 +15,6 @@ import { ManagerAlertListener } from "@/components/ManagerAlertListener";
 import { StockChangeListener } from "@/components/StockChangeListener";
 import { ManagerPinProvider } from "@/components/providers/ManagerPinProvider";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
-
 export const metadata: Metadata = {
   title: "GWI POS",
   description: "Point of Sale System",
@@ -39,9 +28,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
+      <body className="antialiased">
         <ErrorBoundary>
           <ManagerPinProvider>
             {children}
@@ -55,7 +42,6 @@ export default function RootLayout({
         <StockChangeListener />
         <IdleTimerProvider />
         <ServiceWorkerRegistration />
-        {/* OfflineDisconnectBanner removed — was blocking UI and showing false positives on cloud access */}
         <FailoverBanner />
         <OutageBanner />
         <CellularModeBanner />

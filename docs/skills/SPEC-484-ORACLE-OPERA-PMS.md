@@ -275,4 +275,3 @@ interface HotelPmsSettings {
 - `docs/planning/ORACLE-PMS-HARDENING.md` — Full security hardening sprint (P0.1–P0.7, P1.1–P1.3, Go-Live Checklist)
 - `docs/features/payments.md` — Payment method registry
 - `docs/guides/PAYMENTS-RULES.md` — Payment rules (Datacap-only processor; room_charge bypasses Datacap)
-- `docs/skills/SPEC-57-HOTEL-PMS.md` — Original planning spec (superseded by this implementation)

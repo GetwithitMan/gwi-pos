@@ -20,7 +20,7 @@ import { dispatchFailoverActive, dispatchFailoverResolved } from '@/lib/socket-d
 import { getLocalLeaseExpiry } from '@/lib/ha-lease-state'
 import { getDownstreamSyncMetrics } from '@/lib/sync/downstream-sync-worker'
 import { getUpstreamSyncMetrics, isInOutageMode } from '@/lib/sync/upstream-sync-worker'
-import { getUpdateAgentStatus } from '@/lib/update-agent'
+import { getUpdateAgentStatus } from '@/lib/update-status'
 import { getSchemaVerificationResult, isSchemaVerified } from '@/lib/schema-verify'
 import { getReadinessState, type ReadinessLevel } from '@/lib/readiness'
 import { APP_VERSION } from '@/lib/version-contract'

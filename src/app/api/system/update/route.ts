@@ -9,9 +9,10 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { executeUpdate, getUpdateAgentStatus, reportDeployHealth } from '@/lib/update-agent'
 import { createChildLogger } from '@/lib/logger'
 import { err, ok } from '@/lib/api-response'
+import { spawn } from 'child_process'
+import { getUpdateAgentStatus } from '@/lib/update-status'
 const log = createChildLogger('system-update')
 
 export const dynamic = 'force-dynamic'
@@ -51,19 +52,17 @@ export async function POST(req: NextRequest) {
     }, { status: 409 })
   }
 
-  // Fire-and-forget: start update in background, return immediately
-  void executeUpdate(targetVersion).then(async (result) => {
-    if (result.success) {
-      console.log(`[UpdateAgent] Update succeeded: ${result.previousVersion} → ${result.targetVersion} (${result.durationMs}ms)`)
-    } else {
-      console.error(`[UpdateAgent] Update failed: ${result.error}`)
-    }
-
-    // Report result back to MC deploy-health endpoint
-    try {
-      await reportDeployHealth(result)
-    } catch {}
-  }).catch(err => log.warn({ err }, 'Background task failed'))
+  // Fire-and-forget: start update in a detached runner process, return immediately
+  const tsxBinary = process.platform === 'win32'
+    ? `${process.cwd()}/node_modules/.bin/tsx.cmd`
+    : `${process.cwd()}/node_modules/.bin/tsx`
+  const runnerPath = `${process.cwd()}/scripts/update-agent-runner.ts`
+  const child = spawn(tsxBinary, [runnerPath, targetVersion], {
+    detached: true,
+    stdio: 'ignore',
+    env: process.env,
+  })
+  child.unref()
 
   return ok({
     success: true,
