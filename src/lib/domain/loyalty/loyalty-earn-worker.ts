@@ -24,8 +24,47 @@ import crypto from 'crypto'
 import { Prisma } from '@/generated/prisma/client'
 import { db } from '@/lib/db'
 import { createChildLogger } from '@/lib/logger'
+import { dispatchLoyaltyEarnDeadLetter } from '@/lib/socket-dispatch/misc-dispatch'
 
 const log = createChildLogger('loyalty-earn-worker')
+
+/**
+ * Emit dead-letter observability signals (T9 — folded into worker per
+ * team-lead decision). Mirrors the inventory:deduction-failed pattern in
+ * `src/lib/deduction-processor.ts`.
+ *
+ * Fire-and-forget — observability MUST NOT block payment flow or worker
+ * progress. Logs at error level + emits a critical socket event so admin
+ * dashboards can alert. Each call corresponds to exactly one transition
+ * of an outbox row into the `dead` status — the worker only reaches the
+ * dead branch once per row (status=dead is terminal in the SQL claim
+ * predicate), so no de-dup flag is required.
+ */
+function emitDeadLetterAlert(params: {
+  locationId: string
+  orderId: string
+  customerId: string
+  attempts: number
+  lastError: string
+}): void {
+  log.error(
+    {
+      event: 'loyalty.earn_dead_letter',
+      locationId: params.locationId,
+      orderId: params.orderId,
+      customerId: params.customerId,
+      attempts: params.attempts,
+      lastError: params.lastError,
+    },
+    '[LOYALTY] CRITICAL: Earn dead-lettered — points NOT credited. Manual adjustment required.'
+  )
+  void dispatchLoyaltyEarnDeadLetter(params.locationId, {
+    orderId: params.orderId,
+    customerId: params.customerId,
+    attempts: params.attempts,
+    lastError: params.lastError,
+  }).catch((err) => log.warn({ err }, 'fire-and-forget loyalty:earn_dead_letter dispatch failed'))
+}
 
 interface ClaimedEarn {
   id: string
@@ -212,6 +251,14 @@ export async function processNextLoyaltyEarn(): Promise<{
           succeededAt: new Date(),
         },
       }).catch(err => log.warn({ err }, 'Failed to mark outbox row dead'))
+      // T9 alert: dead-letter (terminal — customer gone).
+      emitDeadLetterAlert({
+        locationId: job.locationId,
+        orderId: job.orderId,
+        customerId: job.customerId,
+        attempts: job.attempts,
+        lastError: 'customer_not_found',
+      })
       return { processed: true, orderId: job.orderId, success: false }
     }
 
@@ -229,10 +276,14 @@ export async function processNextLoyaltyEarn(): Promise<{
     }).catch(err => log.warn({ err }, 'Failed to update outbox row status after error'))
 
     if (isDead) {
-      log.error(
-        { orderId: job.orderId, customerId: job.customerId, errorMessage },
-        '[LOYALTY] CRITICAL: Earn dead-lettered — points NOT credited. Manual adjustment required.'
-      )
+      // T9 alert: dead-letter (retry exhausted).
+      emitDeadLetterAlert({
+        locationId: job.locationId,
+        orderId: job.orderId,
+        customerId: job.customerId,
+        attempts: job.attempts,
+        lastError: errorMessage,
+      })
     } else {
       log.warn({ orderId: job.orderId, attempt: job.attempts, errorMessage }, 'Loyalty earn failed, will retry')
     }
