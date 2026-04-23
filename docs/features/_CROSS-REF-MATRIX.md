@@ -231,10 +231,21 @@ This matrix answers: "If I change feature X, what else might break?"
 | | |
 |---|---|
 | **Depends On** | Settings (customer features enabled), Roles (customer read/write permissions) |
-| **Depended On By** | Orders (customer assigned to order), Events (customer tickets), Payments (house accounts) |
-| **Shared Models** | `Customer`, `CustomerNote`, `LoyaltyPoints` |
+| **Depended On By** | Orders (customer assigned to order), Events (customer tickets), Payments (house accounts), Loyalty Rewards (customer is the ledger subject) |
+| **Shared Models** | `Customer`, `CustomerNote`, `LoyaltyTransaction` (ledger rows reference `customerId`) |
 | **Shared Socket Events** | None |
-| **Critical Rules** | Customer data is PII — handle with care. Loyalty points require LOYALTY_POINTS permission. |
+| **Critical Rules** | Customer data is PII — handle with care. Loyalty points require LOYALTY_POINTS permission. Direct writes to `Customer.loyaltyPoints`/`lifetimePoints` outside the canonical loyalty engine are forbidden — see `loyalty.md`. |
+
+---
+
+### Loyalty Rewards
+| | |
+|---|---|
+| **Depends On** | Customers (subject of earn/redeem), Orders (earn is per-order), Payments (commit triggers earn; void/refund trigger reversal), Refund/Void (reversal path), Settings (`LoyaltySettings` + `LoyaltyProgram`/`LoyaltyTier` rows), Online Ordering (online checkout earns through canonical engine), CFD (reads loyalty snapshot for display) |
+| **Depended On By** | Customers (updates `loyaltyPoints`/`lifetimePoints`/`loyaltyTierId`), Reports (loyalty transaction reports), CFD (balance + tier display), Customer Portal (rewards balance + redeem) |
+| **Shared Models** | `LoyaltyProgram`, `LoyaltyTier`, `LoyaltyTransaction`, `Customer.loyaltyPoints`, `Customer.lifetimePoints`, `Customer.loyaltyProgramId`, `Customer.loyaltyTierId` |
+| **Shared Socket Events** | `order:summary-updated` (carries `loyaltyPointsEarned`), `cfd:show-order` (carries loyalty snapshot). No dedicated `loyalty:*` events today. |
+| **Critical Rules** | Exactly ONE persisted `LoyaltyTransaction(type='earn')` per order lifecycle — enforced by partial unique index `(orderId) WHERE type='earn'`. `customerId` MUST be re-read from the `FOR UPDATE`-locked Order row inside the payment commit transaction, never from an in-memory snapshot. Post-commit earn write is driven by a durable outbox — never fire-and-forget. Void/refund reverses exactly one earn (idempotent). Online checkout uses the same canonical engine — no flat fallback. Direct writes to `Customer.loyaltyPoints`/`lifetimePoints` outside the engine + outbox are FORBIDDEN. Points-as-tender (`payment-methods/loyalty.ts`) is RESERVED/DEPRECATED — no new callers. |
 
 ---
 
@@ -802,4 +813,4 @@ When one of these changes, the entire cluster often needs review:
 
 ---
 
-*Last updated: 2026-04-18 (Android Update System entry added — engineering-complete, 3/4 apps canary-validated)*
+*Last updated: 2026-04-23 (Loyalty Rewards entry added — spec for Loyalty Rewards Cleanup workstream; Customers entry expanded to reflect canonical engine ownership)*
