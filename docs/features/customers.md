@@ -148,12 +148,21 @@ HouseAccountTransaction {
 3. Validates charge doesn't exceed credit limit (UI warning if it does)
 4. Charge creates HouseAccountTransaction with balance tracking
 
-### VIP Tier System
+### VIP Tier System (display/perks)
 | Tier | Threshold |
 |------|-----------|
 | Silver | $500+ totalSpent |
 | Gold | $2,000+ totalSpent |
 | Platinum | $5,000+ totalSpent |
+
+**This is the VIP tier — separate from the Loyalty Tier.** Two tier systems coexist on `Customer` and solve different problems:
+
+| System | Field | Driven by | Drives |
+|--------|-------|-----------|--------|
+| **VIP tier** (this section) | derived from `Customer.totalSpent` (dollars) | lifetime spend in dollars | display badges, perks, recognition; does NOT affect loyalty earn math |
+| **Loyalty tier** (see `docs/features/loyalty.md`) | `Customer.loyaltyTierId` → `LoyaltyTier.minimumPoints` | lifetime loyalty points | earn-rate multipliers, redemption tiers; does NOT affect VIP display |
+
+A customer can be Gold-VIP without being a high Loyalty tier (e.g. high-spend non-enrolled), and vice versa. Do not collapse these into one system without a product decision.
 
 ### Aging Report Buckets
 | Bucket | Days Overdue |
