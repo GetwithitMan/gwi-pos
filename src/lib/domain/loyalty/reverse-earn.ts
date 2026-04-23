@@ -42,6 +42,10 @@
 
 import crypto from 'crypto'
 import { db as defaultDb } from '@/lib/db'
+import { emitCfdLoyaltyRefresh } from './emit-cfd-loyalty-refresh'
+import { createChildLogger } from '@/lib/logger'
+
+const reverseEarnLog = createChildLogger('reverse-earn')
 
 export type ReverseSource = 'void' | 'refund' | 'comp-void'
 
@@ -299,6 +303,21 @@ export async function reverseEarnForOrder(
       tierDemoted = { from: currentTierName, to: targetTierName }
     }
   }
+
+  // T11 — fire-and-forget CFD refresh so the customer-facing display reflects
+  // the reversed balance (and any tier demotion) within ~100ms. The reversal
+  // already wrote to Customer; CFD events fired earlier in the void/refund
+  // flow saw the pre-reversal totals.
+  void emitCfdLoyaltyRefresh({
+    customerId: earn.customerId,
+    locationId,
+    orderId,
+  }).catch((err) =>
+    reverseEarnLog.warn(
+      { err, orderId, customerId: earn.customerId },
+      'CFD loyalty refresh failed after reversal (non-fatal)',
+    ),
+  )
 
   return {
     reversed: true,

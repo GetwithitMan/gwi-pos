@@ -440,3 +440,34 @@ export function dispatchCFDOrderUpdated(locationId: string, data: {
     }
   })()
 }
+
+/**
+ * Dispatch CFD loyalty-balance-updated event (T11 — loyalty cleanup)
+ *
+ * Fired after an async loyalty balance write (earn, reversal, admin adjust,
+ * redeem) when there is NO active order to piggy-back a dispatchCFDOrderUpdated
+ * onto. The CFD uses this to refresh its displayed points/tier/lifetime totals
+ * without waiting for the next full order snapshot.
+ *
+ * Payload carries only loyalty fields — no order data — because it is emitted
+ * post-receipt / post-admin-action and the CFD may be on the idle screen.
+ *
+ * Broadcasts to location (all CFDs filter by customerId).
+ *
+ * FOLLOW-UP (tracked separately): the gwi-cfd Android app does NOT yet listen
+ * for `cfd:loyalty-balance-updated`. A matching client-side handler must be
+ * added in the gwi-cfd repo before this event has any effect on physical
+ * A3700 terminals. This PR establishes the server-side emit only.
+ */
+export function dispatchCFDLoyaltyBalanceUpdated(locationId: string, data: {
+  customerId: string
+  loyaltyPoints: number
+  lifetimePoints: number
+  tier: string | null
+  firstName: string
+  lastName: string | null
+}): void {
+  void emitToLocation(locationId, CFD_EVENTS.LOYALTY_BALANCE_UPDATED, data).catch((err) =>
+    log.error({ err, locationId, customerId: data.customerId }, 'CFD loyalty-balance-updated dispatch failed'),
+  )
+}
