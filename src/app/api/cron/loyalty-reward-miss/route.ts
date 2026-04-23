@@ -34,9 +34,13 @@ export async function GET(request: NextRequest) {
     const results = await scanRewardMisses(venueDb)
     const totalCount = results.reduce((acc, r) => acc + r.count, 0)
     const enabledLocations = results.filter((r) => r.enabled).length
+    // Surface the cap-exceeded signal in the cron response so MC/dashboards
+    // can flag a venue whose true count is partially-sampled (PR #272 fix).
+    const capExceeded = results.some((r) => r.capExceeded)
     allResults[slug] = {
       enabledLocations,
       totalMisses: totalCount,
+      capExceeded,
       perLocation: results,
     }
   }, { label: 'cron:loyalty-reward-miss' })
