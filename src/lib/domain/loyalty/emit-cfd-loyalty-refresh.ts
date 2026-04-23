@@ -19,8 +19,12 @@
  * Contract:
  *   • NEVER throws — all failures are swallowed via `.catch(log.warn)`.
  *   • NEVER blocks the write path — callers `void emitCfdLoyaltyRefresh(...)`.
- *   • Rate-limited per customerId (10/sec) so a worker draining a large
- *     backlog does not fan out 1000 socket events.
+ *   • Per-customer trailing-edge debounce: high-frequency callers (worker
+ *     draining a backlog, rapid back-to-back adjustments) are coalesced into
+ *     at most ~10 emits/sec — but the FINAL state is ALWAYS emitted. We never
+ *     silently drop an update; if a call exceeds the budget we schedule a
+ *     trailing emit that re-fetches the customer at the window boundary so
+ *     it carries the latest DB state.
  *   • When `orderId` belongs to an active (non-terminal) order, emits
  *     `dispatchCFDOrderUpdated` so the current CFD order view gets the
  *     fresh points. Otherwise emits `dispatchCFDLoyaltyBalanceUpdated`.
@@ -59,72 +63,84 @@ export interface EmitCfdLoyaltyRefreshParams {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Rate limiter — coalesce >10 refreshes/sec for the same customerId.
+// Trailing-edge coalescer — keep emit rate at ≤RATE_LIMIT_MAX_CALLS per
+// RATE_LIMIT_WINDOW_MS for any one customer WITHOUT silently dropping
+// updates. The latest state always wins:
 //
-// Simple sliding-window counter in-memory. The worst-case cost of a miss
-// (firing a duplicate event) is one extra socket emit; the benefit is not
-// swamping every CFD in the venue when the worker drains a backlog of 500
-// pending earns for one customer (e.g. after a long outage replay).
+//   • Under budget → emit immediately, record timestamp.
+//   • Over budget → store the latest pending params; if no timer is yet
+//     scheduled for this customer, schedule one to fire at the moment the
+//     window slides open. When it fires, the deferred emit re-queries the
+//     customer (so it sees whatever the FINAL DB state is at that instant)
+//     and dispatches normally.
+//
+// Why re-fetching is safe: every dispatch path inside `_runEmit` does its
+// own `db.customer.findFirst`, so a deferred emit naturally carries the
+// latest snapshot. The only thing the coalescer caches is the last-known
+// `(locationId, orderId)` tuple — these are stable for a given order and
+// don't go stale within a 100ms window.
 // ──────────────────────────────────────────────────────────────────────────
 
 const RATE_LIMIT_WINDOW_MS = 1000
 const RATE_LIMIT_MAX_CALLS = 10
-const rateLimitBuckets = new Map<string, number[]>()
 
-/**
- * Returns true if the call should proceed; false if it should be coalesced.
- * Exported for the test suite.
- */
-export function _shouldEmitForCustomer(
-  customerId: string,
-  now: number = Date.now(),
-): boolean {
-  const cutoff = now - RATE_LIMIT_WINDOW_MS
-  const existing = rateLimitBuckets.get(customerId) ?? []
-  // Drop timestamps outside the window.
-  const recent = existing.filter((t) => t > cutoff)
-  if (recent.length >= RATE_LIMIT_MAX_CALLS) {
-    rateLimitBuckets.set(customerId, recent)
-    return false
+interface CoalesceState {
+  /** Emit timestamps still inside the sliding window. */
+  windowEmits: number[]
+  /** Latest pending params for the trailing emit (null if nothing pending). */
+  pendingParams: EmitCfdLoyaltyRefreshParams | null
+  /** Active trailing-emit timer (null if none scheduled). */
+  pendingTimer: ReturnType<typeof setTimeout> | null
+}
+
+const coalesceBuckets = new Map<string, CoalesceState>()
+
+function getState(customerId: string): CoalesceState {
+  let state = coalesceBuckets.get(customerId)
+  if (!state) {
+    state = { windowEmits: [], pendingParams: null, pendingTimer: null }
+    coalesceBuckets.set(customerId, state)
   }
-  recent.push(now)
-  rateLimitBuckets.set(customerId, recent)
-  return true
+  return state
 }
 
-/** Reset the in-memory rate limiter — test hook only. */
-export function _resetRateLimitForTests(): void {
-  rateLimitBuckets.clear()
+function pruneWindow(state: CoalesceState, now: number): void {
+  const cutoff = now - RATE_LIMIT_WINDOW_MS
+  state.windowEmits = state.windowEmits.filter((t) => t > cutoff)
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// Main entry point
-// ──────────────────────────────────────────────────────────────────────────
 
 /**
- * Emit a CFD refresh event with the customer's latest loyalty balance.
- *
- * Fire-and-forget. Never throws. Never blocks the caller.
+ * Reset the in-memory coalescer — test hook only. Clears any pending timers
+ * so test cases can't leak setTimeout handles between runs.
  */
-export async function emitCfdLoyaltyRefresh(
+export function _resetRateLimitForTests(): void {
+  for (const state of coalesceBuckets.values()) {
+    if (state.pendingTimer) {
+      clearTimeout(state.pendingTimer)
+    }
+  }
+  coalesceBuckets.clear()
+}
+
+/**
+ * Test-only inspector: returns the current pending params for a customer.
+ * Returns null when nothing is pending.
+ */
+export function _peekPendingForTests(
+  customerId: string,
+): EmitCfdLoyaltyRefreshParams | null {
+  return coalesceBuckets.get(customerId)?.pendingParams ?? null
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Internal: actually fetch + dispatch. Never throws.
+// ──────────────────────────────────────────────────────────────────────────
+
+async function _runEmit(
   params: EmitCfdLoyaltyRefreshParams,
 ): Promise<void> {
   const { customerId, locationId, orderId } = params
-
   try {
-    if (!customerId || !locationId) {
-      return
-    }
-
-    // Rate-limit: coalesce rapid calls for the same customer.
-    if (!_shouldEmitForCustomer(customerId)) {
-      log.debug(
-        { customerId, locationId },
-        'Coalesced CFD loyalty refresh (rate-limited)',
-      )
-      return
-    }
-
     // Fetch the fresh customer snapshot.
     const customer = await db.customer
       .findFirst({
@@ -248,4 +264,100 @@ export async function emitCfdLoyaltyRefresh(
       'emitCfdLoyaltyRefresh failed unexpectedly (swallowed)',
     )
   }
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Trailing-emit timer plumbing
+// ──────────────────────────────────────────────────────────────────────────
+
+function scheduleTrailingEmit(
+  customerId: string,
+  state: CoalesceState,
+  delayMs: number,
+): void {
+  if (state.pendingTimer) {
+    return // already scheduled — newer params will be picked up when it fires
+  }
+  state.pendingTimer = setTimeout(() => {
+    state.pendingTimer = null
+    const params = state.pendingParams
+    state.pendingParams = null
+    if (!params) {
+      return
+    }
+
+    // Re-evaluate the window AT FIRE TIME — if the burst is still going,
+    // budget may already be full again, so we may need to re-defer. The
+    // common case is the burst has died down and we just emit.
+    const now = Date.now()
+    pruneWindow(state, now)
+
+    if (state.windowEmits.length < RATE_LIMIT_MAX_CALLS) {
+      // Safe to emit. Record the timestamp + run.
+      state.windowEmits.push(now)
+      void _runEmit(params)
+      return
+    }
+
+    // Still saturated — re-schedule for when the next slot opens.
+    state.pendingParams = params
+    const oldest = state.windowEmits[0] ?? now
+    const nextAvailable = Math.max(1, oldest + RATE_LIMIT_WINDOW_MS - now)
+    scheduleTrailingEmit(customerId, state, nextAvailable)
+  }, Math.max(1, delayMs))
+
+  // Don't keep the Node process alive solely to flush a CFD refresh.
+  if (typeof state.pendingTimer === 'object' && state.pendingTimer !== null) {
+    const t = state.pendingTimer as unknown as { unref?: () => void }
+    if (typeof t.unref === 'function') {
+      t.unref()
+    }
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Main entry point
+// ──────────────────────────────────────────────────────────────────────────
+
+/**
+ * Emit a CFD refresh event with the customer's latest loyalty balance.
+ *
+ * Fire-and-forget. Never throws. Never blocks the caller.
+ *
+ * Bursts >RATE_LIMIT_MAX_CALLS / RATE_LIMIT_WINDOW_MS for the same customer
+ * are coalesced via a trailing-edge debounce: the LATEST params are emitted
+ * once the window slides open. No update is ever silently dropped.
+ */
+export async function emitCfdLoyaltyRefresh(
+  params: EmitCfdLoyaltyRefreshParams,
+): Promise<void> {
+  const { customerId, locationId } = params
+
+  if (!customerId || !locationId) {
+    return
+  }
+
+  const state = getState(customerId)
+  const now = Date.now()
+  pruneWindow(state, now)
+
+  if (state.windowEmits.length < RATE_LIMIT_MAX_CALLS) {
+    // Under budget — emit immediately.
+    state.windowEmits.push(now)
+    await _runEmit(params)
+    return
+  }
+
+  // Over budget — coalesce. Latest call wins; schedule trailing emit if
+  // none is already armed.
+  const wasPending = state.pendingParams !== null
+  state.pendingParams = params
+  log.debug(
+    { customerId, locationId, alreadyPending: wasPending },
+    'Coalesced CFD loyalty refresh — trailing emit will carry latest state',
+  )
+
+  const oldest = state.windowEmits[0] ?? now
+  const delayMs = Math.max(1, oldest + RATE_LIMIT_WINDOW_MS - now)
+  scheduleTrailingEmit(customerId, state, delayMs)
 }

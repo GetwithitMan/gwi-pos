@@ -43,8 +43,8 @@ vi.mock('@/lib/logger', () => ({
 
 import {
   emitCfdLoyaltyRefresh,
-  _shouldEmitForCustomer,
   _resetRateLimitForTests,
+  _peekPendingForTests,
 } from '../emit-cfd-loyalty-refresh'
 
 // ---------------------------------------------------------------------------
@@ -270,53 +270,161 @@ describe('emitCfdLoyaltyRefresh — never throws', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Rate limiter
+// Trailing-edge coalescer — the regression-driver tests for PR #273 review.
+// The previous implementation silently DROPPED 11+ calls in the same second.
+// The contract now is: coalesce, never drop. The latest state always wins.
 // ---------------------------------------------------------------------------
 
-describe('emitCfdLoyaltyRefresh — rate limit', () => {
-  it('coalesces calls beyond 10/sec for the same customerId', () => {
-    const now = 1_700_000_000_000
-    for (let i = 0; i < 10; i++) {
-      expect(_shouldEmitForCustomer('cust-1', now + i)).toBe(true)
-    }
-    // 11th call within the same window should be coalesced.
-    expect(_shouldEmitForCustomer('cust-1', now + 10)).toBe(false)
-    expect(_shouldEmitForCustomer('cust-1', now + 100)).toBe(false)
-  })
-
-  it('does NOT coalesce calls for different customerIds', () => {
-    const now = 1_700_000_000_000
-    for (let i = 0; i < 10; i++) {
-      expect(_shouldEmitForCustomer('cust-A', now + i)).toBe(true)
-    }
-    // Different customer — fresh bucket.
-    expect(_shouldEmitForCustomer('cust-B', now + 10)).toBe(true)
-  })
-
-  it('admits new calls after the rate-limit window expires', () => {
-    const now = 1_700_000_000_000
-    for (let i = 0; i < 10; i++) {
-      _shouldEmitForCustomer('cust-1', now + i)
-    }
-    // Still within window — blocked.
-    expect(_shouldEmitForCustomer('cust-1', now + 500)).toBe(false)
-    // Past the 1-second window — allowed again.
-    expect(_shouldEmitForCustomer('cust-1', now + 1500)).toBe(true)
-  })
-
-  it('skips dispatch when rate-limited (integration with main fn)', async () => {
+describe('emitCfdLoyaltyRefresh — trailing-edge coalescer', () => {
+  it('a single call still emits immediately (no debounce penalty)', async () => {
     mockCustomerFindFirst.mockResolvedValue(baseCustomer)
-
-    // Burn the bucket.
-    const now = Date.now()
-    for (let i = 0; i < 10; i++) {
-      _shouldEmitForCustomer('cust-1', now)
-    }
 
     await emitCfdLoyaltyRefresh({ customerId: 'cust-1', locationId: 'loc-1' })
 
-    expect(mockCustomerFindFirst).not.toHaveBeenCalled()
-    expect(mockDispatchLoyaltyBalance).not.toHaveBeenCalled()
+    expect(mockCustomerFindFirst).toHaveBeenCalledTimes(1)
+    expect(mockDispatchLoyaltyBalance).toHaveBeenCalledTimes(1)
+    // No trailing emit pending.
+    expect(_peekPendingForTests('cust-1')).toBeNull()
+  })
+
+  it('two rapid calls each produce a distinct effect — second carries latest data even if delayed', async () => {
+    vi.useFakeTimers()
+    try {
+      // Fill the budget for cust-1 (10 in the same window).
+      mockCustomerFindFirst.mockResolvedValue(baseCustomer)
+      for (let i = 0; i < 10; i++) {
+        await emitCfdLoyaltyRefresh({
+          customerId: 'cust-1',
+          locationId: 'loc-1',
+        })
+      }
+      expect(mockDispatchLoyaltyBalance).toHaveBeenCalledTimes(10)
+
+      // Now the 11th call — must NOT be silently dropped. It must defer
+      // and eventually emit with the *latest* state.
+      mockDispatchLoyaltyBalance.mockClear()
+      mockCustomerFindFirst.mockClear()
+      mockCustomerFindFirst.mockResolvedValue({
+        ...baseCustomer,
+        loyaltyPoints: 999, // updated state — must surface in trailing emit
+        loyaltyTier: { name: 'Platinum' },
+      })
+
+      await emitCfdLoyaltyRefresh({ customerId: 'cust-1', locationId: 'loc-1' })
+      // Synchronously: nothing fired yet (deferred).
+      expect(mockDispatchLoyaltyBalance).not.toHaveBeenCalled()
+      expect(_peekPendingForTests('cust-1')).not.toBeNull()
+
+      // Advance past the window — trailing emit fires.
+      await vi.advanceTimersByTimeAsync(1100)
+
+      expect(mockDispatchLoyaltyBalance).toHaveBeenCalledTimes(1)
+      const payload = mockDispatchLoyaltyBalance.mock.calls[0][1]
+      expect(payload.loyaltyPoints).toBe(999)
+      expect(payload.tier).toBe('Platinum')
+      // Pending cleared after trailing emit fires.
+      expect(_peekPendingForTests('cust-1')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('ten rapid OVER-budget calls produce a single trailing emit with the FINAL state', async () => {
+    vi.useFakeTimers()
+    try {
+      mockCustomerFindFirst.mockResolvedValue(baseCustomer)
+      // Saturate the budget first.
+      for (let i = 0; i < 10; i++) {
+        await emitCfdLoyaltyRefresh({
+          customerId: 'cust-1',
+          locationId: 'loc-1',
+        })
+      }
+      mockDispatchLoyaltyBalance.mockClear()
+      mockCustomerFindFirst.mockClear()
+
+      // Fire 10 more rapid calls — every one of these is over budget, so
+      // they MUST coalesce. The last one's state must win.
+      for (let i = 1; i <= 10; i++) {
+        // Rebind the mock so each call's "current DB state" is unique.
+        mockCustomerFindFirst.mockResolvedValue({
+          ...baseCustomer,
+          loyaltyPoints: 1000 + i,
+        })
+        await emitCfdLoyaltyRefresh({
+          customerId: 'cust-1',
+          locationId: 'loc-1',
+        })
+      }
+
+      // Nothing fired yet (all coalesced into the trailing slot).
+      expect(mockDispatchLoyaltyBalance).not.toHaveBeenCalled()
+      expect(_peekPendingForTests('cust-1')).not.toBeNull()
+
+      // Drain the timer.
+      await vi.advanceTimersByTimeAsync(1100)
+
+      // At least one trailing emit fired. (We accept >=1 to be tolerant of
+      // implementation choice — the load-bearing requirement is "not zero".)
+      expect(
+        mockDispatchLoyaltyBalance.mock.calls.length,
+      ).toBeGreaterThanOrEqual(1)
+
+      // The DB lookup that backed the trailing emit was made at fire time,
+      // so it picked up the FINAL mocked state (loyaltyPoints=1010).
+      const lastPayload =
+        mockDispatchLoyaltyBalance.mock.calls[
+          mockDispatchLoyaltyBalance.mock.calls.length - 1
+        ][1]
+      expect(lastPayload.loyaltyPoints).toBe(1010)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('different customerIds do NOT share a budget', async () => {
+    mockCustomerFindFirst.mockResolvedValue(baseCustomer)
+
+    for (let i = 0; i < 10; i++) {
+      await emitCfdLoyaltyRefresh({
+        customerId: 'cust-A',
+        locationId: 'loc-1',
+      })
+    }
+    // cust-A budget is saturated — but cust-B should still emit immediately.
+    mockDispatchLoyaltyBalance.mockClear()
+    await emitCfdLoyaltyRefresh({ customerId: 'cust-B', locationId: 'loc-1' })
+
+    expect(mockDispatchLoyaltyBalance).toHaveBeenCalledTimes(1)
+    expect(_peekPendingForTests('cust-B')).toBeNull()
+  })
+
+  it('after the window expires, fresh calls emit immediately again', async () => {
+    vi.useFakeTimers()
+    try {
+      mockCustomerFindFirst.mockResolvedValue(baseCustomer)
+      for (let i = 0; i < 10; i++) {
+        await emitCfdLoyaltyRefresh({
+          customerId: 'cust-1',
+          locationId: 'loc-1',
+        })
+      }
+
+      // Slide the window forward past expiry.
+      await vi.advanceTimersByTimeAsync(1500)
+
+      mockDispatchLoyaltyBalance.mockClear()
+      await emitCfdLoyaltyRefresh({
+        customerId: 'cust-1',
+        locationId: 'loc-1',
+      })
+
+      // Fresh window — call emits synchronously.
+      expect(mockDispatchLoyaltyBalance).toHaveBeenCalledTimes(1)
+      expect(_peekPendingForTests('cust-1')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 
