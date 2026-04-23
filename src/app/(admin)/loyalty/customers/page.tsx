@@ -65,29 +65,34 @@ export default function LoyaltyCustomersPage() {
 
   const handleAdjust = async () => {
     if (!adjustModal || adjustPoints === 0) return
+    const trimmedReason = adjustReason.trim()
+    if (!trimmedReason) {
+      toast.error('Reason is required for manual adjustments')
+      return
+    }
     setAdjusting(true)
     try {
-      // Use the earn endpoint for positive adjustments, redeem for negative
-      if (adjustPoints > 0) {
-        const res = await fetch('/api/loyalty/earn', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            customerId: adjustModal.customerId,
-            amount: 0, // Direct point adjustment, not order-based
-            points: adjustPoints,
-          }),
-        })
-        // If earn route requires amount, fall back to direct DB adjustment via transactions
-        if (!res.ok) {
-          // Use a manual adjust — create transaction directly
-          // This is a simplification; in production we'd have a dedicated adjust endpoint
-          toast.error('Failed to adjust points')
-          return
-        }
+      // Q3 (2026-04-23): /api/loyalty/earn was deprecated. Manual corrections
+      // (positive AND negative) go through /api/loyalty/adjust which writes a
+      // LoyaltyTransaction(type='admin_adjustment') so corrections do not look
+      // like organic earning in reports.
+      const res = await fetch('/api/loyalty/adjust', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customerId: adjustModal.customerId,
+          points: adjustPoints,
+          reason: trimmedReason,
+        }),
+      })
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}))
+        toast.error(json?.error || 'Failed to adjust points')
+        return
       }
       toast.success(`Adjusted ${adjustPoints > 0 ? '+' : ''}${adjustPoints} points for ${adjustModal.name}`)
       setAdjustModal(null)
+      setAdjustReason('')
       await fetchCustomers()
     } catch {
       toast.error('Failed to adjust points')
@@ -227,13 +232,14 @@ export default function LoyaltyCustomersPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Reason</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Reason <span className="text-red-500">*</span></label>
                 <input
                   type="text"
                   value={adjustReason}
                   onChange={(e) => setAdjustReason(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
                   placeholder="e.g., Customer complaint, Bonus"
+                  required
                 />
               </div>
             </div>
@@ -247,7 +253,7 @@ export default function LoyaltyCustomersPage() {
               </button>
               <button
                 onClick={handleAdjust}
-                disabled={adjustPoints === 0 || adjusting}
+                disabled={adjustPoints === 0 || !adjustReason.trim() || adjusting}
                 className="flex-1 py-2.5 rounded-lg bg-indigo-600 text-white font-semibold text-sm hover:bg-indigo-700 transition-colors disabled:opacity-50"
               >
                 {adjusting ? 'Adjusting...' : 'Apply'}
