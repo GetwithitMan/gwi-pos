@@ -7,6 +7,7 @@ import { withVenue } from '@/lib/with-venue'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { err, ok } from '@/lib/api-response'
+import { emitCfdLoyaltyRefresh } from '@/lib/domain/loyalty/emit-cfd-loyalty-refresh'
 
 // POST /api/loyalty/redeem — redeem points for a dollar discount
 export const POST = withVenue(async function POST(request: NextRequest) {
@@ -124,6 +125,15 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     pushUpstream()
     void notifyDataChanged({ locationId, domain: 'loyalty', action: 'updated' })
+
+    // T11 — fire-and-forget CFD refresh so the customer-facing display sees
+    // the new balance immediately after redemption. orderId may be null when
+    // a redemption isn't tied to an active order.
+    void emitCfdLoyaltyRefresh({
+      customerId,
+      locationId,
+      orderId: orderId || null,
+    }).catch(() => {})
 
     return ok(result)
   } catch (error: any) {

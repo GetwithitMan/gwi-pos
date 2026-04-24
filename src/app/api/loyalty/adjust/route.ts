@@ -7,6 +7,7 @@ import { withVenue } from '@/lib/with-venue'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { err, ok } from '@/lib/api-response'
+import { emitCfdLoyaltyRefresh } from '@/lib/domain/loyalty/emit-cfd-loyalty-refresh'
 
 // POST /api/loyalty/adjust — manually adjust a customer's loyalty balance.
 //
@@ -131,6 +132,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     pushUpstream()
     void notifyDataChanged({ locationId, domain: 'loyalty', action: 'updated', entityId: result.data.customerId })
+
+    // T11 — fire-and-forget CFD refresh so the customer-facing display sees
+    // the new balance immediately. Admin adjusts have no order context.
+    void emitCfdLoyaltyRefresh({
+      customerId: result.data.customerId,
+      locationId,
+    }).catch(() => {})
 
     return ok(result.data)
   } catch (error: any) {

@@ -25,6 +25,7 @@ import { Prisma } from '@/generated/prisma/client'
 import { db } from '@/lib/db'
 import { createChildLogger } from '@/lib/logger'
 import { dispatchLoyaltyEarnDeadLetter } from '@/lib/socket-dispatch/misc-dispatch'
+import { emitCfdLoyaltyRefresh } from './emit-cfd-loyalty-refresh'
 
 const log = createChildLogger('loyalty-earn-worker')
 
@@ -218,6 +219,14 @@ export async function processNextLoyaltyEarn(): Promise<{
          WHERE "id" = ${job.id}
       `
     })
+
+    // T11 — fire-and-forget CFD refresh so the customer-facing display sees
+    // the new points within ~100ms. Never throws (helper is fail-safe).
+    void emitCfdLoyaltyRefresh({
+      customerId: job.customerId,
+      locationId: job.locationId,
+      orderId: job.orderId,
+    }).catch((err) => log.warn({ err, orderId: job.orderId }, 'CFD loyalty refresh failed (non-fatal)'))
 
     return { processed: true, orderId: job.orderId, success: true }
   } catch (earnErr) {

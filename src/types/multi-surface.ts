@@ -138,6 +138,17 @@ export const CFD_EVENTS = {
   IDLE: 'cfd:idle',
   RECEIPT_SENT: 'cfd:receipt-sent',
   SETTINGS_UPDATED: 'cfd:settings-updated',
+  /**
+   * T11 — loyalty balance refresh after async writes (earn, reversal, adjust,
+   * redeem). Fired when there is no active order to piggy-back on (post-pay,
+   * admin adjust, or during an active order the CFD can't look up).
+   *
+   * NOTE: the gwi-cfd Android app does NOT yet listen to this event — a
+   * follow-up ticket must add the client-side handler before the CFD will
+   * actually refresh on this signal. Until then, the ORDER_UPDATED path
+   * (active-order case) is the primary way CFDs pick up fresh points.
+   */
+  LOYALTY_BALANCE_UPDATED: 'cfd:loyalty-balance-updated',
   // CFD → POS
   TIP_SELECTED: 'cfd:tip-selected',
   SIGNATURE_DONE: 'cfd:signature-done',
