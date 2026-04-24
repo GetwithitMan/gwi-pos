@@ -15,7 +15,7 @@
 
 import crypto from 'crypto'
 import type { LoyaltySettings } from '@/lib/settings/types'
-import { computeLoyaltyEarn, makePrismaTierLookup } from '@/lib/domain/loyalty/compute-earn'
+import { computeLoyaltyEarn, makePrismaTierLookup, lookupCustomerRoundingMode } from '@/lib/domain/loyalty/compute-earn'
 
 interface OnlineEarnDb {
   customer: {
@@ -80,7 +80,10 @@ export async function recordOnlineCustomerLoyaltyEarn(
     return { pointsEarned: 0, loyaltyEarningBase: 0, loyaltyTierMultiplier: 1.0, transactionId: null }
   }
 
-  // Canonical earn computation (same formula as POS commit path)
+  // Canonical earn computation (same formula as POS commit path).
+  // roundingMode is read from the customer's enrolled LoyaltyProgram and
+  // defaults to 'floor' (matches schema default + /api/loyalty/earn default).
+  const roundingMode = await lookupCustomerRoundingMode(db, customerId)
   const earn = await computeLoyaltyEarn({
     subtotal,
     total,
@@ -88,6 +91,7 @@ export async function recordOnlineCustomerLoyaltyEarn(
     loyaltySettings,
     customerLoyaltyTierId: customer.loyaltyTierId ?? null,
     lookupTierMultiplier: makePrismaTierLookup(db),
+    roundingMode,
   })
 
   // Always update Customer stats (lastVisit, totalOrders, totalSpent) so an

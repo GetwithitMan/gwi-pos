@@ -25,7 +25,7 @@ import type { TxClient, PaymentRecord } from '@/lib/domain/payment/types'
 import type { LocationSettings } from '@/lib/settings'
 import type { PaymentLoopResult } from '@/lib/domain/payment/executors/process-payment-loop'
 import { createChildLogger } from '@/lib/logger'
-import { computeLoyaltyEarn, makePrismaTierLookup } from '@/lib/domain/loyalty/compute-earn'
+import { computeLoyaltyEarn, makePrismaTierLookup, lookupCustomerRoundingMode } from '@/lib/domain/loyalty/compute-earn'
 import { enqueueLoyaltyEarn } from '@/lib/domain/loyalty/enqueue-loyalty-earn'
 
 const log = createChildLogger('commit-payment')
@@ -221,6 +221,9 @@ export async function commitPaymentTransaction(params: CommitPaymentParams): Pro
   let loyaltyEarningBase = 0
   let loyaltyTierMultiplier = 1.0
   if (updateData.status === 'paid' && order.customer) {
+    // Look up the customer's program rounding mode (defaults to 'floor' on
+    // missing program / unknown value — see compute-earn.ts).
+    const roundingMode = await lookupCustomerRoundingMode(outerDb, (order.customer as any).id)
     const earn = await computeLoyaltyEarn({
       subtotal: toNumber(order.subtotal ?? 0),
       total: toNumber(order.total ?? 0),
@@ -230,6 +233,7 @@ export async function commitPaymentTransaction(params: CommitPaymentParams): Pro
       // Use outerDb (outside tx lock) to match prior behavior — LoyaltyTier is
       // an admin-owned table not mutated inside the payment transaction.
       lookupTierMultiplier: makePrismaTierLookup(outerDb),
+      roundingMode,
     })
     pointsEarned = earn.pointsEarned
     loyaltyEarningBase = earn.loyaltyEarningBase

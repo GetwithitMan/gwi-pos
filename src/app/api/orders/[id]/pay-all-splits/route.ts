@@ -9,7 +9,7 @@ import { resolvePairedCfdTerminalId } from '@/lib/cfd-terminal'
 // deductInventoryForOrder replaced by PendingDeduction outbox pattern (see pay/route.ts)
 // import { deductInventoryForOrder } from '@/lib/inventory-calculations'
 import { allocateTipsForPayment } from '@/lib/domain/tips'
-import { computeLoyaltyEarn, makePrismaTierLookup } from '@/lib/domain/loyalty/compute-earn'
+import { computeLoyaltyEarn, makePrismaTierLookup, lookupCustomerRoundingMode } from '@/lib/domain/loyalty/compute-earn'
 import { enqueueLoyaltyEarn } from '@/lib/domain/loyalty/enqueue-loyalty-earn'
 import { parseSettings } from '@/lib/settings'
 import { calculateCardPrice, roundToCents } from '@/lib/pricing'
@@ -284,6 +284,7 @@ export const POST = withVenue(withAuth(async function POST(
 
         // Compute earn using canonical engine + enqueue
         const splitsSubtotal = Number(parentOrder.splitOrders.reduce((sum, s) => sum + Number(s.subtotal), 0))
+        const roundingMode = await lookupCustomerRoundingMode(tx, lockedCustomerId)
         const earn = await computeLoyaltyEarn({
           subtotal: splitsSubtotal,
           total: combinedTotal,
@@ -291,6 +292,7 @@ export const POST = withVenue(withAuth(async function POST(
           loyaltySettings: settings.loyalty,
           customerLoyaltyTierId: custTierId,
           lookupTierMultiplier: makePrismaTierLookup(tx),
+          roundingMode,
         })
         loyaltyPointsEarned = earn.pointsEarned
         if (loyaltyPointsEarned > 0) {
