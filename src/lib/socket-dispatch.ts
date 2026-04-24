@@ -14,6 +14,7 @@
  *   scale-dispatch.ts      — weight scale readings and status
  *   sync-dispatch.ts       — outage status, HA failover
  *   misc-dispatch.ts       — entertainment, inventory, menu, alerts, etc.
+ *   check-dispatch.ts     — check lifecycle (opened, committed, abandoned, lease)
  *   emit-helpers.ts        — shared logger, emit wrappers, types
  */
 
@@ -25,6 +26,7 @@ export * from './socket-dispatch/cfd-dispatch'
 export * from './socket-dispatch/scale-dispatch'
 export * from './socket-dispatch/sync-dispatch'
 export * from './socket-dispatch/misc-dispatch'
+export * from './socket-dispatch/check-dispatch'
 
 // Re-export shared types for consumers that need them
 export type { DispatchOptions } from './socket-dispatch/emit-helpers'

@@ -593,6 +593,20 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     })),
   }))
 
+  // ─── Active Checks (draft/committed/paid) ──────────────────────────────────
+  // Checks with items — allows Android to hydrate the check aggregate on boot.
+  const activeChecks = await db.check.findMany({
+    where: {
+      locationId,
+      status: { in: ['draft', 'committed', 'paid'] },
+      deletedAt: null,
+    },
+    include: {
+      items: { where: { status: { not: 'removed' } } },
+    },
+    orderBy: { createdAt: 'desc' },
+  })
+
   // ─── Entertainment Resources & Active Sessions ─────────────────────────────
   const [entertainmentResources, entertainmentSessions] = await Promise.all([
     db.entertainmentResource.findMany({
@@ -666,6 +680,55 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         lastExtendedAt: s.lastExtendedAt?.toISOString() ?? null,
         createdAt: s.createdAt?.toISOString() ?? null,
         updatedAt: s.updatedAt?.toISOString() ?? null,
+      })),
+      // Active checks: allows Android to hydrate the check aggregate on boot
+      checks: activeChecks.map(check => ({
+        id: check.id,
+        locationId: check.locationId,
+        employeeId: check.employeeId,
+        orderType: check.orderType,
+        tableId: check.tableId,
+        tabName: check.tabName,
+        guestCount: check.guestCount,
+        status: check.status,
+        orderNumber: check.orderNumber,
+        displayNumber: check.displayNumber,
+        terminalId: check.terminalId,
+        leaseAcquiredAt: check.leaseAcquiredAt?.toISOString() ?? null,
+        leaseLastHeartbeatAt: check.leaseLastHeartbeatAt?.toISOString() ?? null,
+        notes: check.notes,
+        isBottleService: check.isBottleService,
+        bottleServiceTierId: check.bottleServiceTierId,
+        orderId: check.orderId,
+        createdAt: check.createdAt.toISOString(),
+        updatedAt: check.updatedAt.toISOString(),
+        items: check.items.map(item => ({
+          id: item.id,
+          menuItemId: item.menuItemId,
+          name: item.name,
+          priceCents: item.priceCents,
+          quantity: item.quantity,
+          modifiersJson: item.modifiersJson,
+          specialNotes: item.specialNotes,
+          seatNumber: item.seatNumber,
+          courseNumber: item.courseNumber,
+          itemType: item.itemType,
+          blockTimeMinutes: item.blockTimeMinutes,
+          isHeld: item.isHeld,
+          delayMinutes: item.delayMinutes,
+          status: item.status,
+          soldByWeight: item.soldByWeight,
+          weight: item.weight,
+          weightUnit: item.weightUnit,
+          unitPriceCents: item.unitPriceCents,
+          pricingOptionId: item.pricingOptionId,
+          pricingOptionLabel: item.pricingOptionLabel,
+          pourSize: item.pourSize,
+          pourMultiplier: item.pourMultiplier,
+          isTaxInclusive: item.isTaxInclusive,
+          pizzaConfigJson: item.pizzaConfigJson,
+          comboSelectionsJson: item.comboSelectionsJson,
+        })),
       })),
       syncVersion: Date.now(),
       terminalConfig: {

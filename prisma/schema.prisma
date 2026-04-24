@@ -960,6 +960,9 @@ model Location {
   // Peripheral Snapshot (upstream sync to MC)
   peripheralSnapshots PeripheralSnapshot[]
 
+  // Check Aggregate (Migration 132)
+  checks Check[]
+
   @@index([organizationId])
 }
 
@@ -10194,6 +10197,137 @@ model PeripheralSnapshot {
   @@unique([locationId, deviceType, deviceId])
   @@index([locationId])
   @@index([locationId, updatedAt])
+}
+
+// ============================================
+// CHECK AGGREGATE (Migration 132)
+// ============================================
+
+/// The aggregate root for pre-commit order building.
+/// Draft checks live here until committed, at which point an Order is created.
+model Check {
+  id                   String    @id @default(cuid())
+  locationId           String
+  location             Location  @relation(fields: [locationId], references: [id])
+  tableId              String?
+  orderType            String    @default("dine_in") // dine_in | takeout | delivery | bar_tab
+  employeeId           String
+  guestCount           Int       @default(1)
+  tabName              String?
+  status               String    @default("draft") // draft | committed | paid | closed | abandoned
+  orderNumber          Int? // NULL until commit — assigned by allocator
+  displayNumber        String? // Formatted display number (e.g., "A-42")
+  terminalId           String? // Terminal that holds the editing lease
+  leaseAcquiredAt      DateTime?
+  leaseLastHeartbeatAt DateTime?
+  notes                String?
+
+  // Post-commit: link to the Order record created at commit time
+  orderId              String?   @unique
+
+  // Bottle service (carried forward at commit)
+  isBottleService      Boolean   @default(false)
+  bottleServiceTierId  String?
+
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  deletedAt            DateTime?
+
+  // Relations
+  items  CheckItem[]
+  events CheckEvent[]
+
+  @@index([locationId, status])
+  @@index([locationId, tableId])
+  @@index([locationId, status, createdAt])
+  @@index([orderId])
+}
+
+/// Line items on a Check — cascade-deleted when the parent Check is removed.
+model CheckItem {
+  id                 String   @id @default(cuid())
+  checkId            String
+  check              Check    @relation(fields: [checkId], references: [id], onDelete: Cascade)
+  menuItemId         String
+  name               String
+  priceCents         Int // Base price in cents
+  quantity           Int      @default(1)
+  modifiersJson      String?  @db.Text // JSON array of modifier snapshots
+  seatNumber         Int?
+  courseNumber        Int?
+  specialNotes       String?  @db.Text
+  itemType           String? // timed_rental, combo, pizza, etc.
+  blockTimeMinutes   Int?
+  isHeld             Boolean  @default(false)
+  delayMinutes       Int?
+  status             String   @default("active") // active | voided | comped | removed
+
+  // Pricing details
+  soldByWeight       Boolean  @default(false)
+  weight             Float?
+  weightUnit         String?
+  unitPriceCents     Int?
+  pricingOptionId    String?
+  pricingOptionLabel String?
+  pourSize           String?
+  pourMultiplier     Float?
+  isTaxInclusive     Boolean  @default(false)
+  pizzaConfigJson    String?  @db.Text
+  comboSelectionsJson String? @db.Text
+  itemDiscountsJson  String?  @db.Text
+
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([checkId])
+  @@index([checkId, status])
+}
+
+/// Continuous audit trail for Check mutations — append-only.
+model CheckEvent {
+  id             String   @id @default(cuid())
+  eventId        String   @unique // Client-generated UUID for dedup
+  checkId        String
+  check          Check    @relation(fields: [checkId], references: [id], onDelete: Cascade)
+  serverSequence Int      @default(autoincrement()) // Canonical ordering
+  type           String // CHECK_OPENED, CHECK_ITEM_ADDED, CHECK_COMMITTED, etc.
+  payloadJson    String   @db.Text
+  schemaVersion  Int      @default(1)
+  deviceId       String?
+  deviceCounter  Int?
+  commandId      String? // For idempotency correlation
+
+  createdAt      DateTime @default(now())
+
+  @@index([checkId])
+  @@index([checkId, serverSequence])
+  @@index([commandId])
+}
+
+/// Transactional idempotency — stores command results for replay.
+/// Pruned after 24 hours by a scheduled job.
+model ProcessedCommand {
+  id         String   @id @default(cuid())
+  commandId  String   @unique // Client-generated UUID
+  resultJson String   @db.Text // Stored result for replay
+  createdAt  DateTime @default(now())
+
+  @@index([commandId])
+  @@index([createdAt]) // For 24h pruning
+}
+
+/// Monotonic order-number allocator — one row per location per business day.
+model OrderNumberAllocator {
+  id           String   @id @default(cuid())
+  locationId   String
+  businessDate String // "2026-04-15" format — from NUC server, NOT device clocks
+  nextNumber   Int      @default(1)
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([locationId, businessDate])
+  @@index([locationId, businessDate])
 }
 
 // NOTE: _local_schema_state and _local_install_state are NUC-only tables
