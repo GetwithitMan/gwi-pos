@@ -3,7 +3,7 @@
  *
  * Handles: entertainment, inventory, menu, location alerts, void approval,
  * waitlist, print jobs, quick bar, membership, shift requests, venue logs,
- * reservations, cake orders, modifiers, settings.
+ * reservations, cake orders, modifiers, settings, loyalty observability.
  */
 
 import { db } from '@/lib/db'
@@ -11,6 +11,7 @@ import {
   log,
   emitToLocation,
   emitToTags,
+  emitCriticalToLocation,
   type DispatchOptions,
 } from './emit-helpers'
 
@@ -1036,6 +1037,79 @@ export async function dispatchCakeOrderUpdated(
   } catch (err) {
     log.error({ err }, 'Failed to dispatch cake-orders:updated')
   }
+}
+
+// ==================== Loyalty Observability (T9) ====================
+
+/**
+ * Dispatch loyalty:reward_misses_detected event.
+ *
+ * Emitted by the reward-miss monitor cron when paid orders with linked
+ * customers have no corresponding LoyaltyTransaction(earn) AND no
+ * PendingLoyaltyEarn outbox row within the SLA window. Indicates a real
+ * regression — the canonical earn path failed to enqueue at all.
+ *
+ * Listeners: admin dashboards / observability UIs (no register surface).
+ */
+export async function dispatchLoyaltyRewardMissesDetected(
+  locationId: string,
+  payload: {
+    count: number
+    sampleOrderIds: string[]
+    windowSeconds: number
+    detectedAt: string
+  },
+  options: DispatchOptions = {}
+): Promise<boolean> {
+  const doEmit = async () => {
+    try {
+      await emitCriticalToLocation(locationId, 'loyalty:reward_misses_detected', payload)
+      return true
+    } catch (error) {
+      log.error({ err: error }, 'Failed to dispatch loyalty:reward_misses_detected')
+      return false
+    }
+  }
+  if (options.async) {
+    doEmit().catch((err) => log.error({ err }, 'Async loyalty:reward_misses_detected failed'))
+    return true
+  }
+  return doEmit()
+}
+
+/**
+ * Dispatch loyalty:earn_dead_letter event.
+ *
+ * Emitted by the loyalty-earn-worker when a PendingLoyaltyEarn row is
+ * dead-lettered (attempts >= maxAttempts OR terminal failure). Mirrors
+ * the inventory:deduction-failed pattern in deduction-processor.ts.
+ *
+ * Listeners: admin dashboards / observability UIs.
+ */
+export async function dispatchLoyaltyEarnDeadLetter(
+  locationId: string,
+  payload: {
+    orderId: string
+    customerId: string
+    attempts: number
+    lastError: string
+  },
+  options: DispatchOptions = {}
+): Promise<boolean> {
+  const doEmit = async () => {
+    try {
+      await emitCriticalToLocation(locationId, 'loyalty:earn_dead_letter', payload)
+      return true
+    } catch (error) {
+      log.error({ err: error }, 'Failed to dispatch loyalty:earn_dead_letter')
+      return false
+    }
+  }
+  if (options.async) {
+    doEmit().catch((err) => log.error({ err }, 'Async loyalty:earn_dead_letter failed'))
+    return true
+  }
+  return doEmit()
 }
 
 // ==================== Settings Events ====================

@@ -26,10 +26,16 @@ vi.mock('@/lib/db', () => ({
   },
 }))
 
+vi.mock('@/lib/socket-dispatch/misc-dispatch', () => ({
+  dispatchLoyaltyEarnDeadLetter: vi.fn().mockResolvedValue(true),
+  dispatchLoyaltyRewardMissesDetected: vi.fn().mockResolvedValue(true),
+}))
+
 // After the hoisted mock is set up we can safely import the worker + the
 // mocked db instance.
 import { processNextLoyaltyEarn } from '../loyalty-earn-worker'
 import { db as mockDb } from '@/lib/db'
+import { dispatchLoyaltyEarnDeadLetter } from '@/lib/socket-dispatch/misc-dispatch'
 
 // ---- Helpers ---------------------------------------------------------------
 
@@ -186,6 +192,55 @@ describe('processNextLoyaltyEarn', () => {
         data: expect.objectContaining({ status: 'dead' }),
       })
     )
+  })
+
+  it('dead-letter (retry exhausted) emits loyalty:earn_dead_letter exactly once', async () => {
+    mockDb.$queryRaw.mockResolvedValueOnce([makeClaimRow({ attempts: 5, maxAttempts: 5 })])
+    mockDb.$transaction.mockImplementation(txFactory({
+      customerRow: { loyaltyPoints: 0, lifetimePoints: 0, loyaltyProgramId: null, loyaltyTierId: null },
+      insertThrows: new Error('connection refused'),
+    }) as any)
+    mockDb.pendingLoyaltyEarn.update.mockResolvedValue({})
+
+    await processNextLoyaltyEarn()
+
+    expect(dispatchLoyaltyEarnDeadLetter).toHaveBeenCalledTimes(1)
+    expect(dispatchLoyaltyEarnDeadLetter).toHaveBeenCalledWith('loc-1', expect.objectContaining({
+      orderId: 'order-1',
+      customerId: 'cust-1',
+      attempts: 5,
+      lastError: 'connection refused',
+    }))
+  })
+
+  it('dead-letter (customer_not_found) emits loyalty:earn_dead_letter exactly once', async () => {
+    mockDb.$queryRaw.mockResolvedValueOnce([makeClaimRow()])
+    mockDb.$transaction.mockImplementation(txFactory({
+      customerRow: null,
+    }) as any)
+    mockDb.pendingLoyaltyEarn.update.mockResolvedValue({})
+
+    await processNextLoyaltyEarn()
+
+    expect(dispatchLoyaltyEarnDeadLetter).toHaveBeenCalledTimes(1)
+    expect(dispatchLoyaltyEarnDeadLetter).toHaveBeenCalledWith('loc-1', expect.objectContaining({
+      orderId: 'order-1',
+      customerId: 'cust-1',
+      lastError: 'customer_not_found',
+    }))
+  })
+
+  it('transient failure (not yet dead) does NOT emit loyalty:earn_dead_letter', async () => {
+    mockDb.$queryRaw.mockResolvedValueOnce([makeClaimRow({ attempts: 2, maxAttempts: 5 })])
+    mockDb.$transaction.mockImplementation(txFactory({
+      customerRow: { loyaltyPoints: 0, lifetimePoints: 0, loyaltyProgramId: null, loyaltyTierId: null },
+      insertThrows: new Error('connection refused'),
+    }) as any)
+    mockDb.pendingLoyaltyEarn.update.mockResolvedValue({})
+
+    await processNextLoyaltyEarn()
+
+    expect(dispatchLoyaltyEarnDeadLetter).not.toHaveBeenCalled()
   })
 
   it('zero points: ack outbox row without writing LoyaltyTransaction', async () => {
