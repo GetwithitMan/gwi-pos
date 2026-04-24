@@ -282,13 +282,33 @@ export const POST = withVenue(withAuth(async function POST(
           },
         })
 
-        // Compute earn using canonical engine + enqueue
+        // Compute earn using canonical engine + enqueue.
+        //
+        // T10 (Q5): split-payment earn is PARENT-ORDER-ONLY. The earn is keyed
+        // on `parentOrderId`, the customer is the PARENT'S linked customer
+        // (re-read from the FOR UPDATE-locked parent row above), and the
+        // earning base is the combined total/subtotal of all split children.
+        // Splits never carry a separate customerId; even if a future code
+        // path attaches one to a child, parent-order-only is the contract.
+        //
+        // Tips: aggregate tipTotal across ALL split children (existing
+        // per-split tips + any auto-gratuity newly applied in this call).
+        // The engine itself adds this to the earning base only when
+        // `settings.loyalty.earnOnTips === true`; passing the real number
+        // unconditionally keeps the conditional in one place (the engine).
         const splitsSubtotal = Number(parentOrder.splitOrders.reduce((sum, s) => sum + Number(s.subtotal), 0))
         const roundingMode = await lookupCustomerRoundingMode(tx, lockedCustomerId)
+        const splitsTipTotal = parentOrder.splitOrders.reduce((sum, s) => {
+          const baseTip = Number(s.tipTotal ?? 0)
+          // Only auto-grat applied to currently-unpaid splits in this call is new;
+          // already-paid splits already had their tips counted in `s.tipTotal`.
+          const autoGrat = autoGratPerSplit.get(s.id) ?? 0
+          return sum + baseTip + autoGrat
+        }, 0)
         const earn = await computeLoyaltyEarn({
           subtotal: splitsSubtotal,
           total: combinedTotal,
-          tipTotal: 0, // pay-all-splits doesn't carry per-payment tip on the earn base today
+          tipTotal: splitsTipTotal,
           loyaltySettings: settings.loyalty,
           customerLoyaltyTierId: custTierId,
           lookupTierMultiplier: makePrismaTierLookup(tx),

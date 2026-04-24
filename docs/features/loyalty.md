@@ -281,6 +281,23 @@ Reversal-capable routes (do not award; they reverse):
 
 All earn-capable routes funnel through the canonical engine in `commit-payment-transaction.ts` + the post-commit outbox in `run-payment-post-commit-effects.ts`. The DB partial unique index (see Data Model) makes retries safe.
 
+### Split-Payment Earn Rule **[POST-T10]**
+
+> **Decision (Q5):** Parent-order-only earn. Tips count when `earnOnTips=true`.
+
+When `pay-all-splits` closes a parent order's split children in one atomic call, exactly one `LoyaltyTransaction(type='earn')` row is persisted **per parent order lifecycle**:
+
+1. **Customer:** the earn is attributed to the **parent order's** `customerId`, re-read inside the FOR UPDATE-locked parent row at commit time (T3). Per-split `customerId` values (today always `null`; reserved for future use) are **ignored** — splitting an order does not allow rerouting points to a different customer.
+2. **Earning base:** the canonical engine receives the **sum of split children's subtotals** (`subtotal` field) and the **sum of split children's totals** (`combinedTotal` after dual-pricing). This equals the same number a single non-split order with the same totals would earn.
+3. **Tips:** the engine receives the **sum of every split child's `tipTotal`** plus any **auto-gratuity newly applied this call** (`autoGratPerSplit`). The engine adds tips to the earning base only when `loyaltySettings.earnOnTips === true` (single conditional, single source of truth).
+4. **Idempotency:** the earn is enqueued into `PendingLoyaltyEarn` keyed on `parentOrderId`. The unique constraint + the partial unique index on `LoyaltyTransaction (orderId) WHERE type='earn'` together guarantee at most one persisted earn even if `pay-all-splits` is invoked twice or if a sibling route (`pay`, `close-tab`) later runs on a child split.
+5. **No customer linked:** no earn, no enqueue.
+6. **Loyalty disabled:** no earn, no enqueue.
+
+**Why parent-only?** Splitting an order should not change the earning model. Awarding per-split would let a venue inflate points by splitting a $1 ticket into ten 10¢ children. Parent-only is least gameable and matches operator intuition: the "order" earned the points, not the ticket presentation.
+
+**Tests:** `src/lib/domain/loyalty/__tests__/split-payment-earn.test.ts` pins the contract.
+
 ### Customer-Link Re-read at Commit Boundary **[POST-T3]**
 
 Inside the payment transaction:
