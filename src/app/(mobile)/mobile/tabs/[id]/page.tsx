@@ -1,9 +1,11 @@
 'use client'
 
-import { useState, useEffect, use, Suspense } from 'react'
+import { useState, useEffect, use, Suspense, useCallback } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import MobileTabActions from '@/components/mobile/MobileTabActions'
+import MobileCustomerLinkModal from '@/components/mobile/MobileCustomerLinkModal'
+import type { CurrentlyLinkedCustomer } from '@/components/mobile/MobileCustomerLinkModal'
 
 interface TabDetail {
   id: string
@@ -18,6 +20,7 @@ interface TabDetail {
   isBottleService: boolean
   bottleServiceDeposit: number | null
   bottleServiceMinSpend: number | null
+  customer: CurrentlyLinkedCustomer | null
   items: Array<{
     name: string
     quantity: number
@@ -56,6 +59,9 @@ function MobileTabDetailContent({ tabId }: { tabId: string }) {
   const [tab, setTab] = useState<TabDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [authChecked, setAuthChecked] = useState(false)
+  const [linkModalOpen, setLinkModalOpen] = useState(false)
+  // Increment to trigger a re-fetch of order detail after a successful link/unlink.
+  const [refreshKey, setRefreshKey] = useState(0)
 
   // Verify session cookie on mount. Redirect to login if not authenticated.
   useEffect(() => {
@@ -84,9 +90,44 @@ function MobileTabDetailContent({ tabId }: { tabId: string }) {
   useEffect(() => {
     if (!authChecked) return
 
-    fetch(`/api/orders/${tabId}`)
-      .then(res => res.json())
-      .then(data => {
+    // Parallel fetch: order detail + linked customer.
+    // The /api/orders/{id} response carries customerId only — the customer
+    // details (name, loyalty points) live behind /api/orders/{id}/customer
+    // which is the canonical source per `feedback_ha_canonical_entity`
+    // (display from current authoritative state, not a stale cache).
+    const orderUrl = `/api/orders/${tabId}`
+    const customerUrl = employeeId
+      ? `/api/orders/${tabId}/customer?requestingEmployeeId=${encodeURIComponent(employeeId)}`
+      : `/api/orders/${tabId}/customer`
+
+    Promise.all([
+      fetch(orderUrl).then(res => (res.ok ? res.json() : null)).catch(() => null),
+      fetch(customerUrl).then(res => (res.ok ? res.json() : null)).catch(() => null),
+    ])
+      .then(([orderData, customerRaw]) => {
+        if (!orderData) {
+          setLoading(false)
+          return
+        }
+        const data = orderData
+
+        // /api/orders/{id}/customer wraps the customer payload in { data: { ... } }
+        const customerPayload = customerRaw?.data?.customer ?? customerRaw?.customer ?? null
+        const linkedCustomer: CurrentlyLinkedCustomer | null = customerPayload
+          ? {
+              id: customerPayload.id,
+              name:
+                customerPayload.name ||
+                [customerPayload.firstName, customerPayload.lastName].filter(Boolean).join(' ').trim() ||
+                'Customer',
+              loyaltyPoints:
+                typeof customerPayload.loyaltyPoints === 'number'
+                  ? customerPayload.loyaltyPoints
+                  : undefined,
+              tags: Array.isArray(customerPayload.tags) ? customerPayload.tags : [],
+            }
+          : null
+
         setTab({
           id: data.id,
           tabName: data.tabName,
@@ -100,6 +141,7 @@ function MobileTabDetailContent({ tabId }: { tabId: string }) {
           isBottleService: data.isBottleService || false,
           bottleServiceDeposit: data.bottleServiceDeposit ? Number(data.bottleServiceDeposit) : null,
           bottleServiceMinSpend: data.bottleServiceMinSpend ? Number(data.bottleServiceMinSpend) : null,
+          customer: linkedCustomer,
           items: (data.items || []).map((item: { name: string; quantity: number; price: number; modifiers?: Array<{ name: string }> }) => ({
             name: item.name,
             quantity: item.quantity,
@@ -117,7 +159,13 @@ function MobileTabDetailContent({ tabId }: { tabId: string }) {
         setLoading(false)
       })
       .catch(() => setLoading(false))
-  }, [authChecked, tabId])
+  }, [authChecked, tabId, employeeId, refreshKey])
+
+  const handleLinked = useCallback(() => {
+    // Re-read the order on the next tick so we pick up the updated customer + totals
+    // (auto-discount removal on unlink can change subtotal/total too).
+    setRefreshKey(k => k + 1)
+  }, [])
 
   // Don't render until auth is resolved
   if (!authChecked) {
@@ -184,6 +232,38 @@ function MobileTabDetailContent({ tabId }: { tabId: string }) {
             Bottle Service — Deposit: ${tab.bottleServiceDeposit?.toFixed(2)} • Min: ${tab.bottleServiceMinSpend?.toFixed(2)}
           </div>
         )}
+
+        {/* Customer link pill / button */}
+        <div className="mt-3 ml-9">
+          {tab.customer ? (
+            <button
+              onClick={() => setLinkModalOpen(true)}
+              className="inline-flex items-center gap-2 min-h-[40px] px-3 py-1.5 rounded-xl bg-blue-500/15 border border-blue-500/30 text-blue-300 text-sm font-medium hover:bg-blue-500/25 active:scale-[0.98]"
+              aria-label="Edit linked customer"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+              <span className="truncate max-w-[160px]">{tab.customer.name}</span>
+              {typeof tab.customer.loyaltyPoints === 'number' && (
+                <span className="text-blue-200/80 text-xs">
+                  · {tab.customer.loyaltyPoints.toLocaleString()} pts
+                </span>
+              )}
+            </button>
+          ) : (
+            <button
+              onClick={() => setLinkModalOpen(true)}
+              className="inline-flex items-center gap-2 min-h-[40px] px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-white/60 text-sm font-medium hover:bg-white/10 active:scale-[0.98]"
+              aria-label="Link customer"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
+              Link Customer
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Items */}
@@ -237,6 +317,19 @@ function MobileTabDetailContent({ tabId }: { tabId: string }) {
         tabId={tab.id}
         employeeId={employeeId}
       />
+
+      {/* Customer link modal — pinned overlay */}
+      {linkModalOpen && (
+        <MobileCustomerLinkModal
+          isOpen={linkModalOpen}
+          onClose={() => setLinkModalOpen(false)}
+          orderId={tab.id}
+          locationId={locationId}
+          employeeId={employeeId}
+          currentCustomer={tab.customer}
+          onLinked={handleLinked}
+        />
+      )}
     </div>
   )
 }
