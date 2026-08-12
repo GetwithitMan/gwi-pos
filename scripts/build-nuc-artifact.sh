@@ -245,6 +245,18 @@ _SMOKE_RESULT=$(cd "$STAGING" && node -e "
 }
 echo "    Smoke test passed: $_SMOKE_RESULT"
 
+# preload.js must exist before the smoke-BOOT test below, which runs
+# `node -r ./preload.js server.js`. It is not part of the Next standalone
+# output, so staging it with the custom server further down left the boot test
+# loading a file that did not exist: "Cannot find module './preload.js'".
+# That has failed every release build since 2026-04-23, pinning the fleet at
+# v2.0.72. The custom server.js is deliberately still copied later: it is
+# fail-closed without a database ("Cannot start with sync coverage errors in
+# production"), so the boot test intentionally exercises the standalone server,
+# which starts without one.
+echo "    preload.js (pre-staged for boot test)..."
+cp "$REPO_DIR/preload.js" "$STAGING/preload.js"
+
 # ── Artifact smoke-BOOT test: start the server and verify it binds a port ──
 # This catches ALL missing dependencies (transitive, lazy, generated internals)
 # by actually running the staged artifact. Fails the build if the server can't
@@ -319,7 +331,7 @@ mkdir -p "$STAGING/.next/static"
 cp -r "$REPO_DIR/.next/static/." "$STAGING/.next/static/"
 
 # Custom server + preload
-echo "    server.js + preload.js..."
+echo "    server.js (custom server overwrites standalone stub)..."
 cp "$REPO_DIR/server.js" "$STAGING/server.js"
 cp "$REPO_DIR/preload.js" "$STAGING/preload.js"
 
