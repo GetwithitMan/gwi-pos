@@ -540,19 +540,33 @@ SIGNED=false
 if [ -n "${MINISIGN_SECRET_KEY:-}" ]; then
     if ! command -v minisign &>/dev/null; then
         echo "    minisign not found — installing..."
+        # sudo is required on CI runners: the job user cannot write
+        # /var/lib/apt/lists or /usr/local/bin. Without it apt-get fails with
+        # "Could not open lock file ... Permission denied", the fallback cp
+        # fails the same way, and the build dies at signing.
+        # See feedback: ALL apt-get in this repo uses explicit sudo.
+        _SUDO=""
+        if [ "$(id -u)" -ne 0 ] && command -v sudo &>/dev/null; then _SUDO="sudo"; fi
+
         if command -v apt-get &>/dev/null; then
-            apt-get update -qq && apt-get install -y -qq minisign 2>/dev/null
+            $_SUDO apt-get update -qq && $_SUDO apt-get install -y -qq minisign || true
         elif command -v brew &>/dev/null; then
-            brew install minisign 2>/dev/null
+            brew install minisign || true
         fi
         if ! command -v minisign &>/dev/null; then
-            # Fallback: download pre-built binary
+            # Fallback: download pre-built binary. Retry — this endpoint has
+            # returned a transient 503 mid-build before.
             echo "    apt/brew install failed — downloading minisign binary..."
-            curl -fsSL "https://github.com/jedisct1/minisign/releases/download/0.12/minisign-0.12-linux.tar.gz" \
-                | tar xz -C /tmp/ 2>/dev/null
-            if [ -f /tmp/minisign-linux/x86_64/minisign ]; then
-                cp /tmp/minisign-linux/x86_64/minisign /usr/local/bin/minisign
-                chmod +x /usr/local/bin/minisign
+            _MS_URL="https://github.com/jedisct1/minisign/releases/download/0.12/minisign-0.12-linux.tar.gz"
+            if curl -fsSL --retry 5 --retry-delay 3 --retry-all-errors --max-time 120 "$_MS_URL" | tar xz -C /tmp/; then
+                if [ -f /tmp/minisign-linux/x86_64/minisign ]; then
+                    $_SUDO cp /tmp/minisign-linux/x86_64/minisign /usr/local/bin/minisign
+                    $_SUDO chmod +x /usr/local/bin/minisign
+                else
+                    echo "    downloaded archive did not contain the expected binary" >&2
+                fi
+            else
+                echo "    minisign download failed" >&2
             fi
         fi
         if ! command -v minisign &>/dev/null; then
