@@ -287,6 +287,7 @@ ensure_host_state_writable() {
 
 start_container() {
   docker run -d --name "$CONTAINER_NAME" --restart=unless-stopped \
+    --log-opt max-size=50m --log-opt max-file=3 \
     --network=host --env-file "$ENV_FILE" -v "${SHARED_DIR}:${SHARED_DIR}" \
     -v /opt/gwi-pos/state:/opt/gwi-pos/state \
     "$1"
@@ -298,6 +299,7 @@ start_agent() {
   docker rm "$AGENT_CONTAINER_NAME" 2>/dev/null || true
   docker run -d --name "$AGENT_CONTAINER_NAME" \
     --restart=unless-stopped \
+    --log-opt max-size=50m --log-opt max-file=3 \
     --network=host \
     --user root \
     --env-file "$ENV_FILE" \

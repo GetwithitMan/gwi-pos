@@ -30,7 +30,7 @@ import { startBridgeCheckpoint, stopBridgeCheckpoint } from './src/lib/bridge-ch
 import { startCloudRelayClient, stopCloudRelayClient } from './src/lib/cloud-relay-client'
 import { startCellularRelayCleanup, stopCellularRelayCleanup } from './src/lib/cellular-event-relay'
 import { disconnectNeon } from './src/lib/neon-client'
-import { cleanupStaleOrders } from './src/lib/domain/cleanup/stale-order-cleanup'
+import { runCheckCleanup } from './src/lib/check-events/check-cleanup'
 import { executeEodReset } from './src/lib/eod'
 import { parseSettings } from './src/lib/settings'
 import { parseTimeString } from './src/lib/business-day'
@@ -52,81 +52,37 @@ const hostname = process.env.HOSTNAME || 'localhost'
 const port = config.port
 
 // ============================================================================
-// EOD Scheduler — runs stale order cleanup daily at 4 AM
-// ============================================================================
-
-function startEodScheduler() {
-  const EOD_HOUR = 4 // 4 AM local time
-
-  function msUntilNext4AM(): number {
-    const now = new Date()
-    const next = new Date(now)
-    next.setHours(EOD_HOUR, 0, 0, 0)
-    if (next <= now) {
-      next.setDate(next.getDate() + 1)
-    }
-    return next.getTime() - now.getTime()
-  }
-
-  async function runEodCleanup() {
-    const locationId = config.posLocationId
-    if (!locationId) {
-      // Cloud/dev mode without a fixed location — skip automatic cleanup
-      return
-    }
-
-    try {
-      const result = await cleanupStaleOrders({ locationId })
-      if (result.closedCount > 0) {
-        logger.info({ closedCount: result.closedCount }, 'Cleaned up stale draft orders')
-      }
-    } catch (err) {
-      logger.error({ err }, 'Stale order cleanup failed')
-    }
-  }
-
-  function scheduleNext() {
-    const delay = msUntilNext4AM()
-    const nextRun = new Date(Date.now() + delay)
-    logger.info({ nextRun: nextRun.toISOString() }, 'Next stale-order cleanup scheduled')
-
-    const timer = setTimeout(async () => {
-      await runEodCleanup()
-      scheduleNext() // Reschedule for next day
-    }, delay)
-    // Don't keep the process alive just for the EOD timer
-    timer.unref()
-  }
-
-  scheduleNext()
-}
-
-// ============================================================================
-// Periodic Draft Cleanup — cancels abandoned $0 drafts every 5 minutes (15-min TTL)
+// Periodic Check Cleanup — releases stale leases and abandons stale drafts
+//
+// Runs every 5 minutes. Shares `runCheckCleanup` with /api/cron/check-cleanup,
+// which covers the cloud/cellular path. Replaces the old stale-Order sweep —
+// drafts are Checks now (Check Aggregate).
 // ============================================================================
 
 function startDraftCleanupInterval() {
   const INTERVAL_MS = 5 * 60 * 1000 // 5 minutes
-  const MAX_AGE_MINUTES = 15 // Cancel drafts older than 15 minutes
 
-  async function cleanupDrafts() {
+  async function cleanupChecks() {
     const locationId = config.posLocationId
     if (!locationId) return
 
     try {
-      const result = await cleanupStaleOrders({ locationId, maxAgeMinutes: MAX_AGE_MINUTES })
-      if (result.closedCount > 0) {
-        logger.info({ closedCount: result.closedCount, maxAgeMinutes: MAX_AGE_MINUTES }, 'Cancelled abandoned draft orders (5-min sweep)')
+      const result = await runCheckCleanup({ locationId })
+      if (result.releasedLeases > 0 || result.abandonedDrafts > 0) {
+        logger.info(
+          { releasedLeases: result.releasedLeases, abandonedDrafts: result.abandonedDrafts },
+          'Check cleanup sweep'
+        )
       }
-    } catch {
-      // Silent — non-critical background task
+    } catch (err) {
+      logger.error({ err }, 'Check cleanup failed')
     }
   }
 
-  const timer = setInterval(cleanupDrafts, INTERVAL_MS)
+  const timer = setInterval(cleanupChecks, INTERVAL_MS)
   timer.unref()
   // Run once on startup after a 2-minute delay (let server fully boot)
-  const startupTimer = setTimeout(cleanupDrafts, 2 * 60 * 1000)
+  const startupTimer = setTimeout(cleanupChecks, 2 * 60 * 1000)
   startupTimer.unref()
 }
 
@@ -759,10 +715,6 @@ async function main() {
       logger.warn('Sync workers deferred — readiness at BOOT (schema/seed incomplete). Will start when SYNC level reached.')
     }
 
-    registerWorker('eodScheduler', 'optional',
-      () => startEodScheduler(),
-      () => { /* timer-based, unref'd — exits with process */ }
-    )
     registerWorker('draftCleanup', 'optional',
       () => startDraftCleanupInterval(),
       () => { /* interval-based, unref'd — exits with process */ }

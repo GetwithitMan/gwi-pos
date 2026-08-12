@@ -58,6 +58,11 @@ export const SYNC_MODELS: Readonly<Record<string, SyncModelConfig>> = {
   OrderDiscount:          { direction: 'bidirectional', owner: 'both', priority: 22, batchSize: 100, conflictStrategy: 'quarantine' },
   OrderCard:              { direction: 'bidirectional', owner: 'both', priority: 24, batchSize: 100, conflictStrategy: 'quarantine' },
   OrderItemModifier:      { direction: 'bidirectional', owner: 'both', priority: 25, batchSize: 100, conflictStrategy: 'quarantine' },
+  // Check Aggregate — same dual-ingress shape as Order (LAN registers via NUC,
+  // cellular terminals via Vercel → Neon), so bidirectional like its Order twin.
+  // Sequenced AFTER Order: Check.orderId is an FK to Order.
+  Check:                  { direction: 'bidirectional', owner: 'both', priority: 26, batchSize: 200, conflictStrategy: 'quarantine' },
+  CheckItem:              { direction: 'bidirectional', owner: 'both', priority: 27, batchSize: 200, conflictStrategy: 'quarantine' },
   Payment:                { direction: 'bidirectional', owner: 'both', priority: 30, batchSize: 200, conflictStrategy: 'quarantine' },
 
   // ── NUC-owned (upstream: NUC → Neon) ──────────────────────────────────
@@ -217,6 +222,8 @@ export const SYNC_MODELS: Readonly<Record<string, SyncModelConfig>> = {
 
   // ── Orders + Events (NUC → Neon) ────────────────────────────────────
   OrderEvent:             { direction: 'upstream', owner: 'nuc', priority: 109, batchSize: 100 },
+  // Append-only check audit trail — NUC-generated, same shape as OrderEvent.
+  CheckEvent:             { direction: 'upstream', owner: 'nuc', priority: 109.5, batchSize: 100 },
   OrderSnapshot:          { direction: 'upstream', owner: 'nuc', priority: 110, batchSize: 50 },
   OrderItemSnapshot:      { direction: 'upstream', owner: 'nuc', priority: 111, batchSize: 100 },
 
@@ -360,6 +367,13 @@ export const LOCAL_ONLY_TABLES = new Set([
   'RegisteredDevice', 'MobileSession', 'ServerRegistrationToken',
   'SyncConflict', 'SyncWatermark', // quarantine infrastructure
   'LocalSchemaState', 'LocalInstallState', // NUC-owned infrastructure (never synced)
+  // Check Aggregate infrastructure — deliberately NOT synced.
+  // ProcessedCommand is a 24h per-node idempotency ledger; replaying another
+  // node's entries would suppress legitimate commands.
+  // OrderNumberAllocator is a per-node counter guarded by SELECT FOR UPDATE —
+  // syncing it would let two nodes converge on the same nextNumber and issue
+  // duplicate order numbers.
+  'ProcessedCommand', 'OrderNumberAllocator',
   // Reservation ephemeral tokens + junction table (composite PK, no id column)
   'ReservationIdempotencyKey', 'ReservationDepositToken', 'ReservationTable',
   // Delivery infrastructure

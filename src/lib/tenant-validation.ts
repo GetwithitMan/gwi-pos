@@ -156,6 +156,10 @@ export const NO_SOFT_DELETE_MODELS = new Set([
   'OutageQueueEntry', 'FulfillmentEvent', 'BridgeCheckpoint',
   // locationId but no deletedAt (append-only logs)
   'ReservationEvent', 'VenueLog',
+  // Check Aggregate — only Check itself has deletedAt. CheckItem/CheckEvent are
+  // owned by their parent check, ProcessedCommand is a 24h idempotency ledger,
+  // and OrderNumberAllocator is a per-location/day counter. None soft-delete.
+  'CheckItem', 'CheckEvent', 'ProcessedCommand', 'OrderNumberAllocator',
 ])
 
 // ── Boot-time validation ─────────────────────────────────────────────────────
