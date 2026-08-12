@@ -27,12 +27,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
-import { ok, err } from '@/lib/api-response'
+import { err } from '@/lib/api-response'
 import { getBusinessDate } from '@/lib/check-events/business-date'
 import { dispatchCheckCommitted, dispatchChecksListChanged, dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { emitToLocation } from '@/lib/socket-server'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { allocateOrderNumber } from '@/lib/check-commit/allocate-order-number'
+import { recalculateCommittedOrderTotals } from '@/lib/check-commit/order-totals-sync'
 import { createChildLogger } from '@/lib/logger'
 
 const log = createChildLogger('check-commit')
@@ -189,6 +190,12 @@ export const POST = withVenue(async function POST(
           },
         })
       }
+
+      // 7b. Compute the Order's money fields from the items just written.
+      //     The Order is created with zeroed totals above (the row must exist
+      //     before its items do), so without this it would stay at $0.00 —
+      //     payments, receipts, and reports all read these columns.
+      await recalculateCommittedOrderTotals(tx, order.id, check.locationId)
 
       // 8. Update check: status → committed, assign orderNumber, link orderId
       const committed = await tx.check.update({

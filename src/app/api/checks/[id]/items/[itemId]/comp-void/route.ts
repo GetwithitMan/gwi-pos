@@ -8,6 +8,7 @@ import { emitCheckEventInTx, checkIdempotency, validateLease, isLeaseError, reso
 import { emitToLocation } from '@/lib/socket-server'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
+import { recalculateCommittedOrderTotals } from '@/lib/check-commit/order-totals-sync'
 import { err, ok, notFound } from '@/lib/api-response'
 
 const CompVoidSchema = z.object({
@@ -93,6 +94,7 @@ export const POST = withVenue(async function POST(
             wasMade: body.wasMade ?? null,
           },
         })
+        await recalculateCommittedOrderTotals(tx, check.orderId as string, locationId)
       }
 
       await tx.check.update({ where: { id: checkId }, data: { updatedAt: new Date() } })

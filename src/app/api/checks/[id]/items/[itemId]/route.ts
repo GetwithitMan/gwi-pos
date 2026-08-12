@@ -8,6 +8,7 @@ import { emitCheckEventInTx, checkIdempotency, validateLease, isLeaseError, reso
 import { emitToLocation } from '@/lib/socket-server'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
+import { recalculateCommittedOrderTotals } from '@/lib/check-commit/order-totals-sync'
 import { err, ok, notFound } from '@/lib/api-response'
 
 // ── Zod schema for DELETE /api/checks/[id]/items/[itemId] ───────────
@@ -96,6 +97,7 @@ export const DELETE = withVenue(async function DELETE(
           where: { id: itemId },
           data: { status: 'removed' },
         })
+        await recalculateCommittedOrderTotals(tx, check.orderId as string, locationId)
       }
 
       await tx.check.update({ where: { id: checkId }, data: { updatedAt: new Date() } })
@@ -262,6 +264,8 @@ export const PATCH = withVenue(async function PATCH(
             })
           }
         }
+
+        await recalculateCommittedOrderTotals(tx, check.orderId as string, locationId)
       }
 
       await tx.check.update({ where: { id: checkId }, data: { updatedAt: new Date() } })

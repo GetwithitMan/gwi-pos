@@ -9,6 +9,7 @@ import { emitToLocation } from '@/lib/socket-server'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { err, created } from '@/lib/api-response'
+import { recalculateCommittedOrderTotals } from '@/lib/check-commit/order-totals-sync'
 
 // ── Zod schema for POST /api/checks/[id]/items ─────────────────────
 const AddItemSchema = z.object({
@@ -184,6 +185,12 @@ export const POST = withVenue(async function POST(
             } : undefined,
           },
         })
+      }
+
+      // Keep the Order's money fields in step with the dual-written OrderItem.
+      // Without this the Order keeps stale totals while its items change.
+      if (isCommitted) {
+        await recalculateCommittedOrderTotals(tx, check.orderId as string, locationId)
       }
 
       await tx.check.update({ where: { id: checkId }, data: { updatedAt: new Date() } })
