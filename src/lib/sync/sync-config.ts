@@ -60,9 +60,11 @@ export const SYNC_MODELS: Readonly<Record<string, SyncModelConfig>> = {
   OrderItemModifier:      { direction: 'bidirectional', owner: 'both', priority: 25, batchSize: 100, conflictStrategy: 'quarantine' },
   // Check Aggregate — same dual-ingress shape as Order (LAN registers via NUC,
   // cellular terminals via Vercel → Neon), so bidirectional like its Order twin.
-  // Sequenced AFTER Order: Check.orderId is an FK to Order.
-  Check:                  { direction: 'bidirectional', owner: 'both', priority: 26, batchSize: 200, conflictStrategy: 'quarantine' },
-  CheckItem:              { direction: 'bidirectional', owner: 'both', priority: 27, batchSize: 200, conflictStrategy: 'quarantine' },
+  // Sequenced AFTER Order (Check.orderId is an FK to it) and after the whole
+  // OrderItem family, which occupies 20-27. 28/29 were free; 26/27 collide with
+  // OrderItemIngredient/OrderItemPizza and sync-config validation is fail-closed.
+  Check:                  { direction: 'bidirectional', owner: 'both', priority: 28, batchSize: 200, conflictStrategy: 'quarantine' },
+  CheckItem:              { direction: 'bidirectional', owner: 'both', priority: 29, batchSize: 200, conflictStrategy: 'quarantine' },
   Payment:                { direction: 'bidirectional', owner: 'both', priority: 30, batchSize: 200, conflictStrategy: 'quarantine' },
 
   // ── NUC-owned (upstream: NUC → Neon) ──────────────────────────────────
