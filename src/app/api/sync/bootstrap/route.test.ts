@@ -32,6 +32,7 @@ const mockDb = vi.hoisted(() => ({
   comboTemplate: { findMany: vi.fn() },
   entertainmentResource: { findMany: vi.fn() },
   entertainmentSession: { findMany: vi.fn() },
+  check: { findMany: vi.fn() },
 }))
 
 const mockAdminDb = vi.hoisted(() => ({
@@ -99,6 +100,7 @@ function stubEmptyDefaults() {
   mockDb.comboTemplate.findMany.mockResolvedValue([])
   mockDb.entertainmentResource.findMany.mockResolvedValue([])
   mockDb.entertainmentSession.findMany.mockResolvedValue([])
+  mockDb.check.findMany.mockResolvedValue([])
   mockAdminDb.employee.findMany.mockResolvedValue([])
   mockAdminDb.order.findMany.mockResolvedValue([])
   mockAdminDb.orderSnapshot.findMany.mockResolvedValue([])
