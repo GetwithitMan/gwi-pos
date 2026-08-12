@@ -2,7 +2,7 @@ import { PrismaClient } from '@/generated/prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { orderWriteGuardExtension } from './order-write-guard'
 import { getRequestPrisma } from './request-context'
-import { applySoftDeleteFilter } from './db-soft-delete'
+import { applySoftDeleteFilter, initSoftDeleteRegistry } from './db-soft-delete'
 import { createTenantScopedExtension } from './db-tenant-scope'
 import { CONNECTION_BUDGET } from './db-connection-budget'
 import {
@@ -70,6 +70,11 @@ export function createPrismaClient(url?: string) {
       timeout: 30000, // 30s — extra headroom for payment transactions
     },
   })
+
+  // Derive which models actually declare `deletedAt` before any query runs.
+  // Without this the filter is injected into models that lack the column and
+  // every read of them throws PrismaClientValidationError. See db-soft-delete.ts.
+  initSoftDeleteRegistry(client)
 
   // Chain: soft-delete guard → legacy write guard → tenant scoping
   const extended = client.$extends({
