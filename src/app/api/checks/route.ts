@@ -12,6 +12,12 @@ import { err, created } from '@/lib/api-response'
 // ── Zod schema for POST /api/checks ────────────────────────────────
 const OpenCheckSchema = z.object({
   commandId: z.string().uuid('commandId must be a UUID'),
+  // Client-generated aggregate id — see docs/guides/STABLE-ID-CONTRACT.md.
+  // The register writes the draft to Room and renders it before this request
+  // is made, so the id must originate on the device: a server-assigned id
+  // would leave every offline draft unaddressable and unable to replay.
+  // Optional so older clients keep working; they fall back to a server cuid.
+  checkId: z.string().uuid('checkId must be a UUID').optional(),
   locationId: z.string().min(1, 'locationId is required'),
   employeeId: z.string().min(1, 'employeeId is required'),
   terminalId: z.string().min(1, 'terminalId is required'),
@@ -85,6 +91,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
       const newCheck = await tx.check.create({
         data: {
+          ...(body.checkId ? { id: body.checkId } : {}),
           locationId,
           employeeId: body.employeeId,
           orderType: body.orderType,

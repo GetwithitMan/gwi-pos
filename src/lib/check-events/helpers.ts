@@ -9,6 +9,7 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getRequestLocationId } from '@/lib/request-context'
 import { getActorFromRequest } from '@/lib/api-auth'
+import { authenticateTerminal } from '@/lib/terminal-auth'
 import type { NextRequest } from 'next/server'
 
 // ── Idempotency ──────────────────────────────────────────────────────
@@ -108,8 +109,15 @@ export function isLeaseError(
 /**
  * Resolve locationId from (in priority order):
  *   1. Explicit body field
- *   2. Request context (JWT / cellular)
- *   3. Actor session
+ *   2. Request context (NUC server.ts requestStore)
+ *   3. Actor session cookie (web / PIN login)
+ *   4. Bearer terminal identity — LAN device token or cellular JWT
+ *
+ * Step 4 matters for cellular terminals: they authenticate with a Bearer token
+ * and never carry a session cookie, and requests through Vercel have no NUC
+ * request context. Without it every check mutation 400s with
+ * "locationId is required" on the cellular path. The locationId comes from the
+ * verified token, so it is not client-assertable.
  */
 export async function resolveLocationId(
   request: NextRequest,
@@ -119,5 +127,7 @@ export async function resolveLocationId(
   const fromCtx = getRequestLocationId()
   if (fromCtx) return fromCtx
   const actor = await getActorFromRequest(request)
-  return actor.locationId
+  if (actor.locationId) return actor.locationId
+  const auth = await authenticateTerminal(request)
+  return auth.terminal?.locationId ?? null
 }
