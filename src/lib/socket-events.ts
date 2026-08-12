@@ -221,6 +221,14 @@ export const SOCKET_EVENTS = {
   DRAWER_PAID_IN_OUT:   'drawer:paid-in-out',
   SHIFTS_CHANGED:       'shifts:changed',
   ORDER_TYPES_UPDATED:  'order-types:updated',
+
+  // ── Check Lifecycle ───────────────────────────────────────────────────
+  CHECK_EVENT:            'check:event',           // Event-sourced check mutations
+  CHECK_OPENED:           'check:opened',          // New draft check on floor plan
+  CHECK_COMMITTED:        'check:committed',       // Check became numbered order
+  CHECK_ABANDONED:        'check:abandoned',       // Draft check discarded
+  CHECK_LEASE_CHANGED:    'check:lease-changed',   // Lease acquired/released/heartbeat
+  CHECKS_LIST_CHANGED:    'checks:list-changed',   // Open checks refresh signal
 } as const
 
 /** Union of all event name string literals */
