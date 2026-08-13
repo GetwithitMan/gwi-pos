@@ -544,7 +544,10 @@ export const POST = withVenue(async function POST(
           ...seatItems.map(item => ({
             type: 'ITEM_ADDED' as const,
             payload: {
-              lineItemId: item.id,
+              // The child's own OrderItem id, NOT the parent's. order_item_snapshots.id
+              // is the lineItemId and is the primary key, so reusing the parent's id
+              // collides with its existing snapshot row and fails payment with P2002.
+              lineItemId: matchingSplit.itemIdMap[item.id] ?? item.id,
               menuItemId: item.menuItemId,
               name: item.name,
               priceCents: Math.round(Number(item.price) * 100),
@@ -690,7 +693,8 @@ export const POST = withVenue(async function POST(
           ...tableItems.map(item => ({
             type: 'ITEM_ADDED' as const,
             payload: {
-              lineItemId: item.id,
+              // Child's own OrderItem id — see the by_seat branch for why.
+              lineItemId: matchingSplit.itemIdMap[item.id] ?? item.id,
               menuItemId: item.menuItemId,
               name: item.name,
               priceCents: Math.round(Number(item.price) * 100),

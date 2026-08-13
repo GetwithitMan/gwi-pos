@@ -9,7 +9,7 @@ import { Prisma, OrderItemStatus } from '@/generated/prisma/client'
 import { calculateSplitTax } from '@/lib/order-calculations'
 import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
 import { distributeDiscountsProportionally } from './discount-distribution'
-import type { TxClient, SplitSourceOrder, SplitOrderItem, TableSplitResult } from './types'
+import type { TxClient, SplitSourceOrder, SplitOrderItem, TableSplitResult, TableSplitChildSummary } from './types'
 import { createChildLogger } from '@/lib/logger'
 
 const log = createChildLogger('table-split')
@@ -62,18 +62,7 @@ export async function createTableSplit(
   })
 
   // Create a split order for each table
-  const splitOrders: Array<{
-    id: string
-    orderNumber: number
-    splitIndex: number | null
-    displayNumber: string
-    tableId: string
-    tableName: string
-    total: number
-    itemCount: number
-    paidAmount: number
-    isPaid: boolean
-  }> = []
+  const splitOrders: TableSplitChildSummary[] = []
   let splitIndex = existingSplits
   const childItemDiscountAccum: TableChildDiscountAccum[] = []
 
@@ -218,6 +207,14 @@ export async function createTableSplit(
       },
     }) as any
 
+    // Map each source item to the child's newly-created row — the caller emits
+    // ITEM_ADDED with these ids. See SeatSplitChildSummary.itemIdMap.
+    const tableItemIdMap: Record<string, string> = {}
+    for (let i = 0; i < tableItems.length; i++) {
+      const created = (splitOrder.items as any[])[i]
+      if (created) tableItemIdMap[tableItems[i].id] = created.id
+    }
+
     splitOrders.push({
       id: splitOrder.id,
       orderNumber: splitOrder.orderNumber,
@@ -229,6 +226,7 @@ export async function createTableSplit(
       itemCount: (splitOrder.items as any[]).length,
       paidAmount: 0,
       isPaid: false,
+      itemIdMap: tableItemIdMap,
     })
 
     // Update MenuItem.currentOrderId for timed_rental items moved to split child
@@ -252,12 +250,7 @@ export async function createTableSplit(
     }
 
     // --- Move item-level discounts to this table's child order ---
-    const oldToNewItemMap = new Map<string, string>()
-    for (let i = 0; i < tableItems.length; i++) {
-      const oldItem = tableItems[i]
-      const newItem = (splitOrder.items as any[])[i]
-      if (newItem) oldToNewItemMap.set(oldItem.id, newItem.id)
-    }
+    const oldToNewItemMap = new Map<string, string>(Object.entries(tableItemIdMap))
 
     let tableItemDiscountTotal = 0
     for (const movedItem of tableItems) {

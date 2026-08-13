@@ -10,7 +10,7 @@ import { calculateSplitTax } from '@/lib/order-calculations'
 import { createChildLogger } from '@/lib/logger'
 import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
 import { distributeDiscountsProportionally } from './discount-distribution'
-import type { TxClient, SplitSourceOrder, SplitOrderItem, SeatSplitResult } from './types'
+import type { TxClient, SplitSourceOrder, SplitOrderItem, SeatSplitResult, SeatSplitChildSummary } from './types'
 
 /** Track per-child item discount totals accumulated during seat split */
 interface SeatChildDiscountAccum {
@@ -60,17 +60,7 @@ export async function createSeatSplit(
   })
 
   // Create a split order for each seat
-  const splitOrders: Array<{
-    id: string
-    orderNumber: number
-    splitIndex: number | null
-    displayNumber: string
-    seatNumber: number | null
-    total: number
-    itemCount: number
-    paidAmount: number
-    isPaid: boolean
-  }> = []
+  const splitOrders: SeatSplitChildSummary[] = []
   let splitIndex = existingSplits
   const childItemDiscountAccum: SeatChildDiscountAccum[] = []
 
@@ -213,6 +203,14 @@ export async function createSeatSplit(
       },
     }) as any
 
+    // Map each source item to the child's newly-created row. The caller emits
+    // ITEM_ADDED with these ids — see SeatSplitChildSummary.itemIdMap.
+    const seatItemIdMap: Record<string, string> = {}
+    for (let i = 0; i < seatItems.length; i++) {
+      const created = (splitOrder.items as any[])[i]
+      if (created) seatItemIdMap[seatItems[i].id] = created.id
+    }
+
     splitOrders.push({
       id: splitOrder.id,
       orderNumber: splitOrder.orderNumber,
@@ -223,6 +221,7 @@ export async function createSeatSplit(
       itemCount: (splitOrder.items as any[]).length,
       paidAmount: 0,
       isPaid: false,
+      itemIdMap: seatItemIdMap,
     })
 
     // Update MenuItem.currentOrderId for timed_rental items moved to split child
@@ -246,12 +245,7 @@ export async function createSeatSplit(
     }
 
     // --- Move item-level discounts to this seat's child order ---
-    const oldToNewItemMap = new Map<string, string>()
-    for (let i = 0; i < seatItems.length; i++) {
-      const oldItem = seatItems[i]
-      const newItem = (splitOrder.items as any[])[i]
-      if (newItem) oldToNewItemMap.set(oldItem.id, newItem.id)
-    }
+    const oldToNewItemMap = new Map<string, string>(Object.entries(seatItemIdMap))
 
     let seatItemDiscountTotal = 0
     for (const movedItem of seatItems) {
