@@ -55,9 +55,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       // ── Table exclusivity guard ─────────────────────────────────────
       // Prevent two terminals opening separate drafts on the same table.
       if (body.tableId) {
-        // Advisory lock serializes check creation per table within this txn
+        // Advisory lock serializes check creation per table within this txn.
+        // MUST be $executeRaw, not $queryRaw: pg_advisory_xact_lock() returns
+        // void, and $queryRaw tries to deserialize the result set —
+        //   "Failed to deserialize column of type 'void'" (P2010)
+        // which 500s every table-based check. Only tableId orders hit this
+        // branch, so tableless smoke tests pass while real table taps fail.
         const lockKey = Math.abs(body.tableId.split('').reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0))
-        await tx.$queryRaw`SELECT pg_advisory_xact_lock(${lockKey})`
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(${lockKey})`
 
         const existingCheck = await tx.check.findFirst({
           where: {
