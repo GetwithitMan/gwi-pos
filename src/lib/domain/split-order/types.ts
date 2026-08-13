@@ -222,6 +222,16 @@ export interface SeatSplitChildSummary {
   itemCount: number
   paidAmount: number
   isPaid: boolean
+  /**
+   * Source OrderItem id → the child's newly-created OrderItem id.
+   *
+   * The child's items are new rows with their own ids. ITEM_ADDED events for
+   * the child MUST carry these ids, not the parent's: `order_item_snapshots.id`
+   * IS the lineItemId and is the primary key, so emitting the parent's ids makes
+   * the projector insert a row that already exists under the parent's snapshot —
+   * P2002 on payment, which rolls the whole transaction back.
+   */
+  itemIdMap: Record<string, string>
 }
 
 export interface SeatSplitResult {
@@ -242,6 +252,8 @@ export interface TableSplitChildSummary {
   itemCount: number
   paidAmount: number
   isPaid: boolean
+  /** Source OrderItem id → the child's new OrderItem id. See SeatSplitChildSummary.itemIdMap. */
+  itemIdMap: Record<string, string>
 }
 
 export interface TableSplitResult {
