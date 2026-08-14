@@ -322,11 +322,23 @@ export async function buildPaymentFinancialContext(
     let taxInclusiveTotal = rawTotal
     if (!isAllocChild) {
       if (storedTax > 0) {
-        // AUTHORITATIVE PATH. Order.taxTotal was computed by the item-level tax
-        // engine, which honours each venue's TaxRule rows including per-category
-        // and per-item scoping (TaxRule.appliesTo = all | category | item).
-        // This is the only source of truth for tax. Never re-derive it here.
-        taxInclusiveTotal = roundToCents(rawTotal + storedTax)
+        // AUTHORITATIVE PATH. Order.total ALREADY INCLUDES tax — see
+        // order-calculations.ts calculateOrderTotals():
+        //   totalBeforeRounding = inclusiveSubtotal + exclusiveSubtotal
+        //                         + taxFromExclusive - discount + tip + fee
+        // Verified against production rows: subtotal 42.96 + taxTotal 3.44 = total 46.40.
+        //
+        // This branch used to return (rawTotal + storedTax), double-counting tax.
+        // It never fired in practice ONLY because the event-sourcing bridge was
+        // clobbering taxTotal to 0 on every replay, so storedTax was always 0 and
+        // the else-branch below silently compensated. Fixing that clobber (RC-3)
+        // arms this path for the first time — so it must be correct now. Adding
+        // storedTax here would overcharge every order by its full tax amount
+        // ($42.96 + 10% would bill $51.56 instead of $47.26).
+        //
+        // Tax itself comes from the venue's TaxRule rows via the item-level
+        // engine, which honours appliesTo / categoryIds / itemIds.
+        taxInclusiveTotal = rawTotal
       } else {
         // FALLBACK — always the individual venue's own configured rate.
         //

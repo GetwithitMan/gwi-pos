@@ -53,8 +53,11 @@ function serverPayable(
   const isAllocChild = !!order.parentOrderId && order.splitClass === 'allocation'
   let taxInclusive = order.total
   if (!isAllocChild) {
+    // Order.total ALREADY includes tax when taxTotal was persisted
+    // (order-calculations.ts adds taxFromExclusive into total). Only add tax when
+    // it was never computed — the legacy/clobbered case.
     taxInclusive = order.taxTotal > 0
-      ? roundToCents(order.total + order.taxTotal)
+      ? order.total
       : roundToCents(order.total + roundToCents(order.total * taxRatePct / 100))
   }
   return roundNearestDollar(taxInclusive)
@@ -140,14 +143,15 @@ describe.each([
     expect(payable).toBe(roundNearestDollar(split.parentTaxInclusive))
   })
 
-  it('a stored taxTotal is preferred over recomputing from the rate', () => {
-    const withStored = serverPayable(rate, {
-      total: CHECK_SUBTOTAL, taxTotal: split.parentTax, parentOrderId: null, splitClass: null,
+  it('never double-counts tax when taxTotal is persisted', () => {
+    // total is already tax-inclusive here, so the payable must be total (rounded),
+    // NOT total + taxTotal. Pre-fix that returned 51.56 on a 47.26 check at 10%.
+    const taxInclusiveTotal = roundToCents(CHECK_SUBTOTAL + split.parentTax)
+    const payable = serverPayable(rate, {
+      total: taxInclusiveTotal, taxTotal: split.parentTax, parentOrderId: null, splitClass: null,
     })
-    const withoutStored = serverPayable(rate, {
-      total: CHECK_SUBTOTAL, taxTotal: 0, parentOrderId: null, splitClass: null,
-    })
-    expect(withStored).toBe(withoutStored)
+    expect(payable).toBe(roundNearestDollar(taxInclusiveTotal))
+    expect(payable).not.toBe(roundNearestDollar(roundToCents(taxInclusiveTotal + split.parentTax)))
   })
 
   it('a STRUCTURAL split child still gets tax added — it owns real items', () => {
