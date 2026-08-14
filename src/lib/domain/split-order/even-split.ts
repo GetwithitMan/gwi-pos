@@ -143,8 +143,20 @@ export async function createEvenSplit(
     data: {
       status: 'split',
       discountTotal: 0,
-      // Set splitFamilyTotal on first split (immutable snapshot of original total)
-      ...(parentAnyForFamily.splitFamilyTotal ? {} : { splitFamilyTotal: order.total }),
+      // Set splitFamilyTotal on first split (immutable snapshot of original total).
+      //
+      // Must be TAX-INCLUSIVE, because the children it bounds are: each child's
+      // total is (splitSubtotal + splitTax - splitDiscount). Snapshotting the
+      // parent's pre-tax `total` here made the family ceiling smaller than the sum
+      // of its own children once tax is persisted, which would block the final
+      // split payment as "exceeds family balance".
+      ...(parentAnyForFamily.splitFamilyTotal
+        ? {}
+        : {
+            splitFamilyTotal: roundToCents(
+              Number(order.subtotal) + Number(order.taxTotal || 0) - Number(order.discountTotal || 0) + parentDonation
+            ),
+          }),
       // Zero out parent donation — it's been distributed to children
       ...(parentDonation > 0 ? { donationAmount: 0 } : {}),
       notes: order.notes
