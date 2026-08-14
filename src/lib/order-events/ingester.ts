@@ -23,6 +23,7 @@ import {
 } from './types'
 import { reduce } from './reducer'
 import { applyProjection, bridgeLegacyFieldsToSnapshot } from './projector'
+import { shouldSkipMoneyBridge } from '@/lib/domain/split-order/split-helpers'
 import {
   queueSocketEvent,
   queueTagSocketEvent,
@@ -71,6 +72,45 @@ function cacheSet(orderId: string, state: OrderState, lastSeq: number): void {
     if (oldest != null) snapshotCache.delete(oldest)
   }
   snapshotCache.set(orderId, { state, lastSeq })
+}
+
+/**
+ * Read-only snapshot pre-warm.
+ *
+ * Replays an order's event stream and populates the snapshot cache WITHOUT
+ * writing to any table. Use this before entering a FOR UPDATE transaction so
+ * the in-transaction ingestAndProject takes the cheap incremental path.
+ *
+ * Deliberately does NOT call applyProjection or the Order bridge. Callers on
+ * the money path (pay/route.ts) must never mutate order totals just to warm a
+ * cache — doing so zeroed allocation split children and closed them as paid
+ * with no Payment row.
+ */
+export async function warmOrderSnapshotCache(
+  db: PrismaClient,
+  orderId: string
+): Promise<void> {
+  try {
+    if (cacheGet(orderId)) return // already warm
+
+    const orderEvents = await (db as any).orderEvent.findMany({
+      where: { orderId },
+      orderBy: { serverSequence: 'asc' },
+      select: { type: true, payloadJson: true, serverSequence: true },
+    })
+    if (orderEvents.length === 0) return
+
+    let state = emptyOrderState(orderId)
+    let lastSequence = 0
+    for (const oe of orderEvents) {
+      state = reduce(state, { type: oe.type, payload: oe.payloadJson } as OrderEventPayload)
+      lastSequence = oe.serverSequence
+    }
+    cacheSet(orderId, state, lastSequence)
+  } catch (err) {
+    // Pre-warm is a pure optimisation — never fail the caller.
+    log.warn({ err, orderId }, '[ingester] snapshot pre-warm failed (non-fatal)')
+  }
 }
 
 /** Invalidate a cached snapshot (e.g. on corruption recovery). */
@@ -294,18 +334,46 @@ export async function ingestAndProject(
       const tipTotal = getTipTotalCents(state) / 100
       const total = getTotalCents(state) / 100
 
+      // ── Guard: never bridge fields the event stream does not own ──────
+      //
+      // This bridge rebuilds Order columns from the replayed event state. Any
+      // column written directly to the Order row but NOT carried by an event
+      // would otherwise be destroyed on the next replay. Two cases:
+      //
+      // 1. ALLOCATION split children (even / custom_amount) are amount-only —
+      //    they deliberately hold zero OrderItem rows and their total is
+      //    authored at split time (see lib/domain/split-order/even-split.ts).
+      //    Replaying their stream yields subtotal/total = 0, which silently
+      //    zeroed real money and let pay/route.ts close them as "$0 balance"
+      //    with no Payment row. Their money fields are NOT derivable here.
+      //
+      // 2. tabName / notes / tableId are written directly by their own routes
+      //    and have no reliable event carrying them (TAB_OPENED, for example,
+      //    is never emitted), so state.* is null and would null the column.
+      //    Only bridge these when the stream actually establishes a value.
+      const existingOrder = await tx.order.findUnique({
+        where: { id: orderId },
+        select: { splitClass: true, parentOrderId: true, itemCount: true },
+      })
+      const isAllocationChild = shouldSkipMoneyBridge(existingOrder)
+
       const bridgeData = {
         status: state.status as any,
-        subtotal,
-        discountTotal,
-        taxTotal,
+        // Money + itemCount are only derivable for orders that own their items.
+        ...(isAllocationChild ? {} : {
+          subtotal,
+          discountTotal,
+          taxTotal,
+          total,
+          itemCount: getItemCount(state),
+        }),
+        // tipTotal comes from payment events, which allocation children DO have.
         tipTotal,
-        total,
-        itemCount: getItemCount(state),
-        notes: state.notes,
         guestCount: state.guestCount,
-        tableId: state.tableId,
-        tabName: state.tabName,
+        // Preserve directly-written values the event stream cannot reproduce.
+        ...(state.notes != null ? { notes: state.notes } : {}),
+        ...(state.tableId != null ? { tableId: state.tableId } : {}),
+        ...(state.tabName != null ? { tabName: state.tabName } : {}),
         lastMutatedBy: 'cloud' as const,
         ...(isNowClosed ? { paidAt: new Date(), closedAt: new Date() } : {}),
         ...(state.status === 'sent' ? { sentAt: new Date() } : {}),

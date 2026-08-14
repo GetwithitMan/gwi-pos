@@ -11,7 +11,7 @@ import { roundToCents, toNumber } from '@/lib/pricing'
 import { withVenue } from '@/lib/with-venue'
 import { withTiming, getTimingFromRequest } from '@/lib/with-timing'
 import { getCurrentBusinessDay } from '@/lib/business-day'
-import { ingestAndProject } from '@/lib/order-events/ingester'
+import { ingestAndProject, warmOrderSnapshotCache } from '@/lib/order-events/ingester'
 import { enableSyncReplication } from '@/lib/db-helpers'
 import { checkOrderClaim } from '@/lib/order-claim'
 import { PAYABLE_STATUSES } from '@/lib/domain/order-status'
@@ -34,6 +34,38 @@ import { err, notFound, ok } from '@/lib/api-response'
 import { handlePaymentFailure } from '@/lib/domain/payment/compensation/handle-payment-failure'
 import { runPaymentPostCommitEffects } from '@/lib/domain/payment/effects/run-payment-post-commit-effects'
 const log = createChildLogger('orders-pay')
+
+/**
+ * Total payment amount the client submitted, read defensively from the RAW body.
+ *
+ * Runs before normalizePaymentInput/Zod, so it must tolerate both the
+ * { payments: [...] } shape and the legacy/Android flat shape, and must never
+ * throw on malformed input — it is only used to decide whether a $0-balance
+ * close would be swallowing real money. Returns 0 when nothing parseable.
+ */
+function sumSubmittedPaymentAmount(rawBody: unknown): number {
+  try {
+    const body = rawBody as Record<string, unknown> | null
+    if (!body || typeof body !== 'object') return 0
+
+    const readAmount = (v: unknown): number => {
+      const n = typeof v === 'string' ? Number(v) : typeof v === 'number' ? v : NaN
+      return Number.isFinite(n) && n > 0 ? n : 0
+    }
+
+    if (Array.isArray(body.payments)) {
+      return roundToCents(
+        (body.payments as unknown[]).reduce<number>(
+          (sum, p) => sum + readAmount((p as Record<string, unknown>)?.amount),
+          0
+        )
+      )
+    }
+    return roundToCents(readAmount(body.amount))
+  } catch {
+    return 0
+  }
+}
 
 // POST - Process payment for order
 export const POST = withVenue(withTiming(async function POST(
@@ -257,13 +289,18 @@ export const POST = withVenue(withTiming(async function POST(
     }
 
     // ── Pre-warm snapshot cache OUTSIDE the FOR UPDATE lock ──────────
-    // Running ingestAndProject with an empty event array forces a snapshot
-    // replay and caches the result. When the transaction re-enters
-    // ingestAndProject later, it hits the cache (incremental path) instead
-    // of replaying all events under the row-level lock — saving 50-200ms
-    // of lock hold time on large pizza orders with many modifiers.
+    // Replays the event stream and caches the result so that when the
+    // transaction re-enters ingestAndProject it hits the cache (incremental
+    // path) instead of replaying all events under the row-level lock —
+    // saving 50-200ms of lock hold time on large pizza orders.
+    //
+    // MUST stay read-only. This previously called ingestAndProject(..., []),
+    // which despite the "pre-warm" framing also ran the Order/snapshot bridge
+    // writes. On an allocation split child (zero items by design) that replay
+    // zeroed subtotal/total, and the $0-balance branch below then closed the
+    // check as paid with NO Payment row — silently destroying real revenue.
     if (payLocationId) {
-      await ingestAndProject(db, orderId, payLocationId, [], { suppressBroadcast: true })
+      await warmOrderSnapshotCache(db, orderId)
     }
 
     // Hoisted for post-transaction access (populated inside tx)
@@ -386,6 +423,26 @@ export const POST = withVenue(withTiming(async function POST(
         .reduce((sum, p) => sum + toNumber(p.amount), 0))
       const zeroRemaining = roundToCents(toNumber(order.total ?? 0) - zeroAlreadyPaid)
       if (zeroRemaining <= 0) {
+        // Guard: this branch closes an order as paid WITHOUT writing a Payment
+        // row. That is only ever correct when there is genuinely no money to
+        // take (fully voided/comped). If the caller submitted a positive
+        // amount, the server's $0 balance is wrong — never swallow real money.
+        const submittedAmount = sumSubmittedPaymentAmount(body)
+        if (submittedAmount > 0) {
+          log.error(
+            { orderId, orderTotal: toNumber(order.total ?? 0), zeroAlreadyPaid, submittedAmount },
+            '[PAY] Refusing $0 close: client submitted a payment but server computed a $0 balance'
+          )
+          return { earlyReturn: NextResponse.json(
+            {
+              error: 'Order total does not match the submitted payment. Refusing to close without recording payment.',
+              code: 'ORDER_TOTAL_MISMATCH',
+              details: { orderTotal: toNumber(order.total ?? 0), alreadyPaid: zeroAlreadyPaid, submittedAmount },
+            },
+            { status: 409 }
+          ) }
+        }
+
         await ingestAndProject(tx as any, orderId, order.locationId, [
           { type: 'ORDER_CLOSED', payload: { closedStatus: 'paid' } }
         ])
