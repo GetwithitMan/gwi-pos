@@ -21,6 +21,7 @@ import { applyPriceRounding, calculateCardPrice, roundToCents, toNumber } from '
 import { calculateCharge, type EntertainmentPricing, type OvertimeConfig } from '@/lib/entertainment-pricing'
 import { getLocationTaxRate, recalculatePercentDiscounts, calculateSplitTax } from '@/lib/order-calculations'
 import { ingestAndProject } from '@/lib/order-events/ingester'
+import { allocateRoundedFamilyTotal, roundingIncrementCents } from '@/lib/domain/split-order/split-helpers'
 import * as OrderRepository from '@/lib/repositories/order-repository'
 import * as OrderItemRepository from '@/lib/repositories/order-item-repository'
 import { db } from '@/lib/db'
@@ -257,32 +258,113 @@ export async function buildPaymentFinancialContext(
     select: { total: true, taxTotal: true }
   })
 
+  // ── Family-level rounding for allocation split children ────────────────────
+  // Rounding each child on its own rounds UP more often than not, so the table
+  // collectively pays more than the check (a $47.26 check split 2 ways became
+  // 2 x $24.00 = $48.00 at Monument). Round the family ONCE and divide that, so
+  // the children always sum to exactly what the whole check rounds to.
+  // Tax is unaffected — it is remitted in full; only the rounding difference
+  // moves, and it comes out of product revenue via Payment.roundingAdjustment.
+  const isAllocationChild =
+    !!order.parentOrderId && (order as any).splitClass === 'allocation'
+  let allocatedChildPayable: number | null = null
+
+  if (isAllocationChild && settings.priceRounding?.enabled && settings.priceRounding.applyToCash) {
+    const siblings = await tx.order.findMany({
+      where: { parentOrderId: order.parentOrderId, deletedAt: null },
+      select: { id: true, splitIndex: true, total: true },
+    })
+    const withIndex = siblings.filter(
+      (s: { splitIndex: number | null }) => s.splitIndex != null,
+    )
+    if (withIndex.length > 0) {
+      // Each allocation child's total is already tax-inclusive, so the family
+      // tax-inclusive payable is just their sum.
+      const familyTaxInclusive = roundToCents(
+        withIndex.reduce((sum: number, s: { total: unknown }) => sum + toNumber(s.total ?? 0), 0),
+      )
+      const familyRounded = applyPriceRounding(
+        familyTaxInclusive,
+        settings.priceRounding as any,
+        'cash',
+      )
+      const allocation = allocateRoundedFamilyTotal(
+        Math.round(familyRounded * 100),
+        roundingIncrementCents(settings.priceRounding.increment),
+        withIndex.map((s: { splitIndex: number | null; total: unknown }) => ({
+          splitIndex: s.splitIndex as number,
+          shareCents: Math.round(toNumber(s.total ?? 0) * 100),
+        })),
+      )
+      const mine = allocation.get((order as any).splitIndex as number)
+      if (mine != null) allocatedChildPayable = roundToCents(mine / 100)
+    }
+  }
+
   const orderTotal = (() => {
     if (splitPayRemainingOverride != null) return splitPayRemainingOverride
+    if (allocatedChildPayable != null) return allocatedChildPayable
 
     const rawTotal = toNumber(freshOrderTotals?.total ?? order.total ?? 0)
     const storedTax = toNumber(freshOrderTotals?.taxTotal ?? order.taxTotal ?? 0)
 
+    const isAllocChild = isAllocationChild
+
     // Step 1: Compute tax-inclusive amount
+    //
+    // An allocation split child's `total` is ALREADY tax-inclusive: even-split.ts
+    // builds it as (splitSubtotal + splitTax - splitDiscount), i.e. its proportional
+    // share of the parent's tax-inclusive value. Adding tax again here double-counts.
+    // The register enforces the same contract — see the allocation fast-path in
+    // DefaultCheckoutEvaluationEngine.kt: "Allocation split children carry server-set
+    // proportional totals that already include tax, discounts, and surcharge. The
+    // engine must NOT recompute these or it will double-count tax."
     let taxInclusiveTotal = rawTotal
-    if (storedTax > 0) {
-      // Tax already stored on the order (entertainment settlement or pre-computed)
-      taxInclusiveTotal = roundToCents(rawTotal + storedTax)
-    } else {
-      // Compute tax from venue settings (same as register engine)
-      const taxSettings = settings.tax
-      const taxRate = taxSettings?.defaultRate ?? 0  // percentage, e.g. 10.0
-      if (taxRate > 0) {
-        const computedTax = roundToCents(rawTotal * taxRate / 100)
-        taxInclusiveTotal = roundToCents(rawTotal + computedTax)
+    if (!isAllocChild) {
+      if (storedTax > 0) {
+        // AUTHORITATIVE PATH. Order.taxTotal was computed by the item-level tax
+        // engine, which honours each venue's TaxRule rows including per-category
+        // and per-item scoping (TaxRule.appliesTo = all | category | item).
+        // This is the only source of truth for tax. Never re-derive it here.
+        taxInclusiveTotal = roundToCents(rawTotal + storedTax)
+      } else {
+        // FALLBACK — always the individual venue's own configured rate.
+        //
+        // settings.tax.defaultRate is derived from THAT VENUE's TaxRule rows
+        // (Settings -> Tax Rules): the sum of its non-inclusive rates, refreshed
+        // whenever a rule changes and shipped to the register at bootstrap. Tax is
+        // never hardcoded and never global — it always comes from the venue.
+        //
+        // Caveat worth knowing: this derived value is a single flattened
+        // percentage, so it is exact for venues whose rules are all
+        // appliesTo:'all' (the common case), and approximate for a venue that
+        // scopes different rates per category or item. The exact per-item figure
+        // lives in Order.taxTotal above, which the item-level engine computes from
+        // the venue's TaxRule rows honouring appliesTo / categoryIds / itemIds.
+        // Log when we land here so a scoped-rule venue is visible rather than silent.
+        const taxSettings = settings.tax
+        const taxRate = taxSettings?.defaultRate ?? 0  // percentage, e.g. 10.0
+        if (taxRate > 0) {
+          log.warn(
+            { orderId, rawTotal, venueTaxRatePct: taxRate },
+            '[PAY] Order.taxTotal not persisted — using the venue\'s derived tax rate from its Tax Rules. ' +
+            'Exact for single-rate venues; approximate if this venue scopes rates per category/item.'
+          )
+          const computedTax = roundToCents(rawTotal * taxRate / 100)
+          taxInclusiveTotal = roundToCents(rawTotal + computedTax)
+        }
       }
     }
 
     // Step 2: Apply cash rounding (mirrors register checkout engine)
     // The register rounds the tax-inclusive total before submitting. The server must
     // compute the same rounded amount or validation will reject for mismatch.
-    const isAllocChild = order.parentOrderId && (order as any).splitClass === 'allocation'
-    if (!isAllocChild && settings.priceRounding?.enabled && settings.priceRounding.applyToCash) {
+    //
+    // This applies to allocation children too — the register's allocation fast-path
+    // runs calcRoundingDelta() on the stored total exactly like any other order.
+    // Previously the server skipped rounding here while the register applied it,
+    // so the two could never agree on a split child's payable.
+    if (settings.priceRounding?.enabled && settings.priceRounding.applyToCash) {
       return applyPriceRounding(taxInclusiveTotal, settings.priceRounding, 'cash')
     }
 
@@ -320,11 +402,20 @@ export async function buildPaymentFinancialContext(
   //   2. cashRounding (legacy) — named modes ('nickel', 'quarter', etc.)
   // priceRounding takes precedence when enabled.
   const hasCashPayment = payments.some(p => p.method === 'cash')
-  const isAllocationChild = order.parentOrderId && (order as any).splitClass === 'allocation'
   let validationRemaining = remaining
-  // Skip cash rounding for allocation split children — their totals were set
-  // during split creation without rounding, so the client sends the exact split amount.
-  if (hasCashPayment && !isAllocationChild) {
+  // Allocation split children are INCLUDED here now.
+  //
+  // This used to skip rounding for them, on the reasoning that "their totals were
+  // set during split creation without rounding, so the client sends the exact
+  // split amount". That was wrong in both directions: the register always applies
+  // cash rounding (its allocation fast-path runs calcRoundingDelta like any other
+  // order), so the two sides could never agree — the live symptom was the register
+  // offering $21.00 against a server demand of $23.20.
+  //
+  // For an allocation child `remaining` is now the family-rounded allocated share
+  // (see allocateRoundedFamilyTotal above), so re-applying the same rounding here
+  // is idempotent — it lands on the increment it is already on.
+  if (hasCashPayment) {
     // Dual pricing: order.total IS the cash price (stored price model).
     // Card price = order.total * (1 + cashDiscountPercent/100).
     // Cash payments must match the stored total — do NOT call calculateCashPrice()

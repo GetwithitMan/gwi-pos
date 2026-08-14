@@ -363,9 +363,17 @@ export async function ingestAndProject(
         ...(isAllocationChild ? {} : {
           subtotal,
           discountTotal,
-          taxTotal,
           total,
           itemCount: getItemCount(state),
+          // taxTotal is NOT event-derived. state.taxTotalCents is only ever set by
+          // the discount handlers (reducer.ts DISCOUNT_APPLIED/REMOVED); no
+          // ITEM_ADDED path computes tax, so it is 0 for any order that never
+          // received a discount. Bridging that 0 back destroyed the tax that
+          // recalculateOrderTotalsForAdd had just computed from the venue's rate —
+          // which is why every Order at every venue reported taxTotal = 0.00 while
+          // exclusiveTaxRate was correctly stored, and why reports showed zero tax
+          // collected. Only write it when the stream actually established a value.
+          ...(state.taxTotalCents > 0 ? { taxTotal } : {}),
         }),
         // tipTotal comes from payment events, which allocation children DO have.
         tipTotal,
