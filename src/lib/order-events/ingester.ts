@@ -353,9 +353,28 @@ export async function ingestAndProject(
       //    Only bridge these when the stream actually establishes a value.
       const existingOrder = await tx.order.findUnique({
         where: { id: orderId },
-        select: { splitClass: true, parentOrderId: true, itemCount: true },
+        select: { splitClass: true, parentOrderId: true, itemCount: true, taxTotal: true },
       })
       const isAllocationChild = shouldSkipMoneyBridge(existingOrder)
+
+      // ── Keep total and taxTotal consistent ────────────────────────────────
+      // getTotalCents(state) = subtotal - discounts + state.taxTotalCents, and
+      // state.taxTotalCents is only ever set by the discount handlers. So for an
+      // order that never took a discount the replayed total EXCLUDES tax, while
+      // recalculateOrderTotalsForAdd wrote a tax-INCLUSIVE total to the row.
+      //
+      // Bridging the replayed total on its own therefore left the row
+      // self-contradictory — observed live: subtotal 42.96, taxTotal 4.30,
+      // total 42.96 (should be 47.26). The register asked for $47.00 while the
+      // server computed $43.00 from that broken total and rejected the payment
+      // (PAY-VALIDATION paymentBaseTotal=47 remaining=43).
+      //
+      // Substitute the authoritative persisted tax whenever the event stream
+      // does not own one, so total and taxTotal always move together.
+      const persistedTaxCents = Math.round(Number(existingOrder?.taxTotal ?? 0) * 100)
+      const effectiveTaxCents = state.taxTotalCents > 0 ? state.taxTotalCents : persistedTaxCents
+      const effectiveTaxTotal = effectiveTaxCents / 100
+      const effectiveTotal = (getTotalCents(state) - state.taxTotalCents + effectiveTaxCents) / 100
 
       const bridgeData = {
         status: state.status as any,
@@ -363,17 +382,14 @@ export async function ingestAndProject(
         ...(isAllocationChild ? {} : {
           subtotal,
           discountTotal,
-          total,
           itemCount: getItemCount(state),
-          // taxTotal is NOT event-derived. state.taxTotalCents is only ever set by
-          // the discount handlers (reducer.ts DISCOUNT_APPLIED/REMOVED); no
-          // ITEM_ADDED path computes tax, so it is 0 for any order that never
-          // received a discount. Bridging that 0 back destroyed the tax that
-          // recalculateOrderTotalsForAdd had just computed from the venue's rate —
-          // which is why every Order at every venue reported taxTotal = 0.00 while
-          // exclusiveTaxRate was correctly stored, and why reports showed zero tax
-          // collected. Only write it when the stream actually established a value.
-          ...(state.taxTotalCents > 0 ? { taxTotal } : {}),
+          // total and taxTotal are written together from the effective tax, so the
+          // row can never end up self-contradictory (see the derivation above).
+          // Tax itself is authored by the item-level engine from the venue's
+          // TaxRule rows; the event stream only owns it when a discount event
+          // carried a recalculated value.
+          taxTotal: effectiveTaxTotal,
+          total: effectiveTotal,
         }),
         // tipTotal comes from payment events, which allocation children DO have.
         tipTotal,
