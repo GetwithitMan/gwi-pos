@@ -198,8 +198,33 @@ export async function ingestAndProject(
     paymentBridgeOverrides?: Record<string, Record<string, unknown>>
     suppressBroadcast?: boolean
     employeeId?: string
+    /**
+     * Which side authored this mutation. Defaults to 'local' — ingestAndProject
+     * normally runs on the NUC processing NUC/Android events. Pass 'cloud' only
+     * from a genuine cloud route (e.g. a cellular terminal writing through
+     * Vercel), matching the `isCellular ? 'cloud' : 'local'` convention used by
+     * the REST routes.
+     *
+     * This is NOT cosmetic. OrderItem is a bidirectional sync model, and the
+     * upstream worker skips rows where lastMutatedBy = 'cloud'
+     * (upstream-sync-worker.ts biDirFilter). Hardcoding 'cloud' here meant every
+     * locally-created order item was labelled cloud-originated and therefore
+     * NEVER synced upstream — verified at Monument, where a paid order's 8 items
+     * were all lastMutatedBy='cloud' and Neon held 0 items for it. It also let
+     * downstream sync freely overwrite local rows, since downstream only applies
+     * cloud changes to rows marked cloud/NULL.
+     */
+    mutationOrigin?: 'cloud' | 'local'
   }
 ): Promise<IngestResult> {
+  // Default from the RUNTIME rather than a constant:
+  //   - on the NUC  -> 'local'  (this ingest authored the change locally)
+  //   - on Vercel   -> 'cloud'  (cellular terminals write through Vercel → Neon)
+  // Getting this backwards breaks sync in one direction or the other: 'cloud' on
+  // the NUC hides rows from upstream sync, 'local' on Vercel hides them from the
+  // NUC's downstream sync (which only applies rows marked cloud/NULL).
+  const mutationOrigin: 'cloud' | 'local' =
+    options?.mutationOrigin ?? (process.env.VERCEL ? 'cloud' : 'local')
   // ── Wrap entire pipeline in a transaction for atomicity ──────────
   // This prevents race conditions where two Android devices sending the
   // same eventId concurrently could both pass a findUnique check and
@@ -398,7 +423,7 @@ export async function ingestAndProject(
         ...(state.notes != null ? { notes: state.notes } : {}),
         ...(state.tableId != null ? { tableId: state.tableId } : {}),
         ...(state.tabName != null ? { tabName: state.tabName } : {}),
-        lastMutatedBy: 'cloud' as const,
+        lastMutatedBy: mutationOrigin,
         ...(isNowClosed ? { paidAt: new Date(), closedAt: new Date() } : {}),
         ...(state.status === 'sent' ? { sentAt: new Date() } : {}),
       }
@@ -427,7 +452,7 @@ export async function ingestAndProject(
                 orderNumber: state.orderNumber,
                 displayNumber: state.displayNumber,
                 ...bridgeData,
-                lastMutatedBy: 'cloud',
+                lastMutatedBy: mutationOrigin,
               },
             })
           }
@@ -454,7 +479,7 @@ export async function ingestAndProject(
             tipTotal,
             total,
             itemCount: getItemCount(state),
-            lastMutatedBy: 'cloud',
+            lastMutatedBy: mutationOrigin,
           },
           update: bridgeData,
         })
@@ -480,7 +505,7 @@ export async function ingestAndProject(
       if (removedIds.length > 0) {
         await tx.orderItem.updateMany({
           where: { id: { in: removedIds } },
-          data: { deletedAt: new Date(), status: 'voided', lastMutatedBy: 'cloud' },
+          data: { deletedAt: new Date(), status: 'voided', lastMutatedBy: mutationOrigin },
         })
       }
 
@@ -519,7 +544,7 @@ export async function ingestAndProject(
             costAtSale: item.costAtSaleCents != null ? item.costAtSaleCents / 100 : null,
             pourSize: item.pourSize ?? null,
             pourMultiplier: item.pourMultiplier ?? null,
-            lastMutatedBy: 'cloud',
+            lastMutatedBy: mutationOrigin,
           },
           update: {
             name: item.name,
@@ -546,7 +571,7 @@ export async function ingestAndProject(
             costAtSale: item.costAtSaleCents != null ? item.costAtSaleCents / 100 : null,
             pourSize: item.pourSize ?? null,
             pourMultiplier: item.pourMultiplier ?? null,
-            lastMutatedBy: 'cloud',
+            lastMutatedBy: mutationOrigin,
             deletedAt: null, // Un-delete if re-added
           },
         })
@@ -588,7 +613,7 @@ export async function ingestAndProject(
             cardBrand,
             cardLast4,
             status,
-            lastMutatedBy: 'cloud',
+            lastMutatedBy: mutationOrigin,
             ...overrides,
           },
           update: {}, // Idempotent — don't overwrite existing Payment
