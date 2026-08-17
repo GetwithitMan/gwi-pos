@@ -259,10 +259,37 @@ export const POST = withVenue(async function POST(
 
     // Resolve idempotencyKey: prefer body field, fall back to HTTP header (Android sends it there).
     // Android's AuthInterceptor always adds Idempotency-Key header on POST/PUT/PATCH/DELETE.
-    const idempotencyKey = body.idempotencyKey || request.headers.get('idempotency-key')
+    //
+    // BACKWARD COMPATIBILITY — do NOT reinstate a hard 400 here.
+    //
+    // Older deployed clients do not send this. The PAX/SoftPOS handheld
+    // (com.gwi.pax v1.1.0, built 2026-03-12) predates that interceptor, so
+    // making the key mandatory rejected EVERY item add with
+    // "idempotencyKey is required" — the handheld could not ring up anything,
+    // while its UI still showed the item staged at a live price. Verified on
+    // hardware at Monument 2026-08-17.
+    //
+    // A separate key is redundant anyway: per docs/guides/STABLE-ID-CONTRACT.md
+    // every OrderItemRequest already carries a stable, client-generated
+    // lineItemId, and the server uses it as the OrderItem.id. Deriving the key
+    // from those ids gives exactly the same replay protection — a retry of the
+    // same request produces the same key, and a genuinely new add produces a
+    // new one — without requiring a client update.
+    const derivedIdempotencyKey = (() => {
+      const ids = (items ?? [])
+        .map((i: AddItemInput) => (i as { lineItemId?: string }).lineItemId)
+        .filter((v): v is string => !!v)
+      return ids.length > 0 ? `derived:${orderId}:${ids.join(',')}` : null
+    })()
+
+    const idempotencyKey =
+      body.idempotencyKey || request.headers.get('idempotency-key') || derivedIdempotencyKey
+
     if (!idempotencyKey) {
+      // Only unreachable by clients that send neither a key NOR stable line item
+      // ids — which would violate the stable-id contract outright.
       return apiError.badRequest(
-        'idempotencyKey is required to prevent duplicate items. Send in body or Idempotency-Key header.',
+        'idempotencyKey is required to prevent duplicate items. Send in body, Idempotency-Key header, or include lineItemId on each item.',
         ERROR_CODES.VALIDATION_ERROR,
       )
     }
