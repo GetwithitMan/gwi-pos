@@ -11,6 +11,7 @@ import { ORDER_ITEM_FULL_INCLUDE, mapOrderItemForWire } from '@/lib/domain/order
 import { roundToCents } from '@/lib/pricing'
 import { getLocationSettings } from '@/lib/location-cache'
 import { parseSettings, getPricingProgram } from '@/lib/settings'
+import { computePayable, isAllocationSplitChild } from '@/lib/domain/payment/payable'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { apiError, ERROR_CODES } from '@/lib/api/error-responses'
@@ -29,6 +30,34 @@ interface DualPricingResult {
   debitMarkupPercent: number
   /** @deprecated Use creditMarkupPercent */
   cashDiscountPercent: number
+}
+
+
+/**
+ * Publish the server-authoritative payable alongside the raw totals.
+ *
+ * The handheld and register must render the number the server will actually
+ * accept. When they derived it themselves — from a bootstrapped tax rate and
+ * their own rounding — they disagreed with the server and payments were
+ * rejected on the floor. See src/lib/domain/payment/payable.ts.
+ */
+async function payableFields(order: {
+  locationId: string
+  total: unknown
+  taxTotal?: unknown
+  parentOrderId?: string | null
+  splitClass?: string | null
+}): Promise<{ payableCents: number; payableCardCents: number }> {
+  const settings = (await getLocationSettings(order.locationId)) as Record<string, unknown> | null
+  const input = {
+    total: Number(order.total),
+    taxTotal: order.taxTotal == null ? undefined : Number(order.taxTotal),
+    isAllocationChild: isAllocationSplitChild(order),
+  }
+  return {
+    payableCents: Math.round(computePayable(input, settings as never, 'cash') * 100),
+    payableCardCents: Math.round(computePayable(input, settings as never, 'card') * 100),
+  }
 }
 
 export async function computeDualPricing(
@@ -161,6 +190,10 @@ export async function getOrderForPanel(orderId: string) {
       baseSeatCount: true,
       extraSeatCount: true,
       employeeId: true,
+      // parentOrderId is REQUIRED for isAllocationSplitChild(). Without it an
+      // allocation child is misclassified and payableFields() adds tax to a
+      // total that already includes it -- a double-taxed payable.
+      parentOrderId: true,
       splitClass: true,
       splitMode: true,
       splitResolution: true,
@@ -226,8 +259,11 @@ export async function getOrderForPanel(orderId: string) {
     Number(order.tipTotal) || 0,
   )
 
+  const payable = await payableFields(order as never)
+
   return ok({
     ...order,
+    ...payable,
     subtotal: Number(order.subtotal),
     taxTotal: Number(order.taxTotal),
     total: Number(order.total),
@@ -332,8 +368,11 @@ export async function getOrderFull(
     Number((order as any).tipTotal) || 0,
   )
 
+  const payableFull = await payableFields(order as never)
+
   return ok({
     ...response,
+    ...payableFull,
     paidAmount,
     version: order.version,
     splitClass: (order as any).splitClass || null,
