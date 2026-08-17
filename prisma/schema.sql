@@ -1206,6 +1206,7 @@ CREATE TABLE "OrderItem" (
     "pourSize" TEXT,
     "pourMultiplier" DECIMAL(10,4),
     "cardPrice" DECIMAL(10,2),
+    "debitPrice" DECIMAL(10,2),
     "isTaxInclusive" BOOLEAN NOT NULL DEFAULT false,
     "categoryType" TEXT,
     "seatNumber" INTEGER,

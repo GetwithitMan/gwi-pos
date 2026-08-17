@@ -6,6 +6,7 @@ import { withTiming, getTimingFromRequest } from '@/lib/with-timing'
 import { getCurrentBusinessDay } from '@/lib/business-day'
 import { err, ok } from '@/lib/api-response'
 import { OPEN_ORDERS_CACHE_TTL, getOpenOrdersCacheEntry, setOpenOrdersCacheEntry } from '@/lib/open-orders-cache'
+import { computePayable, isAllocationSplitChild } from '@/lib/domain/payment/payable'
 // TODO: Migrate to OrderRepository once it supports getOpenOrdersSummary(), getOpenOrdersFull(),
 // business day batching, empty-shell exclusion, rich includes, multi-filter, and pagination
 
@@ -266,6 +267,22 @@ export const GET = withVenue(withAuth({ allowCellular: true }, withTiming(async 
           id: o.id,
           orderNumber: o.orderNumber,
           displayNumber: o.displayNumber || String(o.orderNumber),
+          // ── Authoritative payable (Phase 0) ────────────────────────────────
+          // The amount the guest actually owes, computed SERVER-SIDE from this
+          // venue's own tax and rounding settings. Published so clients render
+          // money instead of deriving it — the register previously recomputed
+          // tax from its bootstrapped config and rounding on its own, which is
+          // how it ended up asking for $47.00 against a server figure of $43.00,
+          // and $21.00 against $23.20 on split children.
+          // Cents, to avoid float drift across the wire.
+          payableCents: Math.round(computePayable(
+            { total: o.total, taxTotal: o.taxTotal, isAllocationChild: isAllocationSplitChild(o) },
+            settings as any, 'cash',
+          ) * 100),
+          payableCardCents: Math.round(computePayable(
+            { total: o.total, taxTotal: o.taxTotal, isAllocationChild: isAllocationSplitChild(o) },
+            settings as any, 'card',
+          ) * 100),
           isSplitTicket: !!o.parentOrderId,
           parentOrderId: o.parentOrderId,
           splitIndex: o.splitIndex,
@@ -526,6 +543,15 @@ export const GET = withVenue(withAuth({ allowCellular: true }, withTiming(async 
         id: order.id,
         orderNumber: order.orderNumber,
         displayNumber: order.displayNumber || String(order.orderNumber), // "30-1" for splits, "30" for regular
+        // Authoritative payable — see the summary branch above.
+        payableCents: Math.round(computePayable(
+          { total: order.total, taxTotal: (order as any).taxTotal, isAllocationChild: isAllocationSplitChild(order as any) },
+          settings as any, 'cash',
+        ) * 100),
+        payableCardCents: Math.round(computePayable(
+          { total: order.total, taxTotal: (order as any).taxTotal, isAllocationChild: isAllocationSplitChild(order as any) },
+          settings as any, 'card',
+        ) * 100),
         isSplitTicket: !!order.parentOrderId,
         parentOrderId: order.parentOrderId,
         splitIndex: order.splitIndex,

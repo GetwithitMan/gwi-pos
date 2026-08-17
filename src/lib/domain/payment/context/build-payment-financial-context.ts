@@ -22,6 +22,7 @@ import { calculateCharge, type EntertainmentPricing, type OvertimeConfig } from 
 import { getLocationTaxRate, recalculatePercentDiscounts, calculateSplitTax } from '@/lib/order-calculations'
 import { ingestAndProject } from '@/lib/order-events/ingester'
 import { allocateRoundedFamilyTotal, roundingIncrementCents } from '@/lib/domain/split-order/split-helpers'
+import { computePayable } from '@/lib/domain/payment/payable'
 import * as OrderRepository from '@/lib/repositories/order-repository'
 import * as OrderItemRepository from '@/lib/repositories/order-item-repository'
 import { db } from '@/lib/db'
@@ -305,83 +306,20 @@ export async function buildPaymentFinancialContext(
     if (splitPayRemainingOverride != null) return splitPayRemainingOverride
     if (allocatedChildPayable != null) return allocatedChildPayable
 
-    const rawTotal = toNumber(freshOrderTotals?.total ?? order.total ?? 0)
-    const storedTax = toNumber(freshOrderTotals?.taxTotal ?? order.taxTotal ?? 0)
-
-    const isAllocChild = isAllocationChild
-
-    // Step 1: Compute tax-inclusive amount
-    //
-    // An allocation split child's `total` is ALREADY tax-inclusive: even-split.ts
-    // builds it as (splitSubtotal + splitTax - splitDiscount), i.e. its proportional
-    // share of the parent's tax-inclusive value. Adding tax again here double-counts.
-    // The register enforces the same contract — see the allocation fast-path in
-    // DefaultCheckoutEvaluationEngine.kt: "Allocation split children carry server-set
-    // proportional totals that already include tax, discounts, and surcharge. The
-    // engine must NOT recompute these or it will double-count tax."
-    let taxInclusiveTotal = rawTotal
-    if (!isAllocChild) {
-      if (storedTax > 0) {
-        // AUTHORITATIVE PATH. Order.total ALREADY INCLUDES tax — see
-        // order-calculations.ts calculateOrderTotals():
-        //   totalBeforeRounding = inclusiveSubtotal + exclusiveSubtotal
-        //                         + taxFromExclusive - discount + tip + fee
-        // Verified against production rows: subtotal 42.96 + taxTotal 3.44 = total 46.40.
-        //
-        // This branch used to return (rawTotal + storedTax), double-counting tax.
-        // It never fired in practice ONLY because the event-sourcing bridge was
-        // clobbering taxTotal to 0 on every replay, so storedTax was always 0 and
-        // the else-branch below silently compensated. Fixing that clobber (RC-3)
-        // arms this path for the first time — so it must be correct now. Adding
-        // storedTax here would overcharge every order by its full tax amount
-        // ($42.96 + 10% would bill $51.56 instead of $47.26).
-        //
-        // Tax itself comes from the venue's TaxRule rows via the item-level
-        // engine, which honours appliesTo / categoryIds / itemIds.
-        taxInclusiveTotal = rawTotal
-      } else {
-        // FALLBACK — always the individual venue's own configured rate.
-        //
-        // settings.tax.defaultRate is derived from THAT VENUE's TaxRule rows
-        // (Settings -> Tax Rules): the sum of its non-inclusive rates, refreshed
-        // whenever a rule changes and shipped to the register at bootstrap. Tax is
-        // never hardcoded and never global — it always comes from the venue.
-        //
-        // Caveat worth knowing: this derived value is a single flattened
-        // percentage, so it is exact for venues whose rules are all
-        // appliesTo:'all' (the common case), and approximate for a venue that
-        // scopes different rates per category or item. The exact per-item figure
-        // lives in Order.taxTotal above, which the item-level engine computes from
-        // the venue's TaxRule rows honouring appliesTo / categoryIds / itemIds.
-        // Log when we land here so a scoped-rule venue is visible rather than silent.
-        const taxSettings = settings.tax
-        const taxRate = taxSettings?.defaultRate ?? 0  // percentage, e.g. 10.0
-        if (taxRate > 0) {
-          log.warn(
-            { orderId, rawTotal, venueTaxRatePct: taxRate },
-            '[PAY] Order.taxTotal not persisted — using the venue\'s derived tax rate from its Tax Rules. ' +
-            'Exact for single-rate venues; approximate if this venue scopes rates per category/item.'
-          )
-          const computedTax = roundToCents(rawTotal * taxRate / 100)
-          taxInclusiveTotal = roundToCents(rawTotal + computedTax)
-        }
-      }
-    }
-
-    // Step 2: Apply cash rounding (mirrors register checkout engine)
-    // The register rounds the tax-inclusive total before submitting. The server must
-    // compute the same rounded amount or validation will reject for mismatch.
-    //
-    // This applies to allocation children too — the register's allocation fast-path
-    // runs calcRoundingDelta() on the stored total exactly like any other order.
-    // Previously the server skipped rounding here while the register applied it,
-    // so the two could never agree on a split child's payable.
-    if (settings.priceRounding?.enabled && settings.priceRounding.applyToCash) {
-      return applyPriceRounding(taxInclusiveTotal, settings.priceRounding, 'cash')
-    }
-
-    return taxInclusiveTotal
+    // Single source of truth — lib/domain/payment/payable.ts. The same function
+    // backs the payable published on order reads, so the register can never
+    // derive a different number than the payment path enforces.
+    return computePayable(
+      {
+        total: freshOrderTotals?.total ?? order.total ?? 0,
+        taxTotal: freshOrderTotals?.taxTotal ?? order.taxTotal ?? 0,
+        isAllocationChild,
+      },
+      settings as any,
+      'cash',
+    )
   })()
+
 
   const remaining = roundToCents(splitPayRemainingOverride != null
     ? splitPayRemainingOverride  // Family balance already accounts for all paid amounts

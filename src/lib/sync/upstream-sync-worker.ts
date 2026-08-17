@@ -257,9 +257,49 @@ function serializeValue(val: unknown, isPgArray = false): unknown {
   return val
 }
 
-/** Load column names for all upstream tables from information_schema */
+/**
+ * Load column names for all upstream tables from information_schema.
+ *
+ * IMPORTANT: the column list is intersected with the columns that actually exist
+ * UPSTREAM (Neon), not just locally.
+ *
+ * These INSERTs are built locally but executed against Neon. Any column present
+ * on the NUC but absent upstream makes Postgres reject the whole statement with
+ * 42703, and because the failure is per-row-batch it takes out EVERY row of that
+ * table — then every child row dies on an FK violation because its parent never
+ * landed.
+ *
+ * That is exactly what happened at Monument: migration 127 added
+ * OrderItem.debitPrice locally via raw ALTER TABLE, but the column was never
+ * declared in prisma/schema.prisma, so Neon (provisioned from the schema) never
+ * got it. Result: ~800 OrderItem failures plus ~3,900 OrderItemModifier FK
+ * dead-letters per window, and NO order data reaching the cloud at all.
+ *
+ * Intersecting makes the sync degrade gracefully — it ships the columns the
+ * cloud understands and simply omits ones it does not yet have, instead of
+ * failing closed. A local-only column can never again silently sever upstream
+ * sync. Any omission is logged once per table so the drift stays visible.
+ */
 async function loadColumnMetadata(): Promise<void> {
   const models = getUpstreamModels()
+
+  // Snapshot upstream columns once per load so we can intersect below.
+  const upstreamColumns = new Map<string, Set<string>>()
+  if (hasNeonConnection() && neonClient) {
+    try {
+      const rows = await neonClient.$queryRawUnsafe<{ table_name: string; column_name: string }[]>(
+        `SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = 'public'`
+      )
+      for (const r of rows) {
+        if (!upstreamColumns.has(r.table_name)) upstreamColumns.set(r.table_name, new Set())
+        upstreamColumns.get(r.table_name)!.add(r.column_name)
+      }
+    } catch (err) {
+      // Cannot reach Neon — fall back to local columns (previous behaviour).
+      log.warn({ err }, '[upstream-sync] could not read upstream schema; column intersection skipped')
+    }
+  }
+
   for (const [tableName] of models) {
     try {
       const cols = await masterClient.$queryRawUnsafe<{ column_name: string; data_type: string; udt_name: string }[]>(
@@ -267,9 +307,24 @@ async function loadColumnMetadata(): Promise<void> {
         tableName
       )
       if (cols.length > 0) {
-        columnCache.set(tableName, cols.map((c) => c.column_name))
+        const upstream = upstreamColumns.get(tableName)
+        const usable = upstream ? cols.filter((c) => upstream.has(c.column_name)) : cols
+
+        const dropped = cols.length - usable.length
+        if (dropped > 0) {
+          log.warn(
+            {
+              table: tableName,
+              omitted: cols.filter((c) => !upstream!.has(c.column_name)).map((c) => c.column_name),
+            },
+            '[upstream-sync] columns exist locally but not upstream — omitting them from sync. ' +
+            'Declare them in prisma/schema.prisma so the cloud schema gains them on the next rollout.'
+          )
+        }
+
+        columnCache.set(tableName, usable.map((c) => c.column_name))
         const castMap = new Map<string, string>()
-        cols.forEach((c) => castMap.set(c.column_name, buildCast(c.data_type, c.udt_name)))
+        usable.forEach((c) => castMap.set(c.column_name, buildCast(c.data_type, c.udt_name)))
         columnTypeMap.set(tableName, castMap)
       }
     } catch (err) {

@@ -2921,6 +2921,7 @@ model OrderItem {
 
   // Item-level pricing truth (Layer 2)
   cardPrice      Decimal? @db.Decimal(10, 2) // Computed card price at time of order (null if no dual pricing)
+  debitPrice     Decimal? @db.Decimal(10, 2) // Computed debit price at time of order (null if no dual pricing)
   isTaxInclusive Boolean  @default(false) // Was this item tax-inclusive at time of sale?
   categoryType   String? // Snapshot of category type at time of order
 
